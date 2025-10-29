@@ -1,11 +1,11 @@
 import pytest
+import pytest_asyncio
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from vfoundation.adapters.binance_adapter import BinanceAdapter
 
-
 class TestBinanceAdapterQuantizeQuantity:
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def adapter(self):
         # Mock adapter without real session
         adapter = BinanceAdapter('key', 'secret', 'https://testnet.binancefuture.com')
@@ -14,7 +14,7 @@ class TestBinanceAdapterQuantizeQuantity:
         adapter.get_mark_price = AsyncMock()
         return adapter
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_quantize_basic(self, adapter):
         # Mock exchange info for BTCUSDT
         adapter.get_exchange_info.return_value = {
@@ -33,7 +33,7 @@ class TestBinanceAdapterQuantizeQuantity:
         # 0.003 * 50000 = 150 >= 10, ok
         assert qty == '0.003'
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_quantize_rounds_down(self, adapter):
         adapter.get_exchange_info.return_value = {
             'symbols': [{
@@ -50,7 +50,7 @@ class TestBinanceAdapterQuantizeQuantity:
         # 0.055 // 0.01 = 5, so 5 * 0.01 = 0.05
         assert qty == '0.05'
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_quantize_below_min_notional(self, adapter):
         adapter.get_exchange_info.return_value = {
             'symbols': [{
@@ -66,7 +66,7 @@ class TestBinanceAdapterQuantizeQuantity:
         qty = await adapter.quantize_quantity('BTCUSDT', 0.001)  # 0.001 * 1000 = 1 < 100, should increase to 0.1
         assert qty == '0.1'
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_quantize_below_min_qty(self, adapter):
         adapter.get_exchange_info.return_value = {
             'symbols': [{
@@ -82,7 +82,7 @@ class TestBinanceAdapterQuantizeQuantity:
         qty = await adapter.quantize_quantity('BTCUSDT', 0.005)  # 0.005 < 0.01, should increase to 0.01
         assert qty == '0.01'
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_quantize_zero_after_rounding(self, adapter):
         adapter.get_exchange_info.return_value = {
             'symbols': [{
@@ -98,7 +98,7 @@ class TestBinanceAdapterQuantizeQuantity:
         with pytest.raises(ValueError, match="rounds to zero"):
             await adapter.quantize_quantity('BTCUSDT', 0.05)  # 0.05 // 0.1 = 0
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_symbol_not_found(self, adapter):
         adapter.get_exchange_info.return_value = {'symbols': []}
 
@@ -107,38 +107,52 @@ class TestBinanceAdapterQuantizeQuantity:
 
 
 class TestBinanceAdapterRequest:
-    @pytest.fixture
+    @pytest_asyncio.fixture(scope="function")
     async def adapter(self):
+        mock_session = MagicMock()
         adapter = BinanceAdapter('key', 'secret', 'https://testnet.binancefuture.com')
-        adapter._session = MagicMock()
+        adapter._session = mock_session
         adapter._sync_time = AsyncMock()
-        return adapter
+        adapter._server_time = AsyncMock(return_value=1234567890000)
+        # Reset any global state that might affect the test
+        adapter._time_offset_ms = 0
+        adapter._last_time_sync_monotonic = 0.0
+        yield adapter
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_request_success(self, adapter):
         response = AsyncMock()
         response.status = 200
         response.json = AsyncMock(return_value={'result': 'ok'})
-        adapter._session.get.return_value.__aenter__.return_value = response
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+        adapter._session.get.return_value = mock_context
 
         result = await adapter._request('GET', '/test')
         assert result == {'result': 'ok'}
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_request_json_error_body(self, adapter):
         response = AsyncMock()
         response.status = 400
         response.json = AsyncMock(return_value={"code": -1013, "msg": "Invalid quantity"})
-        adapter._session.post.return_value.__aenter__.return_value = response
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+        adapter._session.post.return_value = mock_context
 
         from vfoundation.adapters.binance_adapter import BinanceAPIError
+        print(f"DEBUG: BinanceAPIError class: {BinanceAPIError}")
+        print(f"DEBUG: BinanceAPIError module: {BinanceAPIError.__module__}")
         with pytest.raises(BinanceAPIError) as exc_info:
             await adapter._request('POST', '/order')
+        print(f"DEBUG: Exception caught: {exc_info.value}")
         assert exc_info.value.code == -1013
         assert exc_info.value.msg == "Invalid quantity"
         assert exc_info.value.status == 400
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_request_retry_on_1021(self, adapter):
         # First call: 400 with -1021 error -> should retry with force sync
         response1 = AsyncMock()
@@ -147,10 +161,13 @@ class TestBinanceAdapterRequest:
         response2 = AsyncMock()
         response2.status = 200
         response2.json = AsyncMock(return_value={"ok": True})
-        adapter._session.get.side_effect = [
-            MagicMock(__aenter__=AsyncMock(return_value=response1)),
-            MagicMock(__aenter__=AsyncMock(return_value=response2))
-        ]
+        mock_context1 = AsyncMock()
+        mock_context1.__aenter__ = AsyncMock(return_value=response1)
+        mock_context1.__aexit__ = AsyncMock(return_value=None)
+        mock_context2 = AsyncMock()
+        mock_context2.__aenter__ = AsyncMock(return_value=response2)
+        mock_context2.__aexit__ = AsyncMock(return_value=None)
+        adapter._session.get.side_effect = [mock_context1, mock_context2]
 
         result = await adapter._request('GET', '/test', signed=True)
         assert result == {"ok": True}
@@ -159,7 +176,7 @@ class TestBinanceAdapterRequest:
         # Should have called _sync_time with force=True on retry
         adapter._sync_time.assert_any_call(True)
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_request_retry_on_1022(self, adapter):
         # First call: 400 with -1022 error -> should retry with force sync
         response1 = AsyncMock()
@@ -168,27 +185,36 @@ class TestBinanceAdapterRequest:
         response2 = AsyncMock()
         response2.status = 200
         response2.json = AsyncMock(return_value={"ok": True})
-        adapter._session.get.side_effect = [
-            MagicMock(__aenter__=AsyncMock(return_value=response1)),
-            MagicMock(__aenter__=AsyncMock(return_value=response2))
-        ]
+        mock_context1 = AsyncMock()
+        mock_context1.__aenter__ = AsyncMock(return_value=response1)
+        mock_context1.__aexit__ = AsyncMock(return_value=None)
+        mock_context2 = AsyncMock()
+        mock_context2.__aenter__ = AsyncMock(return_value=response2)
+        mock_context2.__aexit__ = AsyncMock(return_value=None)
+        adapter._session.get.side_effect = [mock_context1, mock_context2]
 
         result = await adapter._request('GET', '/test', signed=True)
         assert result == {"ok": True}
         assert adapter._session.get.call_count == 2
         adapter._sync_time.assert_any_call(True)
 
-    @pytest.mark.anyio
+    @pytest.mark.asyncio
     async def test_request_no_retry_on_other_errors(self, adapter):
         # Error -1013, should not retry
         response = AsyncMock()
         response.status = 400
         response.json = AsyncMock(return_value={"code": -1013, "msg": "Invalid quantity"})
-        adapter._session.get.return_value.__aenter__.return_value = response
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+        adapter._session.get.return_value = mock_context
 
         from vfoundation.adapters.binance_adapter import BinanceAPIError
+        print(f"DEBUG2: BinanceAPIError class: {BinanceAPIError}")
+        print(f"DEBUG2: BinanceAPIError module: {BinanceAPIError.__module__}")
         with pytest.raises(BinanceAPIError) as exc_info:
             await adapter._request('GET', '/test', signed=True)
+        print(f"DEBUG2: Exception caught: {exc_info.value}")
         assert exc_info.value.code == -1013
         # Should have called get only once
         assert adapter._session.get.call_count == 1

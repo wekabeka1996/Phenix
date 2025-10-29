@@ -1,140 +1,134 @@
- **повний список ордерів USDT-M (Futures /fapi)** і як їх правильно подавати на біржу. Дам коротко: що це, які поля обов’язкові, і мінімальні приклади (REST і через CCXT). Джерела — офіційні доки Binance. ([Центр разработчиков Binance][1])
 
----
 
-# Типи ордерів і обов’язкові поля (USDT-M Futures)
+Будь ласка, виконай наступні завдання для рефакторингу логіки та посилення XAI (Explainability) у доменах `decision_making` та `execution_position`.
 
-| Type                   | Що це         | Обов’язкові поля                                                                           | Нюанси                                                                                                                       |
-| ---------------------- | ------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `LIMIT`                | Лімітний      | `symbol`, `side`, `type=LIMIT`, `timeInForce`, `quantity`, `price` *(або `priceMatch`)*    | Підтримує `GTC/IOC/FOK/GTX/GTD`; `priceMatch` (опонент/черга) взаємовиключний із `price`. ([Центр разработчиков Binance][2]) |
-| `MARKET`               | Ринковий      | `symbol`, `side`, `type=MARKET`, `quantity`                                                | `timeInForce` не застосовується. ([Центр разработчиков Binance][2])                                                          |
-| `STOP`                 | Стоп-ліміт    | `symbol`, `side`, `type=STOP`, `quantity`, `stopPrice`, (`price` або `priceMatch`)         | Тригер за `workingType`=`MARK_PRICE`/`CONTRACT_PRICE`, за замовчуванням `CONTRACT_PRICE`. ([Центр разработчиков Binance][2]) |
-| `STOP_MARKET`          | Стоп-маркет   | `symbol`, `side`, `type=STOP_MARKET`, `stopPrice`                                          | Якщо додаєш `closePosition=true` → **не** передавати `quantity` і `reduceOnly`. ([Центр разработчиков Binance][2])           |
-| `TAKE_PROFIT`          | ТП-ліміт      | `symbol`, `side`, `type=TAKE_PROFIT`, `quantity`, `stopPrice`, (`price` або `priceMatch`)  | Аналогічно `STOP`. ([Центр разработчиков Binance][2])                                                                        |
-| `TAKE_PROFIT_MARKET`   | ТП-маркет     | `symbol`, `side`, `type=TAKE_PROFIT_MARKET`, `stopPrice`                                   | З `closePosition=true` **без** `quantity` і **без** `reduceOnly`. ([Центр разработчиков Binance][2])                         |
-| `TRAILING_STOP_MARKET` | Трейлінг-стоп | `symbol`, `side`, `type=TRAILING_STOP_MARKET`, `callbackRate` *(+ опц. `activationPrice`)* | Валідація: BUY → `activationPrice` < поточної; SELL → `activationPrice` > поточної. ([Центр разработчиков Binance][2])       |
+**Мета:** Привести код у відповідність до принципів "Explain Everything" (XAI) та "Clean Code", підготувавши його до майбутніх розширень логіки сайзингу.
 
-Додаткові параметри, які реально важливі:
+-----
 
-* `positionSide`: у **Hedge Mode обов’язковий** (`LONG`/`SHORT`), в One-way — не потрібен. ([Центр разработчиков Binance][1])
-* `reduceOnly`: **можна** для часткового закриття; **не допускається** разом із `closePosition=true` і в Hedge Mode. ([Центр разработчиков Binance][1])
-* `closePosition`: лише з `STOP_MARKET`/`TAKE_PROFIT_MARKET`; за тригеру **закриє весь** поточний лонг (якщо `SELL`) або шорт (якщо `BUY`). **Не** поєднується з `quantity`/`reduceOnly`. ([Центр разработчиков Binance][1])
-* `workingType`: що тригерить `stopPrice` — `MARK_PRICE` або `CONTRACT_PRICE` (за замовчуванням). ([Центр разработчиков Binance][1])
-* `priceProtect`: вмикає захист тригерів від різких відхилень (перевіряє `triggerProtect` із `exchangeInfo`). ([Центр разработчиков Binance][2])
-* `timeInForce`: `GTC`, `IOC`, `FOK`, **`GTX` (post-only)**, **`GTD` (із `goodTillDate`)**; для ринкових і *_MARKET не застосовується. Помилки для `GTX/FOK` тепер повертаються **відразу**. ([Центр разработчиков Binance][3])
-* `priceMatch`: автоматичний підбір ціни для `LIMIT/STOP/TAKE_PROFIT` (опонент/черга). Не можна разом із `price`. **Нещодавно частину значень тимчасово прибрали** — дивись change-log. ([developers.binance.info][4])
+**Завдання 1: Рефакторинг логіки сайзингу в `decision_making.py`**
 
----
+**Мета:** Ізолювати поточну спрощену логіку розрахунку розміру позиції в окрему функцію для полегшення майбутньої заміни на Kelly/CVaR.
 
-# Мінімальні приклади (REST)
+1.  **Файл:** `apps/reference/domains/decision_making/decision_making.py`
 
-> База для **testnet**: `https://testnet.binancefuture.com` (`/fapi`). Підпис і `timestamp` обов’язкові для приватних викликів. ([developers.binance.me][5])
+2.  **Створи новий приватний метод** у класі `DecisionMaking` (або статичну функцію, якщо не потрібен `self`): `_calculate_simple_position_size_usd`.
 
-**1) MARKET (відкриття)**
+3.  **Перенеси** поточну логіку розрахунку `final_pos_size_usd` з методу `_calculate_position_size` у цей новий метод.
 
-```
-POST /fapi/v1/order
-symbol=BTCUSDT&side=BUY&type=MARKET&quantity=0.001&timestamp=...&signature=...
-```
+    *Логіка для перенесення (приблизно):*
 
-(без `timeInForce`). ([Центр разработчиков Binance][1])
+    ```python
+    # ... (отримання equity, self.liq_cap_usd) ...
+    final_pos_size_usd = min(self.liq_cap_usd, equity * decimal.Decimal('0.1')) # Спрощений сайзинг
 
-**2) STOP_MARKET (SL «закрий усе»)**
+    if final_pos_size_usd < self.min_pos_size_usd:
+        return None, f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"
 
-```
-POST /fapi/v1/order
-symbol=BTCUSDT&side=SELL&type=STOP_MARKET&stopPrice=60000&closePosition=true
-&workingType=MARK_PRICE&timestamp=...&signature=...
-```
+    return final_pos_size_usd, f"pos_size_usd={final_pos_size_usd:.2f} (simple 10% equity cap)"
+    ```
 
-> Жодного `quantity` і жодного `reduceOnly`. У Hedge Mode — не став `side=SELL` для `positionSide=SHORT` (заборонено). ([Центр разработчиков Binance][1])
+4.  **Зміни метод `_calculate_position_size`** так, щоб він викликав `_calculate_simple_position_size_usd` для отримання `final_pos_size_usd`. Решта логіки (розрахунок `qty` з `price`, округлення `step_size`) має залишитися в `_calculate_position_size`.
 
-**3) TAKE_PROFIT (TP-ліміт частковий)**
+    *Приклад `_calculate_position_size` (після рефакторингу):*
 
-```
-POST /fapi/v1/order
-symbol=BTCUSDT&side=SELL&type=TAKE_PROFIT&quantity=0.001&stopPrice=61000&price=61050
-&timeInForce=GTC&workingType=CONTRACT_PRICE&reduceOnly=true
-&timestamp=...&signature=...
-```
+    ```python
+    def _calculate_position_size(self, symbol: str, price: decimal.Decimal, side: str, context: dict) -> tuple[Optional[decimal.Decimal], str]:
+        portfolio = context['portfolio']
+        equity = decimal.Decimal(str(portfolio.get('equity', '0')))
+        
+        # Виклик нової ізольованої функції
+        final_pos_size_usd, why_sizing = self._calculate_simple_position_size_usd(equity)
+        
+        if final_pos_size_usd is None:
+            return None, why_sizing
 
-> Якщо хочеш «закрити все» на TP — використовуй `TAKE_PROFIT_MARKET + closePosition=true` (без qty/RO). ([Центр разработчиков Binance][1])
+        # ... (решта логіки: отримання step_size, розрахунок qty, округлення, перевірка rounded_qty > 0) ...
 
-**4) TRAILING_STOP_MARKET**
+        return rounded_qty, why_sizing
+    ```
 
-```
-POST /fapi/v1/order
-symbol=BTCUSDT&side=SELL&type=TRAILING_STOP_MARKET&callbackRate=0.5&activationPrice=62000
-&workingType=MARK_PRICE&timestamp=...&signature=...
-```
+-----
 
-> Валідація BUY/SELL щодо `activationPrice` — як у таблиці вище. ([Центр разработчиков Binance][2])
+**Завдання 2: Посилення XAI в `decision_making.py`**
 
----
+**Мета:** Надати чіткі, машиночитні `why` рядки, що пояснюють рішення, згідно з Конституцією.
 
-# Те ж саме через **CCXT (binanceusdm)**
+1.  **Файл:** `apps/reference/domains/decision_making/decision_making.py`
+2.  **Онови метод `_make_decision_for_symbol`:**
+      * При відхиленні сигналу (Neutral):
+          * **Було:** `self.logger.info(f"Trade intent for {symbol} rejected: Neutral signal score {signal_score:.4f}")`
+          * **Зміни:** `self.logger.info(f"REJECT: Neutral signal {signal_score:.4f} (Threshold: {signal_threshold})")`
+      * При відхиленні через режим:
+          * **Було:** `self.logger.info(f"Trade intent for {symbol} ({side}) rejected by regime filter (current regime: {current_regime}).")`
+          * **Зміни:** `self.logger.info(f"REJECT: Counter-trend {side} blocked by regime {current_regime}")`
+3.  **Онови метод `_propose_trade_intent`:**
+      * **Мета:** Сформувати деталізований масив `why`.
 
-> Увімкни ф’ючерси (клас `binanceusdm` або `options.defaultType='future'`). Символи в **уніфікованому** форматі `BTC/USDT`. Додаткові поля — через `params`. ([GitHub][6])
+      * **Було:** `trade_intent = { ... "why": [why], ... }`
 
-```python
-import ccxt.async_support as ccxt
+      * **Зміни:** Замість передачі `why` як аргументу, збери його тут з контексту (який вже є у `_make_decision_for_symbol` і передається в `_calculate_position_size`, але для `_propose_trade_intent` знадобиться більше деталей).
 
-ex = ccxt.binanceusdm({
-    "apiKey": "...", "secret": "...",
-    "enableRateLimit": True,
-    "options": {"defaultType": "future"},
-})
-await ex.load_markets()
-```
+      * *Рефакторинг (Альтернатива):* Найкраще буде збирати `why_chain` у `_make_decision_for_symbol` і передавати його в `_propose_trade_intent`.
 
-**1) MARKET**
+      * **Давай зробимо так:**
 
-```python
-await ex.create_order("BTC/USDT", "market", "buy", 0.001, None, {})
-```
+          * У `_make_decision_for_symbol`, де розраховується `signal_score`, додай `why_chain.append(f"Signal {signal_score:.4f} vs Threshold {signal_threshold}")`.
+          * `why_sizing` (з `_calculate_position_size`) вже додається до `why_chain`.
+          * У `_propose_trade_intent`, зміни параметр `why: str` на `why_chain: list[str]`.
+          * **Було (в `_propose_trade_intent`):** `"why": [why]`
+          * **Стало (в `_propose_trade_intent`):** `"why": why_chain`
+          * Переконайся, що `_make_decision_for_symbol` тепер викликає `self._propose_trade_intent(..., why_chain=why_chain, ...)`
 
-**2) STOP_MARKET (SL close-all)**
+-----
 
-```python
-params = {"stopPrice": 60000, "workingType": "MARK_PRICE", "closePosition": True}
-# важливо: без amount і без reduceOnly
-await ex.create_order("BTC/USDT", "stop_market", "sell", None, None, params)
-```
+**Завдання 3: Посилення XAI в `fsm_open.py`**
 
-(Гарантовано закриє **всю** LONG-позицію, коли спрацює тригер. Не міксуй з qty/RO.) ([Центр разработчиков Binance][1])
+**Мета:** Замінити загальні коди помилок на специфічні, згідно з Конституцією (XAI).
 
-**3) TAKE_PROFIT (частковий TP-ліміт)**
+1.  **Файл:** `apps/reference/domains/execution_position/fsm_open.py` (клас `OpenFlowFSM`).
+2.  **Онови метод `handle` (у разі успіху):**
+      * **Було:** `dec = Message( ... why="OPEN_OK", ... )`
+      * **Стало:** `dec = Message( ... why="Open guards passed", ... )`
+3.  **Онови метод `handle` (у разі відмов `_reject`):**
+      * Заміни всі виклики `self._reject(msg, "OPEN_GUARD_FAIL", ...)` на специфічні `why` коди:
+      * **Відсутні поля:**
+          * **Було:** `return self._reject(msg, "OPEN_GUARD_FAIL", "missing symbol or side")`
+          * **Стало:** `return self._reject(msg, "GUARD_MISSING_FIELDS", "missing symbol or side")`
+      * **Мін. кількість:**
+          * **Було:** `return self._reject(msg, "OPEN_GUARD_FAIL", f"qty below minimum {min_qty}")`
+          * **Стало:** `return self._reject(msg, "GUARD_MIN_QTY", f"qty {qty_dec} below minimum {min_qty}")`
+      * **Ціна для LIMIT:**
+          * **Було:** `return self._reject(msg, "OPEN_GUARD_FAIL", "LIMIT order requires price")`
+          * **Стало:** `return self._reject(msg, "GUARD_MISSING_PRICE", "LIMIT order requires price")`
+      * **Мін. вартість (Notional):**
+          * **Було (LIMIT):** `return self._reject(msg, "OPEN_GUARD_FAIL", f"notional {notional} < {min_notional}")`
+          * **Стало (LIMIT):** `return self._reject(msg, "GUARD_MIN_NOTIONAL", f"notional {notional} < {min_notional}")`
+          * **Було (MARKET):** `return self._reject(msg, "OPEN_GUARD_FAIL", f"estimated notional {notional} < {min_notional}")`
+          * **Стало (MARKET):** `return self._reject(msg, "GUARD_MIN_NOTIONAL", f"estimated notional {notional} < {min_notional}")`
+      * **Кулдаун:**
+          * **Було:** `return self._reject(msg, "OPEN_GUARD_FAIL", "cooldown active")`
+          * **Стало:** `return self._reject(msg, "GUARD_COOLDOWN", "cooldown active")`
+      * *(`IDEMPOTENCY_FAIL` та `MAX_ORDERS_REACHED` вже мають бути коректними з попередніх кроків).*
 
-```python
-params = {"stopPrice": 61000, "workingType": "CONTRACT_PRICE", "timeInForce": "GTC", "reduceOnly": True}
-await ex.create_order("BTC/USDT", "take_profit", "sell", 0.001, 61050, params)
-```
+-----
 
-**4) TRAILING_STOP_MARKET**
+**Завдання 4: Валідація та Оновлення Журналів**
 
-```python
-params = {"callbackRate": 0.5, "activationPrice": 62000, "workingType": "MARK_PRICE"}
-await ex.create_order("BTC/USDT", "trailing_stop_market", "sell", 0.001, None, params)
-```
+1.  **Запусти всі тести** (`pytest`), щоб переконатися, що рефакторинг не зламав існуючу логіку (особливо тести для `fsm_open.py` та `decision_making.py`).
+2.  **Додай запис** до `docs/Хазяйство/JOURNAL_мій.md`:
+    ```markdown
+    ## 2025-10-29 | RID: DEBUG_EXEC_LOGIC_REFACTOR_P4 | Крок 4: Рефакторинг логіки та посилення XAI
 
-> Для reduceOnly у CCXT — це **custom param**: `{'reduceOnly': True}`; у Hedge Mode додавай `positionSide`. ([GitHub][7])
+    **WHY:** Покращити читабельність коду сайзингу та деталізувати `why` поля для рішень та відмов, згідно з Конституцією FSM (XAI).
+    **ACTION:**
+        1. `decision_making.py`: Винесено логіку розрахунку `final_pos_size_usd` в окремий метод `_calculate_simple_position_size_usd` для майбутньої заміни.
+        2. `decision_making.py`: Покращено `why_chain` для `EVT:TRADE_INTENT_PROPOSED`, включено деталі про сигнал та сайзинг.
+        3. `fsm_open.py`: Замінено загальний `why="OPEN_GUARD_FAIL"` на специфічні коди (`GUARD_MISSING_FIELDS`, `GUARD_MIN_QTY`, `GUARD_MIN_NOTIONAL`, `GUARD_COOLDOWN`).
+    **VALIDATION:** Всі `pytest` тести проходять.
+    **STATUS:** ✅ **ЗАВЕРШЕНО**
+    **NEXT:** Завершення фази дебагінгу.
+    ```
+3.  **Онови `TODO.md`**, позначивши `DEBUG_EXEC_LOGIC_REFACTOR_P4` як виконаний.
 
----
-
-## Типові помилки, які треба уникнути
-
-* **`-2022 reduceOnly order would increase position`** — невірна сторона, або qty > позиції, або ти поєднав `closePosition=true` з `quantity`/`reduceOnly`. Для close-all *_MARKET завжди без qty/RO. ([Binance Developer Community][8])
-* **Пост-онлі**: `timeInForce=GTX` — якщо ордер торкається ринку, біржа **відхиляє одразу** (`-5022`). ([Центр разработчиков Binance][3])
-* **Hedge Mode**: завжди став `positionSide`, і не юзай `reduceOnly`. ([Центр разработчиков Binance][1])
-* **GTD**: якщо ставиш `timeInForce=GTD`, обов’язково додай `goodTillDate` (секундна точність) і він має бути > now+600s. ([Центр разработчиков Binance][2])
-
----
-
-## Короткий чек-лист перед відправкою
-
-1. Правильний **ендпоінт** (`/fapi/v1/order`) і **testnet baseURL**. ([developers.binance.me][5])
-2. `positionSide` в Hedge Mode; **правильний `side`**: для LONG захист — `SELL`, для SHORT — `BUY`. ([Центр разработчиков Binance][1])
-3. Якщо `closePosition=true` → **жодного** `quantity` і `reduceOnly`. ([Центр разработчиков Binance][1])
-4. `workingType` для умовних — чітко вибери (`MARK_PRICE`/`CONTRACT_PRICE`). ([Центр разработчиков Binance][1])
-5. Для `LIMIT/STOP/TAKE_PROFIT` узгодь `timeInForce`/`price`/`priceMatch`. ([Центр разработчиков Binance][2])
-
+Дякую\!

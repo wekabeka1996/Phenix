@@ -60,6 +60,13 @@ class ManageFlowFSM:
         # Configuration
         self.config = config or {}
         
+        # Read rules from config
+        rules_config = self.config.get('execution_position', {}).get('rules', {})
+        self.sl_bps = Decimal(str(rules_config.get('sl_bps', 50)))  # 50 bps default
+        self.tp_bps = Decimal(str(rules_config.get('tp_bps', 100)))  # 100 bps default
+        self.breakeven_bps = Decimal(str(rules_config.get('breakeven_bps', 20)))  # 20 bps default
+        self.trail_start_bps = Decimal(str(rules_config.get('trail_start_bps', 30)))  # 30 bps default
+        
         self._metrics: Dict[str, int] = {
             "fsm_adjust_decisions_total": 0,
             "fsm_bracket_orders_placed": 0,
@@ -140,6 +147,20 @@ class ManageFlowFSM:
         # This covers market data updates while in OPENED, BRACKETS_PENDING, etc.
         if self.state in (ManageState.OPENED, ManageState.TRACKING, ManageState.BRACKETS_PENDING, ManageState.BRACKETS_PLACED):
             return self._check_rules(msg)
+
+        elif msg.op == "UPD" and msg.verb == "TICK" and self.state == ManageState.OPENED:
+            # Received new tick, check SL/TP rules
+            current_price = Decimal(str(msg.pld.get("price", 0)))
+            if not current_price:
+                return None
+                
+            self.last_known_price = current_price
+            
+            # Call existing rule checking logic
+            close_decision = self._check_rules(msg)
+            if close_decision:
+                self.state = ManageState.CLOSE_COND_MET  # Transition to close state
+                return close_decision
 
         return None
 
@@ -230,14 +251,14 @@ class ManageFlowFSM:
         entry_price = self.position_entry_price
         
         # Calculate SL price
-        sl_bps = sl_config.get("fixed_bps", 50)
+        sl_bps = self.sl_bps
         if self.position_side == "BUY":
             sl_price = entry_price * (1 - Decimal(str(sl_bps)) / 10000)
         else:  # SELL
             sl_price = entry_price * (1 + Decimal(str(sl_bps)) / 10000)
             
         # Calculate TP price
-        tp_bps = tp_config.get("fixed_bps", 100)
+        tp_bps = self.tp_bps
         if self.position_side == "BUY":
             tp_price = entry_price * (1 + Decimal(str(tp_bps)) / 10000)
         else:  # SELL
@@ -326,6 +347,29 @@ class ManageFlowFSM:
 
                 if current_price_dec > trail_trigger:
                     return self._emit_adjust(msg, "ADJUST_TRAIL", {"rule": "trail", "trigger_price": str(trail_trigger)})
+
+            # Rule 1.5: SL/TP Check (client-side stops)
+            if msg.op == "UPD" and msg.verb == "TICK" and current_price is not None:
+                current_price_dec = Decimal(str(current_price))
+                
+                # Calculate SL and TP prices
+                if self.position_side == "BUY":
+                    sl_price = self.position_entry_price * (1 - self.sl_bps / Decimal('10000'))
+                    tp_price = self.position_entry_price * (1 + self.tp_bps / Decimal('10000'))
+                    
+                    if current_price_dec <= sl_price:
+                        return self._emit_close(msg, "STOP_LOSS_HIT", {"rule": "client_sl", "sl_price": str(sl_price)})
+                    elif current_price_dec >= tp_price:
+                        return self._emit_close(msg, "TAKE_PROFIT_HIT", {"rule": "client_tp", "tp_price": str(tp_price)})
+                        
+                elif self.position_side == "SELL":
+                    sl_price = self.position_entry_price * (1 + self.sl_bps / Decimal('10000'))
+                    tp_price = self.position_entry_price * (1 - self.tp_bps / Decimal('10000'))
+                    
+                    if current_price_dec >= sl_price:
+                        return self._emit_close(msg, "STOP_LOSS_HIT", {"rule": "client_sl", "sl_price": str(sl_price)})
+                    elif current_price_dec <= tp_price:
+                        return self._emit_close(msg, "TAKE_PROFIT_HIT", {"rule": "client_tp", "tp_price": str(tp_price)})
 
             # Rule 2: Breakeven (stub: move SL to BE after X seconds)
             if elapsed > self.breakeven_after_sec:
@@ -477,6 +521,23 @@ class ManageFlowFSM:
 
         # Return to TRACKING
         self.state = ManageState.TRACKING
+        return dec
+
+    def _emit_close(self, msg: Message, why: str, details: Dict[str, Any]) -> Message:
+        """Generate DEC:CLOSE for SL/TP hits."""
+        self.state = ManageState.EMIT_DEC_ADJUST  # Use existing state
+        self._metrics["fsm_adjust_decisions_total"] += 1
+
+        dec = Message(
+            op="DEC",
+            verb="CLOSE",
+            src=msg.dst,
+            dst="execution_position",
+            rid=msg.rid,
+            why=why[:80],
+            idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
+            pld=details,
+        )
         return dec
 
     def get_metrics(self) -> Dict[str, int]:

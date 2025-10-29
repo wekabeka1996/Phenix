@@ -46,10 +46,12 @@ def test_get_or_create_flows_and_accessors():
 
     try:
         class Cfg:
-            pass
+            def get(self, key, default=None):
+                return getattr(self, key, default)
         cfg = Cfg()
         cfg.trading = {"execution": {"cooldown_ms": 1000, "guard_enabled": True}, "instruments": {}}
-        f = fsm_mod.ExecPosFSM(config=cfg, fsm=DummyFSM(), shadow_mode=True)
+        cfg.binance_api = {"testnet": {"api_key": "test", "api_secret": "test", "rest_url": "https://testnet.binance.vision"}}
+        f = fsm_mod.ExecPosFSM(config=cfg, fsm=DummyFSM(), shadow_mode=False)
 
         # ExecPosFSM (vfoundation variant) exposes flow instances as attributes
         of = f.open_flow
@@ -75,7 +77,8 @@ def test_handle_routes_to_open_flow_and_missing_symbol():
 
     try:
         class Cfg:
-            pass
+            def get(self, key, default=None):
+                return getattr(self, key, default)
         cfg = Cfg()
         cfg.trading = {"execution": {"cooldown_ms": 1000, "guard_enabled": True}, "instruments": {}}
         f = fsm_mod.ExecPosFSM(config=cfg, fsm=DummyFSM(), shadow_mode=True)
@@ -88,8 +91,8 @@ def test_handle_routes_to_open_flow_and_missing_symbol():
         m = DummyMsg(pld={"symbol": "BTCUSDT"}, verb="OPEN")
         result = f.handle(m)
         # our DummyFlow.handle returns None, but should have been called
-        of = f.open_flow
-        assert of.called_handle is True
+        open_flow, _, _ = f._get_or_create_flows("BTCUSDT")
+        assert open_flow.called_handle is True
         assert result is None
     finally:
         monkey.undo()

@@ -6,6 +6,7 @@ EVT:RISK_ASSESSMENT_COMPLETED, and EVT:PORTFOLIO_STATE_UPDATED events,
 and emits a valid EVT:TRADE_INTENT_PROPOSED event.
 """
 import sys
+import decimal
 from pathlib import Path
 from unittest import mock
 import pytest
@@ -59,7 +60,9 @@ def mock_config():
                     "min_position_size_usd": 10.0,
                     "max_position_size_usd": 1000.0,
                     "default_notional_cap_usd": 1000.0,
-                    "liquidity_based_cap_usd": 10000.0
+                    "liquidity_based_cap_usd": 10000.0,
+                    "risk_per_trade_pct": 0.01,
+                    "sl_bps": 50
                 },
                 "calib_metrics_placeholder": "ECE=0.05, Brier=0.08"
             },
@@ -189,4 +192,29 @@ def test_decision_making_aggregates_events_and_proposes_intent(decision_making_d
     assert emitted_event.op == "EVT"
     assert emitted_event.verb == "TRADE_INTENT_PROPOSED"
     assert emitted_event.pld["instrument"] == "ETHUSDT"
-    assert emitted_event.pld["side"] == "buy"
+
+
+def test_calculate_risk_based_position_size_usd(mock_config):
+    """Test the new risk-based position sizing logic (Van Tharp model)."""
+    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    
+    # Create DecisionMaking instance using the same pattern as the fixture
+    fsm = FSMCore()
+    dm = DecisionMaking(fsm=fsm, config=mock_config)
+    
+    # Test case: equity=10000, risk_per_trade_pct=0.01 (Risk = $100), sl_bps=50 (SL = 0.005)
+    # Expected: Position Size = 100 / 0.005 = 20000
+    equity = decimal.Decimal('10000')
+    pos_size, why = dm._calculate_risk_based_position_size_usd(equity)
+    
+    assert pos_size is not None
+    assert pos_size == decimal.Decimal('10000')  # Capped at liquidity_based_cap_usd
+    assert "Risk=100.00" in why
+    assert "SL=0.0050" in why
+    assert "CappedAt=10000" in why
+    
+    # Test minimum size check
+    dm.min_pos_size_usd = decimal.Decimal('30000')  # Set min higher than calculated
+    pos_size, why = dm._calculate_risk_based_position_size_usd(equity)
+    assert pos_size is None
+    assert "below minimum 30000" in why

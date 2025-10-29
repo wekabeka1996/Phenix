@@ -11,6 +11,8 @@ trading:
     position_sizing:
       min_position_size_usd: 10
       liquidity_based_cap_usd: 10000
+      risk_per_trade_pct: 0.01  # Risk 1% of equity per trade
+      sl_bps: 50                # Stop Loss 50 bps (0.5%) for sizing calculation
 
   # ==============================================================================
   # INSTRUMENT SPECIFICATIONS (BINANCE FUTURES)
@@ -38,6 +40,7 @@ trading:
   # Risk Management Settings
   risk:
     max_daily_drawdown_limit: 0.05  # 5%
+    min_liquidation_distance_pct: 1.0  # 1.0% > 0.5% (sl_bps), but < 1.6% (liquidation 50x)
     score_weights:
       delta_price: 0.05
       obi: 0.35
@@ -64,6 +67,15 @@ trading:
         workingType: "MARK_PRICE"
       TRAILING_STOP_MARKET:
         callbackRate: "0.5" # 0.5%
+
+  execution_position:
+    max_active_orders: 5
+    idempotency_window_sec: 60
+    rules:                    # Rules for position management (TP/SL)
+      sl_bps: 50            # Stop Loss 50 bps (0.5%)
+      tp_bps: 100           # Take Profit 100 bps (1.0%)
+      breakeven_bps: 20     # Breakeven point
+      trail_start_bps: 30   # Trailing stop start point
 
   # ==============================================================================
   # DOMAIN-LEVEL CONFIGURATION

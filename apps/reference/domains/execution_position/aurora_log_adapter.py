@@ -35,19 +35,26 @@ class AuroraLogAdapter:
         self.logger = logging.getLogger("aurora.trades")
         self.logger.setLevel(getattr(logging, level.upper()))
 
-        # Avoid duplicate handlers
-        if not self.logger.handlers:
-            # File handler with trade-specific format
-            file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            )
-            file_handler.setFormatter(formatter)
-            self.logger.addHandler(file_handler)
+        # Clear existing handlers to avoid duplicate logs in test environments
+        if self.logger.hasHandlers():
+            self.logger.handlers.clear()
 
-            # Prevent propagation to root logger
-            self.logger.propagate = False
+        # File handler with trade-specific format
+        file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
+
+        # Prevent propagation to root logger
+        self.logger.propagate = False
+
+    def flush(self) -> None:
+        """Flush all handlers to ensure logs are written to disk."""
+        for handler in self.logger.handlers:
+            handler.flush()
 
     def log_trade_intent(self,
                          rid: str,
@@ -236,3 +243,10 @@ class AuroraLogAdapter:
 
         message = f"GUARD_REJECT: {guard_type} - {symbol} {side} ({reason})"
         self.logger.warning(message, extra=log_data)
+
+    def flush(self) -> None:
+        """
+        Flush all handlers to ensure logs are written to disk.
+        """
+        for handler in self.logger.handlers:
+            handler.flush()

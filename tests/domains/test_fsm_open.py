@@ -65,3 +65,64 @@ def test_limit_order_price_rounding_and_notional_reject():
     # price will be quantized and DEC returned if notional OK
     if r2.op == "DEC":
         assert "price" in r2.pld
+
+def test_rejects_open_when_max_active_orders_limit_reached():
+    """
+    Tests that OpenFlowFSM rejects an OPEN command if the maximum number of active orders has been reached.
+    """
+    # 1. Mock configuration
+    config = {
+        'execution_position': {
+            'max_active_orders': 2
+        },
+        "trading": {"instruments": {"ETHUSDT": {}}}
+    }
+
+    # 2. Mock ExecPosFSM and its active order counter
+    class MockExecPosFSM:
+        def __init__(self):
+            self.active_orders_count = 0
+        def get_active_orders_count(self):
+            return self.active_orders_count
+        def increment_orders(self):
+            self.active_orders_count += 1
+
+    mock_exec_pos_fsm = MockExecPosFSM()
+
+    # 3. Create OpenFlowFSM instance with mocked dependencies
+    open_fsm = OpenFlowFSM(
+        config=config,
+        max_active_orders=config['execution_position']['max_active_orders'],
+        get_active_orders_count=mock_exec_pos_fsm.get_active_orders_count,
+        cooldown_sec=0
+    )
+
+    # 4. Generate CMD:OPEN messages
+    cmd1 = make_cmd_open(rid="cmd1", symbol="ETHUSDT")
+    cmd1.pld['idempotent_key'] = "key1"
+    cmd2 = make_cmd_open(rid="cmd2", symbol="ETHUSDT")
+    cmd2.pld['idempotent_key'] = "key2"
+    cmd3 = make_cmd_open(rid="cmd3", symbol="ETHUSDT")
+    cmd3.pld['idempotent_key'] = "key3"
+
+    # 5. Handle messages and assert behavior
+    # First call should be successful
+    result1 = open_fsm.handle(cmd1)
+    assert result1.op == "DEC"
+    assert result1.verb == "OPEN"
+    mock_exec_pos_fsm.increment_orders()
+    assert mock_exec_pos_fsm.get_active_orders_count() == 1
+
+    # Second call should also be successful
+    result2 = open_fsm.handle(cmd2)
+    assert result2.op == "DEC"
+    assert result2.verb == "OPEN"
+    mock_exec_pos_fsm.increment_orders()
+    assert mock_exec_pos_fsm.get_active_orders_count() == 2
+
+    # Third call should be rejected
+    result3 = open_fsm.handle(cmd3)
+    assert result3.op == "ERR"
+    assert result3.verb == "OPEN"
+    assert result3.why == "MAX_ORDERS_REACHED"
+    assert mock_exec_pos_fsm.get_active_orders_count() == 2

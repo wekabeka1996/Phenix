@@ -24,9 +24,9 @@ sys.path.insert(0, root_path)
 sys.path.insert(0, str(Path(__file__).parent.parent / "apps" / "reference"))
 
 try:
-    from config_loader import ConfigLoader
-except ImportError:
     from apps.reference.config_loader import ConfigLoader
+except ImportError:
+    from config_loader import ConfigLoader
 
 try:
     from vfoundation.core import FSMCore
@@ -207,18 +207,29 @@ async def test_signal_weights_loaded():
     
     config = ConfigLoader().load_config()
     
+    print(f"\n🔍 DEBUG: Full config keys: {list(config.to_dict().keys())}")
+    print(f"🔍 DEBUG: trading exists: {'trading' in config.to_dict()}")
+    if 'trading' in config.to_dict():
+        trading_dict = config.to_dict()['trading']
+        trading_keys = list(trading_dict.keys()) if isinstance(trading_dict, dict) else 'not dict'
+        print(f"🔍 DEBUG: trading keys: {trading_keys}")
+    
     # Check signal_weights in config
-    trading_config = config.get("trading", {})
+    trading_config = config.trading
     decision_config = trading_config.get("decision", {})
     signal_weights = decision_config.get("signal_weights", {})
     
     print(f"\n📋 Config structure:")
-    print(f"  trading keys: {list(trading_config.keys())}")
-    print(f"  decision keys: {list(decision_config.keys())}")
+    if hasattr(trading_config, 'to_dict'):
+        print(f"  trading keys: {list(trading_config.to_dict().keys())}")
+    else:
+        print(f"  trading keys: {list(trading_config.keys()) if isinstance(trading_config, dict) else 'Not a dict'}")
+    print(f"  decision keys: {list(decision_config.keys()) if isinstance(decision_config, dict) else 'Not a dict'}")
     print(f"  signal_weights: {signal_weights}")
     
     # Assertions
-    assert "decision" in trading_config, "Missing 'decision' in trading config"
+    assert trading_config is not None, "Missing 'trading' config"
+    assert trading_config.get("decision") is not None, f"Missing 'decision' in trading config. Available keys: {list(trading_config.to_dict().keys()) if hasattr(trading_config, 'to_dict') else list(trading_config.keys()) if isinstance(trading_config, dict) else 'not dict'}"
     assert "signal_weights" in decision_config, "Missing 'signal_weights' in decision config"
     
     expected_weights = {"obi": 0.6, "tfi": 0.35, "delta_price": 0.05}
@@ -237,7 +248,7 @@ def test_signal_calculation():
     
     config = ConfigLoader().load_config()
     
-    trading_config = config.get("trading", {})
+    trading_config = config.trading['trading'] if isinstance(config.trading, dict) and 'trading' in config.trading else config.trading
     signal_weights = trading_config.get("decision", {}).get("signal_weights", {})
     
     # Test signal calculation with mock features

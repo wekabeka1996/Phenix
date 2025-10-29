@@ -502,8 +502,8 @@ class BinanceAdapter:
 
     async def close_session(self):
         """Close the aiohttp session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        if self._session and not self._session.closed:
+            await self._session.close()
             LOG.info("BinanceAdapter aiohttp session closed.")
 
     async def get_book_ticker(self, symbol: str) -> Dict[str, Any]:
@@ -616,18 +616,24 @@ class BinanceAdapter:
                 "symbol": p.get("symbol"),
                 "positionSide": pos_side,     # BOTH/LONG/SHORT
                 "side": side,                 # LONG/SHORT (зручно для бізнес-логіки)
-                "positionAmt": amt,
-                "entryPrice": entry,
-                "markPrice": mark,
-                "unRealizedProfit": upnl,
+                "positionAmt": p.get("positionAmt"),  # зберігаємо як string для precision
+                "entryPrice": p.get("entryPrice"),
+                "markPrice": p.get("markPrice"),
+                "unRealizedProfit": p.get("unRealizedProfit"),
                 "leverage": lev,
                 "marginType": p.get("marginType", "cross").upper(),  # CROSS/ISOLATED
-                "isolatedMargin": float(p.get("isolatedMargin", "0") or 0),
-                "updateTime": int(p.get("updateTime", 0) or 0),
+                "isolatedMargin": p.get("isolatedMargin"),
+                "updateTime": p.get("updateTime"),
                 # можна додати інші поля за потреби
             })
 
         return positions
+
+    async def close_session(self) -> None:
+        """Close the aiohttp session if it exists."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
 # ---- helpers ----
 

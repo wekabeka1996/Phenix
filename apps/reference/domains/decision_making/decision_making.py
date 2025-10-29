@@ -48,6 +48,8 @@ class DecisionMaking:
         sizing_config = decision_config.get('position_sizing', {})
         self.min_pos_size_usd = decimal.Decimal(str(sizing_config.get('min_position_size_usd', 10)))
         self.liq_cap_usd = decimal.Decimal(str(sizing_config.get('liquidity_based_cap_usd', 10000)))
+        self.risk_per_trade_pct = decimal.Decimal(str(sizing_config.get('risk_per_trade_pct', '0.01')))
+        self.sl_bps_for_sizing = decimal.Decimal(str(sizing_config.get('sl_bps', '50')))
 
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features)
         self.fsm.listen("EVT:RISK_ASSESSMENT_COMPLETED", self.on_risk)
@@ -136,7 +138,7 @@ class DecisionMaking:
         elif signal_score < -signal_threshold:
             side = "sell"
         else:
-            self.logger.info(f"Trade intent for {symbol} rejected: Neutral signal score {signal_score:.4f}")
+            self.logger.info(f"REJECT: Neutral signal {signal_score:.4f} (Threshold: {signal_threshold})")
             self.clear_internal_state_for_symbol(symbol)
             return
 
@@ -144,7 +146,7 @@ class DecisionMaking:
             current_regime = regime.get('regime')
             if (current_regime == "TREND_UP" and side == "sell") or \
                (current_regime == "TREND_DOWN" and side == "buy"):
-                self.logger.info(f"Trade intent for {symbol} ({side}) rejected by regime filter (current regime: {current_regime}).")
+                self.logger.info(f"REJECT: Counter-trend {side} blocked by regime {current_regime}")
                 self.clear_internal_state_for_symbol(symbol)
                 return
 
@@ -155,6 +157,7 @@ class DecisionMaking:
             return
         price_ref = decimal.Decimal(str(price_ref_str))
 
+        why_chain.append(f"Signal {signal_score:.4f} vs Threshold {signal_threshold}")
         qty, why_sizing = self._calculate_position_size(symbol, price_ref, side, context)
         why_chain.append(why_sizing)
 
@@ -163,19 +166,53 @@ class DecisionMaking:
             self.clear_internal_state_for_symbol(symbol)
             return
 
-        self._propose_trade_intent(symbol, side, qty, price_ref, ", ".join(why_chain), rid)
+        self._propose_trade_intent(symbol, side, qty, price_ref, why_chain, rid)
+
+    def _calculate_risk_based_position_size_usd(self, equity: decimal.Decimal) -> tuple[Optional[decimal.Decimal], str]:
+        """
+        Розраховує розмір позиції в USD на основі моделі фіксованого ризику (Van Tharp).
+        Position Size = (Risk Amount) / (Stop Loss %)
+        """
+        
+        # 1. Визначити суму ризику (Risk Amount)
+        risk_per_trade_usd = equity * self.risk_per_trade_pct
+        
+        # 2. Визначити Stop Loss %  
+        if self.sl_bps_for_sizing <= 0:
+            why_fail = f"Sizing failed: invalid sl_bps_for_sizing ({self.sl_bps_for_sizing})"
+            self.logger.error(why_fail)
+            return None, why_fail
+            
+        stop_loss_pct = self.sl_bps_for_sizing / decimal.Decimal('10000') # 50 bps = 0.005 (0.5%)
+
+        # 3. Розрахувати розмір позиції
+        # (Використовуємо context=decimal.Context(prec=10) для уникнення Inexact)
+        ctx = decimal.Context(prec=10)
+        calculated_pos_size_usd = ctx.divide(risk_per_trade_usd, stop_loss_pct)
+        
+        # 4. Застосувати ліміти (Liquidity Cap та Min Size)
+        final_pos_size_usd = min(calculated_pos_size_usd, self.liq_cap_usd)
+        
+        why_chain = (
+            f"pos_size_usd={final_pos_size_usd:.2f} "
+            f"(Risk={risk_per_trade_usd:.2f} / SL={stop_loss_pct:.4f}, "
+            f"CappedAt={self.liq_cap_usd})"
+        )
+
+        if final_pos_size_usd < self.min_pos_size_usd:
+            why_fail = f"pos_size {final_pos_size_usd:.2f} is below minimum {self.min_pos_size_usd}"
+            return None, why_fail
+
+        return final_pos_size_usd, why_chain
 
     def _calculate_position_size(self, symbol: str, price: decimal.Decimal, side: str, context: dict) -> tuple[Optional[decimal.Decimal], str]:
-        why_chain = []
         portfolio = context['portfolio']
         equity = decimal.Decimal(str(portfolio.get('equity', '0')))
-        
-        final_pos_size_usd = min(self.liq_cap_usd, equity * decimal.Decimal('0.1')) # Simplified sizing
-        
-        if final_pos_size_usd < self.min_pos_size_usd:
-            return None, f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"
-        
-        why_chain.append(f"pos_size_usd={final_pos_size_usd}")
+
+        final_pos_size_usd, why_sizing = self._calculate_risk_based_position_size_usd(equity)
+
+        if final_pos_size_usd is None:
+            return None, why_sizing
 
         # Support both old (config['trading']['instruments']) and new (config['instruments']) formats
         trading_config = self.config.get('trading', self.config)
@@ -183,7 +220,7 @@ class DecisionMaking:
         step_size_str = instrument_specs.get('step_size')
         if not step_size_str:
             return None, "Missing step_size in config"
-        
+
         step_size = decimal.Decimal(step_size_str)
         if price <= 0:
             return None, "Invalid price for sizing"
@@ -194,16 +231,16 @@ class DecisionMaking:
         if rounded_qty <= 0:
             return None, f"qty rounded to zero from raw {qty}"
 
-        return rounded_qty, ", ".join(why_chain)
+        return rounded_qty, why_sizing
 
-    def _propose_trade_intent(self, symbol: str, side: str, qty: decimal.Decimal, price: decimal.Decimal, why: str, rid: str) -> None:
+    def _propose_trade_intent(self, symbol: str, side: str, qty: decimal.Decimal, price: decimal.Decimal, why_chain: list[str], rid: str) -> None:
         trade_intent = {
-            "instrument": symbol, "side": side, 
+            "instrument": symbol, "side": side,
             "order": {"qty": str(qty), "price": str(price), "price_ref": str(price), "reduce_only": False},
             "p": "0.75", "payoff_ratio_r": "2.0",
             "tca_budget": {"max_slippage_bps": "10", "max_latency_ms": 500, "maker_preference": "neutral"},
             "risk_budget": {"trade_cvar95_max_bps": "100", "session_cvar95_max_bps": "200"},
-            "size": {"notional_cap_usd": str(qty*price), "kelly_fraction": "0.1"}, "valid_for_ms": 5000, "why": [why],
+            "size": {"notional_cap_usd": str(qty*price), "kelly_fraction": "0.1"}, "valid_for_ms": 5000, "why": why_chain,
             "dto_version": "1.0.0", "schema_ref": "...", "idempotent_key": str(uuid.uuid4())
         }
         self.fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent")

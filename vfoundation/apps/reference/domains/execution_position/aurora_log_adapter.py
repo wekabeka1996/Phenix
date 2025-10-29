@@ -49,6 +49,11 @@ class AuroraLogAdapter:
             # Prevent propagation to root logger
             self.logger.propagate = False
 
+    def flush(self) -> None:
+        """Flush all handlers to ensure logs are written to disk."""
+        for handler in self.logger.handlers:
+            handler.flush()
+
     def log_trade_intent(self,
                          rid: str,
                          symbol: str,

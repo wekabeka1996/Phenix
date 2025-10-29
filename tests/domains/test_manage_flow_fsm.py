@@ -9,7 +9,8 @@ def make_fill_msg(rid="r1", symbol="ETHUSDT", qty=1, price=100.0, side="BUY"):
 
 
 def test_hydrate_success_and_brackets_state():
-    fsm = ManageFlowFSM(config={"brackets": {}})
+    config = {"execution_position": {"rules": {"sl_bps": 50, "tp_bps": 100}}}
+    fsm = ManageFlowFSM(config=config)
     pd = {"qty": 2, "entry_price": "100", "side": "BUY", "open_ts": time.time(), "sl_order_id": "s1"}
     fsm.hydrate(pd)
     # having sl_order_id should set BRACKETS_PLACED
@@ -23,7 +24,10 @@ def test_hydrate_missing_key_sets_error():
 
 
 def test_should_place_brackets_and_place_flow():
-    cfg = {"brackets": {"enable": True, "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}}
+    cfg = {
+        "brackets": {"enable": True, "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}},
+        "execution_position": {"rules": {"sl_bps": 50, "tp_bps": 100}}
+    }
     fsm = ManageFlowFSM(config=cfg)
 
     # Before any fills, should not place
@@ -39,11 +43,11 @@ def test_should_place_brackets_and_place_flow():
 
 
 def test_calculate_bracket_prices_and_get_opposite():
-    fsm = ManageFlowFSM()
+    config = {"execution_position": {"rules": {"sl_bps": 50, "tp_bps": 100}}}
+    fsm = ManageFlowFSM(config=config)
     fsm.position_entry_price = Decimal("100")
     fsm.position_side = "BUY"
     fsm.position_qty = Decimal("1")
-    fsm.config = {"brackets": {"sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}}
 
     sl, tp = fsm._calculate_bracket_prices()
     assert sl is not None and tp is not None

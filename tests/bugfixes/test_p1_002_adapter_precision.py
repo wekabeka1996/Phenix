@@ -27,20 +27,20 @@ async def test_decimal_precision_is_preserved_on_response():
     # Mock aiohttp.ClientSession to return precise data
     with patch('aiohttp.ClientSession') as mock_session_class:
         # Create mock session instance
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_session_class.return_value = mock_session
-        mock_session.closed = False
         
         # Create mock response
         mock_response = AsyncMock()
         mock_response.json = AsyncMock(return_value=MOCK_API_RESPONSE)
-        mock_response.status_code = 200
+        mock_response.status = 200
         mock_response.raise_for_status = MagicMock()
         
-        # Set up the context manager for session.request()
-        mock_session.request = MagicMock()
-        mock_session.request.return_value.__aenter__.return_value = mock_response
-        mock_session.request.return_value.__aexit__.return_value = None
+        # Set up the context manager for session.get()
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get.return_value = mock_context
         
         # Initialize the adapter
         adapter = BinanceAdapter(
@@ -48,6 +48,12 @@ async def test_decimal_precision_is_preserved_on_response():
             api_secret="test_secret",
             rest_url="https://testnet.binancefuture.com"
         )
+        
+        adapter._session = mock_session
+        
+        # Mock _sync_time and _server_time to avoid real API calls
+        adapter._sync_time = AsyncMock()
+        adapter._server_time = AsyncMock(return_value=1234567890000)
         
         # Call the method that makes the API request (mocked)
         positions = await adapter.get_open_positions()

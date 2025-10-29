@@ -42,7 +42,12 @@ class OpenFlowFSM:
     Guards (fail-closed): min_notional, qty/price steps, cooldown.
     """
 
-    def __init__(self, cooldown_sec: float = 1.0, guard_enabled: bool = True, config: Optional[Dict] = None):
+    def __init__(self, 
+                 cooldown_sec: float = 1.0, 
+                 guard_enabled: bool = True, 
+                 config: Optional[Dict] = None,
+                 max_active_orders: int = 5,
+                 get_active_orders_count: callable = lambda: 0):
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
         self.guard_enabled = guard_enabled
@@ -56,6 +61,8 @@ class OpenFlowFSM:
         }
         self.idempotency_store: Dict[str, float] = {}
         self.idempotency_window_sec = self.config.get('idempotency_window_sec', 60)
+        self.max_active_orders = max_active_orders
+        self.get_active_orders_count = get_active_orders_count
 
     def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
         """Get instrument specifications from config."""
@@ -123,7 +130,7 @@ class OpenFlowFSM:
 
                 if not symbol or not side:
                     self.logger.error(f"GUARD_REJECT: Missing required fields - symbol={symbol}, side={side}, rid={msg.rid}")
-                    return self._reject(msg, "OPEN_GUARD_FAIL", "missing symbol or side")
+                    return self._reject(msg, "GUARD_MISSING_FIELDS", "missing symbol or side")
 
                 # Get instrument specifications
                 specs = self._get_instrument_specs(symbol)
@@ -140,7 +147,7 @@ class OpenFlowFSM:
                 # Guard: qty bounds
                 if qty_dec is None or qty_dec < min_qty:
                     self.logger.error(f"GUARD_REJECT: Quantity below minimum - qty={qty_dec}, min={min_qty}, rid={msg.rid}")
-                    return self._reject(msg, "OPEN_GUARD_FAIL", f"qty below minimum {min_qty}")
+                    return self._reject(msg, "GUARD_MIN_QTY", f"qty {qty_dec} below minimum {min_qty}")
 
                 # Guard: qty step (round down to step_size)
                 qty_rounded = (qty_dec // step_size) * step_size
@@ -152,7 +159,7 @@ class OpenFlowFSM:
                 if order_type == "LIMIT":
                     if price_dec is None:
                         self.logger.error(f"GUARD_REJECT: LIMIT order missing price - order_type={order_type}, price={price}, rid={msg.rid}")
-                        return self._reject(msg, "OPEN_GUARD_FAIL", "LIMIT order requires price")
+                        return self._reject(msg, "GUARD_MISSING_PRICE", "LIMIT order requires price")
                     
                     # Round price to tick_size
                     price_rounded = ((price_dec // tick_size) * tick_size).quantize(tick_size)
@@ -169,20 +176,34 @@ class OpenFlowFSM:
                     notional = qty_dec * price_dec
                     if notional < min_notional:
                         self.logger.error(f"GUARD_REJECT: Notional below minimum - notional={notional}, min={min_notional}, qty={qty_dec}, price={price_dec}, rid={msg.rid}")
-                        return self._reject(msg, "OPEN_GUARD_FAIL", f"notional {notional} < {min_notional}")
-                
+                        return self._reject(msg, "GUARD_MIN_NOTIONAL", f"notional {notional} < {min_notional}")
+
                 # Guard: min_notional for MARKET orders (approximate check using current market price)
                 elif order_type == "MARKET" and price_ref is not None:
                     notional = qty_dec * price_ref
                     if notional < min_notional:
                         self.logger.error(f"GUARD_REJECT: Estimated notional below minimum - notional={notional}, min={min_notional}, qty={qty_dec}, price_ref={price_ref}, rid={msg.rid}")
-                        return self._reject(msg, "OPEN_GUARD_FAIL", f"estimated notional {notional} < {min_notional}")
+                        return self._reject(msg, "GUARD_MIN_NOTIONAL", f"estimated notional {notional} < {min_notional}")
 
                 # Guard: cooldown
                 now = time.time()
                 if self.guard_enabled and now - self.last_open_ts < self.cooldown_sec:
                     self.logger.warning(f"GUARD_REJECT: Cooldown active - elapsed={now - self.last_open_ts:.2f}s, required={self.cooldown_sec}s, rid={msg.rid}")
-                    return self._reject(msg, "OPEN_GUARD_FAIL", "cooldown active")
+                    return self._reject(msg, "GUARD_COOLDOWN", "cooldown active")
+
+                # Guard: Max Active Orders Limit
+                if self.guard_enabled and self.get_active_orders_count() >= self.max_active_orders:
+                    self.logger.warning(f"GUARD_REJECT: Max active orders limit reached - current={self.get_active_orders_count()}, max={self.max_active_orders}, rid={msg.rid}")
+                    self._metrics["fsm_guard_rejects_total"] += 1
+                    return Message(
+                        op="ERR",
+                        verb="OPEN",
+                        src=msg.dst,
+                        dst=msg.src,
+                        rid=msg.rid,
+                        why="MAX_ORDERS_REACHED",
+                        pld={"reason": f"limit {self.max_active_orders} reached"},
+                    )
 
                 # All guards passed → generate DEC:OPEN
                 dec_pld = {
@@ -208,7 +229,7 @@ class OpenFlowFSM:
                     src=msg.dst,  # FSM as source
                     dst="execution_position",
                     rid=msg.rid,
-                    why="OPEN_OK",
+                    why="Open guards passed",
                     pld=dec_pld,
                 )
 

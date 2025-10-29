@@ -2,18 +2,9 @@ import time
 from decimal import Decimal
 import hmac
 import hashlib
+from urllib.parse import urlencode, quote_plus
 
-import importlib.util
-import os
-
-# Load BinanceAdapter from source path to avoid import issues in test env
-spec = importlib.util.spec_from_file_location(
-    "vfoundation.adapters.binance_adapter",
-    os.path.join(os.path.dirname(__file__), "..", "..", "vfoundation", "adapters", "binance_adapter.py")
-)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
-BinanceAdapter = mod.BinanceAdapter
+from vfoundation.adapters.binance_adapter import BinanceAdapter
 
 
 def test_norm_params_and_sign_build(monkeypatch):
@@ -40,7 +31,6 @@ def test_norm_params_and_sign_build(monkeypatch):
     base = adapter._norm_params({"a": 1, "b": "x"})
     base["timestamp"] = str(int(time.time() * 1000))
     base.setdefault("recvWindow", str(adapter._recv_window_ms))
-    from urllib.parse import urlencode, quote_plus
     qs_no_sig = urlencode(base, doseq=True, quote_via=quote_plus)
     expected = hmac.new(adapter.api_secret, qs_no_sig.encode(), hashlib.sha256).hexdigest()
     assert sig == expected

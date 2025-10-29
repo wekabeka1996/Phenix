@@ -23,7 +23,15 @@ def exec_pos_fsm():
     fsm_path = Path(apps.reference.domains.execution_position.fsm.__file__)
     mock_fsm = MagicMock()
     mock_config = MagicMock()
-    mock_config.get.return_value.get.return_value = {}
+
+    def get_config(key, default=None):
+        if key == 'execution_position':
+            return {'max_active_orders': 5}
+        if key == 'trading':
+            return {'execution': {}}
+        return default or {}
+
+    mock_config.get.side_effect = get_config
     fsm_instance = ExecPosFSM(config=mock_config, fsm=mock_fsm, shadow_mode=True)
 
     # Verify that the FSM has the 'handle' method for vFoundation compatibility
@@ -104,3 +112,55 @@ def test_replay_empty_wal(temp_wal_dir):
     replay.replay_from_wal(replay_handler)
     
     replay_handler.assert_not_called()
+
+
+def test_client_side_stops_on_tick(exec_pos_fsm):
+    """
+    Test that ManageFlowFSM triggers DEC:CLOSE on UPD:TICK when SL/TP is hit.
+    
+    Scenario:
+    1. CMD:OPEN -> DEC:OPEN
+    2. EVT:FILL -> ManageFlowFSM transitions to OPENED
+    3. UPD:TICK with safe price -> None
+    4. UPD:TICK with SL breach -> DEC:CLOSE with STOP_LOSS_HIT
+    """
+    shadow_fsm = exec_pos_fsm
+    
+    # 1. Send CMD:OPEN
+    open_cmd = Message(
+        op="CMD", verb="OPEN", src="test", dst="exec_pos", rid="test_rid_1",
+        pld={"symbol": "BTCUSDT", "side": "BUY", "qty": "0.1", "price": "50000"}
+    )
+    open_dec = shadow_fsm.handle(open_cmd)
+    assert open_dec is not None
+    assert open_dec.op == "DEC"
+    assert open_dec.verb == "OPEN"
+    
+    # 2. Send EVT:FILL to transition ManageFlowFSM to OPENED
+    fill_evt = Message(
+        op="EVT", verb="FILL", src="test", dst="exec_pos", rid="test_rid_1",
+        pld={"symbol": "BTCUSDT", "side": "BUY", "qty": "0.1", "price": "50000"}
+    )
+    fill_result = shadow_fsm.handle(fill_evt)
+    # FILL should trigger bracket placement, but not return DEC:CLOSE
+    assert fill_result is None or fill_result.op != "DEC" or fill_result.verb != "CLOSE"
+    
+    # 3. Send UPD:TICK with safe price (above SL)
+    # SL for BUY at 50000 with sl_bps=50: 50000 * (1 - 50/10000) = 49750
+    safe_tick = Message(
+        op="UPD", verb="TICK", src="test", dst="exec_pos", rid="test_rid_1",
+        pld={"symbol": "BTCUSDT", "price": "49800"}  # Above SL
+    )
+    safe_result = shadow_fsm.handle(safe_tick)
+    assert safe_result is None  # No SL/TP trigger
+    
+    # 4. Send UPD:TICK with SL breach
+    sl_tick = Message(
+        op="UPD", verb="TICK", src="test", dst="exec_pos", rid="test_rid_1",
+        pld={"symbol": "BTCUSDT", "price": "49700"}  # Below SL (49750)
+    )
+    sl_result = shadow_fsm.handle(sl_tick)
+    assert sl_result is not None
+    assert sl_result.op == "DEC"
+    assert sl_result.verb == "CLOSE"
+    assert "STOP_LOSS_HIT" in sl_result.why

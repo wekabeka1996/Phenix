@@ -47,8 +47,16 @@ class ExecPosFSM:
         self.log_adapter = AuroraLogAdapter()
         self.metrics_collector = MetricsCollector()
 
+        # Active orders counter
+        self.active_orders_count = 0
+        exec_pos_config = self.config.get('execution_position', {})
+        self.max_active_orders = exec_pos_config.get('max_active_orders', 5) # Default to 5
+
         if not self.shadow_mode:
             self._initialize_adapter()
+
+    def _get_active_orders_count(self) -> int:
+        return self.active_orders_count
 
     def _initialize_adapter(self):
         """Initializes the BinanceAdapter based on the domain-level trading_mode."""
@@ -95,6 +103,16 @@ class ExecPosFSM:
         )
         LOG.info(f"✅ BinanceAdapter initialized for ExecPosFSM with base URL: {self.adapter.base_url}")
 
+        # Initialize flow FSMs
+        exec_config = self.config.get('trading', {}).get('execution', {})
+        cooldown_ms = float(exec_config.get('cooldown_ms', 1000))
+        cooldown_sec = cooldown_ms / 1000.0
+        guard_enabled = exec_config.get('guard_enabled', True)
+
+        self.open_flow = OpenFlowFSM(cooldown_sec=cooldown_sec, guard_enabled=guard_enabled, config=self.config)
+        self.manage_flow = ManageFlowFSM(trail_pct=0.5, breakeven_after_sec=300.0)
+        self.close_flow = CloseFlowFSM(max_hold_sec=7200.0)
+
     def _get_or_create_flows(self, symbol: str) -> Tuple[OpenFlowFSM, ManageFlowFSM, CloseFlowFSM]:
         """Get or create the set of FSMs for a given symbol."""
         if symbol not in self.manage_flows:
@@ -104,7 +122,13 @@ class ExecPosFSM:
             cooldown_sec = cooldown_ms / 1000.0
             guard_enabled = exec_config.get('guard_enabled', True)
 
-            self.open_flows[symbol] = OpenFlowFSM(cooldown_sec=cooldown_sec, guard_enabled=guard_enabled, config=self.config)
+            self.open_flows[symbol] = OpenFlowFSM(
+                cooldown_sec=cooldown_sec,
+                guard_enabled=guard_enabled,
+                config=self.config,
+                max_active_orders=self.max_active_orders,
+                get_active_orders_count=self._get_active_orders_count
+            )
             self.manage_flows[symbol] = ManageFlowFSM(config=self.config)
             self.close_flows[symbol] = CloseFlowFSM()
         
@@ -137,10 +161,17 @@ class ExecPosFSM:
         # Route to the correct FSM based on the message verb
         if msg.verb == "OPEN":
             result = open_flow.handle(msg)
-        elif msg.verb in ["PARTIAL_FILL", "FILL", "TRADE_EXECUTED", "ORDER_UPDATED"]:
+            if result and result.op == "DEC" and result.verb == "OPEN":
+                self.active_orders_count += 1
+        elif msg.verb in ["PARTIAL_FILL", "FILL", "TRADE_EXECUTED", "ORDER_UPDATED", "ORDER_CANCELLED", "ORDER_REJECTED"]:
             manage_result = manage_flow.handle(msg)
             close_result = close_flow.handle(msg)
             result = manage_result if manage_result else close_result
+            if msg.verb in ["FILL", "TRADE_EXECUTED", "ORDER_CANCELLED", "ORDER_REJECTED"]:
+                if self.active_orders_count > 0:
+                    self.active_orders_count -= 1
+        elif msg.verb == "TICK":  # NEW: Route TICK updates to manage_flow for SL/TP checking
+            result = manage_flow.handle(msg)
         elif msg.verb == "CLOSE":
             result = close_flow.handle(msg)
         else:

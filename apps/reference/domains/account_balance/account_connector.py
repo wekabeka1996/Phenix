@@ -143,12 +143,11 @@ class AccountConnector:
             for asset in balance_data if decimal.Decimal(asset.get('balance', '0')) > 0
         ]
 
-        if not assets:
-            return
-
+        # Always emit event, even if no assets have positive balance
+        # This ensures FSM knows balance was updated, even if all assets are filtered out
         payload = {
             'assets': assets,
-            'updateTime': max((asset.get('updateTime', 0) for asset in assets), default=0)
+            'updateTime': max((asset.get('updateTime', 0) for asset in balance_data), default=0)
         }
         self.fsm.emit(
             event_name="EVT:BALANCE_UPDATE_RECEIVED",

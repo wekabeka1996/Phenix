@@ -60,6 +60,15 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
         >>> assert 'sim_' in result['exchange_order_id']
     """
     
+    def __init__(self, fsm=None, config=None):
+        """
+        Initialize simulated adapter.
+        
+        For simulation purposes, fsm and config are optional and ignored.
+        """
+        # Call parent init with dummy values if not provided
+        super().__init__(fsm or {}, config or {})
+    
     def place_order(self, dec_msg: Message) -> Dict[str, Any]:
         """
         Simulate order placement.

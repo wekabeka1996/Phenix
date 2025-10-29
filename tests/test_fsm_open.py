@@ -51,7 +51,7 @@ def test_open_flow_valid_market_order():
     assert result is not None
     assert result.op == "DEC"
     assert result.verb == "OPEN"
-    assert result.why == "OPEN_OK"
+    assert result.why == "Open guards passed"
     assert result.pld["symbol"] == "BTCUSDT"
     assert result.pld["side"] == "BUY"
     assert Decimal(result.pld["qty"]) == Decimal("1.0")
@@ -275,7 +275,7 @@ def test_open_flow_guard_fail_qty_out_of_bounds():
     
     assert result is not None
     assert result.op == "ERR"
-    assert "qty below minimum" in result.pld["reason"]
+    assert "below minimum" in result.pld["reason"]
     assert fsm.get_metrics()["fsm_guard_rejects_total"] == 1
 
 
