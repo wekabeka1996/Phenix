@@ -28,6 +28,25 @@ try:
 except ImportError:
     from apps.reference.config_loader import ConfigLoader
 
+try:
+    from vfoundation.core import FSMCore
+except Exception:
+    # fallback: try direct module path (works when package layout differs)
+    try:
+        from vfoundation.vfoundation.core.fsm_core import FSMCore
+    except Exception:
+        # Leave NameError for test run to surface if FSMCore is truly missing
+        FSMCore = None
+
+try:
+    # FeatureEngineering implementation in reference app
+    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+except Exception:
+    try:
+        from domains.feature_engineering.feature_engineering import FeatureEngineering
+    except Exception:
+        FeatureEngineering = None
+
 
 class FeaturesTestCollector:
     """Collects features and signals for analysis."""
@@ -81,18 +100,41 @@ async def test_features_calculation_live():
     print("="*80)
     
     # Load config
-    config = ConfigLoader.load_config(
-        system_config_path="config/aurora/system.yaml",
-        trading_config_path="config/aurora/trading.yaml",
-        mode="live"
-    )
+    config = ConfigLoader().load_config()
     
     collector = FeaturesTestCollector()
     fsm = FSMCore()
-    event_chain = EventChain(fsm)
-    
-    # Create FeatureEngineering instance
-    feature_eng = FeatureEngineering(fsm, event_chain, config)
+    # Adapter for older test helper method names -> map to FSMCore.listen/emit
+    if not hasattr(fsm, "register_listener"):
+        def _register_listener(event_name: str, handler):
+            # Wrap handler so it supports either (event_name, payload) or (message,) signatures
+            def _wrapper(message):
+                import inspect, asyncio
+                try:
+                    res = handler(event_name, message.pld)
+                except TypeError:
+                    res = handler(message)
+                # If handler returned a coroutine / awaitable, schedule it
+                try:
+                    if inspect.isawaitable(res):
+                        asyncio.create_task(res)
+                except Exception:
+                    # If inspection fails or scheduling fails, ignore; handler may handle sync path
+                    pass
+            fsm.listen(event_name, _wrapper)
+        fsm.register_listener = _register_listener
+    if not hasattr(fsm, "emit_event"):
+        def _emit_event(event_name: str, payload: dict, why: str = "") -> None:
+            # FSMCore.emit expects (event_name, payload, why)
+            if hasattr(fsm, "emit"):
+                try:
+                    fsm.emit(event_name, payload, why)
+                except TypeError:
+                    # emit signature may differ; try without why
+                    fsm.emit(event_name, payload)
+        fsm.emit_event = _emit_event
+    # Create FeatureEngineering instance (FeatureEngineering expects (fsm, config))
+    feature_eng = FeatureEngineering(fsm, config)
     
     # Run feature engineering for 30 seconds to collect data
     start_time = datetime.now()
@@ -124,13 +166,17 @@ async def test_features_calculation_live():
     # Process each market data point
     for symbol, ticks in market_data.items():
         for tick in ticks:
-            # Emit market tick event
+            # Emit market tick event - build payload matching FeatureEngineering expectations
+            ts = int(datetime.now().timestamp() * 1000)
+            price = (tick["bid"] + tick["ask"]) / 2
             payload = {
                 "symbol": symbol,
-                "bid": tick["bid"],
-                "ask": tick["ask"],
-                "bid_vol": tick["bid_vol"],
-                "ask_vol": tick["ask_vol"],
+                "bid_size": tick["bid_vol"],
+                "ask_size": tick["ask_vol"],
+                "buy_volume": tick["bid_vol"],
+                "sell_volume": tick["ask_vol"],
+                "price": price,
+                "ts": ts,
             }
             fsm.emit_event("EVT:MARKET_TICK_RECEIVED", payload)
             await asyncio.sleep(0.1)  # Small delay between ticks
@@ -159,11 +205,7 @@ async def test_signal_weights_loaded():
     print("TEST 2: Signal Weights Loaded from Config")
     print("="*80)
     
-    config = ConfigLoader.load_config(
-        system_config_path="config/aurora/system.yaml",
-        trading_config_path="config/aurora/trading.yaml",
-        mode="live"
-    )
+    config = ConfigLoader().load_config()
     
     # Check signal_weights in config
     trading_config = config.get("trading", {})
@@ -193,11 +235,7 @@ def test_signal_calculation():
     print("TEST 3: Signal Score Calculation Logic")
     print("="*80)
     
-    config = ConfigLoader.load_config(
-        system_config_path="config/aurora/system.yaml",
-        trading_config_path="config/aurora/trading.yaml",
-        mode="live"
-    )
+    config = ConfigLoader().load_config()
     
     trading_config = config.get("trading", {})
     signal_weights = trading_config.get("decision", {}).get("signal_weights", {})
@@ -317,7 +355,30 @@ def test_feature_event_propagation():
     print("="*80)
     
     fsm = FSMCore()
-    event_chain = EventChain(fsm)
+    # Adapter for older test helper method names -> map to FSMCore.listen/emit
+    if not hasattr(fsm, "register_listener"):
+        def _register_listener(event_name: str, handler):
+            def _wrapper(message):
+                import inspect, asyncio
+                try:
+                    res = handler(event_name, message.pld)
+                except TypeError:
+                    res = handler(message)
+                try:
+                    if inspect.isawaitable(res):
+                        asyncio.create_task(res)
+                except Exception:
+                    pass
+            fsm.listen(event_name, _wrapper)
+        fsm.register_listener = _register_listener
+    if not hasattr(fsm, "emit_event"):
+        def _emit_event(event_name: str, payload: dict, why: str = "") -> None:
+            if hasattr(fsm, "emit"):
+                try:
+                    fsm.emit(event_name, payload, why)
+                except TypeError:
+                    fsm.emit(event_name, payload)
+        fsm.emit_event = _emit_event
     
     # Track event propagation
     propagation_log = []
