@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "market_tick_v1.json",
+  "title": "Market Tick Event",
+  "description": "Schema for market tick data received from exchange",
+  "type": "object",
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "description": "Timestamp in milliseconds (Unix epoch)"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol, e.g. BTCUSDT"
+    },
+    "bid": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Best bid price (string-encoded Decimal for precision)"
+    },
+    "ask": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Best ask price (string-encoded Decimal for precision)"
+    },
+    "mid": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Mid price (calculated as (bid + ask)/2) (string-encoded Decimal for precision)"
+    }
+  },
+  "required": ["ts", "symbol", "bid", "ask", "mid"]
+}

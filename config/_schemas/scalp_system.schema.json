@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/scalp_system.schema.json",
+  "title": "ScalpSystemConfig",
+  "type": "object",
+  "required": [
+    "config_version",
+    "idempotency",
+    "lifecycle",
+    "slas",
+    "positions",
+    "xai",
+    "hotreload_whitelist"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "idempotency": {
+      "type": "object",
+      "required": ["backend", "path", "ttl_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": ["sqlite", "rocksdb"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ttl_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["resubmit_on_timeout", "cancel_on_violation"],
+      "additionalProperties": false,
+      "properties": {
+        "resubmit_on_timeout": {
+          "type": "boolean"
+        },
+        "cancel_on_violation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "slas": {
+      "type": "object",
+      "required": ["tick_to_send_p95_ms", "send_to_ack_p95_ms", "ack_to_fill_p95_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "tick_to_send_p95_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "send_to_ack_p95_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ack_to_fill_p95_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "positions": {
+      "type": "object",
+      "required": ["enable", "snapshot_interval_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "enable": {
+          "type": "boolean"
+        },
+        "snapshot_interval_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "xai": {
+      "type": "object",
+      "required": ["enabled", "sink", "sample_rate"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "sink": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sample_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      }
+    },
+    "hotreload_whitelist": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  }
+}

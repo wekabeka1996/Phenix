@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "portfolio_state_v1.json",
+  "title": "Portfolio State Updated Event",
+  "description": "Schema for EVT:PORTFOLIO_STATE_UPDATED event payload describing complete portfolio state",
+  "type": "object",
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "description": "Timestamp of portfolio state snapshot in milliseconds"
+    },
+    "equity": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Current equity/capital value in USD (string-encoded Decimal for precision)"
+    },
+    "realized_pnl": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Total realized profit and loss in USD (string-encoded Decimal for precision)"
+    },
+    "unrealized_pnl": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Current unrealized profit and loss in USD (string-encoded Decimal for precision)"
+    },
+    "positions": {
+      "type": "array",
+      "description": "Array of current positions",
+      "items": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Trading instrument symbol"
+          },
+          "net_position": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Net position quantity (positive = long, negative = short) (string-encoded Decimal for precision)"
+          },
+          "avg_entry_price": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Average entry price for the position (string-encoded Decimal for precision)"
+          },
+          "venues": {
+            "type": "array",
+            "description": "List of venues where this position has exposure",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["symbol", "net_position", "avg_entry_price", "venues"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["ts", "equity", "realized_pnl", "unrealized_pnl", "positions"],
+  "additionalProperties": false
+}

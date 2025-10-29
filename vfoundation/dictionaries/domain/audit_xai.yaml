@@ -1,0 +1,7 @@
+domain: audit_xai
+key: audit/*
+ttl_profile: background
+verbs:
+  - UPD:WHY_APPEND
+  - EVT:AUDIT_LOGGED
+routing: cold

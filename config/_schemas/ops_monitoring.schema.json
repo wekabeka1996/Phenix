@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/ops_monitoring.schema.json",
+  "title": "OpsMonitoringConfig",
+  "type": "object",
+  "required": [
+    "config_version",
+    "sla",
+    "error_budgets",
+    "alarms",
+    "dashboards",
+    "sampling"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "sla": {
+      "type": "object",
+      "required": [
+        "availability_pct_30d",
+        "tick_to_send_p95_ms",
+        "send_to_ack_p95_ms",
+        "ack_to_fill_p95_ms",
+        "end_to_end_p99_ms",
+        "canary_verdict_latency_min"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "availability_pct_30d": {"type": "number", "minimum": 0, "maximum": 100},
+        "tick_to_send_p95_ms": {"type": "number", "minimum": 0},
+        "send_to_ack_p95_ms": {"type": "number", "minimum": 0},
+        "ack_to_fill_p95_ms": {"type": "number", "minimum": 0},
+        "end_to_end_p99_ms": {"type": "number", "minimum": 0},
+        "canary_verdict_latency_min": {"type": "number", "minimum": 0}
+      }
+    },
+    "error_budgets": {
+      "type": "object",
+      "required": [
+        "daily_denies_sla_pct",
+        "cvar_breach_count",
+        "idempotent_duplicates_pct",
+        "headroom_pct"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "daily_denies_sla_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "cvar_breach_count": {"type": "integer", "minimum": 0},
+        "idempotent_duplicates_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "headroom_pct": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    },
+    "alarms": {
+      "type": "object",
+      "required": [
+        "no_trades_too_long_s",
+        "spike_denies_sigma",
+        "latency_spike_sigma",
+        "calibration_drift_ece",
+        "maker_hazard_mae_ms",
+        "brier_fill",
+        "cpu_utilization_pct",
+        "queue_backlog_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "no_trades_too_long_s": {"type": "integer", "minimum": 0},
+        "spike_denies_sigma": {"type": "number", "minimum": 0},
+        "latency_spike_sigma": {"type": "number", "minimum": 0},
+        "calibration_drift_ece": {"type": "number", "minimum": 0, "maximum": 1},
+        "maker_hazard_mae_ms": {"type": "number", "minimum": 0},
+        "brier_fill": {"type": "number", "minimum": 0, "maximum": 1},
+        "cpu_utilization_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "queue_backlog_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    "dashboards": {
+      "type": "object",
+      "required": [
+        "edge_breakdown",
+        "tca_plan_vs_fact",
+        "perf_stage_view",
+        "dr_readiness"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "edge_breakdown": {"type": "boolean"},
+        "tca_plan_vs_fact": {"type": "boolean"},
+        "perf_stage_view": {"type": "boolean"},
+        "dr_readiness": {"type": "boolean"}
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "required": ["otel_trace_sample_pct", "xai_trace_sample_pct"],
+      "additionalProperties": false,
+      "properties": {
+        "otel_trace_sample_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "xai_trace_sample_pct": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    }
+  }
+}

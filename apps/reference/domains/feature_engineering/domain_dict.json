@@ -1,0 +1,18 @@
+{
+  "domain_name": "feature_engineering",
+  "description": "Відповідає за споживання ринкових даних та розрахунок похідних індикаторів (фіч) для подальшого аналізу.",
+  "schema_version": "1.0",
+  "schema_path": "schemas/features_calculated_v1.json",
+  "imports": [
+    {
+      "event_name": "EVT:MARKET_TICK_RECEIVED",
+      "description": "Споживає ринкові тіки для розрахунку фіч."
+    }
+  ],
+  "exports": [
+    {
+      "event_name": "EVT:FEATURES_CALCULATED",
+      "description": "Подія, що виникає після успішного розрахунку нового набору фіч."
+    }
+  ]
+}

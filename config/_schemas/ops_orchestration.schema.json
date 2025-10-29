@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/ops_orchestration.schema.json",
+  "title": "OpsOrchestrationConfig",
+  "type": "object",
+  "required": [
+    "config_version",
+    "sync",
+    "queues",
+    "retries",
+    "dlq",
+    "canary",
+    "idempotency",
+    "guards"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "sync": {
+      "type": "object",
+      "required": [
+        "heartbeat_sec"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "heartbeat_sec": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "queues": {
+      "type": "object",
+      "required": [
+        "intent",
+        "feedback"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "intent": {
+          "$ref": "#/definitions/topic"
+        },
+        "feedback": {
+          "$ref": "#/definitions/topic"
+        }
+      }
+    },
+    "retries": {
+      "type": "object",
+      "required": [
+        "max",
+        "backoff_ms",
+        "backoff_multiplier"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backoff_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backoff_multiplier": {
+          "type": "number",
+          "exclusiveMinimum": 0.0
+        }
+      }
+    },
+    "dlq": {
+      "type": "object",
+      "required": [
+        "intent",
+        "feedback"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "feedback": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "canary": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "sample_rate",
+        "alpha_budget"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "sample_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "alpha_budget": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "required": [
+        "consumer_cache_ttl_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "consumer_cache_ttl_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "guards": {
+      "type": "object",
+      "required": [
+        "clock_skew_guard_ms",
+        "feedback_ttl_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "clock_skew_guard_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "feedback_ttl_ms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "bus": {
+      "type": "object",
+      "required": [
+        "ticks_path",
+        "intents_path",
+        "feedback_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ticks_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "intents_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "feedback_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "definitions": {
+    "topic": {
+      "type": "object",
+      "required": [
+        "topic"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "topic": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

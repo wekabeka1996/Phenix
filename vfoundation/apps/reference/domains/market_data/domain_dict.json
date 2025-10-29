@@ -1,0 +1,11 @@
+{
+  "domain_name": "market_data",
+  "description": "Відповідає за отримання та публікацію ринкових даних (тіків) з біржі.",
+  "maintainer": "vFoundation Architect",
+  "exports": {
+    "event_name": "EVT:MARKET_TICK_RECEIVED",
+    "description": "Подія, що виникає при отриманні нової угоди (tick) з ринку.",
+    "schema_version": "1.0",
+    "schema_path": "schemas/market_tick_v1.json"
+  }
+}

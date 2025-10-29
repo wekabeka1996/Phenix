@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/aurora_trading.schema.json",
+  "title": "AuroraTradingConfig",
+  "type": "object",
+  "required": [
+    "config_version",
+    "instruments",
+    "entry",
+    "tca_prefs",
+    "risk_budgets",
+    "hotreload_whitelist"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "instruments": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "venue",
+          "symbol",
+          "min_qty",
+          "max_notional_usd"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "venue": {
+            "type": "string",
+            "minLength": 2
+          },
+          "symbol": {
+            "type": "string",
+            "pattern": "^(?:[A-Z]{3,10}USDT|[A-Z]{3,10}-PERP)$"
+          },
+          "min_qty": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "max_notional_usd": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": [
+        "p_star_basis_bps",
+        "p_star_addon_by_regime",
+        "guard_margin_bps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "p_star_basis_bps": {
+          "type": "number"
+        },
+        "guard_margin_bps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p_star_addon_by_regime": {
+          "type": "object",
+          "required": [
+            "trend",
+            "meanrev",
+            "chaos"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "trend": {
+              "type": "number"
+            },
+            "meanrev": {
+              "type": "number"
+            },
+            "chaos": {
+              "type": "number"
+            }
+          }
+        },
+        "regime_detector": {
+          "type": "object",
+          "required": [
+            "half_life_min",
+            "features"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "half_life_min": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "features": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    },
+    "tca_prefs": {
+      "type": "object",
+      "required": [
+        "max_slippage_bps",
+        "max_latency_ms",
+        "maker_preference",
+        "rebate_bps",
+        "adverse_move_limit_bps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_slippage_bps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maker_preference": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "prefer",
+            "forbid"
+          ]
+        },
+        "rebate_bps": {
+          "type": "number"
+        },
+        "adverse_move_limit_bps": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "risk_budgets": {
+      "type": "object",
+      "required": [
+        "trade_cvar95_max_bps",
+        "session_cvar95_max_bps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trade_cvar95_max_bps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "session_cvar95_max_bps": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "hotreload_whitelist": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(instruments\\.(?:[A-Z]{3,10}USDT|[A-Z]{3,10}-PERP)\\.(min_qty|max_notional_usd|tags)|entry\\.(p_star_basis_bps|guard_margin_bps|p_star_addon_by_regime\\.(trend|meanrev|chaos))|tca_prefs\\.(max_slippage_bps|max_latency_ms|maker_preference|rebate_bps|adverse_move_limit_bps)|risk_budgets\\.(trade_cvar95_max_bps|session_cvar95_max_bps|session_cvar95_cap_ccy))$"
+      },
+      "uniqueItems": true
+    },
+    "xai": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "equivalence_probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "sample_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "kelly",
+                  "cvar",
+                  "tca"
+                ]
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "drift_monitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "experiment_id": {
+              "type": "string"
+            },
+            "ks_threshold": {
+              "type": "number",
+              "minimum": 0
+            },
+            "brier_threshold": {
+              "type": "number",
+              "minimum": 0
+            },
+            "drift_z_score": {
+              "type": "number",
+              "minimum": 0
+            },
+            "calibration_window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "reference_window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "monitoring_window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "confidence_level": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "min_observations": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_observations": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "regime_sensitivity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "recalibration_trigger": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "volatility": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "experiment_id": {
+              "type": "string"
+            },
+            "vol_ks_threshold": {
+              "type": "number",
+              "minimum": 0
+            },
+            "vol_brier_threshold": {
+              "type": "number",
+              "minimum": 0
+            },
+            "vol_drift_z_score": {
+              "type": "number",
+              "minimum": 0
+            },
+            "vol_calibration_window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "vol_reference_window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "vol_monitoring_window": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "confidence_level": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "min_observations": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_observations": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "vol_regime_sensitivity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "vol_recalibration_trigger": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "key_template": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ts_bucket_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ttl_sec": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "brackets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enable": {
+          "type": "boolean"
+        },
+        "reduce_only": {
+          "type": "boolean"
+        },
+        "oco_emulation": {
+          "type": "boolean"
+        },
+        "sl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["atr", "fixed_bps"]
+            },
+            "k_atr": {
+              "type": "number",
+              "minimum": 0
+            },
+            "fixed_bps": {
+              "type": "number",
+              "minimum": 0
+            },
+            "order_type": {
+              "type": "string",
+              "enum": ["STOP_MARKET", "STOP_LIMIT"]
+            },
+            "trigger": {
+              "type": "string",
+              "enum": ["MARK_PRICE", "LAST_PRICE"]
+            }
+          }
+        },
+        "tp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["atr", "fixed_bps"]
+            },
+            "k_atr": {
+              "type": "number",
+              "minimum": 0
+            },
+            "fixed_bps": {
+              "type": "number",
+              "minimum": 0
+            },
+            "order_type": {
+              "type": "string",
+              "enum": ["LIMIT", "MARKET"]
+            },
+            "trigger": {
+              "type": ["string", "null"]
+            }
+          }
+        }
+      }
+    },
+    "trailing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enable": {
+          "type": "boolean"
+        },
+        "activation_profit_atr_k": {
+          "type": "number",
+          "minimum": 0
+        },
+        "step_bps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cooldown_sec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "order_type": {
+          "type": "string",
+          "enum": ["STOP_MARKET", "STOP_LIMIT"]
+        },
+        "trigger": {
+          "type": "string",
+          "enum": ["MARK_PRICE", "LAST_PRICE"]
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cooldown_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_orders_per_second": {
+          "type": "number",
+          "minimum": 0
+        },
+        "enable_cooldown_per_symbol": {
+          "type": "boolean"
+        },
+        "guard_enabled": {
+          "type": "boolean"
+        },
+        "ttl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entry_place_ttl_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "bracket_place_ttl_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cancel_ttl_ms": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_tries": {
+              "type": "number",
+              "minimum": 1
+            },
+            "backoff_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "jitter": {
+              "type": "boolean"
+            }
+          }
+        },
+        "circuit_breaker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fail_max": {
+              "type": "number",
+              "minimum": 1
+            },
+            "reset_timeout_sec": {
+              "type": "number",
+              "minimum": 0
+            },
+            "exclude": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "open_threshold_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "error_rate_window_sec": {
+              "type": "number",
+              "minimum": 0
+            },
+            "half_open_attempts": {
+              "type": "number",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

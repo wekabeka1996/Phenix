@@ -1,0 +1,281 @@
+# Словники даних домену Account Balance
+
+# Версія словника: FSMP-P1-T04
+# Остання зміна: 2025-01-28
+# Автор: Aurora System Documentation
+
+# =============================================================================
+# КОНФІГУРАЦІЙНІ СЛОВНИКИ
+# =============================================================================
+
+# Основні режими роботи системи
+trading_modes:
+  live: "live"
+  testnet: "testnet"
+  hybrid_live_data_testnet_exec: "hybrid_live_data_testnet_exec"
+  hybrid_testnet_data_live_exec: "hybrid_testnet_data_live_exec"
+
+# Типи маржі для позицій
+margin_types:
+  isolated: "isolated"
+  cross: "cross"
+
+# Статуси позицій
+position_statuses:
+  open: "open"
+  closed: "closed"
+  liquidating: "liquidating"
+
+# =============================================================================
+# СТРУКТУРИ ДАНИХ API
+# =============================================================================
+
+# Структура відповіді Binance Balance API (/fapi/v2/balance)
+balance_response_schema:
+  type: object
+  properties:
+    accountAlias: { type: string, description: "Alias рахунку" }
+    asset: { type: string, description: "Назва активу (USDT, BTC, etc.)" }
+    balance: { type: string, description: "Загальний баланс активу" }
+    crossWalletBalance: { type: string, description: "Баланс в cross margin" }
+    crossUnPnl: { type: string, description: "Нереалізований P&L в cross margin" }
+    availableBalance: { type: string, description: "Доступний баланс" }
+    maxWithdrawAmount: { type: string, description: "Максимальна сума виведення" }
+    marginAvailable: { type: boolean, description: "Доступність для маржі" }
+    updateTime: { type: integer, description: "Час оновлення (timestamp)" }
+
+# Структура відповіді Binance Position Risk API (/fapi/v2/positionRisk)
+position_response_schema:
+  type: object
+  properties:
+    symbol: { type: string, description: "Торгова пара (BTCUSDT)" }
+    positionAmt: { type: string, description: "Розмір позиції" }
+    entryPrice: { type: string, description: "Ціна входу" }
+    markPrice: { type: string, description: "Позначена ціна" }
+    unRealizedProfit: { type: string, description: "Нереалізований прибуток" }
+    liquidationPrice: { type: string, description: "Ціна ліквідації" }
+    leverage: { type: integer, description: "Плече" }
+    maxNotionalValue: { type: string, description: "Максимальне номінальне значення" }
+    marginType: { type: string, enum: ["isolated", "cross"] }
+    isolatedMargin: { type: string, description: "Ізольована маржа" }
+    isAutoAddMargin: { type: boolean, description: "Автоматичне додавання маржі" }
+    positionSide: { type: string, enum: ["LONG", "SHORT", "BOTH"] }
+    notional: { type: string, description: "Номінальне значення" }
+    isolatedWallet: { type: string, description: "Ізольований гаманець" }
+    updateTime: { type: integer, description: "Час оновлення" }
+
+# =============================================================================
+# FSM ПОДІЇ
+# =============================================================================
+
+# Подія оновлення балансу
+evt_balance_update_received:
+  event_type: "EVT:BALANCE_UPDATE_RECEIVED"
+  version: "1.0"
+  description: "Оновлення балансу активів рахунку"
+  frequency: "30 секунд (конфігурується)"
+  direction: "Decision Making, Risk Management, Position Tracking"
+  payload_schema:
+    type: object
+    properties:
+      assets:
+        type: array
+        items:
+          type: object
+          properties:
+            asset: { type: string }
+            balance: { type: string }
+            crossUnPnl: { type: string }
+            crossWalletBalance: { type: string }
+            updateTime: { type: integer }
+      updateTime: { type: integer }
+    required: ["assets", "updateTime"]
+
+# Подія оновлення стану рахунку та позицій
+evt_account_update_received:
+  event_type: "EVT:ACCOUNT_UPDATE_RECEIVED"
+  version: "1.0"
+  description: "Оновлення загального стану рахунку та всіх позицій"
+  frequency: "30 секунд (конфігурується)"
+  direction: "Position Tracking, Risk Management, Decision Making"
+  payload_schema:
+    type: object
+    properties:
+      totalWalletBalance: { type: string }
+      totalUnrealizedProfit: { type: string }
+      totalCrossWalletBalance: { type: string }
+      positions:
+        type: array
+        items:
+          type: object
+          properties:
+            symbol: { type: string }
+            positionAmt: { type: string }
+            entryPrice: { type: string }
+            unRealizedProfit: { type: string }
+            leverage: { type: integer }
+            marginType: { type: string, enum: ["isolated", "cross"] }
+            markPrice: { type: string }
+            liquidationPrice: { type: string }
+      updateTime: { type: integer }
+    required: ["totalWalletBalance", "totalUnrealizedProfit", "totalCrossWalletBalance", "positions", "updateTime"]
+
+# =============================================================================
+# КОНФІГУРАЦІЙНІ ПАРАМЕТРИ
+# =============================================================================
+
+# Конфігурація домену account_balance
+domain_config_schema:
+  type: object
+  properties:
+    poll_interval:
+      type: integer
+      minimum: 5
+      maximum: 300
+      default: 30
+      description: "Інтервал опитування API в секундах"
+    retry_attempts:
+      type: integer
+      minimum: 1
+      maximum: 10
+      default: 3
+      description: "Кількість повторів при помилці API"
+    backoff_multiplier:
+      type: number
+      minimum: 1.0
+      maximum: 5.0
+      default: 2.0
+      description: "Множник для експоненціального backoff"
+    timeout:
+      type: integer
+      minimum: 5
+      maximum: 60
+      default: 10
+      description: "Таймаут API викликів в секундах"
+    max_concurrent_requests:
+      type: integer
+      minimum: 1
+      maximum: 5
+      default: 2
+      description: "Максимальна кількість паралельних запитів"
+    enable_position_filtering:
+      type: boolean
+      default: true
+      description: "Фільтрувати тільки відкриті позиції"
+    enable_balance_filtering:
+      type: boolean
+      default: true
+      description: "Фільтрувати тільки активи з балансом > 0"
+
+# =============================================================================
+# СЛОВНИКИ АКТИВІВ
+# =============================================================================
+
+# Підтримувані активи для торгівлі
+supported_assets:
+  - USDT
+  - BUSD
+  - BTC
+  - ETH
+  - BNB
+  - ADA
+  - SOL
+  - DOT
+  - LINK
+  - UNI
+
+# Словник торгових пар (для валідації)
+trading_pairs:
+  BTCUSDT: { base: BTC, quote: USDT, min_qty: 0.001, step_size: 0.001 }
+  ETHUSDT: { base: ETH, quote: USDT, min_qty: 0.01, step_size: 0.01 }
+  BNBUSDT: { base: BNB, quote: USDT, min_qty: 1.0, step_size: 0.1 }
+  ADAUSDT: { base: ADA, quote: USDT, min_qty: 1.0, step_size: 0.1 }
+  SOLUSDT: { base: SOL, quote: USDT, min_qty: 0.1, step_size: 0.1 }
+
+# =============================================================================
+# СЛОВНИКИ ПОМИЛОК
+# =============================================================================
+
+# Коди помилок Binance API
+binance_error_codes:
+  -1000: "UNKNOWN"
+  -1001: "DISCONNECTED"
+  -1002: "UNAUTHORIZED"
+  -1003: "TOO_MANY_REQUESTS"
+  -1013: "INVALID_MESSAGE"
+  -1014: "UNKNOWN_ORDER_COMPOSITION"
+  -1015: "TOO_MANY_ORDERS"
+  -1016: "SERVICE_SHUTTING_DOWN"
+  -1020: "UNSUPPORTED_OPERATION"
+  -1021: "INVALID_TIMESTAMP"
+  -1022: "INVALID_SIGNATURE"
+
+# Типи помилок домену
+domain_error_types:
+  api_connection_error: "Помилка з'єднання з Binance API"
+  authentication_error: "Помилка аутентифікації API ключів"
+  rate_limit_error: "Перевищення ліміту запитів"
+  data_parsing_error: "Помилка парсингу відповіді API"
+  invalid_config_error: "Некоректна конфігурація домену"
+  timeout_error: "Таймаут очікування відповіді API"
+
+# =============================================================================
+# МЕТРИКИ ТА МОНІТОРИНГ
+# =============================================================================
+
+# Метрики продуктивності
+performance_metrics:
+  account_balance_updates_success: "Кількість успішних оновлень балансу"
+  account_balance_updates_failed: "Кількість невдалих оновлень балансу"
+  account_balance_api_latency: "Середній час відповіді API (ms)"
+  account_balance_last_update_age: "Вік останніх даних (секунди)"
+  account_balance_position_count: "Кількість активних позицій"
+  account_balance_asset_count: "Кількість активів з балансом"
+
+# Рівні логування
+log_levels:
+  DEBUG: "Детальне логування для розробки"
+  INFO: "Інформаційні повідомлення про нормальну роботу"
+  WARN: "Попередження про потенційні проблеми"
+  ERROR: "Критичні помилки що потребують уваги"
+
+# =============================================================================
+# ТЕСТОВІ ДАНІ
+# =============================================================================
+
+# Приклад тестового балансу
+test_balance_data:
+  assets:
+    - asset: "USDT"
+      balance: "1000.50"
+      crossUnPnl: "25.30"
+      crossWalletBalance: "975.20"
+      updateTime: 1640995200000
+    - asset: "BTC"
+      balance: "0.025"
+      crossUnPnl: "2.15"
+      crossWalletBalance: "0.023"
+      updateTime: 1640995200000
+  updateTime: 1640995200000
+
+# Приклад тестових позицій
+test_position_data:
+  positions:
+    - symbol: "BTCUSDT"
+      positionAmt: "0.001"
+      entryPrice: "50000.00"
+      unRealizedProfit: "5.25"
+      leverage: 10
+      marginType: "cross"
+      markPrice: "50250.00"
+      liquidationPrice: "45000.00"
+    - symbol: "ETHUSDT"
+      positionAmt: "-0.05"
+      entryPrice: "3000.00"
+      unRealizedProfit: "-12.50"
+      leverage: 5
+      marginType: "isolated"
+      markPrice: "2950.00"
+      liquidationPrice: "3200.00"
+  updateTime: 1640995200000</content>
+<parameter name="filePath">c:\Users\job11\Music\Olimp_v1\docs\domains\account_balance\dictionaries.yaml

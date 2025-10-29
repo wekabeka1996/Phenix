@@ -1,0 +1,150 @@
+{
+  "properties": {
+    "v": {
+      "default": 1,
+      "title": "V",
+      "type": "integer"
+    },
+    "op": {
+      "enum": [
+        "ASK",
+        "DEC",
+        "CMD",
+        "EVT",
+        "UPD",
+        "ERR"
+      ],
+      "title": "Op",
+      "type": "string"
+    },
+    "verb": {
+      "title": "Verb",
+      "type": "string"
+    },
+    "src": {
+      "title": "Src",
+      "type": "string"
+    },
+    "dst": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": "any",
+          "type": "string"
+        }
+      ],
+      "title": "Dst"
+    },
+    "rid": {
+      "title": "Rid",
+      "type": "string"
+    },
+    "span_id": {
+      "title": "Span Id",
+      "type": "string"
+    },
+    "parent_span_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Span Id"
+    },
+    "ts": {
+      "title": "Ts",
+      "type": "integer"
+    },
+    "ttl_ms": {
+      "default": 2000,
+      "title": "Ttl Ms",
+      "type": "integer"
+    },
+    "key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Key"
+    },
+    "idempotent_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Idempotent Key"
+    },
+    "pld": {
+      "additionalProperties": true,
+      "title": "Pld",
+      "type": "object"
+    },
+    "why": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Why"
+    },
+    "why_explain_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Why Explain Ref"
+    },
+    "data_ref": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Data Ref",
+      "type": "array"
+    },
+    "sig": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sig"
+    }
+  },
+  "required": [
+    "op",
+    "verb",
+    "src",
+    "dst"
+  ],
+  "title": "Message",
+  "type": "object"
+}

@@ -1,0 +1,110 @@
+trading:
+  # ==============================================================================
+  # DECISION MAKING SETTINGS
+  # ==============================================================================
+  decision:
+    signal_weights:
+      obi: 0.6
+      tfi: 0.35
+      delta_price: 0.05
+    signal_threshold: 0.05
+    position_sizing:
+      min_position_size_usd: 10
+      liquidity_based_cap_usd: 10000
+
+  # ==============================================================================
+  # INSTRUMENT SPECIFICATIONS (BINANCE FUTURES)
+  # ==============================================================================
+  instruments:
+    BTCUSDT:
+      step_size: "0.00001"  # Binance BTCUSDT step_size
+      min_notional: "10"     # Minimum notional value
+    ETHUSDT:
+      step_size: "0.001"     # Binance ETHUSDT step_size
+      min_notional: "10"
+
+  # TCA (Transaction Cost Analysis) Preferences
+  tca_prefs:
+    max_slippage_pct: 0.5
+    preferred_venue: "binance"
+    execution_priority: "speed"
+
+  # Risk Budgets
+  risk_budgets:
+    max_portfolio_risk_pct: 5.0
+    max_single_position_risk_pct: 1.0
+    max_daily_loss_pct: 2.0
+
+  # Risk Management Settings
+  risk:
+    max_daily_drawdown_limit: 0.05  # 5%
+    score_weights:
+      delta_price: 0.05
+      obi: 0.35
+      tfi: 0.35
+      absorption_inverse: 0.25
+    trading_allowed_thresholds:
+      max_risk_score: 0.8
+
+  # ==============================================================================
+  # EXECUTION SETTINGS
+  # ==============================================================================
+  execution:
+    # Default order type for opening positions.
+    # Valid types: LIMIT, MARKET, STOP, STOP_MARKET, TAKE_PROFIT, TAKE_PROFIT_MARKET
+    open_order_type: "MARKET"
+
+    # Parameters for each order type
+    order_params:
+      LIMIT:
+        timeInForce: "GTC" # Good-Till-Cancel
+      STOP_MARKET:
+        workingType: "MARK_PRICE"
+      TAKE_PROFIT_MARKET:
+        workingType: "MARK_PRICE"
+      TRAILING_STOP_MARKET:
+        callbackRate: "0.5" # 0.5%
+
+  # ==============================================================================
+  # DOMAIN-LEVEL CONFIGURATION
+  # ==============================================================================
+  # IMPORTANT: These override global trading_mode for each domain
+  # Global mode: "hybrid_live_data_testnet_exec" = live data for features + testnet for execution
+  domain_configuration:
+    # Data sources: READ from live market
+    market_data:
+      trading_mode: "live"  # Read LIVE Binance data
+      
+    feature_engineering:
+      trading_mode: "live"  # Process live features (OBI, TFI, delta_price)
+      
+    decision_making:
+      trading_mode: "live"  # Make decisions based on live signals
+      
+    risk_management:
+      trading_mode: "live"  # Risk scoring on live data
+      
+    # Execution: WRITE to testnet (safety!)
+    execution_position:
+      trading_mode: "testnet"  # Place orders on TESTNET only
+      
+    audit_trail:
+      trading_mode: "live"  # Log from live data
+
+# ==============================================================================
+# BINANCE API CONFIGURATION
+# ==============================================================================
+# All credentials come from .env file via ${VAR_NAME} template substitution
+# ConfigLoader._resolve_env_vars() automatically converts these at load time
+binance_api:
+  live:
+    api_key: "${BINANCE_FUTURES_API_KEY_LIVE}"
+    api_secret: "${BINANCE_FUTURES_API_SECRET_LIVE}"
+    rest_url: "${BINANCE_FUTURES_BASE_URL_LIVE}"
+    ws_url: "wss://fstream.binance.com"
+    
+  testnet:
+    api_key: "${BINANCE_TESTNET_API_KEY}"
+    api_secret: "${BINANCE_TESTNET_API_SECRET}"
+    rest_url: "https://testnet.binancefuture.com"
+    ws_url: "wss://stream.testnet.binancefuture.com"

@@ -1,0 +1,664 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/scalp_trading.schema.json",
+  "title": "ScalpTradingConfig",
+  "type": "object",
+  "required": [
+    "config_version",
+    "symbols",
+    "execution",
+    "routing",
+    "maker",
+    "taker",
+    "risk",
+    "hotreload_whitelist"
+  ],
+  "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "symbols": {
+      "type": "object",
+      "required": [
+        "allowlist"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "allowlist": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._-]{2,20}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "max_open_orders",
+        "leverage",
+        "ewma_alpha",
+        "slippage_beta",
+        "latency_base_ms",
+        "latency_k_p95",
+        "latency_min_ms",
+        "latency_max_ms",
+        "sla"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_open_orders": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "leverage": {
+          "type": "number",
+          "exclusiveMinimum": 0.0
+        },
+        "ewma_alpha": {
+          "type": "number",
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "description": "EWMA weighting parameter for volatility estimate (0,1]; Fail-Fast required; was code default 0.2)"
+        },
+        "slippage_beta": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 10.0,
+          "description": "Blend factor between spread and EWMA sigma (≥0; was code default 0.5)"
+        },
+        "latency_base_ms": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Base component for adaptive latency buffer (Fail-Fast required; was code default 10.0)"
+        },
+        "latency_k_p95": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Multiplier applied to p95 latency for buffer (Fail-Fast required; was code default 0.5)"
+        },
+        "latency_min_ms": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Lower clamp for adaptive latency buffer (Fail-Fast required; was code default 5.0)"
+        },
+        "latency_max_ms": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Upper clamp for adaptive latency buffer (Fail-Fast required; was code default 200.0)"
+        },
+        "sla": {
+          "type": "object",
+          "required": [
+            "max_latency_ms",
+            "kappa_bps_per_ms"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "max_latency_ms": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kappa_bps_per_ms": {
+              "type": "number",
+              "minimum": 0.0,
+              "description": "Linear penalty (bps) per millisecond latency applied to expected edge for profitability gating"
+            }
+          }
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "required": [
+        "maker_quote_depth",
+        "taker_aggressiveness_bps",
+        "taker_slippage_limit_bps",
+        "price_ref",
+        "maker_enabled",
+        "latency_buffer_ms",
+        "profitability_gate",
+        "allowlists"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "maker_quote_depth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "taker_aggressiveness_bps": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "taker_slippage_limit_bps": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Global SSOT slippage cap for taker path; intent.tca_budget.max_slippage_bps overrides when provided"
+        },
+        "maker_preference": {
+          "type": "string",
+          "enum": [
+            "forbid",
+            "allow",
+            "prefer"
+          ],
+          "description": "DEPRECATED (ADR-CFG-016): use routing.mode_preferences ordering instead; retained for backward compatibility",
+          "deprecated": true
+        },
+        "price_ref": {
+          "type": "string",
+          "enum": [
+            "best",
+            "microprice"
+          ],
+          "description": "Reference price basis used for expected slippage / edge modeling"
+        },
+        "maker_enabled": {
+          "type": "boolean",
+          "description": "T1.4 MVP: Enable maker quote optimization (shadow mode initially)"
+        },
+        "kappa_bps_per_ms": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "DEPRECATED duplicate (ADR-CFG-016): use execution.sla.kappa_bps_per_ms",
+          "deprecated": true
+        },
+        "latency_buffer_ms": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "F2: Additional latency buffer for SLA calculations beyond execution.latency_* parameters"
+        },
+        "profitability_gate": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "min_edge_bps"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "F2: Enable profitability gating in route selection"
+            },
+            "min_edge_bps": {
+              "type": "number",
+              "minimum": 0.0,
+              "description": "F2: Minimum expected edge (bps) required to approve route"
+            }
+          }
+        },
+        "mode_preferences": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "maker_only",
+              "taker_only",
+              "maker_preferred",
+              "taker_preferred",
+              "balanced"
+            ]
+          },
+          "description": "F2: Ordered list of routing mode preferences",
+          "uniqueItems": true
+        },
+        "allowlists": {
+          "type": "object",
+          "required": [
+            "makers",
+            "venues"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "makers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,50}$"
+              },
+              "description": "F2: Allowed maker counterparties (empty = no restriction)",
+              "uniqueItems": true
+            },
+            "venues": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,50}$"
+              },
+              "description": "F2: Allowed trading venues (empty = no restriction)",
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "mode_preferences"
+          ],
+          "not": {
+            "required": [
+              "maker_preference"
+            ]
+          }
+        },
+        {
+          "required": [
+            "maker_preference"
+          ],
+          "not": {
+            "required": [
+              "mode_preferences"
+            ]
+          }
+        }
+      ]
+    },
+    "maker": {
+      "type": "object",
+      "required": [
+        "hazard",
+        "quote_optimization",
+        "canary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hazard": {
+          "type": "object",
+          "required": [
+            "target_mae_ms",
+            "target_brier",
+            "min_depth"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "target_mae_ms": {
+              "type": "number",
+              "minimum": 0.0
+            },
+            "target_brier": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "min_depth": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "quote_optimization": {
+          "type": "object",
+          "required": [
+            "delta_min_bps",
+            "delta_max_bps",
+            "delta_grid_size",
+            "horizon_ms",
+            "rebate_bps",
+            "cancel_penalty_bps",
+            "kelly_lambda_clamp",
+            "hazard_threshold",
+            "min_edge_bps"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "delta_min_bps": {
+              "type": "number",
+              "minimum": 0.1,
+              "description": "Minimum spread delta in basis points"
+            },
+            "delta_max_bps": {
+              "type": "number",
+              "minimum": 1.0,
+              "description": "Maximum spread delta in basis points"
+            },
+            "delta_grid_size": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 50,
+              "description": "Number of grid points for delta optimization"
+            },
+            "horizon_ms": {
+              "type": "number",
+              "minimum": 100.0,
+              "description": "Time horizon for fill probability calculation (ms)"
+            },
+            "rebate_bps": {
+              "type": "number",
+              "minimum": 0.0,
+              "description": "Maker rebate in basis points"
+            },
+            "cancel_penalty_bps": {
+              "type": "number",
+              "minimum": 0.0,
+              "description": "Penalty for cancelled orders in basis points"
+            },
+            "kelly_lambda_clamp": {
+              "type": "number",
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "description": "Lambda clamp for Kelly sizing (0,1]"
+            },
+            "hazard_threshold": {
+              "type": "number",
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "description": "Minimum hazard score to enable maker mode (0,1]"
+            },
+            "min_edge_bps": {
+              "type": "number",
+              "minimum": 0.0,
+              "description": "Minimum expected edge in basis points"
+            }
+          }
+        },
+        "soak": {
+          "type": "object",
+          "description": "T1.5-T1.7: Soak decision engine for statistical evaluation"
+        },
+        "canary": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "rollout",
+            "current_stage",
+            "hash_key"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "T1.5: Enable live canary rollout system for maker"
+            },
+            "rollout": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "enum": [
+                  5,
+                  25,
+                  100
+                ]
+              },
+              "description": "T1.5: Live rollout stages (5%, 25%, 100%)",
+              "minItems": 1,
+              "maxItems": 3
+            },
+            "current_stage": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "T1.5: Current rollout stage index"
+            },
+            "hash_key": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_|]+$",
+              "description": "T1.5: Hash key format for stable canary selection (e.g., 'instrument|venue')"
+            },
+            "hazard": {
+              "type": "object",
+              "required": [
+                "lambda_min",
+                "lambda_clamp"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "lambda_min": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 10.0,
+                  "description": "T1.5: Minimum Hawkes intensity for maker activation"
+                },
+                "lambda_clamp": {
+                  "type": "number",
+                  "minimum": 0.1,
+                  "maximum": 10.0,
+                  "description": "T1.5: Kelly clamp maximum value"
+                }
+              }
+            },
+            "kpi_gates": {
+              "type": "object",
+              "required": [
+                "hit_rate_min",
+                "cancel_rate_max",
+                "pnl_vs_sim_min",
+                "es_breaches_max",
+                "latency_slo_ms",
+                "adverse_selection_max",
+                "monitoring_window_minutes"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "hit_rate_min": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 1.0,
+                  "description": "T1.5: Minimum hit rate (fills/attempts) to advance stage"
+                },
+                "cancel_rate_max": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 1.0,
+                  "description": "T1.5: Maximum cancel rate to remain in stage"
+                },
+                "pnl_vs_sim_min": {
+                  "type": "number",
+                  "description": "T1.5: Minimum ΔPnL canary vs shadow (bps)"
+                },
+                "es_breaches_max": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "T1.5: Maximum expected shortfall breaches allowed"
+                },
+                "latency_slo_ms": {
+                  "type": "number",
+                  "minimum": 1.0,
+                  "maximum": 5000.0,
+                  "description": "T1.5: Maximum p95 latency SLO (ms)"
+                },
+                "adverse_selection_max": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 1.0,
+                  "description": "T1.5: Maximum adverse selection ratio"
+                },
+                "monitoring_window_minutes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1440,
+                  "description": "T1.5: KPI calculation window (minutes)"
+                }
+              }
+            },
+            "kpi_gates_25": {
+              "type": "object",
+              "description": "T1.6: Enhanced KPI gates for 25% rollout stage"
+            },
+            "kpi_gates_100": {
+              "type": "object",
+              "description": "T1.7: Production KPI gates for 100% rollout stage"
+            },
+            "rollback": {
+              "type": "object",
+              "required": [
+                "enabled",
+                "consecutive_failures",
+                "cooldown_minutes",
+                "emergency_disable",
+                "auto_rollback_enabled"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Enable automatic rollback on KPI failures"
+                },
+                "consecutive_failures": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Rollback after N consecutive KPI failures"
+                },
+                "lookback_window_hours": {
+                  "type": "number",
+                  "minimum": 1.0,
+                  "description": "KPI evaluation lookback window (hours)"
+                },
+                "cooldown_hours": {
+                  "type": "number",
+                  "minimum": 1.0,
+                  "description": "Minimum cooldown before retry (hours)"
+                },
+                "cooldown_minutes": {
+                  "type": "number",
+                  "minimum": 1.0,
+                  "description": "Cooldown in minutes (alternative to hours)"
+                },
+                "emergency_disable": {
+                  "type": "boolean",
+                  "description": "Allow emergency disable capability"
+                },
+                "auto_rollback_enabled": {
+                  "type": "boolean",
+                  "description": "Enable automatic rollback on KPI failures"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "taker": {
+      "type": "object",
+      "required": [
+        "max_market_impact_bps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_market_impact_bps": {
+          "type": "number",
+          "minimum": 0.0
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "required": [
+        "inventory_max_abs_qty",
+        "notional_day_cap_usd"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "inventory_max_abs_qty": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "notional_day_cap_usd": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "cost_tracker_window_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Rolling window size for historical execution costs (samples per instrument)"
+        },
+        "cost_tracker_min_samples": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum number of samples required to produce a historical CVaR estimate"
+        },
+        "cost_tracker_cvar_percentile": {
+          "type": "number",
+          "minimum": 50.0,
+          "maximum": 99.9,
+          "description": "Percentile used to compute VaR before taking tail mean for CVaR"
+        },
+        "cvar_floor_bps": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Static minimum CVaR fallback in basis points"
+        },
+        "active_tail_optimizer": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "alpha",
+            "time_budget_ms",
+            "max_cuts_per_iter",
+            "eps_violation_bps",
+            "max_iterations"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable S2-C active tail cutting-plane algorithm"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0.90,
+              "maximum": 0.999,
+              "description": "CVaR confidence level (e.g., 0.95 for CVaR95)"
+            },
+            "time_budget_ms": {
+              "type": "number",
+              "minimum": 50.0,
+              "maximum": 500.0,
+              "description": "Time budget in milliseconds for p95 ≤ 200ms SLO compliance"
+            },
+            "tail_buffer_ratio": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 0.50,
+              "description": "Buffer ratio beyond (1-α)N for initial tail selection"
+            },
+            "max_cuts_per_iter": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Maximum scenarios to add per cutting-plane iteration"
+            },
+            "eps_violation_bps": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 10.0,
+              "description": "Convergence tolerance in basis points for tail violations"
+            },
+            "max_iterations": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 100,
+              "description": "Maximum cutting-plane iterations before convergence timeout"
+            },
+            "warm_start": {
+              "type": "boolean",
+              "description": "Enable solver warm-start for improved performance"
+            },
+            "bound_tightening": {
+              "type": "boolean",
+              "description": "Enable z-bound optimization (S2-C performance enhancement)"
+            },
+            "solver_deterministic": {
+              "type": "boolean",
+              "description": "Use deterministic solver mode for reproducible benchmarks"
+            },
+            "fallback_enabled": {
+              "type": "boolean",
+              "description": "Enable fallback to external solver if time budget exceeded"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "hotreload_whitelist": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  }
+}

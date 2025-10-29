@@ -1,0 +1,9 @@
+domain: execution_position
+key: position/*
+ttl_profile: critical
+verbs:
+  - CMD:OPEN
+  - CMD:CLOSE
+  - EVT:POSITION_OPENED
+  - EVT:POSITION_CLOSED
+routing: hot

@@ -1,0 +1,100 @@
+{
+  "computed_at": "2025-10-14T10:55:36.461621Z",
+  "time_window_sec": 1.0,
+  "total_records": 742,
+  "decisions_count": 112,
+  "events_count": 0,
+  "confusion_matrix": {
+    "tp": 0,
+    "fp": 112,
+    "fn": 0,
+    "tn": 0
+  },
+  "metrics": {
+    "drift_pct": 100.0,
+    "accuracy": 0.0
+  },
+  "mismatches_count": 112,
+  "mismatches": [
+    {
+      "rid": "test-e2e-001",
+      "symbol": "BTCUSDT",
+      "type": "FP",
+      "decision_verb": "OPEN",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "test-e2e-003",
+      "symbol": "UNKNOWN",
+      "type": "FP",
+      "decision_verb": "CLOSE",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "test-idem-001",
+      "symbol": "ADAUSDT",
+      "type": "FP",
+      "decision_verb": "OPEN",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "r0",
+      "symbol": "BTC",
+      "type": "FP",
+      "decision_verb": "OPEN",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "test-e2e-001",
+      "symbol": "BTCUSDT",
+      "type": "FP",
+      "decision_verb": "OPEN",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "test-e2e-003",
+      "symbol": "UNKNOWN",
+      "type": "FP",
+      "decision_verb": "CLOSE",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "test-idem-001",
+      "symbol": "ADAUSDT",
+      "type": "FP",
+      "decision_verb": "OPEN",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "r0",
+      "symbol": "BTC",
+      "type": "FP",
+      "decision_verb": "OPEN",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "test-e2e-001",
+      "symbol": "BTCUSDT",
+      "type": "FP",
+      "decision_verb": "OPEN",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    },
+    {
+      "rid": "test-e2e-003",
+      "symbol": "UNKNOWN",
+      "type": "FP",
+      "decision_verb": "CLOSE",
+      "event_verb": null,
+      "timestamp": 1760439336.461622
+    }
+  ]
+}

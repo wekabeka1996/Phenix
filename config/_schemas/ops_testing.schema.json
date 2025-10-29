@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/ops_testing.schema.json",
+  "title": "OpsTestingConfig",
+  "type": "object",
+  "required": [
+    "config_version",
+    "replay",
+    "smoke",
+    "e2e"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "replay": {
+      "type": "object",
+      "required": ["enabled", "sources"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "required": ["timeouts_s"],
+      "additionalProperties": false,
+      "properties": {
+        "timeouts_s": {"type": "integer", "minimum": 0}
+      }
+    },
+    "e2e": {
+      "type": "object",
+      "required": ["scenarios", "acceptance_kpi"],
+      "additionalProperties": false,
+      "properties": {
+        "scenarios": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "acceptance_kpi": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

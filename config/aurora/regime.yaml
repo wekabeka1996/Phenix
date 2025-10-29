@@ -1,0 +1,20 @@
+config_version: 1.0.0
+hmm:
+  enabled: true
+  K: 3               # number of hidden states (>=2)
+  emission:
+    cov_kind: diag    # diag | full
+  sticky_kappa: 0.15  # self-transition bias (0=no bias)
+  update_interval: 250  # semi-online EM update cadence (observations)
+  history_hours: 48    # offline training lookback window
+  confidence_threshold: 0.75
+features:
+  rv_window: 120      # samples for realized volatility
+  trend_window: 180   # samples for trend slope regression
+  obi_window: 60      # samples for order book imbalance smoothing
+  spread_min_ticks: 1 # used for normalization safeguards
+  micro_return_window: 1
+hotreload_whitelist:
+  - hmm.sticky_kappa
+  - hmm.update_interval
+  - hmm.change_conf_min

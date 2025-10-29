@@ -1,0 +1,163 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://aurora.scalp/shared/config/_schemas/portfolio.schema.json",
+    "title": "Portfolio Configuration",
+    "type": "object",
+    "required": [
+        "cvar_ru",
+        "solver",
+        "kelly_scale"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "cvar_ru": {
+            "type": "object",
+            "required": [
+                "alpha",
+                "box_bounds",
+                "budget_eq"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "alpha": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "exclusiveMinimum": true,
+                    "exclusiveMaximum": true,
+                    "description": "CVaR confidence level α ∈ (0,1)"
+                },
+                "box_bounds": {
+                    "type": "object",
+                    "required": [
+                        "lower_bounds",
+                        "upper_bounds"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "lower_bounds": {
+                            "type": "array",
+                            "items": {
+                                "type": "number",
+                                "minimum": 0.0
+                            },
+                            "description": "Lower bounds ℓ for portfolio weights w ∈ [ℓ, u]"
+                        },
+                        "upper_bounds": {
+                            "type": "array",
+                            "items": {
+                                "type": "number",
+                                "minimum": 0.0,
+                                "maximum": 1.0
+                            },
+                            "description": "Upper bounds u for portfolio weights w ∈ [ℓ, u]"
+                        }
+                    }
+                },
+                "budget_eq": {
+                    "type": "object",
+                    "required": [
+                        "weights_sum_to_one",
+                        "no_short"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "weights_sum_to_one": {
+                            "type": "boolean",
+                            "description": "Enforce 1ᵀw = 1 constraint"
+                        },
+                        "no_short": {
+                            "type": "boolean",
+                            "description": "Enforce w ≥ 0 (no short selling)"
+                        }
+                    }
+                }
+            }
+        },
+        "solver": {
+            "type": "object",
+            "required": [
+                "name",
+                "tolerance",
+                "iteration_max"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "enum": [
+                        "scipy",
+                        "mock"
+                    ],
+                    "description": "LP solver backend name"
+                },
+                "tolerance": {
+                    "type": "number",
+                    "minimum": 1e-12,
+                    "maximum": 1e-6,
+                    "description": "Solver numerical tolerance"
+                },
+                "iteration_max": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 10000,
+                    "description": "Maximum solver iterations"
+                },
+                "method": {
+                    "type": "string",
+                    "enum": [
+                        "highs",
+                        "highs-ds",
+                        "highs-ipm",
+                        "revised simplex"
+                    ],
+                    "description": "LP solver method (scipy-specific)"
+                }
+            }
+        },
+        "kelly_scale": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "s_max"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable Kelly scaling after CVaR optimization"
+                },
+                "s_max": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 2.0,
+                    "description": "Maximum Kelly scale factor s ∈ [0, s_max]"
+                }
+            }
+        },
+        "tca_model": {
+            "type": "object",
+            "required": [
+                "piecewise_knots_bps"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "piecewise_knots_bps": {
+                    "type": "array",
+                    "items": {
+                        "type": "number",
+                        "minimum": 0.0
+                    },
+                    "minItems": 2,
+                    "description": "Piecewise linear TCA knots in basis points"
+                },
+                "liquidity_penalty_factor": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "description": "Liquidity penalty multiplier for TCA model"
+                }
+            }
+        }
+    }
+}

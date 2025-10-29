@@ -1,0 +1,6 @@
+# Staging override enabling numeric equivalence probe (E-S3.2 experiment)
+xai:
+  equivalence_probe:
+    enabled: true
+    sample_rate: 0.01
+    scopes: ["kelly", "cvar", "tca"]

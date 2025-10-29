@@ -1,0 +1,16 @@
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": 1640995200000,
+  "source": "account_observer",
+  "version": "1.0.0",
+  "event_type": "EVT:TRADE_EXECUTED",
+  "payload": {
+    "symbol": "BTCUSDT",
+    "side": "buy",
+    "price": "50000.00",
+    "quantity": "0.00100000",
+    "ts": 1640995200000,
+    "fees": "0.00025000",
+    "venue": "binance"
+  }
+}

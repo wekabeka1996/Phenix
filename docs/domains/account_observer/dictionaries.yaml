@@ -1,0 +1,252 @@
+# Словники домену Account Observer
+
+# Конфігураційні словники
+config:
+  # Режими роботи
+  trading_modes:
+    live: "live"
+    testnet: "testnet"
+    hybrid_live: "hybrid_live"
+    hybrid_testnet: "hybrid_testnet"
+
+  # Інтервали опитування (секунди)
+  poll_intervals:
+    fast: 1
+    normal: 5
+    slow: 10
+    very_slow: 30
+
+  # Ліміт трейдів для отримання за раз
+  trade_limits:
+    minimal: 10
+    standard: 50
+    extended: 100
+    maximum: 500
+
+  # Максимальна кількість кешованих ID трейдів (автоматичне очищення при потребі)
+  max_cached_trade_ids:
+    small: 1000
+    medium: 5000
+    large: 10000
+    xlarge: 50000
+
+  # Конфігурація Binance API
+  binance_api_structure:
+    live:
+      api_key: "BINANCE_LIVE_API_KEY"
+      api_secret: "BINANCE_LIVE_API_SECRET"
+    testnet:
+      api_key: "BINANCE_TESTNET_API_KEY"
+      api_secret: "BINANCE_TESTNET_API_SECRET"
+
+  # Структура конфігурації account_observer
+  account_observer_structure:
+    poll_interval: 5
+    symbols: ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+    trade_limit: 50
+
+# Словник подій FSM
+events:
+  # Вихідні події
+  outgoing:
+    trade_executed:
+      name: "EVT:TRADE_EXECUTED"
+      description: "Подія про виконання торгової операції"
+      payload_schema: "trade_executed_payload"
+      frequency: "high"
+      priority: "normal"
+
+  # Вхідні події (якщо будуть)
+  incoming: {}
+
+# Словник типів даних
+data_types:
+  # Типи сторін торгівлі
+  trade_sides:
+    buy: "buy"
+    sell: "sell"
+
+  # Типи комісій
+  commission_types:
+    maker: "maker"
+    taker: "taker"
+
+  # Торгові майданчики
+  venues:
+    binance: "binance"
+    binance_testnet: "binance_testnet"
+
+# Словник символів для моніторингу
+symbols:
+  # Основні криптовалюти
+  major_crypto:
+    - BTCUSDT
+    - ETHUSDT
+    - BNBUSDT
+    - ADAUSDT
+    - SOLUSDT
+    - DOTUSDT
+    - LINKUSDT
+    - LTCUSDT
+
+  # Altcoins середньої капіталізації
+  mid_cap:
+    - AVAXUSDT
+    - MATICUSDT
+    - ALGOUSDT
+    - VETUSDT
+    - ICPUSDT
+    - FILUSDT
+    - TRXUSDT
+    - ETCUSDT
+
+  # Stablecoins
+  stables:
+    - BUSDUSDT
+    - USDCUSDT
+    - DAIUSDT
+
+# Словник конфігурації помилок
+error_codes:
+  api_connection_error: "AO001"
+  api_rate_limit_error: "AO002"
+  api_authentication_error: "AO003"
+  invalid_trade_data: "AO004"
+  deduplication_failure: "AO005"
+  configuration_error: "AO006"
+  memory_limit_exceeded: "AO007"
+
+error_messages:
+  AO001: "Не вдалося підключитися до Binance API"
+  AO002: "Перевищено ліміт запитів до API"
+  AO003: "Помилка аутентифікації API ключів"
+  AO004: "Отримано невалідні дані трейду"
+  AO005: "Помилка системи дедуплікації"
+  AO006: "Невалідна конфігурація домену"
+  AO007: "Перевищено ліміт пам'яті для кешу"
+
+# Словник метрик моніторингу
+metrics:
+  # Лічильники
+  counters:
+    trades_processed: "account_observer_trades_processed_total"
+    trades_skipped_duplicates: "account_observer_trades_skipped_duplicates_total"
+    api_calls_total: "account_observer_api_calls_total"
+    api_errors_total: "account_observer_api_errors_total"
+    poll_cycles_total: "account_observer_poll_cycles_total"
+
+  # Гістограми
+  histograms:
+    api_call_duration: "account_observer_api_call_duration_seconds"
+    trade_processing_duration: "account_observer_trade_processing_duration_seconds"
+    poll_cycle_duration: "account_observer_poll_cycle_duration_seconds"
+
+  # Гауги
+  gauges:
+    cached_trade_ids_count: "account_observer_cached_trade_ids_count"
+    active_symbols_count: "account_observer_active_symbols_count"
+    memory_usage_bytes: "account_observer_memory_usage_bytes"
+
+# Словник конфігурації логування
+logging:
+  # Рівні логування
+  levels:
+    debug: "DEBUG"
+    info: "INFO"
+    warning: "WARNING"
+    error: "ERROR"
+    critical: "CRITICAL"
+
+  # Категорії повідомлень
+  categories:
+    api_calls: "api"
+    trade_processing: "trade"
+    deduplication: "dedup"
+    lifecycle: "lifecycle"
+    errors: "error"
+    performance: "perf"
+
+  # Формат повідомлень
+  formats:
+    standard: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    json: '{"timestamp": "%(asctime)s", "logger": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}'
+
+# Словник конфігурації тестування
+testing:
+  # Тестові дані
+  mock_trades:
+    - symbol: "BTCUSDT"
+      id: 12345
+      orderId: 67890
+      price: "50000.00"
+      qty: "0.001"
+      quoteQty: "50.00"
+      commission: "0.00025"
+      commissionAsset: "BNB"
+      time: 1640995200000
+      isBuyer: true
+      isMaker: true
+      isBestMatch: true
+
+    - symbol: "ETHUSDT"
+      id: 12346
+      orderId: 67891
+      price: "3000.00"
+      qty: "0.01"
+      quoteQty: "30.00"
+      commission: "0.00025"
+      commissionAsset: "BNB"
+      time: 1640995260000
+      isBuyer: false
+      isMaker: false
+      isBestMatch: true
+
+  # Тестові сценарії
+  scenarios:
+    normal_operation: "Нормальна робота з новими трейдами"
+    duplicate_trades: "Обробка дублікатів трейдів"
+    api_errors: "Симуляція помилок API"
+    high_volume: "Високий обсяг трейдів"
+    memory_pressure: "Тестування обмежень пам'яті"
+
+# Словник конфігурації безпеки
+security:
+  # Мінімальні дозволи API ключів
+  required_permissions:
+    - "Read Info"        # Для читання балансу
+    - "Enable Spot & Margin Trading"  # Для торгівлі (якщо потрібно)
+    - "Enable Futures"   # Для ф'ючерсів
+    - "Enable Reading"   # Для читання трейдів
+
+  # Час життя кешу (секунди)
+  cache_ttl:
+    trade_ids: 86400    # 24 години
+    api_responses: 300  # 5 хвилин
+
+  # Ліміт швидкості
+  rate_limits:
+    api_calls_per_minute: 1200
+    api_calls_per_hour: 72000
+
+# Словник конфігурації продуктивності
+performance:
+  # Цільові метрики SLA
+  targets:
+    data_freshness_seconds: 35
+    deduplication_accuracy: 1.0
+    availability_percentage: 99.5
+    api_response_time_median_seconds: 5
+
+  # Пороги попереджень
+  thresholds:
+    high_api_latency_ms: 10000
+    high_memory_usage_mb: 100
+    high_error_rate_percentage: 5
+    high_duplicate_rate_percentage: 1
+
+  # Оптимізації
+  optimizations:
+    batch_size: 50
+    parallel_requests: 3
+    cache_cleanup_interval_minutes: 60</content>
+<parameter name="filePath">c:\Users\job11\Music\Olimp_v1\docs\domains\account_observer\dictionaries.yaml

@@ -1,0 +1,354 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "Observability Jobs Configuration Schema",
+    "description": "Schema for S2-D calibration, drift detection and observability jobs with NO-DEFAULTS policy",
+    "required": [
+        "config_version",
+        "jobs"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "config_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "description": "Configuration schema version"
+        },
+        "jobs": {
+            "type": "object",
+            "description": "Job configurations for calibration and drift monitoring",
+            "required": [
+                "maker_calibration"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "maker_calibration": {
+                    "$ref": "#/definitions/CalibrationJobConfig"
+                },
+                "volatility_calibration": {
+                    "$ref": "#/definitions/CalibrationJobConfig"
+                },
+                "regime_calibration": {
+                    "$ref": "#/definitions/CalibrationJobConfig"
+                }
+            }
+        },
+        "xai": {
+            "type": "object",
+            "description": "XAI event configuration for calibration monitoring",
+            "additionalProperties": false,
+            "properties": {
+                "calibration_events": {
+                    "type": "object",
+                    "required": [
+                        "enabled",
+                        "min_event_interval_seconds"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "min_event_interval_seconds": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "include_reliability_curve": {
+                            "type": "boolean"
+                        },
+                        "include_drift_diagnostics": {
+                            "type": "boolean"
+                        }
+                    }
+                }
+            }
+        },
+        "alerts": {
+            "type": "object",
+            "description": "Alerting configuration for calibration monitoring",
+            "additionalProperties": false,
+            "properties": {
+                "calibration": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "brier_degradation": {
+                            "$ref": "#/definitions/AlertConfig"
+                        },
+                        "drift_detection": {
+                            "$ref": "#/definitions/DriftAlertConfig"
+                        },
+                        "recalibration": {
+                            "$ref": "#/definitions/RecalibrationAlertConfig"
+                        }
+                    }
+                }
+            }
+        },
+        "persistence": {
+            "type": "object",
+            "description": "Persistence configuration for calibration data",
+            "additionalProperties": false,
+            "properties": {
+                "calibration_history": {
+                    "type": "object",
+                    "required": [
+                        "enabled",
+                        "retention_days",
+                        "snapshot_interval_hours"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "retention_days": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "snapshot_interval_hours": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                },
+                "artifacts": {
+                    "type": "object",
+                    "required": [
+                        "enabled",
+                        "output_directory",
+                        "formats"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "output_directory": {
+                            "type": "string"
+                        },
+                        "formats": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "json",
+                                    "csv",
+                                    "parquet"
+                                ]
+                            },
+                            "minItems": 1
+                        },
+                        "include_raw_data": {
+                            "type": "boolean"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "CalibrationJobConfig": {
+            "type": "object",
+            "description": "Configuration for calibration monitoring job",
+            "required": [
+                "enabled",
+                "experiment_id",
+                "update_interval_minutes",
+                "min_observations",
+                "max_observations",
+                "brier_target",
+                "brier_warning_threshold",
+                "brier_critical_threshold",
+                "drift_sensitivity",
+                "drift_threshold",
+                "glr_window_size",
+                "glr_alpha",
+                "recalibration_method",
+                "recalibration_enabled",
+                "recalibration_min_drift",
+                "reliability_bins",
+                "bin_min_samples"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable this calibration job"
+                },
+                "experiment_id": {
+                    "type": "string",
+                    "description": "Unique experiment identifier for XAI tracking"
+                },
+                "update_interval_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1440,
+                    "description": "Job update frequency in minutes"
+                },
+                "min_observations": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "description": "Minimum observations required for analysis"
+                },
+                "max_observations": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "description": "Maximum observations in rolling window"
+                },
+                "brier_target": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Target Brier score for good calibration"
+                },
+                "brier_warning_threshold": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Warning threshold for Brier score degradation"
+                },
+                "brier_critical_threshold": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Critical threshold for Brier score"
+                },
+                "drift_sensitivity": {
+                    "type": "number",
+                    "minimum": 0.001,
+                    "maximum": 0.1,
+                    "description": "Page-Hinkley drift sensitivity parameter"
+                },
+                "drift_threshold": {
+                    "type": "number",
+                    "minimum": 1.0,
+                    "maximum": 10.0,
+                    "description": "Page-Hinkley detection threshold"
+                },
+                "glr_window_size": {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 1000,
+                    "description": "GLR test window size"
+                },
+                "glr_alpha": {
+                    "type": "number",
+                    "minimum": 0.001,
+                    "maximum": 0.1,
+                    "description": "GLR test significance level"
+                },
+                "recalibration_method": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "platt_scaling",
+                        "isotonic",
+                        "hybrid"
+                    ],
+                    "description": "Recalibration method"
+                },
+                "recalibration_enabled": {
+                    "type": "boolean",
+                    "description": "Enable automatic recalibration"
+                },
+                "recalibration_min_drift": {
+                    "type": "number",
+                    "minimum": 0.01,
+                    "maximum": 0.5,
+                    "description": "Minimum drift to trigger recalibration"
+                },
+                "reliability_bins": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 20,
+                    "description": "Number of bins for reliability curve"
+                },
+                "bin_min_samples": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 100,
+                    "description": "Minimum samples per reliability bin"
+                }
+            }
+        },
+        "AlertConfig": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "threshold_ratio",
+                "min_samples",
+                "cooldown_minutes"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "threshold_ratio": {
+                    "type": "number",
+                    "minimum": 1.0
+                },
+                "min_samples": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "cooldown_minutes": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "DriftAlertConfig": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "drift_threshold",
+                "consecutive_alerts",
+                "cooldown_minutes"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "drift_threshold": {
+                    "type": "string",
+                    "enum": [
+                        "warning",
+                        "significant",
+                        "critical"
+                    ]
+                },
+                "consecutive_alerts": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "cooldown_minutes": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "RecalibrationAlertConfig": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "auto_recalibration_alert",
+                "manual_review_required"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "auto_recalibration_alert": {
+                    "type": "boolean"
+                },
+                "manual_review_required": {
+                    "type": "boolean"
+                }
+            }
+        }
+    }
+}

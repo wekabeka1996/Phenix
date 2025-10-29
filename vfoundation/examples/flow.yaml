@@ -1,0 +1,6 @@
+rid: demo
+steps:
+  - ASK:EVAL risk_strategy->execution_position
+  - DEC:EVAL risk_strategy->execution_position
+  - CMD:OPEN execution_position->any
+  - EVT:POSITION_OPENED execution_position->any

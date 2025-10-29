@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora-core.io/schemas/regime_detected_v1.json",
+  "title": "RegimeDetectedEvent_v1",
+  "description": "Signals the detection of a specific market regime.",
+  "type": "object",
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "description": "Event timestamp (microseconds).",
+      "minimum": 0
+    },
+    "symbol": {
+      "type": "string",
+      "description": "The symbol for which the regime was detected, e.g., 'ETHUSDT'.",
+      "pattern": "^[A-Z0-9]+$",
+      "minLength": 2,
+      "maxLength": 20
+    },
+    "regime": {
+      "type": "string",
+      "enum": [
+        "TREND_UP",
+        "TREND_DOWN",
+        "MEAN_REVERSION",
+        "HIGH_VOLATILITY",
+        "LOW_VOLATILITY",
+        "UNCERTAIN"
+      ],
+      "description": "The identified market regime."
+    },
+    "confidence": {
+      "type": "string",
+      "description": "A string-encoded Decimal representing the confidence in the detection (0.0 to 1.0).",
+      "pattern": "^(0(\\.\\d+)?|1(\\.0+)?)$"
+    },
+    "source_model": {
+      "type": "string",
+      "description": "The name of the model used for detection, e.g., 'HMM_v1'.",
+      "minLength": 1,
+      "maxLength": 50
+    }
+  },
+  "required": ["ts", "symbol", "regime", "confidence", "source_model"],
+  "additionalProperties": false
+}

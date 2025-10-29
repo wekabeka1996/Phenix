@@ -1,0 +1,15 @@
+{
+  "rid": "823313eb-2091-4b33-9edd-9b398fe7f0da",
+  "events_count": 2,
+  "computed_at": "2025-10-14T10:14:10.579508Z",
+  "shadow_mode": true,
+  "integrity": {
+    "hash_chain_valid": true,
+    "all_events_have_hash": true
+  },
+  "why_chain": [
+    "simulate",
+    "ok"
+  ],
+  "events": []
+}

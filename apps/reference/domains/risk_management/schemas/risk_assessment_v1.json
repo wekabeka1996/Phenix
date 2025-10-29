@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "risk_assessment_v1.json",
+  "title": "Risk Assessment Completed Event",
+  "description": "Schema for EVT:RISK_ASSESSMENT_COMPLETED event payload",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Timestamp of risk assessment in milliseconds"
+    },
+    "risk_parameters": {
+      "type": "object",
+      "description": "Calculated risk parameters and limits",
+      "properties": {
+        "kelly_fraction": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Kelly criterion fraction for position sizing (string-encoded Decimal for precision)"
+        },
+        "cvar_limit_usd": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "CVaR limit in USD for risk control (string-encoded Decimal for precision)"
+        },
+        "max_drawdown_percent": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Maximum allowed drawdown percentage (string-encoded Decimal for precision)"
+        },
+        "is_trading_allowed": {
+          "type": "boolean",
+          "description": "Whether trading is allowed based on current risk assessment"
+        }
+      },
+      "required": ["kelly_fraction", "cvar_limit_usd", "max_drawdown_percent", "is_trading_allowed"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["symbol", "ts", "risk_parameters"],
+  "additionalProperties": false
+}

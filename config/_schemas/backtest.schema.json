@@ -1,0 +1,420 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://schemas.trading-system.local/shared/backtest/backtest.schema.json",
+    "title": "Backtesting Configuration Schema",
+    "description": "Configuration schema for T1.4 Backtesting MVP pipeline",
+    "type": "object",
+    "required": [
+        "symbol",
+        "hmm",
+        "hawkes",
+        "maker",
+        "routing",
+        "risk",
+        "tca"
+    ],
+    "properties": {
+        "symbol": {
+            "type": "string",
+            "description": "Trading symbol for backtesting",
+            "pattern": "^[A-Z]{3,4}-[A-Z]{4}$",
+            "examples": [
+                "BTC-PERP",
+                "ETH-PERP",
+                "SOL-PERP"
+            ]
+        },
+        "time_range": {
+            "type": "object",
+            "description": "Backtesting time range configuration",
+            "properties": {
+                "start_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Start date in YYYY-MM-DD format"
+                },
+                "end_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "End date in YYYY-MM-DD format"
+                },
+                "tick_interval_ms": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000,
+                    "default": 100,
+                    "description": "Market tick interval in milliseconds"
+                }
+            },
+            "required": [
+                "start_date",
+                "end_date"
+            ]
+        },
+        "hmm": {
+            "type": "object",
+            "description": "Hidden Markov Model configuration for regime detection",
+            "required": [
+                "n_states"
+            ],
+            "properties": {
+                "n_states": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 10,
+                    "default": 3,
+                    "description": "Number of hidden states for market regime"
+                },
+                "covariance_type": {
+                    "type": "string",
+                    "enum": [
+                        "spherical",
+                        "tied",
+                        "diag",
+                        "full"
+                    ],
+                    "default": "diag",
+                    "description": "Covariance matrix type"
+                },
+                "n_iter": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 1000,
+                    "default": 100,
+                    "description": "Maximum EM iterations"
+                },
+                "convergence_threshold": {
+                    "type": "number",
+                    "minimum": 1e-8,
+                    "maximum": 1e-2,
+                    "default": 1e-6,
+                    "description": "EM convergence threshold"
+                }
+            }
+        },
+        "hawkes": {
+            "type": "object",
+            "description": "Hawkes process configuration for arrival intensity",
+            "required": [
+                "mu",
+                "alpha",
+                "beta"
+            ],
+            "properties": {
+                "mu": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "description": "Base arrival intensity (events/second)"
+                },
+                "alpha": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Self-excitation strength"
+                },
+                "beta": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 10.0,
+                    "description": "Decay rate (1/seconds)"
+                },
+                "history_window_s": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600,
+                    "default": 300,
+                    "description": "History window for intensity calculation (seconds)"
+                }
+            }
+        },
+        "maker": {
+            "type": "object",
+            "description": "Maker trading configuration",
+            "required": [
+                "lambda_min"
+            ],
+            "properties": {
+                "lambda_min": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 5.0,
+                    "description": "Minimum hazard rate for maker activation"
+                },
+                "quote_optimization": {
+                    "$ref": "#/$defs/MakerQuoteConfig"
+                },
+                "kelly_clamp": {
+                    "type": "object",
+                    "properties": {
+                        "min_f": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.0,
+                            "description": "Minimum Kelly fraction"
+                        },
+                        "max_f": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 10.0,
+                            "default": 2.0,
+                            "description": "Maximum Kelly fraction clamp"
+                        }
+                    }
+                },
+                "canary": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Enable canary deployment in backtest"
+                        },
+                        "shadow_mode": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Run in shadow mode (no actual trades)"
+                        }
+                    }
+                }
+            }
+        },
+        "routing": {
+            "type": "object",
+            "description": "Order routing configuration",
+            "properties": {
+                "maker_enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable maker order routing"
+                },
+                "taker_enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable taker order routing"
+                },
+                "fallback_policy": {
+                    "type": "string",
+                    "enum": [
+                        "cancel",
+                        "taker",
+                        "delay"
+                    ],
+                    "default": "taker",
+                    "description": "Fallback when maker is not viable"
+                },
+                "decision_timeout_ms": {
+                    "type": "number",
+                    "minimum": 1.0,
+                    "maximum": 1000.0,
+                    "default": 10.0,
+                    "description": "Router decision timeout"
+                }
+            }
+        },
+        "risk": {
+            "type": "object",
+            "description": "Risk management configuration",
+            "required": [
+                "optimization_budget_ms",
+                "violation_tolerance_bps"
+            ],
+            "properties": {
+                "optimization_budget_ms": {
+                    "type": "number",
+                    "minimum": 1.0,
+                    "maximum": 500.0,
+                    "description": "Time budget for CVaR optimization"
+                },
+                "violation_tolerance_bps": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 100.0,
+                    "description": "CVaR violation tolerance in basis points"
+                },
+                "position_limits": {
+                    "type": "object",
+                    "properties": {
+                        "max_position_size": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "description": "Maximum position size in base currency"
+                        },
+                        "max_notional_usd": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "description": "Maximum notional in USD"
+                        },
+                        "max_drawdown_bps": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 10000.0,
+                            "default": 500.0,
+                            "description": "Maximum drawdown threshold in bps"
+                        }
+                    }
+                }
+            }
+        },
+        "tca": {
+            "type": "object",
+            "description": "Transaction Cost Analysis configuration",
+            "properties": {
+                "maker_fee_bps": {
+                    "type": "number",
+                    "minimum": -10.0,
+                    "maximum": 10.0,
+                    "default": -0.5,
+                    "description": "Maker fee/rebate in bps (negative = rebate)"
+                },
+                "taker_fee_bps": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 100.0,
+                    "default": 5.0,
+                    "description": "Taker fee in bps"
+                },
+                "market_impact": {
+                    "type": "object",
+                    "properties": {
+                        "linear_coefficient": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.1,
+                            "description": "Linear market impact coefficient"
+                        },
+                        "sqrt_coefficient": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.05,
+                            "description": "Square-root market impact coefficient"
+                        }
+                    }
+                }
+            }
+        },
+        "performance": {
+            "type": "object",
+            "description": "Performance and SLA configuration",
+            "properties": {
+                "pipeline_slo": {
+                    "type": "object",
+                    "properties": {
+                        "p50_latency_ms": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 1000.0,
+                            "default": 50.0,
+                            "description": "Target p50 pipeline latency in ms"
+                        },
+                        "p95_latency_ms": {
+                            "type": "number",
+                            "minimum": 1.0,
+                            "maximum": 5000.0,
+                            "default": 200.0,
+                            "description": "Target p95 pipeline latency in ms"
+                        }
+                    }
+                },
+                "kpi_thresholds": {
+                    "type": "object",
+                    "properties": {
+                        "min_hit_rate": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.75,
+                            "description": "Minimum acceptable hit rate"
+                        },
+                        "max_cancel_rate": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3,
+                            "description": "Maximum acceptable cancel rate"
+                        },
+                        "min_edge_bps": {
+                            "type": "number",
+                            "minimum": -100.0,
+                            "maximum": 100.0,
+                            "default": 0.0,
+                            "description": "Minimum expected edge in bps"
+                        }
+                    }
+                }
+            }
+        },
+        "output": {
+            "type": "object",
+            "description": "Output and artifact configuration",
+            "properties": {
+                "save_xai_traces": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Save XAI decision traces"
+                },
+                "xai_sample_rate": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.01,
+                    "description": "XAI trace sampling rate (1% default)"
+                },
+                "save_market_data": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Save market data ticks"
+                },
+                "compression": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "gzip",
+                        "bz2"
+                    ],
+                    "default": "gzip",
+                    "description": "Output file compression"
+                }
+            }
+        }
+    },
+    "$defs": {
+        "MakerQuoteConfig": {
+            "type": "object",
+            "description": "Maker quote optimization configuration",
+            "properties": {
+                "base_size": {
+                    "type": "number",
+                    "minimum": 0.1,
+                    "maximum": 10000.0,
+                    "default": 100.0,
+                    "description": "Base position size"
+                },
+                "adverse_selection_factor": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": 0.05,
+                    "description": "Adverse selection adjustment factor"
+                },
+                "volatility_lookback_s": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600,
+                    "default": 300,
+                    "description": "Volatility estimation lookback window"
+                },
+                "edge_threshold_bps": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 100.0,
+                    "default": 1.0,
+                    "description": "Minimum edge threshold for quoting"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "trade_executed_v1.json",
+  "title": "Trade Executed Event",
+  "description": "Schema for EVT:TRADE_EXECUTED event payload describing a single executed trade",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["buy", "sell"],
+      "description": "Trade direction: 'buy' for long positions, 'sell' for short positions"
+    },
+    "price": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Execution price per unit (string-encoded Decimal for precision)"
+    },
+    "quantity": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Executed quantity (positive for buy, negative for sell) (string-encoded Decimal for precision)"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Timestamp of trade execution in milliseconds"
+    },
+    "fees": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Trading fees paid for this trade (optional, defaults to 0) (string-encoded Decimal for precision)",
+      "default": "0.0"
+    },
+    "venue": {
+      "type": "string",
+      "description": "Trading venue/exchange where the trade was executed"
+    }
+  },
+  "required": ["symbol", "side", "price", "quantity", "ts", "venue"],
+  "additionalProperties": false
+}

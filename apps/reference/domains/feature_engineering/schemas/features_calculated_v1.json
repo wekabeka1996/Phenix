@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "features_calculated_v1.json",
+  "title": "Features Calculated Event",
+  "description": "Schema for EVT:FEATURES_CALCULATED event payload",
+  "type": "object",
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "description": "Timestamp of feature calculation in milliseconds"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
+    },
+    "features": {
+      "type": "object",
+      "description": "Calculated features object",
+      "properties": {
+        "obi": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Order Book Imbalance indicator (string-encoded Decimal for precision)"
+        },
+        "tfi": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Trade Flow Imbalance indicator (string-encoded Decimal for precision)"
+        },
+        "delta_price": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Price change delta (string-encoded Decimal for precision)"
+        },
+        "absorption": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Market absorption indicator (string-encoded Decimal for precision)"
+        }
+      },
+      "required": ["obi", "tfi", "delta_price", "absorption"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["ts", "symbol", "features"],
+  "additionalProperties": false
+}

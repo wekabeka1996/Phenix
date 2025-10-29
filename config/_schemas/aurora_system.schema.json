@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/aurora_system.schema.json",
+  "title": "AuroraSystemConfig",
+  "type": "object",
+  "required": [
+    "config_version",
+    "sequential_tests",
+    "risk_core",
+    "kelly",
+    "calibrator",
+    "hawkes",
+    "hotreload_whitelist"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "hawkes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "kernel",
+        "eta_max",
+        "update_interval_ms",
+        "window_ms",
+        "bivariate"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "kernel": {
+          "type": "object",
+          "required": [
+            "decay_beta_ms"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "decay_beta_ms": {
+              "type": "number",
+              "minimum": 0.1
+            }
+          }
+        },
+        "eta_max": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "update_interval_ms": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "window_ms": {
+          "type": "integer",
+          "minimum": 100
+        },
+        "bivariate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "sequential_tests": {
+      "type": "object",
+      "required": [
+        "wald",
+        "glr"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "wald": {
+          "type": "object",
+          "required": [
+            "alpha",
+            "beta",
+            "mu0",
+            "mu1",
+            "sigma"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "alpha": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "beta": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "mu0": {
+              "type": "number"
+            },
+            "mu1": {
+              "type": "number"
+            },
+            "sigma": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "glr": {
+          "type": "object",
+          "required": [
+            "alpha",
+            "beta",
+            "min_samples"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "alpha": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "beta": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "min_samples": {
+              "type": "integer",
+              "minimum": 3
+            }
+          }
+        }
+      }
+    },
+    "risk_core": {
+      "type": "object",
+      "required": [
+        "cvar_threshold_bps",
+        "stress_scenarios",
+        "inventory_limits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cvar_threshold_bps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "stress_scenarios": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "inventory_limits": {
+          "type": "object",
+          "required": [
+            "max_abs_position",
+            "max_daily_notional"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "max_abs_position": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_daily_notional": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "kelly": {
+      "type": "object",
+      "required": [
+        "fraction_cap",
+        "decay_half_life_days"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fraction_cap": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "decay_half_life_days": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "calibrator": {
+      "type": "object",
+      "required": [
+        "state_store"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state_store": {
+          "type": "object",
+          "required": [
+            "backend",
+            "versioning",
+            "retention_days"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "type": "string",
+              "enum": [
+                "sqlite",
+                "s3",
+                "gcs"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "bucket": {
+              "type": "string"
+            },
+            "versioning": {
+              "type": "boolean"
+            },
+            "retention_days": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "backend": {
+                    "const": "sqlite"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "path"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "backend": {
+                    "enum": [
+                      "s3",
+                      "gcs"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "bucket"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "hotreload_whitelist": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Keys permitted for hot reload. Include hawkes.* keys when enabling Hawkes (ADR-S2-B)."
+    }
+  }
+}

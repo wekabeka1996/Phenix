@@ -1,0 +1,41 @@
+{
+  "rid": "test-e2e-001",
+  "events_count": 28,
+  "computed_at": "2025-10-14T10:55:28.932579Z",
+  "shadow_mode": true,
+  "integrity": {
+    "hash_chain_valid": true,
+    "all_events_have_hash": true
+  },
+  "why_chain": [
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK",
+    "OPEN_OK"
+  ],
+  "events": []
+}
