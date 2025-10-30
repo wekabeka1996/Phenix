@@ -5,6 +5,7 @@ Hybrid approach: Uses REST API to poll klines, bookTicker, and trades to calcula
 real-time features (OBI, TFI, delta_price) from live Binance data.
 Emits EVT:MARKET_TICK_RECEIVED with accurate feature data.
 """
+
 import asyncio
 import decimal
 import logging
@@ -23,9 +24,11 @@ LOG = logging.getLogger(__name__)
 # Check if unicorn_binance_websocket_api is available (for backward compatibility testing)
 try:
     import unicorn_binance_websocket_api
+
     HAS_UNICORN = True
 except ImportError:
     HAS_UNICORN = False
+
 
 class MarketDataConnector:
     """
@@ -52,21 +55,25 @@ class MarketDataConnector:
         self.thread: Optional[threading.Thread] = None
         self.running = False
         self.data_source_tag = "testnet"
-        
-        system_config = config.get('system', {})
-        trading_section = system_config.get('trading', {})
-        self.symbols = trading_section.get('symbols_to_track', ["BTCUSDT", "ETHUSDT"])
-        
+
+        system_config = config.get("system", {})
+        trading_section = system_config.get("trading", {})
+        self.symbols = trading_section.get("symbols_to_track", ["BTCUSDT", "ETHUSDT"])
+
         # Configure polling interval - now faster for WebSocket-like responsiveness
-        market_data_config = trading_section.get('market_data', {})
-        self.poll_interval_sec = market_data_config.get('poll_interval_sec', 2.0)  # 2s instead of 5s
-        self.websocket_streams = market_data_config.get('websocket_streams', ["bookTicker", "trade"])
+        market_data_config = trading_section.get("market_data", {})
+        self.poll_interval_sec = market_data_config.get(
+            "poll_interval_sec", 2.0
+        )  # 2s instead of 5s
+        self.websocket_streams = market_data_config.get(
+            "websocket_streams", ["bookTicker", "trade"]
+        )
 
         # Initialize the BinanceAdapter based on the domain-level trading_mode
         mode = "live"  # Default for market_data domain
-        
+
         # Try to get domain-specific mode first
-        if hasattr(config, 'get_domain_mode'):
+        if hasattr(config, "get_domain_mode"):
             try:
                 mode = config.get_domain_mode("market_data")
                 LOG.info(f"MarketDataConnector using domain-specific mode: {mode}")
@@ -77,9 +84,9 @@ class MarketDataConnector:
             # Fallback to global mode
             mode = config.get("trading_mode", "live")
             LOG.info(f"MarketDataConnector using global trading_mode: {mode}")
-        
+
         api_config = config.get("binance_api", {})
-        
+
         env_config = {}
         if mode in ["live", "hybrid_live_data_testnet_exec"]:
             env_config = api_config.get("live", {})
@@ -90,13 +97,19 @@ class MarketDataConnector:
             self.data_source_tag = "testnet"
             LOG.info("MarketDataConnector is configured to use TESTNET data source.")
 
-        if not all([env_config.get("api_key"), env_config.get("api_secret"), env_config.get("rest_url")]):
+        if not all(
+            [
+                env_config.get("api_key"),
+                env_config.get("api_secret"),
+                env_config.get("rest_url"),
+            ]
+        ):
             raise ValueError(f"API configuration for '{mode}' mode is incomplete.")
 
         self.adapter = BinanceAdapter(
             api_key=env_config["api_key"],
             api_secret=env_config["api_secret"],
-            rest_url=env_config["rest_url"]
+            rest_url=env_config["rest_url"],
         )
 
         # Initialize WebSocket aggregator for real-time data collection
@@ -112,7 +125,9 @@ class MarketDataConnector:
         self.running = True
         self.thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.thread.start()
-        LOG.info(f"MarketDataConnector started for symbols: {self.symbols} with {self.poll_interval_sec}s interval.")
+        LOG.info(
+            f"MarketDataConnector started for symbols: {self.symbols} with {self.poll_interval_sec}s interval."
+        )
 
     def stop(self) -> None:
         """Stop the data polling thread."""
@@ -122,7 +137,8 @@ class MarketDataConnector:
         # Close the adapter's session (without asyncio.run() to avoid conflicts)
         try:
             import sys
-            if sys.platform == 'win32':
+
+            if sys.platform == "win32":
                 # On Windows, use a safer approach
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -161,10 +177,10 @@ class MarketDataConnector:
                 # Fetch REAL bid/ask sizes from bookTicker
                 book_data = await self.adapter.get_book_ticker(symbol=symbol)
                 if book_data:
-                    bid_price = book_data.get('bidPrice', '0')
-                    bid_size = book_data.get('bidQty', '0')
-                    ask_price = book_data.get('askPrice', '0')
-                    ask_size = book_data.get('askQty', '0')
+                    bid_price = book_data.get("bidPrice", "0")
+                    bid_size = book_data.get("bidQty", "0")
+                    ask_price = book_data.get("askPrice", "0")
+                    ask_size = book_data.get("askQty", "0")
                     ts = int(time.time() * 1000)
 
                     # Feed data to aggregator
@@ -173,19 +189,25 @@ class MarketDataConnector:
                     )
 
                 # Fetch REAL recent trades
-                trades_data = await self.adapter.get_recent_trades(symbol=symbol, limit=50)
+                trades_data = await self.adapter.get_recent_trades(
+                    symbol=symbol, limit=50
+                )
                 if trades_data:
                     for trade in trades_data:
                         self.aggregator.on_trade(
                             symbol,
-                            price=trade.get('price', '0'),
-                            quantity=trade.get('qty', '0'),
-                            is_buyer_maker=trade.get('m', True),  # m=True means buyer is maker (sell)
-                            ts=trade.get('time', int(time.time() * 1000))
+                            price=trade.get("price", "0"),
+                            quantity=trade.get("qty", "0"),
+                            is_buyer_maker=trade.get(
+                                "m", True
+                            ),  # m=True means buyer is maker (sell)
+                            ts=trade.get("time", int(time.time() * 1000)),
                         )
 
                 # Fetch klines for delta_price calculation
-                klines = await self.adapter.get_klines(symbol=symbol, interval="1m", limit=2)
+                klines = await self.adapter.get_klines(
+                    symbol=symbol, interval="1m", limit=2
+                )
                 if klines and len(klines) >= 2:
                     # Update price history
                     for kline in klines:
@@ -194,9 +216,9 @@ class MarketDataConnector:
                         self.aggregator.on_trade(
                             symbol,
                             price=str(price),
-                            quantity='0',
+                            quantity="0",
                             is_buyer_maker=False,
-                            ts=ts
+                            ts=ts,
                         )
 
                 # Get aggregated market tick with REAL features
@@ -213,25 +235,25 @@ class MarketDataConnector:
         """Emit a market tick event with real feature data."""
         try:
             payload = {
-                "ts": tick['ts'],
+                "ts": tick["ts"],
                 "symbol": symbol,
-                "price": tick['price'],
-                "bid": tick['bid'],
-                "ask": tick['ask'],
-                "mid": tick['mid'],
-                "bid_size": tick['bid_size'],    # ✅ NOW REAL!
-                "ask_size": tick['ask_size'],    # ✅ NOW REAL!
-                "buy_volume": tick['buy_volume'],  # ✅ NOW REAL!
-                "sell_volume": tick['sell_volume'],  # ✅ NOW REAL!
+                "price": tick["price"],
+                "bid": tick["bid"],
+                "ask": tick["ask"],
+                "mid": tick["mid"],
+                "bid_size": tick["bid_size"],  # ✅ NOW REAL!
+                "ask_size": tick["ask_size"],  # ✅ NOW REAL!
+                "buy_volume": tick["buy_volume"],  # ✅ NOW REAL!
+                "sell_volume": tick["sell_volume"],  # ✅ NOW REAL!
                 "data_type": "market_tick_aggregated",
-                "data_source": tick['data_source'],
-                "debug_info": f"BID/ASK: {tick['bid_ask_count']}, Trades: {tick['trade_count']}"
+                "data_source": tick["data_source"],
+                "debug_info": f"BID/ASK: {tick['bid_ask_count']}, Trades: {tick['trade_count']}",
             }
 
             self.fsm.emit(
                 event_name="EVT:MARKET_TICK_RECEIVED",
                 payload=payload,
-                why=f"Real-time market tick for {symbol} from {tick['data_source']}"
+                why=f"Real-time market tick for {symbol} from {tick['data_source']}",
             )
 
             LOG.info(
@@ -240,7 +262,6 @@ class MarketDataConnector:
                 f"trades: BUY={tick['trade_count'].split(':')[1].split()[0]} "
                 f"SELL={tick['trade_count'].split(':')[2]}"
             )
-
 
         except Exception as e:
             LOG.error(f"Error emitting market tick for {symbol}: {e}", exc_info=True)

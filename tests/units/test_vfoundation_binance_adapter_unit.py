@@ -9,8 +9,15 @@ import pathlib
 import sys
 
 # Load module by file path so tests don't depend on package installation
-_p = pathlib.Path(__file__).resolve().parents[2] / "vfoundation" / "adapters" / "binance_adapter.py"
-spec = importlib.util.spec_from_file_location("vfoundation.adapters.binance_adapter", str(_p))
+_p = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "vfoundation"
+    / "adapters"
+    / "binance_adapter.py"
+)
+spec = importlib.util.spec_from_file_location(
+    "vfoundation.adapters.binance_adapter", str(_p)
+)
 ba_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ba_mod)
 sys.modules["vfoundation.adapters.binance_adapter"] = ba_mod
@@ -36,12 +43,15 @@ def test_to_decimal_and_rounding_and_errors():
     assert a._to_decimal({"markPrice": "3.14"}) == Decimal("3.14")
     # rounding step
     from decimal import Decimal as D
+
     r = a._round_step(D("123.456"), D("0.01"))
     assert isinstance(r, D)
 
 
 def test_sign_build_is_deterministic(monkeypatch):
-    a = ba_mod.BinanceAdapter(api_key="KKEY", api_secret="SSECRET", base_url="https://test")
+    a = ba_mod.BinanceAdapter(
+        api_key="KKEY", api_secret="SSECRET", base_url="https://test"
+    )
     # set time to fixed value
     monkeypatch.setattr(ba_mod.time, "time", lambda: 1000.0)
     a._time_offset_ms = 0
@@ -56,7 +66,9 @@ def test_sign_build_is_deterministic(monkeypatch):
     base_norm["timestamp"] = str(ts)
     base_norm.setdefault("recvWindow", str(a._recv_window_ms))
     expected_qs = urlencode(base_norm, doseq=True, quote_via=quote_plus)
-    expected_sig = hmac.new(a.api_secret, expected_qs.encode(), hashlib.sha256).hexdigest()
+    expected_sig = hmac.new(
+        a.api_secret, expected_qs.encode(), hashlib.sha256
+    ).hexdigest()
 
     assert final["signature"] == expected_sig
     assert expected_sig in qs
@@ -65,6 +77,7 @@ def test_sign_build_is_deterministic(monkeypatch):
 def test_is_code_1021_and_make_error():
     err = {"code": -1021, "msg": "time"}
     assert ba_mod._is_code_1021(err) is True
+
     class DummyResp:
         status = 400
 

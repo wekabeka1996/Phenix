@@ -7,7 +7,16 @@ import os
 # load module directly to avoid ambiguous imports
 spec = importlib.util.spec_from_file_location(
     "apps.reference.domains.execution_position.fsm_manage",
-    os.path.join(os.path.dirname(__file__), "..", "..", "apps", "reference", "domains", "execution_position", "fsm_manage.py"),
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "apps",
+        "reference",
+        "domains",
+        "execution_position",
+        "fsm_manage.py",
+    ),
 )
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -67,8 +76,17 @@ def test_emit_place_order_message_contains_expected_fields():
     fsm.position_qty = Decimal("0.5")
     fsm.position_side = "BUY"
 
-    msg = Message(op="EVT", verb="FILL", src="test", dst="manage", rid="rid-1", pld={"symbol": "BTCUSDT"})
-    dec = fsm._emit_place_order(msg, "cid123", "LIMIT", "SELL", "0.5", "101.0", "TP bracket")
+    msg = Message(
+        op="EVT",
+        verb="FILL",
+        src="test",
+        dst="manage",
+        rid="rid-1",
+        pld={"symbol": "BTCUSDT"},
+    )
+    dec = fsm._emit_place_order(
+        msg, "cid123", "LIMIT", "SELL", "0.5", "101.0", "TP bracket"
+    )
 
     assert dec.op == "DEC"
     assert dec.verb == "PLACE_ORDER"

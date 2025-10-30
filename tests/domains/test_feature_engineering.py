@@ -1,4 +1,5 @@
 """Unit tests for FeatureEngineering domain."""
+
 import decimal
 import time
 from unittest import mock
@@ -30,7 +31,14 @@ def config():
     return {}
 
 
-def make_tick(ts=None, price="50000.00", bid_size="10", ask_size="8", buy_volume="50", sell_volume="30"):
+def make_tick(
+    ts=None,
+    price="50000.00",
+    bid_size="10",
+    ask_size="8",
+    buy_volume="50",
+    sell_volume="30",
+):
     if ts is None:
         ts = int(time.time() * 1000)
     return {
@@ -49,7 +57,9 @@ def make_tick(ts=None, price="50000.00", bid_size="10", ask_size="8", buy_volume
 
 
 def test_no_symbol_no_emit(fsm, config):
-    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+    from apps.reference.domains.feature_engineering.feature_engineering import (
+        FeatureEngineering,
+    )
 
     fe = FeatureEngineering(fsm=fsm, config=config)
 
@@ -61,7 +71,9 @@ def test_no_symbol_no_emit(fsm, config):
 
 
 def test_first_tick_only_stored(fsm, config):
-    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+    from apps.reference.domains.feature_engineering.feature_engineering import (
+        FeatureEngineering,
+    )
 
     fe = FeatureEngineering(fsm=fsm, config=config)
 
@@ -74,17 +86,35 @@ def test_first_tick_only_stored(fsm, config):
 
 
 def test_calculate_and_emit_features_basic(fsm, config):
-    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+    from apps.reference.domains.feature_engineering.feature_engineering import (
+        FeatureEngineering,
+    )
 
     fe = FeatureEngineering(fsm=fsm, config=config)
 
     ts0 = int(time.time() * 1000)
-    last = make_tick(ts=ts0, price="50000.00", bid_size="10", ask_size="8", buy_volume="50", sell_volume="30")
-    current = make_tick(ts=ts0 + 500, price="50050.00", bid_size="12", ask_size="6", buy_volume="60", sell_volume="20")
+    last = make_tick(
+        ts=ts0,
+        price="50000.00",
+        bid_size="10",
+        ask_size="8",
+        buy_volume="50",
+        sell_volume="30",
+    )
+    current = make_tick(
+        ts=ts0 + 500,
+        price="50050.00",
+        bid_size="12",
+        ask_size="6",
+        buy_volume="60",
+        sell_volume="20",
+    )
 
     fe.last_tick_data["BTCUSDT"] = last
 
-    msg = Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="fe", pld=current)
+    msg = Message(
+        op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="fe", pld=current
+    )
     fe.on_market_tick(msg)
 
     # One FEATURES_CALCULATED should be emitted
@@ -102,7 +132,9 @@ def test_calculate_and_emit_features_basic(fsm, config):
 
 
 def test_delta_price_suppressed_when_time_diff_large(fsm, config):
-    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+    from apps.reference.domains.feature_engineering.feature_engineering import (
+        FeatureEngineering,
+    )
 
     fe = FeatureEngineering(fsm=fsm, config=config)
 
@@ -111,13 +143,17 @@ def test_delta_price_suppressed_when_time_diff_large(fsm, config):
     current = make_tick(ts=ts0 + 2000, price="50050.00")
 
     fe.last_tick_data["BTCUSDT"] = last
-    msg = Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="fe", pld=current)
+    msg = Message(
+        op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="fe", pld=current
+    )
     fe.on_market_tick(msg)
 
     assert len(fsm.emitted) == 1
     _, payload, _ = fsm.emitted[0]
     features = payload["features"]
     assert float(features["delta_price"]) == pytest.approx(0.0, rel=1e-9)
+
+
 """
 Integration test for feature_engineering domain.
 """
@@ -125,25 +161,42 @@ from unittest import mock
 import pytest
 import time
 from vfoundation.core.protocol import Message
-from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+from apps.reference.domains.feature_engineering.feature_engineering import (
+    FeatureEngineering,
+)
+
 
 @pytest.fixture
 def mock_config():
     """Mock configuration for feature engineering tests."""
     return {}
 
+
 class FSMCore:
     """Simple FSM core interface for testing."""
+
     def __init__(self):
         self.listeners = {}
+
     def listen(self, event_name, callback):
         if event_name not in self.listeners:
             self.listeners[event_name] = []
         self.listeners[event_name].append(callback)
+
     def emit(self, event_name, payload, why):
         if event_name in self.listeners:
             for callback in self.listeners[event_name]:
-                callback(Message(op="EVT", verb=event_name.split(":")[1], src="test", dst="any", pld=payload, why=why))
+                callback(
+                    Message(
+                        op="EVT",
+                        verb=event_name.split(":")[1],
+                        src="test",
+                        dst="any",
+                        pld=payload,
+                        why=why,
+                    )
+                )
+
 
 def test_feature_engineering_consumes_tick_and_emits_features(mock_config):
     """Test that feature_engineering consumes a tick and emits features."""
@@ -153,11 +206,35 @@ def test_feature_engineering_consumes_tick_and_emits_features(mock_config):
     feature_component = FeatureEngineering(fsm=fsm, config=mock_config)
 
     # Send two ticks to get a delta_price
-    tick1 = {"ts": int(time.time() * 1000) - 100, "symbol": "BTCUSDT", "price": "50000", "bid_size": "1", "ask_size": "1", "buy_volume": "1", "sell_volume": "1"}
-    tick2 = {"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "price": "50010", "bid_size": "1", "ask_size": "1", "buy_volume": "1", "sell_volume": "1"}
-    
-    feature_component.on_market_tick(Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="test", pld=tick1))
-    feature_component.on_market_tick(Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="test", pld=tick2))
+    tick1 = {
+        "ts": int(time.time() * 1000) - 100,
+        "symbol": "BTCUSDT",
+        "price": "50000",
+        "bid_size": "1",
+        "ask_size": "1",
+        "buy_volume": "1",
+        "sell_volume": "1",
+    }
+    tick2 = {
+        "ts": int(time.time() * 1000),
+        "symbol": "BTCUSDT",
+        "price": "50010",
+        "bid_size": "1",
+        "ask_size": "1",
+        "buy_volume": "1",
+        "sell_volume": "1",
+    }
+
+    feature_component.on_market_tick(
+        Message(
+            op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="test", pld=tick1
+        )
+    )
+    feature_component.on_market_tick(
+        Message(
+            op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="test", pld=tick2
+        )
+    )
 
     mock_listener.assert_called_once()
     features = mock_listener.call_args[0][0].pld["features"]

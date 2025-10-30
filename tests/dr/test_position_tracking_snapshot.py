@@ -3,6 +3,7 @@ Test suite for PositionTracking.get_snapshot() DR functionality.
 
 Validates that snapshots are schema-compliant and preserve Decimal precision.
 """
+
 import json
 import re
 import sys
@@ -22,6 +23,7 @@ from vfoundation.core.protocol import Message
 
 class MockFSMCore:
     """A mock FSMCore for testing purposes."""
+
     def __init__(self) -> None:
         self.listeners: Dict[str, List[Callable[[Any], None]]] = {}
         self.emitted_events: List[Message] = []
@@ -38,7 +40,7 @@ class MockFSMCore:
             src="test",
             dst="any",
             pld=payload,
-            why=why
+            why=why,
         )
         self.emitted_events.append(message)
         if event_name in self.listeners:
@@ -57,11 +59,7 @@ class TestPositionTrackingSnapshot:
     @pytest.fixture
     def config(self):
         """Create test configuration."""
-        return {
-            "system": {
-                "worker_id": "test-worker-001"
-            }
-        }
+        return {"system": {"worker_id": "test-worker-001"}}
 
     @pytest.fixture
     def position_tracking(self, fsm, config):
@@ -90,8 +88,9 @@ class TestPositionTrackingSnapshot:
 
         state_hash = snapshot["state_hash"]
         # Should be "sha256:<64 hex chars>"
-        assert re.match(r"^sha256:[a-f0-9]{64}$", state_hash), \
+        assert re.match(r"^sha256:[a-f0-9]{64}$", state_hash), (
             f"Invalid hash format: {state_hash}"
+        )
 
     def test_snapshot_state_structure(self, position_tracking):
         """Verify state object has correct structure."""
@@ -128,7 +127,7 @@ class TestPositionTrackingSnapshot:
         position_tracking._positions["ETHUSDT"] = {
             "quantity": Decimal("1.234567890123456789"),
             "avg_price": Decimal("3874.115"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
 
         snapshot = position_tracking.get_snapshot()
@@ -166,18 +165,18 @@ class TestPositionTrackingSnapshot:
         position_tracking._positions["ETHUSDT"] = {
             "quantity": Decimal("1.5"),
             "avg_price": Decimal("3800.0"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
         position_tracking._positions["BTCUSDT"] = {
             "quantity": Decimal("-0.05"),
             "avg_price": Decimal("67000.0"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
         # Add near-zero position (should be excluded)
         position_tracking._positions["SOLUSDT"] = {
             "quantity": Decimal("0.0000000001"),
             "avg_price": Decimal("100.0"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
 
         snapshot = position_tracking.get_snapshot()
@@ -193,12 +192,12 @@ class TestPositionTrackingSnapshot:
         position_tracking._positions["ETHUSDT"] = {
             "quantity": Decimal("1.5"),  # Positive = long
             "avg_price": Decimal("3800.0"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
         position_tracking._positions["BTCUSDT"] = {
             "quantity": Decimal("-0.05"),  # Negative = short
             "avg_price": Decimal("67000.0"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
 
         snapshot = position_tracking.get_snapshot()
@@ -213,7 +212,7 @@ class TestPositionTrackingSnapshot:
         position_tracking._positions["ETHUSDT"] = {
             "quantity": Decimal("1.5"),
             "avg_price": Decimal("3800.0"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
 
         snapshot = position_tracking.get_snapshot()
@@ -250,11 +249,7 @@ class TestPositionTrackingSnapshotRestore:
     @pytest.fixture
     def config(self):
         """Create test configuration."""
-        return {
-            "system": {
-                "worker_id": "test-worker-restore"
-            }
-        }
+        return {"system": {"worker_id": "test-worker-restore"}}
 
     @pytest.fixture
     def position_tracking(self, fsm, config):
@@ -275,33 +270,34 @@ class TestPositionTrackingSnapshotRestore:
                         "avg_price": "3800.5",
                         "side": "long",
                         "unrealized_pnl": "0.0",
-                        "venues": ["binance"]
+                        "venues": ["binance"],
                     },
                     "BTCUSDT": {
                         "qty": "-0.05",
                         "avg_price": "67000.0",
                         "side": "short",
                         "unrealized_pnl": "0.0",
-                        "venues": ["binance"]
-                    }
+                        "venues": ["binance"],
+                    },
                 },
                 "portfolio": {
                     "equity": "5000.123456789",
                     "balance": "4900.0",
-                    "margin_used": "0.0"
-                }
+                    "margin_used": "0.0",
+                },
             },
             "metadata": {
                 "worker_id": "test-worker-001",
                 "positions_count": 2,
-                "sequence_number": 1729252800000
-            }
+                "sequence_number": 1729252800000,
+            },
         }
 
         # Compute valid hash
         import hashlib
+
         state_str = json.dumps(snapshot_data["state"], sort_keys=True)
-        state_hash = hashlib.sha256(state_str.encode('utf-8')).hexdigest()
+        state_hash = hashlib.sha256(state_str.encode("utf-8")).hexdigest()
         snapshot_data["state_hash"] = f"sha256:{state_hash}"
 
         # Load snapshot
@@ -340,15 +336,15 @@ class TestPositionTrackingSnapshotRestore:
                 "portfolio": {
                     "equity": "5000.0",
                     "balance": "5000.0",
-                    "margin_used": "0.0"
-                }
+                    "margin_used": "0.0",
+                },
             },
             "state_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",  # Invalid hash
             "metadata": {
                 "worker_id": "test-worker-001",
                 "positions_count": 0,
-                "sequence_number": 1729252800000
-            }
+                "sequence_number": 1729252800000,
+            },
         }
 
         result = position_tracking.load_snapshot(snapshot_data)
@@ -370,26 +366,27 @@ class TestPositionTrackingSnapshotRestore:
                         "avg_price": "3800.0",
                         "side": "long",
                         "unrealized_pnl": "0.0",
-                        "venues": ["binance"]
+                        "venues": ["binance"],
                     }
                 },
                 "portfolio": {
                     "equity": "5000.0",
                     "balance": "5000.0",
-                    "margin_used": "0.0"
-                }
+                    "margin_used": "0.0",
+                },
             },
             "metadata": {
                 "worker_id": "test-worker-001",
                 "positions_count": 1,
-                "sequence_number": 1729252800000
-            }
+                "sequence_number": 1729252800000,
+            },
         }
 
         # Compute valid hash for the invalid data
         import hashlib
+
         state_str = json.dumps(snapshot_data["state"], sort_keys=True)
-        state_hash = hashlib.sha256(state_str.encode('utf-8')).hexdigest()
+        state_hash = hashlib.sha256(state_str.encode("utf-8")).hexdigest()
         snapshot_data["state_hash"] = f"sha256:{state_hash}"
 
         result = position_tracking.load_snapshot(snapshot_data)
@@ -406,7 +403,7 @@ class TestPositionTrackingSnapshotRestore:
             # Missing 'state' field
             "timestamp_utc": "2025-10-18T12:00:00Z",
             "state_hash": "sha256:abc123",
-            "metadata": {}
+            "metadata": {},
         }
 
         result = position_tracking.load_snapshot(snapshot_data)
@@ -421,7 +418,7 @@ class TestPositionTrackingSnapshotRestore:
         position_tracking._positions["ETHUSDT"] = {
             "quantity": Decimal("1.234567890123456789"),
             "avg_price": Decimal("3800.5"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
 
         # Create snapshot
@@ -450,7 +447,7 @@ class TestPositionTrackingSnapshotRestore:
         position_tracking._positions["SOLUSDT"] = {
             "quantity": Decimal("10.0"),
             "avg_price": Decimal("100.0"),
-            "venues": ["binance"]
+            "venues": ["binance"],
         }
 
         # Create snapshot with different state
@@ -465,26 +462,27 @@ class TestPositionTrackingSnapshotRestore:
                         "avg_price": "3800.0",
                         "side": "long",
                         "unrealized_pnl": "0.0",
-                        "venues": ["binance"]
+                        "venues": ["binance"],
                     }
                 },
                 "portfolio": {
                     "equity": "9000.0",
                     "balance": "8900.0",
-                    "margin_used": "0.0"
-                }
+                    "margin_used": "0.0",
+                },
             },
             "metadata": {
                 "worker_id": "test-worker-001",
                 "positions_count": 1,
-                "sequence_number": 1729252800000
-            }
+                "sequence_number": 1729252800000,
+            },
         }
 
         # Compute valid hash
         import hashlib
+
         state_str = json.dumps(snapshot_data["state"], sort_keys=True)
-        state_hash = hashlib.sha256(state_str.encode('utf-8')).hexdigest()
+        state_hash = hashlib.sha256(state_str.encode("utf-8")).hexdigest()
         snapshot_data["state_hash"] = f"sha256:{state_hash}"
 
         # Load snapshot

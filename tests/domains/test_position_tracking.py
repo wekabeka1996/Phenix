@@ -4,6 +4,7 @@ Integration test for position_tracking domain.
 Tests that the domain correctly subscribes to EVT:TRADE_EXECUTED,
 processes it, and emits a valid EVT:PORTFOLIO_STATE_UPDATED event.
 """
+
 from unittest import mock
 import pytest
 from vfoundation.core.protocol import Message
@@ -13,8 +14,8 @@ from vfoundation.core.protocol import Message
 def mock_config():
     """Mock configuration for position tracking tests."""
     return {
-        'position_limits': {'max_positions': 10},
-        'risk_limits': {'max_drawdown': 0.1}
+        "position_limits": {"max_positions": 10},
+        "risk_limits": {"max_drawdown": 0.1},
     }
 
 
@@ -35,14 +36,16 @@ class FSMCore:
         if event_name in self.listeners:
             for callback in self.listeners[event_name]:
                 try:
-                    callback(Message(
-                        op="EVT",
-                        verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
-                        src="test",
-                        dst="any",
-                        pld=payload,
-                        why=why
-                    ))
+                    callback(
+                        Message(
+                            op="EVT",
+                            verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
+                            src="test",
+                            dst="any",
+                            pld=payload,
+                            why=why,
+                        )
+                    )
                 except Exception as e:
                     print(f"Error in event listener: {e}")
 
@@ -61,8 +64,11 @@ def test_position_tracking_consumes_trade_and_updates_portfolio(mock_config):
     # This import will raise ModuleNotFoundError until the component exists
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -75,13 +81,13 @@ def test_position_tracking_consumes_trade_and_updates_portfolio(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,  # 2023-09-01 00:00:00 UTC in milliseconds
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit(
         "EVT:TRADE_EXECUTED",
         payload=fake_trade_payload,
-        why="Simulated trade for position tracking test."
+        why="Simulated trade for position tracking test.",
     )
 
     # Step 4: Verify result
@@ -99,9 +105,13 @@ def test_position_tracking_consumes_trade_and_updates_portfolio(mock_config):
     # FIXED: After precision refactoring, financial fields are strings
     assert isinstance(fsm_event.pld["equity"], str), "equity should be string"
     assert "realized_pnl" in fsm_event.pld
-    assert isinstance(fsm_event.pld["realized_pnl"], str), "realized_pnl should be string"
+    assert isinstance(fsm_event.pld["realized_pnl"], str), (
+        "realized_pnl should be string"
+    )
     assert "unrealized_pnl" in fsm_event.pld
-    assert isinstance(fsm_event.pld["unrealized_pnl"], str), "unrealized_pnl should be string"
+    assert isinstance(fsm_event.pld["unrealized_pnl"], str), (
+        "unrealized_pnl should be string"
+    )
     assert "positions" in fsm_event.pld
     assert isinstance(fsm_event.pld["positions"], list)
 
@@ -120,7 +130,9 @@ def test_position_tracking_consumes_trade_and_updates_portfolio(mock_config):
     assert btc_position["symbol"] == "BTCUSDT"
     # FIXED: After precision refactoring, position fields are strings
     assert btc_position["net_position"] == "0.1", "net_position should be string '0.1'"
-    assert btc_position["avg_entry_price"] == "50000.0", "avg_entry_price should be string"
+    assert btc_position["avg_entry_price"] == "50000.0", (
+        "avg_entry_price should be string"
+    )
     assert isinstance(btc_position["venues"], list)
     assert "binance" in btc_position["venues"]
 
@@ -139,8 +151,11 @@ def test_position_tracking_multiple_trades(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -153,7 +168,7 @@ def test_position_tracking_multiple_trades(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=trade1_payload, why="First trade: buy BTC.")
@@ -166,10 +181,14 @@ def test_position_tracking_multiple_trades(mock_config):
         "quantity": 0.05,
         "ts": 1693526460000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=trade2_payload, why="Second trade: accumulate BTC.")
+    fsm.emit(
+        "EVT:TRADE_EXECUTED",
+        payload=trade2_payload,
+        why="Second trade: accumulate BTC.",
+    )
 
     # Step 6: Third trade - sell part (partial close)
     trade3_payload = {
@@ -179,10 +198,14 @@ def test_position_tracking_multiple_trades(mock_config):
         "quantity": 0.08,
         "ts": 1693526520000,
         "fees": 5.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=trade3_payload, why="Third trade: partial sell BTC.")
+    fsm.emit(
+        "EVT:TRADE_EXECUTED",
+        payload=trade3_payload,
+        why="Third trade: partial sell BTC.",
+    )
 
     # Step 7: Verify final state
     # Should have 3 calls to listener
@@ -230,8 +253,11 @@ def test_position_tracking_complete_position_close(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -244,7 +270,7 @@ def test_position_tracking_complete_position_close(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=buy_payload, why="Buy BTC.")
@@ -257,7 +283,7 @@ def test_position_tracking_complete_position_close(mock_config):
         "quantity": 0.1,
         "ts": 1693526460000,
         "fees": 10.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=sell_payload, why="Sell all BTC.")
@@ -280,7 +306,9 @@ def test_position_tracking_complete_position_close(mock_config):
     # FIXED: After precision refactoring, realized_pnl is string
     assert abs(float(final_payload["realized_pnl"]) - expected_pnl) < 1e-9
 
-    print(f"✅ Complete close test passed! Realized P&L: {final_payload['realized_pnl']}")
+    print(
+        f"✅ Complete close test passed! Realized P&L: {final_payload['realized_pnl']}"
+    )
 
 
 def test_position_tracking_short_position(mock_config):
@@ -297,8 +325,11 @@ def test_position_tracking_short_position(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -311,7 +342,7 @@ def test_position_tracking_short_position(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=short_payload, why="Short sell BTC.")
@@ -326,7 +357,9 @@ def test_position_tracking_short_position(mock_config):
     pos = positions[0]
     assert pos["symbol"] == "BTCUSDT"
     # FIXED: After precision refactoring, position fields are strings
-    assert pos["net_position"] == "-0.1", "net_position should be string '-0.1' for short"
+    assert pos["net_position"] == "-0.1", (
+        "net_position should be string '-0.1' for short"
+    )
     assert pos["avg_entry_price"] == "50000.0", "avg_entry_price should be string"
 
     print(f"✅ Short position test passed! Position: {pos}")
@@ -346,8 +379,11 @@ def test_position_tracking_multiple_venues(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -360,7 +396,7 @@ def test_position_tracking_multiple_venues(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=trade1_payload, why="Buy BTC on binance.")
@@ -373,7 +409,7 @@ def test_position_tracking_multiple_venues(mock_config):
         "quantity": 0.05,
         "ts": 1693526460000,
         "fees": 0.0,
-        "venue": "kraken"
+        "venue": "kraken",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=trade2_payload, why="Buy BTC on kraken.")
@@ -419,8 +455,11 @@ def test_position_tracking_invalid_side(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -433,7 +472,7 @@ def test_position_tracking_invalid_side(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     # Should handle error gracefully (no exception raised, error logged)
@@ -459,8 +498,11 @@ def test_position_tracking_position_flip(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -473,7 +515,7 @@ def test_position_tracking_position_flip(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=buy_payload, why="Buy BTC.")
@@ -486,10 +528,14 @@ def test_position_tracking_position_flip(mock_config):
         "quantity": 0.15,
         "ts": 1693526460000,
         "fees": 5.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=sell_payload, why="Sell more than position (flip).")
+    fsm.emit(
+        "EVT:TRADE_EXECUTED",
+        payload=sell_payload,
+        why="Sell more than position (flip).",
+    )
 
     # Step 6: Verify final state
     assert portfolio_listener.call_count == 2
@@ -506,7 +552,9 @@ def test_position_tracking_position_flip(mock_config):
     btc_pos = positions[0]
     assert btc_pos["symbol"] == "BTCUSDT"
     # FIXED: After precision refactoring, position fields are strings
-    assert abs(float(btc_pos["net_position"]) - (-0.05)) < 1e-9  # -0.1 + 0.15 = -0.05 (short)
+    assert (
+        abs(float(btc_pos["net_position"]) - (-0.05)) < 1e-9
+    )  # -0.1 + 0.15 = -0.05 (short)
 
     # After flip, average price should be the flip price (48000)
     # FIXED: After precision refactoring, avg_entry_price is string
@@ -535,8 +583,11 @@ def test_position_tracking_short_to_long_flip(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -549,7 +600,7 @@ def test_position_tracking_short_to_long_flip(mock_config):
         "quantity": 0.1,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=short_payload, why="Short sell BTC.")
@@ -562,10 +613,14 @@ def test_position_tracking_short_to_long_flip(mock_config):
         "quantity": 0.15,
         "ts": 1693526460000,
         "fees": 5.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=buy_payload, why="Buy more than short position (flip).")
+    fsm.emit(
+        "EVT:TRADE_EXECUTED",
+        payload=buy_payload,
+        why="Buy more than short position (flip).",
+    )
 
     # Step 6: Verify final state
     assert portfolio_listener.call_count == 2
@@ -582,7 +637,9 @@ def test_position_tracking_short_to_long_flip(mock_config):
     btc_pos = positions[0]
     assert btc_pos["symbol"] == "BTCUSDT"
     # FIXED: After precision refactoring, position fields are strings
-    assert abs(float(btc_pos["net_position"]) - 0.05) < 1e-9  # -0.1 + 0.15 = 0.05 (long)
+    assert (
+        abs(float(btc_pos["net_position"]) - 0.05) < 1e-9
+    )  # -0.1 + 0.15 = 0.05 (long)
 
     # After flip, average price should be the flip price (52000)
     assert abs(float(btc_pos["avg_entry_price"]) - 52000.0) < 1e-9
@@ -610,8 +667,11 @@ def test_position_tracking_partial_close(mock_config):
     # Step 3: Initialize component
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     position_tracker = PositionTracking(fsm=fsm, config=mock_config)
     position_tracker.start()
@@ -624,7 +684,7 @@ def test_position_tracking_partial_close(mock_config):
         "quantity": 0.2,
         "ts": 1693526400000,
         "fees": 0.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=buy_payload, why="Buy BTC.")
@@ -637,7 +697,7 @@ def test_position_tracking_partial_close(mock_config):
         "quantity": 0.1,
         "ts": 1693526460000,
         "fees": 5.0,
-        "venue": "binance"
+        "venue": "binance",
     }
 
     fsm.emit("EVT:TRADE_EXECUTED", payload=sell_payload, why="Partial sell BTC.")

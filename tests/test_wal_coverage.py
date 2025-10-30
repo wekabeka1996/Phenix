@@ -27,6 +27,7 @@ class TestWalCoverage:
 
         # Create a WAL file with today's date
         import time
+
         today = time.strftime("%Y-%m-%d")
         wal_file = wal_dir / f"{today}.jsonl"
         wal_dir.mkdir(parents=True, exist_ok=True)
@@ -63,6 +64,7 @@ class TestWalCoverage:
 
         # Create a WAL file with today's date
         import time
+
         today = time.strftime("%Y-%m-%d")
         wal_file = wal_dir / f"{today}.jsonl"
         wal_dir.mkdir(parents=True, exist_ok=True)
@@ -89,6 +91,7 @@ class TestWalCoverage:
 
         # Import the wal module to patch it
         from vfoundation.dr import wal as wal_module
+
         monkeypatch.setattr(wal_module, "_file_lock", mock_file_lock)
 
         result = append({"test": "data"})
@@ -115,7 +118,9 @@ class TestWalCoverage:
         assert success1 is True
 
         # Try to append with wrong expected hash
-        success2, hash2 = append_cas({"second": "record"}, expected_prev_hash="wronghash")
+        success2, hash2 = append_cas(
+            {"second": "record"}, expected_prev_hash="wronghash"
+        )
         assert success2 is False
         assert hash2 is None
 

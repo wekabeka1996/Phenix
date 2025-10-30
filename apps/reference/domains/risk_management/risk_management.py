@@ -4,6 +4,7 @@ RiskManagement domain component.
 Calculates risk parameters (kelly_fraction, cvar_limit_usd, max_drawdown_percent, is_trading_allowed)
 from features data and emits EVT:RISK_ASSESSMENT_COMPLETED events.
 """
+
 import decimal
 import logging
 import uuid
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-chain_logger = logging.getLogger('event_chain')
+chain_logger = logging.getLogger("event_chain")
 
 
 class RiskManagement:
@@ -33,7 +34,7 @@ class RiskManagement:
         # Portfolio state tracking for holistic risk management
         self.portfolio_state: Optional[Dict[str, Any]] = None
         self.peak_equity: Optional[decimal.Decimal] = None
-        self.current_daily_drawdown = decimal.Decimal('0')
+        self.current_daily_drawdown = decimal.Decimal("0")
 
         # Subscribe to events
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features_calculated)
@@ -57,13 +58,16 @@ class RiskManagement:
         payload = event.pld
 
         # Log event receipt to chain
-        chain_logger.info("Event received", extra={
-            'rid': rid,
-            'event_type': 'EVT:FEATURES_CALCULATED',
-            'domain': 'risk_management',
-            'symbol': payload.get('symbol'),
-            'stage': 'input'
-        })
+        chain_logger.info(
+            "Event received",
+            extra={
+                "rid": rid,
+                "event_type": "EVT:FEATURES_CALCULATED",
+                "domain": "risk_management",
+                "symbol": payload.get("symbol"),
+                "stage": "input",
+            },
+        )
 
         # Extract required fields from payload
         symbol = payload["symbol"]
@@ -77,7 +81,7 @@ class RiskManagement:
         risk_payload = {
             "symbol": symbol,
             "ts": timestamp,
-            "risk_parameters": risk_parameters
+            "risk_parameters": risk_parameters,
         }
 
         # Emit risk assessment completed event
@@ -85,21 +89,24 @@ class RiskManagement:
         self.fsm.emit(
             "EVT:RISK_ASSESSMENT_COMPLETED",
             payload=risk_payload,
-            why="Risk parameters calculated based on new features."
+            why="Risk parameters calculated based on new features.",
         )
 
         # Log event emission to chain
-        chain_logger.info("Event emitted", extra={
-            'rid': rid,
-            'event_type': 'EVT:RISK_ASSESSMENT_COMPLETED',
-            'domain': 'risk_management',
-            'symbol': symbol,
-            'stage': 'output',
-            'risk_assessment': {
-                'is_trading_allowed': risk_parameters.get('is_trading_allowed'),
-                'risk_score': risk_parameters.get('risk_score')
-            }
-        })
+        chain_logger.info(
+            "Event emitted",
+            extra={
+                "rid": rid,
+                "event_type": "EVT:RISK_ASSESSMENT_COMPLETED",
+                "domain": "risk_management",
+                "symbol": symbol,
+                "stage": "output",
+                "risk_assessment": {
+                    "is_trading_allowed": risk_parameters.get("is_trading_allowed"),
+                    "risk_score": risk_parameters.get("risk_score"),
+                },
+            },
+        )
 
     def on_portfolio_state_updated(self, event: Message) -> None:
         """
@@ -107,7 +114,7 @@ class RiskManagement:
         """
         self.logger.info("Handling EVT:PORTFOLIO_STATE_UPDATED for risk assessment...")
         self.portfolio_state = event.pld
-        current_equity = decimal.Decimal(str(self.portfolio_state.get('equity', '0')))
+        current_equity = decimal.Decimal(str(self.portfolio_state.get("equity", "0")))
 
         if self.peak_equity is None:
             self.peak_equity = current_equity
@@ -117,7 +124,9 @@ class RiskManagement:
 
         if self.peak_equity > 0:
             drawdown = (self.peak_equity - current_equity) / self.peak_equity
-            self.current_daily_drawdown = drawdown if drawdown > 0 else decimal.Decimal('0')
+            self.current_daily_drawdown = (
+                drawdown if drawdown > 0 else decimal.Decimal("0")
+            )
             self.logger.info(
                 f"Portfolio risk update: Equity=${current_equity:.2f}, "
                 f"Peak Equity=${self.peak_equity:.2f}, Drawdown={self.current_daily_drawdown:.2%}"
@@ -129,8 +138,10 @@ class RiskManagement:
         This acts as a gatekeeper, checking both portfolio-level and instrument-level risk.
         """
         # 1. Portfolio-level risk check (Circuit Breaker)
-        risk_config = self.config.get('risk', {})
-        max_drawdown = decimal.Decimal(str(risk_config.get('max_daily_drawdown_limit', '0.10')))  # 10% default
+        risk_config = self.config.get("risk", {})
+        max_drawdown = decimal.Decimal(
+            str(risk_config.get("max_daily_drawdown_limit", "0.10"))
+        )  # 10% default
 
         if self.current_daily_drawdown > max_drawdown:
             self.logger.critical(
@@ -148,15 +159,21 @@ class RiskManagement:
 
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
-        score_weights = self.config.get('risk', {}).get('score_weights', {})
-        delta_price_weight = decimal.Decimal(str(score_weights.get('delta_price', '0.1')))
-        obi_weight = decimal.Decimal(str(score_weights.get('obi', '0.3')))
-        tfi_weight = decimal.Decimal(str(score_weights.get('tfi', '0.3')))
-        absorption_inverse_weight = decimal.Decimal(str(score_weights.get('absorption_inverse', '0.3')))
+        score_weights = self.config.get("risk", {}).get("score_weights", {})
+        delta_price_weight = decimal.Decimal(
+            str(score_weights.get("delta_price", "0.1"))
+        )
+        obi_weight = decimal.Decimal(str(score_weights.get("obi", "0.3")))
+        tfi_weight = decimal.Decimal(str(score_weights.get("tfi", "0.3")))
+        absorption_inverse_weight = decimal.Decimal(
+            str(score_weights.get("absorption_inverse", "0.3"))
+        )
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
         price = decimal.Decimal(str(features.get("price", 1.0)))  # Current price
-        delta_price_pct = (abs(delta_price) / price) if price > 0 else decimal.Decimal('0')
+        delta_price_pct = (
+            (abs(delta_price) / price) if price > 0 else decimal.Decimal("0")
+        )
         # Risk score uses normalized features (all in [0, 1] range approximately)
         # - delta_price_pct: percentage change (0.01 = 1%)
         # - obi, tfi, absorption: already normalized to [-1, 1] or [0, 1]
@@ -164,11 +181,11 @@ class RiskManagement:
             delta_price_pct * delta_price_weight
             + abs(obi) * obi_weight
             + abs(tfi) * tfi_weight
-            + (decimal.Decimal('1') - absorption) * absorption_inverse_weight
+            + (decimal.Decimal("1") - absorption) * absorption_inverse_weight
         )
         # Determine if trading is allowed based on risk thresholds
-        thresholds = self.config.get('risk', {}).get('trading_allowed_thresholds', {})
-        max_risk_score = decimal.Decimal(str(thresholds.get('max_risk_score', '0.8')))
+        thresholds = self.config.get("risk", {}).get("trading_allowed_thresholds", {})
+        max_risk_score = decimal.Decimal(str(thresholds.get("max_risk_score", "0.8")))
         is_trading_allowed = risk_score <= max_risk_score
 
         self.logger.info(

@@ -16,19 +16,22 @@ import decimal
 decimal.setcontext(decimal.Context(prec=28, rounding=decimal.ROUND_HALF_UP))
 
 # Export commonly used decimal constants
-ZERO = decimal.Decimal('0')
-ONE = decimal.Decimal('1')
-TWO = decimal.Decimal('2')
-TEN = decimal.Decimal('10')
-HUNDRED = decimal.Decimal('100')
+ZERO = decimal.Decimal("0")
+ONE = decimal.Decimal("1")
+TWO = decimal.Decimal("2")
+TEN = decimal.Decimal("10")
+HUNDRED = decimal.Decimal("100")
+
 
 def decimal_from_str(value: str) -> decimal.Decimal:
     """Convert string to Decimal, ensuring no float conversion."""
     return decimal.Decimal(value)
 
+
 def decimal_from_int(value: int) -> decimal.Decimal:
     """Convert int to Decimal."""
     return decimal.Decimal(value)
+
 
 def decimal_from_float(value: float) -> decimal.Decimal:
     """Convert float to Decimal (use sparingly, prefer string conversion)."""

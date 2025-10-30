@@ -49,13 +49,15 @@ class MetricsCollector:
         self._rolling_data: deque = deque(maxlen=10000)  # Store last 10k events
 
         # Per-symbol metrics
-        self._symbol_metrics: defaultdict = defaultdict(lambda: {
-            "intents": 0,
-            "accepted": 0,
-            "rejected": 0,
-            "cooldown_rejects": 0,
-            "last_trade_time": 0.0
-        })
+        self._symbol_metrics: defaultdict = defaultdict(
+            lambda: {
+                "intents": 0,
+                "accepted": 0,
+                "rejected": 0,
+                "cooldown_rejects": 0,
+                "last_trade_time": 0.0,
+            }
+        )
 
     def record_trade_intent(self, symbol: str, side: str, **extra_data) -> None:
         """Record a trade intent."""
@@ -68,11 +70,18 @@ class MetricsCollector:
                 "symbol": symbol,
                 "side": side,
                 "timestamp": time.time(),
-                **extra_data
+                **extra_data,
             }
             self._rolling_data.append(event)
 
-    def record_trade_decision(self, symbol: str, side: str, decision: str, reason: Optional[str] = None, **extra_data) -> None:
+    def record_trade_decision(
+        self,
+        symbol: str,
+        side: str,
+        decision: str,
+        reason: Optional[str] = None,
+        **extra_data,
+    ) -> None:
         """Record a trade decision (accepted/rejected)."""
         with self._lock:
             if decision.upper() == "ACCEPTED":
@@ -97,11 +106,13 @@ class MetricsCollector:
                 "decision": decision,
                 "reason": reason,
                 "timestamp": time.time(),
-                **extra_data
+                **extra_data,
             }
             self._rolling_data.append(event)
 
-    def record_trade_execution(self, symbol: str, side: str, status: str, **extra_data) -> None:
+    def record_trade_execution(
+        self, symbol: str, side: str, status: str, **extra_data
+    ) -> None:
         """Record a trade execution status."""
         with self._lock:
             status_key = f"executions_{status.lower()}"
@@ -114,21 +125,29 @@ class MetricsCollector:
                 "side": side,
                 "status": status,
                 "timestamp": time.time(),
-                **extra_data
+                **extra_data,
             }
             self._rolling_data.append(event)
 
     def get_summary_metrics(self) -> Dict[str, Any]:
         """Get summary metrics for the entire system."""
         with self._lock:
-            total_decisions = (self._metrics["trade_decisions_accepted"] +
-                             self._metrics["trade_decisions_rejected"])
+            total_decisions = (
+                self._metrics["trade_decisions_accepted"]
+                + self._metrics["trade_decisions_rejected"]
+            )
 
-            acceptance_rate = (self._metrics["trade_decisions_accepted"] / total_decisions
-                             if total_decisions > 0 else 0.0)
+            acceptance_rate = (
+                self._metrics["trade_decisions_accepted"] / total_decisions
+                if total_decisions > 0
+                else 0.0
+            )
 
-            rejection_rate = (self._metrics["trade_decisions_rejected"] / total_decisions
-                            if total_decisions > 0 else 0.0)
+            rejection_rate = (
+                self._metrics["trade_decisions_rejected"] / total_decisions
+                if total_decisions > 0
+                else 0.0
+            )
 
             return {
                 "total_intents": self._metrics["trade_intents_total"],
@@ -153,7 +172,9 @@ class MetricsCollector:
             if total_decisions > 0:
                 metrics["acceptance_rate"] = metrics["accepted"] / total_decisions
                 metrics["rejection_rate"] = metrics["rejected"] / total_decisions
-                metrics["cooldown_rejection_rate"] = metrics["cooldown_rejects"] / total_decisions
+                metrics["cooldown_rejection_rate"] = (
+                    metrics["cooldown_rejects"] / total_decisions
+                )
             else:
                 metrics["acceptance_rate"] = 0.0
                 metrics["rejection_rate"] = 0.0
@@ -170,7 +191,10 @@ class MetricsCollector:
             for event in reversed(self._rolling_data):
                 if event["timestamp"] < cutoff_time:
                     break
-                if event.get("type") == "decision" and event.get("decision") != "ACCEPTED":
+                if (
+                    event.get("type") == "decision"
+                    and event.get("decision") != "ACCEPTED"
+                ):
                     recent_rejections.append(event)
 
             return recent_rejections
@@ -182,14 +206,18 @@ class MetricsCollector:
                 "cooldown_dominant": False,
                 "high_rejection_rate": False,
                 "problem_symbols": [],
-                "recent_rejection_spike": False
+                "recent_rejection_spike": False,
             }
 
             # Check if cooldown is the dominant rejection reason
-            total_rejections = (self._metrics["guard_rejections_cooldown"] +
-                              self._metrics["guard_rejections_other"])
+            total_rejections = (
+                self._metrics["guard_rejections_cooldown"]
+                + self._metrics["guard_rejections_other"]
+            )
             if total_rejections > 0:
-                cooldown_ratio = self._metrics["guard_rejections_cooldown"] / total_rejections
+                cooldown_ratio = (
+                    self._metrics["guard_rejections_cooldown"] / total_rejections
+                )
                 patterns["cooldown_dominant"] = cooldown_ratio > 0.8
 
             # Check overall rejection rate
@@ -202,11 +230,13 @@ class MetricsCollector:
                 if total_decisions >= 10:  # Minimum sample size
                     rejection_rate = metrics["rejected"] / total_decisions
                     if rejection_rate > 0.7:  # 70% rejection threshold
-                        patterns["problem_symbols"].append({
-                            "symbol": symbol,
-                            "rejection_rate": rejection_rate,
-                            "total_decisions": total_decisions
-                        })
+                        patterns["problem_symbols"].append(
+                            {
+                                "symbol": symbol,
+                                "rejection_rate": rejection_rate,
+                                "total_decisions": total_decisions,
+                            }
+                        )
 
             # Check for recent rejection spike (last 5 minutes vs last hour)
             recent_5min = self.get_recent_rejections(5)

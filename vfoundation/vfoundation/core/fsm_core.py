@@ -3,6 +3,7 @@ FSM Core - Event Bus for FSM Applications
 
 Provides a simple event-driven communication system for FSM components.
 """
+
 from typing import Dict, List, Callable, Any
 import logging
 from .protocol import Message
@@ -51,7 +52,7 @@ class FSMCore:
                 src="fsm_core",
                 dst="any",
                 pld=payload,
-                why=why
+                why=why,
             )
 
             # Call all listeners

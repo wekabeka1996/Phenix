@@ -62,16 +62,18 @@ root_logger.setLevel(getattr(logging, log_level, logging.INFO))
 # Create console handler
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(getattr(logging, log_level, logging.INFO))
-console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
+console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(message)s")
 console_handler.setFormatter(console_formatter)
-console_handler.stream.reconfigure(encoding='utf-8')  # Fix encoding for Windows
+console_handler.stream.reconfigure(encoding="utf-8")  # Fix encoding for Windows
 root_logger.addHandler(console_handler)
 
 # File handler for detailed logs
 log_file = logs_dir / "aurora_core.log"
-file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
+file_handler = RotatingFileHandler(
+    log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+)
 file_handler.setLevel(logging.DEBUG)  # Log everything to the file
-file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(file_formatter)
 root_logger.addHandler(file_handler)
 
@@ -82,7 +84,7 @@ def on_trade_intent_proposed(event: Any) -> None:
     """
     Listens for trade intents from the decision_making domain and transforms
     them into executable commands for the execution_position domain.
-    
+
     Bridge pattern: EVT:TRADE_INTENT_PROPOSED → CMD:OPEN
     - Preserves XAI chain via why field
     - Maps analytical output to execution command
@@ -96,7 +98,7 @@ def on_trade_intent_proposed(event: Any) -> None:
     # Transform EVT to CMD
     # Extract order details from nested structure
     order_details = event.pld.get("order", {})
-    
+
     command_payload = {
         "symbol": event.pld.get("instrument"),  # Map 'instrument' to 'symbol'
         "side": event.pld.get("side"),
@@ -104,8 +106,12 @@ def on_trade_intent_proposed(event: Any) -> None:
         "price": order_details.get("price"),  # Get price from order.price (as string)
         "order_type": "LIMIT",  # Use LIMIT orders with specified price
         "tif": "GTC",  # Good-Till-Cancel
-        "idempotent_key": event.pld.get("idempotent_key"),  # Pass through for deduplication (AURORA_IDEMPOTENCY_V1)
-        "price_ref": order_details.get("price_ref"),  # Pass current market price for min_notional checks
+        "idempotent_key": event.pld.get(
+            "idempotent_key"
+        ),  # Pass through for deduplication (AURORA_IDEMPOTENCY_V1)
+        "price_ref": order_details.get(
+            "price_ref"
+        ),  # Pass current market price for min_notional checks
     }
 
     LOG.debug(f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
@@ -127,7 +133,9 @@ def on_trade_intent_proposed(event: Any) -> None:
         pld=command_payload,
     )
 
-    LOG.info(f"BRIDGE: Dispatched CMD:OPEN with rid={open_command.rid}, parent_span={event.span_id}")
+    LOG.info(
+        f"BRIDGE: Dispatched CMD:OPEN with rid={open_command.rid}, parent_span={event.span_id}"
+    )
 
     # Handle the command with execution_position FSM
     if execution_position is not None:
@@ -147,12 +155,16 @@ def debug_event_listener(event: Any) -> None:
     Debug listener to see all events flowing through the system.
     """
     print(f"📡 EVENT: {event.op}:{event.verb} from {event.src} - {event.why}")
-    if hasattr(event, 'pld') and event.pld:
+    if hasattr(event, "pld") and event.pld:
         # Only show key fields for market data to avoid spam
         if event.verb == "MARKET_TICK_RECEIVED":
             pld = event.pld
             print(f"   📊 {pld.get('symbol')} bid={pld.get('bid')} ask={pld.get('ask')}")
-        elif event.verb in ["FEATURES_CALCULATED", "RISK_ASSESSMENT_COMPLETED", "PORTFOLIO_STATE_UPDATED"]:
+        elif event.verb in [
+            "FEATURES_CALCULATED",
+            "RISK_ASSESSMENT_COMPLETED",
+            "PORTFOLIO_STATE_UPDATED",
+        ]:
             print(f"   📊 {event.verb} for {event.pld.get('symbol', 'unknown')}")
         elif event.verb == "TRADE_INTENT_PROPOSED":
             order_details = event.pld.get("order", {})
@@ -160,19 +172,19 @@ def debug_event_listener(event: Any) -> None:
             price = order_details.get("price", "None")
             trade_info = f"   🎯 TRADE INTENT: {event.pld.get('side')} {quantity} {event.pld.get('instrument')}"
             print(trade_info)
-            
+
             # Log formatted trade info to formatted log file (exactly as shown in console)
             # Note: Structured logging handled by AuroraLogAdapter in execution_position/fsm.py
-            trade_formatted_logger = logging.getLogger('aurora.trade_formatted')
+            trade_formatted_logger = logging.getLogger("aurora.trade_formatted")
             trade_formatted_logger.info(trade_info)
 
 
 def initialize_domains(config: dict[str, Any]) -> FSMCore:
     """Initialize all application domains and wire them up."""
     global fsm, execution_position
-    
+
     LOG.info("Initializing Aurora Core domains...")
-    
+
     # 1. Create the central FSMCore instance
     fsm = FSMCore()
 
@@ -234,7 +246,7 @@ def main() -> None:
         "EVT:FEATURES_CALCULATED",
         "EVT:RISK_ASSESSMENT_COMPLETED",
         "EVT:PORTFOLIO_STATE_UPDATED",
-        "EVT:TRADE_INTENT_PROPOSED"
+        "EVT:TRADE_INTENT_PROPOSED",
     ]
     for event_name in debug_events:
         fsm.listen(event_name, debug_event_listener)
@@ -260,36 +272,38 @@ def main() -> None:
 
     # Position Tracking (tracks portfolio state)
     position_tracking = PositionTracking(fsm=fsm, config=config.system)
-    
+
     # ==========================================
     # DR: DISASTER RECOVERY STATE RESTORATION
     # ==========================================
     LOG.info("--- Starting Disaster Recovery Check ---")
-    
+
     from apps.reference.dr_loader import find_latest_snapshot, replay_wal_after
     import json
-    
+
     snapshot_dir_path = str(project_root / "ops" / "snapshots")
     wal_dir_path = str(project_root / "ops" / "wal")
-    
+
     latest_snapshot_path = find_latest_snapshot(snapshot_dir_path)
-    
+
     if latest_snapshot_path:
         try:
             LOG.info(f"Found latest snapshot: {latest_snapshot_path.name}")
-            
+
             # Load snapshot data
-            with open(latest_snapshot_path, 'r', encoding='utf-8') as f:
+            with open(latest_snapshot_path, "r", encoding="utf-8") as f:
                 snapshot_data = json.load(f)
-            
+
             # Restore state from snapshot
             if position_tracking.load_snapshot(snapshot_data):
                 LOG.info("✅ Successfully loaded state from snapshot")
                 LOG.info(f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}")
-                LOG.info(f"   Positions restored: {snapshot_data.get('metadata', {}).get('positions_count', 0)}")
-                
+                LOG.info(
+                    f"   Positions restored: {snapshot_data.get('metadata', {}).get('positions_count', 0)}"
+                )
+
                 # Replay WAL entries after snapshot
-                snapshot_ts = snapshot_data.get('timestamp_utc')
+                snapshot_ts = snapshot_data.get("timestamp_utc")
                 if snapshot_ts:
                     LOG.info("Replaying WAL entries after snapshot...")
                     replayed_count = replay_wal_after(wal_dir_path, snapshot_ts, position_tracking)
@@ -299,14 +313,15 @@ def main() -> None:
             else:
                 LOG.warning(f"⚠️ Failed to restore state from snapshot: {latest_snapshot_path.name}")
                 LOG.info("Starting with empty state.")
-                
+
         except Exception as e:
             LOG.error(f"Error during disaster recovery: {e}. Starting with empty state.")
             import traceback
+
             LOG.debug(traceback.format_exc())
     else:
         LOG.warning("No snapshot found. Starting with a clean state.")
-    
+
     LOG.info("--- Disaster Recovery Check Finished ---")
 
     # Decision Making (generates trade intents)
@@ -333,7 +348,7 @@ def main() -> None:
     snapshot_scheduler_config = {
         "interval_sec": 30,  # 30 seconds for testing (production: 300)
         "snapshot_dir": "ops/snapshots",
-        "domains": ["position_tracking"]  # Start with position_tracking only
+        "domains": ["position_tracking"],  # Start with position_tracking only
     }
     snapshot_scheduler = SnapshotScheduler(fsm=fsm, config=snapshot_scheduler_config)
     # fsm.register_domain('snapshot_scheduler', snapshot_scheduler)
@@ -365,11 +380,11 @@ def main() -> None:
 
     # Step 5: Keep the application running
     LOG.info("Aurora Core is running... Press Ctrl+C to stop.")
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🌟 AURORA CORE IS ACTIVE 🌟")
     print("Waiting for market data and trade signals...")
     print("Press Ctrl+C to stop the application.")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     try:
         while True:
@@ -382,13 +397,19 @@ def main() -> None:
 
         # Helper to stop components safely if they exist
         for name in [
-            'account_balance', 'account_observer', 'market_data',
-            'feature_engineering', 'risk_management', 'position_tracking',
-            'decision_making', 'snapshot_scheduler', 'execution_position'
+            "account_balance",
+            "account_observer",
+            "market_data",
+            "feature_engineering",
+            "risk_management",
+            "position_tracking",
+            "decision_making",
+            "snapshot_scheduler",
+            "execution_position",
         ]:
             try:
                 comp = locals().get(name)
-                if comp is not None and hasattr(comp, 'stop'):
+                if comp is not None and hasattr(comp, "stop"):
                     comp.stop()
                     LOG.info(f"{name} stopped.")
             except Exception as e:

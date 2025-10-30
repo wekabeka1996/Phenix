@@ -21,29 +21,35 @@ import time
 import logging
 import os
 
-K = TypeVar('K')
-V = TypeVar('V')
+K = TypeVar("K")
+V = TypeVar("V")
 
 logger = logging.getLogger(__name__)
+
 
 def ns_from_ms(ms: int) -> int:
     """Convert milliseconds to nanoseconds"""
     return ms * 1_000_000
 
+
 def ms_from_ns(ns: int) -> int:
     """Convert nanoseconds to milliseconds (floor)"""
     return ns // 1_000_000
+
 
 def now_ns() -> int:
     """Get current monotonic time in nanoseconds"""
     return time.monotonic_ns()
 
+
 def now_ms() -> int:
     """Get current monotonic time in milliseconds"""
     return ms_from_ns(time.monotonic_ns())
 
+
 class CleanupStats:
     """Statistics from cleanup operation"""
+
     def __init__(self, expired: int, scanned: int, remaining: int):
         self.expired = expired
         self.scanned = scanned
@@ -51,6 +57,7 @@ class CleanupStats:
 
     def __repr__(self) -> str:
         return f"CleanupStats(expired={self.expired}, scanned={self.scanned}, remaining={self.remaining})"
+
 
 class MonotonicTTLCache(Generic[K, V]):
     """
@@ -67,7 +74,7 @@ class MonotonicTTLCache(Generic[K, V]):
         default_ttl_ms: Optional[int] = None,
         janitor_interval_ms: int = 500,
         scan_budget: int = 2000,
-        clock: Callable[[], int] = time.monotonic_ns
+        clock: Callable[[], int] = time.monotonic_ns,
     ):
         """
         Initialize the cache.
@@ -164,12 +171,14 @@ class MonotonicTTLCache(Generic[K, V]):
                     if candidate not in self._pinned:
                         evicted_key = candidate
                         break
-                
+
                 if evicted_key is None:
                     # All entries are pinned, cannot evict
-                    logger.warning(f"Cannot evict: all {len(self._data)} entries are pinned, max_entries={self.max_entries}")
+                    logger.warning(
+                        f"Cannot evict: all {len(self._data)} entries are pinned, max_entries={self.max_entries}"
+                    )
                     break
-                    
+
                 # Remove the evicted entry
                 _, _ = self._data.pop(evicted_key)
                 self._pinned.discard(evicted_key)
@@ -261,8 +270,10 @@ class MonotonicTTLCache(Generic[K, V]):
         with self._lock:
             keys_to_remove = []
             scanned_count = 0
-            
-            for key in list(self._data.keys()):  # Create snapshot to avoid modification during iteration
+
+            for key in list(
+                self._data.keys()
+            ):  # Create snapshot to avoid modification during iteration
                 if scanned_count >= budget:
                     break
                 scanned_count += 1
@@ -302,13 +313,15 @@ class MonotonicTTLCache(Generic[K, V]):
     def start_janitor(self) -> None:
         """Start the background janitor thread (idempotent, multi-process safe)"""
         current_pid = os.getpid()
-        
+
         with self._lock:
             # Multi-process guard: only allow janitor in the process that created the cache
             if self._janitor_pid != current_pid:
-                logger.warning(f"Janitor start blocked: cache created in PID {self._janitor_pid}, current PID {current_pid}")
+                logger.warning(
+                    f"Janitor start blocked: cache created in PID {self._janitor_pid}, current PID {current_pid}"
+                )
                 return
-            
+
             if self._janitor_running:
                 return
 
@@ -316,7 +329,7 @@ class MonotonicTTLCache(Generic[K, V]):
             self._janitor_thread = threading.Thread(
                 target=self._janitor_loop,
                 daemon=True,
-                name=f"MonotonicTTLCache-Janitor-PID{current_pid}"
+                name=f"MonotonicTTLCache-Janitor-PID{current_pid}",
             )
             self._janitor_thread.start()
             self._janitor_running = True
@@ -331,7 +344,7 @@ class MonotonicTTLCache(Generic[K, V]):
                 return
 
             self._janitor_stop_event.set()
-        
+
         if self._janitor_thread:
             self._janitor_thread.join(timeout=timeout_s)
             if self._janitor_thread.is_alive():

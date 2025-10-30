@@ -13,7 +13,9 @@ def test_hydrate_sets_opened():
 def test_fill_triggers_close_when_max_hold_negative():
     # If max_hold_sec is negative, elapsed > max_hold_sec immediately
     fsm = CloseFlowFSM(max_hold_sec=-1)
-    msg = Message(op="EVT", verb="FILL", src="t", dst="c", rid="r1", pld={"filled_qty": 1})
+    msg = Message(
+        op="EVT", verb="FILL", src="t", dst="c", rid="r1", pld={"filled_qty": 1}
+    )
     dec = fsm.handle(msg)
     # Since fill opens and immediately triggers max_hold rule -> DEC CLOSE
     assert dec is not None and dec.op == "DEC" and dec.verb == "CLOSE"

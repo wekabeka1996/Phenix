@@ -12,7 +12,7 @@ def test_risk_strategy_handle_eval(monkeypatch):
     def fake_append(x):
         called.append(x)
 
-    monkeypatch.setattr('vfoundation.dr.wal.append', fake_append)
+    monkeypatch.setattr("vfoundation.dr.wal.append", fake_append)
 
     msg = Message(op="ASK", verb="EVAL", src="test", dst="risk", rid="rx1")
     # call the handler function directly

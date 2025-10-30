@@ -17,6 +17,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+
 def get_signed_params(api_secret: str, params: dict) -> dict:
     """Create signed parameters for Binance API."""
     signed_params = params.copy()
@@ -26,15 +27,16 @@ def get_signed_params(api_secret: str, params: dict) -> dict:
     # Create signature
     query_string = "&".join(f"{k}={v}" for k, v in sorted(signed_params.items()))
     signature = hmac.new(
-        api_secret.encode('utf-8'),
-        query_string.encode('utf-8'),
-        hashlib.sha256
+        api_secret.encode("utf-8"), query_string.encode("utf-8"), hashlib.sha256
     ).hexdigest()
 
     signed_params["signature"] = signature
     return signed_params
 
-def test_margin_type(api_key: str, api_secret: str, base_url: str, symbol: str = "BTCUSDT"):
+
+def test_margin_type(
+    api_key: str, api_secret: str, base_url: str, symbol: str = "BTCUSDT"
+):
     """Test setting margin type."""
     print(f"\n=== Testing Margin Type Setting for {symbol} ===")
 
@@ -69,7 +71,14 @@ def test_margin_type(api_key: str, api_secret: str, base_url: str, symbol: str =
         print(f"Error: {e}")
         return False
 
-def test_leverage(api_key: str, api_secret: str, base_url: str, symbol: str = "BTCUSDT", leverage: int = 10):
+
+def test_leverage(
+    api_key: str,
+    api_secret: str,
+    base_url: str,
+    symbol: str = "BTCUSDT",
+    leverage: int = 10,
+):
     """Test setting leverage."""
     print(f"\n=== Testing Leverage Setting for {symbol} ===")
 
@@ -103,6 +112,7 @@ def test_leverage(api_key: str, api_secret: str, base_url: str, symbol: str = "B
     except Exception as e:
         print(f"Error: {e}")
         return False
+
 
 def test_dry_run():
     """Test signing logic without API calls."""
@@ -142,7 +152,9 @@ def test_dry_run():
 
     if margin_ok and leverage_ok:
         print("🎉 Signing logic appears correct!")
-        print("The issue is likely in how the HTTP request is made (POST data vs query params)")
+        print(
+            "The issue is likely in how the HTTP request is made (POST data vs query params)"
+        )
         return True
     else:
         print("💥 Signing logic has issues")
@@ -191,6 +203,7 @@ def test_dry_run():
     else:
         print("💥 Some tests failed. Check the error details above.")
         return False
+
 
 if __name__ == "__main__":
     success = main()

@@ -4,6 +4,7 @@ Integration test for risk_management domain.
 Tests that the domain correctly subscribes to EVT:FEATURES_CALCULATED,
 processes it, and emits a valid EVT:RISK_ASSESSMENT_COMPLETED event.
 """
+
 from unittest import mock
 import pytest
 from vfoundation.core.protocol import Message
@@ -13,8 +14,8 @@ from vfoundation.core.protocol import Message
 def mock_config():
     """Mock configuration for risk management tests."""
     return {
-        'risk_limits': {'max_drawdown': 0.1, 'max_leverage': 5.0},
-        'position_limits': {'max_positions': 10}
+        "risk_limits": {"max_drawdown": 0.1, "max_leverage": 5.0},
+        "position_limits": {"max_positions": 10},
     }
 
 
@@ -35,14 +36,16 @@ class FSMCore:
         if event_name in self.listeners:
             for callback in self.listeners[event_name]:
                 try:
-                    callback(Message(
-                        op="EVT",
-                        verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
-                        src="test",
-                        dst="any",
-                        pld=payload,
-                        why=why
-                    ))
+                    callback(
+                        Message(
+                            op="EVT",
+                            verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
+                            src="test",
+                            dst="any",
+                            pld=payload,
+                            why=why,
+                        )
+                    )
                 except Exception as e:
                     print(f"Error in event listener: {e}")
 
@@ -61,7 +64,8 @@ def test_risk_management_consumes_features_and_emits_assessment(mock_config):
     # This import will raise ModuleNotFoundError until the component exists
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
     from apps.reference.domains.risk_management.risk_management import RiskManagement
 
     risk_component = RiskManagement(fsm=fsm, config=mock_config)
@@ -71,18 +75,13 @@ def test_risk_management_consumes_features_and_emits_assessment(mock_config):
     fake_features_payload = {
         "ts": 1693526400000,  # 2023-09-01 00:00:00 UTC in milliseconds
         "symbol": "BTCUSDT",
-        "features": {
-            "obi": 0.1,
-            "tfi": -0.05,
-            "delta_price": 10.5,
-            "absorption": 0.8
-        }
+        "features": {"obi": 0.1, "tfi": -0.05, "delta_price": 10.5, "absorption": 0.8},
     }
 
     fsm.emit(
         "EVT:FEATURES_CALCULATED",
         payload=fake_features_payload,
-        why="Simulated features for risk management test."
+        why="Simulated features for risk management test.",
     )
 
     # Step 4: Verify result

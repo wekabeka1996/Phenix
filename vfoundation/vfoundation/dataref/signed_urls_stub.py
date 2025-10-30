@@ -5,7 +5,8 @@ import hashlib
 import time
 from typing import Tuple
 
-def make_signed_url(path: str, ttl_s: int = 60) -> Tuple[str,str]:
+
+def make_signed_url(path: str, ttl_s: int = 60) -> Tuple[str, str]:
     exp = int(time.time() + ttl_s)
     msg = f"{path}:{exp}".encode()
     key = b"local-secret"

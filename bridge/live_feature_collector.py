@@ -2,6 +2,7 @@
 Live feature collector for Binance live market data.
 Collects obi, tfi, delta_price features from ETHUSDT and BTCUSDT.
 """
+
 import decimal
 import logging
 import os
@@ -39,7 +40,9 @@ class LiveFeatureCollector:
 
     def collect_features(self, duration_seconds: int = 30):
         """Collect features for the specified duration."""
-        logger.info(f"Starting live feature collection for {duration_seconds} seconds...")
+        logger.info(
+            f"Starting live feature collection for {duration_seconds} seconds..."
+        )
 
         while time.time() - self.start_time < duration_seconds:
             if self.bwam.is_manager_stopping():
@@ -57,24 +60,24 @@ class LiveFeatureCollector:
     def _process_stream_data(self, stream_data: dict):
         """Process incoming stream data and calculate features."""
         try:
-            if not isinstance(stream_data, dict) or 'data' not in stream_data:
+            if not isinstance(stream_data, dict) or "data" not in stream_data:
                 logger.debug(f"Skipping invalid stream_data: {type(stream_data)}")
                 return
-            data = stream_data.get('data', {})
-            symbol = data.get('s', '').upper()
+            data = stream_data.get("data", {})
+            symbol = data.get("s", "").upper()
             if symbol not in self.symbols:
                 return
             logger.info(f"Processing {symbol} live data")
 
             # Convert to tick format
             current_tick = {
-                'symbol': symbol,
-                'price': data.get('c', '0'),  # Close price
-                'bid_size': data.get('B', '0'),  # Bid quantity
-                'ask_size': data.get('A', '0'),  # Ask quantity
-                'buy_volume': data.get('v', '0'),  # Volume
-                'sell_volume': data.get('q', '0'),  # Quote volume
-                'ts': int(data.get('E', time.time() * 1000))  # Event time
+                "symbol": symbol,
+                "price": data.get("c", "0"),  # Close price
+                "bid_size": data.get("B", "0"),  # Bid quantity
+                "ask_size": data.get("A", "0"),  # Ask quantity
+                "buy_volume": data.get("v", "0"),  # Volume
+                "sell_volume": data.get("q", "0"),  # Quote volume
+                "ts": int(data.get("E", time.time() * 1000)),  # Event time
             }
 
             last_tick = self.last_tick_data.get(symbol)
@@ -86,7 +89,9 @@ class LiveFeatureCollector:
             # Calculate features
             features = self._calculate_features(current_tick, last_tick)
             self.features_collected[symbol].append(features)
-            logger.info(f"Collected features for {symbol}: obi={features['obi']:.4f}, tfi={features['tfi']:.4f}, delta_price={features['delta_price']:.4f}")
+            logger.info(
+                f"Collected features for {symbol}: obi={features['obi']:.4f}, tfi={features['tfi']:.4f}, delta_price={features['delta_price']:.4f}"
+            )
 
         except Exception as e:
             logger.error(f"Error processing stream data: {e}")
@@ -104,16 +109,20 @@ class LiveFeatureCollector:
         obi = (bid_size - ask_size) / depth if depth > 0 else decimal.Decimal(0)
 
         total_flow = buy_volume + sell_volume
-        tfi = (buy_volume - sell_volume) / total_flow if total_flow > 0 else decimal.Decimal(0)
+        tfi = (
+            (buy_volume - sell_volume) / total_flow
+            if total_flow > 0
+            else decimal.Decimal(0)
+        )
 
-        time_diff = current_tick['ts'] - last_tick['ts']
+        time_diff = current_tick["ts"] - last_tick["ts"]
         delta_price = price - prev_price if time_diff < 1000 else decimal.Decimal(0)
 
         return {
             "obi": float(obi),
             "tfi": float(tfi),
             "delta_price": float(delta_price),
-            "price": float(price)
+            "price": float(price),
         }
 
     def get_summary(self) -> dict:
@@ -123,18 +132,26 @@ class LiveFeatureCollector:
             if not features_list:
                 continue
 
-            obi_values = [f['obi'] for f in features_list]
-            tfi_values = [f['tfi'] for f in features_list]
-            delta_price_values = [f['delta_price'] for f in features_list]
+            obi_values = [f["obi"] for f in features_list]
+            tfi_values = [f["tfi"] for f in features_list]
+            delta_price_values = [f["delta_price"] for f in features_list]
 
             summary[symbol] = {
                 "count": len(features_list),
                 "obi_avg": sum(obi_values) / len(obi_values) if obi_values else 0,
                 "tfi_avg": sum(tfi_values) / len(tfi_values) if tfi_values else 0,
-                "delta_price_avg": sum(delta_price_values) / len(delta_price_values) if delta_price_values else 0,
-                "obi_range": (min(obi_values), max(obi_values)) if obi_values else (0, 0),
-                "tfi_range": (min(tfi_values), max(tfi_values)) if tfi_values else (0, 0),
-                "delta_price_range": (min(delta_price_values), max(delta_price_values)) if delta_price_values else (0, 0)
+                "delta_price_avg": sum(delta_price_values) / len(delta_price_values)
+                if delta_price_values
+                else 0,
+                "obi_range": (min(obi_values), max(obi_values))
+                if obi_values
+                else (0, 0),
+                "tfi_range": (min(tfi_values), max(tfi_values))
+                if tfi_values
+                else (0, 0),
+                "delta_price_range": (min(delta_price_values), max(delta_price_values))
+                if delta_price_values
+                else (0, 0),
             }
         return summary
 

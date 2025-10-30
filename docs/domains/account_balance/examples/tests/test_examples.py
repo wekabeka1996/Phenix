@@ -13,23 +13,22 @@ import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 from typing import Dict, Any
 
+
 # Мок класи для тестування
 class MockFSMCore:
     def __init__(self):
         self.events = []
 
     def emit(self, event_name: str, payload: Dict[str, Any], why: str):
-        self.events.append({
-            'event_name': event_name,
-            'payload': payload,
-            'why': why
-        })
+        self.events.append({"event_name": event_name, "payload": payload, "why": why})
+
 
 class MockBinanceAdapter:
     def __init__(self):
         self.get_account_balance = AsyncMock()
         self.get_open_positions = AsyncMock()
         self.close_session = AsyncMock()
+
 
 # Приклад модульного тесту
 def test_account_connector_initialization():
@@ -42,12 +41,10 @@ def test_account_connector_initialization():
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com"
+                "rest_url": "https://testnet.binancefuture.com",
             }
         },
-        "account_observer": {
-            "poll_interval": 30
-        }
+        "account_observer": {"poll_interval": 30},
     }
 
     fsm = MockFSMCore()
@@ -60,6 +57,7 @@ def test_account_connector_initialization():
 
     print("✅ Тест ініціалізації пройдено")
 
+
 # Приклад тесту з моками API
 @pytest.mark.asyncio
 async def test_balance_update_emission():
@@ -69,19 +67,19 @@ async def test_balance_update_emission():
     # Мок дані API
     mock_balance_data = [
         {
-            'asset': 'USDT',
-            'balance': '1000.50',
-            'crossUnPnl': '25.30',
-            'crossWalletBalance': '975.20',
-            'updateTime': 1640995200000
+            "asset": "USDT",
+            "balance": "1000.50",
+            "crossUnPnl": "25.30",
+            "crossWalletBalance": "975.20",
+            "updateTime": 1640995200000,
         },
         {
-            'asset': 'BTC',
-            'balance': '0.000',  # буде відфільтровано
-            'crossUnPnl': '0.00',
-            'crossWalletBalance': '0.000',
-            'updateTime': 1640995200000
-        }
+            "asset": "BTC",
+            "balance": "0.000",  # буде відфільтровано
+            "crossUnPnl": "0.00",
+            "crossWalletBalance": "0.000",
+            "updateTime": 1640995200000,
+        },
     ]
 
     config = {
@@ -90,10 +88,10 @@ async def test_balance_update_emission():
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com"
+                "rest_url": "https://testnet.binancefuture.com",
             }
         },
-        "account_observer": {"poll_interval": 30}
+        "account_observer": {"poll_interval": 30},
     }
 
     fsm = MockFSMCore()
@@ -106,16 +104,17 @@ async def test_balance_update_emission():
     assert len(fsm.events) == 1
     event = fsm.events[0]
 
-    assert event['event_name'] == 'EVT:BALANCE_UPDATE_RECEIVED'
-    assert event['why'] == 'Balance data updated from Binance API.'
+    assert event["event_name"] == "EVT:BALANCE_UPDATE_RECEIVED"
+    assert event["why"] == "Balance data updated from Binance API."
 
-    payload = event['payload']
-    assert 'assets' in payload
-    assert 'updateTime' in payload
-    assert len(payload['assets']) == 1  # тільки USDT з балансом > 0
-    assert payload['assets'][0]['asset'] == 'USDT'
+    payload = event["payload"]
+    assert "assets" in payload
+    assert "updateTime" in payload
+    assert len(payload["assets"]) == 1  # тільки USDT з балансом > 0
+    assert payload["assets"][0]["asset"] == "USDT"
 
     print("✅ Тест емісії балансу пройдено")
+
 
 # Приклад тесту обробки помилок
 @pytest.mark.asyncio
@@ -129,10 +128,10 @@ async def test_api_error_handling():
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com"
+                "rest_url": "https://testnet.binancefuture.com",
             }
         },
-        "account_observer": {"poll_interval": 30}
+        "account_observer": {"poll_interval": 30},
     }
 
     fsm = MockFSMCore()
@@ -152,6 +151,7 @@ async def test_api_error_handling():
 
     print("✅ Тест обробки помилок пройдено")
 
+
 # Приклад інтеграційного тесту
 @pytest.mark.asyncio
 async def test_full_data_flow():
@@ -161,24 +161,24 @@ async def test_full_data_flow():
     # Мок дані API
     mock_balance_data = [
         {
-            'asset': 'USDT',
-            'balance': '1000.50',
-            'crossUnPnl': '25.30',
-            'crossWalletBalance': '975.20',
-            'updateTime': 1640995200000
+            "asset": "USDT",
+            "balance": "1000.50",
+            "crossUnPnl": "25.30",
+            "crossWalletBalance": "975.20",
+            "updateTime": 1640995200000,
         }
     ]
 
     mock_positions_data = [
         {
-            'symbol': 'BTCUSDT',
-            'positionAmt': '0.001',
-            'entryPrice': '50000.00',
-            'unRealizedProfit': '5.25',
-            'leverage': 10,
-            'marginType': 'cross',
-            'markPrice': '50250.00',
-            'liquidationPrice': '45000.00'
+            "symbol": "BTCUSDT",
+            "positionAmt": "0.001",
+            "entryPrice": "50000.00",
+            "unRealizedProfit": "5.25",
+            "leverage": 10,
+            "marginType": "cross",
+            "markPrice": "50250.00",
+            "liquidationPrice": "45000.00",
         }
     ]
 
@@ -188,10 +188,10 @@ async def test_full_data_flow():
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com"
+                "rest_url": "https://testnet.binancefuture.com",
             }
         },
-        "account_observer": {"poll_interval": 30}
+        "account_observer": {"poll_interval": 30},
     }
 
     fsm = MockFSMCore()
@@ -210,22 +210,30 @@ async def test_full_data_flow():
     assert len(fsm.events) == 2
 
     # Перевірка події балансу
-    balance_event = next(e for e in fsm.events if e['event_name'] == 'EVT:BALANCE_UPDATE_RECEIVED')
-    assert len(balance_event['payload']['assets']) == 1
+    balance_event = next(
+        e for e in fsm.events if e["event_name"] == "EVT:BALANCE_UPDATE_RECEIVED"
+    )
+    assert len(balance_event["payload"]["assets"]) == 1
 
     # Перевірка події позицій
-    account_event = next(e for e in fsm.events if e['event_name'] == 'EVT:ACCOUNT_UPDATE_RECEIVED')
-    assert len(account_event['payload']['positions']) == 1
-    assert account_event['payload']['totalWalletBalance'] == '1000.50'
+    account_event = next(
+        e for e in fsm.events if e["event_name"] == "EVT:ACCOUNT_UPDATE_RECEIVED"
+    )
+    assert len(account_event["payload"]["positions"]) == 1
+    assert account_event["payload"]["totalWalletBalance"] == "1000.50"
 
     print("✅ Тест повного потоку даних пройдено")
 
+
 # Приклад параметризованого тесту
-@pytest.mark.parametrize("balance_value,expected_filtered", [
-    ("1000.50", True),   # баланс > 0 - має бути включено
-    ("0.000", False),    # баланс = 0 - має бути відфільтровано
-    ("-10.00", False),   # негативний баланс - має бути відфільтровано
-])
+@pytest.mark.parametrize(
+    "balance_value,expected_filtered",
+    [
+        ("1000.50", True),  # баланс > 0 - має бути включено
+        ("0.000", False),  # баланс = 0 - має бути відфільтровано
+        ("-10.00", False),  # негативний баланс - має бути відфільтровано
+    ],
+)
 def test_balance_filtering(balance_value, expected_filtered):
     """Тест фільтрації активів за балансом"""
     from apps.reference.domains.account_balance import AccountConnector
@@ -236,10 +244,10 @@ def test_balance_filtering(balance_value, expected_filtered):
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com"
+                "rest_url": "https://testnet.binancefuture.com",
             }
         },
-        "account_observer": {"poll_interval": 30}
+        "account_observer": {"poll_interval": 30},
     }
 
     fsm = MockFSMCore()
@@ -248,11 +256,11 @@ def test_balance_filtering(balance_value, expected_filtered):
     # Тестові дані
     balance_data = [
         {
-            'asset': 'TEST',
-            'balance': balance_value,
-            'crossUnPnl': '0.00',
-            'crossWalletBalance': balance_value,
-            'updateTime': 1640995200000
+            "asset": "TEST",
+            "balance": balance_value,
+            "crossUnPnl": "0.00",
+            "crossWalletBalance": balance_value,
+            "updateTime": 1640995200000,
         }
     ]
 
@@ -262,12 +270,13 @@ def test_balance_filtering(balance_value, expected_filtered):
     # Перевірка результату
     if expected_filtered:
         assert len(fsm.events) == 1
-        assert len(fsm.events[0]['payload']['assets']) == 1
+        assert len(fsm.events[0]["payload"]["assets"]) == 1
     else:
         assert len(fsm.events) == 1
-        assert len(fsm.events[0]['payload']['assets']) == 0
+        assert len(fsm.events[0]["payload"]["assets"]) == 0
 
     print(f"✅ Тест фільтрації балансу {balance_value} пройдено")
+
 
 # Функція для запуску прикладів тестів
 def run_examples():
@@ -286,11 +295,13 @@ def run_examples():
     print()
     print("✅ Всі приклади тестів пройдено успішно")
 
+
 async def run_async_examples():
     """Запуск асинхронних прикладів тестів"""
     await test_balance_update_emission()
     await test_api_error_handling()
     await test_full_data_flow()
+
 
 if __name__ == "__main__":
     run_examples()

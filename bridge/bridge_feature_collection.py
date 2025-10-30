@@ -11,17 +11,20 @@ from unicorn_binance_websocket_api import BinanceWebSocketApiManager
 LIVE_EXCHANGE = "binance.com"
 BOOK_BUFFER = "book_buffer"
 TRADE_BUFFER = "trade_buffer"
-DP_MS_MAX_GAP = int(os.getenv("DP_MS_MAX_GAP", "2000"))   # max gap for delta_price, ms
+DP_MS_MAX_GAP = int(os.getenv("DP_MS_MAX_GAP", "2000"))  # max gap for delta_price, ms
 TFI_WINDOW_SEC = float(os.getenv("TFI_WINDOW_SEC", "3.0"))  # rolling window for tfi
+
 
 # ---------- Helper ----------
 def now_ms() -> int:
     return int(time.time() * 1000)
 
+
 def jwrite(path: str, obj: dict):
     print(f"Writing to {path}: {obj}")
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+
 
 # ---------- Collector ----------
 class LiveBridgeCollector:
@@ -84,7 +87,7 @@ class LiveBridgeCollector:
             return
 
         # features
-        depth = (Bq + Aq)
+        depth = Bq + Aq
         obi = (Bq - Aq) / depth if depth > 0 else 0.0
 
         # delta_price vs mid
@@ -120,15 +123,25 @@ class LiveBridgeCollector:
             # TRADES
             tmsg = self.bwam.pop_stream_data_from_stream_buffer(TRADE_BUFFER)
             if tmsg:
-                if isinstance(tmsg, str): tmsg = json.loads(tmsg)
-                if isinstance(tmsg, dict) and "data" in tmsg and tmsg.get("stream", "").endswith("@aggTrade"):
+                if isinstance(tmsg, str):
+                    tmsg = json.loads(tmsg)
+                if (
+                    isinstance(tmsg, dict)
+                    and "data" in tmsg
+                    and tmsg.get("stream", "").endswith("@aggTrade")
+                ):
                     self._handle_trade(tmsg["data"])
 
             # BOOK
             bmsg = self.bwam.pop_stream_data_from_stream_buffer(BOOK_BUFFER)
             if bmsg:
-                if isinstance(bmsg, str): bmsg = json.loads(bmsg)
-                if isinstance(bmsg, dict) and "data" in bmsg and bmsg.get("stream", "").endswith("@bookTicker"):
+                if isinstance(bmsg, str):
+                    bmsg = json.loads(bmsg)
+                if (
+                    isinstance(bmsg, dict)
+                    and "data" in bmsg
+                    and bmsg.get("stream", "").endswith("@bookTicker")
+                ):
                     self._handle_book(bmsg["data"])
 
             time.sleep(0.05)
@@ -136,9 +149,11 @@ class LiveBridgeCollector:
         self.bwam.stop_manager_with_all_streams()
         print(f"Collection completed. Features saved to {self.features_path}")
 
+
 def main():
     syms = os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT").split(",")
     LiveBridgeCollector([s.strip() for s in syms if s.strip()]).run(seconds=5)
+
 
 if __name__ == "__main__":
     main()

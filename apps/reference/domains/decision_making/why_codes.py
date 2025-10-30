@@ -128,14 +128,12 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.SPREAD_TOO_WIDE: "Market spread exceeds maximum allowed threshold",
         WhyCode.SPREAD_NEGATIVE: "Market spread is negative (invalid data)",
         WhyCode.SPREAD_ZERO: "Market spread is zero (no liquidity)",
-
         # Risk Management Rejections
         WhyCode.RISK_SCORE_HIGH: "Risk score exceeds acceptable threshold",
         WhyCode.RISK_NOT_ALLOWED: "Risk management policy prohibits trading",
         WhyCode.RISK_KELLY_ZERO: "Kelly fraction calculation resulted in zero",
         WhyCode.RISK_CVAR_EXCEEDED: "Conditional Value at Risk exceeds limit",
         WhyCode.RISK_DRAWDOWN_LIMIT: "Portfolio drawdown exceeds maximum limit",
-
         # Liquidity and Sizing Issues
         WhyCode.LIQ_POSITION_TOO_SMALL: "Calculated position size below minimum threshold",
         WhyCode.LIQ_POSITION_TOO_LARGE: "Calculated position size exceeds maximum limit",
@@ -147,12 +145,10 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.SIZING_ERROR_NO_INSTRUMENT_SPECS: "Cannot size position: instrument specs unavailable",
         WhyCode.SIZING_ERROR_QTY_ZERO_AFTER_ROUNDING: "Quantity became zero after rounding to step size",
         WhyCode.SIZING_SUCCESS: "Position sizing completed successfully",
-
         # Margin and Leverage Issues
         WhyCode.MARGIN_INSUFFICIENT: "Available margin insufficient for position",
         WhyCode.MARGIN_LEVERAGE_TOO_HIGH: "Leverage exceeds safe liquidation distance",
         WhyCode.MARGIN_MAINTENANCE_LOW: "Maintenance margin below required level",
-
         # Market Regime Filtering
         WhyCode.REGIME_TREND_UP_BLOCK_SELL: "Counter-trend sell blocked in TREND_UP regime",
         WhyCode.REGIME_TREND_DOWN_BLOCK_BUY: "Counter-trend buy blocked in TREND_DOWN regime",
@@ -160,22 +156,18 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.REGIME_HIGH_VOL_SIZE_REDUCED: "Position size reduced in HIGH_VOLATILITY regime",
         WhyCode.REGIME_LOW_VOL_SIZE_INCREASED: "Position size increased in LOW_VOLATILITY regime",
         WhyCode.REGIME_MEAN_REVERSION_SIZE_REDUCED: "Position size reduced in MEAN_REVERSION regime",
-
         # Signal Processing Issues
         WhyCode.SIGNAL_NEUTRAL: "Signal score is neutral, no trade action required",
-
         # System Guards and Limits
         WhyCode.GUARD_LIQ_DIST_TOO_CLOSE: "Liquidation distance too close to entry price",
         WhyCode.GUARD_POSITION_LIMIT_EXCEEDED: "Position limit per symbol exceeded",
         WhyCode.GUARD_RATE_LIMIT_EXCEEDED: "API rate limit exceeded",
         WhyCode.GUARD_CIRCUIT_BREAKER_OPEN: "Circuit breaker is open due to system issues",
-
         # FSM State and Transition Issues
         WhyCode.FSM_STATE_INVALID: "FSM is in invalid state for this operation",
         WhyCode.FSM_TRANSITION_NOT_ALLOWED: "FSM transition not allowed from current state",
         WhyCode.FSM_TIMEOUT_EXPIRED: "FSM operation timed out",
         WhyCode.FSM_DUPLICATE_OPERATION: "Duplicate operation detected by FSM",
-
         # Exchange API Rejections
         WhyCode.EXCHANGE_ORDER_REJECTED: "Order rejected by exchange",
         WhyCode.EXCHANGE_INSUFFICIENT_BALANCE: "Exchange reports insufficient balance",
@@ -183,33 +175,27 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.EXCHANGE_INVALID_QUANTITY: "Order quantity rejected by exchange",
         WhyCode.EXCHANGE_MARKET_CLOSED: "Market is closed for trading",
         WhyCode.EXCHANGE_RATE_LIMIT: "Exchange rate limit exceeded",
-
         # Idempotency Issues
         WhyCode.IDEMPOTENCY_DUPLICATE_KEY: "Duplicate operation detected via idempotency key",
         WhyCode.IDEMPOTENCY_KEY_EXPIRED: "Idempotency key has expired",
         WhyCode.IDEMPOTENCY_KEY_INVALID: "Idempotency key format is invalid",
-
         # Time-based Issues
         WhyCode.TIMEOUT_ORDER_EXPIRED: "Order expired before execution",
         WhyCode.TIMEOUT_REQUEST_EXPIRED: "Request timed out",
         WhyCode.TIMEOUT_CONNECTION_LOST: "Connection lost during operation",
-
         # Configuration Issues
         WhyCode.CONFIG_MISSING_KEY: "Required configuration key is missing",
         WhyCode.CONFIG_INVALID_VALUE: "Configuration value is invalid",
         WhyCode.CONFIG_SCHEMA_VIOLATION: "Configuration violates schema requirements",
-
         # Input Validation Failures
         WhyCode.VALIDATION_MISSING_FIELD: "Required field is missing from input",
         WhyCode.VALIDATION_INVALID_TYPE: "Field has invalid data type",
         WhyCode.VALIDATION_INVALID_FORMAT: "Field format is invalid",
         WhyCode.VALIDATION_OUT_OF_RANGE: "Field value is out of acceptable range",
-
         # Drift Monitor Issues
         WhyCode.DRIFT_DEC_CLOSE_FALSE_POSITIVE: "DEC:CLOSE matched non-position-closing FILL",
         WhyCode.DRIFT_DEC_CLOSE_MISSING_FILL: "Expected FILL event for DEC:CLOSE not found",
         WhyCode.DRIFT_DEC_CLOSE_REDUCE_ONLY_MISMATCH: "FILL reduceOnly flag doesn't match DEC:CLOSE",
-
         # Success/Info Codes
         WhyCode.SUCCESS_ORDER_PLACED: "Order successfully placed on exchange",
         WhyCode.SUCCESS_POSITION_OPENED: "Position successfully opened",
@@ -230,7 +216,9 @@ def format_why_with_details(code: WhyCode, *details: str) -> str:
     return base
 
 
-def create_why_payload(code: WhyCode, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def create_why_payload(
+    code: WhyCode, details: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Create standardized WHY payload for events."""
     payload: Dict[str, Any] = {
         "why_code": code.value,

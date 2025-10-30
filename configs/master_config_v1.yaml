@@ -1,0 +1,7 @@
+ops:
+  metrics_url: "http://127.0.0.1:8000/metrics"   # якщо ваш API на іншому порту — оновіть тут
+  reports_dir: "reports"
+
+execution:
+  manage:
+    auto: false

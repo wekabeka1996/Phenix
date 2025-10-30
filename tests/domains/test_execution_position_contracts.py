@@ -3,14 +3,24 @@ Tests for execution_position/contracts.py
 
 Covers Pydantic models and validation logic.
 """
+
 import pytest
 from decimal import Decimal
 from pydantic import ValidationError
 
 from apps.reference.domains.execution_position.contracts import (
-    Side, OrderType, TimeInForce, OrderStatus,
-    OrderPayload, PositionPayload, validate_order_command,
-    MIN_ORDER_QTY, MAX_ORDER_QTY, MIN_PRICE, MAX_PRICE, MIN_NOTIONAL
+    Side,
+    OrderType,
+    TimeInForce,
+    OrderStatus,
+    OrderPayload,
+    PositionPayload,
+    validate_order_command,
+    MIN_ORDER_QTY,
+    MAX_ORDER_QTY,
+    MIN_PRICE,
+    MAX_PRICE,
+    MIN_NOTIONAL,
 )
 
 
@@ -52,7 +62,7 @@ class TestOrderPayloadValidation:
             qty=Decimal("0.001"),
             order_type=OrderType.LIMIT,
             price=Decimal("50000.00"),
-            tif=TimeInForce.GTC
+            tif=TimeInForce.GTC,
         )
         assert payload.symbol == "BTCUSDT"
         assert payload.side == Side.BUY
@@ -65,7 +75,7 @@ class TestOrderPayloadValidation:
             symbol="ETHUSDT",
             side=Side.SELL,
             qty=Decimal("1.0"),
-            order_type=OrderType.MARKET
+            order_type=OrderType.MARKET,
         )
         assert payload.symbol == "ETHUSDT"
         assert payload.side == Side.SELL
@@ -79,7 +89,7 @@ class TestOrderPayloadValidation:
                 symbol="BTCUSDT",
                 side=Side.BUY,
                 qty=Decimal("0.0001"),  # Below MIN_ORDER_QTY
-                order_type=OrderType.MARKET
+                order_type=OrderType.MARKET,
             )
         assert "qty must be >=" in str(exc_info.value)
 
@@ -90,7 +100,7 @@ class TestOrderPayloadValidation:
                 symbol="BTCUSDT",
                 side=Side.BUY,
                 qty=Decimal("2000.0"),  # Above MAX_ORDER_QTY
-                order_type=OrderType.MARKET
+                order_type=OrderType.MARKET,
             )
         assert "qty must be <=" in str(exc_info.value)
 
@@ -102,7 +112,7 @@ class TestOrderPayloadValidation:
                 side=Side.BUY,
                 qty=Decimal("0.001"),
                 order_type=OrderType.LIMIT,
-                price=Decimal("0.001")  # Below MIN_PRICE
+                price=Decimal("0.001"),  # Below MIN_PRICE
             )
         assert "price must be >=" in str(exc_info.value)
 
@@ -114,7 +124,7 @@ class TestOrderPayloadValidation:
                 side=Side.BUY,
                 qty=Decimal("0.001"),
                 order_type=OrderType.LIMIT,
-                price=Decimal("2000000.0")  # Above MAX_PRICE
+                price=Decimal("2000000.0"),  # Above MAX_PRICE
             )
         assert "price must be <=" in str(exc_info.value)
 
@@ -125,7 +135,7 @@ class TestOrderPayloadValidation:
                 symbol="BTCUSDT",
                 side=Side.BUY,
                 qty=Decimal("0.001"),
-                order_type=OrderType.LIMIT
+                order_type=OrderType.LIMIT,
                 # Missing price
             )
         assert "LIMIT orders require price" in str(exc_info.value)
@@ -138,7 +148,7 @@ class TestOrderPayloadValidation:
                 side=Side.BUY,
                 qty=Decimal("0.001"),
                 order_type=OrderType.LIMIT,
-                price=Decimal("5.00")  # 0.001 * 5.00 = 0.005 < MIN_NOTIONAL (10.0)
+                price=Decimal("5.00"),  # 0.001 * 5.00 = 0.005 < MIN_NOTIONAL (10.0)
             )
         assert "order notional value must be >=" in str(exc_info.value)
 
@@ -148,7 +158,7 @@ class TestOrderPayloadValidation:
             symbol="BTCUSDT",
             side=Side.BUY,
             qty=Decimal("0.0015"),  # Should quantize to 0.001
-            order_type=OrderType.MARKET
+            order_type=OrderType.MARKET,
         )
         assert payload.qty == Decimal("0.001")
 
@@ -159,17 +169,14 @@ class TestOrderPayloadValidation:
             side=Side.BUY,
             qty=Decimal("0.001"),
             order_type=OrderType.LIMIT,
-            price=Decimal("50000.123")  # Should quantize to 50000.12
+            price=Decimal("50000.123"),  # Should quantize to 50000.12
         )
         assert payload.price == Decimal("50000.12")
 
     def test_qty_parsing_from_string(self):
         """Test quantity parsing from string"""
         payload = OrderPayload(
-            symbol="BTCUSDT",
-            side=Side.BUY,
-            qty="0.001",
-            order_type=OrderType.MARKET
+            symbol="BTCUSDT", side=Side.BUY, qty="0.001", order_type=OrderType.MARKET
         )
         assert payload.qty == Decimal("0.001")
 
@@ -180,7 +187,7 @@ class TestOrderPayloadValidation:
             side=Side.BUY,
             qty=Decimal("0.001"),
             order_type=OrderType.LIMIT,
-            price="50000.00"
+            price="50000.00",
         )
         assert payload.price == Decimal("50000.00")
 
@@ -191,7 +198,7 @@ class TestOrderPayloadValidation:
                 symbol="BTCUSDT",
                 side=Side.BUY,
                 qty="invalid",
-                order_type=OrderType.MARKET
+                order_type=OrderType.MARKET,
             )
         assert "qty must be valid number" in str(exc_info.value)
 
@@ -203,7 +210,7 @@ class TestOrderPayloadValidation:
                 side=Side.BUY,
                 qty=Decimal("0.001"),
                 order_type=OrderType.LIMIT,
-                price="invalid"
+                price="invalid",
             )
         assert "price must be valid number" in str(exc_info.value)
 
@@ -219,7 +226,7 @@ class TestPositionPayloadValidation:
             qty=Decimal("0.001"),
             avg_price=Decimal("50000.00"),
             unrealized_pnl=Decimal("10.0"),
-            realized_pnl=Decimal("5.0")
+            realized_pnl=Decimal("5.0"),
         )
         assert payload.symbol == "BTCUSDT"
         assert payload.side == Side.BUY
@@ -239,7 +246,7 @@ class TestValidateOrderCommand:
             "side": "BUY",
             "qty": "0.001",
             "order_type": "LIMIT",
-            "price": "50000.00"
+            "price": "50000.00",
         }
         assert validate_order_command(cmd) is True
 
@@ -249,7 +256,7 @@ class TestValidateOrderCommand:
             "side": "BUY",
             "qty": "0.001",
             "order_type": "LIMIT",
-            "price": "50000.00"
+            "price": "50000.00",
         }
         assert validate_order_command(cmd) is False
 
@@ -260,7 +267,7 @@ class TestValidateOrderCommand:
             "side": "BUY",
             "qty": "invalid",
             "order_type": "LIMIT",
-            "price": "50000.00"
+            "price": "50000.00",
         }
         assert validate_order_command(cmd) is False
 
@@ -271,6 +278,6 @@ class TestValidateOrderCommand:
             "side": "BUY",
             "qty": "0.001",
             "order_type": "LIMIT",
-            "price": "5.00"
+            "price": "5.00",
         }
         assert validate_order_command(cmd) is False

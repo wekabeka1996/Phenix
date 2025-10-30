@@ -1,3 +1,5 @@
-httpx 
-httpx 
-pytest-aiohttp 
+httpx
+httpx
+pytest-aiohttp
+prometheus_client>=0.20.0
+PyYAML>=6.0

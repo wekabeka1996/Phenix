@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field, field_validator
 import time
 import uuid
 
-Op = Literal["ASK","DEC","CMD","EVT","UPD","ERR"]
+Op = Literal["ASK", "DEC", "CMD", "EVT", "UPD", "ERR"]
+
 
 class Message(BaseModel):
     v: int = 1

@@ -37,27 +37,31 @@ class AccountObserver:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         if Client is None:
-            raise ImportError("python-binance is required. Install with: pip install python-binance")
+            raise ImportError(
+                "python-binance is required. Install with: pip install python-binance"
+            )
 
         # Get trading mode and API config
         mode = config.get("trading_mode", "testnet")
         api_config = config.get("binance_api", {})
-        
+
         # Get credentials based on mode
         env_config = {}
         if mode == "live":
             env_config = api_config.get("live", {})
         else:  # testnet or hybrid modes
             env_config = api_config.get("testnet", {})
-        
+
         api_key = env_config.get("api_key")
         api_secret = env_config.get("api_secret")
 
         if not api_key or not api_secret:
-            raise ValueError(f"API configuration for account observer in '{mode}' mode is incomplete")
+            raise ValueError(
+                f"API configuration for account observer in '{mode}' mode is incomplete"
+            )
 
         # Get account observer config
-        account_observer_config = config.get('account_observer', {})
+        account_observer_config = config.get("account_observer", {})
 
         # Determine testnet/mainnet based on trading mode
         # If mode is 'live' or contains 'live' → mainnet, otherwise testnet
@@ -74,13 +78,15 @@ class AccountObserver:
         self._stop_polling = threading.Event()
 
         # Polling interval (seconds) - from config
-        self.poll_interval = account_observer_config.get('poll_interval', 5)
+        self.poll_interval = account_observer_config.get("poll_interval", 5)
 
         # Symbols to monitor - from config
-        self.symbols = account_observer_config.get('symbols', ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'])
+        self.symbols = account_observer_config.get(
+            "symbols", ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+        )
 
         # Trade limit per symbol - from config
-        self.trade_limit = account_observer_config.get('trade_limit', 50)
+        self.trade_limit = account_observer_config.get("trade_limit", 50)
 
         self.logger.info("AccountObserver initialized with testnet client")
 
@@ -121,8 +127,10 @@ class AccountObserver:
             # Note: get_my_trades requires symbol, so we need to check configured symbols
             for symbol in self.symbols:
                 try:
-                    trades = self.client.get_my_trades(symbol=symbol, limit=self.trade_limit)
-                    self._process_trades(trades, 'binance')
+                    trades = self.client.get_my_trades(
+                        symbol=symbol, limit=self.trade_limit
+                    )
+                    self._process_trades(trades, "binance")
                 except Exception as e:
                     self.logger.debug(f"Error getting trades for {symbol}: {e}")
 
@@ -132,7 +140,7 @@ class AccountObserver:
     def _process_trades(self, trades: list[dict[str, Any]], venue: str) -> None:
         """Process list of trades and emit events for new ones."""
         for trade in trades:
-            trade_id = trade['id']
+            trade_id = trade["id"]
 
             if trade_id in self.processed_trade_ids:
                 continue  # Already processed
@@ -147,7 +155,7 @@ class AccountObserver:
             self.fsm.emit(
                 "EVT:TRADE_EXECUTED",
                 payload=payload,
-                why="Detected new user trade from Binance account."
+                why="Detected new user trade from Binance account.",
             )
 
             self.logger.info(f"Emitted TRADE_EXECUTED for trade {trade_id}: {payload}")
@@ -158,12 +166,16 @@ class AccountObserver:
         # 'symbol', 'id', 'orderId', 'price', 'qty', 'quoteQty', 'commission', 'commissionAsset',
         # 'time', 'isBuyer', 'isMaker', 'isBestMatch'
 
-        symbol = trade['symbol']
-        side = 'buy' if trade['isBuyer'] else 'sell'
-        price = str(trade['price'])  # Preserve precision as string
-        quantity = str(trade['qty']) if trade['isBuyer'] else str(-decimal.Decimal(trade['qty']))  # Preserve precision, handle sign
-        ts = trade['time']  # Already in milliseconds
-        fees = str(trade.get('commission', '0.0'))  # Preserve precision as string
+        symbol = trade["symbol"]
+        side = "buy" if trade["isBuyer"] else "sell"
+        price = str(trade["price"])  # Preserve precision as string
+        quantity = (
+            str(trade["qty"])
+            if trade["isBuyer"]
+            else str(-decimal.Decimal(trade["qty"]))
+        )  # Preserve precision, handle sign
+        ts = trade["time"]  # Already in milliseconds
+        fees = str(trade.get("commission", "0.0"))  # Preserve precision as string
 
         return {
             "symbol": symbol,
@@ -172,5 +184,5 @@ class AccountObserver:
             "quantity": quantity,
             "ts": ts,
             "fees": fees,
-            "venue": venue
+            "venue": venue,
         }

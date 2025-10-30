@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 class DegradationPolicy:
     def __init__(self) -> None:
         self.reduce_only = False

@@ -12,6 +12,7 @@ Used for:
 This adapter always returns successful responses, enabling full FSM flow
 validation without exchange connectivity.
 """
+
 import logging
 import time
 from decimal import Decimal
@@ -24,11 +25,14 @@ try:
 except ImportError:
     import sys
     from pathlib import Path
+
     project_root = Path(__file__).parent.parent.parent.parent.parent
     sys.path.insert(0, str(project_root / "vfoundation" / "vfoundation"))
     sys.path.insert(0, str(project_root / "apps"))
     from vfoundation.core.protocol import Message
-    from apps.reference.domains.execution_position.execution_adapter import AbstractExecutionAdapter
+    from apps.reference.domains.execution_position.execution_adapter import (
+        AbstractExecutionAdapter,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -37,37 +41,37 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
     """
     A simulated execution adapter that logs order requests and returns
     mock successful responses without connecting to any real exchange.
-    
+
     Design:
     - Always returns 'ACCEPTED' status (no real validation)
     - Generates mock exchange_order_id using timestamp
     - Preserves qty for fill simulation
     - Logs all operations for observability
     - Returns 'CONNECTED' status (no real connection)
-    
+
     Use Cases:
     - Shadow mode: Run FSM without real orders
     - Integration tests: Fast, deterministic behavior
     - Development: No API credentials needed
     - TDD: Validate FSM logic before exchange integration
-    
+
     Example:
         >>> adapter = SimulatedExecutionAdapter()
-        >>> dec_open = Message(op="DEC", verb="OPEN", 
+        >>> dec_open = Message(op="DEC", verb="OPEN",
         ...                    pld={"symbol": "ETHUSDT", "qty": "0.5"})
         >>> result = adapter.place_order(dec_open)
         >>> assert result['status'] == 'ACCEPTED'
         >>> assert 'sim_' in result['exchange_order_id']
     """
-    
+
     def place_order(self, dec_msg: Message) -> Dict[str, Any]:
         """
         Simulate order placement.
-        
+
         Args:
             dec_msg: DEC:OPEN or DEC:ADJUST message with order details
                 Expected payload: {symbol, side, qty, price, order_type, tif}
-        
+
         Returns:
             Standardized response:
             {
@@ -77,7 +81,7 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
                 'message': 'Order simulated successfully.',
                 'timestamp': <current_time_ms>
             }
-        
+
         Notes:
             - No validation of payload fields (always succeeds)
             - No real API call (instant response)
@@ -87,33 +91,33 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
         qty = dec_msg.pld.get("qty", "0.0")
         side = dec_msg.pld.get("side", "UNKNOWN")
         price = dec_msg.pld.get("price", "0.0")
-        
+
         logger.info(
             f"[SIMULATED] Placing order: {side.upper()} {qty} {symbol} @ {price}. "
             f"Simulating immediate acceptance."
         )
-        
+
         # Generate mock exchange order ID using timestamp for uniqueness
         timestamp_ms = int(time.time() * 1000)
         mock_order_id = f"sim_{timestamp_ms}"
-        
+
         # Return standardized success response
         return {
             "status": "ACCEPTED",
             "exchange_order_id": mock_order_id,
             "filled_qty": str(Decimal(qty)),  # Preserve precision, return as string
             "message": "Order simulated successfully.",
-            "timestamp": timestamp_ms
+            "timestamp": timestamp_ms,
         }
 
     def cancel_order(self, dec_msg: Message) -> Dict[str, Any]:
         """
         Simulate order cancellation.
-        
+
         Args:
             dec_msg: DEC:CANCEL message with exchange_order_id to cancel
                 Expected payload: {exchange_order_id}
-        
+
         Returns:
             Standardized response:
             {
@@ -123,36 +127,36 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
                 'message': 'Cancel simulated successfully.',
                 'timestamp': <current_time_ms>
             }
-        
+
         Notes:
             - No validation if order exists (always succeeds)
             - No state tracking (stateless adapter)
         """
         order_id = dec_msg.pld.get("exchange_order_id", "UNKNOWN")
-        
+
         logger.info(
             f"[SIMULATED] Cancelling order {order_id}. "
             f"Simulating immediate cancellation."
         )
-        
+
         timestamp_ms = int(time.time() * 1000)
-        
+
         # Return standardized cancel success response
         return {
             "status": "ACCEPTED",
             "exchange_order_id": order_id,
             "filled_qty": "0.0",  # No partial fills in simulation
             "message": "Cancel simulated successfully.",
-            "timestamp": timestamp_ms
+            "timestamp": timestamp_ms,
         }
 
     def get_status(self) -> str:
         """
         Simulate connection status check.
-        
+
         Returns:
             'CONNECTED' (always, no real connection to check)
-        
+
         Notes:
             - Used by FSM for circuit breaker logic
             - In simulation, always returns healthy status

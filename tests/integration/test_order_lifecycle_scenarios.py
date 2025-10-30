@@ -15,10 +15,23 @@ sys.path.insert(0, str(project_root / "vfoundation" / "vfoundation"))
 import pytest
 from unittest.mock import Mock, patch
 
+
 # Simple Message class for testing (same as in other integration tests)
 class Message:
     """Simple message class for testing."""
-    def __init__(self, op, verb, src=None, dst=None, pld=None, why=None, rid=None, span_id=None, parent_span_id=None):
+
+    def __init__(
+        self,
+        op,
+        verb,
+        src=None,
+        dst=None,
+        pld=None,
+        why=None,
+        rid=None,
+        span_id=None,
+        parent_span_id=None,
+    ):
         self.op = op
         self.verb = verb
         self.src = src
@@ -58,7 +71,7 @@ class TestOrderLifecycleScenarios:
     async def test_entry_fill_bracket_placement(self, mock_aurora_system):
         """Test scenario 3: Entry → Fill → Bracket placement."""
         # Mock successful order placement
-        with patch.object(mock_aurora_system.adapter, 'place_order') as mock_place:
+        with patch.object(mock_aurora_system.adapter, "place_order") as mock_place:
             mock_place.return_value = {
                 "instrument": "BTCUSDT",
                 "order_id": "12345",
@@ -68,7 +81,7 @@ class TestOrderLifecycleScenarios:
                 "breaches": [],
                 "why": ["EXEC_GUARD_PASS"],
                 "dto_version": "1.0.0",
-                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json"
+                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json",
             }
 
             # Send DEC:OPEN
@@ -84,8 +97,8 @@ class TestOrderLifecycleScenarios:
                     "qty": 0.001,
                     "price": 50000.0,
                     "order_type": "market",
-                    "time_in_force": "gtc"
-                }
+                    "time_in_force": "gtc",
+                },
             )
 
             result = mock_aurora_system.adapter.place_order(dec_msg)
@@ -104,7 +117,7 @@ class TestOrderLifecycleScenarios:
                 "breaches": [],
                 "why": ["EXEC_GUARD_PASS"],
                 "dto_version": "1.0.0",
-                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json"
+                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json",
             }
 
             # Send DEC:OPEN
@@ -120,8 +133,8 @@ class TestOrderLifecycleScenarios:
                     "qty": 0.001,
                     "price": 50000.0,
                     "order_type": "market",
-                    "time_in_force": "gtc"
-                }
+                    "time_in_force": "gtc",
+                },
             )
 
             result = mock_aurora_system.adapter.place_order(dec_msg)
@@ -163,7 +176,7 @@ class TestOrderLifecycleScenarios:
         # Send twice
         # Verify only one market order is placed
 
-        with patch.object(mock_aurora_system.adapter, 'close_position') as mock_close:
+        with patch.object(mock_aurora_system.adapter, "close_position") as mock_close:
             mock_close.return_value = {
                 "instrument": "BTCUSDT",
                 "order_id": "close-123",
@@ -173,7 +186,7 @@ class TestOrderLifecycleScenarios:
                 "breaches": [],
                 "why": ["EXEC_GUARD_PASS"],
                 "dto_version": "1.0.0",
-                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json"
+                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json",
             }
 
             # First close command
@@ -183,10 +196,7 @@ class TestOrderLifecycleScenarios:
                 src="test",
                 dst="execution_position",
                 rid="test-rid-close-001",
-                pld={
-                    "instrument": "BTCUSDT",
-                    "close_type": "market"
-                }
+                pld={"instrument": "BTCUSDT", "close_type": "market"},
             )
 
             result1 = mock_aurora_system.adapter.close_position(dec_close)

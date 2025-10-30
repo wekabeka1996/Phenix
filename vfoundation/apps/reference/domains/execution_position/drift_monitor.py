@@ -15,6 +15,7 @@ Methodology:
 
 Off-path computation: processes WAL/fixtures, not hot-path.
 """
+
 from __future__ import annotations
 import time
 from typing import Dict, List, Any, Optional
@@ -26,11 +27,12 @@ from vfoundation.config import config
 @dataclass
 class ConfusionMatrix:
     """Confusion matrix for shadow-mode validation."""
+
     tp: int = 0  # True Positive: DEC matched by EVT
     fp: int = 0  # False Positive: DEC without matching EVT
     fn: int = 0  # False Negative: EVT without matching DEC
     tn: int = 0  # True Negative: No action, no event
-    
+
     @property
     def drift_pct(self) -> float:
         """Calculate drift percentage: (FP + FN) / total * 100."""
@@ -38,7 +40,7 @@ class ConfusionMatrix:
         if total == 0:
             return 0.0
         return ((self.fp + self.fn) / total) * 100.0
-    
+
     @property
     def accuracy(self) -> float:
         """Calculate accuracy: (TP + TN) / total * 100."""
@@ -46,7 +48,7 @@ class ConfusionMatrix:
         if total == 0:
             return 0.0
         return ((self.tp + self.tn) / total) * 100.0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Export as dict for metrics/debug."""
         return {
@@ -62,13 +64,14 @@ class ConfusionMatrix:
 @dataclass
 class Mismatch:
     """Single mismatch record for drift_report."""
+
     rid: str
     symbol: str
     type: str  # "FP" or "FN"
     decision_verb: Optional[str] = None  # "OPEN" or "CLOSE" for FP
-    event_verb: Optional[str] = None     # "ORDER_PLACED" etc for FN
+    event_verb: Optional[str] = None  # "ORDER_PLACED" etc for FN
     timestamp: float = field(default_factory=time.time)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Export as dict."""
         return {
@@ -84,11 +87,12 @@ class Mismatch:
 @dataclass
 class DriftReport:
     """Complete drift report for /debug endpoint."""
+
     confusion: ConfusionMatrix
     mismatches: List[Mismatch] = field(default_factory=list)
     computed_at: float = field(default_factory=time.time)
     records_processed: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Export as dict for JSON response."""
         return {
@@ -106,21 +110,21 @@ def compute_drift(
 ) -> DriftReport:
     """
     Compute drift between shadow decisions and actual events.
-    
+
     Args:
         decisions: List of DEC messages (op="DEC", verb="OPEN"|"CLOSE")
         events: List of EVT messages (op="EVT", verb="ORDER_PLACED"|"FILL"|"CANCELLED")
         time_window_sec: Time window for matching (uses config default if None)
-    
+
     Returns:
         DriftReport with confusion matrix and mismatches
     """
     if time_window_sec is None:
         time_window_sec = config.drift_time_window_sec
-        
+
     confusion = ConfusionMatrix()
     mismatches: List[Mismatch] = []
-    
+
     # Index events by RID for fast lookup (symbol may be missing in DEC)
     event_index: Dict[str, List[Dict[str, Any]]] = {}
     for evt in events:
@@ -128,40 +132,40 @@ def compute_drift(
         if rid not in event_index:
             event_index[rid] = []
         event_index[rid].append(evt)
-    
+
     # Track matched events to detect FN later
     matched_events = set()
-    
+
     # Process decisions (DEC:OPEN/CLOSE) → check for matching events
     for dec in decisions:
         verb = dec.get("verb", "")
         if verb not in ("OPEN", "CLOSE"):
             continue  # Skip non-OPEN/CLOSE decisions
-        
+
         pld = dec.get("pld", {})
         symbol = pld.get("symbol", "UNKNOWN")
         rid = dec.get("rid", "unknown")
         dec_ts = dec.get("timestamp", time.time())
-        
+
         # Look for matching events by RID
         candidate_events = event_index.get(rid, [])
-        
+
         matched = False
         for evt in candidate_events:
             evt_ts = evt.get("timestamp", time.time())
             evt_verb = evt.get("verb", "")
-            
+
             # Check time window
             if abs(evt_ts - dec_ts) > time_window_sec:
                 continue
-            
+
             # Match OPEN → ORDER_PLACED|FILL
             if verb == "OPEN" and evt_verb in ("ORDER_PLACED", "FILL"):
                 confusion.tp += 1
                 matched = True
                 matched_events.add(id(evt))
                 break
-            
+
             # Match CLOSE → CANCELLED|FILL(reduce)
             if verb == "CLOSE" and evt_verb in ("CANCELLED", "FILL"):
                 # For FILL events, ensure it's actually a position-reducing fill
@@ -173,23 +177,25 @@ def compute_drift(
                         continue  # This FILL is not a position closure, skip matching
                     # If no reduceOnly flag but we have side info, we could check against position
                     # For now, assume FILL without reduceOnly=False is valid (backward compatibility)
-                
+
                 confusion.tp += 1
                 matched = True
                 matched_events.add(id(evt))
                 break
-        
+
         if not matched:
             # False Positive: decision without matching event
             confusion.fp += 1
-            mismatches.append(Mismatch(
-                rid=rid,
-                symbol=symbol,
-                type="FP",
-                decision_verb=verb,
-                timestamp=dec_ts,
-            ))
-    
+            mismatches.append(
+                Mismatch(
+                    rid=rid,
+                    symbol=symbol,
+                    type="FP",
+                    decision_verb=verb,
+                    timestamp=dec_ts,
+                )
+            )
+
     # Process unmatched events → False Negatives
     for evt in events:
         if id(evt) not in matched_events:
@@ -198,20 +204,22 @@ def compute_drift(
             rid = evt.get("rid", "unknown")
             evt_verb = evt.get("verb", "")
             evt_ts = evt.get("timestamp", time.time())
-            
+
             confusion.fn += 1
-            mismatches.append(Mismatch(
-                rid=rid,
-                symbol=symbol,
-                type="FN",
-                event_verb=evt_verb,
-                timestamp=evt_ts,
-            ))
-    
+            mismatches.append(
+                Mismatch(
+                    rid=rid,
+                    symbol=symbol,
+                    type="FN",
+                    event_verb=evt_verb,
+                    timestamp=evt_ts,
+                )
+            )
+
     # TN: stub for now (requires baseline of "no action" states)
     # In shadow mode, TN ≈ periods where neither DEC nor EVT occurred
     # For simplicity, we'll keep TN=0 unless explicitly tracked
-    
+
     return DriftReport(
         confusion=confusion,
         mismatches=mismatches,
@@ -223,10 +231,10 @@ def compute_drift(
 def aggregate_drift_metrics(reports: List[DriftReport]) -> Dict[str, Any]:
     """
     Aggregate multiple drift reports into summary metrics.
-    
+
     Args:
         reports: List of DriftReport instances
-    
+
     Returns:
         Dict with aggregated confusion metrics and latest drift_pct
     """
@@ -239,16 +247,16 @@ def aggregate_drift_metrics(reports: List[DriftReport]) -> Dict[str, Any]:
             "drift_pct_last": 0.0,
             "accuracy_last": 0.0,
         }
-    
+
     # Sum all confusion metrics
     total_tp = sum(r.confusion.tp for r in reports)
     total_fp = sum(r.confusion.fp for r in reports)
     total_fn = sum(r.confusion.fn for r in reports)
     total_tn = sum(r.confusion.tn for r in reports)
-    
+
     # Use last report's drift_pct as "latest"
     last_report = reports[-1]
-    
+
     return {
         "confusion_tp_total": total_tp,
         "confusion_fp_total": total_fp,

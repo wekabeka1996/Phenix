@@ -38,10 +38,9 @@ class AuroraLogAdapter:
         # Avoid duplicate handlers
         if not self.logger.handlers:
             # File handler with trade-specific format
-            file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
+            file_handler = logging.FileHandler(self.log_file, encoding="utf-8")
             formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
             )
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
@@ -49,17 +48,19 @@ class AuroraLogAdapter:
             # Prevent propagation to root logger
             self.logger.propagate = False
 
-    def log_trade_intent(self,
-                         rid: str,
-                         symbol: str,
-                         side: str,
-                         probability: Optional[float] = None,
-                         size: Optional[float] = None,
-                         price: Optional[float] = None,
-                         qty: Optional[float] = None,
-                         risk_score: Optional[float] = None,
-                         features: Optional[Dict[str, Any]] = None,
-                         **extra_fields) -> None:
+    def log_trade_intent(
+        self,
+        rid: str,
+        symbol: str,
+        side: str,
+        probability: Optional[float] = None,
+        size: Optional[float] = None,
+        price: Optional[float] = None,
+        qty: Optional[float] = None,
+        risk_score: Optional[float] = None,
+        features: Optional[Dict[str, Any]] = None,
+        **extra_fields,
+    ) -> None:
         """
         Log trade intent with full context.
 
@@ -80,7 +81,7 @@ class AuroraLogAdapter:
             "rid": rid,
             "symbol": symbol,
             "side": side,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
         # Add optional fields if provided
@@ -115,13 +116,15 @@ class AuroraLogAdapter:
 
         self.logger.info(message, extra=log_data)
 
-    def log_trade_decision(self,
-                           rid: str,
-                           symbol: str,
-                           side: str,
-                           decision: str,
-                           reason: Optional[str] = None,
-                           **extra_fields) -> None:
+    def log_trade_decision(
+        self,
+        rid: str,
+        symbol: str,
+        side: str,
+        decision: str,
+        reason: Optional[str] = None,
+        **extra_fields,
+    ) -> None:
         """
         Log trade decision (accept/reject).
 
@@ -139,7 +142,7 @@ class AuroraLogAdapter:
             "symbol": symbol,
             "side": side,
             "decision": decision,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
         if reason:
@@ -154,15 +157,17 @@ class AuroraLogAdapter:
 
         self.logger.log(level, message, extra=log_data)
 
-    def log_trade_execution(self,
-                           rid: str,
-                           symbol: str,
-                           side: str,
-                           order_id: Optional[str] = None,
-                           status: str = "PLACED",
-                           executed_qty: Optional[float] = None,
-                           executed_price: Optional[float] = None,
-                           **extra_fields) -> None:
+    def log_trade_execution(
+        self,
+        rid: str,
+        symbol: str,
+        side: str,
+        order_id: Optional[str] = None,
+        status: str = "PLACED",
+        executed_qty: Optional[float] = None,
+        executed_price: Optional[float] = None,
+        **extra_fields,
+    ) -> None:
         """
         Log trade execution status.
 
@@ -182,7 +187,7 @@ class AuroraLogAdapter:
             "symbol": symbol,
             "side": side,
             "status": status,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
         if order_id:
@@ -204,13 +209,9 @@ class AuroraLogAdapter:
 
         self.logger.info(message, extra=log_data)
 
-    def log_guard_rejection(self,
-                           rid: str,
-                           symbol: str,
-                           side: str,
-                           guard_type: str,
-                           reason: str,
-                           **extra_fields) -> None:
+    def log_guard_rejection(
+        self, rid: str, symbol: str, side: str, guard_type: str, reason: str, **extra_fields
+    ) -> None:
         """
         Log guard rejection with details.
 
@@ -229,7 +230,7 @@ class AuroraLogAdapter:
             "side": side,
             "guard_type": guard_type,
             "reason": reason,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
 
         log_data.update(extra_fields)

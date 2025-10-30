@@ -1,19 +1,39 @@
 import time
 from decimal import Decimal
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM, ManageState
+from apps.reference.domains.execution_position.fsm_manage import (
+    ManageFlowFSM,
+    ManageState,
+)
 from vfoundation.core.protocol import Message
 
 
 def make_fill_msg(rid="r1", symbol="ETHUSDT", qty=1, price=100.0, side="BUY"):
-    return Message(op="EVT", verb="FILL", src="test", dst="manager", rid=rid, pld={"symbol": symbol, "qty": qty, "price": price, "side": side})
+    return Message(
+        op="EVT",
+        verb="FILL",
+        src="test",
+        dst="manager",
+        rid=rid,
+        pld={"symbol": symbol, "qty": qty, "price": price, "side": side},
+    )
 
 
 def test_hydrate_success_and_brackets_state():
     fsm = ManageFlowFSM(config={"brackets": {}})
-    pd = {"qty": 2, "entry_price": "100", "side": "BUY", "open_ts": time.time(), "sl_order_id": "s1"}
+    pd = {
+        "qty": 2,
+        "entry_price": "100",
+        "side": "BUY",
+        "open_ts": time.time(),
+        "sl_order_id": "s1",
+    }
     fsm.hydrate(pd)
     # having sl_order_id should set BRACKETS_PLACED
-    assert fsm.state in (ManageState.TRACKING, ManageState.BRACKETS_PLACED, ManageState.OPENED)
+    assert fsm.state in (
+        ManageState.TRACKING,
+        ManageState.BRACKETS_PLACED,
+        ManageState.OPENED,
+    )
 
 
 def test_hydrate_missing_key_sets_error():
@@ -23,7 +43,9 @@ def test_hydrate_missing_key_sets_error():
 
 
 def test_should_place_brackets_and_place_flow():
-    cfg = {"brackets": {"enable": True, "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}}
+    cfg = {
+        "brackets": {"enable": True, "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}
+    }
     fsm = ManageFlowFSM(config=cfg)
 
     # Before any fills, should not place

@@ -2,6 +2,7 @@
 This file makes the 'tests' directory a Python package and ensures
 that the project root is added to the system path before any tests are run.
 """
+
 import sys
 from pathlib import Path
 

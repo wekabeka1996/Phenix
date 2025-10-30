@@ -15,10 +15,13 @@ class RetryPolicy:
 
     def backoff_ms(self, attempt: int) -> int:
         # exponential backoff with jitter
-        return min(self.max_ms, int((2 ** attempt) * self.base_ms + random.randint(0, 10)))
+        return min(self.max_ms, int((2**attempt) * self.base_ms + random.randint(0, 10)))
+
 
 class CircuitBreaker:
-    def __init__(self, threshold: Optional[int] = None, cool_down_s: Optional[float] = None) -> None:
+    def __init__(
+        self, threshold: Optional[int] = None, cool_down_s: Optional[float] = None
+    ) -> None:
         self.threshold = threshold if threshold is not None else config.cb_threshold
         self.cool_down_s = cool_down_s if cool_down_s is not None else config.cb_cooldown_sec
         self.failures = 0

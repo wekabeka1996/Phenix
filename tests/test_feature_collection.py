@@ -1,6 +1,7 @@
 """
 Test script to collect feature parameters (obi, tfi, delta_price) from Binance for ETHUSDT and BTCUSDT over 30 seconds.
 """
+
 import decimal
 import logging
 import os
@@ -24,7 +25,7 @@ class FeatureCollector:
         self.start_time = time.time()
 
         # Initialize Binance WebSocket
-        testnet = os.getenv('USE_TESTNET', 'false').lower() == 'true'
+        testnet = os.getenv("USE_TESTNET", "false").lower() == "true"
         exchange = "binance.com-testnet" if testnet else "binance.com"
         logger.info(f"Using exchange: {exchange}")
         self.bwam = BinanceWebSocketApiManager(exchange=exchange)
@@ -58,25 +59,25 @@ class FeatureCollector:
         """Process incoming stream data and calculate features."""
         try:
             logger.debug(f"Raw stream_data: {stream_data}")
-            if not isinstance(stream_data, dict) or 'data' not in stream_data:
+            if not isinstance(stream_data, dict) or "data" not in stream_data:
                 logger.debug(f"Skipping invalid stream_data: {type(stream_data)}")
                 return
-            data = stream_data.get('data', {})
+            data = stream_data.get("data", {})
             logger.debug(f"Received data: {data}")
-            symbol = data.get('s', '').upper()
+            symbol = data.get("s", "").upper()
             if symbol not in self.symbols:
                 return
             logger.info(f"Processing {symbol} data: keys={list(data.keys())}")
 
             # Convert to tick format similar to project
             current_tick = {
-                'symbol': symbol,
-                'price': data.get('c', '0'),  # Close price
-                'bid_size': data.get('B', '0'),  # Bid quantity
-                'ask_size': data.get('A', '0'),  # Ask quantity
-                'buy_volume': data.get('v', '0'),  # Volume
-                'sell_volume': data.get('q', '0'),  # Quote volume (approximate)
-                'ts': int(data.get('E', time.time() * 1000))  # Event time
+                "symbol": symbol,
+                "price": data.get("c", "0"),  # Close price
+                "bid_size": data.get("B", "0"),  # Bid quantity
+                "ask_size": data.get("A", "0"),  # Ask quantity
+                "buy_volume": data.get("v", "0"),  # Volume
+                "sell_volume": data.get("q", "0"),  # Quote volume (approximate)
+                "ts": int(data.get("E", time.time() * 1000)),  # Event time
             }
 
             last_tick = self.last_tick_data.get(symbol)
@@ -105,16 +106,20 @@ class FeatureCollector:
         obi = (bid_size - ask_size) / depth if depth > 0 else decimal.Decimal(0)
 
         total_flow = buy_volume + sell_volume
-        tfi = (buy_volume - sell_volume) / total_flow if total_flow > 0 else decimal.Decimal(0)
+        tfi = (
+            (buy_volume - sell_volume) / total_flow
+            if total_flow > 0
+            else decimal.Decimal(0)
+        )
 
-        time_diff = current_tick['ts'] - last_tick['ts']
+        time_diff = current_tick["ts"] - last_tick["ts"]
         delta_price = price - prev_price if time_diff < 1000 else decimal.Decimal(0)
 
         return {
             "obi": float(obi),
             "tfi": float(tfi),
             "delta_price": float(delta_price),
-            "price": float(price)
+            "price": float(price),
         }
 
     def get_summary(self) -> dict:
@@ -124,18 +129,26 @@ class FeatureCollector:
             if not features_list:
                 continue
 
-            obi_values = [f['obi'] for f in features_list]
-            tfi_values = [f['tfi'] for f in features_list]
-            delta_price_values = [f['delta_price'] for f in features_list]
+            obi_values = [f["obi"] for f in features_list]
+            tfi_values = [f["tfi"] for f in features_list]
+            delta_price_values = [f["delta_price"] for f in features_list]
 
             summary[symbol] = {
                 "count": len(features_list),
                 "obi_avg": sum(obi_values) / len(obi_values) if obi_values else 0,
                 "tfi_avg": sum(tfi_values) / len(tfi_values) if tfi_values else 0,
-                "delta_price_avg": sum(delta_price_values) / len(delta_price_values) if delta_price_values else 0,
-                "obi_range": (min(obi_values), max(obi_values)) if obi_values else (0, 0),
-                "tfi_range": (min(tfi_values), max(tfi_values)) if tfi_values else (0, 0),
-                "delta_price_range": (min(delta_price_values), max(delta_price_values)) if delta_price_values else (0, 0)
+                "delta_price_avg": sum(delta_price_values) / len(delta_price_values)
+                if delta_price_values
+                else 0,
+                "obi_range": (min(obi_values), max(obi_values))
+                if obi_values
+                else (0, 0),
+                "tfi_range": (min(tfi_values), max(tfi_values))
+                if tfi_values
+                else (0, 0),
+                "delta_price_range": (min(delta_price_values), max(delta_price_values))
+                if delta_price_values
+                else (0, 0),
             }
         return summary
 

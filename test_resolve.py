@@ -19,13 +19,15 @@ print(f"  api_key: {binance_api.get('live', {}).get('api_key')}")
 # Test regex substitution
 pattern = re.compile(r"\$\{\s*(\w+)\s*\}")
 
-api_key_str = binance_api.get('live', {}).get('api_key', '')
+api_key_str = binance_api.get("live", {}).get("api_key", "")
 print(f"\nBefore substitution: {api_key_str}")
+
 
 def resolve(s):
     if isinstance(s, str):
         return pattern.sub(lambda m: os.environ.get(m.group(1), m.group(0)), s)
     return s
+
 
 result = resolve(api_key_str)
 print(f"After substitution: {result[:30]}...")

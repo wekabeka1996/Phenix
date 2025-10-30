@@ -45,10 +45,15 @@ def test_get_or_create_flows_and_accessors():
     monkey.setattr(fsm_mod, "CloseFlowFSM", DummyFlow)
 
     try:
+
         class Cfg:
             pass
+
         cfg = Cfg()
-        cfg.trading = {"execution": {"cooldown_ms": 1000, "guard_enabled": True}, "instruments": {}}
+        cfg.trading = {
+            "execution": {"cooldown_ms": 1000, "guard_enabled": True},
+            "instruments": {},
+        }
         f = fsm_mod.ExecPosFSM(config=cfg, fsm=DummyFSM(), shadow_mode=True)
 
         # ExecPosFSM (vfoundation variant) exposes flow instances as attributes
@@ -74,10 +79,15 @@ def test_handle_routes_to_open_flow_and_missing_symbol():
     monkey.setattr(fsm_mod, "CloseFlowFSM", DummyFlow)
 
     try:
+
         class Cfg:
             pass
+
         cfg = Cfg()
-        cfg.trading = {"execution": {"cooldown_ms": 1000, "guard_enabled": True}, "instruments": {}}
+        cfg.trading = {
+            "execution": {"cooldown_ms": 1000, "guard_enabled": True},
+            "instruments": {},
+        }
         f = fsm_mod.ExecPosFSM(config=cfg, fsm=DummyFSM(), shadow_mode=True)
 
         # message without symbol -> warning path, returns None

@@ -1,7 +1,9 @@
 """
 Abstract base class for execution adapters.
 """
+
 import abc
+
 
 class AbstractExecutionAdapter(abc.ABC):
     """Abstract base class for execution adapters."""

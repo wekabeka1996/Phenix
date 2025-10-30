@@ -7,6 +7,7 @@ Output: DEC:CLOSE(reduce_only=true)
 
 Shadow-mode: decisions only, no live closures.
 """
+
 from __future__ import annotations
 
 import time
@@ -18,6 +19,7 @@ from vfoundation.core.protocol import Message
 
 class CloseState(str, Enum):
     """FSM states for close flow."""
+
     FLAT = "FLAT"
     OPENED = "OPENED"
     CLOSE_COND = "CLOSE_COND"
@@ -29,7 +31,7 @@ class CloseState(str, Enum):
 class CloseFlowFSM:
     """
     Close Flow FSM: monitors conditions and emits DEC:CLOSE.
-    
+
     Shadow-mode: stub rules (time-based, event-driven).
     Triggers on EVT:FILL|REJECTED|EXPIRED or timer tick.
     """
@@ -52,9 +54,11 @@ class CloseFlowFSM:
             # If a position exists, the FSM should be active.
             self.state = CloseState.OPENED
             self.position_active = True
-            self.position_open_ts = float(position_data.get('open_ts', time.time()))
-            
-            print(f"[CloseFlowFSM] Hydrated state for position: open_ts={self.position_open_ts}")
+            self.position_open_ts = float(position_data.get("open_ts", time.time()))
+
+            print(
+                f"[CloseFlowFSM] Hydrated state for position: open_ts={self.position_open_ts}"
+            )
 
         except Exception as e:
             self.state = CloseState.ERROR
@@ -64,10 +68,10 @@ class CloseFlowFSM:
     def handle(self, msg: Message) -> Optional[Message]:
         """
         Process incoming events and emit DEC:CLOSE if rules trigger.
-        
+
         Args:
             msg: EVT:FILL|REJECTED|EXPIRED|UPD:* (including UPD:TICK for timer)
-            
+
         Returns:
             DEC:CLOSE if rules trigger, None otherwise.
         """
@@ -84,8 +88,12 @@ class CloseFlowFSM:
                 self.position_open_ts = time.time()
                 self.state = CloseState.OPENED
                 # Log the transition reason
-                transition_reason = "PARTIAL_FILL" if msg.verb == "PARTIAL_FILL" else "FILL"
-                print(f"[CloseFlowFSM] Transitioned to OPENED on {transition_reason}, filled_qty={filled_qty}")
+                transition_reason = (
+                    "PARTIAL_FILL" if msg.verb == "PARTIAL_FILL" else "FILL"
+                )
+                print(
+                    f"[CloseFlowFSM] Transitioned to OPENED on {transition_reason}, filled_qty={filled_qty}"
+                )
                 # Immediately check close conditions on the fill event itself
                 return self._check_close_conditions(msg)
 
@@ -98,7 +106,7 @@ class CloseFlowFSM:
     def _check_close_conditions(self, msg: Message) -> Optional[Message]:
         """
         Check stub close rules: max_hold_sec, REJECTED, EXPIRED.
-        
+
         Returns:
             DEC:CLOSE if rule triggers, None otherwise.
         """
@@ -110,7 +118,9 @@ class CloseFlowFSM:
             now = time.time()
             elapsed = now - self.position_open_ts
             if elapsed > self.max_hold_sec:
-                return self._emit_close(msg, "CLOSE_RULE", {"rule": "max_hold_time", "elapsed_sec": elapsed})
+                return self._emit_close(
+                    msg, "CLOSE_RULE", {"rule": "max_hold_time", "elapsed_sec": elapsed}
+                )
 
             # Rule 2: Emergency close on REJECTED/EXPIRED
             if msg.verb in ("REJECTED", "EXPIRED"):
@@ -119,7 +129,11 @@ class CloseFlowFSM:
             # Rule 3: UPD:TICK (timer check: check every tick if max_hold exceeded)
             if msg.op == "UPD" and msg.verb == "TICK":
                 if elapsed > self.max_hold_sec:
-                    return self._emit_close(msg, "CLOSE_RULE", {"rule": "timer_check", "elapsed_sec": elapsed})
+                    return self._emit_close(
+                        msg,
+                        "CLOSE_RULE",
+                        {"rule": "timer_check", "elapsed_sec": elapsed},
+                    )
 
         except Exception:
             self._metrics["fsm_errors_total"] += 1

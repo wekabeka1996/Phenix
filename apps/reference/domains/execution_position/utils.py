@@ -4,11 +4,21 @@ from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from typing import Optional, Tuple, Any
 import hashlib, time, re, math
 
-__all__ = ["quantize_stop_price", "validate_anti_2021", "generate_client_order_id", "calc_tp_sl_from_mark", "validate_not_immediate", "opposite_side"]
+__all__ = [
+    "quantize_stop_price",
+    "validate_anti_2021",
+    "generate_client_order_id",
+    "calc_tp_sl_from_mark",
+    "validate_not_immediate",
+    "opposite_side",
+]
 
 # ---- price quantization helpers ----
 
-def _round_to_tick(price: float | Decimal, tick_size: float | Decimal, mode: str = "floor") -> float:
+
+def _round_to_tick(
+    price: float | Decimal, tick_size: float | Decimal, mode: str = "floor"
+) -> float:
     p = Decimal(str(price))
     t = Decimal(str(tick_size))
     if t <= 0:
@@ -22,7 +32,10 @@ def _round_to_tick(price: float | Decimal, tick_size: float | Decimal, mode: str
         q = (p / t).to_integral_value(rounding=ROUND_DOWN)
     return float(q * t)
 
-def quantize_stop_price(stop_price: float, tick_size: float, *, side: Optional[str] = None) -> float:
+
+def quantize_stop_price(
+    stop_price: float, tick_size: float, *, side: Optional[str] = None
+) -> float:
     """
     Квантує stopPrice до кратності tick_size.
     Для SELL краще floor, для BUY — ceil, щоб уникати рівності тригеру.
@@ -31,7 +44,9 @@ def quantize_stop_price(stop_price: float, tick_size: float, *, side: Optional[s
     mode = "floor" if s == "SELL" else "ceil" if s == "BUY" else "floor"
     return _round_to_tick(stop_price, tick_size, mode=mode)
 
+
 # ---- anti-2021 guard ----
+
 
 def validate_anti_2021(
     side: str,
@@ -54,8 +69,11 @@ def validate_anti_2021(
     # 1 тик або мінімальний мікро-зсув
     eps = max(float(tick_size), float(trigger_price) * 1e-9)
 
-    def nudge_down(px: float) -> float: return px - eps
-    def nudge_up(px: float) -> float:   return px + eps
+    def nudge_down(px: float) -> float:
+        return px - eps
+
+    def nudge_up(px: float) -> float:
+        return px + eps
 
     if t in {"STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET"}:
         if s == "SELL":
@@ -90,7 +108,9 @@ def validate_anti_2021(
 
     # Якщо після округлення дорівнює тригеру — зсунь ще на 1 тик
     if abs(sp_q - trigger_price) < 1e-15:
-        if (s == "SELL" and t.startswith("STOP")) or (s == "BUY" and t.startswith("TAKE_PROFIT")):
+        if (s == "SELL" and t.startswith("STOP")) or (
+            s == "BUY" and t.startswith("TAKE_PROFIT")
+        ):
             sp_q -= float(tick_size)
         else:
             sp_q += float(tick_size)
@@ -99,13 +119,17 @@ def validate_anti_2021(
 
     return float(sp_q), adjusted, "; ".join(reason_parts)
 
+
 # ---- clientOrderId helper (<=36 chars) ----
 
-def generate_client_order_id(prefix: str, decision_id: str, extra: str | None = None, *, max_len: int = 32) -> str:
+
+def generate_client_order_id(
+    prefix: str, decision_id: str, extra: str | None = None, *, max_len: int = 32
+) -> str:
     """
     Створює короткий детермінований clientOrderId (Binance: <36 симв.).
     """
-    base = f"{prefix}:{decision_id}:{extra or ''}:{int(time.time()*1000)}"
+    base = f"{prefix}:{decision_id}:{extra or ''}:{int(time.time() * 1000)}"
     h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
     cid = f"{prefix}-{h}"
     if len(cid) > max_len:
@@ -113,7 +137,9 @@ def generate_client_order_id(prefix: str, decision_id: str, extra: str | None = 
     # тільки дозволені символи
     return re.sub(r"[^A-Za-z0-9_\-]", "", cid)
 
+
 # ---- additional utilities ----
+
 
 def _to_float(val: Any, *, name: str = "value") -> float:
     """
@@ -186,6 +212,7 @@ def calc_tp_sl_from_mark(
 
     return float(tp), float(sl)
 
+
 def validate_not_immediate(side: str, tp, sl, mark) -> float:
     """
     Анти-2021 перевірка: тригер не має спрацювати одразу.
@@ -213,6 +240,7 @@ def validate_not_immediate(side: str, tp, sl, mark) -> float:
 
     return m
 
+
 def opposite_side(side: str) -> str:
     """
     Get opposite side.
@@ -223,4 +251,4 @@ def opposite_side(side: str) -> str:
     Returns:
         Opposite side.
     """
-    return 'SELL' if side == 'BUY' else 'BUY'
+    return "SELL" if side == "BUY" else "BUY"

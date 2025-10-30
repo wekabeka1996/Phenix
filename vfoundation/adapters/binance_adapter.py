@@ -6,6 +6,7 @@ It handles API key signing, endpoint selection (live/testnet), and error handlin
 This adapter is designed to be instantiated by domain services with a specific
 environment configuration, ensuring a clean separation of concerns.
 """
+
 import asyncio
 import hashlib
 import hmac
@@ -22,16 +23,26 @@ from aiohttp import ClientSession
 
 LOG = logging.getLogger(__name__)
 
+
 class BinanceAPIError(Exception):
     """Custom exception for Binance API errors."""
+
     def __init__(self, code: int, msg: str, status: int):
         self.code = code
         self.msg = msg
         self.status = status
         super().__init__(f"Binance API Error {code}: {msg}")
 
+
 class BinanceAdapter:
-    def __init__(self, api_key: str, api_secret: str, base_url: str = "https://testnet.binancefuture.com", config: dict | None = None, **kwargs):
+    def __init__(
+        self,
+        api_key: str,
+        api_secret: str,
+        base_url: str = "https://testnet.binancefuture.com",
+        config: dict | None = None,
+        **kwargs,
+    ):
         rest_url = kwargs.pop("rest_url", None)  # legacy alias
         if rest_url:
             base_url = rest_url
@@ -48,7 +59,9 @@ class BinanceAdapter:
         self._recv_window_ms = int(self.config.get("recv_window_ms", 20000))
 
         self._session: Optional[ClientSession] = None
-        self._mark_price_cache: Dict[str, Dict[str, Any]] = {}  # symbol -> {'price': float, 'timestamp': float}
+        self._mark_price_cache: Dict[
+            str, Dict[str, Any]
+        ] = {}  # symbol -> {'price': float, 'timestamp': float}
 
     def _norm_params(self, d: dict) -> dict:
         """Фільтрує None і нормалізує значення до рядків, сумісних з Binance."""
@@ -59,8 +72,8 @@ class BinanceAdapter:
             if isinstance(v, bool):
                 out[k] = "true" if v else "false"
             elif isinstance(v, Decimal):
-                s = format(v, 'f')
-                out[k] = s.rstrip('0').rstrip('.') if '.' in s else s
+                s = format(v, "f")
+                out[k] = s.rstrip("0").rstrip(".") if "." in s else s
             else:
                 out[k] = str(v)
         return out
@@ -111,7 +124,9 @@ class BinanceAdapter:
         final_params["signature"] = sig
         return final_qs, final_params
 
-    async def _request(self, method: str, path: str, params: dict | None = None, signed: bool = True):
+    async def _request(
+        self, method: str, path: str, params: dict | None = None, signed: bool = True
+    ):
         session = await self._ensure_session()
         url = f"{self.base_url}{path}"
         params = params or {}
@@ -149,15 +164,21 @@ class BinanceAdapter:
                     raise ValueError(f"Unsupported method: {method}")
             else:
                 if method == "GET":
-                    async with session.get(url, params=self._norm_params(base_params), headers=headers) as r:
+                    async with session.get(
+                        url, params=self._norm_params(base_params), headers=headers
+                    ) as r:
                         r.raise_for_status()
                         return await r.json()
                 elif method == "POST":
-                    async with session.post(url, params=self._norm_params(base_params), headers=headers) as r:
+                    async with session.post(
+                        url, params=self._norm_params(base_params), headers=headers
+                    ) as r:
                         r.raise_for_status()
                         return await r.json()
                 elif method == "DELETE":
-                    async with session.delete(url, params=self._norm_params(base_params), headers=headers) as r:
+                    async with session.delete(
+                        url, params=self._norm_params(base_params), headers=headers
+                    ) as r:
                         r.raise_for_status()
                         return await r.json()
                 else:
@@ -173,7 +194,11 @@ class BinanceAdapter:
                 await self._sync_time(True)
                 return await _do(method, base_params)
             # Якщо -1022 → також спробуємо 1 ретрай з чистої бази (частий кейс "перепідписали")
-            if "code': -1022" in msg or "-1022" in msg or "Signature for this request is not valid" in msg:
+            if (
+                "code': -1022" in msg
+                or "-1022" in msg
+                or "Signature for this request is not valid" in msg
+            ):
                 await self._sync_time(True)
                 return await _do(method, base_params)
             raise
@@ -219,7 +244,7 @@ class BinanceAdapter:
             raise ValueError("Value cannot be None")
         if isinstance(value, dict):
             # For mark price dict, use 'markPrice' or 'price'
-            price = value.get('markPrice') or value.get('price')
+            price = value.get("markPrice") or value.get("price")
             if price is None:
                 raise ValueError(f"Dict has no 'markPrice' or 'price': {value}")
             return Decimal(str(price))
@@ -227,14 +252,16 @@ class BinanceAdapter:
             return Decimal(str(value))
         raise ValueError(f"Cannot convert {type(value)} to Decimal: {value}")
 
-    def _round_step(self, qty: Decimal, step_size: Decimal, round_mode: str = ROUND_DOWN) -> Decimal:
+    def _round_step(
+        self, qty: Decimal, step_size: Decimal, round_mode: str = ROUND_DOWN
+    ) -> Decimal:
         """
         Round quantity to step size.
         round_mode: ROUND_DOWN (default) or ROUND_UP.
         """
         if step_size == 0:
             return qty
-        return (qty / step_size).quantize(Decimal('1'), rounding=round_mode) * step_size
+        return (qty / step_size).quantize(Decimal("1"), rounding=round_mode) * step_size
 
     async def quantize_quantity(self, symbol: str, qty: Any) -> str:
         """
@@ -243,18 +270,18 @@ class BinanceAdapter:
         """
         info = await self.get_exchange_info(symbol)
         # exchangeInfo has 'symbols' list
-        symbols = info.get('symbols') or []
+        symbols = info.get("symbols") or []
         sym = None
         for s in symbols:
-            if s.get('symbol') == symbol:
+            if s.get("symbol") == symbol:
                 sym = s
                 break
         if not sym:
             raise ValueError(f"Exchange info for {symbol} not found")
 
-        filters = {f.get('filterType'): f for f in sym.get('filters', [])}
-        lot = filters.get('LOT_SIZE') or filters.get('MINQ') or {}
-        step_size = Decimal(str(lot.get('stepSize') or lot.get('step') or '1'))
+        filters = {f.get("filterType"): f for f in sym.get("filters", [])}
+        lot = filters.get("LOT_SIZE") or filters.get("MINQ") or {}
+        step_size = Decimal(str(lot.get("stepSize") or lot.get("step") or "1"))
         if step_size <= 0:
             raise ValueError("Invalid step size from exchange info")
 
@@ -264,26 +291,30 @@ class BinanceAdapter:
             raise ValueError("Quantity rounds to zero with stepSize")
 
         # check minQty if available
-        min_qty = lot.get('minQty')
+        min_qty = lot.get("minQty")
         if min_qty:
             min_qty_d = Decimal(str(min_qty))
             if q < min_qty_d:
                 q = min_qty_d
 
         # check min notional if available
-        min_notional_filter = filters.get('MIN_NOTIONAL') or filters.get('MIN_NOTIONAL') or filters.get('MIN_NOTIONAL')
+        min_notional_filter = (
+            filters.get("MIN_NOTIONAL")
+            or filters.get("MIN_NOTIONAL")
+            or filters.get("MIN_NOTIONAL")
+        )
         # try common key names
         min_notional = None
-        for key in ('MIN_NOTIONAL', 'MIN_NOTIONAL', 'MIN_NOTIONAL'):
+        for key in ("MIN_NOTIONAL", "MIN_NOTIONAL", "MIN_NOTIONAL"):
             if key in filters:
                 fn = filters[key]
-                min_notional = fn.get('notional') or fn.get('minNotional') or fn.get('minNotional')
+                min_notional = fn.get("notional") or fn.get("minNotional") or fn.get("minNotional")
                 break
         # fallback: try 'MIN_NOTIONAL' variations inside filters
         if min_notional is None:
-            for f in sym.get('filters', []):
-                if f.get('filterType', '').upper() == 'MIN_NOTIONAL':
-                    min_notional = f.get('notional') or f.get('minNotional')
+            for f in sym.get("filters", []):
+                if f.get("filterType", "").upper() == "MIN_NOTIONAL":
+                    min_notional = f.get("notional") or f.get("minNotional")
                     break
 
         if min_notional:
@@ -298,10 +329,12 @@ class BinanceAdapter:
                     raise ValueError("Cannot meet MIN_NOTIONAL with stepSize")
 
         # format without scientific notation
-        q_str = format(q.normalize(), 'f')
+        q_str = format(q.normalize(), "f")
         return q_str
 
-    async def place_market_entry(self, symbol: str, side: str, quantity: str, new_client_order_id: Optional[str] = None) -> Dict[str, Any]:
+    async def place_market_entry(
+        self, symbol: str, side: str, quantity: str, new_client_order_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Place a market entry order.
 
@@ -318,16 +351,23 @@ class BinanceAdapter:
         qty = await self.quantize_quantity(symbol, quantity)
 
         params = {
-            'symbol': symbol,
-            'side': side.upper(),
-            'type': 'MARKET',
-            'quantity': qty,
+            "symbol": symbol,
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": qty,
         }
         if new_client_order_id:
-            params['newClientOrderId'] = new_client_order_id
+            params["newClientOrderId"] = new_client_order_id
         return await self.create_order(params)
 
-    async def place_stop_market_close_position(self, symbol: str, side: str, stop_price: str, position_side: Optional[str] = None, new_client_order_id: Optional[str] = None) -> Dict[str, Any]:
+    async def place_stop_market_close_position(
+        self,
+        symbol: str,
+        side: str,
+        stop_price: str,
+        position_side: Optional[str] = None,
+        new_client_order_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Place a stop market order to close position.
 
@@ -342,21 +382,28 @@ class BinanceAdapter:
             Order response.
         """
         params = {
-            'symbol': symbol,
-            'side': side.upper(),
-            'type': 'STOP_MARKET',
-            'stopPrice': stop_price,
-            'workingType': 'MARK_PRICE',
-            'closePosition': 'true',
-            'priceProtect': 'true',
+            "symbol": symbol,
+            "side": side.upper(),
+            "type": "STOP_MARKET",
+            "stopPrice": stop_price,
+            "workingType": "MARK_PRICE",
+            "closePosition": "true",
+            "priceProtect": "true",
         }
         if position_side:
-            params['positionSide'] = position_side
+            params["positionSide"] = position_side
         if new_client_order_id:
-            params['newClientOrderId'] = new_client_order_id
+            params["newClientOrderId"] = new_client_order_id
         return await self.create_order(params)
 
-    async def place_take_profit_market_close_position(self, symbol: str, side: str, stop_price: str, position_side: Optional[str] = None, new_client_order_id: Optional[str] = None) -> Dict[str, Any]:
+    async def place_take_profit_market_close_position(
+        self,
+        symbol: str,
+        side: str,
+        stop_price: str,
+        position_side: Optional[str] = None,
+        new_client_order_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Place a take profit market order to close position.
 
@@ -371,21 +418,29 @@ class BinanceAdapter:
             Order response.
         """
         params = {
-            'symbol': symbol,
-            'side': side.upper(),
-            'type': 'TAKE_PROFIT_MARKET',
-            'stopPrice': stop_price,
-            'workingType': 'MARK_PRICE',
-            'closePosition': 'true',
-            'priceProtect': 'true',
+            "symbol": symbol,
+            "side": side.upper(),
+            "type": "TAKE_PROFIT_MARKET",
+            "stopPrice": stop_price,
+            "workingType": "MARK_PRICE",
+            "closePosition": "true",
+            "priceProtect": "true",
         }
         if position_side:
-            params['positionSide'] = position_side
+            params["positionSide"] = position_side
         if new_client_order_id:
-            params['newClientOrderId'] = new_client_order_id
+            params["newClientOrderId"] = new_client_order_id
         return await self.create_order(params)
 
-    async def place_limit_reduce_only(self, symbol: str, side: str, price: str, quantity: str, position_side: Optional[str] = None, new_client_order_id: Optional[str] = None) -> Dict[str, Any]:
+    async def place_limit_reduce_only(
+        self,
+        symbol: str,
+        side: str,
+        price: str,
+        quantity: str,
+        position_side: Optional[str] = None,
+        new_client_order_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Place a limit reduce-only order.
 
@@ -401,18 +456,18 @@ class BinanceAdapter:
             Order response.
         """
         params = {
-            'symbol': symbol,
-            'side': side.upper(),
-            'type': 'LIMIT',
-            'timeInForce': 'GTC',
-            'price': price,
-            'quantity': quantity,
-            'reduceOnly': 'true',
+            "symbol": symbol,
+            "side": side.upper(),
+            "type": "LIMIT",
+            "timeInForce": "GTC",
+            "price": price,
+            "quantity": quantity,
+            "reduceOnly": "true",
         }
         if position_side:
-            params['positionSide'] = position_side
+            params["positionSide"] = position_side
         if new_client_order_id:
-            params['newClientOrderId'] = new_client_order_id
+            params["newClientOrderId"] = new_client_order_id
         return await self.create_order(params)
 
     async def get_account_balance(self) -> list:
@@ -438,7 +493,7 @@ class BinanceAdapter:
         path = "/fapi/v1/openOrders"
         params = {}
         if symbol:
-            params['symbol'] = symbol
+            params["symbol"] = symbol
         return await self._request("GET", path, params)
 
     async def get_mark_price(self, symbol: str, ttl_ms: int = 250) -> float:
@@ -455,9 +510,9 @@ class BinanceAdapter:
         now = time.time() * 1000
         if symbol in self._mark_price_cache:
             cached = self._mark_price_cache[symbol]
-            if now - cached['timestamp'] < ttl_ms:
-                return cached['price']
-        
+            if now - cached["timestamp"] < ttl_ms:
+                return cached["price"]
+
         try:
             path = "/fapi/v1/premiumIndex"
             params = {"symbol": symbol}
@@ -467,8 +522,8 @@ class BinanceAdapter:
             # Fallback to last price
             LOG.warning(f"Failed to get mark price for {symbol}, using last price fallback")
             price = await self.get_last_price(symbol)
-        
-        self._mark_price_cache[symbol] = {'price': price, 'timestamp': now}
+
+        self._mark_price_cache[symbol] = {"price": price, "timestamp": now}
         return price
 
     async def get_exchange_info(self, symbol: str) -> Dict[str, Any]:
@@ -607,29 +662,30 @@ class BinanceAdapter:
 
             # Hedge: 'LONG'/'SHORT'; One-way: 'BOTH'
             pos_side = p.get("positionSide", "BOTH") or "BOTH"
-            side = (
-                "LONG" if (amt > 0 and pos_side in ("BOTH", "LONG"))
-                else "SHORT"
-            )
+            side = "LONG" if (amt > 0 and pos_side in ("BOTH", "LONG")) else "SHORT"
 
-            positions.append({
-                "symbol": p.get("symbol"),
-                "positionSide": pos_side,     # BOTH/LONG/SHORT
-                "side": side,                 # LONG/SHORT (зручно для бізнес-логіки)
-                "positionAmt": amt,
-                "entryPrice": entry,
-                "markPrice": mark,
-                "unRealizedProfit": upnl,
-                "leverage": lev,
-                "marginType": p.get("marginType", "cross").upper(),  # CROSS/ISOLATED
-                "isolatedMargin": float(p.get("isolatedMargin", "0") or 0),
-                "updateTime": int(p.get("updateTime", 0) or 0),
-                # можна додати інші поля за потреби
-            })
+            positions.append(
+                {
+                    "symbol": p.get("symbol"),
+                    "positionSide": pos_side,  # BOTH/LONG/SHORT
+                    "side": side,  # LONG/SHORT (зручно для бізнес-логіки)
+                    "positionAmt": amt,
+                    "entryPrice": entry,
+                    "markPrice": mark,
+                    "unRealizedProfit": upnl,
+                    "leverage": lev,
+                    "marginType": p.get("marginType", "cross").upper(),  # CROSS/ISOLATED
+                    "isolatedMargin": float(p.get("isolatedMargin", "0") or 0),
+                    "updateTime": int(p.get("updateTime", 0) or 0),
+                    # можна додати інші поля за потреби
+                }
+            )
 
         return positions
 
+
 # ---- helpers ----
+
 
 async def _safe_read_err(resp):
     try:
@@ -641,11 +697,13 @@ async def _safe_read_err(resp):
         except Exception:
             return {"code": resp.status, "msg": "unknown"}
 
+
 def _is_code_1021(err) -> bool:
     try:
         return int(err.get("code")) == -1021
     except Exception:
         return False
+
 
 def _make_binance_error(resp, err):
     # Твій клас/фабрика помилок (залиши як було), приклад:

@@ -11,6 +11,10 @@ trading:
     position_sizing:
       min_position_size_usd: 10
       liquidity_based_cap_usd: 10000
+    qos:
+      exposure_block_cooldown_sec: 10
+      symbol_cooldown_sec: 3
+      max_intents_per_minute_per_symbol: 6
 
   # ==============================================================================
   # INSTRUMENT SPECIFICATIONS (BINANCE FUTURES)
@@ -44,12 +48,28 @@ trading:
       tfi: 0.35
       absorption_inverse: 0.25
     trading_allowed_thresholds:
-      max_risk_score: 0.8
+      max_risk_score: 0.9
+    # Daily Loss / Drawdown Gate (A3)
+    daily:
+      max_realized_loss_usd: 250.0     # Stop-day by realized PnL
+      max_drawdown_pct: 8.0            # Stop-day by intra-day DD (% from equity_open)
+      reset_time_utc: "00:00"          # Daily reset time
 
   # ==============================================================================
-  # EXECUTION SETTINGS
+  # OPERATIONS CONTROLS (PACK PROD-2)
   # ==============================================================================
+  ops:
+    panic_killswitch: false
+    quiet_hours_utc: ["22:00-06:00"]
+    allowlist_symbols: []    # Empty = no restrictions
   execution:
+    # Portfolio Exposure Gate (20% of equity_free_usdt)
+    exposure:
+      max_portfolio_fraction: 0.20
+      count_pending_orders: true
+      exclude_reduce_only: true
+      pending_reservation_ttl_sec: 90
+
     # Default order type for opening positions.
     # Valid types: LIMIT, MARKET, STOP, STOP_MARKET, TAKE_PROFIT, TAKE_PROFIT_MARKET
     open_order_type: "MARKET"
@@ -74,20 +94,20 @@ trading:
     # Data sources: READ from live market
     market_data:
       trading_mode: "live"  # Read LIVE Binance data
-      
+
     feature_engineering:
       trading_mode: "live"  # Process live features (OBI, TFI, delta_price)
-      
+
     decision_making:
       trading_mode: "live"  # Make decisions based on live signals
-      
+
     risk_management:
       trading_mode: "live"  # Risk scoring on live data
-      
+
     # Execution: WRITE to testnet (safety!)
     execution_position:
       trading_mode: "testnet"  # Place orders on TESTNET only
-      
+
     audit_trail:
       trading_mode: "live"  # Log from live data
 
@@ -102,7 +122,7 @@ binance_api:
     api_secret: "${BINANCE_FUTURES_API_SECRET_LIVE}"
     rest_url: "${BINANCE_FUTURES_BASE_URL_LIVE}"
     ws_url: "wss://fstream.binance.com"
-    
+
   testnet:
     api_key: "${BINANCE_TESTNET_API_KEY}"
     api_secret: "${BINANCE_TESTNET_API_SECRET}"

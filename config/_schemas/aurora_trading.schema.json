@@ -169,6 +169,83 @@
         }
       }
     },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_daily_drawdown_limit": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "score_weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "trading_allowed_thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_risk_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "daily": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_realized_loss_usd": {
+              "type": "number",
+              "minimum": 0,
+              "default": 250.0
+            },
+            "max_drawdown_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 8.0
+            },
+            "reset_time_utc": {
+              "type": "string",
+              "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+              "default": "00:00"
+            }
+          }
+        }
+      }
+    },
+    "ops": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "panic_killswitch": {
+          "type": "boolean",
+          "default": false
+        },
+        "quiet_hours_utc": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]$"
+          },
+          "default": [
+            "22:00-06:00"
+          ]
+        },
+        "allowlist_symbols": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
     "hotreload_whitelist": {
       "type": "array",
       "items": {
@@ -365,7 +442,10 @@
           "properties": {
             "mode": {
               "type": "string",
-              "enum": ["atr", "fixed_bps"]
+              "enum": [
+                "atr",
+                "fixed_bps"
+              ]
             },
             "k_atr": {
               "type": "number",
@@ -377,11 +457,17 @@
             },
             "order_type": {
               "type": "string",
-              "enum": ["STOP_MARKET", "STOP_LIMIT"]
+              "enum": [
+                "STOP_MARKET",
+                "STOP_LIMIT"
+              ]
             },
             "trigger": {
               "type": "string",
-              "enum": ["MARK_PRICE", "LAST_PRICE"]
+              "enum": [
+                "MARK_PRICE",
+                "LAST_PRICE"
+              ]
             }
           }
         },
@@ -391,7 +477,10 @@
           "properties": {
             "mode": {
               "type": "string",
-              "enum": ["atr", "fixed_bps"]
+              "enum": [
+                "atr",
+                "fixed_bps"
+              ]
             },
             "k_atr": {
               "type": "number",
@@ -403,10 +492,16 @@
             },
             "order_type": {
               "type": "string",
-              "enum": ["LIMIT", "MARKET"]
+              "enum": [
+                "LIMIT",
+                "MARKET"
+              ]
             },
             "trigger": {
-              "type": ["string", "null"]
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         }
@@ -433,11 +528,17 @@
         },
         "order_type": {
           "type": "string",
-          "enum": ["STOP_MARKET", "STOP_LIMIT"]
+          "enum": [
+            "STOP_MARKET",
+            "STOP_LIMIT"
+          ]
         },
         "trigger": {
           "type": "string",
-          "enum": ["MARK_PRICE", "LAST_PRICE"]
+          "enum": [
+            "MARK_PRICE",
+            "LAST_PRICE"
+          ]
         }
       }
     },
@@ -445,6 +546,39 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "manage": {
+          "type": "object",
+          "properties": {
+            "auto": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": true
+        },
+        "exposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_portfolio_fraction": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "count_pending_orders": {
+              "type": "boolean"
+            },
+            "exclude_reduce_only": {
+              "type": "boolean"
+            },
+            "pending_reservation_ttl_sec": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 600,
+              "default": 90
+            }
+          }
+        },
         "cooldown_ms": {
           "type": "number",
           "minimum": 0
@@ -524,6 +658,59 @@
             "half_open_attempts": {
               "type": "number",
               "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signal_weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "signal_threshold": {
+          "type": "number"
+        },
+        "position_sizing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_position_size_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "liquidity_based_cap_usd": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "qos": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "exposure_block_cooldown_sec": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 10
+            },
+            "symbol_cooldown_sec": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 3
+            },
+            "max_intents_per_minute_per_symbol": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 6
             }
           }
         }

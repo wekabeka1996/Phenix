@@ -1,4 +1,7 @@
-from apps.reference.domains.execution_position.utils import calc_tp_sl_from_mark, validate_not_immediate
+from apps.reference.domains.execution_position.utils import (
+    calc_tp_sl_from_mark,
+    validate_not_immediate,
+)
 
 m = {"markPrice": "114000.0"}
 tp, sl = calc_tp_sl_from_mark(m, "LONG", 100, 50, tick_size=0.1)

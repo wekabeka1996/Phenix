@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 LOG = logging.getLogger(__name__)
 
+
 def deep_merge(source, destination):
     """Deep merge source dict into destination dict."""
     for key, value in source.items():
@@ -19,18 +20,23 @@ def deep_merge(source, destination):
             destination[key] = value
     return destination
 
+
 class AuroraConfig:
     def __init__(self, config_dict: Dict[str, Any]):
         self._config = config_dict
+
     def __getattr__(self, name: str) -> Any:
         value = self._config.get(name)
         if isinstance(value, dict):
             return AuroraConfig(value)
         return value
+
     def get(self, key: str, default: Any = None) -> Any:
         return self._config.get(key, default)
+
     def to_dict(self) -> Dict[str, Any]:
         return self._config
+
     def get_domain_mode(self, domain_name: str) -> str:
         """Get trading_mode for a specific domain from domain_configuration."""
         domain_config = self._config.get("domain_configuration", {})
@@ -38,15 +44,23 @@ class AuroraConfig:
             domain_config = domain_config.to_dict()
         domain_spec = domain_config.get(domain_name, {})
         if isinstance(domain_spec, dict):
-            return domain_spec.get("trading_mode", self._config.get("trading_mode", "live"))
+            return domain_spec.get(
+                "trading_mode", self._config.get("trading_mode", "live")
+            )
         # If domain_spec is AuroraConfig object
-        return getattr(domain_spec, "trading_mode", self._config.get("trading_mode", "live"))
+        return getattr(
+            domain_spec, "trading_mode", self._config.get("trading_mode", "live")
+        )
+
 
 class ConfigLoader:
     _ENV_VAR_PATTERN = re.compile(r"\$\{\s*(\w+)\s*\}")
 
     def __init__(self, config_dir: Optional[Path] = None):
-        self.config_dir = config_dir or Path(__file__).resolve().parent.parent.parent / "config" / "aurora"
+        self.config_dir = (
+            config_dir
+            or Path(__file__).resolve().parent.parent.parent / "config" / "aurora"
+        )
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
             load_dotenv(env_path)
@@ -55,7 +69,7 @@ class ConfigLoader:
         config_path = self.config_dir / filename
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data if isinstance(data, dict) else {}
 
@@ -65,7 +79,9 @@ class ConfigLoader:
         if isinstance(config_part, list):
             return [self._resolve_env_vars(i) for i in config_part]
         if isinstance(config_part, str):
-            return self._ENV_VAR_PATTERN.sub(lambda m: os.environ.get(m.group(1), m.group(0)), config_part)
+            return self._ENV_VAR_PATTERN.sub(
+                lambda m: os.environ.get(m.group(1), m.group(0)), config_part
+            )
         return config_part
 
     def _validate_config(self, config: Dict[str, Any]):
@@ -76,11 +92,19 @@ class ConfigLoader:
         mode = config["trading_mode"]
         api_config = config["binance_api"]
         if mode in ["live", "hybrid_live_data_testnet_exec"]:
-            if "live" not in api_config or not all(api_config["live"].get(k) for k in ["api_key", "api_secret"]):
-                raise ValueError("Missing required keys in 'binance_api.live' for mode.")
+            if "live" not in api_config or not all(
+                api_config["live"].get(k) for k in ["api_key", "api_secret"]
+            ):
+                raise ValueError(
+                    "Missing required keys in 'binance_api.live' for mode."
+                )
         if mode in ["testnet", "hybrid_live_data_testnet_exec"]:
-            if "testnet" not in api_config or not all(api_config["testnet"].get(k) for k in ["api_key", "api_secret"]):
-                raise ValueError("Missing required keys in 'binance_api.testnet' for mode.")
+            if "testnet" not in api_config or not all(
+                api_config["testnet"].get(k) for k in ["api_key", "api_secret"]
+            ):
+                raise ValueError(
+                    "Missing required keys in 'binance_api.testnet' for mode."
+                )
 
     def load_config(self) -> AuroraConfig:
         system_config = self._load_yaml("system.yaml")
@@ -92,10 +116,14 @@ class ConfigLoader:
         deep_merge(trading_config, merged_config)  # Overlay trading
         resolved_config = self._resolve_env_vars(merged_config)
         self._validate_config(resolved_config)
-        LOG.info(f"Configuration loaded for trading_mode: '{resolved_config['trading_mode']}'")
+        LOG.info(
+            f"Configuration loaded for trading_mode: '{resolved_config['trading_mode']}'"
+        )
         return AuroraConfig(resolved_config)
 
+
 _config_instance: Optional[AuroraConfig] = None
+
 
 def get_config() -> AuroraConfig:
     global _config_instance

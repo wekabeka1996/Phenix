@@ -4,6 +4,7 @@ Minimal ENV-based configuration for vFoundation.
 Security and critical operational knobs only - no business logic parameters.
 Fail-obvious dev defaults with warnings, no live-reload, no frameworks.
 """
+
 from __future__ import annotations
 
 import os
@@ -27,9 +28,7 @@ class Config:
         )
 
         # Circuit Breaker
-        self.cb_threshold: int = self._get_int_env(
-            "CB_THRESHOLD", 5, min_val=1, max_val=100
-        )
+        self.cb_threshold: int = self._get_int_env("CB_THRESHOLD", 5, min_val=1, max_val=100)
         self.cb_cooldown_sec: float = self._get_float_env(
             "CB_COOLDOWN_SEC", 60.0, min_val=1.0, max_val=3600.0
         )
@@ -123,15 +122,14 @@ class Config:
             warnings.warn(
                 "RBAC_ADMIN_TOKENS not set - using INSECURE dev default 'dev-admin-token'. "
                 "Set RBAC_ADMIN_TOKENS env var in production!",
-                stacklevel=2
+                stacklevel=2,
             )
             return ["dev-admin-token"]
 
         tokens = [t.strip() for t in raw.split(",") if t.strip()]
         if not tokens:
             warnings.warn(
-                "RBAC_ADMIN_TOKENS is empty - no admin access will be granted!",
-                stacklevel=2
+                "RBAC_ADMIN_TOKENS is empty - no admin access will be granted!", stacklevel=2
             )
         return tokens
 
@@ -143,7 +141,7 @@ class Config:
             warnings.warn(
                 "SIGNING_KEY not set - using INSECURE dev default. "
                 "Set SIGNING_KEY env var in production!",
-                stacklevel=2
+                stacklevel=2,
             )
             return "0" * 64  # Dev-obvious invalid key
 
@@ -151,7 +149,7 @@ class Config:
             warnings.warn(
                 f"SIGNING_KEY should be 64 hex characters (got {len(key)}). "
                 "Using provided value but signatures may fail.",
-                stacklevel=2
+                stacklevel=2,
             )
         return key
 
@@ -159,15 +157,14 @@ class Config:
         """Get execution mode from ENV with dry_run default."""
         mode = os.getenv("EXECUTION_MODE", "dry_run").lower()
         valid_modes = {"dry_run", "paper", "live"}
-        
+
         if mode not in valid_modes:
             warnings.warn(
-                f"EXECUTION_MODE='{mode}' invalid, using 'dry_run'. "
-                f"Valid modes: {valid_modes}",
-                stacklevel=2
+                f"EXECUTION_MODE='{mode}' invalid, using 'dry_run'. Valid modes: {valid_modes}",
+                stacklevel=2,
             )
             return "dry_run"
-        
+
         # Fail-obvious requirement for non-dry_run modes
         if mode in {"paper", "live"}:
             required = ["EXCHANGE_API_KEY", "EXCHANGE_API_SECRET", "EXCHANGE_BASE_URL"]
@@ -177,7 +174,7 @@ class Config:
                     f"EXECUTION_MODE={mode} requires ENV vars: {', '.join(missing)}. "
                     f"Set them or use EXECUTION_MODE=dry_run for testing."
                 )
-        
+
         return mode
 
     def _get_redis_url(self) -> str:
@@ -190,13 +187,15 @@ class Config:
         worker_id = os.getenv("WORKER_ID")
         if not worker_id:
             import socket
+
             hostname = socket.gethostname()
             import uuid
+
             worker_id = f"{hostname}-{uuid.uuid4().hex[:8]}"
             warnings.warn(
                 f"WORKER_ID not set - using generated ID: {worker_id}. "
                 "Set WORKER_ID env var for stable identification.",
-                stacklevel=2
+                stacklevel=2,
             )
         return worker_id
 
@@ -210,11 +209,7 @@ class Config:
         return pathlib.Path(dir_str)
 
     def _get_int_env(
-        self,
-        key: str,
-        default: int,
-        min_val: Optional[int] = None,
-        max_val: Optional[int] = None
+        self, key: str, default: int, min_val: Optional[int] = None, max_val: Optional[int] = None
     ) -> int:
         """Get integer from ENV with validation."""
         raw = os.getenv(key)
@@ -225,23 +220,16 @@ class Config:
             value = int(raw)
         except ValueError:
             warnings.warn(
-                f"{key}='{raw}' is not a valid integer, using default {default}",
-                stacklevel=3
+                f"{key}='{raw}' is not a valid integer, using default {default}", stacklevel=3
             )
             return default
 
         if min_val is not None and value < min_val:
-            warnings.warn(
-                f"{key}={value} is below minimum {min_val}, using minimum",
-                stacklevel=3
-            )
+            warnings.warn(f"{key}={value} is below minimum {min_val}, using minimum", stacklevel=3)
             return min_val
 
         if max_val is not None and value > max_val:
-            warnings.warn(
-                f"{key}={value} exceeds maximum {max_val}, using maximum",
-                stacklevel=3
-            )
+            warnings.warn(f"{key}={value} exceeds maximum {max_val}, using maximum", stacklevel=3)
             return max_val
 
         return value
@@ -251,7 +239,7 @@ class Config:
         key: str,
         default: float,
         min_val: Optional[float] = None,
-        max_val: Optional[float] = None
+        max_val: Optional[float] = None,
     ) -> float:
         """Get float from ENV with validation."""
         raw = os.getenv(key)
@@ -262,23 +250,16 @@ class Config:
             value = float(raw)
         except ValueError:
             warnings.warn(
-                f"{key}='{raw}' is not a valid number, using default {default}",
-                stacklevel=3
+                f"{key}='{raw}' is not a valid number, using default {default}", stacklevel=3
             )
             return default
 
         if min_val is not None and value < min_val:
-            warnings.warn(
-                f"{key}={value} is below minimum {min_val}, using minimum",
-                stacklevel=3
-            )
+            warnings.warn(f"{key}={value} is below minimum {min_val}, using minimum", stacklevel=3)
             return min_val
 
         if max_val is not None and value > max_val:
-            warnings.warn(
-                f"{key}={value} exceeds maximum {max_val}, using maximum",
-                stacklevel=3
-            )
+            warnings.warn(f"{key}={value} exceeds maximum {max_val}, using maximum", stacklevel=3)
             return max_val
 
         return value
@@ -291,15 +272,15 @@ config = Config()
 def reload_config() -> None:
     """
     Reload configuration from ENV (useful for testing).
-    
+
     Recreates Config and updates global singleton attributes in-place
     so existing references to `config` see updated values.
-    
+
     WARNING: Not thread-safe. Only use in test setup or single-threaded context.
     """
     global config
     new_config = Config()
-    
+
     # Update all attributes in-place to preserve existing references
     config.rbac_admin_tokens = new_config.rbac_admin_tokens
     config.signing_key = new_config.signing_key
@@ -310,7 +291,7 @@ def reload_config() -> None:
     config.idem_ttl_ms = new_config.idem_ttl_ms
     config.idem_max_entries = new_config.idem_max_entries
     config.drift_time_window_sec = new_config.drift_time_window_sec
-    
+
     # Adapter settings (FSMP-P2-T01)
     config.execution_mode = new_config.execution_mode
     config.exchange_api_key = new_config.exchange_api_key
@@ -326,7 +307,7 @@ def reload_config() -> None:
     config.adapter_cb_open_threshold = new_config.adapter_cb_open_threshold
     config.adapter_cb_cooldown_ms = new_config.adapter_cb_cooldown_ms
     config.adapter_cb_half_open_probes = new_config.adapter_cb_half_open_probes
-    
+
     # Distributed idempotency (FSMP-P2-T02)
     config.redis_url = new_config.redis_url
     config.idemp_ttl_ms = new_config.idemp_ttl_ms

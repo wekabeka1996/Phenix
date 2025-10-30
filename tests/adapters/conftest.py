@@ -3,6 +3,7 @@ Conftest for tests/adapters directory.
 
 Ensures apps/ is in sys.path for adapter tests.
 """
+
 import sys
 from pathlib import Path
 

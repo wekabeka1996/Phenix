@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict
 import time
 
+
 class RateLimiter:
     def __init__(self, per_s: int = 10) -> None:
         self.per_s = per_s

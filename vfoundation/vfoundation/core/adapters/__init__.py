@@ -1,4 +1,5 @@
 """Core adapters for vFoundation (FSMP-P2-T01)."""
+
 from __future__ import annotations
 
 __all__ = [
