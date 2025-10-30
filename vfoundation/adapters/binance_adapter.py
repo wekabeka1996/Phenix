@@ -12,14 +12,11 @@ import hashlib
 import hmac
 import logging
 import time
-import json
-from decimal import Decimal, ROUND_DOWN, ROUND_UP, InvalidOperation
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, quote_plus
 
-import aiohttp
-import anyio
-from aiohttp import ClientSession
+import httpx
 
 LOG = logging.getLogger(__name__)
 
@@ -41,6 +38,9 @@ class BinanceAdapter:
         api_secret: str,
         base_url: str = "https://testnet.binancefuture.com",
         config: dict | None = None,
+        *,
+        session: Optional[httpx.AsyncClient] = None,  # <-- новий аргумент
+        timeout: float = 10.0,
         **kwargs,
     ):
         rest_url = kwargs.pop("rest_url", None)  # legacy alias
@@ -50,6 +50,7 @@ class BinanceAdapter:
         self.api_secret = api_secret.encode()
         self.base_url = base_url.rstrip("/")
         self.config = config or {}
+        self._timeout = timeout
 
         # NEW: time sync state
         self._time_offset_ms = 0
@@ -58,10 +59,29 @@ class BinanceAdapter:
         # recvWindow (ms). Для ф'ючерсів максимум 60000.
         self._recv_window_ms = int(self.config.get("recv_window_ms", 20000))
 
-        self._session: Optional[ClientSession] = None
+        # Сумісність із тестами: публічне поле .session завжди існує
+        self.session: httpx.AsyncClient = session or httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self._timeout,
+            headers={"X-MBX-APIKEY": self.api_key},
+        )
+
         self._mark_price_cache: Dict[
             str, Dict[str, Any]
         ] = {}  # symbol -> {'price': float, 'timestamp': float}
+
+    # опційно: контекст-менеджер для акуратного закриття
+    async def __aenter__(self) -> "BinanceAdapter":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        try:
+            await self.session.aclose()
+        except Exception:
+            pass
 
     def _norm_params(self, d: dict) -> dict:
         """Фільтрує None і нормалізує значення до рядків, сумісних з Binance."""
@@ -78,19 +98,13 @@ class BinanceAdapter:
                 out[k] = str(v)
         return out
 
-    async def _ensure_session(self) -> ClientSession:
-        if self._session is None:
-            self._session = ClientSession()
-        return self._session
-
     async def _server_time(self) -> int:
         # Для USDM futures: /fapi/v1/time
-        session = await self._ensure_session()
-        async with session.get(f"{self.base_url}/fapi/v1/time") as r:
-            r.raise_for_status()
-            data = await r.json()
-            # serverTime у мілісекундах
-            return int(data["serverTime"])
+        r = await self.session.get(f"{self.base_url}/fapi/v1/time")
+        r.raise_for_status()
+        data = r.json()
+        # serverTime у мілісекундах
+        return int(data["serverTime"])
 
     async def _sync_time(self, force: bool = False):
         # TTL 2 хв за замовчуванням
@@ -127,62 +141,28 @@ class BinanceAdapter:
     async def _request(
         self, method: str, path: str, params: dict | None = None, signed: bool = True
     ):
-        session = await self._ensure_session()
         url = f"{self.base_url}{path}"
         params = params or {}
 
         # Готуємо одразу "базові" params (без підпису) для можливого ретраю
         base_params = dict(params)
 
-        headers = {"X-MBX-APIKEY": self.api_key}
-
         async def _do(method: str, base_params: dict):
-            nonlocal url, headers, signed, session
             if signed:
                 await self._sync_time(False)
                 qs, final_params = self._sign_build(base_params)
-                # ВАЖЛИВО: передаємо або exact-рядок qs, або список пар, щоб зберегти порядок
-                if method == "GET":
-                    async with session.get(url, params=final_params, headers=headers) as r:
-                        if r.status >= 400:
-                            err = await _safe_read_err(r)
-                            raise _make_binance_error(r, err)
-                        return await r.json()
-                elif method == "POST":
-                    async with session.post(url, params=final_params, headers=headers) as r:
-                        if r.status >= 400:
-                            err = await _safe_read_err(r)
-                            raise _make_binance_error(r, err)
-                        return await r.json()
-                elif method == "DELETE":
-                    async with session.delete(url, params=final_params, headers=headers) as r:
-                        if r.status >= 400:
-                            err = await _safe_read_err(r)
-                            raise _make_binance_error(r, err)
-                        return await r.json()
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
+                # ВИКОРИСТОВУЄМО self.session — щоб тести могли мокати її
+                r = await self.session.request(method.upper(), url, params=final_params)
+                if r.status_code >= 400:
+                    err = _safe_read_err(r)
+                    raise _make_binance_error(r, err)
+                return r.json()
             else:
-                if method == "GET":
-                    async with session.get(
-                        url, params=self._norm_params(base_params), headers=headers
-                    ) as r:
-                        r.raise_for_status()
-                        return await r.json()
-                elif method == "POST":
-                    async with session.post(
-                        url, params=self._norm_params(base_params), headers=headers
-                    ) as r:
-                        r.raise_for_status()
-                        return await r.json()
-                elif method == "DELETE":
-                    async with session.delete(
-                        url, params=self._norm_params(base_params), headers=headers
-                    ) as r:
-                        r.raise_for_status()
-                        return await r.json()
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
+                r = await self.session.request(
+                    method.upper(), url, params=self._norm_params(base_params)
+                )
+                r.raise_for_status()
+                return r.json()
 
         # 1-й запит
         try:
@@ -298,11 +278,6 @@ class BinanceAdapter:
                 q = min_qty_d
 
         # check min notional if available
-        min_notional_filter = (
-            filters.get("MIN_NOTIONAL")
-            or filters.get("MIN_NOTIONAL")
-            or filters.get("MIN_NOTIONAL")
-        )
         # try common key names
         min_notional = None
         for key in ("MIN_NOTIONAL", "MIN_NOTIONAL", "MIN_NOTIONAL"):
@@ -556,10 +531,12 @@ class BinanceAdapter:
         return float(response["price"])
 
     async def close_session(self):
-        """Close the aiohttp session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
-            LOG.info("BinanceAdapter aiohttp session closed.")
+        """Close the httpx session."""
+        try:
+            await self.session.aclose()
+            LOG.info("BinanceAdapter httpx session closed.")
+        except Exception:
+            pass
 
     async def get_book_ticker(self, symbol: str) -> Dict[str, Any]:
         """
@@ -687,15 +664,14 @@ class BinanceAdapter:
 # ---- helpers ----
 
 
-async def _safe_read_err(resp):
+def _safe_read_err(resp):
     try:
-        return await resp.json(content_type=None)
+        return resp.json()
     except Exception:
         try:
-            t = await resp.text()
-            return {"code": resp.status, "msg": t}
+            return {"code": resp.status_code, "msg": resp.text}
         except Exception:
-            return {"code": resp.status, "msg": "unknown"}
+            return {"code": resp.status_code, "msg": "unknown"}
 
 
 def _is_code_1021(err) -> bool:
@@ -707,5 +683,5 @@ def _is_code_1021(err) -> bool:
 
 def _make_binance_error(resp, err):
     # Твій клас/фабрика помилок (залиши як було), приклад:
-    status = getattr(resp, "status", None)
+    status = getattr(resp, "status_code", None)
     return BinanceAPIError(err.get("code"), err.get("msg"), status)

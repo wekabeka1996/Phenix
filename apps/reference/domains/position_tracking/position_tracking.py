@@ -129,6 +129,10 @@ class PositionTracking:
         # Update position and calculate P&L
         self._update_position(symbol, qty, price, fees, venue)
 
+        # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
+        open_positions_usd = self._calculate_open_positions_notional()
+        positions_last_ts_ms = int(time.time() * 1000)
+
         # Emit portfolio state updated event
         portfolio_payload = {
             "ts": ts,
@@ -140,6 +144,8 @@ class PositionTracking:
                 self._calculate_unrealized_pnl()
             ),  # Preserve Decimal precision as string
             "positions": self._get_positions_snapshot(),
+            "open_positions_usd": str(open_positions_usd),  # EXP-FIX: Notional for exposure gate
+            "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
         }
 
         # Emit portfolio state updated event
@@ -244,6 +250,10 @@ class PositionTracking:
                 # Remove flat positions
                 self._positions.pop(symbol, None)
 
+        # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
+        open_positions_usd = self._calculate_open_positions_notional()
+        positions_last_ts_ms = int(time.time() * 1000)
+
         # Emit portfolio state updated event with real account data
         portfolio_payload = {
             "ts": int(time.time() * 1000),
@@ -258,6 +268,8 @@ class PositionTracking:
                 _d(payload.get("maxWithdrawAmount", self._equity))
             ),  # Available margin for new positions
             "positions": self._get_positions_snapshot(),
+            "open_positions_usd": str(open_positions_usd),  # EXP-FIX: Notional for exposure gate
+            "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
         }
 
         # Add equity fields if USDT present in balance data (from account update)
@@ -310,6 +322,10 @@ class PositionTracking:
         # Update internal equity state
         self._equity = decimal.Decimal(equity_data["equity_free_usdt"])
 
+        # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
+        open_positions_usd = self._calculate_open_positions_notional()
+        positions_last_ts_ms = int(time.time() * 1000)
+
         # Emit portfolio state updated event with equity fields for DecisionMaking
         portfolio_payload = {
             "ts": int(time.time() * 1000),
@@ -323,6 +339,8 @@ class PositionTracking:
             "unrealized_pnl": "0",  # Not available in balance update
             "available_balance": equity_data["equity_free_usdt"],
             "positions": self._get_positions_snapshot(),
+            "open_positions_usd": str(open_positions_usd),  # EXP-FIX: Notional for exposure gate
+            "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
         }
 
         self.logger.info(
@@ -466,19 +484,28 @@ class PositionTracking:
             "venues": venues,
         }
 
-    def _calculate_unrealized_pnl(self) -> decimal.Decimal:
+    def _calculate_open_positions_notional(self) -> decimal.Decimal:
         """
-        Calculate unrealized P&L based on current positions.
+        Calculate total notional value of open positions in USD.
 
-        For simplicity, assumes current price = last trade price (stored in position).
-        In real implementation, this would use current market prices.
+        EXP-FIX: Used by exposure gate to ensure portfolio positions are accounted for.
+        Returns sum of abs(positionAmt) * markPrice for all positions.
         """
-        unrealized = decimal.Decimal("0")
+        total_notional = decimal.Decimal("0")
+
+        # For now, use entry price as approximation since we don't have mark prices
+        # In production, this should use current mark prices from market data
         for symbol, position in self._positions.items():
-            # For this simple implementation, assume unrealized P&L is 0
-            # In real system, would need current market price
-            pass
-        return unrealized
+            quantity = abs(position["quantity"])
+            entry_price = position["avg_price"]
+
+            if quantity > decimal.Decimal("1e-9") and entry_price > decimal.Decimal("0"):
+                position_notional = quantity * entry_price
+                total_notional += position_notional
+                self.logger.debug(f"Position notional for {symbol}: {position_notional} USD")
+
+        # Round to 2 decimal places for consistency
+        return total_notional.quantize(decimal.Decimal("0.01"))
 
     def get_positions(self) -> Dict[str, Dict[str, Any]]:
         """Returns a copy of the internal positions dictionary."""

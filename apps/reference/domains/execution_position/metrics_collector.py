@@ -43,6 +43,11 @@ class MetricsCollector:
             "executions_filled": 0,
             "executions_cancelled": 0,
             "executions_rejected": 0,
+            # EXP-FIX: Exposure gate metrics
+            "exposure_fail_closed_total": defaultdict(int),
+            "postfill_hold_active": 0,
+            "postfill_hold_expired_total": 0,
+            "exposure_mismatch_total": defaultdict(int),
         }
 
         # Rolling window data for time-based analysis
@@ -129,6 +134,31 @@ class MetricsCollector:
             }
             self._rolling_data.append(event)
 
+    def record_exposure_fail_closed(self, reason: str) -> None:
+        """EXP-FIX: Record exposure fail-closed event."""
+        with self._lock:
+            self._metrics["exposure_fail_closed_total"][reason] += 1
+
+    def record_postfill_hold(self, active_count: int) -> None:
+        """EXP-FIX: Record post-fill hold status."""
+        with self._lock:
+            self._metrics["postfill_hold_active"] = active_count
+
+    def record_postfill_expired(self) -> None:
+        """EXP-FIX: Record expired post-fill hold."""
+        with self._lock:
+            self._metrics["postfill_hold_expired_total"] += 1
+
+    def record_postfill_released(self) -> None:
+        """EXP-FIX: Record released post-fill hold."""
+        with self._lock:
+            self._metrics["postfill_hold_released_total"] = self._metrics.get("postfill_hold_released_total", 0) + 1
+
+    def record_exposure_mismatch(self, check_type: str) -> None:
+        """EXP-FIX: Record exposure mismatch detection."""
+        with self._lock:
+            self._metrics["exposure_mismatch_total"][check_type] += 1
+
     def get_summary_metrics(self) -> Dict[str, Any]:
         """Get summary metrics for the entire system."""
         with self._lock:
@@ -161,6 +191,11 @@ class MetricsCollector:
                 "executions_filled": self._metrics["executions_filled"],
                 "executions_cancelled": self._metrics["executions_cancelled"],
                 "executions_rejected": self._metrics["executions_rejected"],
+                # EXP-FIX: Exposure gate metrics
+                "exposure_fail_closed": dict(self._metrics["exposure_fail_closed_total"]),
+                "postfill_hold_active": self._metrics["postfill_hold_active"],
+                "postfill_hold_expired_total": self._metrics["postfill_hold_expired_total"],
+                "exposure_mismatch": dict(self._metrics["exposure_mismatch_total"]),
             }
 
     def get_symbol_metrics(self, symbol: str) -> Dict[str, Any]:

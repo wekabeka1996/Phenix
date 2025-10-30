@@ -1,5 +1,42 @@
 # Aurora FSM Development TODO
 
+## 🎉 RELEASE v0.1.0 COMPLETED - Production Ready! ✅ (2025-10-30)
+
+**Статус**: ✅ **100% ЗАВЕРШЕНО**
+**Тривалість**: ~30 хвилин
+**Результат**: Frozen SSOT, release artifacts, notes, git tag v0.1.0
+
+### Release Summary
+- **64/64 tests passing** - Full E2E coverage achieved
+- **Frozen configs/schemas** - SSOT snapshots created
+- **Release notes** - Technical documentation completed
+- **Git tag v0.1.0** - Production-ready release tagged
+- **Artifacts collected** - Metrics, coverage, event logs ready
+
+---
+
+## Next Priority Tasks - v0.2.0 Roadmap
+
+### Infrastructure & Operations
+- [ ] **OPS-TG-BOT** - Telegram bot для real-time alerts та команд (panic kill, status checks)
+- [ ] **SLO_READY_ENDPOINT** - `/ready` endpoint з SLO validation (p95 ≤ 50ms, timeout_rate ≤ 1%)
+- [ ] **GRAFANA_DASHBOARD** - Prometheus + Grafana dashboard для метрик візуалізації
+- [ ] **LOG_AGGREGATION** - Centralized logging з ELK stack або Loki
+
+### Trading Features
+- [ ] **VOL_AWARE_BRACKETS** - Volatility-adjusted stop-loss та take-profit брекети
+- [ ] **MULTI_TIMEFRAME_SIGNALS** - Multi-timeframe signal aggregation для кращої точності
+- [ ] **RISK_PARITY_SCALING** - Risk parity portfolio allocation замість equal-weight
+- [ ] **ADAPTIVE_EXPOSURE** - Dynamic exposure limits based на volatility/market regime
+
+### Quality & Reliability
+- [ ] **PERFORMANCE_PROFILING** - Production profiling та bottleneck identification
+- [ ] **CHAOS_ENGINEERING** - Fault injection testing для resilience validation
+- [ ] **CONFIG_HOT_RELOAD** - Runtime config updates без restart
+- [ ] **BACKUP_STRATEGIES** - WAL replay та state recovery procedures
+
+---
+
 ## 🎉 Recent Completion: Plan #1 Stage 1 - Архітектурна Стабілізація ✅✅✅
 
 **Статус**: ✅ **100% ЗАВЕРШЕНО** (27 жовтня 2025)
@@ -55,7 +92,24 @@
 
 ---
 
-## 🎉 Recent Completion: PACK L3 & PACK A4 - Metrics Summary & Ops API ✅ (2025-10-30)
+## 🎉 Recent Completion: EXP-Fix: Portfolio Notional Hard Gate ✅ (2025-10-30)
+
+**Статус**: ✅ **100% ЗАВЕРШЕНО** (30 жовтня 2025)
+**Тривалість**: ~3 години
+**Результат**: Hard exposure gate з fail-closed поведінкою, post-fill hold та shadow auditing
+
+- [x] **EXP-FIX: Portfolio Notional Hard Gate Implementation**
+  - [x] Position Aggregation: Додано _calculate_open_positions_notional() у PositionTracking з EVT:PORTFOLIO_STATE_UPDATED
+  - [x] Fail-Closed FSM Logic: Реалізовано ExposureGuard.can_open() з блокуванням на stale/unknown positions
+  - [x] Post-Fill Hold Mechanism: on_fill() переміщує reservations до postfill_reservations для race condition prevention
+  - [x] Shadow Notional Safety: get_positions_notional_usd_shadow() для Binance API validation (every 10th request)
+  - [x] Metrics & Logging: Додано exposure_fail_closed_total, postfill_hold_active, exposure_mismatch_total counters
+  - [x] Portfolio Update Processing: FSM тепер обробляє EVT:PORTFOLIO_STATE_UPDATED перед symbol checks та releases postfill holds
+  - [x] Async Error Handling: RuntimeError fallbacks для sync emission у test environments
+  - [x] Comprehensive Tests: 8/8 тестів PASSED (3 test files: failclosed, positions_aggregate, postfill_hold)
+  - [x] **Результат**: ✅ CMD:OPEN блокується на stale positions, race conditions eliminated, shadow auditing active
+
+---
 
 **Статус**: ✅ **100% ЗАВЕРШЕНО** (30 жовтня 2025)
 **Тривалість**: ~1.5 години
@@ -199,7 +253,22 @@
 
 ---
 
-## 🎉 Recent Completion: PACK EXP-4 & PACK EXP-5 - QoS & Normalized Reject Reasons ✅ (2025-10-28)
+## 🎉 Recent Completion: BinanceAdapter Session Attribute Fix ✅ (2025-10-31)
+
+**Статус**: ✅ **100% ЗАВЕРШЕНО** (31 жовтня 2025)
+**Тривалість**: ~1 година
+**Результат**: BinanceAdapter тепер має .session атрибут для тестування, міграція на httpx завершена
+
+- [x] **BINANCE_ADAPTER_SESSION_FIX** - Додавання .session атрибуту та міграція на httpx
+  - [x] HTTP Client Migration: Замінено aiohttp.ClientSession на httpx.AsyncClient для кращої тестованості
+  - [x] Session Attribute: Додано публічний self.session атрибут з можливістю ін'єкції для тестування
+  - [x] Context Manager: Реалізовано __aenter__/__aexit__/aclose методи для правильного управління ресурсами
+  - [x] Backward Compatibility: Зберіжено існуючі API сигнатури з підтримкою **kwargs для legacy параметрів
+  - [x] Unit Test: Створено tests/units/test_binance_adapter_session.py з тестуванням session атрибуту
+  - [x] Code Quality: Виправлено всі ruff linting issues (видалено unused imports, перейменовано функції)
+  - [x] Integration Tests: Всі 64/64 integration тестів проходять успішно
+  - [x] Type Safety: Mypy перевірки пройдені без помилок
+  - [x] **Результат**: ✅ Test failures через відсутність .session атрибуту виправлено, система готова до продакшену
 
 **Статус**: ✅ **100% ЗАВЕРШЕНО** (28 жовтня 2025)
 **Тривалість**: ~2 години

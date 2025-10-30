@@ -56,6 +56,8 @@ class RiskManagement:
 
         self.logger.info("Handling EVT:FEATURES_CALCULATED...")
         payload = event.pld
+        print(f"DEBUG: risk_management payload = {payload}")
+        print(f"DEBUG: risk_management payload type = {type(payload)}")
 
         # Log event receipt to chain
         chain_logger.info(

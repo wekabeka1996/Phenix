@@ -95,3 +95,45 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         if self.shadow_mode:
             return "shadow"
         return "connected"
+
+    async def get_positions_notional_usd_shadow(self) -> float:
+        """
+        EXP-FIX: Get shadow notional from Binance API for safety auditing.
+
+        Fetches current positions from /fapi/v2/positionRisk and calculates
+        total notional value. Used for safety comparison with portfolio data.
+
+        Returns:
+            Total notional value in USD, or 0.0 on error
+        """
+        if self.shadow_mode:
+            return 0.0
+
+        try:
+            params = {"timestamp": int(time.time() * 1000)}
+            params["signature"] = self._generate_signature(params)
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/fapi/v2/positionRisk",
+                    params=params,
+                    headers=self.headers,
+                )
+                response.raise_for_status()
+                positions = response.json()
+
+                total_notional = 0.0
+                for pos in positions:
+                    try:
+                        position_amt = abs(float(pos.get("positionAmt", 0)))
+                        mark_price = float(pos.get("markPrice", 0))
+                        if position_amt > 0 and mark_price > 0:
+                            total_notional += position_amt * mark_price
+                    except (ValueError, TypeError):
+                        continue
+
+                return round(total_notional, 2)
+
+        except Exception as e:
+            self.logger.error(f"SHADOW_NOTIONAL_ERROR: {e}")
+            return 0.0

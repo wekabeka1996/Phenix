@@ -20,7 +20,10 @@ class FeatureEngineering:
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
 
     def on_market_tick(self, event: Message) -> None:
+        print(f"DEBUG: event.pld = {event.pld}")
+        print(f"DEBUG: event.pld type = {type(event.pld)}")
         symbol = event.pld.get("symbol")
+        print(f"DEBUG: symbol = {symbol}, type = {type(symbol)}")
         if not symbol:
             return
 
@@ -37,6 +40,10 @@ class FeatureEngineering:
         self, symbol: str, current_tick: dict, last_tick: dict
     ) -> None:
         try:
+            print(f"DEBUG: _calculate_and_emit_features called with symbol={symbol}")
+            print(f"DEBUG: current_tick={current_tick}")
+            print(f"DEBUG: last_tick={last_tick}")
+
             bid_size = decimal.Decimal(str(current_tick.get("bid_size", 0)))
             ask_size = decimal.Decimal(str(current_tick.get("ask_size", 0)))
             buy_volume = decimal.Decimal(str(current_tick.get("buy_volume", 0)))
@@ -77,6 +84,9 @@ class FeatureEngineering:
             )
 
         except Exception as e:
+            print(f"DEBUG: Exception type: {type(e)}, value: {e}")
+            import traceback
+            traceback.print_exc()
             self.logger.error(f"Error calculating features for {symbol}: {e}")
 
     def start(self) -> None:

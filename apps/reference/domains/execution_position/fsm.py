@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple
 
 from vfoundation.core.protocol import Message
@@ -29,6 +30,7 @@ from .utils import (
 )
 from .aurora_log_adapter import AuroraLogAdapter
 from .metrics_collector import MetricsCollector
+from .exposure_guard import ExposureGuard  # EXP-FIX: Exposure guard import
 from .utils import quantize_stop_price, validate_anti_2021, generate_client_order_id
 
 LOG = logging.getLogger(__name__)
@@ -52,6 +54,10 @@ class ExecPosFSM:
 
         self.log_adapter = AuroraLogAdapter()
         self.metrics_collector = MetricsCollector()
+
+        # EXP-FIX: Initialize exposure guard
+        self.exposure_guard = ExposureGuard(self.config)
+        self._latest_portfolio_state = {}  # EXP-FIX: Store latest portfolio state
 
         if not self.shadow_mode:
             self._initialize_adapter()
@@ -154,6 +160,36 @@ class ExecPosFSM:
     def handle(self, msg: Message) -> Optional[Message]:
         """Route message to the appropriate flow and handle execution decisions."""
         pld = msg.pld or {}
+
+        # EXP-FIX: Store latest portfolio state for exposure checks
+        if msg.op == "EVT" and msg.verb == "PORTFOLIO_STATE_UPDATED":
+            self._latest_portfolio_state = msg.pld or {}
+            # Clean up stale reservations on portfolio updates
+            expired = self.exposure_guard.expire_stale()
+            # EXP-FIX: Release post-fill holds since portfolio is now updated
+            released_postfill = list(self.exposure_guard.state.postfill_reservations.keys())
+            for key in released_postfill:
+                self.exposure_guard.state.postfill_reservations.pop(key, None)
+            if released_postfill:
+                LOG.debug(f"RELEASED_POSTFILL_HOLDS: {len(released_postfill)} keys")
+                if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                    for _ in released_postfill:
+                        self.metrics_collector.record_postfill_released()
+            if expired:
+                # EXP-FIX: Record expired post-fill holds
+                if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                    for _ in expired:
+                        if _ in self.exposure_guard.state.postfill_reservations:
+                            self.metrics_collector.record_postfill_expired()
+
+                # Emit event for expired reservations
+                self.fsm.emit(
+                    "EVT:PENDING_EXPOSURE_EXPIRED",
+                    payload={"expired_keys": expired, "why": "ttl_expired"},
+                    why="exposure_cleanup"
+                )
+            return None  # Portfolio updates don't need further processing
+
         symbol = pld.get("symbol")
         if not symbol:
             LOG.warning(f"ExecPosFSM received message without symbol: {msg.verb}")
@@ -164,11 +200,19 @@ class ExecPosFSM:
 
         # Route to the correct FSM based on the message verb
         if msg.verb == "OPEN":
+            # EXP-FIX: Fail-closed exposure check before processing CMD:OPEN
+            if self._check_exposure_fail_closed(msg):
+                return None  # Error already emitted
             result = open_flow.handle(msg)
         elif msg.verb in ["PARTIAL_FILL", "FILL", "TRADE_EXECUTED", "ORDER_UPDATED"]:
             manage_result = manage_flow.handle(msg)
             close_result = close_flow.handle(msg)
             result = manage_result if manage_result else close_result
+
+            # EXP-FIX: Handle post-fill hold for FILLED orders
+            if msg.verb == "FILL" and result:
+                self._handle_fill_event(msg)
+
         elif msg.verb == "CLOSE":
             result = close_flow.handle(msg)
         else:
@@ -362,3 +406,162 @@ class ExecPosFSM:
         """Get or create CloseFlowFSM for the given symbol."""
         _, _, close_f = self._get_or_create_flows(symbol)
         return close_f
+
+    def _check_exposure_fail_closed(self, msg: Message) -> bool:
+        """
+        EXP-FIX: Check exposure limits with fail-closed behavior.
+
+        Returns True if request should be blocked (error already emitted).
+        """
+        pld = msg.pld or {}
+        symbol = pld.get("symbol")
+        qty = pld.get("qty")
+        price_ref = pld.get("price_ref")
+
+        if not symbol or not qty or not price_ref:
+            LOG.warning(f"EXPOSURE_CHECK_SKIP: Missing required fields for {symbol}")
+            return False
+
+        try:
+            # Calculate notional
+            notional_usd = Decimal(str(qty)) * Decimal(str(price_ref))
+
+            # Check exposure with fail-closed logic
+            exposure_check = self.exposure_guard.can_open(symbol, notional_usd, self._latest_portfolio_state)
+
+            if not exposure_check["allowed"]:
+                reason = exposure_check["reason"]
+                stale_sec = exposure_check.get("stale_sec", 0)
+
+                # Emit ERR:OPEN with fail-closed reason
+                error_msg = Message(
+                    op="ERR",
+                    verb="OPEN",
+                    src="execution_position",
+                    dst=msg.src,
+                    rid=msg.rid,
+                    pld={
+                        "reason": reason,
+                        "stale_sec": stale_sec,
+                        "symbol": symbol,
+                        "requested_notional": str(notional_usd)
+                    },
+                    why=f"exposure_fail_closed_{reason.lower()}"
+                )
+
+                # EXP-FIX: Record fail-closed metric
+                if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                    self.metrics_collector.record_exposure_fail_closed(reason)
+
+                # Reserve exposure temporarily to prevent race conditions
+                reserve_key = pld.get("idempotent_key") or msg.rid or f"rid_{msg.rid}"
+                self.exposure_guard.reserve(reserve_key, notional_usd)
+
+                # Emit error asynchronously
+                try:
+                    asyncio.create_task(self._emit_error_async(error_msg))
+                except RuntimeError:
+                    # No running loop, emit synchronously
+                    self.fsm.emit(error_msg.op, verb=error_msg.verb, payload=error_msg.pld, why=error_msg.why)
+                return True
+
+            # EXP-FIX: Periodic shadow notional check (every 10 requests approx)
+            if hasattr(self, '_shadow_check_counter'):
+                self._shadow_check_counter += 1
+            else:
+                self._shadow_check_counter = 1
+
+            if self._shadow_check_counter % 10 == 0 and self.adapter:
+                try:
+                    asyncio.create_task(self._check_shadow_notional())
+                except RuntimeError:
+                    # No running loop, skip async check
+                    pass
+
+            # Reserve exposure for successful check
+            reserve_key = pld.get("idempotent_key") or msg.rid or f"rid_{msg.rid}"
+            self.exposure_guard.reserve(reserve_key, notional_usd)
+
+            return False
+
+        except Exception as e:
+            LOG.error(f"EXPOSURE_CHECK_ERROR: {e}", exc_info=True)
+            return False
+
+    async def _emit_error_async(self, msg: Message) -> None:
+        """Asynchronously emit an error message."""
+        self.fsm.emit(msg.op, verb=msg.verb, payload=msg.pld, why=msg.why)
+
+    def _handle_fill_event(self, msg: Message) -> None:
+        """
+        EXP-FIX: Handle order fill events for post-fill hold mechanism.
+
+        Moves reservation from pending to post-fill hold to prevent race conditions.
+        """
+        pld = msg.pld or {}
+        reserve_key = pld.get("idempotent_key") or pld.get("client_order_id") or msg.rid
+
+        if not reserve_key:
+            LOG.warning("FILL_EVENT_SKIP: No reserve_key found in fill event")
+            return
+
+        # Calculate filled notional (approximate)
+        qty = pld.get("qty", 0)
+        price = pld.get("price", 0)
+        try:
+            notional_usd = Decimal(str(qty)) * Decimal(str(price))
+            self.exposure_guard.on_fill(reserve_key, notional_usd)
+
+            # EXP-FIX: Record post-fill hold metric
+            if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                self.metrics_collector.record_postfill_hold(len(self.exposure_guard.state.postfill_reservations))
+
+            LOG.debug(f"FILL_HANDLED: key={reserve_key}, notional={notional_usd}")
+        except Exception as e:
+            LOG.error(f"FILL_HANDLE_ERROR: {e}", exc_info=True)
+
+    async def _check_shadow_notional(self) -> None:
+        """
+        EXP-FIX: Periodic shadow notional check for safety auditing.
+
+        Compares portfolio positions with exchange data and emits warnings on mismatch.
+        """
+        try:
+            if not hasattr(self, 'adapter') or not self.adapter:
+                return
+
+            # Get shadow notional from exchange
+            shadow_notional = await self.adapter.get_positions_notional_usd_shadow()
+
+            # Get portfolio notional
+            portfolio_notional = Decimal(str(self._latest_portfolio_state.get("open_positions_usd", "0")))
+
+            # Compare with tolerance (allow 1% difference)
+            tolerance = 0.01
+            diff_pct = abs(shadow_notional - float(portfolio_notional)) / max(shadow_notional, float(portfolio_notional), 1) * 100
+
+            if diff_pct > tolerance:
+                LOG.warning(
+                    f"EXPOSURE_MISMATCH: portfolio={portfolio_notional}, shadow={shadow_notional}, diff={diff_pct:.2f}%"
+                )
+                self.exposure_guard._increment_metric("exposure_mismatch_total", "shadow_check")
+
+                # EXP-FIX: Record mismatch metric
+                if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                    self.metrics_collector.record_exposure_mismatch("shadow_check")
+
+                # Emit event for monitoring
+                self.fsm.emit(
+                    "EVT:EXPOSURE_MISMATCH",
+                    payload={
+                        "portfolio_notional": str(portfolio_notional),
+                        "shadow_notional": shadow_notional,
+                        "diff_pct": diff_pct
+                    },
+                    why="shadow_notional_mismatch"
+                )
+            else:
+                LOG.debug(f"SHADOW_CHECK_OK: portfolio={portfolio_notional}, shadow={shadow_notional}")
+
+        except Exception as e:
+            LOG.error(f"SHADOW_CHECK_ERROR: {e}", exc_info=True)
