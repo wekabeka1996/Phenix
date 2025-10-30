@@ -55,7 +55,7 @@ class PositionTracking:
             event: FSM event with trade payload
         """
         self.logger.info("Handling EVT:TRADE_EXECUTED...")
-        
+
         # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
         # Write event to WAL BEFORE processing to ensure disaster recovery
         try:
@@ -85,7 +85,7 @@ class PositionTracking:
             )
             return
         # --- END WAL INTEGRATION ---
-        
+
         payload = event.pld
 
         # Extract required fields from payload
@@ -135,7 +135,7 @@ class PositionTracking:
             event: FSM event with account payload
         """
         self.logger.info("Handling EVT:ACCOUNT_UPDATE_RECEIVED...")
-        
+
         # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
         # Write event to WAL BEFORE processing to ensure disaster recovery
         try:
@@ -165,16 +165,16 @@ class PositionTracking:
             )
             return
         # --- END WAL INTEGRATION ---
-        
+
         payload = event.pld
 
         # Update equity from account data
         total_wallet_balance = decimal.Decimal(str(payload.get('totalWalletBalance', 0)))
         total_unrealized_profit = decimal.Decimal(str(payload.get('totalUnrealizedProfit', 0)))
         total_cross_wallet_balance = decimal.Decimal(str(payload.get('totalCrossWalletBalance', total_wallet_balance - total_unrealized_profit)))
-        
+
         self._equity = total_wallet_balance
-        
+
         # === AURORA_STATE_SYNC_V1: Recalculate realized_pnl from ACCOUNT_UPDATE ===
         # totalCrossWalletBalance = balance without unrealized PnL
         # realized_pnl = totalCrossWalletBalance - initial_balance
@@ -187,7 +187,7 @@ class PositionTracking:
             # Recalculate realized_pnl from cross wallet balance
             old_realized_pnl = self._realized_pnl
             self._realized_pnl = total_cross_wallet_balance - self._initial_balance
-            
+
             if old_realized_pnl != self._realized_pnl:
                 self.logger.debug(
                     f"[STATE_SYNC] Realized PnL recalculated: "
@@ -213,12 +213,23 @@ class PositionTracking:
         # Emit portfolio state updated event with real account data
         portfolio_payload = {
             "ts": int(time.time() * 1000),
-            "equity": str(self._equity),  # Preserve Decimal precision as string
+            "equity": str(self._equity),  # Legacy field for compatibility
             "realized_pnl": str(self._realized_pnl),  # Preserve Decimal precision as string
             "unrealized_pnl": str(decimal.Decimal(str(payload.get('totalUnrealizedProfit', 0)))),  # Preserve Decimal precision as string
             "available_balance": str(decimal.Decimal(str(payload.get('maxWithdrawAmount', self._equity)))),  # Available margin for new positions
             "positions": self._get_positions_snapshot()
         }
+
+        # Add equity fields if USDT present in balance data (from account update)
+        # Note: account updates may not include full asset list, so equity computation might be limited
+        if 'assets' in payload:
+            equity_data = self._compute_equity_from_balance(payload['assets'], payload)
+            if equity_data:
+                portfolio_payload.update({
+                    "equity_free_usdt": equity_data['equity_free_usdt'],
+                    "equity_cross_usdt": equity_data['equity_cross_usdt'],
+                    "equity_ts": equity_data['equity_ts']
+                })
 
         self.logger.info("Emitting EVT:PORTFOLIO_STATE_UPDATED...")
         self.fsm.emit(
@@ -244,14 +255,25 @@ class PositionTracking:
         assets = payload.get('assets', [])
         self.logger.info(f"Balance update received: {len(assets)} assets with balance > 0")
 
-        # Emit portfolio state updated event to initialize DecisionMaking
-        # This is important for the first trade decision before any trades are executed
+        # Compute equity metrics for USDT-M futures
+        equity_data = self._compute_equity_from_balance(assets)
+        if not equity_data:
+            self.logger.warning("Skipping portfolio update: no USDT in balance data")
+            return
+
+        # Update internal equity state
+        self._equity = decimal.Decimal(equity_data['equity_free_usdt'])
+
+        # Emit portfolio state updated event with equity fields for DecisionMaking
         portfolio_payload = {
             "ts": int(time.time() * 1000),
-            "equity": str(self._equity),  # Preserve Decimal precision as string
+            "equity": equity_data['equity_free_usdt'],  # Legacy field for compatibility
+            "equity_free_usdt": equity_data['equity_free_usdt'],
+            "equity_cross_usdt": equity_data['equity_cross_usdt'],
+            "equity_ts": equity_data['equity_ts'],
             "realized_pnl": str(self._realized_pnl),  # Preserve Decimal precision as string
-            "unrealized_pnl": "0",
-            "available_balance": str(sum(decimal.Decimal(str(a.get('balance', 0))) for a in assets)),
+            "unrealized_pnl": "0",  # Not available in balance update
+            "available_balance": equity_data['equity_free_usdt'],
             "positions": self._get_positions_snapshot()
         }
 
@@ -259,8 +281,49 @@ class PositionTracking:
         self.fsm.emit(
             "EVT:PORTFOLIO_STATE_UPDATED",
             payload=portfolio_payload,
-            why="Initial portfolio state from balance update for DecisionMaking"
+            why=equity_data['why']
         )
+
+    def _compute_equity_from_balance(self, assets: List[Dict[str, Any]], account_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Compute equity metrics for USDT-M futures account.
+
+        Args:
+            assets: List of asset balances from BALANCE_UPDATE
+            account_data: Optional account data from ACCOUNT_UPDATE
+
+        Returns:
+            Dict with equity_free_usdt, equity_cross_usdt, equity_ts, why or None if USDT not present
+        """
+        # Find USDT asset
+        usdt_asset = next((a for a in assets if a.get('asset') == 'USDT'), None)
+        if not usdt_asset:
+            self.logger.warning("Skipping equity computation: USDT not present in balance data")
+            return None
+
+        # Compute free equity (available for new positions)
+        equity_free_usdt = decimal.Decimal(str(usdt_asset.get('balance', '0')))
+
+        # Compute cross equity (total wallet balance including unrealized P&L)
+        if account_data:
+            # From ACCOUNT_UPDATE: use totalCrossWalletBalance + totalUnrealizedProfit
+            equity_cross_usdt = decimal.Decimal(str(account_data.get('totalCrossWalletBalance', '0'))) + \
+                               decimal.Decimal(str(account_data.get('totalUnrealizedProfit', '0')))
+            equity_ts = account_data.get('updateTime', int(time.time() * 1000))
+            why = "equity_from_account_update"
+        else:
+            # From BALANCE_UPDATE: use crossWalletBalance + crossUnPnl
+            equity_cross_usdt = decimal.Decimal(str(usdt_asset.get('crossWalletBalance', '0'))) + \
+                               decimal.Decimal(str(usdt_asset.get('crossUnPnl', '0')))
+            equity_ts = usdt_asset.get('updateTime', int(time.time() * 1000))
+            why = "equity_from_balance_update"
+
+        return {
+            'equity_free_usdt': str(equity_free_usdt),
+            'equity_cross_usdt': str(equity_cross_usdt),
+            'equity_ts': equity_ts,
+            'why': why
+        }
 
     def _update_position(self, symbol: str, quantity: decimal.Decimal, price: decimal.Decimal, fees: decimal.Decimal, venue: str) -> None:
         """
@@ -361,10 +424,10 @@ class PositionTracking:
     def get_snapshot(self) -> dict:
         """
         Serializes the current state of the position_tracking domain for DR purposes.
-        
+
         Returns a snapshot compliant with snapshot_v1.schema.json for disaster recovery.
         All numeric values are preserved as Decimal-encoded strings to maintain precision.
-        
+
         Returns:
             dict: DR snapshot with domain state, hash, and metadata
         """
@@ -379,24 +442,24 @@ class PositionTracking:
                     "side": "long" if qty > 0 else "short",
                     "unrealized_pnl": "0.0"  # Placeholder - would need current market price
                 }
-        
+
         # Build portfolio state with precision preservation
         portfolio_state = {
             "equity": str(self._equity),
             "balance": str(self._equity - self._realized_pnl),  # Simplified calculation
             "margin_used": "0.0"  # Placeholder - would need real margin calculation
         }
-        
+
         # Complete state object
         state_data = {
             "positions": positions_state,
             "portfolio": portfolio_state
         }
-        
+
         # Compute state hash for integrity verification
         state_str = json.dumps(state_data, sort_keys=True)
         state_hash = hashlib.sha256(state_str.encode('utf-8')).hexdigest()
-        
+
         # Build snapshot with metadata
         snapshot = {
             "domain": "position_tracking",
@@ -410,12 +473,12 @@ class PositionTracking:
                 "sequence_number": int(time.time() * 1000)  # Use timestamp as sequence for now
             }
         }
-        
+
         self.logger.info(
             f"DR Snapshot created: {len(positions_state)} positions, "
             f"equity={self._equity}, hash={state_hash[:16]}..."
         )
-        
+
         return snapshot
 
     def load_snapshot(self, snapshot_data: dict) -> bool:

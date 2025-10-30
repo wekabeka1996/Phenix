@@ -30,7 +30,8 @@ dependencies = [
 redis = ["redis>=5.0"]
 
 [tool.setuptools]
-packages = ["vfoundation", "apps", "cli"]
+# packages = ["vfoundation", "apps", "cli"]
+packages = ["vfoundation"]
 
 [tool.setuptools.package-data]
 "vfoundation" = ["py.typed"]

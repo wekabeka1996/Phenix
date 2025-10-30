@@ -1,7 +1,7 @@
 """
 AccountConnector for account_balance domain (FSMP-P1-T04).
 
-Connects to Binance REST API via the centralized BinanceAdapter, retrieves 
+Connects to Binance REST API via the centralized BinanceAdapter, retrieves
 account balance and positions, and emits FSM events.
 """
 import asyncio
@@ -43,7 +43,7 @@ class AccountConnector:
         # Initialize the BinanceAdapter based on the trading_mode
         mode = config.get("trading_mode", "testnet")
         api_config = config.get("binance_api", {})
-        
+
         env_config = {}
         if mode == "live":
             env_config = api_config.get("live", {})
@@ -60,7 +60,7 @@ class AccountConnector:
             api_secret=env_config["api_secret"],
             rest_url=env_config["rest_url"]
         )
-        
+
         # Store latest balance data from /fapi/v2/balance endpoint
         self._latest_balance_data: Optional[List[Dict[str, Any]]] = None
 
@@ -178,9 +178,9 @@ class AccountConnector:
         wallet_balance = '0'
         unrealized_profit = '0'
         cross_wallet_balance = '0'
-        
+
         LOG.debug(f"_emit_positions_update: _latest_balance_data is {type(self._latest_balance_data)} with value: {self._latest_balance_data is not None}")
-        
+
         if self._latest_balance_data:
             LOG.info(f"✅ Using stored balance data: {len(self._latest_balance_data)} assets available")
             # Find USDT balance (or any base currency that has the account summary)
@@ -195,13 +195,13 @@ class AccountConnector:
                 unrealized_profit = str(decimal.Decimal(usdt_asset.get('crossUnPnl', '0')))
                 # crossWalletBalance = balance - unrealizedProfit (approximately)
                 cross_wallet_balance = str(decimal.Decimal(usdt_asset.get('crossWalletBalance', '0')))
-                
+
                 LOG.info(f"   ✅ Found USDT: balance={wallet_balance}, unrealizedProfit={unrealized_profit}, crossWalletBalance={cross_wallet_balance}")
             else:
                 LOG.warning(f"   ⚠️  No USDT asset found in balance data")
         else:
             LOG.warning("⚠️  No balance data available yet; positions update will have zero wallet balance")
-        
+
         payload = {
             'totalWalletBalance': wallet_balance,
             'totalUnrealizedProfit': unrealized_profit,
@@ -215,4 +215,4 @@ class AccountConnector:
             payload=payload,
             why="Open positions data updated from Binance API."
         )
-        LOG.info(f"Emitted positions update: {len(open_positions)} open positions, wallet_balance={wallet_balance}")
+        LOG.info(f"Emitted positions update: {len(open_positions)} open positions, totalWalletBalance={wallet_balance}, totalUnrealizedProfit={unrealized_profit}")

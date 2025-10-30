@@ -33,16 +33,20 @@ class DecisionMaking:
         self.latest_portfolio: Optional[Dict[str, Any]] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
 
+        # Cache for equity values to prevent zero-overwrite
+        self._cached_equity_free_usdt: Optional[str] = None
+        self._cached_equity_cross_usdt: Optional[str] = None
+
         # Support both old (config['trading']['decision']) and new (config['decision']) formats
         trading_config = self.config.get('trading', self.config)
-        
+
         if 'decision' not in trading_config and 'decision' not in self.config:
             raise ValueError("Configuration key missing: 'decision'")
         if 'tca_prefs' not in trading_config and 'tca_prefs' not in self.config:
             raise ValueError("Configuration key missing: 'tca_prefs'")
         if 'risk_budgets' not in trading_config and 'risk_budgets' not in self.config:
             raise ValueError("Configuration key missing: 'risk_budgets'")
-        
+
         # Get decision config from either location
         decision_config = trading_config.get('decision', self.config.get('decision', {}))
         sizing_config = decision_config.get('position_sizing', {})
@@ -68,8 +72,21 @@ class DecisionMaking:
 
     def on_portfolio(self, event: Message) -> None:
         self.logger.info(f"✅ on_portfolio() called - portfolio state received!")
-        self.latest_portfolio = event.pld
-        self.logger.info(f"   Equity: {self.latest_portfolio.get('equity')}, Positions: {len(self.latest_portfolio.get('positions', []))}")
+        portfolio_data = event.pld
+
+        # Cache equity_free_usdt if present, but don't overwrite with zero/null
+        equity_free_usdt = portfolio_data.get('equity_free_usdt')
+        if equity_free_usdt is not None and equity_free_usdt != '0':
+            self._cached_equity_free_usdt = equity_free_usdt
+            self.logger.info(f"   Cached equity_free_usdt: {equity_free_usdt}")
+
+        # Also cache equity_cross_usdt if present
+        equity_cross_usdt = portfolio_data.get('equity_cross_usdt')
+        if equity_cross_usdt is not None and equity_cross_usdt != '0':
+            self._cached_equity_cross_usdt = equity_cross_usdt
+
+        self.latest_portfolio = portfolio_data
+        self.logger.info(f"   Equity: {portfolio_data.get('equity')}, Positions: {len(portfolio_data.get('positions', []))}")
 
     def on_regime(self, event: Message) -> None:
         self.latest_regime = event.pld
@@ -100,12 +117,18 @@ class DecisionMaking:
         features_data = context['features']["features"]
         risk_params = context['risk_params']["risk_parameters"]
         portfolio = context['portfolio']
-        equity = decimal.Decimal(str(portfolio.get('equity', '0')))
+
+        # Use cached equity_free_usdt instead of portfolio equity to prevent zero-overwrite
+        equity_str = self._cached_equity_free_usdt or portfolio.get('equity_free_usdt') or portfolio.get('equity', '0')
+        equity = decimal.Decimal(str(equity_str))
+
+        self.logger.info(f"[{symbol}] Using equity for decision: {equity} (from cached: {self._cached_equity_free_usdt is not None})")
+
         if equity <= 0:
-            self.logger.warning(f"Trade intent for {symbol} rejected: equity is zero or negative.")
+            self.logger.warning(f"Trade intent for {symbol} rejected: equity is zero or negative ({equity}).")
             self.clear_internal_state_for_symbol(symbol)
             return
-            
+
         regime = context.get('regime')
 
         if not risk_params.get('is_trading_allowed', False):
@@ -118,12 +141,12 @@ class DecisionMaking:
         trading_config = self.config.get('trading', self.config)
         decision_config = trading_config.get('decision', {})
         signal_weights = decision_config.get('signal_weights', {})
-        
+
         # DEBUG: Log full trading_config structure
         self.logger.info(f"DEBUG trading_config keys: {list(trading_config.keys())}")
         self.logger.info(f"DEBUG decision_config: {decision_config}")
         self.logger.info(f"DEBUG signal_weights: {signal_weights}")
-        
+
         signal_score = sum(
             decimal.Decimal(str(features_data.get(f, 0.0))) * decimal.Decimal(str(w))
             for f, w in signal_weights.items()
@@ -169,12 +192,12 @@ class DecisionMaking:
         why_chain = []
         portfolio = context['portfolio']
         equity = decimal.Decimal(str(portfolio.get('equity', '0')))
-        
+
         final_pos_size_usd = min(self.liq_cap_usd, equity * decimal.Decimal('0.1')) # Simplified sizing
-        
+
         if final_pos_size_usd < self.min_pos_size_usd:
             return None, f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"
-        
+
         why_chain.append(f"pos_size_usd={final_pos_size_usd}")
 
         # Support both old (config['trading']['instruments']) and new (config['instruments']) formats
@@ -183,7 +206,7 @@ class DecisionMaking:
         step_size_str = instrument_specs.get('step_size')
         if not step_size_str:
             return None, "Missing step_size in config"
-        
+
         step_size = decimal.Decimal(step_size_str)
         if price <= 0:
             return None, "Invalid price for sizing"
@@ -198,7 +221,7 @@ class DecisionMaking:
 
     def _propose_trade_intent(self, symbol: str, side: str, qty: decimal.Decimal, price: decimal.Decimal, why: str, rid: str) -> None:
         trade_intent = {
-            "instrument": symbol, "side": side, 
+            "instrument": symbol, "side": side,
             "order": {"qty": str(qty), "price": str(price), "price_ref": str(price), "reduce_only": False},
             "p": "0.75", "payoff_ratio_r": "2.0",
             "tca_budget": {"max_slippage_bps": "10", "max_latency_ms": 500, "maker_preference": "neutral"},
