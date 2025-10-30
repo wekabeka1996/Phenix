@@ -669,3 +669,90 @@ def test_position_tracking_partial_close(mock_config):
     assert abs(float(final_payload["realized_pnl"]) - 495.0) < 1e-9
 
     print(f"✅ Partial close test passed! Final position: {btc_pos}")
+
+
+def test_position_tracking_commission_accounting(mock_config):
+    """
+    Test that position_tracking correctly accounts for commissions in PnL calculations.
+    
+    Scenario: Buy 1 ETH @ $1000, then Sell 1 ETH @ $1100 with $0.50 commission.
+    Expected: Realized PnL = (1100 - 1000) - 0.50 = $99.50
+    """
+    # Step 1: Initialize FSM core
+    fsm = FSMCore()
+
+    # Step 2: Set up mock listeners
+    portfolio_listener = mock.Mock()
+    fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", portfolio_listener)
+
+    # Step 3: Initialize component
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+
+    position_tracker = PositionTracking(fsm=fsm, config=mock_config)
+    position_tracker.start()
+
+    # Step 4: First trade - buy 1 ETH @ $1000
+    buy_payload = {
+        "symbol": "ETHUSDT",
+        "side": "buy",
+        "price": 1000.0,
+        "quantity": 1.0,
+        "ts": 1693526400000,
+        "fees": 0.0,
+        "commission": 0.25,  # Commission on buy
+        "commission_asset": "USDT",
+        "venue": "binance"
+    }
+
+    fsm.emit(
+        "EVT:TRADE_EXECUTED",
+        payload=buy_payload,
+        why="Buy trade for commission test."
+    )
+
+    # Step 5: Second trade - sell 1 ETH @ $1100 with commission
+    sell_payload = {
+        "symbol": "ETHUSDT",
+        "side": "sell",
+        "price": 1100.0,
+        "quantity": 1.0,
+        "ts": 1693526500000,
+        "fees": 0.0,
+        "commission": 0.50,  # Commission on sell
+        "commission_asset": "USDT",
+        "venue": "binance"
+    }
+
+    fsm.emit(
+        "EVT:TRADE_EXECUTED",
+        payload=sell_payload,
+        why="Sell trade for commission test."
+    )
+
+    # Step 6: Verify results
+    # Should have 2 portfolio updates
+    assert portfolio_listener.call_count == 2
+
+    # Get the final portfolio update
+    final_call = portfolio_listener.call_args_list[-1]
+    final_event = final_call[0][0]
+    final_payload = final_event.pld
+
+    # Verify total commissions accumulated
+    assert "total_commissions" in final_payload
+    assert abs(float(final_payload["total_commissions"]) - 0.75) < 1e-9  # 0.25 + 0.50
+
+    # Verify realized PnL accounts for commissions
+    # Gross profit: 1 * (1100 - 1000) = 100
+    # Net profit: 100 - 0.75 = 99.25
+    assert abs(float(final_payload["realized_pnl"]) - 99.25) < 1e-9
+
+    # Verify position is flat
+    positions = final_payload["positions"]
+    eth_positions = [p for p in positions if p.get("symbol") == "ETHUSDT"]
+    assert len(eth_positions) == 0  # Should be flat
+
+    print(f"✅ Commission accounting test passed! Total commissions: {final_payload['total_commissions']}, Net PnL: {final_payload['realized_pnl']}")

@@ -55,3 +55,65 @@
 - New test validates SL trigger logic
 
 **Next:** Deploy to testnet, monitor SL/TP execution in live conditions
+
+## 2025-10-30 - QUANT_ENHANCEMENT_P3 Commission Accounting Implemented
+
+**RID:** QUANT-ENH-P3-001  
+**Why:** Improve PnL accuracy by accounting for transaction costs, as recommended by Quant audit  
+**Actions:**
+- Modified apps/reference/domains/position_tracking/position_tracking.py: Added _total_commissions state tracking, updated get_snapshot/load_snapshot for persistence
+- Modified on_trade_executed: Extract commission and commission_asset from payload
+- Modified _update_position: Accumulate commissions separately, subtract from realized_pnl with logging
+- Modified portfolio update emission: Include total_commissions in EVT:PORTFOLIO_STATE_UPDATED
+- Added test_position_tracking_commission_accounting: Validates commission accumulation and net PnL calculation
+
+**Results:**
+- Commissions now properly tracked and subtracted from realized PnL
+- Portfolio events include total_commissions for monitoring
+- State persistence includes commission data for DR
+- New test validates: Buy $1000, Sell $1100 with $0.75 commission = Net PnL $99.25
+
+**Next:** Consider implementing slippage accounting for complete transaction cost analysis
+
+## 2025-10-30 - CONFIG_TUNING_P1 Configuration Conflicts Resolved
+
+**RID:** CONFIG-TUNING-P1-001  
+**Why:** System was correctly blocking all orders due to two risk configuration conflicts  
+**Actions:**
+- Updated config/aurora/trading.yaml: Changed risk.trading_allowed_thresholds.max_risk_score from 0.8 to 0.95 (unblocks ETH and BTC at RiskManagement level)
+- Updated config/aurora/trading.yaml: Changed instruments.BTCUSDT.leverage from 100 to 10 (unblocks BTC at Liquidation Guard level, 10x gives ~9.6% distance > 1.0%)
+
+**Results:**
+- Risk score threshold increased to allow valid signals (0.81-0.87) to pass
+- BTC leverage reduced to align with liquidation safety guard
+- Expected: Orders for both ETH and BTC should now pass all risk checks
+
+**Next:** Restart system on testnet to verify order flow unblocking
+
+## 2025-10-30 - ANALYSIS-001 Trading Logic and Trend Analysis
+
+**RID:** ANALYSIS-001
+**Why:** To understand the system's logic for order placement, trend detection, and trading cessation.
+
+**Analysis Summary:**
+
+1.  **Order Stopping Criteria:**
+    *   The primary control mechanism is the `RiskManagement` component (`apps/reference/domains/risk_management/risk_management.py`).
+    *   It calculates a `risk_score` based on micro-structural market features (OBI, TFI, delta_price).
+    *   If `risk_score` exceeds `max_risk_score` (defined in `config/aurora/trading.yaml`), it sets `is_trading_allowed` to `False`.
+    *   This flag is consumed by the `DecisionMaking` domain, which then stops generating new `TRADE_INTENT` events, effectively halting new order placements.
+    *   A secondary "circuit breaker" exists, monitoring `max_daily_drawdown_limit`, which can halt all trading if breached.
+
+2.  **Trend Detection Logic:**
+    *   The system currently does **not** implement traditional trend-following logic (e.g., moving averages, MACD).
+    *   The `FeatureEngineering` component (`apps/reference/domains/feature_engineering/feature_engineering.py`) focuses on calculating high-frequency, micro-structural indicators like Order Book Imbalance (OBI) and Trade Flow Imbalance (TFI).
+    *   While `config/aurora/regime.yaml` contains parameters like `trend_window`, this configuration is not currently used by the analyzed components, suggesting that a dedicated trend/regime detection feature may be planned but is not yet implemented.
+    *   **Conclusion:** The system is reactive to immediate market microstructure rather than longer-term trends.
+
+**Identified Components:**
+*   **Risk Strategy FSM:** `apps/reference/domains/risk_management/risk_management.py`
+*   **Execution Position FSM:** `apps/reference/domains/execution_position/fsm.py`
+*   **"Analyzer" (Feature Calculation):** `apps/reference/domains/feature_engineering/feature_engineering.py`
+*   **Configuration:** `config/aurora/trading.yaml`, `config/aurora/regime.yaml`
+
+**Next:** Based on this analysis, a potential next step would be to implement a dedicated `Analyzer` FSM that utilizes the `trend_window` parameters from the configuration to provide a macro-level market regime context (e.g., "trending", "ranging") to the `DecisionMaking` FSM.

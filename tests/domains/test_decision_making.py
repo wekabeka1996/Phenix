@@ -191,7 +191,7 @@ def test_decision_making_aggregates_events_and_proposes_intent(decision_making_d
     emitted_event = mock_listener.call_args[0][0]
     assert emitted_event.op == "EVT"
     assert emitted_event.verb == "TRADE_INTENT_PROPOSED"
-    assert emitted_event.pld["instrument"] == "ETHUSDT"
+    assert emitted_event.pld["symbol"] == "ETHUSDT"
 
 
 def test_calculate_risk_based_position_size_usd(mock_config):

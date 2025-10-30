@@ -1,3 +1,41 @@
+- RID: CRITICAL_FIX_P6
+- Date: 2025-10-30
+- Why: Система блокувала угоди через Equity: 0. Логи підтвердили, що EVT:ACCOUNT_UPDATE_RECEIVED має totalWalletBalance, а не assets з balance. Попереднє виправлення було неправильним.
+- Artefacts:
+  - `apps/reference/domains/position_tracking/position_tracking.py`: Повернено використання totalWalletBalance замість assets у on_account_update.
+  - `tests/domains/test_position_tracking_logic.py`: Оновлено тест, видаливши assets з payload EVT:ACCOUNT_UPDATE_RECEIVED.
+- Validation: pytest виконується без помилок.
+- Status: ✅ ЗАВЕРШЕНО
+- Next: Повторний запуск системи на тестнеті.
+
+- RID: CRITICAL_FIX_P4_P5
+- Date: 2025-10-30
+- Why: Система блокувала угоди через Equity: 0. Логи показали, що PositionTracking використовував неправильний ключ totalWalletBalance замість суми balance активів при парсингу EVT:ACCOUNT_UPDATE_RECEIVED. Також доменні логи були порожні через неправильні фільтри.
+- Artefacts:
+  - `apps/reference/domains/position_tracking/position_tracking.py`: Спроба виправити розрахунок total_wallet_balance як суму balance всіх активів замість totalWalletBalance (виявилося неправильним, повернено назад).
+  - `apps/reference/main.py`: Оновлено фільтри логування для доменів (startswith на 'domain_name' in record.name), щоб виправити порожні файли логів.
+- Validation: pytest виконується без помилок.
+- Status: ✅ ЗАВЕРШЕНО
+- Next: Повторний запуск системи на тестнеті.
+
+- RID: CRITICAL_FIX_P4
+- Date: 2025-10-30
+- Why: Виправлення помилки гідратації DR, де ExecPosFSM.hydrate отримував невалідні дані позицій без обов'язкових полів 'symbol', що спричиняло HYDRATION_ERROR у логах pytest.
+- Artefacts:
+  - `apps/reference/main.py`: Додано валідацію полів 'quantity' та 'avg_price' у циклі гідратації DR; додано обробку винятків для запобігання крахам на невалідних даних.
+- Validation: pytest виконується без HYDRATION_ERROR у логах.
+- Status: ✅ ЗАВЕРШЕНО
+- Next: Запуск системи на тестнеті з повною валідацією DR.
+
+- RID: CRITICAL_FIX_P3
+- Date: 2025-10-30
+- Why: Виправлення критичної умови перегонів при запуску - DecisionMaking відхиляв угоди через відсутність equity на момент приходу features/risk. Також виправлено помилку гідратації ExecPosFSM при відновленні стану.
+- Artefacts:
+  - `apps/reference/domains/decision_making/decision_making.py`: Додано валідацію `equity > 0` у `_check_and_trigger_decision_for_symbol`; додано `pending_symbols` set для відстеження символів, що чекають на портфоліо; модифіковано `on_portfolio` для повторного запуску рішень при отриманні валідного equity.
+  - `apps/reference/domains/execution_position/fsm.py`: Виправлено метод `hydrate` для обробки як окремих позицій, так і портфельних даних з списком позицій.
+  - `tests/domains/test_decision_making_equity_validation.py`: Оновлено `test_rejects_trade_intent_if_equity_is_zero` для перевірки поведінки з `pending_symbols`; додано `test_processes_pending_symbols_when_portfolio_arrives_with_valid_equity` для перевірки повторного запуску.
+- Validation: Всі 663 `pytest` тести проходять, включаючи 65 тестів execution_position та нові тести на логіку відкладених рішень.
+
 - RID: QUANT_ENHANCEMENT_P1
 - Date: 2025-10-30
 - Why: Усунення критичних ризиків з аудиту (простий сайзинг, хардкод TP/SL).

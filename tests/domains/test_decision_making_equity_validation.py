@@ -26,8 +26,8 @@ def mock_config():
         }
     }
 
-def test_rejects_trade_intent_if_equity_is_zero(mock_fsm, mock_config, caplog):
-    """Verify trade intent is rejected if portfolio equity is zero."""
+def test_rejects_trade_intent_if_equity_is_zero(mock_fsm, mock_config):
+    """Verify trade intent is deferred if portfolio equity is zero, added to pending."""
     decision_domain = DecisionMaking(fsm=mock_fsm, config=mock_config)
     
     features_msg = Message(op="EVT", verb="FEATURES_CALCULATED", src="test", dst="test", pld={"symbol": "ETHUSDT", "features": {"price": "3000", "obi": 0.5}})
@@ -38,5 +38,32 @@ def test_rejects_trade_intent_if_equity_is_zero(mock_fsm, mock_config, caplog):
     decision_domain.on_risk(risk_msg)
     decision_domain.on_features(features_msg)
 
+    # Should not emit trade intent yet
     mock_fsm.emit.assert_not_called()
-    assert "equity is zero or negative" in caplog.text
+    # Symbol should be added to pending
+    assert "ETHUSDT" in decision_domain.pending_symbols
+
+
+def test_processes_pending_symbols_when_portfolio_arrives_with_valid_equity(mock_fsm, mock_config):
+    """Verify pending symbols are processed when portfolio arrives with valid equity."""
+    decision_domain = DecisionMaking(fsm=mock_fsm, config=mock_config)
+    
+    # First, send features and risk without portfolio
+    features_msg = Message(op="EVT", verb="FEATURES_CALCULATED", src="test", dst="test", pld={"symbol": "ETHUSDT", "features": {"price": "3000", "obi": 0.5}})
+    risk_msg = Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED", src="test", dst="test", pld={"symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}})
+    
+    decision_domain.on_risk(risk_msg)
+    decision_domain.on_features(features_msg)
+    
+    # Should be added to pending since no portfolio yet
+    assert "ETHUSDT" in decision_domain.pending_symbols
+    mock_fsm.emit.assert_not_called()
+    
+    # Now send portfolio with valid equity
+    portfolio_msg = Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="test", dst="test", pld={"equity": "10000"})
+    decision_domain.on_portfolio(portfolio_msg)
+    
+    # Should process pending symbol and emit trade intent
+    mock_fsm.emit.assert_called_once()
+    # Should remove from pending
+    assert "ETHUSDT" not in decision_domain.pending_symbols

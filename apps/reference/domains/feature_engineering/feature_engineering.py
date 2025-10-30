@@ -22,6 +22,7 @@ class FeatureEngineering:
         if not symbol:
             return
 
+        self.logger.info(f"📊 FeatureEngineering received MARKET_TICK_RECEIVED for {symbol}")
         current_tick = event.pld
         last_tick = self.last_tick_data.get(symbol)
         self.last_tick_data[symbol] = current_tick
@@ -33,6 +34,7 @@ class FeatureEngineering:
 
     def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> None:
         try:
+            self.logger.info(f"🔢 Calculating features for {symbol}")
             bid_size = decimal.Decimal(str(current_tick.get("bid_size", 0)))
             ask_size = decimal.Decimal(str(current_tick.get("ask_size", 0)))
             buy_volume = decimal.Decimal(str(current_tick.get("buy_volume", 0)))
@@ -59,6 +61,7 @@ class FeatureEngineering:
 
             features_payload = {"ts": current_tick["ts"], "symbol": symbol, "features": features}
             self.fsm.emit("EVT:FEATURES_CALCULATED", payload=features_payload, why="features_calculated")
+            self.logger.info(f"📤 Emitted EVT:FEATURES_CALCULATED for {symbol}: OBI={features['obi']}, TFI={features['tfi']}")
 
         except Exception as e:
             self.logger.error(f"Error calculating features for {symbol}: {e}")

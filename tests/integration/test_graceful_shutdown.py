@@ -50,6 +50,7 @@ def test_graceful_shutdown_calls_stop_on_managed_components():
         def __init__(self, *args, **kwargs):
             self.rid = 'test-rid'
             self.span_id = 'test-span'
+            self.pld = kwargs.get('pld', {}) # Add pld attribute
     vfoundation_protocol.Message = MessageStub
 
     sys.modules['vfoundation'] = vfoundation_pkg

@@ -100,12 +100,11 @@ def test_emitted_trade_intent_conforms_to_schema(decision_domain_for_contract_te
     domain = decision_domain_for_contract_test
     
     # Pre-fill required data streams
+    risk_payload = {"symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}}
+    portfolio_payload = {"equity": "50000", "positions": {}}
+
     domain.latest_portfolio = {"equity": "10000"}
-    domain.latest_risk = {
-        "risk_parameters": {
-            "is_trading_allowed": True
-        }
-    }
+    domain.latest_risk = risk_payload # Update latest_risk with the payload
     
     # Create features with strong BUY signal (OBI, TFI positive)
     features_event = Message(
@@ -154,5 +153,5 @@ def test_emitted_trade_intent_conforms_to_schema(decision_domain_for_contract_te
     # Additional assertions for expected behavior
     assert emitted_payload["side"] == "buy", \
         "Positive features should generate buy intent"
-    assert emitted_payload["instrument"] == "ETHUSDT", \
-        "Instrument should match input symbol"
+    assert emitted_payload["symbol"] == "ETHUSDT", \
+        "Symbol should match input symbol"

@@ -199,7 +199,8 @@ def test_adaptive_sizing_integration_across_regimes(
     assert actual_size <= Decimal('10000'), f"Position size should not exceed liquidity cap, got {actual_size}"
     
     # Verify payload has required fields
-    assert 'instrument' in emitted_payload
-    assert emitted_payload['instrument'] == 'ETHUSDT'
+    assert 'symbol' in emitted_payload
+    assert emitted_payload['symbol'] == 'ETHUSDT', \
+        "Symbol should match input symbol"
     assert 'side' in emitted_payload
     assert emitted_payload['side'] == 'buy'

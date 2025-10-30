@@ -28,10 +28,12 @@ class DecisionMaking:
         self.fsm = fsm
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger.info("🚀 DecisionMaking initialized and registering event listeners")
 
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(lambda: {'features': None, 'risk': None})
         self.latest_portfolio: Optional[Dict[str, Any]] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
+        self.pending_symbols: set[str] = set()
 
         # Support both old (config['trading']['decision']) and new (config['decision']) formats
         trading_config = self.config.get('trading', self.config)
@@ -71,19 +73,46 @@ class DecisionMaking:
     def on_portfolio(self, event: Message) -> None:
         self.logger.info(f"✅ on_portfolio() called - portfolio state received!")
         self.latest_portfolio = event.pld
-        self.logger.info(f"   Equity: {self.latest_portfolio.get('equity')}, Positions: {len(self.latest_portfolio.get('positions', []))}")
+        equity = decimal.Decimal(str(self.latest_portfolio.get('equity', '0')))
+        self.logger.info(f"   Equity: {equity}, Positions: {len(self.latest_portfolio.get('positions', []))}")
+
+        # If we now have valid equity, re-trigger decisions for pending symbols
+        if equity > 0 and self.pending_symbols:
+            self.logger.info(f"🔄 Re-triggering decisions for {len(self.pending_symbols)} pending symbols after portfolio arrival")
+            pending_copy = self.pending_symbols.copy()
+            self.pending_symbols.clear()
+            for symbol in pending_copy:
+                self._check_and_trigger_decision_for_symbol(symbol)
 
     def on_regime(self, event: Message) -> None:
         self.latest_regime = event.pld
 
     def _check_and_trigger_decision_for_symbol(self, symbol: str) -> None:
-        if not self.latest_portfolio:
-            self.logger.debug(f"[{symbol}] Decision deferred: global portfolio state not yet available.")
+        self.logger.info(f"[{symbol}] 🔍 _check_and_trigger_decision_for_symbol() called")
+        
+        # CHECK 1: Portfolio state MUST exist AND have valid equity
+        if not self.latest_portfolio or decimal.Decimal(str(self.latest_portfolio.get('equity', '0'))) <= 0:
+            self.logger.debug(f"[{symbol}] Decision deferred: Portfolio state not yet available or equity is zero.")
+            self.pending_symbols.add(symbol)
             return
 
+        # If we have valid portfolio, remove from pending if present
+        self.pending_symbols.discard(symbol)
+
         state = self.symbol_states[symbol]
-        if not state.get('features') or not state.get('risk'):
-            self.logger.warning(f"[{symbol}] ⚠️ Decision deferred: features={bool(state.get('features'))}, risk={bool(state.get('risk'))}")
+        self.logger.info(f"[{symbol}] Current state keys: {list(state.keys())}")
+        
+        features_present = bool(state.get('features'))
+        risk_present = bool(state.get('risk'))
+        
+        if not features_present or not risk_present:
+            self.logger.warning(f"[{symbol}] ⚠️ Decision deferred: features={features_present}, risk={risk_present}")
+            # DEBUG: Log the actual state content
+            self.logger.warning(f"[{symbol}] DEBUG state keys: {list(state.keys())}")
+            if state.get('features'):
+                self.logger.warning(f"[{symbol}] DEBUG features content: {state['features']}")
+            if state.get('risk'):
+                self.logger.warning(f"[{symbol}] DEBUG risk content: {state['risk']}")
             return
 
         self.logger.info(f"[{symbol}] ✅ All data ready! Triggering decision...")
@@ -205,16 +234,24 @@ class DecisionMaking:
 
         return final_pos_size_usd, why_chain
 
+    def _calculate_simple_position_size_usd(self, equity: decimal.Decimal) -> tuple[Optional[decimal.Decimal], str]:
+        """Calculates a simple position size based on a fixed fraction of equity."""
+        final_pos_size_usd = min(self.liq_cap_usd, equity * decimal.Decimal('0.1'))
+
+        if final_pos_size_usd < self.min_pos_size_usd:
+            return None, f"position size {final_pos_size_usd:.2f} is below minimum {self.min_pos_size_usd}"
+
+        return final_pos_size_usd, f"pos_size_usd={final_pos_size_usd:.2f} (simple 10% equity cap)"
+
     def _calculate_position_size(self, symbol: str, price: decimal.Decimal, side: str, context: dict) -> tuple[Optional[decimal.Decimal], str]:
         portfolio = context['portfolio']
         equity = decimal.Decimal(str(portfolio.get('equity', '0')))
 
-        final_pos_size_usd, why_sizing = self._calculate_risk_based_position_size_usd(equity)
+        final_pos_size_usd, why_sizing = self._calculate_simple_position_size_usd(equity)
 
         if final_pos_size_usd is None:
             return None, why_sizing
 
-        # Support both old (config['trading']['instruments']) and new (config['instruments']) formats
         trading_config = self.config.get('trading', self.config)
         instrument_specs = trading_config.get('instruments', {}).get(symbol, {})
         step_size_str = instrument_specs.get('step_size')
@@ -235,7 +272,7 @@ class DecisionMaking:
 
     def _propose_trade_intent(self, symbol: str, side: str, qty: decimal.Decimal, price: decimal.Decimal, why_chain: list[str], rid: str) -> None:
         trade_intent = {
-            "instrument": symbol, "side": side,
+            "instrument": symbol, "symbol": symbol, "side": side,
             "order": {"qty": str(qty), "price": str(price), "price_ref": str(price), "reduce_only": False},
             "p": "0.75", "payoff_ratio_r": "2.0",
             "tca_budget": {"max_slippage_bps": "10", "max_latency_ms": 500, "maker_preference": "neutral"},

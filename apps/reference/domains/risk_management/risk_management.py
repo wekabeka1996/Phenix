@@ -101,6 +101,9 @@ class RiskManagement:
             }
         })
 
+        symbol = event.pld.get("symbol", "unknown")
+        self.logger.info(f"🎯 RiskManagement received FEATURES_CALCULATED for {symbol}")
+
     def on_portfolio_state_updated(self, event: Message) -> None:
         """
         Handle portfolio state updates to calculate portfolio-level risk metrics.

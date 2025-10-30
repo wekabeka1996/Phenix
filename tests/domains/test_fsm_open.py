@@ -70,59 +70,37 @@ def test_rejects_open_when_max_active_orders_limit_reached():
     """
     Tests that OpenFlowFSM rejects an OPEN command if the maximum number of active orders has been reached.
     """
-    # 1. Mock configuration
-    config = {
-        'execution_position': {
-            'max_active_orders': 2
-        },
-        "trading": {"instruments": {"ETHUSDT": {}}}
-    }
+    # 1. Mock configuration and active order counter
+    max_orders = 2
+    active_orders_count = 0
 
-    # 2. Mock ExecPosFSM and its active order counter
-    class MockExecPosFSM:
-        def __init__(self):
-            self.active_orders_count = 0
-        def get_active_orders_count(self):
-            return self.active_orders_count
-        def increment_orders(self):
-            self.active_orders_count += 1
+    def get_active_orders_count_mock():
+        return active_orders_count
 
-    mock_exec_pos_fsm = MockExecPosFSM()
-
-    # 3. Create OpenFlowFSM instance with mocked dependencies
-    open_fsm = OpenFlowFSM(
-        config=config,
-        max_active_orders=config['execution_position']['max_active_orders'],
-        get_active_orders_count=mock_exec_pos_fsm.get_active_orders_count,
-        cooldown_sec=0
+    # 2. Create OpenFlowFSM instance with the mock
+    fsm = OpenFlowFSM(
+        config={"trading": {"instruments": {"ETHUSDT": {}}}},
+        max_active_orders=max_orders,
+        get_active_orders_count=get_active_orders_count_mock,
+        cooldown_sec=0  # Disable cooldown for this test
     )
 
-    # 4. Generate CMD:OPEN messages
-    cmd1 = make_cmd_open(rid="cmd1", symbol="ETHUSDT")
-    cmd1.pld['idempotent_key'] = "key1"
-    cmd2 = make_cmd_open(rid="cmd2", symbol="ETHUSDT")
-    cmd2.pld['idempotent_key'] = "key2"
-    cmd3 = make_cmd_open(rid="cmd3", symbol="ETHUSDT")
-    cmd3.pld['idempotent_key'] = "key3"
+    # 3. Send messages up to the limit
+    for i in range(max_orders):
+        msg = make_cmd_open(rid=f"r{i+1}")
+        msg.pld["idempotent_key"] = f"key{i+1}"
+        result = fsm.handle(msg)
+        assert result.op == "DEC", f"Order {i+1} should have been accepted"
+        active_orders_count += 1 # Simulate the order becoming active
 
-    # 5. Handle messages and assert behavior
-    # First call should be successful
-    result1 = open_fsm.handle(cmd1)
-    assert result1.op == "DEC"
-    assert result1.verb == "OPEN"
-    mock_exec_pos_fsm.increment_orders()
-    assert mock_exec_pos_fsm.get_active_orders_count() == 1
+    assert active_orders_count == max_orders
 
-    # Second call should also be successful
-    result2 = open_fsm.handle(cmd2)
-    assert result2.op == "DEC"
-    assert result2.verb == "OPEN"
-    mock_exec_pos_fsm.increment_orders()
-    assert mock_exec_pos_fsm.get_active_orders_count() == 2
+    # 4. Send one more message that should be rejected
+    msg_over_limit = make_cmd_open(rid="r_over_limit")
+    msg_over_limit.pld["idempotent_key"] = "key_over_limit"
+    result_over_limit = fsm.handle(msg_over_limit)
 
-    # Third call should be rejected
-    result3 = open_fsm.handle(cmd3)
-    assert result3.op == "ERR"
-    assert result3.verb == "OPEN"
-    assert result3.why == "MAX_ORDERS_REACHED"
-    assert mock_exec_pos_fsm.get_active_orders_count() == 2
+    assert result_over_limit.op == "ERR", "Order should have been rejected as max_active_orders is reached"
+    assert result_over_limit.verb == "OPEN"
+    assert result_over_limit.why == "MAX_ORDERS_REACHED"
+    assert active_orders_count == max_orders # Ensure the counter was not incremented

@@ -120,7 +120,7 @@ fe_log_file = logs_dir / "domain_feature_engineering.log"
 fe_handler = RotatingFileHandler(fe_log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
 fe_handler.setLevel(logging.DEBUG)
 fe_handler.setFormatter(file_formatter)
-fe_handler.addFilter(lambda record: record.name.startswith('apps.reference.domains.feature_engineering'))
+fe_handler.addFilter(lambda record: 'feature_engineering' in record.name)
 domain_handlers['feature_engineering'] = fe_handler
 root_logger.addHandler(fe_handler)
 
@@ -129,7 +129,7 @@ rm_log_file = logs_dir / "domain_risk_management.log"
 rm_handler = RotatingFileHandler(rm_log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
 rm_handler.setLevel(logging.DEBUG)
 rm_handler.setFormatter(file_formatter)
-rm_handler.addFilter(lambda record: record.name.startswith('apps.reference.domains.risk_management'))
+rm_handler.addFilter(lambda record: 'risk_management' in record.name)
 domain_handlers['risk_management'] = rm_handler
 root_logger.addHandler(rm_handler)
 
@@ -138,7 +138,7 @@ dm_log_file = logs_dir / "domain_decision_making.log"
 dm_handler = RotatingFileHandler(dm_log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
 dm_handler.setLevel(logging.DEBUG)
 dm_handler.setFormatter(file_formatter)
-dm_handler.addFilter(lambda record: record.name.startswith('apps.reference.domains.decision_making'))
+dm_handler.addFilter(lambda record: 'decision_making' in record.name)
 domain_handlers['decision_making'] = dm_handler
 root_logger.addHandler(dm_handler)
 
@@ -147,7 +147,7 @@ em_log_file = logs_dir / "domain_execution_management.log"
 em_handler = RotatingFileHandler(em_log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
 em_handler.setLevel(logging.DEBUG)
 em_handler.setFormatter(file_formatter)
-em_handler.addFilter(lambda record: record.name.startswith('apps.reference.domains.execution_position'))
+em_handler.addFilter(lambda record: 'execution_position' in record.name)
 domain_handlers['execution_management'] = em_handler
 root_logger.addHandler(em_handler)
 
@@ -401,15 +401,24 @@ def main() -> None:
                 restored_positions = position_tracking.get_positions()
                 hydrated_count = 0
                 for symbol, position_data in restored_positions.items():
+                    # Validate position data has required fields
+                    if 'quantity' not in position_data or 'avg_price' not in position_data:
+                        LOG.warning(f"Skipping invalid position data for {symbol}: missing quantity or avg_price")
+                        continue
+                    
                     # Reformat data for hydrate method
-                    hydrate_data = {
-                        'symbol': symbol,
-                        'qty': position_data['quantity'],
-                        'entry_price': position_data['avg_price'],
-                        'side': 'BUY' if position_data['quantity'] > 0 else 'SELL',
-                    }
-                    execution_position.hydrate(hydrate_data)
-                    hydrated_count += 1
+                    try:
+                        hydrate_data = {
+                            'symbol': symbol,
+                            'qty': position_data['quantity'],
+                            'entry_price': position_data['avg_price'],
+                            'side': 'BUY' if position_data['quantity'] > 0 else 'SELL',
+                        }
+                        execution_position.hydrate(hydrate_data)
+                        hydrated_count += 1
+                    except Exception as e:
+                        LOG.error(f"Failed to hydrate FSM for {symbol}: {e}")
+                        continue
                 LOG.info(f"✅ Hydrated {hydrated_count} FSMs.")
                 # ==========================================
 

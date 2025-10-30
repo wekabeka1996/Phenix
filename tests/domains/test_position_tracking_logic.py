@@ -61,7 +61,7 @@ def test_opens_new_long_position_correctly():
     tracker.on_trade_executed(trade_event)
     
     position = tracker._positions["BTCUSDT"]
-    assert position["quantity"] == Decimal("0.5")
+    assert position["net_position"] == Decimal("0.5")
     assert position["avg_price"] == Decimal("70000")
     assert "binance" in position["venues"]
 
@@ -78,7 +78,7 @@ def test_opens_new_short_position_correctly():
     tracker.on_trade_executed(trade_event)
     
     position = tracker._positions["ETHUSDT"]
-    assert position["quantity"] == Decimal("-2.0")
+    assert position["net_position"] == Decimal("-2.0")
     assert position["avg_price"] == Decimal("3000")
 
 
@@ -99,7 +99,7 @@ def test_increases_existing_long_position():
     tracker.on_trade_executed(trade2)
     
     position = tracker._positions["BTCUSDT"]
-    assert position["quantity"] == Decimal("1.0")
+    assert position["net_position"] == Decimal("1.0")
     # Weighted average: (0.5*70000 + 0.5*80000) / 1.0 = 75000
     assert position["avg_price"] == Decimal("75000")
 
@@ -121,7 +121,7 @@ def test_increases_existing_short_position():
     tracker.on_trade_executed(trade2)
     
     position = tracker._positions["ETHUSDT"]
-    assert position["quantity"] == Decimal("-2.0")
+    assert position["net_position"] == Decimal("-2.0")
     # Weighted average: (1.0*3000 + 1.0*2800) / 2.0 = 2900
     assert position["avg_price"] == Decimal("2900")
 
@@ -143,7 +143,7 @@ def test_partially_closes_long_position():
     tracker.on_trade_executed(close_trade)
     
     position = tracker._positions["BTCUSDT"]
-    assert position["quantity"] == Decimal("0.7")
+    assert position["net_position"] == Decimal("0.7")
     assert position["avg_price"] == Decimal("70000")  # avg_price unchanged
 
 
@@ -164,7 +164,7 @@ def test_fully_closes_long_position():
     tracker.on_trade_executed(close_trade)
     
     # Position should be removed or quantity=0
-    assert "BTCUSDT" not in tracker._positions or tracker._positions["BTCUSDT"]["quantity"] == Decimal("0")
+    assert "BTCUSDT" not in tracker._positions or tracker._positions["BTCUSDT"]["net_position"] == Decimal("0")
 
 
 def test_fully_closes_short_position():
@@ -183,7 +183,7 @@ def test_fully_closes_short_position():
     close_trade = create_trade_event("ETHUSDT", "buy", 2.0, 2800)
     tracker.on_trade_executed(close_trade)
     
-    assert "ETHUSDT" not in tracker._positions or tracker._positions["ETHUSDT"]["quantity"] == Decimal("0")
+    assert "ETHUSDT" not in tracker._positions or tracker._positions["ETHUSDT"]["net_position"] == Decimal("0")
 
 
 def test_flips_long_to_short():
@@ -203,7 +203,7 @@ def test_flips_long_to_short():
     tracker.on_trade_executed(flip_trade)
     
     position = tracker._positions["BTCUSDT"]
-    assert position["quantity"] == Decimal("-0.5")  # Net short
+    assert position["net_position"] == Decimal("-0.5")  # Net short
     assert position["avg_price"] == Decimal("75000")  # New position at flip price
 
 
@@ -224,7 +224,7 @@ def test_flips_short_to_long():
     tracker.on_trade_executed(flip_trade)
     
     position = tracker._positions["ETHUSDT"]
-    assert position["quantity"] == Decimal("0.5")  # Net long
+    assert position["net_position"] == Decimal("0.5")  # Net long
     assert position["avg_price"] == Decimal("2800")  # New position at flip price
 
 
@@ -294,10 +294,8 @@ def test_tracks_multiple_symbols_independently():
     tracker.on_trade_executed(eth_trade)
     
     assert "BTCUSDT" in tracker._positions
-    assert "ETHUSDT" in tracker._positions
-    assert tracker._positions["BTCUSDT"]["quantity"] == Decimal("0.5")
-    assert tracker._positions["ETHUSDT"]["quantity"] == Decimal("-2.0")
-
+    assert tracker._positions["BTCUSDT"]["net_position"] == Decimal("0.5")
+    assert tracker._positions["ETHUSDT"]["net_position"] == Decimal("-2.0")
 
 def test_handles_account_update_event():
     """Verify account balance updates are processed correctly."""
@@ -312,11 +310,10 @@ def test_handles_account_update_event():
         verb="ACCOUNT_UPDATE_RECEIVED",
         src="broker",
         dst="position_tracking",
-        pld={
-            "totalWalletBalance": 100000.0,
-            "totalUnrealizedProfit": 5000.0,
-            "positions": [],
-            "ts": 1234567890
+                    pld={
+                        "wallet_balance": 100000.0,
+                        "totalUnrealizedProfit": 5000.0,
+                        "positions": [],            "ts": 1234567890
         }
     )
     
@@ -373,7 +370,7 @@ def test_emits_portfolio_state_on_trade():
     assert "positions" in portfolio_pld
     # positions is a list of dicts
     assert len(portfolio_pld["positions"]) > 0
-    assert portfolio_pld["positions"][0]["symbol"] == "BTCUSDT"
+    assert portfolio_pld["positions"][0]["net_position"] == "0.5"
 
 
 def test_filters_out_zero_positions():
@@ -443,7 +440,7 @@ def test_account_update_with_positions():
         src="broker",
         dst="position_tracking",
         pld={
-            "totalWalletBalance": 100000.0,
+            "wallet_balance": 100000.0,
             "totalUnrealizedProfit": 5000.0,
             "positions": [
                 {"symbol": "BTCUSDT", "positionAmt": "0.5", "entryPrice": "70000"},
@@ -457,11 +454,11 @@ def test_account_update_with_positions():
     
     # Check positions were loaded
     assert "BTCUSDT" in tracker._positions
-    assert tracker._positions["BTCUSDT"]["quantity"] == Decimal("0.5")
+    assert tracker._positions["BTCUSDT"]["net_position"] == Decimal("0.5")
     assert tracker._positions["BTCUSDT"]["avg_price"] == Decimal("70000")
     
     assert "ETHUSDT" in tracker._positions
-    assert tracker._positions["ETHUSDT"]["quantity"] == Decimal("-2.0")
+    assert tracker._positions["ETHUSDT"]["net_position"] == Decimal("-2.0")
 
 
 def test_account_update_removes_flat_positions():
@@ -484,7 +481,7 @@ def test_account_update_removes_flat_positions():
         src="broker",
         dst="position_tracking",
         pld={
-            "totalWalletBalance": 100000.0,
+            "wallet_balance": 100000.0,
             "totalUnrealizedProfit": 0.0,
             "positions": [
                 {"symbol": "BTCUSDT", "positionAmt": "0.0", "entryPrice": "70000"}  # Flat

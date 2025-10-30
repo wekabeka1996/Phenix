@@ -136,6 +136,32 @@ class ExecPosFSM:
 
     def hydrate(self, position_data: Dict[str, Any]):
         """Hydrate the FSMs for a given position from a snapshot."""
+        # Handle case where position_data is a portfolio payload with 'positions' list
+        if 'positions' in position_data and isinstance(position_data['positions'], list):
+            LOG.info("Hydrating FSMs from portfolio data with positions list.")
+            hydrated_count = 0
+            for pos in position_data['positions']:
+                symbol = pos.get('symbol') or pos.get('instrument')
+                if symbol:
+                    # Convert portfolio position format to hydrate format
+                    hydrate_data = {
+                        'symbol': symbol,
+                        'qty': pos.get('net_position', pos.get('quantity', '0')),
+                        'entry_price': pos.get('avg_entry_price', pos.get('avg_price', '0')),
+                        'side': 'BUY' if float(pos.get('net_position', pos.get('quantity', '0'))) > 0 else 'SELL',
+                    }
+                    self._hydrate_single_position(hydrate_data)
+                    hydrated_count += 1
+                else:
+                    LOG.warning(f"Skipping position without symbol: {pos}")
+            LOG.info(f"Hydrated {hydrated_count} FSMs from portfolio positions.")
+            return
+        
+        # Handle single position data
+        self._hydrate_single_position(position_data)
+
+    def _hydrate_single_position(self, position_data: Dict[str, Any]):
+        """Hydrate FSMs for a single position."""
         symbol = position_data.get('symbol')
         if not symbol:
             LOG.error("HYDRATION_ERROR: position_data is missing 'symbol'")
