@@ -26,6 +26,10 @@ from pathlib import Path
 from typing import Any
 from logging.handlers import RotatingFileHandler
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -151,6 +155,15 @@ em_handler.addFilter(lambda record: 'execution_position' in record.name)
 domain_handlers['execution_management'] = em_handler
 root_logger.addHandler(em_handler)
 
+# Position Tracking domain logs
+pt_log_file = logs_dir / "domain_position_tracking.log"
+pt_handler = RotatingFileHandler(pt_log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+pt_handler.setLevel(logging.DEBUG)
+pt_handler.setFormatter(file_formatter)
+pt_handler.addFilter(lambda record: 'position_tracking' in record.name)
+domain_handlers['position_tracking'] = pt_handler
+root_logger.addHandler(pt_handler)
+
 # Event Chain structured logs (JSON format)
 chain_log_file = logs_dir / "event_chain.log"
 chain_handler = RotatingFileHandler(chain_log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
@@ -174,6 +187,7 @@ def on_trade_intent_proposed(event: Any) -> None:
     - Maps analytical output to execution command
     - Shadow mode: execution_position processes but doesn't execute
     """
+    LOG.info("🔥🔥🔥 BRIDGE: on_trade_intent_proposed CALLED! 🔥🔥🔥")
     LOG.info(
         f"BRIDGE: Received TRADE_INTENT_PROPOSED rid={event.pld.get('rid')} for {event.pld.get('instrument', 'unknown')} "
         f"with side {event.pld.get('side', 'unknown')}. Transforming to CMD:OPEN."
@@ -279,9 +293,9 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     # Note: This replay() function is legacy code, may need full config refactoring
     market_data = MarketDataConnector(fsm, config_dict)  # Pass full config
     feature_engineering = FeatureEngineering(fsm, config_dict.get("trading", {}))
-    risk_management = RiskManagement(fsm, config_dict.get("system", {}))
+    risk_management = RiskManagement(fsm, config_dict.get("trading", {}))  # ПЕРЕДАТИ trading секцію для доступу до risk конфігурації
     position_tracking = PositionTracking(fsm, config_dict.get("system", {}))
-    decision_making = DecisionMaking(fsm, config_dict.get("trading", {}))
+    decision_making = DecisionMaking(fsm, config_dict)  # ПЕРЕДАТИ ПОВНИЙ СЛОВНИК для доступу до symbols_to_track
     account_balance = AccountConnector(fsm, config_dict)
     account_observer = AccountObserver(fsm, config_dict)
     snapshot_scheduler = SnapshotScheduler(fsm, config_dict)
@@ -317,7 +331,11 @@ def main() -> None:
     global fsm
     fsm = FSMCore()
 
-    # Step 2: Create event listeners
+    # Step 3: Initialize all domain components FIRST
+    LOG.info("Initializing domain components...")
+    fsm = initialize_domains(config.to_dict())
+
+    # Step 4: Create event listeners AFTER domains are initialized
     LOG.info("Setting up event listeners...")
     fsm.listen("EVT:TRADE_INTENT_PROPOSED", on_trade_intent_proposed)
 
@@ -332,157 +350,40 @@ def main() -> None:
     for event_name in debug_events:
         fsm.listen(event_name, debug_event_listener)
 
-    # Step 3: Initialize all domain components
-    LOG.info("Initializing domain components...")
+    # Step 5: Start all components
+    LOG.info("Starting market data connector...")
+    market_data = fsm.get_domain("market_data")
+    market_data.start()
 
-    # Account Connector (source of account balance and positions)
-    account_balance = AccountConnector(fsm=fsm, config=config.to_dict())
-
-    # Account Observer (observes trades and sends portfolio updates)
-    account_observer = AccountObserver(fsm=fsm, config=config.to_dict())
-
-    # Market Data Connector (source of market ticks)
-    # Pass full config dict to access both system.yaml (trading section) and use_testnet
-    market_data = MarketDataConnector(fsm=fsm, config=config.to_dict())
-
-    # Feature Engineering (calculates trading features)
-    feature_engineering = FeatureEngineering(fsm=fsm, config=config.to_dict())
-
-    # Risk Management (assesses position risk)
-    risk_management = RiskManagement(fsm=fsm, config=config.to_dict())
-
-    # Position Tracking (tracks portfolio state)
-    position_tracking = PositionTracking(fsm=fsm, config=config.to_dict())
-
-    # Execution Position (handles order execution on testnet)
-    global execution_position
-    execution_position = ExecPosFSM(config=config.to_dict(), fsm=fsm)
-    LOG.info("✅ Execution position FSM initialized")
-    
-    # ==========================================
-    # DR: DISASTER RECOVERY STATE RESTORATION
-    # ==========================================
-    LOG.info("--- Starting Disaster Recovery Check ---")
-    
-    # Initialize components needed for DR (execution_position already initialized in initialize_domains)
-    from apps.reference.dr_loader import find_latest_snapshot, replay_wal_after
-    import json
-    
-    snapshot_dir_path = str(project_root / "ops" / "snapshots")
-    wal_dir_path = str(project_root / "ops" / "wal")
-    
-    latest_snapshot_path = find_latest_snapshot(snapshot_dir_path)
-    
-    if latest_snapshot_path:
-        try:
-            LOG.info(f"Found latest snapshot: {latest_snapshot_path.name}")
-            
-            # Load snapshot data
-            with open(latest_snapshot_path, 'r', encoding='utf-8') as f:
-                snapshot_data = json.load(f)
-            
-            # Restore state from snapshot
-            if position_tracking.load_snapshot(snapshot_data):
-                LOG.info("✅ Successfully loaded state from snapshot")
-                LOG.info(f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}")
-                LOG.info(f"   Positions restored: {snapshot_data.get('metadata', {}).get('positions_count', 0)}")
-                
-                # Replay WAL entries after snapshot
-                snapshot_ts = snapshot_data.get('timestamp_utc')
-                if snapshot_ts:
-                    LOG.info("Replaying WAL entries after snapshot...")
-                    replayed_count = replay_wal_after(wal_dir_path, snapshot_ts, position_tracking)
-                    LOG.info(f"✅ Replayed {replayed_count} events from WAL")
-
-                # ==========================================
-                # FSM HYDRATION FROM SNAPSHOT
-                # ==========================================
-                LOG.info("Hydrating FSMs from restored positions...")
-                restored_positions = position_tracking.get_positions()
-                hydrated_count = 0
-                for symbol, position_data in restored_positions.items():
-                    # Validate position data has required fields
-                    if 'quantity' not in position_data or 'avg_price' not in position_data:
-                        LOG.warning(f"Skipping invalid position data for {symbol}: missing quantity or avg_price")
-                        continue
-                    
-                    # Reformat data for hydrate method
-                    try:
-                        hydrate_data = {
-                            'symbol': symbol,
-                            'qty': position_data['quantity'],
-                            'entry_price': position_data['avg_price'],
-                            'side': 'BUY' if position_data['quantity'] > 0 else 'SELL',
-                        }
-                        execution_position.hydrate(hydrate_data)
-                        hydrated_count += 1
-                    except Exception as e:
-                        LOG.error(f"Failed to hydrate FSM for {symbol}: {e}")
-                        continue
-                LOG.info(f"✅ Hydrated {hydrated_count} FSMs.")
-                # ==========================================
-
-            else:
-                LOG.warning(f"⚠️ Failed to restore state from snapshot: {latest_snapshot_path.name}")
-                LOG.info("Starting with empty state.")
-                
-        except Exception as e:
-            LOG.error(f"Error during disaster recovery: {e}. Starting with empty state.")
-            import traceback
-            LOG.debug(traceback.format_exc())
-    else:
-        LOG.warning("No snapshot found. Starting with a clean state.")
-    
-    LOG.info("--- Disaster Recovery Check Finished ---")
-
-    # Decision Making (generates trade intents) - execution_position already initialized in initialize_domains()
-    decision_making = DecisionMaking(fsm=fsm, config=config.to_dict())
-
-
-    # Register all domains in FSM core for cross-domain access
-    # NOTE: Temporarily commented out - register_domain not yet implemented in FSMCore
-    # fsm.register_domain('account_balance', account_balance)
-    # fsm.register_domain('account_observer', account_observer)
-    # fsm.register_domain('market_data', market_data)
-    # fsm.register_domain('feature_engineering', feature_engineering)
-    # fsm.register_domain('risk_management', risk_management)
-    # fsm.register_domain('position_tracking', position_tracking)
-    # fsm.register_domain('decision_making', decision_making)
-    # fsm.register_domain('execution_position', execution_position)
-
-    # Initialize Snapshot Scheduler (DR - Phase L4)
-    LOG.info("Initializing snapshot scheduler (DR)...")
-    snapshot_scheduler_config = {
-        "interval_sec": 30,  # 30 seconds for testing (production: 300)
-        "snapshot_dir": "ops/snapshots",
-        "domains": ["position_tracking"]  # Start with position_tracking only
-    }
-    snapshot_scheduler = SnapshotScheduler(fsm=fsm, config=snapshot_scheduler_config)
-    # fsm.register_domain('snapshot_scheduler', snapshot_scheduler)
-
-    # Step 4: Start all components
     LOG.info("Starting account connector...")
+    account_balance = fsm.get_domain("account_balance")
     account_balance.start()
 
     LOG.info("Starting account observer...")
+    account_observer = fsm.get_domain("account_observer")
     account_observer.start()
 
     LOG.info("Starting market data connector...")
     market_data.start()
 
     LOG.info("Starting feature engineering...")
+    feature_engineering = fsm.get_domain("feature_engineering")
     feature_engineering.start()
 
     LOG.info("Starting risk management...")
+    risk_management = fsm.get_domain("risk_management")
     risk_management.start()
 
     LOG.info("Starting position tracking...")
+    position_tracking = fsm.get_domain("position_tracking")
     position_tracking.start()
 
     LOG.info("Starting decision making...")
+    decision_making = fsm.get_domain("decision_making")
     decision_making.start()
 
     LOG.info("Starting snapshot scheduler (DR)...")
+    snapshot_scheduler = fsm.get_domain("snapshot_scheduler")
     snapshot_scheduler.start()
 
     # Step 5: Keep the application running

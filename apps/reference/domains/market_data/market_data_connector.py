@@ -103,6 +103,8 @@ class MarketDataConnector:
         self.aggregator = WebSocketAggregator(self.symbols, window_seconds=60)
         LOG.info(f"✅ WebSocket Aggregator initialized for {self.symbols}")
 
+        self.logger = LOG
+
     def start(self) -> None:
         """Start the data polling in a background thread."""
         if self.running:
@@ -114,40 +116,46 @@ class MarketDataConnector:
         self.thread.start()
         LOG.info(f"MarketDataConnector started for symbols: {self.symbols} with {self.poll_interval_sec}s interval.")
 
-    def stop(self) -> None:
-        """Stop the data polling thread."""
+    async def stop(self) -> None:
+        """Stop the data polling thread and close the adapter session."""
         self.running = False
         if self.thread and self.thread.is_alive():
             self.thread.join()
-        # Close the adapter's session (without asyncio.run() to avoid conflicts)
-        try:
-            import sys
-            if sys.platform == 'win32':
-                # On Windows, use a safer approach
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(self.adapter.close_session())
-                finally:
-                    loop.close()
-            else:
-                asyncio.run(self.adapter.close_session())
-        except RuntimeError:
-            # If asyncio.run() fails (e.g., inside async test), skip
-            LOG.debug("Could not close adapter session (already in event loop)")
+        
+        if self.adapter:
+            await self.adapter.close_session()
+            
         LOG.info("MarketDataConnector stopped.")
 
     def _poll_loop(self) -> None:
         """Main polling loop that runs in the background thread."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        LOG.info("🔄 MarketDataConnector: Polling loop started.")
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            LOG.info("🔄 MarketDataConnector: AsyncIO event loop created.")
+        except Exception as e:
+            LOG.error(f"❌ MarketDataConnector: Failed to create event loop: {e}")
+            return
+
         try:
             while self.running:
-                loop.run_until_complete(self._fetch_and_emit_data())
-                time.sleep(self.poll_interval_sec)
+                try:  # ГЛОБАЛЬНИЙ ЗАХИСТ від "тихої смерті"
+                    LOG.debug("🔄 MarketDataConnector: Starting data fetch cycle.")
+                    loop.run_until_complete(self._fetch_and_emit_data())
+                    LOG.debug(f"🔄 MarketDataConnector: Data fetch completed, sleeping {self.poll_interval_sec}s.")
+                    time.sleep(self.poll_interval_sec)
+                except Exception as e:
+                    LOG.exception(
+                        f"❌ CRITICAL_ERROR in MarketDataConnector _poll_loop: {e}. "
+                        f"Thread might have died. Restarting loop after 15s delay."
+                    )
+                    time.sleep(15)  # Затримка, щоб не спамити логами при постійному падінні
+        except Exception as e:
+            LOG.error(f"❌ MarketDataConnector: Fatal error in polling loop: {e}")
         finally:
             loop.close()
-            LOG.info("Polling loop has ended.")
+            LOG.info("🔄 MarketDataConnector: Polling loop has ended.")
 
     async def _fetch_and_emit_data(self) -> None:
         """
@@ -161,6 +169,7 @@ class MarketDataConnector:
                 # Fetch REAL bid/ask sizes from bookTicker
                 book_data = await self.adapter.get_book_ticker(symbol=symbol)
                 if book_data:
+                    self.logger.info(f"[{symbol}] Fetched book ticker data.")
                     bid_price = book_data.get('bidPrice', '0')
                     bid_size = book_data.get('bidQty', '0')
                     ask_price = book_data.get('askPrice', '0')
@@ -175,6 +184,7 @@ class MarketDataConnector:
                 # Fetch REAL recent trades
                 trades_data = await self.adapter.get_recent_trades(symbol=symbol, limit=50)
                 if trades_data:
+                    self.logger.info(f"[{symbol}] Fetched recent trades data.")
                     for trade in trades_data:
                         self.aggregator.on_trade(
                             symbol,
@@ -187,6 +197,7 @@ class MarketDataConnector:
                 # Fetch klines for delta_price calculation
                 klines = await self.adapter.get_klines(symbol=symbol, interval="1m", limit=2)
                 if klines and len(klines) >= 2:
+                    self.logger.info(f"[{symbol}] Fetched klines data.")
                     # Update price history
                     for kline in klines:
                         price = kline[4]  # close price
@@ -200,6 +211,7 @@ class MarketDataConnector:
                         )
 
                 # Get aggregated market tick with REAL features
+                self.logger.info(f"[{symbol}] Getting market tick from aggregator.")
                 tick = self.aggregator.get_market_tick(symbol)
                 if tick:
                     self._emit_market_tick(symbol, tick)

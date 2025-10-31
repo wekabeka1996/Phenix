@@ -83,12 +83,14 @@ class TestWalCoverage:
         wal_dir = tmp_path / "test_wal"
         set_wal_dir(wal_dir)
 
-        # Mock _file_lock to raise TimeoutError
-        def mock_file_lock(*args, **kwargs):
-            raise TimeoutError("Lock timeout")
-
         # Import the wal module to patch it
         from vfoundation.dr import wal as wal_module
+        import sys
+        from unittest.mock import patch
+
+        # Mock _file_lock to raise TimeoutError (works on both platforms)
+        def mock_file_lock(*args, **kwargs):
+            raise TimeoutError("Lock timeout")
         monkeypatch.setattr(wal_module, "_file_lock", mock_file_lock)
 
         result = append({"test": "data"})

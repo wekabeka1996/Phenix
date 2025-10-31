@@ -61,7 +61,10 @@ class DecisionMaking:
     def on_features(self, event: Message) -> None:
         symbol = event.pld.get("symbol", "unknown")
         self.logger.info(f"✅ on_features() called for {symbol}")
+        self.logger.info(f"   Event payload keys: {list(event.pld.keys()) if event.pld else 'None'}")
+        self.logger.info(f"   Event payload: {event.pld}")
         self.symbol_states[symbol]['features'] = event.pld
+        self.logger.info(f"   Stored features for {symbol}: {bool(self.symbol_states[symbol]['features'])}")
         self._check_and_trigger_decision_for_symbol(symbol)
 
     def on_risk(self, event: Message) -> None:
@@ -76,12 +79,10 @@ class DecisionMaking:
         equity = decimal.Decimal(str(self.latest_portfolio.get('equity', '0')))
         self.logger.info(f"   Equity: {equity}, Positions: {len(self.latest_portfolio.get('positions', []))}")
 
-        # If we now have valid equity, re-trigger decisions for pending symbols
-        if equity > 0 and self.pending_symbols:
-            self.logger.info(f"🔄 Re-triggering decisions for {len(self.pending_symbols)} pending symbols after portfolio arrival")
-            pending_copy = self.pending_symbols.copy()
-            self.pending_symbols.clear()
-            for symbol in pending_copy:
+        # If we now have valid equity, re-trigger decisions for all tracked symbols
+        if equity > 0:
+            self.logger.info(f"🔄 Triggering decisions for all {len(self.config.get('trading', {}).get('symbols_to_track', []))} tracked symbols after portfolio update")
+            for symbol in self.config.get('trading', {}).get('symbols_to_track', []):
                 self._check_and_trigger_decision_for_symbol(symbol)
 
     def on_regime(self, event: Message) -> None:
@@ -104,6 +105,10 @@ class DecisionMaking:
         
         features_present = bool(state.get('features'))
         risk_present = bool(state.get('risk'))
+        
+        self.logger.info(f"[{symbol}] Features present: {features_present}, Risk present: {risk_present}")
+        self.logger.info(f"[{symbol}] Features data: {state.get('features')}")
+        self.logger.info(f"[{symbol}] Risk data: {state.get('risk')}")
         
         if not features_present or not risk_present:
             self.logger.warning(f"[{symbol}] ⚠️ Decision deferred: features={features_present}, risk={risk_present}")
@@ -155,19 +160,24 @@ class DecisionMaking:
         self.logger.info(f"DEBUG decision_config: {decision_config}")
         self.logger.info(f"DEBUG signal_weights: {signal_weights}")
         
+        signal_threshold = decimal.Decimal(str(decision_config.get('signal_threshold', '0.2')))
+        
         signal_score = sum(
             decimal.Decimal(str(features_data.get(f, 0.0))) * decimal.Decimal(str(w))
             for f, w in signal_weights.items()
         )
 
-        signal_threshold = decimal.Decimal(str(decision_config.get('signal_threshold', '0.2')))
+        self.logger.info(f"[{symbol}] SIGNAL CALCULATION: score={signal_score:.6f}, threshold={signal_threshold}, features={features_data}")
+
         side = ""
         if signal_score > signal_threshold:
             side = "buy"
+            self.logger.info(f"[{symbol}] SIGNAL DECISION: BUY (score {signal_score:.6f} > {signal_threshold})")
         elif signal_score < -signal_threshold:
             side = "sell"
+            self.logger.info(f"[{symbol}] SIGNAL DECISION: SELL (score {signal_score:.6f} < -{signal_threshold})")
         else:
-            self.logger.info(f"REJECT: Neutral signal {signal_score:.4f} (Threshold: {signal_threshold})")
+            self.logger.info(f"[{symbol}] REJECT: Neutral signal {signal_score:.4f} (Threshold: {signal_threshold})")
             self.clear_internal_state_for_symbol(symbol)
             return
 
@@ -175,26 +185,30 @@ class DecisionMaking:
             current_regime = regime.get('regime')
             if (current_regime == "TREND_UP" and side == "sell") or \
                (current_regime == "TREND_DOWN" and side == "buy"):
-                self.logger.info(f"REJECT: Counter-trend {side} blocked by regime {current_regime}")
+                self.logger.info(f"[{symbol}] REJECT: Counter-trend {side} blocked by regime {current_regime}")
                 self.clear_internal_state_for_symbol(symbol)
                 return
 
         price_ref_str = features_data.get('price')
         if not price_ref_str:
-            self.logger.error(f"CRITICAL: No valid price reference for {symbol}. Cannot make trading decision.")
+            self.logger.error(f"[{symbol}] CRITICAL: No valid price reference for {symbol}. Cannot make trading decision.")
             self.clear_internal_state_for_symbol(symbol)
             return
         price_ref = decimal.Decimal(str(price_ref_str))
+        self.logger.info(f"[{symbol}] PRICE REF: {price_ref}")
 
         why_chain.append(f"Signal {signal_score:.4f} vs Threshold {signal_threshold}")
+        self.logger.info(f"[{symbol}] CALCULATING POSITION SIZE...")
         qty, why_sizing = self._calculate_position_size(symbol, price_ref, side, context)
         why_chain.append(why_sizing)
+        self.logger.info(f"[{symbol}] POSITION SIZE: qty={qty}, why='{why_sizing}'")
 
         if not qty or qty <= 0:
-            self.logger.warning(f"Trade intent for {symbol} rejected: quantity is zero or negative. Why: {why_sizing}")
+            self.logger.warning(f"[{symbol}] REJECT: quantity is zero or negative. Why: {why_sizing}")
             self.clear_internal_state_for_symbol(symbol)
             return
 
+        self.logger.info(f"[{symbol}] ✅ PROPOSING TRADE INTENT: {side} {qty} @ {price_ref}")
         self._propose_trade_intent(symbol, side, qty, price_ref, why_chain, rid)
 
     def _calculate_risk_based_position_size_usd(self, equity: decimal.Decimal) -> tuple[Optional[decimal.Decimal], str]:
@@ -271,6 +285,7 @@ class DecisionMaking:
         return rounded_qty, why_sizing
 
     def _propose_trade_intent(self, symbol: str, side: str, qty: decimal.Decimal, price: decimal.Decimal, why_chain: list[str], rid: str) -> None:
+        self.logger.info(f"[{symbol}] 🚀 EMITTING EVT:TRADE_INTENT_PROPOSED: {side} {qty} @ {price}")
         trade_intent = {
             "instrument": symbol, "symbol": symbol, "side": side,
             "order": {"qty": str(qty), "price": str(price), "price_ref": str(price), "reduce_only": False},

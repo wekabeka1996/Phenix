@@ -28,6 +28,11 @@ class PositionTracking:
     Subscribes to EVT:TRADE_EXECUTED and emits EVT:PORTFOLIO_STATE_UPDATED.
     """
 
+    # Підтримувані активи для включення в equity розрахунок
+    SUPPORTED_EQUITY_ASSETS = {
+        'USDT', 'BUSD', 'BTC', 'ETH', 'BNB', 'ADA', 'SOL', 'DOT', 'LINK', 'UNI'
+    }
+
     def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
         self.fsm = fsm
         self.config = config
@@ -132,7 +137,21 @@ class PositionTracking:
         self.logger.info(f"Emitted portfolio update after trade for {symbol}.")
 
     def _emit_portfolio_update(self, why: str):
-        pass
+        """Constructs and emits the EVT:PORTFOLIO_STATE_UPDATED event."""
+        portfolio_payload = {
+            "ts": int(time.time() * 1000),
+            "equity": str(self._equity),
+            "realized_pnl": str(self._realized_pnl),
+            "unrealized_pnl": str(self._calculate_unrealized_pnl()),
+            "total_commissions": str(self._total_commissions),
+            "positions": self._get_positions_snapshot()
+        }
+        self.fsm.emit(
+            "EVT:PORTFOLIO_STATE_UPDATED",
+            payload=portfolio_payload,
+            why=why
+        )
+        self.logger.info(f"Emitted EVT:PORTFOLIO_STATE_UPDATED because: {why}")
 
     def on_account_update(self, event: Message) -> None:
         """
@@ -156,7 +175,8 @@ class PositionTracking:
                 'net_position': net_position,
                 'avg_entry_price': decimal.Decimal(str(pos_data_from_api.get('entryPrice', '0'))),
                 'unrealized_pnl': decimal.Decimal(str(pos_data_from_api.get('unRealizedProfit', '0'))),
-                'last_update_ts': int(pos_data_from_api.get('updateTime', 0))
+                'last_update_ts': int(pos_data_from_api.get('updateTime', 0)),
+                'venues': []  # Initialize empty venues list for account update positions
             }
 
             # Preserve realized PnL if the position already existed
@@ -173,7 +193,7 @@ class PositionTracking:
             self.logger.warning(f"Reconciliation removed {len(ghost_positions)} ghost position(s): {', '.join(ghost_positions)}")
 
         self._positions = reconciled_positions
-        self._equity = decimal.Decimal(str(payload.get('wallet_balance', '0')))
+        self._equity = decimal.Decimal(str(payload.get('totalWalletBalance', '0')))
         
         self.logger.info(f"Reconciled portfolio state: equity={self._equity}, open_positions={len(self._positions)}")
         self._emit_portfolio_update("full_sync_from_account_update")
@@ -188,12 +208,39 @@ class PositionTracking:
         self.logger.info("Handling EVT:BALANCE_UPDATE_RECEIVED...")
         payload = event.pld
 
-        # Calculate total equity from assets
+        # Calculate total equity from assets (only supported trading assets)
         assets = payload.get('assets', [])
-        total_equity = sum(decimal.Decimal(str(a.get('balance', '0'))) for a in assets)
+        supported_assets = [
+            asset for asset in assets 
+            if asset.get('asset') in self.SUPPORTED_EQUITY_ASSETS
+        ]
+        total_equity = sum(decimal.Decimal(str(a.get('balance', '0'))) for a in supported_assets)
         self._equity = total_equity  # Update our equity tracking
         
-        self.logger.info(f"Balance update received: {len(assets)} assets with balance > 0")
+        self.logger.info(f"Balance update received: {len(assets)} total assets, {len(supported_assets)} supported for equity")
+        # Log equity calculation breakdown
+        if supported_assets:
+            self.logger.info("Equity calculation breakdown (supported assets only):")
+            for asset in supported_assets:
+                asset_name = asset.get('asset', 'UNKNOWN')
+                balance = asset.get('balance', '0')
+                self.logger.info(f"  {asset_name}: {balance}")
+            self.logger.info(f"Total equity: {total_equity}")
+        else:
+            self.logger.warning("No supported assets found for equity calculation!")
+            
+        # Log excluded assets for transparency
+        excluded_assets = [
+            asset for asset in assets 
+            if asset.get('asset') not in self.SUPPORTED_EQUITY_ASSETS
+        ]
+        if excluded_assets:
+            self.logger.info("Excluded assets (not supported for trading):")
+            for asset in excluded_assets:
+                asset_name = asset.get('asset', 'UNKNOWN')
+                balance = asset.get('balance', '0')
+                self.logger.info(f"  {asset_name}: {balance} (excluded)")
+                
         self.logger.info(f"Calculated total equity: ${total_equity}")
         self.logger.info(f"Updated self._equity to: ${self._equity}")
 
@@ -224,12 +271,12 @@ class PositionTracking:
         """
         existing = self._positions.get(symbol, {
             "net_position": decimal.Decimal('0'),
-            "avg_price": decimal.Decimal('0'),
+            "avg_entry_price": decimal.Decimal('0'),
             "venues": []
         })
 
         pos_qty = existing["net_position"]
-        avg_px = existing["avg_price"]
+        avg_px = existing["avg_entry_price"]
 
         # Determine position sign based on existing position (+1 long, -1 short)
         pos_sign = decimal.Decimal('1') if pos_qty > decimal.Decimal('0') else decimal.Decimal('-1') if pos_qty < decimal.Decimal('0') else decimal.Decimal('0')
@@ -280,7 +327,7 @@ class PositionTracking:
         # Update position
         self._positions[symbol] = {
             "net_position": new_qty,
-            "avg_price": new_avg,
+            "avg_entry_price": new_avg,
             "venues": venues
         }
 
@@ -334,7 +381,7 @@ class PositionTracking:
                 qty = position["net_position"]
                 positions_state[symbol] = {
                     "net_position": str(qty),
-                    "avg_price": str(position["avg_price"]),
+                    "avg_entry_price": str(position["avg_entry_price"]),
                     "side": "long" if qty > 0 else "short",
                     "unrealized_pnl": "0.0"  # Placeholder - would need current market price
                 }
@@ -412,14 +459,14 @@ class PositionTracking:
             for symbol, pos in state_to_load.get('positions', {}).items():
                 try:
                     qty = decimal.Decimal(str(pos.get('net_position', '0')))
-                    avg_price = decimal.Decimal(str(pos.get('avg_price', '0')))
+                    avg_price = decimal.Decimal(str(pos.get('avg_entry_price', '0')))
                 except (ValueError, TypeError, decimal.InvalidOperation) as e:
                     self.logger.error(f"Invalid numeric in snapshot for {symbol}: {e}")
                     return False
 
                 positions_loaded[symbol] = {
                     'net_position': qty,
-                    'avg_price': avg_price,
+                    'avg_entry_price': avg_price,
                     'venues': pos.get('venues', [])
                 }
 

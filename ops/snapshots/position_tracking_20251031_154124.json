@@ -1,0 +1,27 @@
+{
+  "domain": "position_tracking",
+  "version": "1.0.0",
+  "timestamp_utc": "2025-10-31T15:41:24.988852+00:00",
+  "state_hash": "sha256:84edceb2fa9cdf16db86d445cc4c33672d6fe7d9a0ccf3498101b660f1e9645c",
+  "state": {
+    "positions": {
+      "BTCUSDT": {
+        "net_position": "-0.004",
+        "avg_entry_price": "110627.4",
+        "side": "short",
+        "unrealized_pnl": "0.0"
+      }
+    },
+    "portfolio": {
+      "equity": "0",
+      "balance": "0",
+      "margin_used": "0.0",
+      "total_commissions": "0.0"
+    }
+  },
+  "metadata": {
+    "worker_id": "unknown",
+    "positions_count": 1,
+    "sequence_number": 1761925284988
+  }
+}

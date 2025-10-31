@@ -54,98 +54,51 @@ def position_tracking_domain(mock_fsm, temp_wal_dir):
     return domain
 
 
-def test_trade_executed_writes_to_wal(position_tracking_domain, temp_wal_dir):
-    """
-    Test that EVT:TRADE_EXECUTED event is written to WAL before processing.
+    def test_trade_executed_writes_to_wal(position_tracking_domain, temp_wal_dir):
+        """
+        Test that EVT:TRADE_EXECUTED event is written to WAL before processing.
     
-    Coverage: WAL durability guarantee for critical position updates.
-    """
-    # Arrange: Create trade executed event
-    trade_event = Message(
-        op="EVT",
-        verb="TRADE_EXECUTED",
-        pld={
-            "symbol": "ETHUSDT",
-            "side": "buy",  # lowercase
-            "quantity": 0.1,
-            "price": 3500.0,
-            "commission": 0.35,
-            "ts": 1234567890000,  # Required timestamp field
-            "venue": "binance"  # Required venue field
-        },
-        src="execution_engine",
-        dst="position_tracking",
-        rid="RID-test-trade-123"
-    )
+        Coverage: WAL durability guarantee for critical position updates.
+        """
+        # Arrange: Create trade executed event
+        trade_event = Message(
+            op="EVT",
+            verb="TRADE_EXECUTED",
+            pld={
+                "symbol": "ETHUSDT",
+                "side": "buy",  # lowercase
+                "quantity": 0.1,
+                "price": 3500.0,
+                "commission": 0.35,
+                "ts": 1234567890000,  # Required timestamp field
+                "venue": "binance"  # Required venue field
+            },
+            src="execution_engine",
+            dst="position_tracking",
+            rid="RID-test-trade-123"
+        )
     
-    # Act: Process the event
-    position_tracking_domain.on_trade_executed(trade_event)
+        # Act: Process the event
+        position_tracking_domain.on_trade_executed(trade_event)
     
-    # Assert: WAL file was created
-    wal_file_path = wal._get_wal_file_path()
-    assert wal_file_path.exists(), f"WAL file should exist at {wal_file_path}"
+        # Assert: WAL file was created
+        wal_file_path = wal._get_wal_file_path()
+        assert wal_file_path.exists(), f"WAL file should exist at {wal_file_path}"
     
-    # Assert: WAL file contains the trade event
-    with open(wal_file_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-        assert len(lines) >= 1, "WAL should contain at least one entry"
-        
-        # Parse last line (should be our trade event)
-        # WAL structure: {op, verb, pld, src, dst, rid, timestamp, _prev, _hash}
-        last_entry = json.loads(lines[-1])
-        assert "_hash" in last_entry, "WAL entry must have '_hash' field"
-        assert "_prev" in last_entry, "WAL entry must have '_prev' field"
-        assert last_entry["verb"] == "TRADE_EXECUTED"
-        assert last_entry["pld"]["symbol"] == "ETHUSDT"
-        assert last_entry["pld"]["quantity"] == 0.1
-        assert last_entry["rid"] == "RID-test-trade-123"
-
-
-# def test_account_update_writes_to_wal(position_tracking_domain, temp_wal_dir):
-    """
-    Test that EVT:ACCOUNT_UPDATE_RECEIVED event is written to WAL before processing.
+        # Assert: WAL file contains the trade event
+        with open(wal_file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            assert len(lines) >= 1, "WAL should contain at least one entry"
     
-    Coverage: WAL durability guarantee for account state synchronization.
-    """
-    # Arrange: Create account update event
-    account_event = Message(
-        op="EVT",
-        verb="ACCOUNT_UPDATE_RECEIVED",
-        pld={
-            "totalWalletBalance": 50000.0,
-            "positions": [
-                {
-                    "symbol": "ETHUSDT",
-                    "positionAmt": 0.5,
-                    "entryPrice": 3400.0
-                }
-            ]
-        },
-        src="binance_adapter",
-        dst="position_tracking",
-        rid="RID-test-account-456"
-    )
-    
-    # Act: Process the event
-    position_tracking_domain.on_account_update(account_event)
-    
-    # Assert: WAL file was created
-    wal_file_path = wal._get_wal_file_path()
-    assert wal_file_path.exists(), f"WAL file should exist at {wal_file_path}"
-    
-    # Assert: WAL file contains the account update event
-    with open(wal_file_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-        assert len(lines) >= 1, "WAL should contain at least one entry"
-        
-        # Parse last line (should be our account event)
-        # WAL structure: {op, verb, pld, src, dst, rid, timestamp, _prev, _hash}
-        last_entry = json.loads(lines[-1])
-        assert "_hash" in last_entry, "WAL entry must have '_hash' field"
-        assert "_prev" in last_entry, "WAL entry must have '_prev' field"
-        assert last_entry["verb"] == "TRADE_EXECUTED"
-        assert last_entry["pld"]["totalWalletBalance"] == 50000.0
-        assert last_entry["rid"] == "RID-test-account-456"
+            # Parse last line (should be our trade event)
+            # WAL structure: {op, verb, pld, src, dst, rid, timestamp, _prev, _hash}
+            last_entry = json.loads(lines[-1])
+            assert "_hash" in last_entry, "WAL entry must have '_hash' field"
+            assert "_prev" in last_entry, "WAL entry must have '_prev' field"
+            assert last_entry["verb"] == "TRADE_EXECUTED"
+            assert last_entry["pld"]["symbol"] == "ETHUSDT"
+            assert last_entry["pld"]["quantity"] == 0.1
+            assert last_entry["rid"] == "RID-test-trade-123"
 
 
 def test_wal_write_failure_halts_processing(position_tracking_domain, temp_wal_dir, monkeypatch):

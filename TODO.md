@@ -1,3 +1,23 @@
+# TODO List for CRITICAL_FIX_P8 - COMPLETED ✅
+
+- [x] **CRITICAL**: Fix MarketDataConnector aggregator initialization bug preventing EVT:MARKET_TICK_RECEIVED
+- [x] **CRITICAL**: Restore WebSocketAggregator initialization in MarketDataConnector.__init__()
+- [x] **CRITICAL**: Add comprehensive logging to _poll_loop for debugging
+- [x] **VALIDATE**: Confirm EVT:MARKET_TICK_RECEIVED → EVT:FEATURES_CALCULATED → DecisionMaking flow works
+- [x] **VALIDATE**: Verify system generates TRADE_INTENT_PROPOSED (even if rejected due to weak signals)
+- [x] Add entry to JOURNAL_мій.md with evidence
+- [x] Update TODO.md to mark as completed
+
+**Results:** System now properly processes market data pipeline. Features=False blocker eliminated. Decisions now made based on signal strength, not data availability.
+
+# TODO List for CRITICAL_FIX_P7
+
+- [x] Fix "тихої смерті" MarketDataConnector: Обернути _poll_loop в глобальний try...except
+- [x] Fix конфігурації DecisionMaking: Передати повний config_dict замість тільки trading секції
+- [x] Run pytest to validate all changes (673 passed, 0 failed)
+- [x] Add entry to docs/Хазяйство/JOURNAL_мій.md
+- [x] Update TODO.md to mark task as completed
+
 # TODO List for QUANT_ENHANCEMENT_P1
 
 - [x] Update config/aurora/trading.yaml: Add risk_per_trade_pct and sl_bps to position_sizing
@@ -20,6 +40,14 @@
 - [x] Enhance XAI in fsm_open.py: Change why="OPEN_OK" to "Open guards passed"
 - [x] Enhance XAI in fsm_open.py: Update specific reject reasons
 - [x] Run pytest to validate changes
+- [x] Add entry to docs/Хазяйство/JOURNAL_мій.md
+- [x] Update TODO.md to mark task as completed
+
+# TODO List for TEST_FIXES_P1
+
+- [x] Fix test_graceful_shutdown.py: Add cleanup of mocked sys.modules to prevent test interference
+- [x] Fix test_wal_coverage.py test_append_timeout_error: Simplify timeout mocking to work on Windows
+- [x] Run full pytest suite to validate all tests pass (673 passed, 0 failed)
 - [x] Add entry to docs/Хазяйство/JOURNAL_мій.md
 - [x] Update TODO.md to mark task as completed
 

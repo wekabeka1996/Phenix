@@ -76,20 +76,41 @@ class ConfigLoader:
         mode = config["trading_mode"]
         api_config = config["binance_api"]
         if mode in ["live", "hybrid_live_data_testnet_exec"]:
-            if "live" not in api_config or not all(api_config["live"].get(k) for k in ["api_key", "api_secret"]):
+            if "live" not in api_config or not all(api_config["live"].get(k) for k in ["api_key", "api_secret", "rest_url"]):
                 raise ValueError("Missing required keys in 'binance_api.live' for mode.")
         if mode in ["testnet", "hybrid_live_data_testnet_exec"]:
-            if "testnet" not in api_config or not all(api_config["testnet"].get(k) for k in ["api_key", "api_secret"]):
+            if "testnet" not in api_config or not all(api_config["testnet"].get(k) for k in ["api_key", "api_secret", "rest_url"]):
                 raise ValueError("Missing required keys in 'binance_api.testnet' for mode.")
 
     def load_config(self) -> AuroraConfig:
         system_config = self._load_yaml("system.yaml")
         trading_config = self._load_yaml("trading.yaml")
-        # Merge: trading_config (source) → system_config (destination)
-        # This ensures system_config gets updated with trading parameters
+        
+        # Manually construct binance_api from .env
+        binance_api_config = {
+            "live": {
+                "api_key": os.getenv("BINANCE_FUTURES_API_KEY_LIVE"),
+                "api_secret": os.getenv("BINANCE_FUTURES_API_SECRET_LIVE"),
+                "rest_url": os.getenv("BINANCE_FUTURES_REST_URL_LIVE"),
+            },
+            "testnet": {
+                "api_key": os.getenv("BINANCE_TESTNET_API_KEY"),
+                "api_secret": os.getenv("BINANCE_TESTNET_API_SECRET"),
+                "rest_url": os.getenv("BINANCE_TESTNET_REST_URL"),
+            }
+        }
+
+        # Merge configurations
         merged_config = {}
-        deep_merge(system_config, merged_config)  # Copy system first
-        deep_merge(trading_config, merged_config)  # Overlay trading
+        deep_merge(system_config, merged_config)
+        deep_merge(trading_config, merged_config)
+        
+        # Inject the manually constructed binance_api config
+        merged_config["binance_api"] = binance_api_config
+        
+        # Set trading_mode from .env
+        merged_config["trading_mode"] = os.getenv("TRADING_MODE", "testnet")
+
         resolved_config = self._resolve_env_vars(merged_config)
         self._validate_config(resolved_config)
         LOG.info(f"Configuration loaded for trading_mode: '{resolved_config['trading_mode']}'")

@@ -126,8 +126,8 @@ class TestPositionTrackingSnapshot:
 
         # Add position with high precision
         position_tracking._positions["ETHUSDT"] = {
-            "quantity": Decimal("1.234567890123456789"),
-            "avg_price": Decimal("3874.115"),
+            "net_position": Decimal("1.234567890123456789"),
+            "avg_entry_price": Decimal("3874.115"),
             "venues": ["binance"]
         }
 
@@ -142,10 +142,10 @@ class TestPositionTrackingSnapshot:
         positions = snapshot["state"]["positions"]
         assert "ETHUSDT" in positions
         eth_pos = positions["ETHUSDT"]
-        assert isinstance(eth_pos["qty"], str)
-        assert isinstance(eth_pos["avg_price"], str)
-        assert "1.234567890123456789" in eth_pos["qty"]
-        assert "3874.115" in eth_pos["avg_price"]
+        assert isinstance(eth_pos["net_position"], str)
+        assert isinstance(eth_pos["avg_entry_price"], str)
+        assert "1.234567890123456789" in eth_pos["net_position"]
+        assert "3874.115" in eth_pos["avg_entry_price"]
 
     def test_snapshot_hash_changes_with_state(self, position_tracking):
         """Verify state_hash changes when state changes."""
@@ -164,19 +164,19 @@ class TestPositionTrackingSnapshot:
         """Verify all non-zero positions are included in snapshot."""
         # Add multiple positions
         position_tracking._positions["ETHUSDT"] = {
-            "quantity": Decimal("1.5"),
-            "avg_price": Decimal("3800.0"),
+            "net_position": Decimal("1.5"),
+            "avg_entry_price": Decimal("3800.0"),
             "venues": ["binance"]
         }
         position_tracking._positions["BTCUSDT"] = {
-            "quantity": Decimal("-0.05"),
-            "avg_price": Decimal("67000.0"),
+            "net_position": Decimal("-0.05"),
+            "avg_entry_price": Decimal("67000.0"),
             "venues": ["binance"]
         }
         # Add near-zero position (should be excluded)
         position_tracking._positions["SOLUSDT"] = {
-            "quantity": Decimal("0.0000000001"),
-            "avg_price": Decimal("100.0"),
+            "net_position": Decimal("0.0000000001"),
+            "avg_entry_price": Decimal("100.0"),
             "venues": ["binance"]
         }
 
@@ -191,13 +191,13 @@ class TestPositionTrackingSnapshot:
     def test_snapshot_position_side_detection(self, position_tracking):
         """Verify position side (long/short) is correctly detected."""
         position_tracking._positions["ETHUSDT"] = {
-            "quantity": Decimal("1.5"),  # Positive = long
-            "avg_price": Decimal("3800.0"),
+            "net_position": Decimal("1.5"),  # Positive = long
+            "avg_entry_price": Decimal("3800.0"),
             "venues": ["binance"]
         }
         position_tracking._positions["BTCUSDT"] = {
-            "quantity": Decimal("-0.05"),  # Negative = short
-            "avg_price": Decimal("67000.0"),
+            "net_position": Decimal("-0.05"),  # Negative = short
+            "avg_entry_price": Decimal("67000.0"),
             "venues": ["binance"]
         }
 
@@ -211,8 +211,8 @@ class TestPositionTrackingSnapshot:
         """Verify snapshot can be serialized to JSON."""
         position_tracking._equity = Decimal("5000.0")
         position_tracking._positions["ETHUSDT"] = {
-            "quantity": Decimal("1.5"),
-            "avg_price": Decimal("3800.0"),
+            "net_position": Decimal("1.5"),
+            "avg_entry_price": Decimal("3800.0"),
             "venues": ["binance"]
         }
 
@@ -271,15 +271,15 @@ class TestPositionTrackingSnapshotRestore:
             "state": {
                 "positions": {
                     "ETHUSDT": {
-                        "qty": "1.234567890123456789",
-                        "avg_price": "3800.5",
+                        "net_position": "1.234567890123456789",
+                        "avg_entry_price": "3800.5",
                         "side": "long",
                         "unrealized_pnl": "0.0",
                         "venues": ["binance"]
                     },
                     "BTCUSDT": {
-                        "qty": "-0.05",
-                        "avg_price": "67000.0",
+                        "net_position": "-0.05",
+                        "avg_entry_price": "67000.0",
                         "side": "short",
                         "unrealized_pnl": "0.0",
                         "venues": ["binance"]
@@ -316,12 +316,12 @@ class TestPositionTrackingSnapshotRestore:
 
         # Verify Decimal precision preserved
         eth_pos = position_tracking._positions["ETHUSDT"]
-        assert eth_pos["quantity"] == Decimal("1.234567890123456789")
-        assert eth_pos["avg_price"] == Decimal("3800.5")
+        assert eth_pos["net_position"] == Decimal("1.234567890123456789")
+        assert eth_pos["avg_entry_price"] == Decimal("3800.5")
 
         btc_pos = position_tracking._positions["BTCUSDT"]
-        assert btc_pos["quantity"] == Decimal("-0.05")
-        assert btc_pos["avg_price"] == Decimal("67000.0")
+        assert btc_pos["net_position"] == Decimal("-0.05")
+        assert btc_pos["avg_entry_price"] == Decimal("67000.0")
 
         # Verify equity restored
         assert position_tracking._equity == Decimal("5000.123456789")
@@ -366,8 +366,8 @@ class TestPositionTrackingSnapshotRestore:
             "state": {
                 "positions": {
                     "ETHUSDT": {
-                        "qty": "not_a_number",  # Invalid
-                        "avg_price": "3800.0",
+                        "net_position": "not_a_number",  # Invalid
+                        "avg_entry_price": "3800.0",
                         "side": "long",
                         "unrealized_pnl": "0.0",
                         "venues": ["binance"]
@@ -419,8 +419,8 @@ class TestPositionTrackingSnapshotRestore:
         position_tracking._equity = Decimal("5000.123456789")
         position_tracking._realized_pnl = Decimal("100.5")
         position_tracking._positions["ETHUSDT"] = {
-            "quantity": Decimal("1.234567890123456789"),
-            "avg_price": Decimal("3800.5"),
+            "net_position": Decimal("1.234567890123456789"),
+            "avg_entry_price": Decimal("3800.5"),
             "venues": ["binance"]
         }
 
@@ -440,16 +440,16 @@ class TestPositionTrackingSnapshotRestore:
         assert pt2._equity == position_tracking._equity
         assert len(pt2._positions) == len(position_tracking._positions)
         assert "ETHUSDT" in pt2._positions
-        assert pt2._positions["ETHUSDT"]["quantity"] == Decimal("1.234567890123456789")
-        assert pt2._positions["ETHUSDT"]["avg_price"] == Decimal("3800.5")
+        assert pt2._positions["ETHUSDT"]["net_position"] == Decimal("1.234567890123456789")
+        assert pt2._positions["ETHUSDT"]["avg_entry_price"] == Decimal("3800.5")
 
     def test_load_snapshot_overwrites_existing_state(self, position_tracking):
         """Verify load_snapshot overwrites any existing state."""
         # Set initial state
         position_tracking._equity = Decimal("1000.0")
         position_tracking._positions["SOLUSDT"] = {
-            "quantity": Decimal("10.0"),
-            "avg_price": Decimal("100.0"),
+            "net_position": Decimal("10.0"),
+            "avg_entry_price": Decimal("100.0"),
             "venues": ["binance"]
         }
 
@@ -461,8 +461,8 @@ class TestPositionTrackingSnapshotRestore:
             "state": {
                 "positions": {
                     "ETHUSDT": {
-                        "qty": "5.0",
-                        "avg_price": "3800.0",
+                        "net_position": "5.0",
+                        "avg_entry_price": "3800.0",
                         "side": "long",
                         "unrealized_pnl": "0.0",
                         "venues": ["binance"]

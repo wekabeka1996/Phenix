@@ -1,0 +1,20 @@
+{
+  "domain": "position_tracking",
+  "version": "1.0.0",
+  "timestamp_utc": "2025-10-31T14:11:35.139776+00:00",
+  "state_hash": "sha256:73eafb443bb585089c04dba7f5a44ce0d65af7206e50f865feb946f98cb80a70",
+  "state": {
+    "positions": {},
+    "portfolio": {
+      "equity": "0",
+      "balance": "0",
+      "margin_used": "0.0",
+      "total_commissions": "0.0"
+    }
+  },
+  "metadata": {
+    "worker_id": "unknown",
+    "positions_count": 0,
+    "sequence_number": 1761919895139
+  }
+}

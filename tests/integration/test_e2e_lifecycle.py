@@ -113,7 +113,7 @@ def test_happy_path_lifecycle(full_system):
     # 1. Emit a trade intent (simulating output from DecisionMaking)
     intent_payload = {
         "rid": "test-rid-happy-1",
-        "instrument": "BTCUSDT",
+        "symbol": "BTCUSDT",
         "side": "BUY",
         "order": {"qty": "0.1", "price": "10000"},
         "idempotent_key": "e2e-happy-path-1"
@@ -139,8 +139,8 @@ def test_happy_path_lifecycle(full_system):
     # 4. Verify that the position is opened in PositionTracking
     positions = position_tracking.get_positions()
     assert "BTCUSDT" in positions
-    assert positions["BTCUSDT"]["quantity"] == Decimal("0.1")
-    assert positions["BTCUSDT"]["avg_price"] == Decimal("10000.0")
+    assert positions["BTCUSDT"]["net_position"] == Decimal("0.1")
+    assert positions["BTCUSDT"]["avg_entry_price"] == Decimal("10000.0")
 
 def test_failure_path_lifecycle(full_system):
     """

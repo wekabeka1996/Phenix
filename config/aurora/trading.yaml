@@ -1,7 +1,8 @@
 trading:
   # ==============================================================================
-  # DECISION MAKING SETTINGS
+  # TRADING SYMBOLS CONFIGURATION
   # ==============================================================================
+  symbols_to_track: ["BTCUSDT", "ETHUSDT"]  # Symbols to monitor and trade
   decision:
     signal_weights:
       obi: 0.6
@@ -10,8 +11,8 @@ trading:
     signal_threshold: 0.05
     position_sizing:
       min_position_size_usd: 10
-      liquidity_based_cap_usd: 10000
-      risk_per_trade_pct: 0.01  # Risk 1% of equity per trade
+      liquidity_based_cap_usd: 40000  # Increased from 10000 to 40000 (4x) to match position size increase
+      risk_per_trade_pct: 0.04  # Risk 4% of equity per trade (increased from 1% to 4x position size)
       sl_bps: 50                # Stop Loss 50 bps (0.5%) for sizing calculation
 
   # ==============================================================================
@@ -38,7 +39,7 @@ trading:
   # Risk Budgets
   risk_budgets:
     max_portfolio_risk_pct: 5.0
-    max_single_position_risk_pct: 1.0
+    max_single_position_risk_pct: 4.0  # Increased from 1.0 to 4.0 to match position size increase
     max_daily_loss_pct: 2.0
 
   # Risk Management Settings
@@ -107,9 +108,13 @@ trading:
     audit_trail:
       trading_mode: "live"  # Log from live data
 
-# ==============================================================================
-# BINANCE API CONFIGURATION
-# ==============================================================================
+  # ==============================================================================
+  # ACCOUNT OBSERVER CONFIGURATION
+  # ==============================================================================
+  account_observer:
+    poll_interval: 2  # Poll every 2 seconds for faster updates
+    symbols: ["BTCUSDT", "ETHUSDT"]  # Match market_data symbols
+    trade_limit: 50  # Recent trades to check per symbol
 # All credentials come from .env file via ${VAR_NAME} template substitution
 # ConfigLoader._resolve_env_vars() automatically converts these at load time
 binance_api:

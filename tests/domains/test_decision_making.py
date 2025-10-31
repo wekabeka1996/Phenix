@@ -32,6 +32,7 @@ def mock_config():
             }
         },
         "trading": {
+            "symbols_to_track": ["ETHUSDT"],
             "instruments": {
                 "ETHUSDT": {
                     "lot_step": 0.001,

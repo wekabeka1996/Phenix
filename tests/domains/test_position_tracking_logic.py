@@ -62,7 +62,7 @@ def test_opens_new_long_position_correctly():
     
     position = tracker._positions["BTCUSDT"]
     assert position["net_position"] == Decimal("0.5")
-    assert position["avg_price"] == Decimal("70000")
+    assert position["avg_entry_price"] == Decimal("70000")
     assert "binance" in position["venues"]
 
 
@@ -79,7 +79,7 @@ def test_opens_new_short_position_correctly():
     
     position = tracker._positions["ETHUSDT"]
     assert position["net_position"] == Decimal("-2.0")
-    assert position["avg_price"] == Decimal("3000")
+    assert position["avg_entry_price"] == Decimal("3000")
 
 
 def test_increases_existing_long_position():
@@ -101,7 +101,7 @@ def test_increases_existing_long_position():
     position = tracker._positions["BTCUSDT"]
     assert position["net_position"] == Decimal("1.0")
     # Weighted average: (0.5*70000 + 0.5*80000) / 1.0 = 75000
-    assert position["avg_price"] == Decimal("75000")
+    assert position["avg_entry_price"] == Decimal("75000")
 
 
 def test_increases_existing_short_position():
@@ -123,7 +123,7 @@ def test_increases_existing_short_position():
     position = tracker._positions["ETHUSDT"]
     assert position["net_position"] == Decimal("-2.0")
     # Weighted average: (1.0*3000 + 1.0*2800) / 2.0 = 2900
-    assert position["avg_price"] == Decimal("2900")
+    assert position["avg_entry_price"] == Decimal("2900")
 
 
 def test_partially_closes_long_position():
@@ -144,7 +144,7 @@ def test_partially_closes_long_position():
     
     position = tracker._positions["BTCUSDT"]
     assert position["net_position"] == Decimal("0.7")
-    assert position["avg_price"] == Decimal("70000")  # avg_price unchanged
+    assert position["avg_entry_price"] == Decimal("70000")  # avg_price unchanged
 
 
 def test_fully_closes_long_position():
@@ -204,7 +204,7 @@ def test_flips_long_to_short():
     
     position = tracker._positions["BTCUSDT"]
     assert position["net_position"] == Decimal("-0.5")  # Net short
-    assert position["avg_price"] == Decimal("75000")  # New position at flip price
+    assert position["avg_entry_price"] == Decimal("75000")  # New position at flip price
 
 
 def test_flips_short_to_long():
@@ -225,7 +225,7 @@ def test_flips_short_to_long():
     
     position = tracker._positions["ETHUSDT"]
     assert position["net_position"] == Decimal("0.5")  # Net long
-    assert position["avg_price"] == Decimal("2800")  # New position at flip price
+    assert position["avg_entry_price"] == Decimal("2800")  # New position at flip price
 
 
 def test_calculates_realized_pnl_on_close():
@@ -455,7 +455,7 @@ def test_account_update_with_positions():
     # Check positions were loaded
     assert "BTCUSDT" in tracker._positions
     assert tracker._positions["BTCUSDT"]["net_position"] == Decimal("0.5")
-    assert tracker._positions["BTCUSDT"]["avg_price"] == Decimal("70000")
+    assert tracker._positions["BTCUSDT"]["avg_entry_price"] == Decimal("70000")
     
     assert "ETHUSDT" in tracker._positions
     assert tracker._positions["ETHUSDT"]["net_position"] == Decimal("-2.0")

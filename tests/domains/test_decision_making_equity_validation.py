@@ -15,6 +15,7 @@ def mock_config():
     """Provides a valid config for the tests."""
     return {
         "trading": {
+            "symbols_to_track": ["ETHUSDT"],
             "instruments": {"ETHUSDT": {"step_size": "0.001"}},
             "decision": {
                 "signal_weights": {"obi": 1.0},

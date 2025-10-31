@@ -1,101 +1,41 @@
-config_version: 1.0.1
-# NEW: Defines the operational mode for the trading bot.
-# Options: "live", "testnet", "hybrid_live_data_testnet_exec"
-trading_mode: "hybrid_live_data_testnet_exec"
+# System-wide configurations
+# This file defines global settings, domain-specific modes, and API configurations.
 
-# NOTE: binance_api is now defined in trading.yaml with correct env var names
-# pointing to .env file (BINANCE_FUTURES_API_KEY_LIVE, BINANCE_TESTNET_API_KEY, etc.)
+# Trading mode determines the overall behavior of the system.
+# It is now primarily controlled by the TRADING_MODE variable in the .env file.
+# Supported modes:
+# - "live": Live data, live execution on mainnet.
+# - "testnet": Testnet data, testnet execution on Binance Futures Testnet.
+# - "hybrid_live_data_testnet_exec": Live data from mainnet, execution on testnet.
+trading_mode: ${TRADING_MODE}
 
-sequential_tests:
-  wald:
-    alpha: 0.05
-    beta: 0.2
-    mu0: 0.0
-    mu1: 0.5
-    sigma: 1.0
-  glr:
-    alpha: 0.05
-    beta: 0.2
-    min_samples: 5
-risk_core:
-  cvar_threshold_bps: 120
-  stress_scenarios:
-    - flash_crash
-    - volatility_spike
-  inventory_limits:
-    max_abs_position: 500  # МАКСИМАЛЬНО під x50 plече
-    max_daily_notional: 10000000  # $10M денний ліміт для x50
-kelly:
-  fraction_cap: 0.85  # Increased for full testnet operation
-  decay_half_life_days: 5
-calibrator:
-  state_store:
-    backend: sqlite
-    path: data/calibrator/state.db
-    versioning: true
-    retention_days: 30
-hawkes:
-  enabled: true
-  kernel:
-    decay_beta_ms: 250.0
-  eta_max: 1.0
-  update_interval_ms: 100
-  window_ms: 1000
-  bivariate: false
-hotreload_whitelist:
-  - sequential_tests.wald.mu1
-  - sequential_tests.glr.min_samples
-  - kelly.fraction_cap
-  - hawkes.update_interval_ms
-  - hawkes.window_ms
-  - hawkes.eta_max
-logging:
-  level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
-  file: "logs/aurora_core.log"
-  format: "json"  # 'json' or 'text'
-  rotation:
-    max_bytes: 10485760  # 10 MB
-    backup_count: 5
-
-# AURORA_HARDENING_V1 - Enterprise reliability features
-hardening:
-  ttl_config:
-    entry_place_ttl_ms: 5000    # 5 seconds for entry orders
-    bracket_place_ttl_ms: 3000  # 3 seconds for bracket orders
-    cancel_ttl_ms: 2000         # 2 seconds for cancellations
-  retry_config:
-    max_tries: 3                # Maximum retry attempts
-    backoff_ms: 1000            # Base backoff time
-    jitter: true                # Add random jitter
-  circuit_breaker:
-    fail_max: 5                 # Number of failures to open circuit
-    reset_timeout_sec: 30       # Time in OPEN state before HALF_OPEN
-    exclude:                    # Exceptions NOT counted as failures
-      - 'binance.error.ClientError:.*-2010'  # Insufficient balance
-      - 'binance.error.ClientError:.*-1021'  # Timestamp out of window
-    open_threshold_pct: 20      # Open if >20% calls fail in window
-    error_rate_window_sec: 60   # Rolling window for error rate
-    half_open_attempts: 3       # Test calls in HALF_OPEN state
+# Domain-specific configurations allow overriding the global trading_mode for
+# individual components. This is useful for fine-grained control in hybrid setups.
+domain_configuration:
   market_data:
-    max_allowed_lag_ms: 1000    # Maximum allowed market data lag
-    sequence_check_enabled: true # Enable sequence number validation
-  wal:
-    integrity_check_enabled: true # Enable WAL integrity verification
-    hash_algorithm: "sha256"     # Hash algorithm for integrity checks
-account_observer:
-  poll_interval: 5  # seconds between trade polls
-  symbols: [ETHUSDT]  # symbols to monitor
-  trade_limit: 50  # max trades to fetch per symbol
+    trading_mode: "live"  # Always use live data for market analysis
+  execution_position:
+    trading_mode: "testnet" # Always use testnet for placing orders
+  account_balance:
+    trading_mode: "testnet" # Use testnet for balance checks
+  account_observer:
+    trading_mode: "testnet" # Observe testnet account for updates
 
-trading:
-  # Централізована конфігурація для операційних параметрів системи
-  symbols_to_track:
-    - "BTCUSDT"
-    - "ETHUSDT"
-  
-  market_data:
-    # Стріми, які буде слухати MarketDataConnector
-    websocket_streams:
-      - "bookTicker"  # Для OBI (Order Book Imbalance)
-      - "trade"       # Для TFI (Trade Flow Imbalance) та delta_price
+# Binance API configuration is now loaded directly from .env variables
+# by the ConfigLoader. The structure is maintained here for clarity but
+# the values are populated from:
+# - LIVE_BINANCE_API_KEY, LIVE_BINANCE_API_SECRET, LIVE_BINANCE_REST_URL
+# - TESTNET_BINANCE_API_KEY, TESTNET_BINANCE_API_SECRET, TESTNET_BINANCE_REST_URL
+binance_api:
+  live:
+    api_key: ""
+    api_secret: ""
+    rest_url: ""
+  testnet:
+    api_key: ""
+    api_secret: ""
+    rest_url: ""
 
+# Other system settings
+system:
+  trade_intent_validity_ms: 30000

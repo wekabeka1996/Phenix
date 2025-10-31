@@ -1,5 +1,33 @@
 # Journal - QuantumTraderX → vFoundation FSM Migration
 
+## 2025-10-31 - CRITICAL FIX: MarketDataConnector Features Pipeline
+
+**RID:** CRITICAL-FIX-P8  
+**Why:** Fix "тихої смерті" MarketDataConnector preventing EVT:MARKET_TICK_RECEIVED → Features calculation  
+**Root Cause:** WebSocketAggregator initialization missing in MarketDataConnector.__init__()  
+**Actions:**
+- Restored `self.aggregator = WebSocketAggregator(self.symbols, window_seconds=60)` initialization
+- Added comprehensive logging to _poll_loop for debugging polling failures
+- Verified hybrid mode configuration (TRADING_MODE=hybrid_live_data_testnet_exec)
+- Confirmed live API keys working for market data, testnet for execution
+
+**Results:**
+- ✅ MarketDataConnector now generates EVT:MARKET_TICK_RECEIVED events
+- ✅ FeatureEngineering receives tick data and emits EVT:FEATURES_CALCULATED
+- ✅ DecisionMaking receives features + risk data and attempts decisions
+- ✅ System now properly rejects trades due to weak signals (not features=False)
+- ✅ Live market data flowing: BTCUSDT/ETHUSDT ticks with real bid/ask/trade volumes
+
+**Evidence:**
+```
+2025-10-31 14:41:11,602 - EVT:FEATURES_CALCULATED for BTCUSDT: OBI=-0.092, TFI=-0.923
+2025-10-31 14:41:11,593 - [BTCUSDT] Features present: True, Risk present: True
+2025-10-31 14:41:11,602 - [BTCUSDT] 🚀 All data ready! Triggering decision...
+2025-10-31 14:41:11,886 - BTCUSDT Tick: bid=2.100@109770.70, ask=2.526@109770.80
+```
+
+**Next:** Monitor system for sustained market data flow and decision making
+
 ## 2025-01-XX - Test Suite Fixes
 
 **RID:** TEST-FIX-001  

@@ -131,7 +131,7 @@ def test_rejects_decision_on_neutral_signal(mock_get_logger, decision_making_ins
     decision_making_instance.fsm.emit.assert_not_called()
     # Check that the log message contains the expected rejection reason
     mock_logger.info.assert_any_call(
-        'REJECT: Neutral signal 0.1000 (Threshold: 0.5)'
+        '[BTCUSDT] REJECT: Neutral signal 0.1000 (Threshold: 0.5)'
     )
 
 @patch('apps.reference.domains.decision_making.decision_making.logging.getLogger')
@@ -152,7 +152,7 @@ def test_rejects_decision_on_counter_trend_signal(mock_get_logger, decision_maki
     
     decision_making_instance.fsm.emit.assert_not_called()
     mock_logger.info.assert_called_with(
-        "REJECT: Counter-trend sell blocked by regime TREND_UP"
+        "[BTCUSDT] REJECT: Counter-trend sell blocked by regime TREND_UP"
     )
 
 @patch('apps.reference.domains.decision_making.decision_making.uuid.uuid4', return_value='mock_uuid')

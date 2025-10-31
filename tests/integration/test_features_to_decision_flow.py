@@ -17,19 +17,22 @@ class TestFeaturesToDecisionFlow(unittest.TestCase):
         # Arrange
         fsm = FSMCore()
         config = {
-            "decision": {
-                "signal_weights": {
-                    "obi": 0.6,
-                    "tfi": 0.35,
-                    "delta_price": 0.05
+            "trading": {
+                "symbols_to_track": ["ETHUSDT"],
+                "decision": {
+                    "signal_weights": {
+                        "obi": 0.6,
+                        "tfi": 0.35,
+                        "delta_price": 0.05
+                    },
+                    "signal_threshold": 0.05
                 },
-                "signal_threshold": 0.05
-            },
-            "tca_prefs": {},
-            "risk_budgets": {},
-            "instruments": {
-                "ETHUSDT": {
-                    "step_size": "0.001" # Example step_size
+                "tca_prefs": {},
+                "risk_budgets": {},
+                "instruments": {
+                    "ETHUSDT": {
+                        "step_size": "0.001" # Example step_size
+                    }
                 }
             }
         }
@@ -119,19 +122,22 @@ class TestFeaturesToDecisionFlow(unittest.TestCase):
         # Arrange
         fsm = FSMCore()
         config = {
-            "decision": {
-                "signal_weights": {
-                    "obi": 0.6,
-                    "tfi": 0.35,
-                    "delta_price": 0.05
+            "trading": {
+                "symbols_to_track": ["ETHUSDT"],
+                "decision": {
+                    "signal_weights": {
+                        "obi": 0.6,
+                        "tfi": 0.35,
+                        "delta_price": 0.05
+                    },
+                    "signal_threshold": 0.5  # High threshold
                 },
-                "signal_threshold": 0.5  # High threshold
-            },
-            "tca_prefs": {},
-            "risk_budgets": {},
-            "instruments": {
-                "ETHUSDT": {
-                    "step_size": "0.001" # Example step_size
+                "tca_prefs": {},
+                "risk_budgets": {},
+                "instruments": {
+                    "ETHUSDT": {
+                        "step_size": "0.001" # Example step_size
+                    }
                 }
             }
         }

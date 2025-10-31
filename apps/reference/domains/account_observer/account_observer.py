@@ -121,16 +121,21 @@ class AccountObserver:
             # Note: get_my_trades requires symbol, so we need to check configured symbols
             for symbol in self.symbols:
                 try:
+                    self.logger.debug(f"Polling trades for {symbol}...")
                     trades = self.client.get_my_trades(symbol=symbol, limit=self.trade_limit)
+                    self.logger.info(f"Retrieved {len(trades)} trades for {symbol}")
+                    if trades:
+                        self.logger.info(f"Latest trade for {symbol}: ID={trades[-1].get('id', 'N/A')}, side={trades[-1].get('isBuyer', 'N/A')}, qty={trades[-1].get('qty', 'N/A')}")
                     self._process_trades(trades, 'binance')
                 except Exception as e:
-                    self.logger.debug(f"Error getting trades for {symbol}: {e}")
+                    self.logger.error(f"Error getting trades for {symbol}: {e}")
 
         except Exception as e:
             self.logger.error(f"Error in _poll_trades: {e}")
 
     def _process_trades(self, trades: list[dict[str, Any]], venue: str) -> None:
         """Process list of trades and emit events for new ones."""
+        self.logger.debug(f"Processing {len(trades)} trades from {venue}")
         for trade in trades:
             trade_id = trade['id']
 
@@ -139,6 +144,7 @@ class AccountObserver:
 
             # Mark as processed
             self.processed_trade_ids.add(trade_id)
+            self.logger.info(f"Found NEW trade: ID={trade_id}, symbol={trade.get('symbol', 'N/A')}, side={'BUY' if trade.get('isBuyer') else 'SELL'}, qty={trade.get('qty', 'N/A')}")
 
             # Convert Binance trade to our payload format
             payload = self._trade_to_payload(trade, venue)

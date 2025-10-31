@@ -113,6 +113,15 @@ class AccountConnector:
                             LOG.info(f"      {key}: {val}")
                     else:
                         LOG.warning("   ⚠️  No USDT asset found in balance data")
+                    
+                    # Log all assets with positive balance
+                    positive_assets = [item for item in balance_data if decimal.Decimal(item.get('balance', '0')) > 0]
+                    LOG.info(f"   📊 Assets with positive balance ({len(positive_assets)}):")
+                    for asset in positive_assets:
+                        asset_name = asset.get('asset', 'UNKNOWN')
+                        balance = asset.get('balance', '0')
+                        LOG.info(f"      {asset_name}: {balance}")
+                    
                     self._emit_balance_update(balance_data)
                 else:
                     LOG.error(f"Error processing balance data: expected a list, got {type(balance_data)}")

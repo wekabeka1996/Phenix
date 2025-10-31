@@ -30,6 +30,7 @@ class TestFailClosedPricePattern:
         
         config = {
             'trading': {
+                'symbols_to_track': ['ETHUSDT'],
                 'instruments': {
                     'ETHUSDT': {
                         'symbol': 'ETHUSDT',

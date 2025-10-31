@@ -52,8 +52,34 @@ class ExecPosFSM:
         exec_pos_config = self.config.get('execution_position', {})
         self.max_active_orders = exec_pos_config.get('max_active_orders', 5) # Default to 5
 
+        # Register event listeners for execution updates
+        self.fsm.listen("EVT:TRADE_EXECUTED", self.on_trade_executed)
+        self.fsm.listen("EVT:ORDER_UPDATED", self.on_order_updated)
+        self.fsm.listen("EVT:ORDER_CANCELLED", self.on_order_cancelled)
+        self.fsm.listen("EVT:ORDER_REJECTED", self.on_order_rejected)
+
         if not self.shadow_mode:
             self._initialize_adapter()
+
+    def on_trade_executed(self, event: Message) -> None:
+        """Handle trade execution events from AccountObserver."""
+        LOG.info(f"ExecPosFSM received EVT:TRADE_EXECUTED: {event.pld}")
+        self.handle(event)
+
+    def on_order_updated(self, event: Message) -> None:
+        """Handle order update events."""
+        LOG.info(f"ExecPosFSM received EVT:ORDER_UPDATED: {event.pld}")
+        self.handle(event)
+
+    def on_order_cancelled(self, event: Message) -> None:
+        """Handle order cancellation events."""
+        LOG.info(f"ExecPosFSM received EVT:ORDER_CANCELLED: {event.pld}")
+        self.handle(event)
+
+    def on_order_rejected(self, event: Message) -> None:
+        """Handle order rejection events."""
+        LOG.info(f"ExecPosFSM received EVT:ORDER_REJECTED: {event.pld}")
+        self.handle(event)
 
     def _get_active_orders_count(self) -> int:
         return self.active_orders_count
