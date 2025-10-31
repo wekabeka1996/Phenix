@@ -52,11 +52,13 @@ class ExecPosFSM:
         exec_pos_config = self.config.get('execution_position', {})
         self.max_active_orders = exec_pos_config.get('max_active_orders', 5) # Default to 5
 
-        # Register event listeners for execution updates
-        self.fsm.listen("EVT:TRADE_EXECUTED", self.on_trade_executed)
-        self.fsm.listen("EVT:ORDER_UPDATED", self.on_order_updated)
-        self.fsm.listen("EVT:ORDER_CANCELLED", self.on_order_cancelled)
-        self.fsm.listen("EVT:ORDER_REJECTED", self.on_order_rejected)
+        # Register event listeners for execution updates (only if FSM is provided and has listen method)
+        if self.fsm is not None and hasattr(self.fsm, 'listen'):
+            self.fsm.listen("EVT:TRADE_EXECUTED", self.on_trade_executed)
+            self.fsm.listen("EVT:OPEN_ORDERS_UPDATE", self.on_open_orders_update)
+            self.fsm.listen("EVT:ORDER_UPDATED", self.on_order_updated)
+            self.fsm.listen("EVT:ORDER_CANCELLED", self.on_order_cancelled)
+            self.fsm.listen("EVT:ORDER_REJECTED", self.on_order_rejected)
 
         if not self.shadow_mode:
             self._initialize_adapter()
@@ -65,6 +67,13 @@ class ExecPosFSM:
         """Handle trade execution events from AccountObserver."""
         LOG.info(f"ExecPosFSM received EVT:TRADE_EXECUTED: {event.pld}")
         self.handle(event)
+
+    def on_open_orders_update(self, event: Message) -> None:
+        """Handle open orders update to synchronize active orders count."""
+        LOG.info(f"ExecPosFSM received EVT:OPEN_ORDERS_UPDATE: {event.pld}")
+        count = event.pld.get("count", 0)
+        self.active_orders_count = count
+        LOG.info(f"Active orders count synchronized to: {self.active_orders_count}")
 
     def on_order_updated(self, event: Message) -> None:
         """Handle order update events."""
@@ -220,8 +229,12 @@ class ExecPosFSM:
             close_result = close_flow.handle(msg)
             result = manage_result if manage_result else close_result
             if msg.verb in ["FILL", "TRADE_EXECUTED", "ORDER_CANCELLED", "ORDER_REJECTED"]:
+                LOG.info(f"Decrementing active_orders_count for {msg.verb}, current count: {self.active_orders_count}")
                 if self.active_orders_count > 0:
                     self.active_orders_count -= 1
+                    LOG.info(f"Active orders count decremented to: {self.active_orders_count}")
+                else:
+                    LOG.warning(f"Active orders count is already 0, not decrementing for {msg.verb}")
         elif msg.verb == "TICK":  # NEW: Route TICK updates to manage_flow for SL/TP checking
             result = manage_flow.handle(msg)
         elif msg.verb == "CLOSE":
@@ -231,11 +244,37 @@ class ExecPosFSM:
         
         # If a decision was made, log it and execute if not in shadow mode
         if result and result.op == "DEC":
+            LOG.info(f"Processing DEC result: {result.verb} for {result.pld.get('symbol')}")
             wal.append(result.model_dump())
             if not self.shadow_mode and self.adapter:
+                LOG.info(f"Executing decision {result.verb} asynchronously")
                 # Asynchronously execute the trade decision
-                loop = asyncio.get_event_loop()
-                loop.create_task(self._execute_decision(result))
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._execute_decision(result))
+                except RuntimeError:
+                    # No event loop in current thread (e.g., from AccountObserver polling thread)
+                    # Execute synchronously instead
+                    LOG.warning(f"No event loop available for async execution of {result.verb}, executing synchronously")
+                    # For TRADE_EXECUTED events that trigger bracket placement, we need to handle this
+                    if result.verb in ["ADJUST", "OPEN"]:
+                        # This is likely bracket placement after a trade execution or initial order placement
+                        # We can execute this synchronously since it's just placing orders
+                        import asyncio
+                        try:
+                            # Try to get or create an event loop
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(self._execute_decision(result))
+                            loop.close()
+                        except Exception as e:
+                            LOG.error(f"Failed to execute {result.verb} synchronously: {e}")
+                    else:
+                        LOG.warning(f"Skipping async execution for {result.verb} due to no event loop")
+                        # Emit an error event
+                        self.fsm.emit("ERR:EXECUTION_FAILED", why="Synchronous execution failed", payload={"error": str(e), "decision": result.model_dump()})
+            else:
+                LOG.info(f"Skipping execution of {result.verb} (shadow_mode={self.shadow_mode}, adapter={bool(self.adapter)})")
         
         return result
 

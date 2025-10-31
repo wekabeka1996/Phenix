@@ -19,12 +19,12 @@ class TestConfigSecurityAndModes:
         live and testnet API sections.
         """
         with patch.dict(os.environ, {
-            'LIVE_BINANCE_API_KEY': 'live_key_from_env',
-            'LIVE_BINANCE_API_SECRET': 'live_secret_from_env',
-            'LIVE_BINANCE_REST_URL': 'https://fapi.binance.com',
-            'TESTNET_BINANCE_API_KEY': 'testnet_key_from_env',
-            'TESTNET_BINANCE_API_SECRET': 'testnet_secret_from_env',
-            'TESTNET_BINANCE_REST_URL': 'https://testnet.binancefuture.com',
+            'BINANCE_FUTURES_API_KEY_LIVE': 'live_key_from_env',
+            'BINANCE_FUTURES_API_SECRET_LIVE': 'live_secret_from_env',
+            'BINANCE_FUTURES_REST_URL_LIVE': 'https://fapi.binance.com',
+            'BINANCE_TESTNET_API_KEY': 'testnet_key_from_env',
+            'BINANCE_TESTNET_API_SECRET': 'testnet_secret_from_env',
+            'BINANCE_TESTNET_REST_URL': 'https://testnet.binancefuture.com',
             'TRADING_MODE': 'hybrid_live_data_testnet_exec'
         }, clear=True):
             loader = ConfigLoader()
@@ -39,9 +39,9 @@ class TestConfigSecurityAndModes:
         Verify that in 'live' mode, the config correctly loads the live section.
         """
         with patch.dict(os.environ, {
-            'LIVE_BINANCE_API_KEY': 'live_key_from_env',
-            'LIVE_BINANCE_API_SECRET': 'live_secret_from_env',
-            'LIVE_BINANCE_REST_URL': 'https://fapi.binance.com',
+            'BINANCE_FUTURES_API_KEY_LIVE': 'live_key_from_env',
+            'BINANCE_FUTURES_API_SECRET_LIVE': 'live_secret_from_env',
+            'BINANCE_FUTURES_REST_URL_LIVE': 'https://fapi.binance.com',
             'TRADING_MODE': 'live'
         }, clear=True):
             loader = ConfigLoader()
@@ -56,7 +56,22 @@ class TestConfigSecurityAndModes:
         """
         with patch.dict(os.environ, {
             'TRADING_MODE': 'live'
-        }, clear=True):
+        }, clear=True), \
+             patch('dotenv.load_dotenv') as mock_load_dotenv, \
+             patch('os.getenv') as mock_getenv:
+            mock_load_dotenv.return_value = None  # Prevent loading .env file
+            # Mock os.getenv to return None for API keys
+            def getenv_side_effect(key, default=None):
+                if key in ['BINANCE_FUTURES_API_KEY_LIVE', 'BINANCE_FUTURES_API_SECRET_LIVE', 
+                          'BINANCE_FUTURES_REST_URL_LIVE', 'BINANCE_TESTNET_API_KEY', 
+                          'BINANCE_TESTNET_API_SECRET', 'BINANCE_TESTNET_REST_URL']:
+                    return None
+                elif key == 'TRADING_MODE':
+                    return 'live'
+                else:
+                    return default
+            mock_getenv.side_effect = getenv_side_effect
+            
             loader = ConfigLoader()
             
             with pytest.raises(ValueError) as exc_info:

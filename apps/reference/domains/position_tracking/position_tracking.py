@@ -101,7 +101,7 @@ class PositionTracking:
         quantity = decimal.Decimal(str(payload["quantity"]))
         ts = payload["ts"]
         fees = decimal.Decimal(str(payload.get("fees", 0)))
-        commission = decimal.Decimal(str(payload.get("commission", 0)))  # NEW: Extract commission
+        commission = decimal.Decimal(str(payload.get("commission", payload.get("fees", 0))))  # Use fees if commission not present
         commission_asset = payload.get("commission_asset", "USDT")  # NEW: Extract commission asset
         venue = payload["venue"]
 
@@ -193,7 +193,7 @@ class PositionTracking:
             self.logger.warning(f"Reconciliation removed {len(ghost_positions)} ghost position(s): {', '.join(ghost_positions)}")
 
         self._positions = reconciled_positions
-        self._equity = decimal.Decimal(str(payload.get('totalWalletBalance', '0')))
+        self._equity = decimal.Decimal(str(payload.get('totalWalletBalance', payload.get('wallet_balance', '0'))))
         
         self.logger.info(f"Reconciled portfolio state: equity={self._equity}, open_positions={len(self._positions)}")
         self._emit_portfolio_update("full_sync_from_account_update")
@@ -288,8 +288,11 @@ class PositionTracking:
             # sign * qty_closed * (fill_px - avg_entry_px) - fees (keep fees for backward compatibility)
             realized_delta = pos_sign * closed_qty * (price - avg_px) - fees
 
-        # Update realized P&L (subtract commission separately)
-        self._realized_pnl += (realized_delta - commission)
+        # Update realized P&L (subtract commission separately if different from fees)
+        if commission != fees:
+            self._realized_pnl += (realized_delta - commission)
+        else:
+            self._realized_pnl += realized_delta
         
         # Accumulate total commissions
         self._total_commissions += commission
