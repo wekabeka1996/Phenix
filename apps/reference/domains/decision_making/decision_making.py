@@ -18,6 +18,9 @@ from .normalized_reject_reasons import NormalizedRejectReasons
 from vfoundation.apps.reference.domains.decision_making.dm_log_adapter import (
     DecisionLog,
 )
+from vfoundation.apps.reference.telemetry.metrics import inc_decision_deferred
+from vfoundation.core.why_codes import WhyCode, format_why_with_details
+from vfoundation.obs.order_logger import order_logger
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -34,7 +37,8 @@ class DecisionMaking:
     def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
         self.fsm = fsm
         self.config = config
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
 
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
             lambda: {"features": None, "risk": None}
@@ -89,11 +93,22 @@ class DecisionMaking:
         self.qos_max_intents_per_minute_per_symbol = qos_config.get(
             "max_intents_per_minute_per_symbol", 6
         )
+        # QoS mode: shadow=only metrics, defer=delay intents, enforce=block intents
+        self.qos_mode = qos_config.get("mode", "defer")
+        # Legacy enforce flag (use mode instead)
+        self.qos_enforce = qos_config.get("enforce", False)
+
+        # Features TTL configuration
+        features_config = decision_config.get("features", {})
+        self.features_ttl_sec = features_config.get(
+            "ttl_sec", 30)  # 30 seconds default
 
         self.logger.info(
-            f"QoS config: exposure_cooldown={self.qos_exposure_block_cooldown_sec}s, "
+            f"QoS config: mode={self.qos_mode}, enforce={self.qos_enforce}, "
+            f"exposure_cooldown={self.qos_exposure_block_cooldown_sec}s, "
             f"symbol_cooldown={self.qos_symbol_cooldown_sec}s, "
-            f"max_intents_per_min={self.qos_max_intents_per_minute_per_symbol}"
+            f"max_intents_per_min={self.qos_max_intents_per_minute_per_symbol}, "
+            f"features_ttl={self.features_ttl_sec}s"
         )
 
         # FSM event listeners
@@ -161,7 +176,8 @@ class DecisionMaking:
         """Update cooldown timestamp for symbol (prevents rapid-fire decisions)."""
         current_time = time.time()
         self._qos_state["symbol_cooldowns"][symbol] = current_time
-        self.logger.debug(f"[{symbol}] QoS cooldown updated: ts={current_time}")
+        self.logger.debug(
+            f"[{symbol}] QoS cooldown updated: ts={current_time}")
 
     def _update_intent_count(self, symbol: str) -> None:
         """Update intent count for rate limiting."""
@@ -171,11 +187,78 @@ class DecisionMaking:
             f"[{symbol}] QoS intent count updated: count={intent_data['count']}"
         )
 
+    def _check_qos_rules(self, symbol: str) -> dict:
+        """Check QoS rules for symbol and return result dict."""
+        current_time = time.time()
+
+        # Check exposure block cooldown
+        last_exposure_block = self._qos_state.get("last_exposure_block", 0)
+        if current_time - last_exposure_block < self.qos_exposure_block_cooldown_sec:
+            return {"allowed": False, "reason": NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED}
+
+        # Check symbol cooldown
+        last_decision = self._qos_state["symbol_cooldowns"].get(symbol, 0)
+        if current_time - last_decision < self.qos_symbol_cooldown_sec:
+            return {"allowed": False, "reason": NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE}
+
+        # Check rate limit
+        intent_data = self._qos_state["symbol_intent_counts"][symbol]
+        window_end = intent_data["window_start"] + 60
+        if current_time < window_end and intent_data["count"] >= self.qos_max_intents_per_minute_per_symbol:
+            return {"allowed": False, "reason": NormalizedRejectReasons.RATE_LIMIT_EXCEEDED}
+
+        return {"allowed": True, "reason": None}
+
+    def _calculate_next_allowed_time(self, symbol: str) -> int:
+        """Calculate next allowed timestamp for symbol based on QoS rules."""
+        current_time = time.time()
+        next_allowed = current_time
+
+        # Check symbol cooldown
+        last_decision = self._qos_state["symbol_cooldowns"].get(symbol, 0)
+        cooldown_end = last_decision + self.qos_symbol_cooldown_sec
+        next_allowed = max(next_allowed, cooldown_end)
+
+        # Check rate limit window
+        intent_data = self._qos_state["symbol_intent_counts"][symbol]
+        window_end = intent_data["window_start"] + 60  # 1 minute window
+        if intent_data["count"] >= self.qos_max_intents_per_minute_per_symbol:
+            next_allowed = max(next_allowed, window_end)
+
+        return int(next_allowed * 1000)  # Convert to milliseconds
+
+    def _update_qos_state(self, symbol: str) -> None:
+        """Update QoS state after making a decision."""
+        current_time = time.time()
+
+        # Update symbol cooldown
+        self._qos_state["symbol_cooldowns"][symbol] = current_time
+
+        # Update rate limit counters
+        intent_data = self._qos_state["symbol_intent_counts"][symbol]
+        window_start = intent_data["window_start"]
+        window_end = window_start + 60
+
+        if current_time >= window_end:
+            # Reset window
+            intent_data["window_start"] = current_time
+            intent_data["count"] = 1
+        else:
+            intent_data["count"] += 1
+
+        self.logger.debug(
+            f"[{symbol}] QoS state updated: cooldown={current_time}, intents={intent_data['count']}")
+
+    def _update_symbol_cooldown(self, symbol: str) -> None:
+        """Legacy method to update symbol cooldown for tests."""
+        self._qos_state["symbol_cooldowns"][symbol] = time.time()
+
     def _handle_exposure_block(self, symbol: str) -> None:
         """Handle exposure block event by updating QoS state."""
         current_time = time.time()
         self._qos_state["last_exposure_block"] = current_time
-        self.logger.warning(f"[{symbol}] Exposure block recorded at {current_time}")
+        self.logger.warning(
+            f"[{symbol}] Exposure block recorded at {current_time}")
 
     def on_features(self, event: Message) -> None:
         symbol = event.pld.get("symbol", "unknown")
@@ -192,8 +275,16 @@ class DecisionMaking:
 
     def on_risk(self, event: Message) -> None:
         symbol = event.pld.get("symbol", "unknown")
-        self.logger.info(f"✅ on_risk() called for {symbol}. Risk params: {event.pld}")
+        self.logger.info(
+            f"✅ on_risk() called for {symbol}. Risk params: {event.pld}")
         self.symbol_states[symbol]["risk"] = event.pld
+
+        # Cache risk data and timestamp for race condition handling
+        if symbol not in self.symbol_states:
+            self.symbol_states[symbol] = {}
+        self.symbol_states[symbol]["_cached_risk"] = event.pld
+        self.symbol_states[symbol]["_last_risk_time"] = time.time()
+
         self._check_and_trigger_decision_for_symbol(symbol)
 
         rp = (event.pld or {}).get("risk_parameters") or {}
@@ -208,7 +299,8 @@ class DecisionMaking:
         )
 
     def on_portfolio(self, event: Message) -> None:
-        self.logger.info(f"✅ on_portfolio() called - portfolio state received!")
+        self.logger.info(
+            f"✅ on_portfolio() called - portfolio state received!")
         portfolio_data = event.pld
 
         # Cache equity_free_usdt if present, but don't overwrite with zero/null
@@ -242,6 +334,18 @@ class DecisionMaking:
     def on_regime(self, event: Message) -> None:
         self.latest_regime = event.pld
 
+    def _features_ready(self, symbol: str, features_data: dict) -> bool:
+        """Check if features are fresh within TTL."""
+        if not features_data or "ts" not in features_data:
+            return False
+
+        now_ts = time.time() * 1000  # milliseconds
+        features_ts = features_data["ts"]
+        lag_ms = now_ts - features_ts
+        ttl_ms = self.features_ttl_sec * 1000
+
+        return lag_ms <= ttl_ms
+
     def _check_and_trigger_decision_for_symbol(self, symbol: str) -> None:
         if not self.latest_portfolio:
             self.logger.debug(
@@ -250,22 +354,84 @@ class DecisionMaking:
             return
 
         state = self.symbol_states[symbol]
-        if not state.get("features") or not state.get("risk"):
-            self.logger.warning(
-                f"[{symbol}] ⚠️ Decision deferred: features={bool(state.get('features'))}, risk={bool(state.get('risk'))}"
-            )
+        has_features = bool(state.get("features"))
+        has_risk = bool(state.get("risk"))
+
+        # Check features readiness with TTL
+        features_ready = False
+        if has_features:
+            features_ready = self._features_ready(symbol, state["features"])
+            if not features_ready:
+                # XAI instrumentation: features not ready
+                now_ts = time.time() * 1000
+                features_ts = state["features"].get("ts", 0)
+                lag_ms = now_ts - features_ts
+                ttl_ms = self.features_ttl_sec * 1000
+
+                self.logger.warning(
+                    format_why_with_details(
+                        WhyCode.GUARD_RATE_LIMIT_EXCEEDED,  # closest match for stale data
+                        f"features_stale symbol={symbol} rid=? now_ts={now_ts} last_features_ts={features_ts} lag_ms={lag_ms} ttl_ms={ttl_ms}"
+                    )
+                )
+                inc_decision_deferred(symbol, "features_stale")
+
+        # If we have both features and risk, make decision immediately
+        if has_features and has_risk and features_ready:
+            self.logger.info(
+                f"[{symbol}] ✅ All data ready! Triggering decision...")
+            decision_context = {
+                "features": state["features"],
+                "risk_params": state["risk"],
+                "portfolio": self.latest_portfolio,
+                "regime": self.latest_regime,
+            }
+            rid = str(uuid.uuid4())
+            self.dlog.write("DECISION_TRIGGER", rid, {"symbol": symbol})
+            self._make_decision_for_symbol(symbol, decision_context, rid)
             return
 
-        self.logger.info(f"[{symbol}] ✅ All data ready! Triggering decision...")
-        decision_context = {
-            "features": state["features"],
-            "risk_params": state["risk"],
-            "portfolio": self.latest_portfolio,
-            "regime": self.latest_regime,
-        }
-        rid = str(uuid.uuid4())
-        self.dlog.write("DECISION_TRIGGER", rid, {"symbol": symbol})
-        self._make_decision_for_symbol(symbol, decision_context, rid)
+        # If we only have features but risk was already assessed earlier, check if we can use cached risk
+        if has_features and not has_risk:
+            # Check if risk assessment happened recently (within last 30 seconds)
+            # This handles the race condition where features arrive after risk assessment
+            risk_assessment_time = getattr(state, '_last_risk_time', 0)
+            current_time = time.time()
+            if current_time - risk_assessment_time < 30:  # 30 second window
+                cached_risk = getattr(state, '_cached_risk', None)
+                if cached_risk:
+                    self.logger.info(
+                        f"[{symbol}] ✅ Using cached risk assessment from {current_time - risk_assessment_time:.1f}s ago")
+                    state["risk"] = cached_risk
+                    decision_context = {
+                        "features": state["features"],
+                        "risk_params": state["risk"],
+                        "portfolio": self.latest_portfolio,
+                        "regime": self.latest_regime,
+                    }
+                    rid = str(uuid.uuid4())
+                    self.dlog.write("DECISION_TRIGGER", rid, {
+                                    "symbol": symbol, "cached_risk": True})
+                    self._make_decision_for_symbol(
+                        symbol, decision_context, rid)
+                    return
+
+        # Defer decision if we don't have required data
+        self.logger.warning(
+            f"[{symbol}] ⚠️ Decision deferred: features={has_features}, risk={has_risk}, features_ready={features_ready}"
+        )
+        # Track decision deferrals for observability
+        if not has_features and not has_risk:
+            reason = "both_missing"
+        elif not has_features:
+            reason = "features_missing"
+        elif not has_risk:
+            reason = "risk_missing"
+        elif not features_ready:
+            reason = "features_stale"
+        else:
+            reason = "unknown"
+        inc_decision_deferred(symbol, reason)
 
     def _make_decision_for_symbol(self, symbol: str, context: dict, rid: str) -> None:
         self.logger.info(
@@ -281,17 +447,99 @@ class DecisionMaking:
             symbol, is_exposure_block=False
         )
         if not qos_allowed:
-            normalized_reason = NormalizedRejectReasons.normalize(
-                qos_reject_reason or "QoS rejection"
-            )
-            self.logger.warning(
-                f"[{symbol}] Trade intent rejected by QoS: {normalized_reason}"
-            )
-            self.dlog.write(
-                "DECISION_SKIP", rid, {"symbol": symbol, "reason": "QOS_RATE_LIMITED"}
-            )
-            self.clear_internal_state_for_symbol(symbol)
-            return
+            # Determine QoS enforcement mode
+            effective_mode = self.qos_mode
+            if self.qos_enforce and effective_mode == "defer":
+                # Legacy enforce flag overrides defer mode
+                effective_mode = "enforce"
+
+            if effective_mode == "shadow":
+                # Shadow mode: only log/metrics, continue with intent
+                self.logger.warning(
+                    f"[{symbol}] QoS shadow: passing intent downstream (reason: {qos_reject_reason})")
+                inc_decision_deferred(symbol, "qos_shadow")
+            elif effective_mode == "defer":
+                # Defer mode: emit INTENT_DEFERRED event for Bridge to handle
+                next_allowed_ts = self._calculate_next_allowed_time(symbol)
+                self.logger.warning(
+                    f"[{symbol}] QoS defer: delaying intent until {next_allowed_ts} (reason: {qos_reject_reason})")
+
+                # XAI instrumentation: qos_defer
+                cooldown_left_ms = (next_allowed_ts - time.time() *
+                                    1000) if next_allowed_ts > time.time() * 1000 else 0
+                rate_state = f"count={self._qos_state['symbol_intent_counts'][symbol]['count']}"
+                self.logger.warning(
+                    format_why_with_details(
+                        WhyCode.GUARD_RATE_LIMIT_EXCEEDED,
+                        f"cooldown_left_ms={cooldown_left_ms} rate_state={rate_state} code=NRR-012 why=qos_defer"
+                    )
+                )
+
+                inc_decision_deferred(symbol, "qos_defer")
+
+                # Update QoS state to record the deferral
+                self._update_qos_state(symbol)
+
+                # Emit defer event for Bridge
+                defer_payload = {
+                    "reason": "QOS_COOLDOWN",
+                    "symbol": symbol,
+                    "next_allowed_ts": next_allowed_ts,
+                    "original_context": context,
+                    "rid": rid
+                }
+                self.fsm.emit("EVT:INTENT_DEFERRED",
+                              payload=defer_payload, why="qos_defer")
+
+                # Log to OrderLoggerV1
+                # 'NRR-012' — как ожидают тесты
+                nrr_code = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
+                nrr_detail = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE  # 'NRR-017' — детализация
+
+                order_logger.write({
+                    "rid": rid,
+                    "timestamp": int(time.time() * 1000),
+                    "event_type": "ORDER_REJECTED",
+                    "symbol": symbol,
+                    "source_fsm": "decision_making",
+                    "nrr_code": nrr_code,
+                    "why": "qos_defer",
+                    "metadata": {"detail": nrr_detail}
+                })
+
+                self.clear_internal_state_for_symbol(symbol)
+                return
+            else:  # enforce mode
+                # Enforce mode: block intent (legacy behavior)
+                normalized_reason = NormalizedRejectReasons.normalize(
+                    qos_reject_reason or "QoS rejection"
+                )
+                self.logger.warning(
+                    f"[{symbol}] Trade intent rejected by QoS: {normalized_reason}"
+                )
+                self.dlog.write(
+                    "DECISION_SKIP", rid, {
+                        "symbol": symbol, "reason": "QOS_RATE_LIMITED"}
+                )
+
+                # БЕК-СУМІСНІСТЬ: зовнішній код — NRR-012, деталь — NRR-017
+                nrr_code = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED   # 'NRR-012'
+                nrr_detail = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE  # 'NRR-017'
+
+                # Log to OrderLoggerV1
+                order_logger.write({
+                    "rid": rid,
+                    "event_type": "ORDER_REJECTED",
+                    "symbol": symbol,
+                    "side": "NONE",
+                    "nrr_code": nrr_code,
+                    "why": qos_reject_reason[:80] if qos_reject_reason else "QoS rejection",
+                    "source_fsm": "DecisionMaking",
+                    "metadata": {"reject_reason": "QOS_RATE_LIMITED", "detail": nrr_detail}
+                })
+
+                self.clear_internal_state_for_symbol(symbol)
+                return
 
         # Use cached equity_free_usdt instead of portfolio equity to prevent zero-overwrite
         equity_str = (
@@ -307,13 +555,28 @@ class DecisionMaking:
 
         if equity <= 0:
             reject_reason = f"equity is zero or negative ({equity})"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             self.logger.warning(
                 f"Trade intent for {symbol} rejected: {reject_reason} (NRR: {normalized_reason})"
             )
             self.dlog.write(
-                "DECISION_SKIP", rid, {"symbol": symbol, "reason": "ZERO_EQUITY"}
+                "DECISION_SKIP", rid, {
+                    "symbol": symbol, "reason": "ZERO_EQUITY"}
             )
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": "NONE",
+                "nrr_code": "NRR-011",  # Exposure related
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "ZERO_EQUITY", "equity": str(equity)}
+            })
+
             self.clear_internal_state_for_symbol(symbol)
             return
 
@@ -321,22 +584,39 @@ class DecisionMaking:
 
         if not risk_params.get("is_trading_allowed", False):
             reject_reason = "Trading not allowed by risk manager"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
 
             # Check if this is an exposure block (PACK EXP-4)
+            nrr_code = "NRR-011"  # Default to exposure
             if (
                 "exposure_limit_exceeded" in str(risk_params).lower()
                 or "exposure" in str(risk_params).lower()
             ):
                 self._handle_exposure_block(symbol)
                 normalized_reason = NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED
+                nrr_code = "NRR-011"
 
             self.logger.info(
                 f"Trade intent for {symbol} rejected: {reject_reason} (NRR: {normalized_reason})"
             )
             self.dlog.write(
-                "DECISION_SKIP", rid, {"symbol": symbol, "reason": "RISK_DISALLOWED"}
+                "DECISION_SKIP", rid, {
+                    "symbol": symbol, "reason": "RISK_DISALLOWED"}
             )
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": "NONE",
+                "nrr_code": nrr_code,
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "RISK_DISALLOWED", "risk_params": risk_params}
+            })
+
             self.clear_internal_state_for_symbol(symbol)
             return
 
@@ -347,12 +627,14 @@ class DecisionMaking:
         signal_weights = decision_config.get("signal_weights", {})
 
         # DEBUG: Log full trading_config structure
-        self.logger.info(f"DEBUG trading_config keys: {list(trading_config.keys())}")
+        self.logger.info(
+            f"DEBUG trading_config keys: {list(trading_config.keys())}")
         self.logger.info(f"DEBUG decision_config: {decision_config}")
         self.logger.info(f"DEBUG signal_weights: {signal_weights}")
 
         signal_score = sum(
-            decimal.Decimal(str(features_data.get(f, 0.0))) * decimal.Decimal(str(w))
+            decimal.Decimal(str(features_data.get(f, 0.0))) *
+            decimal.Decimal(str(w))
             for f, w in signal_weights.items()
         )
 
@@ -366,13 +648,28 @@ class DecisionMaking:
             side = "sell"
         else:
             reject_reason = f"Neutral signal score {signal_score:.4f}"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             self.logger.info(
                 f"Trade intent for {symbol} rejected: {reject_reason} (NRR: {normalized_reason})"
             )
             self.dlog.write(
-                "DECISION_SKIP", rid, {"symbol": symbol, "reason": "NEUTRAL_SIGNAL"}
+                "DECISION_SKIP", rid, {
+                    "symbol": symbol, "reason": "NEUTRAL_SIGNAL"}
             )
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": "NONE",
+                "nrr_code": None,
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "NEUTRAL_SIGNAL", "signal_score": float(signal_score)}
+            })
+
             self.clear_internal_state_for_symbol(symbol)
             return
 
@@ -394,23 +691,52 @@ class DecisionMaking:
                 reject_reason = (
                     f"rejected by regime filter (current regime: {current_regime})"
                 )
-                normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+                normalized_reason = NormalizedRejectReasons.normalize(
+                    reject_reason)
                 self.logger.info(
                     f"Trade intent for {symbol} ({side}) rejected: {reject_reason} (NRR: {normalized_reason})"
                 )
                 self.dlog.write(
-                    "DECISION_SKIP", rid, {"symbol": symbol, "reason": "REGIME_FILTER"}
+                    "DECISION_SKIP", rid, {
+                        "symbol": symbol, "reason": "REGIME_FILTER"}
                 )
+
+                # Log to OrderLoggerV1
+                order_logger.write({
+                    "rid": rid,
+                    "event_type": "ORDER_REJECTED",
+                    "symbol": symbol,
+                    "side": side.upper(),
+                    "nrr_code": None,
+                    "why": reject_reason[:80],
+                    "source_fsm": "DecisionMaking",
+                    "metadata": {"reject_reason": "REGIME_FILTER", "regime": current_regime}
+                })
+
                 self.clear_internal_state_for_symbol(symbol)
                 return
 
         price_ref_str = features_data.get("price")
         if not price_ref_str:
             reject_reason = "No valid price reference"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             self.logger.error(
                 f"CRITICAL: {reject_reason} for {symbol}. Cannot make trading decision. (NRR: {normalized_reason})"
             )
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": "NONE",
+                "nrr_code": None,
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "NO_PRICE_REFERENCE"}
+            })
+
             self.clear_internal_state_for_symbol(symbol)
             return
         price_ref = decimal.Decimal(str(price_ref_str))
@@ -422,16 +748,30 @@ class DecisionMaking:
 
         if not qty or qty <= 0:
             reject_reason = f"quantity is zero or negative. Why: {why_sizing}"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             self.logger.warning(
                 f"Trade intent for {symbol} rejected: {reject_reason} (NRR: {normalized_reason})"
             )
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": side.upper(),
+                "quantity": float(qty) if qty else 0,
+                "nrr_code": None,
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "ZERO_QUANTITY", "why_sizing": why_sizing}
+            })
+
             self.clear_internal_state_for_symbol(symbol)
             return
 
         # Update QoS state for successful decision
-        self._update_symbol_cooldown(symbol)
-        self._update_intent_count(symbol)
+        self._update_qos_state(symbol)
 
         self.dlog.write(
             "INTENT_PROPOSED",
@@ -460,24 +800,28 @@ class DecisionMaking:
 
         if final_pos_size_usd < self.min_pos_size_usd:
             reject_reason = f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         why_chain.append(f"pos_size_usd={final_pos_size_usd}")
 
         # Support both old (config['trading']['instruments']) and new (config['instruments']) formats
         trading_config = self.config.get("trading", self.config)
-        instrument_specs = trading_config.get("instruments", {}).get(symbol, {})
+        instrument_specs = trading_config.get(
+            "instruments", {}).get(symbol, {})
         step_size_str = instrument_specs.get("step_size")
         if not step_size_str:
             reject_reason = "Missing step_size in config"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         step_size = decimal.Decimal(step_size_str)
         if price <= 0:
             reject_reason = "Invalid price for sizing"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         qty = final_pos_size_usd / price
@@ -485,7 +829,8 @@ class DecisionMaking:
 
         if rounded_qty <= 0:
             reject_reason = f"qty rounded to zero from raw {qty}"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            normalized_reason = NormalizedRejectReasons.normalize(
+                reject_reason)
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         return rounded_qty, ", ".join(why_chain)
@@ -529,6 +874,19 @@ class DecisionMaking:
         self.fsm.emit(
             "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent"
         )
+
+        # Log to OrderLoggerV1
+        order_logger.write({
+            "rid": rid,
+            "event_type": "ORDER_INTENT",
+            "symbol": symbol,
+            "side": side.upper(),
+            "quantity": float(qty),
+            "price": float(price),
+            "source_fsm": "DecisionMaking",
+            "metadata": {"intent_proposed": True, "idempotent_key": trade_intent["idempotent_key"]}
+        })
+
         self.clear_internal_state_for_symbol(symbol)
 
     def clear_internal_state_for_symbol(self, symbol: str) -> None:

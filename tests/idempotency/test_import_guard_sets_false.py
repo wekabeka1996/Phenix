@@ -56,7 +56,6 @@ def test_import_guard_sets_false(monkeypatch: pytest.MonkeyPatch) -> None:
             "..",
             "..",
             "vfoundation",
-            "vfoundation",
             "core",
             "idempotency",
             "backends",

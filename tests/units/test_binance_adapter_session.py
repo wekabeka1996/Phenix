@@ -4,6 +4,7 @@ import httpx
 
 from vfoundation.adapters.binance_adapter import BinanceAdapter
 
+
 @pytest.mark.asyncio
 async def test_adapter_exposes_session_and_uses_request(monkeypatch):
     calls = {}
@@ -13,7 +14,7 @@ async def test_adapter_exposes_session_and_uses_request(monkeypatch):
             self.status_code = status_code
             self._json_data = json_data or {"ok": True}
 
-        def json(self):
+        async def json(self):
             return self._json_data
 
         def raise_for_status(self):
@@ -29,7 +30,7 @@ async def test_adapter_exposes_session_and_uses_request(monkeypatch):
             if "/fapi/v1/time" in url:
                 return DummyResponse(json_data={"serverTime": 1234567890000})
             elif "/fapi/v2/balance" in url:
-                return DummyResponse(json_data={"ok": True})
+                return DummyResponse(json_data=[{"asset": "USDT", "balance": "1000.0"}])
             else:
                 return DummyResponse(json_data={"ok": True})
 
@@ -38,7 +39,7 @@ async def test_adapter_exposes_session_and_uses_request(monkeypatch):
 
     assert hasattr(ad, "session"), "Adapter must expose .session"
     resp = await ad.get_account_balance()
-    assert resp == {"ok": True}
+    assert resp == [{"asset": "USDT", "balance": "1000.0"}]
     assert calls["method"] == "GET"
     assert "/fapi/v2/balance" in calls["url"]
 

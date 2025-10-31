@@ -2,7 +2,7 @@
 
 ## Overview
 
-Drift Monitor обчислює **drift%** та **confusion matrix** між тіньовими рішеннями FSM (DEC:OPEN/CLOSE) та фактичними подіями від біржі (EVT:ORDER_PLACED/FILL/CANCELLED).
+Drift Monitor обчи� лює **drift%** та **confusion matrix** між тіньовими рішеннями FSM (DEC:OPEN/CLOSE) та фактичними подіями від біржі (EVT:ORDER_PLACED/FILL/CANCELLED).
 
 **Призначення**: валідація shadow-mode FSM перед переведенням у hot-path production.
 
@@ -12,7 +12,7 @@ Drift Monitor обчислює **drift%** та **confusion matrix** між ті�
 
 - **TP (True Positive)**: DEC:OPEN/CLOSE має відповідний EVT у time-window
 - **FP (False Positive)**: DEC:OPEN/CLOSE без відповідного EVT
-- **FN (False Negative)**: EVT без відповідного DEC (самовільна подія)
+- **FN (False Negative)**: EVT без відповідного DEC (� амовільна подія)
 - **TN (True Negative)**: періоди без DEC і без EVT (stub: TN=0)
 
 ### Drift Formula
@@ -28,20 +28,20 @@ drift_pct = (FP + FN) / (TP + FP + FN + TN) * 100
 
 ### Matching Rules
 
-**Індексація**: по `RID` (primary key), `symbol` ігнорується якщо відсутній у DEC.
+**Індек� ація**: по `RID` (primary key), `symbol` ігноруєть� я якщо від� утній у DEC.
 
-**Time window**: ±1s (default), налаштовується через `time_window_sec`.
+**Time window**: ±1s (default), налаштовуєть� я через `time_window_sec`.
 
 **Правила звірки**:
 1. `DEC:OPEN` → `EVT:ORDER_PLACED` або `EVT:FILL`
 2. `DEC:CLOSE` → `EVT:CANCELLED` або `EVT:FILL` (reduce)
-3. `DEC:ADJUST` → трактується як `CLOSE` для confusion
+3. `DEC:ADJUST` → трактуєть� я як `CLOSE` для confusion
 
 ## API
 
 ### `compute_drift(decisions, events, time_window_sec=1.0) -> DriftReport`
 
-Обчислює drift між списками decisions та events.
+Обчи� лює drift між � пи� ками decisions та events.
 
 **Args**:
 - `decisions`: List[Dict] — DEC messages (op="DEC", verb="OPEN"|"CLOSE")
@@ -52,7 +52,7 @@ drift_pct = (FP + FN) / (TP + FP + FN + TN) * 100
 - `confusion`: ConfusionMatrix (tp/fp/fn/tn, drift_pct, accuracy)
 - `mismatches`: List[Mismatch] (обмежено до 5 для /debug)
 - `computed_at`: timestamp
-- `records_processed`: кількість оброблених записів
+- `records_processed`: кількі� ть оброблених запи� ів
 
 ### `aggregate_drift_metrics(reports) -> Dict`
 
@@ -85,7 +85,7 @@ metrics.update(drift_metrics)
 
 ### /debug/{rid} Endpoint
 
-Додати `drift_report` секцію (під RBAC):
+Додати `drift_report` � екцію (під RBAC):
 ```python
 from apps.reference.domains.execution_position.drift_monitor import compute_drift
 
@@ -97,15 +97,15 @@ if rid in drift_cache:
 
 ## Performance
 
-**Off-path computation**: обчислення не виконуються у hot-path роутера.
+**Off-path computation**: обчи� лення не виконують� я у hot-path роутера.
 
 **Benchmark**:
 - 1k records: ~25ms (локально)
-- Memory: O(n) для індексації events по RID
+- Memory: O(n) для індек� ації events по RID
 
 ## Testing
 
-**Unit tests** (`test_drift_unit.py`): 9 тестів, 100% PASS
+**Unit tests** (`test_drift_unit.py`): 9 те� тів, 100% PASS
 - Perfect match (drift=0)
 - Only decisions (all FP)
 - Only events (all FN)
@@ -113,7 +113,7 @@ if rid in drift_cache:
 - Time window validation
 - Edge cases (empty matrix, serialization)
 
-**E2E tests** (`test_drift_roundtrip.py`): 5 тестів, 100% PASS
+**E2E tests** (`test_drift_roundtrip.py`): 5 те� тів, 100% PASS
 - Open flow roundtrip (DEC→EVT match)
 - Manage flow (trail trigger, no match)
 - Close flow (max_hold_sec trigger, match)
@@ -126,7 +126,7 @@ if rid in drift_cache:
 
 - ✅ Only OPEN/CLOSE в confusion matrix
 - ✅ No real-time streaming або алерти
-- ✅ No нових ендпоінтів (лише розширення існуючих)
+- ✅ No нових ендпоінтів (лише розширення і� нуючих)
 - ✅ No підключення реальних SDK (ACL-stub + WAL/fixtures)
 - ⚠️ TN=0 (requires baseline tracking)
 

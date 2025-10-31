@@ -29,12 +29,10 @@ else:
 
     @app.get("/metrics")
     def metrics():
-        from vfoundation.apps.reference.telemetry.metrics import (
-            generate_latest,
-            CONTENT_TYPE_LATEST,
-        )
-
-        data = generate_latest()
+        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        from apps.reference.api.metrics import update_hybrid_coherence_metrics
+        update_hybrid_coherence_metrics()
+        data = generate_latest()  # default REGISTRY
         from fastapi import Response
 
         return Response(content=data, media_type=CONTENT_TYPE_LATEST)
@@ -63,6 +61,7 @@ else:
     def statdump():
         # читаємо те саме, що віддає /metrics, з внутрішнього реєстру
         from vfoundation.apps.reference.telemetry.metrics import generate_latest
+        from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
 
         txt = generate_latest().decode("utf-8", "replace")
 
@@ -74,6 +73,13 @@ else:
         ttl_exp = _mget(txt, "pending_exposure_expired_total")
         placed = _mget(txt, "orders_placed_total")
         filled = _mget(txt, "orders_filled_total")
+
+        # Hybrid coherence state
+        hybrid_state = get_hybrid_coherence_state()
+        hybrid_ok = hybrid_state['last_result']['ok']
+        hybrid_reasons = hybrid_state['last_result']['reasons']
+        risk_portfolio_source = hybrid_state['risk_portfolio_source']
+        execution_mode = hybrid_state['execution_mode']
 
         # Зчитуємо частину ops-конфіга (через простий env або ваш ConfigLoader)
         panic = os.environ.get("OPS_PANIC", "false").lower() == "true"
@@ -94,6 +100,12 @@ else:
             },
             "orders": {"placed_total": placed, "filled_total": filled},
             "ops": {"panic_killswitch": panic},
+            "hybrid": {
+                "ok": hybrid_ok,
+                "reasons": hybrid_reasons,
+                "risk_portfolio_source": risk_portfolio_source,
+                "execution_mode": execution_mode,
+            },
         }
         from fastapi.responses import JSONResponse
 

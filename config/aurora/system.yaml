@@ -87,14 +87,17 @@ account_observer:
   symbols: [ETHUSDT]  # symbols to monitor
   trade_limit: 50  # max trades to fetch per symbol
 
+position_tracking:
+  positions_stale_ttl_sec: 8  # TTL for portfolio freshness check in bridge
+
 trading:
-  # Централізована конфігурація для операційних параметрів системи
+  # Централізована конфігурація для операційних параметрів � и� теми
   symbols_to_track:
     - "BTCUSDT"
     - "ETHUSDT"
-  
+
   market_data:
-    # Стріми, які буде слухати MarketDataConnector
+    # Стріми, які буде � лухати MarketDataConnector
     websocket_streams:
       - "bookTicker"  # Для OBI (Order Book Imbalance)
       - "trade"       # Для TFI (Trade Flow Imbalance) та delta_price

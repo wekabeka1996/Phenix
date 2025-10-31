@@ -23,14 +23,21 @@ async def test_defer_without_features():
     cfg = {
         "risk": {"max_allowed": 1.0},  # риск ок
         "decision": {
-            "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
-            "qos": {"exposure_block_cooldown_sec": 10, "symbol_cooldown_sec": 3, "max_intents_per_minute_per_symbol": 6},
+            "position_sizing": {
+                "min_position_size_usd": 10,
+                "liquidity_based_cap_usd": 10000,
+            },
+            "qos": {
+                "exposure_block_cooldown_sec": 10,
+                "symbol_cooldown_sec": 3,
+                "max_intents_per_minute_per_symbol": 6,
+            },
             "signal_weights": {"obi": 0.5, "tfi": 0.5},
-            "signal_threshold": 0.2
+            "signal_threshold": 0.2,
         },
         "tca_prefs": {"max_slippage_bps": 10},
         "risk_budgets": {"trade_cvar95_max_bps": 100},
-        "instruments": {"ETHUSDT": {"step_size": "0.001"}}
+        "instruments": {"ETHUSDT": {"step_size": "0.001"}},
     }
 
     # Mock FSM for testing
@@ -45,7 +52,9 @@ async def test_defer_without_features():
             self.listeners[event].append(handler)
 
         async def emit(self, event_name, payload=None, why=None):
-            msg = Message(op="EVT", verb=event_name.split(":")[1], payload=payload, why=why)
+            msg = Message(
+                op="EVT", verb=event_name.split(":")[1], payload=payload, why=why
+            )
             await self.bus.emit(msg)
 
     fsm = MockFSM(bus)
@@ -54,9 +63,21 @@ async def test_defer_without_features():
     dm = decision_making.DecisionMaking(fsm, cfg)
 
     # Дадим риск без FEATURES_CALCULATED
-    risk = {"symbol": "ETHUSDT", "ts": 1761770001000, "risk_parameters": {"is_trading_allowed": True}}
-    msg = Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED", intent="OBSERVATION",
-                  src="test", dst="any", rid="r2", pld=risk, why="test_risk_only")
+    risk = {
+        "symbol": "ETHUSDT",
+        "ts": 1761770001000,
+        "risk_parameters": {"is_trading_allowed": True},
+    }
+    msg = Message(
+        op="EVT",
+        verb="RISK_ASSESSMENT_COMPLETED",
+        intent="OBSERVATION",
+        src="test",
+        dst="any",
+        rid="r2",
+        pld=risk,
+        why="test_risk_only",
+    )
 
     # Manually trigger the event handlers
     dm.on_risk(msg)

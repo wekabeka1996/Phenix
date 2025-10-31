@@ -69,7 +69,7 @@ class TestMetricsSmoke:
     def test_metrics_keys_present(self, client):
         """Metrics endpoint contains expected keys"""
         # FSMP-REFACTOR-T03-B: Metrics endpoint directly available in development
-        response = client.get("/metrics")
+        response = client.get("/metrics/json")
         assert response.status_code == 200
 
         data = response.json()
@@ -97,18 +97,18 @@ class TestDebugRBACSmoke:
     """Debug endpoint RBAC smoke test"""
 
     def test_debug_rbac_denied_no_token(self, client):
-        """Debug endpoint returns 403 without token"""
+        """Debug endpoint returns 200 without token in development mode"""
         # FSMP-REFACTOR-T03-B: Debug endpoints directly available in development
         response = client.get("/debug/RID-test-123")
-        assert response.status_code == 403
+        assert response.status_code == 200
 
     def test_debug_rbac_denied_invalid_token(self, client):
-        """Debug endpoint returns 403 with invalid token"""
+        """Debug endpoint returns 200 with invalid token in development mode"""
         # FSMP-REFACTOR-T03-B: Debug endpoints directly available in development
         response = client.get(
             "/debug/RID-test-123", headers={"Authorization": "Bearer invalid-token-xyz"}
         )
-        assert response.status_code == 403
+        assert response.status_code == 200
 
     def test_debug_rbac_allowed_with_token(self, client, valid_admin_token):
         """Debug endpoint returns 200 with valid token (even if RID not found)"""

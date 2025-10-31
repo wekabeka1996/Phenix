@@ -3,6 +3,7 @@ Tests for DecisionMaking component's logic branches.
 """
 
 import pytest
+import time
 from unittest.mock import MagicMock
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from vfoundation.core.protocol import Message
@@ -45,14 +46,14 @@ def test_strong_long_signal_emits_trade(mock_fsm, full_valid_config):
         verb="FEATURES_CALCULATED",
         src="test",
         dst="test",
-        pld={"symbol": "BTCUSDT", "features": features},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "features": features},
     )
     risk_msg = Message(
         op="EVT",
         verb="RISK_ASSESSMENT_COMPLETED",
         src="test",
         dst="test",
-        pld={"symbol": "BTCUSDT", "risk_parameters": {"is_trading_allowed": True}},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "risk_parameters": {"is_trading_allowed": True}},
     )
     portfolio_msg = Message(
         op="EVT",
@@ -83,14 +84,14 @@ def test_position_size_below_minimum_rejected(mock_fsm, full_valid_config, caplo
         verb="FEATURES_CALCULATED",
         src="test",
         dst="test",
-        pld={"symbol": "BTCUSDT", "features": features},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "features": features},
     )
     risk_msg = Message(
         op="EVT",
         verb="RISK_ASSESSMENT_COMPLETED",
         src="test",
         dst="test",
-        pld={"symbol": "BTCUSDT", "risk_parameters": {"is_trading_allowed": True}},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "risk_parameters": {"is_trading_allowed": True}},
     )
     portfolio_msg = Message(
         op="EVT",

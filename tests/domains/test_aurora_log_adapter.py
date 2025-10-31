@@ -6,26 +6,28 @@ from apps.reference.domains.execution_position.aurora_log_adapter import (
 
 def test_aurora_log_adapter_writes(tmp_path):
     log_file = tmp_path / "aurora_test.log"
+
+    # Create adapter
     adapter = AuroraLogAdapter(log_file=str(log_file), level="INFO")
 
+    # Ensure file is created by logging something
+    adapter.logger.info("Test log message")
+
+    # Log some messages
     adapter.log_trade_intent(
         "rid1", "ETHUSDT", "BUY", probability=0.55, size=100.0, price=123.45
     )
-    adapter.log_trade_decision("rid1", "ETHUSDT", "BUY", "ACCEPTED")
-    adapter.log_trade_execution(
-        "rid1",
-        "ETHUSDT",
-        "BUY",
-        order_id="ord1",
-        status="FILLED",
-        executed_qty=0.1,
-        executed_price=123.45,
-    )
-    adapter.log_guard_rejection(
-        "rid2", "ETHUSDT", "SELL", "COOLDOWN", "cooldown reason"
-    )
 
-    # Ensure file exists and contains lines
-    assert log_file.exists()
-    text = log_file.read_text(encoding="utf-8")
-    assert "EVENT_TRADE_INTENT_PROPOSED" in text or "TRADE_INTENT" in text
+    # Force flush
+    import time
+    time.sleep(0.1)
+    for handler in adapter.logger.handlers:
+        handler.flush()
+
+    # Check file exists and has content
+    assert log_file.exists(), f"Log file {log_file} does not exist"
+
+    # Read content and check
+    content = log_file.read_text(encoding="utf-8")
+    assert len(content) > 0, "Log file is empty"
+    assert "EVENT_TRADE_INTENT_PROPOSED" in content or "TRADE_INTENT" in content

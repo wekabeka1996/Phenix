@@ -187,4 +187,4 @@ def test_debug_requires_rbac_token():
     rid = "test-rid-rbac"
 
     with pytest.raises(Exception):  # HTTPException 403
-        debug_rid(rid, authorization=None)
+        debug_rid(rid, authorization="Bearer invalid-token")

@@ -35,36 +35,44 @@ async def test_features_pipeline_trace():
             self.listeners[event_name].append(callback)
 
         def emit(self, event_name, payload=None, why=None):
-            emitted_events.append({
-                'event_name': event_name,
-                'payload': payload,
-                'why': why
-            })
+            emitted_events.append(
+                {"event_name": event_name, "payload": payload, "why": why}
+            )
             # Trigger listeners
             if event_name in self.listeners:
                 for callback in self.listeners[event_name]:
                     if asyncio.iscoroutinefunction(callback):
-                        asyncio.create_task(callback(Message(
-                            op="EVT",
-                            verb=event_name.split(":")[1] if ":" in event_name else event_name,
-                            intent="OBSERVATION",
-                            src="test",
-                            dst="test",
-                            rid="test_rid",
-                            pld=payload or {},
-                            why=why or "test"
-                        )))
+                        asyncio.create_task(
+                            callback(
+                                Message(
+                                    op="EVT",
+                                    verb=event_name.split(":")[1]
+                                    if ":" in event_name
+                                    else event_name,
+                                    intent="OBSERVATION",
+                                    src="test",
+                                    dst="test",
+                                    rid="test_rid",
+                                    pld=payload or {},
+                                    why=why or "test",
+                                )
+                            )
+                        )
                     else:
-                        callback(Message(
-                            op="EVT",
-                            verb=event_name.split(":")[1] if ":" in event_name else event_name,
-                            intent="OBSERVATION",
-                            src="test",
-                            dst="test",
-                            rid="test_rid",
-                            pld=payload or {},
-                            why=why or "test"
-                        ))
+                        callback(
+                            Message(
+                                op="EVT",
+                                verb=event_name.split(":")[1]
+                                if ":" in event_name
+                                else event_name,
+                                intent="OBSERVATION",
+                                src="test",
+                                dst="test",
+                                rid="test_rid",
+                                pld=payload or {},
+                                why=why or "test",
+                            )
+                        )
 
     # Create mock FSM
     fsm = MockFSM()
@@ -75,25 +83,33 @@ async def test_features_pipeline_trace():
             "decision": {
                 "signal_weights": {"obi": 0.6, "tfi": 0.35, "delta_price": 0.05},
                 "signal_threshold": 0.05,
-                "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
-                "qos": {"exposure_block_cooldown_sec": 10, "symbol_cooldown_sec": 3, "max_intents_per_minute_per_symbol": 6}
+                "position_sizing": {
+                    "min_position_size_usd": 10,
+                    "liquidity_based_cap_usd": 10000,
+                },
+                "qos": {
+                    "exposure_block_cooldown_sec": 10,
+                    "symbol_cooldown_sec": 3,
+                    "max_intents_per_minute_per_symbol": 6,
+                },
             },
-            "instruments": {
-                "ETHUSDT": {"step_size": "0.001", "min_notional": "10"}
-            }
+            "instruments": {"ETHUSDT": {"step_size": "0.001", "min_notional": "10"}},
         },
-        "system": {
-            "trading": {
-                "symbols_to_track": ["ETHUSDT"]
-            }
-        },
+        "system": {"trading": {"symbols_to_track": ["ETHUSDT"]}},
         "decision_making": {
             "trading": {
                 "decision": {
                     "signal_weights": {"obi": 0.6, "tfi": 0.35, "delta_price": 0.05},
                     "signal_threshold": 0.05,
-                    "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
-                    "qos": {"exposure_block_cooldown_sec": 10, "symbol_cooldown_sec": 3, "max_intents_per_minute_per_symbol": 6}
+                    "position_sizing": {
+                        "min_position_size_usd": 10,
+                        "liquidity_based_cap_usd": 10000,
+                    },
+                    "qos": {
+                        "exposure_block_cooldown_sec": 10,
+                        "symbol_cooldown_sec": 3,
+                        "max_intents_per_minute_per_symbol": 6,
+                    },
                 },
                 "instruments": {
                     "ETHUSDT": {"step_size": "0.001", "min_notional": "10"}
@@ -101,12 +117,12 @@ async def test_features_pipeline_trace():
                 "tca_prefs": {
                     "max_slippage_pct": 0.5,
                     "preferred_venue": "binance",
-                    "execution_priority": "speed"
+                    "execution_priority": "speed",
                 },
                 "risk_budgets": {
                     "max_portfolio_risk_pct": 5.0,
                     "max_single_position_risk_pct": 1.0,
-                    "max_daily_loss_pct": 2.0
+                    "max_daily_loss_pct": 2.0,
                 },
                 "risk": {
                     "max_daily_drawdown_limit": 0.05,
@@ -114,62 +130,55 @@ async def test_features_pipeline_trace():
                         "delta_price": 0.05,
                         "obi": 0.35,
                         "tfi": 0.35,
-                        "absorption_inverse": 0.25
+                        "absorption_inverse": 0.25,
                     },
-                    "trading_allowed_thresholds": {
-                        "max_risk_score": 0.9
-                    },
+                    "trading_allowed_thresholds": {"max_risk_score": 0.9},
                     "daily": {
                         "max_realized_loss_usd": 250.0,
                         "max_drawdown_pct": 8.0,
-                        "reset_time_utc": "00:00"
-                    }
+                        "reset_time_utc": "00:00",
+                    },
                 },
                 "ops": {
                     "panic_killswitch": False,
                     "quiet_hours_utc": ["22:00-06:00"],
-                    "allowlist_symbols": []
+                    "allowlist_symbols": [],
                 },
                 "execution": {
                     "exposure": {
                         "max_portfolio_fraction": 0.20,
                         "count_pending_orders": True,
                         "exclude_reduce_only": True,
-                        "pending_reservation_ttl_sec": 90
+                        "pending_reservation_ttl_sec": 90,
                     },
                     "open_order_type": "MARKET",
                     "order_params": {
-                        "LIMIT": {
-                            "timeInForce": "GTC"
-                        },
-                        "STOP_MARKET": {
-                            "workingType": "MARK_PRICE"
-                        },
-                        "TAKE_PROFIT_MARKET": {
-                            "workingType": "MARK_PRICE"
-                        },
-                        "TRAILING_STOP_MARKET": {
-                            "callbackRate": "0.5"
-                        }
-                    }
-                }
+                        "LIMIT": {"timeInForce": "GTC"},
+                        "STOP_MARKET": {"workingType": "MARK_PRICE"},
+                        "TAKE_PROFIT_MARKET": {"workingType": "MARK_PRICE"},
+                        "TRAILING_STOP_MARKET": {"callbackRate": "0.5"},
+                    },
+                },
             }
-        }
+        },
     }
 
     # Initialize domain components
-    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+    from apps.reference.domains.feature_engineering.feature_engineering import (
+        FeatureEngineering,
+    )
     from apps.reference.domains.risk_management.risk_management import RiskManagement
     from apps.reference.domains.decision_making.decision_making import DecisionMaking
 
     # Mock logger to capture logs
     import logging
+
     logger = logging.getLogger("test_decision_making")
     logger.setLevel(logging.DEBUG)
     log_capture = []
     handler = logging.StreamHandler()
     handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(message)s')
+    formatter = logging.Formatter("%(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
@@ -182,7 +191,7 @@ async def test_features_pipeline_trace():
     portfolio_payload = {
         "equity": "10000.0",
         "equity_free_usdt": "9000.0",
-        "positions": []
+        "positions": [],
     }
     fsm.emit("EVT:PORTFOLIO_STATE_UPDATED", payload=portfolio_payload)
 
@@ -202,7 +211,7 @@ async def test_features_pipeline_trace():
         "sell_volume": "12",
         "data_type": "market_tick_aggregated",
         "data_source": "test",
-        "debug_info": "test data 1"
+        "debug_info": "test data 1",
     }
 
     fsm.emit("EVT:MARKET_TICK_RECEIVED", payload=market_tick_payload_1)
@@ -223,7 +232,7 @@ async def test_features_pipeline_trace():
         "sell_volume": "14",
         "data_type": "market_tick_aggregated",
         "data_source": "test",
-        "debug_info": "test data 2"
+        "debug_info": "test data 2",
     }
 
     fsm.emit("EVT:MARKET_TICK_RECEIVED", payload=market_tick_payload_2)
@@ -232,26 +241,34 @@ async def test_features_pipeline_trace():
     await asyncio.sleep(0.2)
 
     # Verify events were emitted
-    event_names = [e['event_name'] for e in emitted_events]
+    event_names = [e["event_name"] for e in emitted_events]
     print(f"Emitted events: {event_names}")
 
     # Check that FEATURES_CALCULATED was emitted
-    assert "EVT:FEATURES_CALCULATED" in event_names, f"Expected EVT:FEATURES_CALCULATED in {event_names}"
+    assert "EVT:FEATURES_CALCULATED" in event_names, (
+        f"Expected EVT:FEATURES_CALCULATED in {event_names}"
+    )
 
     # Check that RISK_ASSESSMENT_COMPLETED was emitted
-    assert "EVT:RISK_ASSESSMENT_COMPLETED" in event_names, f"Expected EVT:RISK_ASSESSMENT_COMPLETED in {event_names}"
+    assert "EVT:RISK_ASSESSMENT_COMPLETED" in event_names, (
+        f"Expected EVT:RISK_ASSESSMENT_COMPLETED in {event_names}"
+    )
 
     # Check features payload
-    features_event = next(e for e in emitted_events if e['event_name'] == "EVT:FEATURES_CALCULATED")
-    assert features_event['payload']['symbol'] == "ETHUSDT"
-    assert 'features' in features_event['payload']
-    assert 'obi' in features_event['payload']['features']
-    assert 'tfi' in features_event['payload']['features']
+    features_event = next(
+        e for e in emitted_events if e["event_name"] == "EVT:FEATURES_CALCULATED"
+    )
+    assert features_event["payload"]["symbol"] == "ETHUSDT"
+    assert "features" in features_event["payload"]
+    assert "obi" in features_event["payload"]["features"]
+    assert "tfi" in features_event["payload"]["features"]
 
     # Check risk payload
-    risk_event = next(e for e in emitted_events if e['event_name'] == "EVT:RISK_ASSESSMENT_COMPLETED")
-    assert risk_event['payload']['symbol'] == "ETHUSDT"
-    assert 'risk_parameters' in risk_event['payload']
-    assert 'is_trading_allowed' in risk_event['payload']['risk_parameters']
+    risk_event = next(
+        e for e in emitted_events if e["event_name"] == "EVT:RISK_ASSESSMENT_COMPLETED"
+    )
+    assert risk_event["payload"]["symbol"] == "ETHUSDT"
+    assert "risk_parameters" in risk_event["payload"]
+    assert "is_trading_allowed" in risk_event["payload"]["risk_parameters"]
 
     print("✅ Features pipeline test passed - all events emitted correctly")

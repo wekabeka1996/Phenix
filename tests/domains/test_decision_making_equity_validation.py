@@ -3,6 +3,7 @@ Tests for DecisionMaking component's equity validation.
 """
 
 import pytest
+import time
 from unittest.mock import MagicMock
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from vfoundation.core.protocol import Message
@@ -39,14 +40,14 @@ def test_rejects_trade_intent_if_equity_is_zero(mock_fsm, mock_config, caplog):
         verb="FEATURES_CALCULATED",
         src="test",
         dst="test",
-        pld={"symbol": "ETHUSDT", "features": {"price": "3000", "obi": 0.5}},
+        pld={"ts": int(time.time() * 1000), "symbol": "ETHUSDT", "features": {"price": "3000", "obi": 0.5}},
     )
     risk_msg = Message(
         op="EVT",
         verb="RISK_ASSESSMENT_COMPLETED",
         src="test",
         dst="test",
-        pld={"symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}},
+        pld={"ts": int(time.time() * 1000), "symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}},
     )
     portfolio_msg = Message(
         op="EVT",

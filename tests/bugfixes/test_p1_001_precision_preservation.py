@@ -75,9 +75,11 @@ class TestDecimalPrecisionPreservation:
         dm, mock_fsm_core = decision_making_domain
 
         # 1. Arrange: Create mock events with high-precision Decimals
+        import time
+        current_ts = int(time.time() * 1000)
         features_payload = {
             "symbol": "ETHUSDT",
-            "ts": 1672531200,
+            "ts": current_ts,
             "features": {
                 "obi": 0.8,
                 "tfi": 0.8,

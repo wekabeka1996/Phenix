@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 from decimal import Decimal
 import sys
 from pathlib import Path
+import time
 
 # Add apps to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -131,7 +132,7 @@ def test_adaptive_sizing_integration_across_regimes(
         src="feature_engineering",
         dst="decision_making",
         pld={
-            "ts": 123456,
+            "ts": int(time.time() * 1000),  # Fresh timestamp
             "symbol": "ETHUSDT",
             "features": {
                 "obi": 0.9,  # Strong positive order book imbalance

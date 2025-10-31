@@ -86,6 +86,7 @@ class FeatureEngineering:
         except Exception as e:
             print(f"DEBUG: Exception type: {type(e)}, value: {e}")
             import traceback
+
             traceback.print_exc()
             self.logger.error(f"Error calculating features for {symbol}: {e}")
 

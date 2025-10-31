@@ -13,13 +13,14 @@ import logging
 from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple
 
-from vfoundation.core.protocol import Message
+from vfoundation.core.fsm_emit_compat import Message, emit_compat
 from vfoundation.dr import wal
 from vfoundation.adapters.binance_adapter import BinanceAdapter, BinanceAPIError
 
 from .fsm_open import OpenFlowFSM
 from .fsm_manage import ManageFlowFSM
 from .fsm_close import CloseFlowFSM
+from .exposure_guard import ExposureGuard
 from .utils import (
     quantize_stop_price,
     validate_anti_2021,
@@ -30,8 +31,9 @@ from .utils import (
 )
 from .aurora_log_adapter import AuroraLogAdapter
 from .metrics_collector import MetricsCollector
-from .exposure_guard import ExposureGuard  # EXP-FIX: Exposure guard import
+from vfoundation.obs.order_logger import order_logger
 from .utils import quantize_stop_price, validate_anti_2021, generate_client_order_id
+from vfoundation.obs.correlation import CorrelationStore
 
 LOG = logging.getLogger(__name__)
 
@@ -56,8 +58,10 @@ class ExecPosFSM:
         self.metrics_collector = MetricsCollector()
 
         # EXP-FIX: Initialize exposure guard
-        self.exposure_guard = ExposureGuard(self.config)
+        self.exposure_guard = ExposureGuard(self.config, fsm=self.fsm)
         self._latest_portfolio_state = {}  # EXP-FIX: Store latest portfolio state
+
+        self.correlation_store = CorrelationStore()
 
         if not self.shadow_mode:
             self._initialize_adapter()
@@ -104,8 +108,10 @@ class ExecPosFSM:
             LOG.error(
                 f"API configuration for execution in '{mode}' mode is incomplete. Execution will be simulated."
             )
-            LOG.debug(f"  - API Key present: {bool(env_config.get('api_key'))}")
-            LOG.debug(f"  - API Secret present: {bool(env_config.get('api_secret'))}")
+            LOG.debug(
+                f"  - API Key present: {bool(env_config.get('api_key'))}")
+            LOG.debug(
+                f"  - API Secret present: {bool(env_config.get('api_secret'))}")
             LOG.debug(f"  - REST URL: {env_config.get('rest_url')}")
             self.shadow_mode = True  # Fallback to shadow mode if config is missing
             return
@@ -134,6 +140,7 @@ class ExecPosFSM:
                 cooldown_sec=cooldown_sec,
                 guard_enabled=guard_enabled,
                 config=self.config,
+                metrics_collector=self.metrics_collector,
             )
             self.manage_flows[symbol] = ManageFlowFSM(config=self.config)
             self.close_flows[symbol] = CloseFlowFSM()
@@ -167,32 +174,49 @@ class ExecPosFSM:
             # Clean up stale reservations on portfolio updates
             expired = self.exposure_guard.expire_stale()
             # EXP-FIX: Release post-fill holds since portfolio is now updated
-            released_postfill = list(self.exposure_guard.state.postfill_reservations.keys())
+            released_postfill = list(
+                self.exposure_guard.state.postfill_reservations.keys()
+            )
             for key in released_postfill:
                 self.exposure_guard.state.postfill_reservations.pop(key, None)
             if released_postfill:
-                LOG.debug(f"RELEASED_POSTFILL_HOLDS: {len(released_postfill)} keys")
-                if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                LOG.debug(
+                    f"RELEASED_POSTFILL_HOLDS: {len(released_postfill)} keys")
+                if hasattr(self, "metrics_collector") and self.metrics_collector:
                     for _ in released_postfill:
                         self.metrics_collector.record_postfill_released()
             if expired:
                 # EXP-FIX: Record expired post-fill holds
-                if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                if hasattr(self, "metrics_collector") and self.metrics_collector:
                     for _ in expired:
                         if _ in self.exposure_guard.state.postfill_reservations:
                             self.metrics_collector.record_postfill_expired()
 
                 # Emit event for expired reservations
-                self.fsm.emit(
-                    "EVT:PENDING_EXPOSURE_EXPIRED",
-                    payload={"expired_keys": expired, "why": "ttl_expired"},
-                    why="exposure_cleanup"
+                expired_msg = Message(
+                    op="EVT",
+                    verb="PENDING_EXPOSURE_EXPIRED",
+                    intent="OBSERVATION",
+                    src="execution_position",
+                    dst="monitoring",
+                    rid="exposure_cleanup",
+                    pld={"expired_keys": expired, "why": "ttl_expired"},
+                    why="exposure_cleanup",
                 )
+                try:
+                    asyncio.get_running_loop()  # Check for running loop
+                    asyncio.create_task(
+                        emit_compat(self.fsm, expired_msg, logger=self.logger)
+                    )
+                except RuntimeError:
+                    # No running loop, skip emission
+                    pass
             return None  # Portfolio updates don't need further processing
 
         symbol = pld.get("symbol")
         if not symbol:
-            LOG.warning(f"ExecPosFSM received message without symbol: {msg.verb}")
+            LOG.warning(
+                f"ExecPosFSM received message without symbol: {msg.verb}")
             return None
 
         open_flow, manage_flow, close_flow = self._get_or_create_flows(symbol)
@@ -252,16 +276,24 @@ class ExecPosFSM:
                     "🚨 GUARDRAIL TRIGGERED: Domain mode is TESTNET, but adapter is configured for LIVE API! Order BLOCKED."
                 )
                 # Optionally emit a critical error event
-                self.fsm.emit(
-                    "ERR:FATAL_CONFIG_MISMATCH",
+                fatal_msg = Message(
+                    op="ERR",
+                    verb="FATAL_CONFIG_MISMATCH",
+                    intent="ERROR",
+                    src="execution_position",
+                    dst="monitoring",
+                    rid="config_check",
+                    pld={"reason": "Testnet mode with live execution URL"},
                     why="Testnet mode with live execution URL",
-                    payload={"reason": "Testnet mode with live execution URL"},
                 )
+                await emit_compat(self.fsm, fatal_msg, logger=self.logger)
                 return
             else:
-                LOG.info("✅ Testnet mode confirmed: adapter URL contains 'testnet'")
+                LOG.info(
+                    "✅ Testnet mode confirmed: adapter URL contains 'testnet'")
         elif domain_mode == "live":
-            LOG.warning("⚠️ LIVE execution mode - ensure you know what you're doing!")
+            LOG.warning(
+                "⚠️ LIVE execution mode - ensure you know what you're doing!")
 
         # --- END GUARDRAIL ---
 
@@ -298,7 +330,8 @@ class ExecPosFSM:
             )
 
             # Validate
-            validate_not_immediate("LONG" if side == "BUY" else "SHORT", tp, sl, mark)
+            validate_not_immediate(
+                "LONG" if side == "BUY" else "SHORT", tp, sl, mark)
 
             # Place MARKET entry
             entry_id = generate_client_order_id("ENTRY", symbol)
@@ -306,6 +339,39 @@ class ExecPosFSM:
                 symbol, side, qty, entry_id
             )
             LOG.info(f"✅ MARKET entry placed: {entry_resp}")
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": decision.rid,
+                "event_type": "ORDER_PLACED",
+                "symbol": symbol,
+                "side": side,
+                "quantity": float(qty),
+                "client_order_id": entry_id,
+                "order_id": str(entry_resp.get("orderId", "")),
+                "source_fsm": "ExecPosFSM",
+                "reservation_id": decision.corr_id,
+                "adapter_response": entry_resp,
+                "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id}
+            })
+
+            # Correlation: store entry ACK
+            entry_order_id = str(entry_resp["orderId"])
+            decision.link_ack_id = entry_order_id
+            self.correlation_store.put_entry_ack(entry_order_id, {
+                'corr_id': decision.corr_id,
+                'oco_group_id': decision.oco_group_id,
+                'rid': decision.rid,
+                'parent_client_order_id': None
+            })
+            self.log_adapter.log_trade_execution(
+                rid=decision.rid,
+                symbol=symbol,
+                side=side,
+                order_id=entry_order_id,
+                status="ACK",
+                corr_id=decision.corr_id
+            )
 
             # Check for existing brackets to avoid duplicates
             open_orders = await self.adapter.get_open_orders(symbol)
@@ -331,6 +397,11 @@ class ExecPosFSM:
                 )
                 LOG.info(f"✅ SL placed: {sl_resp}")
 
+                # Correlation: store SL ACK
+                sl_order_id = str(sl_resp["orderId"])
+                self.correlation_store.put_sl_tp_ack(
+                    sl_order_id, entry_resp["clientOrderId"], decision.corr_id, decision.oco_group_id, decision.rid)
+
             if existing_tp:
                 LOG.warning(f"TP already exists for {symbol}, skipping")
             else:
@@ -344,6 +415,11 @@ class ExecPosFSM:
                         )
                     )
                     LOG.info(f"✅ TP TAKE_PROFIT_MARKET placed: {tp_resp}")
+
+                    # Correlation: store TP ACK
+                    tp_order_id = str(tp_resp["orderId"])
+                    self.correlation_store.put_sl_tp_ack(
+                        tp_order_id, entry_resp["clientOrderId"], decision.corr_id, decision.oco_group_id, decision.rid)
                 except BinanceAPIError as e:
                     if e.code == -2021:
                         # Retry with widened TP
@@ -351,13 +427,18 @@ class ExecPosFSM:
                         tp_adj = quantize_stop_price(
                             tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
                         )
+                        self.metrics_collector.record_retry(
+                            "tp_adjust") if self.metrics_collector else None
                         try:
                             tp_resp = await self.adapter.place_take_profit_market_close_position(
                                 symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
                             )
-                            LOG.info(f"✅ TP TAKE_PROFIT_MARKET retried: {tp_resp}")
+                            LOG.info(
+                                f"✅ TP TAKE_PROFIT_MARKET retried: {tp_resp}")
                         except BinanceAPIError:
                             # Fallback to LIMIT reduceOnly
+                            self.metrics_collector.record_retry(
+                                "tp_fallback") if self.metrics_collector else None
                             tp_resp = await self.adapter.place_limit_reduce_only(
                                 symbol,
                                 tp_side,
@@ -366,6 +447,11 @@ class ExecPosFSM:
                                 new_client_order_id=tp_id,
                             )
                             LOG.info(f"✅ TP LIMIT fallback placed: {tp_resp}")
+
+                            # Correlation: store TP ACK
+                            tp_order_id = str(tp_resp["orderId"])
+                            self.correlation_store.put_sl_tp_ack(
+                                tp_order_id, entry_resp["clientOrderId"], decision.corr_id, decision.oco_group_id, decision.rid)
                     else:
                         raise
 
@@ -374,12 +460,33 @@ class ExecPosFSM:
                 f"❌ Adapter failed to execute decision {decision.verb} for {decision.pld.get('symbol')}: {e}",
                 exc_info=True,
             )
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": decision.rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": decision.pld.get("symbol", ""),
+                "side": decision.pld.get("side", "NONE"),
+                "quantity": float(decision.pld.get("qty", 0)),
+                "nrr_code": "NRR-015",  # Exchange rejected
+                "why": f"Adapter execution failed: {str(e)}",
+                "source_fsm": "ExecPosFSM",
+                "metadata": {"error": str(e), "decision_verb": decision.verb}
+            })
+
             # Emit an error event
-            self.fsm.emit(
-                "ERR:EXECUTION_FAILED",
+            exec_failed_msg = Message(
+                op="ERR",
+                verb="EXECUTION_FAILED",
+                intent="ERROR",
+                src="execution_position",
+                dst="monitoring",
+                rid=decision.rid,
+                pld={"error": str(
+                    e), "original_decision": decision.model_dump()},
                 why="Execution failed due to adapter error",
-                payload={"error": str(e), "original_decision": decision.model_dump()},
             )
+            await emit_compat(self.fsm, exec_failed_msg, logger=self.logger)
 
     def get_metrics(self) -> Dict[str, Any]:
         """Aggregate metrics from all managed FSMs."""
@@ -419,7 +526,8 @@ class ExecPosFSM:
         price_ref = pld.get("price_ref")
 
         if not symbol or not qty or not price_ref:
-            LOG.warning(f"EXPOSURE_CHECK_SKIP: Missing required fields for {symbol}")
+            LOG.warning(
+                f"EXPOSURE_CHECK_SKIP: Missing required fields for {symbol}")
             return False
 
         try:
@@ -427,7 +535,9 @@ class ExecPosFSM:
             notional_usd = Decimal(str(qty)) * Decimal(str(price_ref))
 
             # Check exposure with fail-closed logic
-            exposure_check = self.exposure_guard.can_open(symbol, notional_usd, self._latest_portfolio_state)
+            exposure_check = self.exposure_guard.can_open(
+                symbol, notional_usd, self._latest_portfolio_state
+            )
 
             if not exposure_check["allowed"]:
                 reason = exposure_check["reason"]
@@ -444,42 +554,54 @@ class ExecPosFSM:
                         "reason": reason,
                         "stale_sec": stale_sec,
                         "symbol": symbol,
-                        "requested_notional": str(notional_usd)
+                        "requested_notional": str(notional_usd),
                     },
-                    why=f"exposure_fail_closed_{reason.lower()}"
+                    why=f"exposure_fail_closed_{reason.lower()}",
                 )
 
                 # EXP-FIX: Record fail-closed metric
-                if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                if hasattr(self, "metrics_collector") and self.metrics_collector:
                     self.metrics_collector.record_exposure_fail_closed(reason)
 
                 # Reserve exposure temporarily to prevent race conditions
-                reserve_key = pld.get("idempotent_key") or msg.rid or f"rid_{msg.rid}"
+                reserve_key = pld.get(
+                    "idempotent_key") or msg.rid or f"rid_{msg.rid}"
                 self.exposure_guard.reserve(reserve_key, notional_usd)
 
                 # Emit error asynchronously
                 try:
+                    asyncio.get_running_loop()  # Check for running loop
                     asyncio.create_task(self._emit_error_async(error_msg))
                 except RuntimeError:
-                    # No running loop, emit synchronously
-                    self.fsm.emit(error_msg.op, verb=error_msg.verb, payload=error_msg.pld, why=error_msg.why)
+                    # No running loop, emit synchronously if possible
+                    try:
+                        asyncio.get_running_loop()
+                        asyncio.create_task(
+                            emit_compat(self.fsm, error_msg,
+                                        logger=self.logger)
+                        )
+                    except RuntimeError:
+                        # Really no loop, skip emission
+                        pass
                 return True
 
             # EXP-FIX: Periodic shadow notional check (every 10 requests approx)
-            if hasattr(self, '_shadow_check_counter'):
+            if hasattr(self, "_shadow_check_counter"):
                 self._shadow_check_counter += 1
             else:
                 self._shadow_check_counter = 1
 
             if self._shadow_check_counter % 10 == 0 and self.adapter:
                 try:
+                    asyncio.get_running_loop()  # Check for running loop
                     asyncio.create_task(self._check_shadow_notional())
                 except RuntimeError:
                     # No running loop, skip async check
                     pass
 
             # Reserve exposure for successful check
-            reserve_key = pld.get("idempotent_key") or msg.rid or f"rid_{msg.rid}"
+            reserve_key = pld.get(
+                "idempotent_key") or msg.rid or f"rid_{msg.rid}"
             self.exposure_guard.reserve(reserve_key, notional_usd)
 
             return False
@@ -490,7 +612,12 @@ class ExecPosFSM:
 
     async def _emit_error_async(self, msg: Message) -> None:
         """Asynchronously emit an error message."""
-        self.fsm.emit(msg.op, verb=msg.verb, payload=msg.pld, why=msg.why)
+        try:
+            await emit_compat(self.fsm, msg, logger=getattr(self, "logger", None))
+        except Exception as e:
+            # Не даємо Task впасти "unretrieved" — лог і поглинання
+            LOG.exception(
+                "Failed to emit error message via emit_compat: %r", e)
 
     def _handle_fill_event(self, msg: Message) -> None:
         """
@@ -499,7 +626,8 @@ class ExecPosFSM:
         Moves reservation from pending to post-fill hold to prevent race conditions.
         """
         pld = msg.pld or {}
-        reserve_key = pld.get("idempotent_key") or pld.get("client_order_id") or msg.rid
+        reserve_key = pld.get("idempotent_key") or pld.get(
+            "client_order_id") or msg.rid
 
         if not reserve_key:
             LOG.warning("FILL_EVENT_SKIP: No reserve_key found in fill event")
@@ -513,10 +641,28 @@ class ExecPosFSM:
             self.exposure_guard.on_fill(reserve_key, notional_usd)
 
             # EXP-FIX: Record post-fill hold metric
-            if hasattr(self, 'metrics_collector') and self.metrics_collector:
-                self.metrics_collector.record_postfill_hold(len(self.exposure_guard.state.postfill_reservations))
+            if hasattr(self, "metrics_collector") and self.metrics_collector:
+                self.metrics_collector.record_postfill_hold(
+                    len(self.exposure_guard.state.postfill_reservations)
+                )
 
-            LOG.debug(f"FILL_HANDLED: key={reserve_key}, notional={notional_usd}")
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": pld.get("rid", f"fill_{reserve_key}"),
+                "event_type": "ORDER_STATE_CHANGED",
+                "symbol": pld.get("symbol", ""),
+                "side": pld.get("side", "NONE"),
+                "quantity": float(qty),
+                "price": float(price),
+                "client_order_id": pld.get("client_order_id", ""),
+                "order_id": pld.get("order_id", ""),
+                "source_fsm": "ExecPosFSM",
+                "reservation_id": reserve_key,
+                "metadata": {"fill_status": "FILLED", "notional_usd": float(notional_usd)}
+            })
+
+            LOG.debug(
+                f"FILL_HANDLED: key={reserve_key}, notional={notional_usd}")
         except Exception as e:
             LOG.error(f"FILL_HANDLE_ERROR: {e}", exc_info=True)
 
@@ -527,41 +673,58 @@ class ExecPosFSM:
         Compares portfolio positions with exchange data and emits warnings on mismatch.
         """
         try:
-            if not hasattr(self, 'adapter') or not self.adapter:
+            if not hasattr(self, "adapter") or not self.adapter:
                 return
 
             # Get shadow notional from exchange
             shadow_notional = await self.adapter.get_positions_notional_usd_shadow()
 
             # Get portfolio notional
-            portfolio_notional = Decimal(str(self._latest_portfolio_state.get("open_positions_usd", "0")))
+            portfolio_notional = Decimal(
+                str(self._latest_portfolio_state.get("open_positions_usd", "0"))
+            )
 
             # Compare with tolerance (allow 1% difference)
             tolerance = 0.01
-            diff_pct = abs(shadow_notional - float(portfolio_notional)) / max(shadow_notional, float(portfolio_notional), 1) * 100
+            diff_pct = (
+                abs(shadow_notional - float(portfolio_notional))
+                / max(shadow_notional, float(portfolio_notional), 1)
+                * 100
+            )
 
             if diff_pct > tolerance:
                 LOG.warning(
                     f"EXPOSURE_MISMATCH: portfolio={portfolio_notional}, shadow={shadow_notional}, diff={diff_pct:.2f}%"
                 )
-                self.exposure_guard._increment_metric("exposure_mismatch_total", "shadow_check")
+                self.exposure_guard._increment_metric(
+                    "exposure_mismatch_total", "shadow_check"
+                )
 
                 # EXP-FIX: Record mismatch metric
-                if hasattr(self, 'metrics_collector') and self.metrics_collector:
-                    self.metrics_collector.record_exposure_mismatch("shadow_check")
+                if hasattr(self, "metrics_collector") and self.metrics_collector:
+                    self.metrics_collector.record_exposure_mismatch(
+                        "shadow_check")
 
                 # Emit event for monitoring
-                self.fsm.emit(
-                    "EVT:EXPOSURE_MISMATCH",
-                    payload={
+                mismatch_msg = Message(
+                    op="EVT",
+                    verb="EXPOSURE_MISMATCH",
+                    intent="OBSERVATION",
+                    src="execution_position",
+                    dst="monitoring",
+                    rid="shadow_check",
+                    pld={
                         "portfolio_notional": str(portfolio_notional),
                         "shadow_notional": shadow_notional,
-                        "diff_pct": diff_pct
+                        "diff_pct": diff_pct,
                     },
-                    why="shadow_notional_mismatch"
+                    why="shadow_notional_mismatch",
                 )
+                await emit_compat(self.fsm, mismatch_msg, logger=self.logger)
             else:
-                LOG.debug(f"SHADOW_CHECK_OK: portfolio={portfolio_notional}, shadow={shadow_notional}")
+                LOG.debug(
+                    f"SHADOW_CHECK_OK: portfolio={portfolio_notional}, shadow={shadow_notional}"
+                )
 
         except Exception as e:
             LOG.error(f"SHADOW_CHECK_ERROR: {e}", exc_info=True)

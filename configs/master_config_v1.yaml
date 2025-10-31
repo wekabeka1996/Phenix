@@ -4,4 +4,4 @@ ops:
 
 execution:
   manage:
-    auto: false
+    auto: true

@@ -41,7 +41,7 @@ async def test_exposure_failclosed_when_positions_stale():
     # Create FSM with mocked components
     fsm_mock = MagicMock()
     emitted_events = []
-    fsm_mock.emit = lambda op, **kwargs: emitted_events.append((op, kwargs))
+    fsm_mock.emit = MagicMock(side_effect=lambda *args, **kwargs: emitted_events.append(args))
 
     fsm = ExecPosFSM(config, fsm_mock, shadow_mode=True)
 
@@ -64,8 +64,8 @@ async def test_exposure_failclosed_when_positions_stale():
             "side": "BUY",
             "qty": "1.0",
             "price_ref": "3000.0",
-            "idempotent_key": "test_key_123"
-        }
+            "idempotent_key": "test_key_123",
+        },
     )
 
     # Process the message
@@ -78,13 +78,14 @@ async def test_exposure_failclosed_when_positions_stale():
     await asyncio.sleep(0.1)  # Allow async emission to complete
 
     # Find the error event
-    error_events = [e for e in emitted_events if e[0] == "ERR"]
+    error_events = [e for e in emitted_events if len(e) > 0 and hasattr(e[0], 'op') and e[0].op == "ERR"]
     assert len(error_events) == 1
 
-    err_op, err_kwargs = error_events[0]
-    assert err_kwargs["verb"] == "OPEN"
-    assert err_kwargs["payload"]["reason"] == "PORTFOLIO_UNKNOWN"
-    assert err_kwargs["why"] == "exposure_fail_closed_portfolio_unknown"
+    err_msg = error_events[0][0]  # The Message object
+    assert err_msg.op == "ERR"
+    assert err_msg.verb == "OPEN"
+    assert err_msg.pld.get("reason") == "PORTFOLIO_UNKNOWN"
+    assert err_msg.why == "exposure_fail_closed_portfolio_unknown"
 
     # Check that exposure was reserved (fail-closed behavior)
     assert "test_key_123" in fsm.exposure_guard.state.reservations
@@ -112,7 +113,7 @@ async def test_exposure_failclosed_when_positions_too_old():
 
     fsm_mock = MagicMock()
     emitted_events = []
-    fsm_mock.emit = lambda op, **kwargs: emitted_events.append((op, kwargs))
+    fsm_mock.emit = MagicMock(side_effect=lambda *args, **kwargs: emitted_events.append(args))
 
     fsm = ExecPosFSM(config, fsm_mock, shadow_mode=True)
 
@@ -135,8 +136,8 @@ async def test_exposure_failclosed_when_positions_too_old():
             "side": "BUY",
             "qty": "1.0",
             "price_ref": "3000.0",
-            "idempotent_key": "test_key_456"
-        }
+            "idempotent_key": "test_key_456",
+        },
     )
 
     result = fsm.handle(msg)
@@ -144,14 +145,15 @@ async def test_exposure_failclosed_when_positions_too_old():
 
     await asyncio.sleep(0.1)
 
-    error_events = [e for e in emitted_events if e[0] == "ERR"]
+    error_events = [e for e in emitted_events if len(e) > 0 and hasattr(e[0], 'op') and e[0].op == "ERR"]
     assert len(error_events) == 1
 
-    err_op, err_kwargs = error_events[0]
-    assert err_kwargs["verb"] == "OPEN"
-    assert err_kwargs["payload"]["reason"] == "PORTFOLIO_STALE"
-    assert "stale_sec" in err_kwargs["payload"]
-    assert err_kwargs["payload"]["stale_sec"] > 9  # At least 9 seconds stale
+    err_msg = error_events[0][0]
+    assert err_msg.op == "ERR"
+    assert err_msg.verb == "OPEN"
+    assert err_msg.pld.get("reason") == "PORTFOLIO_STALE"
+    assert "stale_sec" in err_msg.pld
+    assert err_msg.pld["stale_sec"] > 9  # At least 9 seconds stale
 
 
 @pytest.mark.asyncio
@@ -195,8 +197,8 @@ async def test_exposure_allowed_when_positions_fresh():
             "side": "BUY",
             "qty": "1.0",
             "price_ref": "3000.0",
-            "idempotent_key": "test_key_789"
-        }
+            "idempotent_key": "test_key_789",
+        },
     )
 
     # Mock the open_flow to return a decision
@@ -206,7 +208,7 @@ async def test_exposure_allowed_when_positions_fresh():
         src="execution_position",
         dst="decision_making",
         rid="test_rid_789",
-        pld={"symbol": "ETHUSDT", "side": "BUY", "qty": "1.0"}
+        pld={"symbol": "ETHUSDT", "side": "BUY", "qty": "1.0"},
     )
     fsm.open_flow("ETHUSDT").handle = MagicMock(return_value=mock_decision)
 

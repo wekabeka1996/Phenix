@@ -1,0 +1,208 @@
+"""
+Unit tests for QoS NRR-012 rate limiting semantics.
+
+Tests that DEFER correctly plans retry timestamps and respects cooldowns.
+"""
+
+import pytest
+import time
+from unittest.mock import Mock
+from apps.reference.domains.decision_making.decision_making import DecisionMaking
+
+
+def test_nrr_012_rate_limit_semantics():
+    """Test that NRR-012 properly calculates retry timestamps."""
+
+    # Mock FSM
+    class MockFSM:
+        def __init__(self):
+            self.listeners = {}
+
+        def listen(self, event, handler):
+            if event not in self.listeners:
+                self.listeners[event] = []
+            self.listeners[event].append(handler)
+
+        def emit(self, event_name, payload=None, why=None):
+            pass  # Ignore for this test
+
+    fsm = MockFSM()
+
+    # Config with rate limiting
+    cfg = {
+        "decision": {
+            "features": {"ttl_sec": 30},
+            "qos": {
+                "exposure_block_cooldown_sec": 10,
+                "symbol_cooldown_sec": 3,
+                "max_intents_per_minute_per_symbol": 2,  # Low limit for testing
+                "mode": "defer"
+            },
+            "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
+            "signal_weights": {"obi": 0.5, "tfi": 0.5},
+            "signal_threshold": 0.2,
+        },
+        "tca_prefs": {"max_slippage_bps": 10},
+        "risk_budgets": {"trade_cvar95_max_bps": 100},
+        "instruments": {"BTCUSDT": {"step_size": "0.001"}},
+    }
+
+    dm = DecisionMaking(fsm, cfg)
+
+    symbol = "BTCUSDT"
+
+    # First check should allow
+    allowed, reason = dm._qos_allow(symbol, is_exposure_block=False)
+    assert allowed == True
+    assert reason is None
+
+    # Update state as if intent was made
+    dm._update_intent_count(symbol)
+
+    # Second check should still allow (under limit)
+    allowed, reason = dm._qos_allow(symbol, is_exposure_block=False)
+    assert allowed == True
+    assert reason is None
+
+    # Update again - now at limit
+    dm._update_intent_count(symbol)
+
+    # Third check should block
+    allowed, reason = dm._qos_allow(symbol, is_exposure_block=False)
+    assert allowed == False
+    assert reason == "NRR-012"  # RATE_LIMIT_EXCEEDED
+
+    # Calculate next allowed time
+    next_ts = dm._calculate_next_allowed_time(symbol)
+    now = time.time() * 1000
+
+    # Should be at least 60 seconds in future (end of rate window)
+    assert next_ts > now
+    assert next_ts <= now + (60 * 1000) + 1000  # Allow some tolerance
+
+
+def test_symbol_cooldown_semantics():
+    """Test symbol cooldown prevents rapid-fire decisions."""
+
+    class MockFSM:
+        def __init__(self):
+            self.listeners = {}
+
+        def listen(self, event, handler):
+            if event not in self.listeners:
+                self.listeners[event] = []
+            self.listeners[event].append(handler)
+
+        def emit(self, event_name, payload=None, why=None):
+            pass
+
+    fsm = MockFSM()
+
+    cfg = {
+        "decision": {
+            "features": {"ttl_sec": 30},
+            "qos": {
+                "exposure_block_cooldown_sec": 10,
+                "symbol_cooldown_sec": 1,  # 1 second cooldown
+                "max_intents_per_minute_per_symbol": 60,
+                "mode": "defer"
+            },
+            "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
+            "signal_weights": {"obi": 0.5, "tfi": 0.5},
+            "signal_threshold": 0.2,
+        },
+        "tca_prefs": {"max_slippage_bps": 10},
+        "risk_budgets": {"trade_cvar95_max_bps": 100},
+        "instruments": {"BTCUSDT": {"step_size": "0.001"}},
+    }
+
+    dm = DecisionMaking(fsm, cfg)
+
+    symbol = "BTCUSDT"
+
+    # First check should allow
+    allowed, reason = dm._qos_allow(symbol, is_exposure_block=False)
+    assert allowed == True
+
+    # Update cooldown
+    dm._update_symbol_cooldown(symbol)
+
+    # Immediate second check should block
+    allowed, reason = dm._qos_allow(symbol, is_exposure_block=False)
+    assert allowed == False
+    assert reason == "NRR-012"  # RATE_LIMIT_EXCEEDED (includes cooldown)
+
+    # Calculate next allowed time
+    next_ts = dm._calculate_next_allowed_time(symbol)
+    now = time.time() * 1000
+
+    # Should be at least cooldown period in future (allow small timing variance)
+    assert next_ts >= now + (0.9 * 1000)  # 0.9 second cooldown (allow for timing)
+
+
+def test_defer_mode_emits_correct_event():
+    """Test that defer mode emits INTENT_DEFERRED with correct payload."""
+
+    deferred_events = []
+
+    class MockFSM:
+        def __init__(self):
+            self.listeners = {}
+
+        def listen(self, event, handler):
+            if event not in self.listeners:
+                self.listeners[event] = []
+            self.listeners[event].append(handler)
+
+        def emit(self, event_name, payload=None, why=None):
+            from vfoundation.core.protocol import Message
+            msg = Message(op="EVT", verb=event_name.split(":")[1], src="test", dst="any", pld=payload, why=why)
+            deferred_events.append(msg)
+
+    fsm = MockFSM()
+
+    cfg = {
+        "decision": {
+            "features": {"ttl_sec": 30},
+            "qos": {
+                "exposure_block_cooldown_sec": 10,
+                "symbol_cooldown_sec": 3,
+                "max_intents_per_minute_per_symbol": 1,  # Very restrictive
+                "mode": "defer"
+            },
+            "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
+            "signal_weights": {"obi": 0.5, "tfi": 0.5},
+            "signal_threshold": 0.2,
+        },
+        "tca_prefs": {"max_slippage_bps": 10},
+        "risk_budgets": {"trade_cvar95_max_bps": 100},
+        "instruments": {"BTCUSDT": {"step_size": "0.001"}},
+    }
+
+    dm = DecisionMaking(fsm, cfg)
+
+    # Exhaust rate limit
+    symbol = "BTCUSDT"
+    dm._update_intent_count(symbol)  # Count = 1, at limit
+
+    # Create mock context for defer
+    context = {
+        "features": {"features": {"obi": 0.3, "tfi": 0.3, "price": "50000"}},
+        "risk_params": {"risk_parameters": {"is_trading_allowed": True}},
+        "portfolio": {"equity": "10000", "positions": []},
+        "regime": None
+    }
+
+    # This should trigger QoS defer
+    dm._make_decision_for_symbol(symbol, context, "test-rid")
+
+    # Should have emitted INTENT_DEFERRED
+    assert len(deferred_events) == 1
+    defer_event = deferred_events[0]
+    assert defer_event.verb == "INTENT_DEFERRED"
+
+    payload = defer_event.pld
+    assert "reason" in payload
+    assert "symbol" in payload
+    assert "next_allowed_ts" in payload
+    assert payload['symbol'] == symbol

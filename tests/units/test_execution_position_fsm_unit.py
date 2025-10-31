@@ -46,20 +46,18 @@ def test_get_or_create_flows_and_accessors():
 
     try:
 
-        class Cfg:
-            pass
-
-        cfg = Cfg()
-        cfg.trading = {
-            "execution": {"cooldown_ms": 1000, "guard_enabled": True},
-            "instruments": {},
+        cfg = {
+            "trading": {
+                "execution": {"cooldown_ms": 1000, "guard_enabled": True, "exposure": {}},
+                "instruments": {},
+            }
         }
         f = fsm_mod.ExecPosFSM(config=cfg, fsm=DummyFSM(), shadow_mode=True)
 
         # ExecPosFSM (vfoundation variant) exposes flow instances as attributes
-        of = f.open_flow
-        mf = f.manage_flow
-        cf = f.close_flow
+        of = f.open_flow("BTCUSDT")
+        mf = f.manage_flow("BTCUSDT")
+        cf = f.close_flow("BTCUSDT")
 
         assert isinstance(of, DummyFlow)
         assert isinstance(mf, DummyFlow)
@@ -80,13 +78,11 @@ def test_handle_routes_to_open_flow_and_missing_symbol():
 
     try:
 
-        class Cfg:
-            pass
-
-        cfg = Cfg()
-        cfg.trading = {
-            "execution": {"cooldown_ms": 1000, "guard_enabled": True},
-            "instruments": {},
+        cfg = {
+            "trading": {
+                "execution": {"cooldown_ms": 1000, "guard_enabled": True, "exposure": {}},
+                "instruments": {},
+            }
         }
         f = fsm_mod.ExecPosFSM(config=cfg, fsm=DummyFSM(), shadow_mode=True)
 
@@ -98,7 +94,7 @@ def test_handle_routes_to_open_flow_and_missing_symbol():
         m = DummyMsg(pld={"symbol": "BTCUSDT"}, verb="OPEN")
         result = f.handle(m)
         # our DummyFlow.handle returns None, but should have been called
-        of = f.open_flow
+        of = f.open_flow("BTCUSDT")
         assert of.called_handle is True
         assert result is None
     finally:

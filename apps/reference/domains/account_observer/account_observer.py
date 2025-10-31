@@ -15,6 +15,8 @@ try:
 except ImportError:
     Client = None
 
+from vfoundation.obs.correlation import CorrelationStore
+
 
 class AccountObserver:
     """
@@ -24,13 +26,27 @@ class AccountObserver:
     events for any new trades detected.
     """
 
-    def __init__(self, fsm: Any, config: dict[str, Any]) -> None:
+from typing import Any, Set, Optional, Literal
+
+# ... (решта імпортів)
+
+class AccountObserver:
+    # ... (решта класу)
+
+    def __init__(
+        self,
+        fsm: Any,
+        config: dict[str, Any],
+        environment: Optional[Literal["live", "testnet"]] = None, # NEW PARAMETER
+    ) -> None:
         """
         Initialize Account Observer.
 
         Args:
             fsm: FSM core instance
             config: Configuration dict with 'binance_api' credentials
+            environment: Explicitly set the environment ('live' or 'testnet').
+                         If None, it defaults to config's trading_mode.
         """
         self.fsm = fsm
         self.config = config
@@ -42,12 +58,21 @@ class AccountObserver:
             )
 
         # Get trading mode and API config
-        mode = config.get("trading_mode", "testnet")
+        # Use explicit environment if provided, otherwise fall back to config's trading_mode
+        resolved_environment = environment
+        if resolved_environment is None:
+            # Check for resolved risk_portfolio_source first (FSMP-P3-T01)
+            resolved_portfolio_source = config.get("_resolved", {}).get("risk_portfolio_source")
+            if resolved_portfolio_source:
+                resolved_environment = resolved_portfolio_source
+            else:
+                resolved_environment = config.get("trading_mode", "testnet") # Fallback to old behavior
+
         api_config = config.get("binance_api", {})
 
-        # Get credentials based on mode
+        # Get credentials based on resolved_environment
         env_config = {}
-        if mode == "live":
+        if resolved_environment == "live":
             env_config = api_config.get("live", {})
         else:  # testnet or hybrid modes
             env_config = api_config.get("testnet", {})
@@ -57,15 +82,14 @@ class AccountObserver:
 
         if not api_key or not api_secret:
             raise ValueError(
-                f"API configuration for account observer in '{mode}' mode is incomplete"
+                f"API configuration for account observer in '{resolved_environment}' mode is incomplete"
             )
 
         # Get account observer config
         account_observer_config = config.get("account_observer", {})
 
-        # Determine testnet/mainnet based on trading mode
-        # If mode is 'live' or contains 'live' → mainnet, otherwise testnet
-        self.testnet = mode != "live"
+        # Determine testnet/mainnet based on resolved_environment
+        self.testnet = resolved_environment != "live"
 
         # Initialize Binance client for testnet/mainnet
         self.client = Client(api_key, api_secret, testnet=self.testnet)
@@ -76,6 +100,8 @@ class AccountObserver:
         # Polling thread
         self._polling_thread: threading.Thread | None = None
         self._stop_polling = threading.Event()
+
+        self.correlation_store = CorrelationStore()
 
         # Polling interval (seconds) - from config
         self.poll_interval = account_observer_config.get("poll_interval", 5)
@@ -151,14 +177,27 @@ class AccountObserver:
             # Convert Binance trade to our payload format
             payload = self._trade_to_payload(trade, venue)
 
+            # Correlation lookup
+            order_id = str(trade["orderId"])
+            corr_data = self.correlation_store.get_by_order_id(order_id)
+            if corr_data:
+                payload["corr_id"] = corr_data["corr_id"]
+                payload["link_fill_id"] = order_id
+                payload["oco_group_id"] = corr_data.get("oco_group_id")
+                payload["parent_client_order_id"] = corr_data.get("parent_client_order_id")
+
             # Emit event
             self.fsm.emit(
-                "EVT:TRADE_EXECUTED",
+                "EVT:FILL",
                 payload=payload,
-                why="Detected new user trade from Binance account.",
+                why="Detected new user fill from Binance account.",
             )
 
-            self.logger.info(f"Emitted TRADE_EXECUTED for trade {trade_id}: {payload}")
+            # Log with correlation
+            corr_id_log = payload.get("corr_id", "unknown")
+            self.logger.info(f"ORDER_STATE_CHANGED: FILL for order_id={order_id}, corr_id={corr_id_log}, symbol={payload['symbol']}, side={payload['side']}, qty={payload['quantity']}, price={payload['price']}")
+
+            self.logger.info(f"Emitted EVT:FILL for trade {trade_id}: {payload}")
 
     def _trade_to_payload(self, trade: dict[str, Any], venue: str) -> dict[str, Any]:
         """Convert Binance trade dict to EVT:TRADE_EXECUTED payload."""

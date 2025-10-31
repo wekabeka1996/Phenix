@@ -1,1 +1,1 @@
-# vfoundation reference app package
+# Reference app package

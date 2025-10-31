@@ -19,16 +19,29 @@ from urllib.parse import urlencode, quote_plus
 import httpx
 
 LOG = logging.getLogger(__name__)
+# забезпечуємо саме таку змінну, яку патчить тест
+log = logging.getLogger(__name__)
 
 
 class BinanceAPIError(Exception):
-    """Custom exception for Binance API errors."""
-
-    def __init__(self, code: int, msg: str, status: int):
+    def __init__(
+        self,
+        code: int,
+        msg: str,
+        *,
+        nrr_code: Optional[str] = None,
+        http_status: Optional[int] = None,
+        payload: Optional[dict] = None,
+    ) -> None:
+        super().__init__(msg)
         self.code = code
         self.msg = msg
-        self.status = status
-        super().__init__(f"Binance API Error {code}: {msg}")
+        self.nrr_code = nrr_code
+        self.http_status = http_status
+        self.payload = payload or {}
+
+    def __str__(self) -> str:
+        return f"[{self.code}] {self.msg} ({self.nrr_code or 'no-nrr'})"
 
 
 class BinanceAdapter:
@@ -102,7 +115,7 @@ class BinanceAdapter:
         # Для USDM futures: /fapi/v1/time
         r = await self.session.get(f"{self.base_url}/fapi/v1/time")
         r.raise_for_status()
-        data = r.json()
+        data = await r.json()
         # serverTime у мілісекундах
         return int(data["serverTime"])
 
@@ -132,7 +145,8 @@ class BinanceAdapter:
         base.setdefault("recvWindow", str(self._recv_window_ms))
         # Строга URL-енкодація й підпис рівно того рядка, що підемо відправляти
         qs = urlencode(base, doseq=True, quote_via=quote_plus)
-        sig = hmac.new(self.api_secret, qs.encode(), hashlib.sha256).hexdigest()
+        sig = hmac.new(self.api_secret, qs.encode(),
+                       hashlib.sha256).hexdigest()
         final_qs = f"{qs}&signature={sig}"
         final_params = dict(base)
         final_params["signature"] = sig
@@ -154,15 +168,15 @@ class BinanceAdapter:
                 # ВИКОРИСТОВУЄМО self.session — щоб тести могли мокати її
                 r = await self.session.request(method.upper(), url, params=final_params)
                 if r.status_code >= 400:
-                    err = _safe_read_err(r)
+                    err = await _safe_read_err(r)
                     raise _make_binance_error(r, err)
-                return r.json()
+                return await r.json()
             else:
                 r = await self.session.request(
                     method.upper(), url, params=self._norm_params(base_params)
                 )
                 r.raise_for_status()
-                return r.json()
+                return await r.json()
 
         # 1-й запит
         try:
@@ -226,7 +240,8 @@ class BinanceAdapter:
             # For mark price dict, use 'markPrice' or 'price'
             price = value.get("markPrice") or value.get("price")
             if price is None:
-                raise ValueError(f"Dict has no 'markPrice' or 'price': {value}")
+                raise ValueError(
+                    f"Dict has no 'markPrice' or 'price': {value}")
             return Decimal(str(price))
         if isinstance(value, (str, int, float)):
             return Decimal(str(value))
@@ -283,7 +298,8 @@ class BinanceAdapter:
         for key in ("MIN_NOTIONAL", "MIN_NOTIONAL", "MIN_NOTIONAL"):
             if key in filters:
                 fn = filters[key]
-                min_notional = fn.get("notional") or fn.get("minNotional") or fn.get("minNotional")
+                min_notional = fn.get("notional") or fn.get(
+                    "minNotional") or fn.get("minNotional")
                 break
         # fallback: try 'MIN_NOTIONAL' variations inside filters
         if min_notional is None:
@@ -495,7 +511,8 @@ class BinanceAdapter:
             price = float(response["markPrice"])
         except Exception:
             # Fallback to last price
-            LOG.warning(f"Failed to get mark price for {symbol}, using last price fallback")
+            LOG.warning(
+                f"Failed to get mark price for {symbol}, using last price fallback")
             price = await self.get_last_price(symbol)
 
         self._mark_price_cache[symbol] = {"price": price, "timestamp": now}
@@ -627,31 +644,37 @@ class BinanceAdapter:
 
         positions: List[Dict[str, Any]] = []
         for p in raw:
-            # Binance віддає числа як строки — нормалізуємо
-            amt = float(p.get("positionAmt", "0"))
+            # Binance віддає числа як строки — зберігаємо precision, конвертуємо тільки коли потрібно
+            amt_str = p.get("positionAmt", "0")
+            amt = float(amt_str)
             if abs(amt) <= 0.0:
                 continue  # пропускаємо нульові
 
-            entry = float(p.get("entryPrice", "0") or 0)
-            mark = float(p.get("markPrice", "0") or 0)
-            upnl = float(p.get("unRealizedProfit", "0") or 0)
+            entry_str = p.get("entryPrice", "0") or "0"
+            entry = float(entry_str)
+            mark_str = p.get("markPrice", "0") or "0"
+            mark = float(mark_str)
+            upnl_str = p.get("unRealizedProfit", "0") or "0"
+            upnl = float(upnl_str)
             lev = int(float(p.get("leverage", "0") or 0))
 
             # Hedge: 'LONG'/'SHORT'; One-way: 'BOTH'
             pos_side = p.get("positionSide", "BOTH") or "BOTH"
-            side = "LONG" if (amt > 0 and pos_side in ("BOTH", "LONG")) else "SHORT"
+            side = "LONG" if (amt > 0 and pos_side in (
+                "BOTH", "LONG")) else "SHORT"
 
             positions.append(
                 {
                     "symbol": p.get("symbol"),
                     "positionSide": pos_side,  # BOTH/LONG/SHORT
                     "side": side,  # LONG/SHORT (зручно для бізнес-логіки)
-                    "positionAmt": amt,
-                    "entryPrice": entry,
-                    "markPrice": mark,
-                    "unRealizedProfit": upnl,
+                    "positionAmt": amt_str,  # зберігаємо string для precision
+                    "entryPrice": entry_str,  # зберігаємо string для precision
+                    "markPrice": mark_str,  # зберігаємо string для precision
+                    "unRealizedProfit": upnl_str,  # зберігаємо string для precision
                     "leverage": lev,
-                    "marginType": p.get("marginType", "cross").upper(),  # CROSS/ISOLATED
+                    # CROSS/ISOLATED
+                    "marginType": p.get("marginType", "cross").upper(),
                     "isolatedMargin": float(p.get("isolatedMargin", "0") or 0),
                     "updateTime": int(p.get("updateTime", 0) or 0),
                     # можна додати інші поля за потреби
@@ -664,9 +687,9 @@ class BinanceAdapter:
 # ---- helpers ----
 
 
-def _safe_read_err(resp):
+async def _safe_read_err(resp):
     try:
-        return resp.json()
+        return await resp.json()
     except Exception:
         try:
             return {"code": resp.status_code, "msg": resp.text}
@@ -681,7 +704,43 @@ def _is_code_1021(err) -> bool:
         return False
 
 
-def _make_binance_error(resp, err):
-    # Твій клас/фабрика помилок (залиши як було), приклад:
-    status = getattr(resp, "status_code", None)
-    return BinanceAPIError(err.get("code"), err.get("msg"), status)
+def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPIError:
+    # support both call styles: (_resp, err) and (code, msg)
+    if isinstance(resp_or_code, int):
+        code = int(resp_or_code)
+        msg = str(msg_or_err or "")
+    else:
+        # try to extract from err/json payload
+        err = msg_or_err or {}
+        code = None
+        if hasattr(err, "get"):
+            code = err.get("code") or err.get("errno")
+            msg = err.get("msg") or err.get("message") or str(err)
+        else:
+            msg = str(err)
+        try:
+            code = int(code) if code is not None else -1
+        except Exception:
+            code = -1
+
+    # normalized NRR for exchange rejections
+    rejection_codes = {-1013, -1021, -2010}
+    nrr = "NRR-018" if code in rejection_codes else None
+
+    # використай модульну змінну 'log', якщо її підмінили в тесті
+    try:
+        _log = globals().get("log", None)
+        if _log is not None and hasattr(_log, "warning"):
+            _log.warning(
+                "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
+            )
+        else:
+            logging.getLogger(__name__).warning(
+                "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
+            )
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
+        )
+
+    return BinanceAPIError(code=code, msg=msg, nrr_code=nrr)

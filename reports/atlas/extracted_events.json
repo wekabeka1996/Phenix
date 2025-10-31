@@ -1,0 +1,2047 @@
+[
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 88,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 89,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 90,
+    "type": "EVT",
+    "verb": "INTENT_DEFERRED",
+    "event": "EVT:INTENT_DEFERRED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 165,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 212,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 258,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 286,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 330,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 415,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 722,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 723,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 724,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 725,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\main.py",
+    "lineno": 726,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
+    "lineno": 183,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
+    "lineno": 184,
+    "type": "EVT",
+    "verb": "BALANCE_UPDATE_RECEIVED",
+    "event": "EVT:BALANCE_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
+    "lineno": 264,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
+    "lineno": 265,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\account_observer\\account_observer.py",
+    "lineno": 190,
+    "type": "EVT",
+    "verb": "FILL",
+    "event": "EVT:FILL",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\account_observer\\account_observer.py",
+    "lineno": 191,
+    "type": "EVT",
+    "verb": "FILL",
+    "event": "EVT:FILL",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 115,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 116,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 117,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 118,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 491,
+    "type": "EVT",
+    "verb": "INTENT_DEFERRED",
+    "event": "EVT:INTENT_DEFERRED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 491,
+    "type": "EVT",
+    "verb": "INTENT_DEFERRED",
+    "event": "EVT:INTENT_DEFERRED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 874,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 875,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\decision_making\\why_codes.py",
+    "lineno": 196,
+    "type": "DEC",
+    "verb": "CLOSE matched non-position-closing FILL",
+    "event": "DEC:CLOSE matched non-position-closing FILL",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_management\\execution_management.py",
+    "lineno": 33,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_management\\execution_management.py",
+    "lineno": 47,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_management\\execution_management.py",
+    "lineno": 65,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_management\\execution_management.py",
+    "lineno": 87,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\exposure_guard.py",
+    "lineno": 122,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\exposure_guard.py",
+    "lineno": 145,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 209,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 289,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 489,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 580,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 616,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 723,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\feature_engineering\\feature_engineering.py",
+    "lineno": 20,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\feature_engineering\\feature_engineering.py",
+    "lineno": 80,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\feature_engineering\\feature_engineering.py",
+    "lineno": 81,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\market_data\\market_data_connector.py",
+    "lineno": 253,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\market_data\\market_data_connector.py",
+    "lineno": 254,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 51,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 52,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 53,
+    "type": "EVT",
+    "verb": "BALANCE_UPDATE_RECEIVED",
+    "event": "EVT:BALANCE_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 155,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 156,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 293,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 294,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 355,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 356,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\regime_detector\\regime_detector.py",
+    "lineno": 220,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\regime_detector\\regime_detector.py",
+    "lineno": 221,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
+    "lineno": 52,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
+    "lineno": 53,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
+    "lineno": 79,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
+    "lineno": 103,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
+    "lineno": 104,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
+    "lineno": 114,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "docs\\domains\\account_balance\\examples\\tests\\test_examples.py",
+    "lineno": 107,
+    "type": "EVT",
+    "verb": "BALANCE_UPDATE_RECEIVED",
+    "event": "EVT:BALANCE_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "docs\\domains\\account_balance\\examples\\tests\\test_examples.py",
+    "lineno": 214,
+    "type": "EVT",
+    "verb": "BALANCE_UPDATE_RECEIVED",
+    "event": "EVT:BALANCE_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "docs\\domains\\account_balance\\examples\\tests\\test_examples.py",
+    "lineno": 220,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 63,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 146,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 149,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 160,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 197,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 410,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 412,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 429,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\test_features_and_signals_live.py",
+    "lineno": 439,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\bugfixes\\test_p1_001_precision_preservation.py",
+    "lineno": 130,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\bugfixes\\test_p1_004_failclosed_price.py",
+    "lineno": 206,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\contracts\\test_decision_making_contract.py",
+    "lineno": 159,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\contracts\\test_regime_detector_contract.py",
+    "lineno": 135,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_account_connector_coverage_gaps.py",
+    "lineno": 62,
+    "type": "EVT",
+    "verb": "BALANCE_UPDATE_RECEIVED",
+    "event": "EVT:BALANCE_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_account_connector_coverage_gaps.py",
+    "lineno": 91,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_decision_making.py",
+    "lineno": 119,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_feature_engineering.py",
+    "lineno": 123,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_feature_engineering.py",
+    "lineno": 205,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_integration_three_domains.py",
+    "lineno": 114,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_market_data.py",
+    "lineno": 139,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_market_data.py",
+    "lineno": 185,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_market_data.py",
+    "lineno": 214,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_market_data.py",
+    "lineno": 253,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_market_data_coverage_gaps.py",
+    "lineno": 72,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_market_data_coverage_gaps.py",
+    "lineno": 119,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_portfolio_equity_flow.py",
+    "lineno": 72,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 61,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 87,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 88,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 149,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 174,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 174,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 187,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 188,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 204,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 205,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 251,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 276,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 276,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 289,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 289,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 323,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 348,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 348,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 377,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 402,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 402,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 415,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 415,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 453,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 479,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 479,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 496,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 521,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 521,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 534,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 535,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 581,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 606,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 606,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 619,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 620,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 665,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 690,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 690,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 703,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 703,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking_logic.py",
+    "lineno": 406,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking_logic.py",
+    "lineno": 438,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_regime_detector.py",
+    "lineno": 103,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_regime_detector.py",
+    "lineno": 157,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_regime_detector.py",
+    "lineno": 215,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_regime_detector.py",
+    "lineno": 276,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_regime_detector.py",
+    "lineno": 329,
+    "type": "EVT",
+    "verb": "REGIME_DETECTED",
+    "event": "EVT:REGIME_DETECTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_risk_management.py",
+    "lineno": 61,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_risk_management.py",
+    "lineno": 81,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_risk_management.py",
+    "lineno": 82,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_account_connector.py",
+    "lineno": 103,
+    "type": "EVT",
+    "verb": "BALANCE_UPDATE_RECEIVED",
+    "event": "EVT:BALANCE_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_account_connector.py",
+    "lineno": 104,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_account_connector.py",
+    "lineno": 153,
+    "type": "EVT",
+    "verb": "BALANCE_UPDATE_RECEIVED",
+    "event": "EVT:BALANCE_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_account_connector.py",
+    "lineno": 154,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 58,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 78,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 104,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 105,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 113,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 134,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 135,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 144,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 145,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 161,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 162,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 201,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 202,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 203,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 264,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 265,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 316,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 317,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 321,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_aurora_core_flow.py",
+    "lineno": 321,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_decision_qos_features_burst.py",
+    "lineno": 56,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_decision_to_execution_flow.py",
+    "lineno": 243,
+    "type": null,
+    "verb": null,
+    "event": "TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_e2e_lifecycle.py",
+    "lineno": 101,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_e2e_lifecycle.py",
+    "lineno": 134,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_e2e_lifecycle.py",
+    "lineno": 134,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_e2e_lifecycle.py",
+    "lineno": 153,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_e2e_lifecycle.py",
+    "lineno": 153,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_e2e_smoke.py",
+    "lineno": 243,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_end_to_end_analytics_to_execution.py",
+    "lineno": 60,
+    "type": "EVT",
+    "verb": "",
+    "event": "EVT:",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_end_to_end_analytics_to_execution.py",
+    "lineno": 60,
+    "type": "CMD",
+    "verb": "",
+    "event": "CMD:",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_end_to_end_analytics_to_execution.py",
+    "lineno": 162,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_end_to_end_analytics_to_execution.py",
+    "lineno": 195,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_execpos_error_emit_no_typeerror.py",
+    "lineno": 32,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_and_risk_join.py",
+    "lineno": 57,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_deferred_reasons.py",
+    "lineno": 58,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 196,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 196,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 217,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 217,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 238,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 238,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 248,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 253,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 259,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_features_pipeline_trace.py",
+    "lineno": 268,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_live_bridge_to_marketdata.py",
+    "lineno": 38,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_order_lifecycle_correlation.py",
+    "lineno": 118,
+    "type": "EVT",
+    "verb": "FILL",
+    "event": "EVT:FILL",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_positions_notional_aggregate.py",
+    "lineno": 83,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_positions_notional_aggregate.py",
+    "lineno": 148,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\integration\\test_positions_notional_aggregate.py",
+    "lineno": 210,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\units\\test_fsm_emit_compat.py",
+    "lineno": 34,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\units\\test_fsm_emit_compat.py",
+    "lineno": 44,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\units\\test_fsm_emit_compat.py",
+    "lineno": 62,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\units\\test_fsm_emit_compat_missing_fields.py",
+    "lineno": 27,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\vfoundation\\core\\test_fsm_core_error_handling.py",
+    "lineno": 15,
+    "type": "EVT",
+    "verb": "TEST",
+    "event": "EVT:TEST",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\vfoundation\\core\\test_fsm_core_error_handling.py",
+    "lineno": 19,
+    "type": "EVT",
+    "verb": "TEST",
+    "event": "EVT:TEST",
+    "payload_keys": [
+      "key"
+    ],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\vfoundation\\core\\test_fsm_core_error_handling.py",
+    "lineno": 19,
+    "type": "EVT",
+    "verb": "TEST",
+    "event": "EVT:TEST",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tools\\build_project_atlas.py",
+    "lineno": 33,
+    "type": "EVT",
+    "verb": "",
+    "event": "EVT:",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tools\\build_project_atlas.py",
+    "lineno": 33,
+    "type": "CMD",
+    "verb": "",
+    "event": "CMD:",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tools\\build_project_atlas.py",
+    "lineno": 33,
+    "type": "DEC",
+    "verb": "",
+    "event": "DEC:",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tools\\build_project_atlas.py",
+    "lineno": 33,
+    "type": "ERR",
+    "verb": "",
+    "event": "ERR:",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\main.py",
+    "lineno": 241,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\main.py",
+    "lineno": 245,
+    "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\main.py",
+    "lineno": 246,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\main.py",
+    "lineno": 247,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\main.py",
+    "lineno": 248,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\main.py",
+    "lineno": 249,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 90,
+    "type": "EVT",
+    "verb": "FEATURES_CALCULATED",
+    "event": "EVT:FEATURES_CALCULATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 91,
+    "type": "EVT",
+    "verb": "RISK_ASSESSMENT_COMPLETED",
+    "event": "EVT:RISK_ASSESSMENT_COMPLETED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 92,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 829,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\decision_making\\decision_making.py",
+    "lineno": 830,
+    "type": "EVT",
+    "verb": "TRADE_INTENT_PROPOSED",
+    "event": "EVT:TRADE_INTENT_PROPOSED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
+    "lineno": 384,
+    "type": "EVT",
+    "verb": "ORDER_STATE_CHANGED",
+    "event": "EVT:ORDER_STATE_CHANGED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
+    "lineno": 385,
+    "type": "EVT",
+    "verb": "ORDER_STATE_CHANGED",
+    "event": "EVT:ORDER_STATE_CHANGED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
+    "lineno": 422,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
+    "lineno": 422,
+    "type": "EVT",
+    "verb": "ACCOUNT_UPDATE_RECEIVED",
+    "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\core\\fsm_emit_compat.py",
+    "lineno": 72,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\core\\fsm_emit_compat.py",
+    "lineno": 99,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\core\\fsm_emit_compat.py",
+    "lineno": 111,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "vfoundation\\core\\why_codes.py",
+    "lineno": 190,
+    "type": "DEC",
+    "verb": "CLOSE matched non-position-closing FILL",
+    "event": "DEC:CLOSE matched non-position-closing FILL",
+    "payload_keys": [],
+    "domain": null
+  }
+]

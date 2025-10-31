@@ -8,8 +8,19 @@ from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM, Open
 
 def test_exec_pos_fsm_basic():
     """Basic test for ExecPosFSM."""
-    config = MagicMock()
-    config.trading = {"execution": {"cooldown_ms": 1000, "guard_enabled": True}}
+    config = {
+        "trading": {
+            "execution": {
+                "cooldown_ms": 1000,
+                "guard_enabled": True,
+                "exposure": {
+                    "max_portfolio_fraction": "0.20"
+                }
+            }
+        }
+    }
+    from apps.reference.config_loader import AuroraConfig
+    config = AuroraConfig(config)
     fsm = ExecPosFSM(config=config, fsm=MagicMock())
     assert fsm.open_flow is not None
     assert fsm.manage_flow is not None

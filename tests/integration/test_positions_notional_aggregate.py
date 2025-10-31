@@ -18,7 +18,9 @@ async def test_positions_notional_aggregate():
     WHEN: account update приходит
     THEN: open_positions_usd = sum(abs(positionAmt * entryPrice)) for all positions
     """
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     config = {
         "trading": {
@@ -53,7 +55,7 @@ async def test_positions_notional_aggregate():
             "positionAmt": "0.0",  # No position
             "entryPrice": "0.0",
             "unrealizedProfit": "0.0",
-        }
+        },
     ]
 
     account_msg = Message(
@@ -71,17 +73,21 @@ async def test_positions_notional_aggregate():
             ],
             "totalCrossWalletBalance": "9500.0",  # free USDT
             "totalUnrealizedProfit": "50.0",
-        }
+        },
     )
 
     position_tracking.on_account_update(account_msg)
 
     # Check that portfolio state was emitted with correct notional
-    portfolio_events = [e for e in emitted_events if e[0] == "EVT:PORTFOLIO_STATE_UPDATED"]
+    portfolio_events = [
+        e for e in emitted_events if e[0] == "EVT:PORTFOLIO_STATE_UPDATED"
+    ]
     assert len(portfolio_events) == 1
 
     payload = portfolio_events[0][1]["payload"]
-    expected_notional = abs(Decimal("1.5") * Decimal("2000.0")) + abs(Decimal("-0.02") * Decimal("50000.0"))
+    expected_notional = abs(Decimal("1.5") * Decimal("2000.0")) + abs(
+        Decimal("-0.02") * Decimal("50000.0")
+    )
     assert Decimal(payload["open_positions_usd"]) == expected_notional
     assert "positions_last_ts_ms" in payload
 
@@ -93,7 +99,9 @@ async def test_positions_notional_zero_when_no_positions():
     WHEN: account update приходит
     THEN: open_positions_usd = 0
     """
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     config = {
         "trading": {
@@ -129,14 +137,16 @@ async def test_positions_notional_zero_when_no_positions():
             "positions": positions_data,
             "assets": [
                 {"asset": "USDT", "free": "10000.0", "locked": "0.0"},
-            ]
-        }
+            ],
+        },
     )
 
     position_tracking.on_account_update(account_msg)
 
     # Check that portfolio state was emitted with zero notional
-    portfolio_events = [e for e in emitted_events if e[0] == "EVT:PORTFOLIO_STATE_UPDATED"]
+    portfolio_events = [
+        e for e in emitted_events if e[0] == "EVT:PORTFOLIO_STATE_UPDATED"
+    ]
     assert len(portfolio_events) == 1
 
     payload = portfolio_events[0][1]["payload"]
@@ -151,7 +161,9 @@ async def test_positions_notional_handles_precision():
     WHEN: aggregation happens
     THEN: precision сохраняется правильно
     """
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
 
     config = {
         "trading": {
@@ -187,17 +199,21 @@ async def test_positions_notional_handles_precision():
             "positions": positions_data,
             "assets": [
                 {"asset": "USDT", "free": "10000.0", "locked": "0.0"},
-            ]
-        }
+            ],
+        },
     )
 
     position_tracking.on_account_update(account_msg)
 
     # Check that portfolio state was emitted with correct precision
-    portfolio_events = [e for e in emitted_events if e[0] == "EVT:PORTFOLIO_STATE_UPDATED"]
+    portfolio_events = [
+        e for e in emitted_events if e[0] == "EVT:PORTFOLIO_STATE_UPDATED"
+    ]
     assert len(portfolio_events) == 1
 
     payload = portfolio_events[0][1]["payload"]
-    expected_notional = abs(Decimal("0.12345678") * Decimal("1999.98765432")).quantize(Decimal("0.01"))
+    expected_notional = abs(Decimal("0.12345678") * Decimal("1999.98765432")).quantize(
+        Decimal("0.01")
+    )
     assert Decimal(payload["open_positions_usd"]) == expected_notional
     assert "positions_last_ts_ms" in payload

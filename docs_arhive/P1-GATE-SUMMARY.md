@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-**P1 Phase Complete**: vFoundation federated FSM library досяг стабільного стану з CI/QA дисципліною.
+**P1 Phase Complete**: vFoundation federated FSM library до� яг � табільного � тану з CI/QA ди� ципліною.
 
 ### Gate Criteria (DoD)
 | Критерій | Target | Actual | Status |
@@ -27,15 +27,15 @@
 
 ### Rationale
 - **Platform-specific** (~0.5%): Unix `fcntl` branches unreachable на Windows CI
-- **CLI infra** (~0.4%): `schema`/`simulate` commands потребують повної інфраструктури setup
-- **FSM edge cases** (~0.3%): Diminishing returns — 10 тестів = +0.2% coverage
+- **CLI infra** (~0.4%): `schema`/`simulate` commands потребують повної інфра� труктури setup
+- **FSM edge cases** (~0.3%): Diminishing returns — 10 те� тів = +0.2% coverage
 - **Critical paths**: Покриття 95%+ для FSM, routing, contracts, drift monitor
 - **Next 1%**: Inflated coverage without business value
 
 ### Approval
 **Approved by**: Technical Lead (self-approval за absence of formal review board)  
 **Date**: 2025-01-27  
-**Justification**: Ядро стабільне, критичні шляхи покриті, mypy clean, CI дисциплінує
+**Justification**: Ядро � табільне, критичні шляхи покриті, mypy clean, CI ди� циплінує
 
 ---
 
@@ -164,7 +164,7 @@
 - `.coveragerc` (platform exclusions)
 - `.github/workflows/ci.yml`
 - `FSMP-P1-T06-GATE-UPLIFT.md`
-- ... (інші CI/тестові файли)
+- ... (інші CI/те� тові файли)
 
 ### Modified Files (8)
 - `vfoundation/cli/vfound/__main__.py` (type hints)
@@ -173,7 +173,7 @@
 - `vfoundation/apps/reference/domains/execution_position/fsm.py` (cast)
 - `TODO.md` (P1 complete)
 - `JOURNAL.md` (P1 summary)
-- `docs/Хазяйство/JOURNAL_мій.md` (P1 gate entry)
+- `docs/Хазяй� тво/JOURNAL_мій.md` (P1 gate entry)
 - `pytest.ini` (coverage threshold)
 
 ---
@@ -182,7 +182,7 @@
 
 **P1 Gate Status**: ✅ **CLOSED**
 
-**Ядро стабільне**, метрики й дрейф-монітор підв'язані, **CI дисциплінує**.
+**Ядро � табільне**, метрики й дрейф-монітор підв'язані, **CI ди� циплінує**.
 
 ### Key Achievements
 - 337 tests passing (було 321)

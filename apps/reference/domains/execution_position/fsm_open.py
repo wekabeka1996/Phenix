@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import time
 import logging
+import uuid
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Dict, Optional
@@ -23,6 +24,7 @@ from .contracts import (
     QTY_STEP,
     PRICE_STEP,
 )
+from .metrics_collector import MetricsCollector
 
 
 class OpenState(str, Enum):
@@ -49,6 +51,7 @@ class OpenFlowFSM:
         cooldown_sec: float = 1.0,
         guard_enabled: bool = True,
         config: Optional[Dict] = None,
+        metrics_collector: Optional[MetricsCollector] = None,
     ):
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
@@ -56,6 +59,7 @@ class OpenFlowFSM:
         self.config = config or {}
         self.last_open_ts: float = 0.0
         self.logger = logging.getLogger(__name__)
+        self.metrics_collector = metrics_collector
         self._metrics: Dict[str, int] = {
             "fsm_open_decisions_total": 0,
             "fsm_guard_rejects_total": 0,
@@ -111,6 +115,11 @@ class OpenFlowFSM:
             DEC:OPEN if guards pass, ERR if guards fail, None if not applicable.
         """
         if msg.op == "CMD" and msg.verb == "OPEN":
+            # Record CMD:OPEN
+            if self.metrics_collector:
+                self.metrics_collector.record_cmd_open()
+            timestamp_cmd = time.time()
+
             # 0. Idempotency Check
             self._cleanup_idempotency_store()
             idempotent_key = msg.pld.get("idempotent_key")
@@ -230,6 +239,8 @@ class OpenFlowFSM:
                     self.logger.warning(
                         f"GUARD_REJECT: Cooldown active - elapsed={now - self.last_open_ts:.2f}s, required={self.cooldown_sec}s, rid={msg.rid}"
                     )
+                    if self.metrics_collector:
+                        self.metrics_collector.record_qos_cooldown_hit()
                     return self._reject(msg, "OPEN_GUARD_FAIL", "cooldown active")
 
                 # All guards passed → generate DEC:OPEN
@@ -262,7 +273,15 @@ class OpenFlowFSM:
                     rid=msg.rid,
                     why="OPEN_OK",
                     pld=dec_pld,
+                    corr_id=str(uuid.uuid4()),
+                    oco_group_id=str(uuid.uuid4()),
                 )
+
+                # Record metrics
+                if self.metrics_collector:
+                    ms = (time.time() - timestamp_cmd) * 1000
+                    self.metrics_collector.record_time_to_open(ms)
+                    self.metrics_collector.record_open_success()
 
                 # Update state and metrics
                 self.state = OpenState.DONE
@@ -324,6 +343,8 @@ class OpenFlowFSM:
                 why="OPEN_OK",
                 idempotent_key=msg.idempotent_key,
                 pld=dec_pld,
+                corr_id=str(uuid.uuid4()),
+                oco_group_id=str(uuid.uuid4()),
             )
 
             # Update state and metrics

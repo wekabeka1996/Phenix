@@ -1,8 +1,12 @@
 from decimal import Decimal
+
 # Импортируй модуль, где реально считаются OBI/TFI (укажи путь проекта)
 import sys
-sys.path.insert(0, 'c:/Users/user/Music/Phenix')
-from apps.reference.domains.feature_engineering import feature_engineering as fe  # адаптируй имя
+
+sys.path.insert(0, "c:/Users/user/Music/Phenix")
+from apps.reference.domains.feature_engineering import (
+    feature_engineering as fe,
+)  # адаптируй имя
 
 
 def test_obi_tfi_basic():
@@ -33,7 +37,12 @@ def test_obi_tfi_basic():
     mock_fe = MockFeatureEngineering()
 
     # Test data
-    current_tick = {"bid_size": "100", "ask_size": "50", "buy_volume": "30", "sell_volume": "20"}
+    current_tick = {
+        "bid_size": "100",
+        "ask_size": "50",
+        "buy_volume": "30",
+        "sell_volume": "20",
+    }
     last_tick = {"price": "100"}
 
     obi, tfi = mock_fe._calculate_and_emit_features("BTCUSDT", current_tick, last_tick)

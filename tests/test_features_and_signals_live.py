@@ -24,10 +24,7 @@ root_path = str(Path(__file__).parent.parent)
 sys.path.insert(0, root_path)
 sys.path.insert(0, str(Path(__file__).parent.parent / "apps" / "reference"))
 
-try:
-    from config_loader import ConfigLoader
-except ImportError:
-    from apps.reference.config_loader import ConfigLoader
+from apps.reference.config_loader import ConfigLoader, AuroraConfig
 
 try:
     from vfoundation.core import FSMCore
@@ -227,28 +224,29 @@ async def test_signal_weights_loaded():
     config = ConfigLoader().load_config()
 
     # Check signal_weights in config
-    trading_config = config.get("trading", {})
-    decision_config = trading_config.get("decision", {})
-    signal_weights = decision_config.get("signal_weights", {})
+    trading_config = config.trading if hasattr(config, 'trading') else config.get("trading", {})
+    decision_config = trading_config.decision if hasattr(trading_config, 'decision') else trading_config.get("decision", {})
+    signal_weights = decision_config.signal_weights if hasattr(decision_config, 'signal_weights') else decision_config.get("signal_weights", {})
 
     print(f"\n📋 Config structure:")
-    print(f"  trading keys: {list(trading_config.keys())}")
-    print(f"  decision keys: {list(decision_config.keys())}")
-    print(f"  signal_weights: {signal_weights}")
+    print(f"  trading keys: {list(trading_config._config.keys()) if hasattr(trading_config, '_config') else list(trading_config.keys()) if hasattr(trading_config, 'keys') else 'N/A'}")
+    print(f"  decision keys: {list(decision_config._config.keys()) if hasattr(decision_config, '_config') else list(decision_config.keys()) if hasattr(decision_config, 'keys') else 'N/A'}")
+    print(f"  signal_weights: {signal_weights.to_dict() if hasattr(signal_weights, 'to_dict') else signal_weights}")
 
     # Assertions
-    assert "decision" in trading_config, "Missing 'decision' in trading config"
-    assert "signal_weights" in decision_config, (
+    assert "decision" in (trading_config._config if hasattr(trading_config, '_config') else trading_config), "Missing 'decision' in trading config"
+    assert "signal_weights" in (decision_config._config if hasattr(decision_config, '_config') else decision_config), (
         "Missing 'signal_weights' in decision config"
     )
 
     expected_weights = {"obi": 0.6, "tfi": 0.35, "delta_price": 0.05}
-    assert signal_weights == expected_weights, (
-        f"Signal weights mismatch. Expected {expected_weights}, got {signal_weights}"
+    actual_weights = signal_weights.to_dict() if hasattr(signal_weights, 'to_dict') else signal_weights
+    assert actual_weights == expected_weights, (
+        f"Signal weights mismatch. Expected {expected_weights}, got {actual_weights}"
     )
 
-    print(f"\n✅ Signal weights correctly loaded: {signal_weights}")
-    print(f"   Sum of weights: {sum(signal_weights.values())} (should be close to 1.0)")
+    print(f"\n✅ Signal weights correctly loaded: {actual_weights}")
+    print(f"   Sum of weights: {sum(actual_weights.values())} (should be close to 1.0)")
 
 
 def test_signal_calculation():
@@ -259,8 +257,14 @@ def test_signal_calculation():
 
     config = ConfigLoader().load_config()
 
-    trading_config = config.get("trading", {})
-    signal_weights = trading_config.get("decision", {}).get("signal_weights", {})
+    trading_config = config.trading if hasattr(config, 'trading') else config.get("trading", {})
+    signal_weights = trading_config.decision.signal_weights if hasattr(trading_config, 'decision') and hasattr(trading_config.decision, 'signal_weights') else trading_config.get("decision", {}).get("signal_weights", {})
+
+    # Convert to dict if AuroraConfig
+    if hasattr(signal_weights, 'to_dict'):
+        signal_weights = signal_weights.to_dict()
+    elif hasattr(signal_weights, '_config'):
+        signal_weights = signal_weights._config
 
     # Test signal calculation with mock features
     test_cases = [
@@ -463,12 +467,12 @@ def test_feature_calculation_formulas():
         Range: [-1, 1]
         > 0: More buy pressure (buyers waiting)
         < 0: More sell pressure (sellers waiting)
-    
+
     TFI (Trade Flow Imbalance) = Sum of buy trades - Sum of sell trades (normalized)
         Range: [-1, 1]
         > 0: More buying activity
         < 0: More selling activity
-    
+
     delta_price = (current_mid_price - previous_mid_price) / previous_mid_price
         Range: [-1, 1]
         > 0: Price increasing

@@ -200,17 +200,27 @@ def test_simulated_adapter_handles_missing_fields_gracefully(adapter):
 def test_simulated_adapter_integration_with_fsm(adapter):
     """Integration test: ExecPosFSM can inject SimulatedExecutionAdapter."""
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
-    from unittest.mock import MagicMock
 
-    config = MagicMock()
-    config.domain_fsm_settings = {
-        "execution_position": {
-            "timeout_ms": 5000,
-            "hot_path_max_ms": 100,
-            "fail_closed": True,
+    # Use proper config dict instead of MagicMock
+    config = {
+        "domain_fsm_settings": {
+            "execution_position": {
+                "timeout_ms": 5000,
+                "hot_path_max_ms": 100,
+                "fail_closed": True,
+            }
+        },
+        "trading": {
+            "execution": {
+                "exposure": {
+                    "max_portfolio_fraction": "0.20",
+                    "pending_ttl_sec": 90,
+                    "post_fill_hold_ttl_sec": 5,
+                    "positions_stale_ttl_sec": 5,
+                }
+            }
         }
     }
-    config.trading = {"execution": {}}  # Required by ExecPosFSM
 
     # Create FSM in shadow mode (no real adapter created)
     fsm = ExecPosFSM(config=config, fsm=None, shadow_mode=True)

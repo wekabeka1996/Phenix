@@ -7,9 +7,7 @@ def test_manage_disabled_emits_skipped(monkeypatch):
     # Импортируем класс Manage FSM из проекта
     from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
 
-    fsm = ManageFlowFSM(
-        config={"execution": {"manage": {"auto": False}}}
-    )
+    fsm = ManageFlowFSM(config={"execution": {"manage": {"auto": False}}})
     msg = Message(
         op="EVT",
         verb="TICK",

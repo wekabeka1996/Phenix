@@ -1,6 +1,430 @@
 # Aurora FSM Development Journal
 
-## 2025-10-30: RELEASE_V0.1.0 - Aurora+Scalp Production Release ✅
+## 2025-11-02: ORDER_LIFECYCLE_CORRELATION_V1 - Order Lifecycle Correlation & Metrics Implementation ✅
+
+**RID**: ORDER_LIFECYCLE_CORRELATION_COMPLETED
+**Why**: Implement additive-only correlation enhancements for order lifecycle tracing (corr_id, oco_group_id, link_ack_id, link_fill_id) and minimal metrics without breaking existing APIs, based on LIFECYCLE_AUDIT.md
+**Duration**: ~4 hours
+**Status**: ✅ COMPLETED
+
+### Implementation Overview
+
+#### 1. Protocol Extensions (vfoundation/core/protocol.py)
+- Added optional correlation fields to Message class:
+  - `corr_id: Optional[str] = None` - Correlation ID for order lifecycle tracing
+  - `oco_group_id: Optional[str] = None` - OCO group identifier
+  - `parent_client_order_id: Optional[str] = None` - Parent order reference
+  - `link_ack_id: Optional[str] = None` - Link to ACK event
+  - `link_fill_id: Optional[str] = None` - Link to FILL event
+- Maintained backward compatibility with Optional fields
+
+#### 2. Correlation Store (vfoundation/obs/correlation.py)
+- Created `CorrelationStore` class with thread-safe in-memory storage
+- TTL-based cleanup (24h default) to prevent memory leaks
+- Methods:
+  - `put_entry_ack(order_id, data)` - Store entry order correlation
+  - `put_sl_tp_ack(order_id, parent_client_order_id, corr_id, oco_group_id, rid)` - Store SL/TP correlation
+  - `get_by_order_id(order_id)` - Retrieve correlation data with TTL check
+  - `_cleanup_expired()` - Automatic TTL cleanup on access
+
+#### 3. FSM Open Flow Integration (apps/reference/domains/execution_position/fsm_open.py)
+- Generate `corr_id` and `oco_group_id` in DEC:OPEN response
+- Record `cmd_open` and `time_to_open_ms` metrics
+- Correlation IDs propagated from CMD:OPEN rid or generated as UUIDs
+
+#### 4. FSM Orchestration Updates (apps/reference/domains/execution_position/fsm.py)
+- Store entry/SL/TP ACKs in CorrelationStore with order_id mapping
+- Log ACK events with correlation data for tracing
+- Record retry metrics (retry_count, qos_cooldown_hits)
+- Enhanced error handling with correlation context
+
+#### 5. Account Observer Enhancement (apps/reference/domains/account_observer/account_observer.py)
+- EVT:FILL events enriched with correlation data from store lookup
+- Added `corr_id`, `link_fill_id`, `oco_group_id` to FILL payload
+- Correlation lookup by Binance orderId with fallback handling
+
+#### 6. Metrics Extensions (apps/reference/domains/execution_position/metrics_collector.py)
+- Added new correlation metrics:
+  - `open_success_rate` - Success rate of open operations
+  - `mean_time_to_open_ms` - Average time to open orders
+  - `defer_rate` - Rate of deferred operations
+  - `block_rate` - Rate of blocked operations
+  - `retry_count` - Total retry attempts
+  - `qos_cooldown_hits` - QoS cooldown activations
+- Derived calculations from raw counters and timers
+
+#### 7. Summary Tool Enhancement (tools/metrics_summary.py)
+- Extended L3-METRICS-SUMMARY report generation
+- Collects metrics from Prometheus endpoint
+- Calculates derived values and generates alerts
+- Saves `summary_gate_status.json` with timestamp and period data
+
+### Test Implementation
+
+#### 1. Correlation Store Tests (tests/unit/test_correlation_store.py)
+- TTL expiration testing with proper timing (1.0s sleep for 0.0001h TTL)
+- Entry/SL-TP correlation storage and retrieval
+- Cleanup functionality with get_stats() trigger
+- Thread safety validation
+
+#### 2. Order Lifecycle Tests (tests/integration/test_order_lifecycle_correlation.py)
+- End-to-end correlation flow from CMD:OPEN to EVT:FILL
+- DEC:OPEN correlation generation validation
+- EVT:FILL enrichment with correlation data
+- Message constructor fixes (added src/dst fields)
+
+#### 3. Metrics Summary Tests (tests/integration/test_metrics_summary.py)
+- Metrics collection and calculation validation
+- Summary report generation and JSON output
+- Alert generation logic testing
+
+### Validation Results
+- ✅ **All Tests Passing**: 15/15 tests across 3 test files
+- ✅ **API Compatibility**: No breaking changes to existing interfaces
+- ✅ **Correlation Flow**: Complete traceability CMD:OPEN → DEC:OPEN → ACK → EVT:FILL
+- ✅ **Metrics Coverage**: All minimal metrics implemented and tested
+- ✅ **TTL Management**: Proper cleanup prevents memory leaks
+- ✅ **Thread Safety**: Concurrent access protected with locks
+
+### Technical Details
+
+#### Correlation Data Structure
+```python
+entry_data = {
+    'corr_id': str(uuid.uuid4()),
+    'oco_group_id': str(uuid.uuid4()),
+    'rid': command.rid,
+    'parent_client_order_id': None,
+    'timestamp': time.time()
+}
+```
+
+#### EVT:FILL Enrichment
+```python
+corr_data = self.correlation_store.get_by_order_id(order_id)
+if corr_data:
+    payload["corr_id"] = corr_data["corr_id"]
+    payload["link_fill_id"] = order_id
+    payload["oco_group_id"] = corr_data.get("oco_group_id")
+    payload["parent_client_order_id"] = corr_data.get("parent_client_order_id")
+```
+
+#### Metrics Calculation
+```python
+def calculate_derived_metrics(self):
+    total_cmds = self.counters.get('cmd_open_total', 0)
+    if total_cmds > 0:
+        self.metrics['open_success_rate'] = self.counters.get('open_success_total', 0) / total_cmds
+        self.metrics['defer_rate'] = self.counters.get('defer_total', 0) / total_cmds
+        self.metrics['block_rate'] = self.counters.get('block_total', 0) / total_cmds
+```
+
+### Files Modified
+- `vfoundation/core/protocol.py` - Added correlation fields
+- `vfoundation/obs/correlation.py` - New CorrelationStore class
+- `apps/reference/domains/execution_position/fsm_open.py` - Correlation generation
+- `apps/reference/domains/execution_position/fsm.py` - ACK storage and logging
+- `apps/reference/domains/account_observer/account_observer.py` - FILL enrichment
+- `apps/reference/domains/execution_position/metrics_collector.py` - New metrics
+- `tools/metrics_summary.py` - Extended reporting
+- `tests/unit/test_correlation_store.py` - TTL and storage tests
+- `tests/integration/test_order_lifecycle_correlation.py` - End-to-end tests
+- `tests/integration/test_metrics_summary.py` - Metrics validation
+
+### Why Chain
+1. **Problem**: Lack of order lifecycle tracing and minimal monitoring metrics
+2. **Solution**: Additive correlation fields + TTL store + metrics extensions
+3. **Benefit**: Complete order traceability without API breakage
+4. **Ops**: Enhanced monitoring with success rates, timing, and retry metrics
+
+### Next Steps
+- Integration testing with live BinanceAdapter
+- Performance benchmarking of correlation lookups
+- Alert threshold configuration for metrics
+- Documentation updates for correlation fields
+
+---
+
+**RID**: ORDER_LOGGING_AUDIT_COMPLETED
+**Why**: Audit current order logging infrastructure and NRR codes, create normalization plan without making changes
+**Duration**: ~1 hour
+**Status**: ✅ COMPLETED
+
+### Audit Findings
+
+#### Logging Infrastructure
+- **JSONL Logs**: `logs/aurora_events.jsonl`, `logs/domain_decision_making.log` with structured events
+- **Event Types**: EVT:ORDER_STATE_CHANGED, GUARD_RATE_LIMIT_EXCEEDED, ORDER_PLACED
+- **Metrics**: Prometheus counters/histograms in `vfoundation/apps/reference/telemetry/metrics.py`
+- **FSM Integration**: Order lifecycle tracking in `apps/reference/domains/execution_position/fsm.py`
+
+#### NRR Codes Inventory
+- **NRR-011**: EXPOSURE_LIMIT_EXCEEDED (exposure_guard.py)
+- **NRR-012**: RATE_LIMIT_EXCEEDED (decision_making.py QoS)
+- **Source**: `vfoundation/core/why_codes.py` WhyCode enum
+- **Usage**: Logged in domain_decision_making.log with cooldown_left_ms, rate_state
+
+#### Reservation System
+- **TTL**: 90s default cleanup in exposure_guard.py
+- **Mechanism**: Reserve/release with idempotent keys
+- **Cleanup**: Automatic expiration via TTL watchdog
+
+#### Cooldown Mechanisms
+- **Symbol Cooldown**: 3s between decisions (decision_making.py)
+- **Exposure Block Cooldown**: 10s after exposure violations
+- **CB Cooldown**: Circuit breaker logic in adapters
+
+### Gaps Identified
+1. Inconsistent log formats across domains
+2. No unified order lifecycle schema
+3. Potential NRR code collisions
+4. Reservation logs not tied to order IDs
+
+### Proposed Solution
+- **L1-ORDER-LOGGER Schema**: Additive JSON Schema 2020-12 for unified logging
+- **NRR Normalization**: Extend WhyCode enum with NRR-013/014 for cooldowns
+- **Test Plan**: Schema validation, NRR coverage, reservation logging tests
+- **Artifact**: `artifacts/ORDER_LOGGER_AUDIT.md` with complete implementation plan
+
+### Files for Future Changes
+- `vfoundation/core/why_codes.py` - Add new NRR codes
+- `apps/reference/domains/decision_making/decision_making.py` - Schema logging
+- `apps/reference/domains/execution_position/fsm.py` - Schema integration
+- `vfoundation/adapters/binance_adapter.py` - Include adapter_resp
+- `vfoundation/core/exposure_guard.py` - Reservation logging
+
+**Result**: ✅ Audit completed, artifacts created, ready for review before implementation
+
+---
+
+## 2025-10-31: DECISION_MAKING_TRIAJ_V1 - Decision Logic Triage & Instrumentation ✅
+
+**RID**: DECISION_MAKING_TRIAJ_COMPLETED
+**Why**: Conduct triage of decision making and execution entry logic, add minimal XAI instrumentation and comprehensive tests
+**Duration**: ~4 hours
+**Status**: ✅ COMPLETED
+
+### Code Points Identified
+
+#### 1. Features Ready Check
+**Location**: `apps/reference/domains/decision_making/decision_making.py::_features_ready()`
+**Logic**: `lag_ms <= ttl_ms` (default 30s TTL)
+**Defer Condition**: `features_ready(symbol) == False` → DEFER with `why="features_not_ready"`
+
+#### 2. Trading Allowed Gates
+**Location**: `apps/reference/domains/risk_management/risk_management.py::_calculate_risk_parameters()`
+**Gates**:
+- `daily_drawdown > max_drawdown` → `is_trading_allowed = False`
+- `risk_score > max_risk_score` → `is_trading_allowed = False`
+**Check Location**: `decision_making.py::_make_decision_for_symbol()`
+
+#### 3. QoS (NRR-012) Semantics
+**Location**: `decision_making.py::_qos_allow()` + `_calculate_next_allowed_time()`
+**DEFER vs REJECT**:
+- `defer` mode: Emit `EVT:INTENT_DEFERRED` with `next_allowed_ts`
+- `enforce` mode: Block intent completely
+**NRR-012**: RATE_LIMIT_EXCEEDED for cooldown/rate limit violations
+
+#### 4. Exposure Reservations
+**Reserve**: `exposure_guard.reserve(key, notional_usd)` → stores in `reservations[key]`
+**TTL**: `pending_reservation_ttl_sec: 90` (default)
+**Cleanup**: `cleanup_expired_reservations()` removes stale reservations
+
+#### 5. Execution FSM OPEN Entry
+**Bridge**: `TRADE_INTENT_PROPOSED` → `CMD:OPEN` in `main.py::_dispatch_open()`
+**Reservation**: Created during CMD:OPEN processing in execution FSM
+
+### XAI Instrumentation Added
+
+#### Features Stale Log
+```python
+self.logger.warning(
+    format_why_with_details(
+        WhyCode.GUARD_RATE_LIMIT_EXCEEDED,
+        f"features_stale symbol={symbol} rid={rid} now_ts={now_ts} last_features_ts={features_ts} lag_ms={lag_ms} ttl_ms={ttl_ms}"
+    )
+)
+```
+
+#### Risk Gate Block Log
+```python
+logger.warning(
+    format_why_with_details(
+        WhyCode.RISK_DRAWDOWN_LIMIT,
+        f"gate=daily_drawdown value={float(current_daily_drawdown):.4f} threshold={float(max_drawdown):.4f}"
+    )
+)
+```
+
+#### QoS Defer Log
+```python
+self.logger.warning(
+    format_why_with_details(
+        WhyCode.GUARD_RATE_LIMIT_EXCEEDED,
+        f"cooldown_left_ms={cooldown_left_ms} rate_state={rate_state} code=NRR-012 why=qos_defer"
+    )
+)
+```
+
+#### Execution Entry Log
+```python
+self.logger.info(
+    format_why_with_details(
+        WhyCode.SUCCESS_ORDER_PLACED,
+        f"rid={command_payload.get('rid')} symbol={command_payload.get('symbol')} side={command_payload.get('side')} qty={command_payload.get('qty')} clientOrderId={command_payload.get('idempotent_key')} exposure_reservation_state=unknown why=exec_open_enter"
+    )
+)
+```
+
+### Tests Created
+
+#### 1. Integration Test: `tests/integration/test_hotloop_defer_then_open.py`
+- **Features Stale Scenario**: TTL exceeded → DEFER (no TRADE_INTENT_PROPOSED)
+- **Risk Budget Block**: Daily drawdown breach → BLOCK (no intent)
+- **Green Path**: All gates pass → TRADE_INTENT_PROPOSED with valid payload
+
+#### 2. Unit Test: `tests/unit/test_qos_nrr012.py`
+- **Rate Limit Semantics**: Proper retry timestamp calculation
+- **Symbol Cooldown**: 3s cooldown enforcement
+- **Defer Mode**: Correct EVT:INTENT_DEFERRED emission
+
+#### 3. Unit Test: `tests/unit/test_risk_gate_reasons.py`
+- **Daily Drawdown Gate**: 5% limit breach blocks trading
+- **Risk Score Gate**: Score threshold enforcement
+- **Portfolio Integration**: Drawdown calculation from equity changes
+
+### NRR Codes Verified
+- **NRR-011**: EXPOSURE_LIMIT_EXCEEDED (exposure block)
+- **NRR-012**: RATE_LIMIT_EXCEEDED (cooldown/rate limit)
+- **Table**: `apps/reference/domains/decision_making/normalized_reject_reasons.py`
+
+### Documentation
+- **Flow Diagram**: `docs/decision_flow_diagram.md` with Mermaid flowchart
+- **Analysis Report**: `triage_analysis.md` with detailed code point mapping
+
+### Files Modified
+- `apps/reference/domains/decision_making/decision_making.py`: Features TTL check + QoS instrumentation
+- `apps/reference/domains/risk_management/risk_management.py`: Risk gate instrumentation
+- `apps/reference/main.py`: Execution entry instrumentation
+- `tests/integration/test_hotloop_defer_then_open.py`: Hot-loop integration tests
+- `tests/unit/test_qos_nrr012.py`: QoS unit tests
+- `tests/unit/test_risk_gate_reasons.py`: Risk gate unit tests
+- `docs/decision_flow_diagram.md`: Flow documentation
+
+### Validation
+- ✅ All code points identified and documented
+- ✅ Minimal XAI instrumentation added (no contract changes)
+- ✅ 3 comprehensive test suites created
+- ✅ NRR codes verified and documented
+- ✅ Flow diagram and analysis report created
+- ✅ Ready for PR with test artifacts
+
+### Why Chain
+1. **Problem**: Unclear decision bottlenecks and missing execution telemetry
+2. **Solution**: Code triage + minimal instrumentation + comprehensive tests
+3. **Benefit**: Clear visibility into hot-loop performance and failure points
+4. **Ops**: Structured logging for monitoring decision pipeline health
+
+---
+
+**RID**: PORTFOLIO_FRESHNESS_GATE_COMPLETED
+**Why**: Implement bridge-level portfolio freshness gate to prevent TRADE_INTENT_PROPOSED events from being lost due to stale portfolio data causing fail-closed exposure blocks
+**Duration**: ~2 hours
+**Status**: ✅ COMPLETED
+
+### Problem Solved
+- **Race Condition**: TRADE_INTENT_PROPOSED events converted to CMD:OPEN immediately, but portfolio data stale → ExposureGuard fail-closed → lost trading opportunities
+- **Impact**: Trading system losing valid trade signals due to timing issues between intent processing and portfolio updates
+- **Root Cause**: No coordination between intent processing and portfolio freshness state
+
+### Solution Implemented
+
+#### 1. AuroraBridge Class (`apps/reference/main.py`)
+- **Portfolio State Tracking**: `_last_portfolio`, `_last_portfolio_ts` for freshness checking
+- **Deferred Intent Queue**: `Dict[str, Message]` with idempotent keys for pending intents
+- **Freshness Logic**: `_is_portfolio_fresh()` checks `positions_last_ts_ms` against TTL (5s default)
+- **Intent Processing**: Immediate conversion when fresh, deferral when stale
+- **Retry Mechanism**: Async retry tasks with configurable delays and max retries (3 attempts)
+- **Timeout Handling**: Deferred intents dropped after max retries with INTENT_DROPPED events
+
+#### 2. Event Emission
+- **INTENT_DEFERRED**: Emitted when intent deferred due to stale portfolio (reason: PORTFOLIO_STALE)
+- **INTENT_DROPPED**: Emitted when deferred intent times out (reason: STALE_PORTFOLIO_TIMEOUT)
+- **EXPOSURE_FAIL_CLOSED**: Enhanced ExposureGuard to emit when blocking due to PORTFOLIO_UNKNOWN/PORTFOLIO_STALE
+
+#### 3. Configuration Integration
+- **system.yaml**: Added `positions_stale_ttl_sec: 5` for portfolio freshness TTL
+- **FSM Integration**: ExecPosFSM passes FSM reference to ExposureGuard for event emission
+
+#### 4. Comprehensive Testing
+- **Integration Tests**: `tests/integration/test_bridge_portfolio_freshness_gate.py` with 3 scenarios:
+  - Intent deferred until portfolio fresh, then processed
+  - Intent processed immediately when portfolio already fresh
+  - Deferred intent timeout and drop after max retries
+- **All Tests**: 3/3 PASSED ✅
+
+### Technical Details
+
+#### Freshness Check Logic
+```python
+def _is_portfolio_fresh(self) -> bool:
+    if not self._last_portfolio_ts:
+        return False
+    now_ms = int(time.time() * 1000)
+    return (now_ms - self._last_portfolio_ts) <= self._ttl_sec * 1000
+```
+
+#### Deferral Flow
+```python
+# Portfolio stale → defer
+key = event.pld.get("idempotent_key") or event.rid or str(time.time())
+self._deferred[key] = event
+self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+
+# Emit deferred event
+defer_evt = Message(op="EVT", verb="INTENT_DEFERRED", ...)
+self.fsm.emit(defer_evt)
+
+# Schedule retry
+asyncio.create_task(_retry_once())
+```
+
+#### Retry & Timeout Logic
+```python
+async def _retry_once():
+    await asyncio.sleep(self._retry_delay_sec)
+    if self._deferred_tries.get(key, 0) >= self._max_retries:
+        # Drop with INTENT_DROPPED event
+        drop_evt = Message(op="EVT", verb="INTENT_DROPPED", ...)
+        self.fsm.emit(drop_evt)
+        # Remove from deferred queue
+    else:
+        # Try to flush if portfolio became fresh
+        await self._flush_deferred_if_fresh()
+```
+
+### Validation Results
+- ✅ **Race Condition Eliminated**: Intents no longer lost due to stale portfolio timing
+- ✅ **Event Monitoring**: Full traceability with INTENT_DEFERRED/INTENT_DROPPED events
+- ✅ **Configurable**: TTL, retry count, delay all configurable
+- ✅ **Fail-Safe**: Timeout prevents indefinite deferral
+- ✅ **Test Coverage**: All scenarios tested and passing
+- ✅ **Code Quality**: Ruff check/format clean, async patterns correct
+
+### Files Modified
+- `apps/reference/main.py`: AuroraBridge class with freshness gate logic
+- `config/aurora/system.yaml`: Added positions_stale_ttl_sec configuration
+- `apps/reference/domains/execution_position/exposure_guard.py`: Enhanced event emission
+- `apps/reference/domains/execution_position/fsm.py`: FSM reference passing
+- `tests/integration/test_bridge_portfolio_freshness_gate.py`: Comprehensive test suite
+
+### Why Chain
+1. **Problem**: Race condition causing lost trades due to stale portfolio data
+2. **Solution**: Bridge-level freshness gate with deferral and retry logic
+3. **Benefit**: Reliable intent processing with proper timing coordination
+4. **Ops**: Full event emission for monitoring and debugging
+
+---
 
 **RID**: RELEASE_V0_1_0_COMPLETED
 **Why**: Freeze SSOT, collect artifacts, create release notes, and tag v0.1.0 for production deployment
@@ -44,6 +468,30 @@ curl -s http://127.0.0.1:8000/statdump | jq .  # Real-time metrics
 ```
 
 ---
+
+## 2025-10-31: PROJECT_ATLAS_TOOL_ADDED - Atlas generation tooling (incomplete) ✅
+
+**RID**: PROJECT_ATLAS_TOOL_ADDED
+**Why**: Add tooling to inventory configs, schemas and events and generate `reports/atlas/*.json` and `docs/PROJECT_ATLAS.md` per TASK.md
+**Files**: `tools/build_project_atlas.py`, `reports/atlas/extracted_configs.json` (generated), `reports/atlas/extracted_contracts.json` (generated), `reports/atlas/extracted_events.json` (generated), `docs/PROJECT_ATLAS.md` (generated)
+**Status**: ✅ Created (best-effort implementation; further refinements expected)
+
+Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Python AST to find literal event tags and emit(...) calls. Results live under `reports/atlas/` and basic mermaid diagrams under `docs/diagrams/`.
+
+## 2025-10-31: ATLAS_P1_DONE - Atlas enrichment and tests ✅
+
+**RID**: ATLAS_P1_DONE
+**Why**: Enrich atlas with instruments table and gates/policies, include why samples for events, add mermaid diagrams and tests.
+**Files**: `tools/build_project_atlas.py` (enhanced), `reports/atlas/instruments_table.json`, `reports/atlas/gates_policies.json`, `docs/PROJECT_ATLAS.md` (extended), `docs/diagrams/*` (updated), `tests/tooling/test_build_project_atlas.py` (updated)
+**Status**: ✅ COMPLETED
+
+## 2025-10-31: AUR_HAPPY_OPEN_ADDED - Happy-path DEC:OPEN test ✅
+
+**RID**: AUR_HAPPY_OPEN_ADDED
+**Why**: Add deterministic integration test that verifies OpenFlowFSM emits `DEC:OPEN` under permissive/clean settings.
+**Files**: `tests/integration/test_happy_path_dec_open.py`
+**Status**: ✅ COMPLETED
+
 
 ## 2025-10-31: BINANCE_ADAPTER_SESSION_FIX - Session Attribute & HTTPX Migration ✅
 

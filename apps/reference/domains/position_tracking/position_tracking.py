@@ -144,7 +144,9 @@ class PositionTracking:
                 self._calculate_unrealized_pnl()
             ),  # Preserve Decimal precision as string
             "positions": self._get_positions_snapshot(),
-            "open_positions_usd": str(open_positions_usd),  # EXP-FIX: Notional for exposure gate
+            "open_positions_usd": str(
+                open_positions_usd
+            ),  # EXP-FIX: Notional for exposure gate
             "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
         }
 
@@ -268,7 +270,9 @@ class PositionTracking:
                 _d(payload.get("maxWithdrawAmount", self._equity))
             ),  # Available margin for new positions
             "positions": self._get_positions_snapshot(),
-            "open_positions_usd": str(open_positions_usd),  # EXP-FIX: Notional for exposure gate
+            "open_positions_usd": str(
+                open_positions_usd
+            ),  # EXP-FIX: Notional for exposure gate
             "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
         }
 
@@ -339,7 +343,9 @@ class PositionTracking:
             "unrealized_pnl": "0",  # Not available in balance update
             "available_balance": equity_data["equity_free_usdt"],
             "positions": self._get_positions_snapshot(),
-            "open_positions_usd": str(open_positions_usd),  # EXP-FIX: Notional for exposure gate
+            "open_positions_usd": str(
+                open_positions_usd
+            ),  # EXP-FIX: Notional for exposure gate
             "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
         }
 
@@ -484,6 +490,21 @@ class PositionTracking:
             "venues": venues,
         }
 
+    def _calculate_unrealized_pnl(self) -> decimal.Decimal:
+        """
+        Calculate total unrealized P&L for all positions.
+
+        Note: This is a simplified calculation since we don't have current market prices
+        in the position tracking domain. In production, this should be calculated using
+        current mark prices from market data.
+
+        Returns:
+            decimal.Decimal: Total unrealized P&L
+        """
+        # For now, return 0 since we don't have current market prices
+        # In production, this would be: sum((current_price - avg_entry_price) * quantity for each position)
+        return decimal.Decimal("0")
+
     def _calculate_open_positions_notional(self) -> decimal.Decimal:
         """
         Calculate total notional value of open positions in USD.
@@ -499,10 +520,14 @@ class PositionTracking:
             quantity = abs(position["quantity"])
             entry_price = position["avg_price"]
 
-            if quantity > decimal.Decimal("1e-9") and entry_price > decimal.Decimal("0"):
+            if quantity > decimal.Decimal("1e-9") and entry_price > decimal.Decimal(
+                "0"
+            ):
                 position_notional = quantity * entry_price
                 total_notional += position_notional
-                self.logger.debug(f"Position notional for {symbol}: {position_notional} USD")
+                self.logger.debug(
+                    f"Position notional for {symbol}: {position_notional} USD"
+                )
 
         # Round to 2 decimal places for consistency
         return total_notional.quantize(decimal.Decimal("0.01"))
@@ -630,8 +655,8 @@ class PositionTracking:
             positions_loaded: Dict[str, Dict[str, Any]] = {}
             for symbol, pos in state_to_load.get("positions", {}).items():
                 try:
-                    qty = _d(pos.get("qty", "0"))
-                    avg_price = _d(pos.get("avg_price", "0"))
+                    qty = decimal.Decimal(str(pos.get("qty", "0")))
+                    avg_price = decimal.Decimal(str(pos.get("avg_price", "0")))
                 except (ValueError, TypeError, decimal.InvalidOperation) as e:
                     self.logger.error(f"Invalid numeric in snapshot for {symbol}: {e}")
                     return False
@@ -649,7 +674,7 @@ class PositionTracking:
 
             if equity_str is not None:
                 try:
-                    self._equity = _d(equity_str)
+                    self._equity = decimal.Decimal(str(equity_str))
                 except (ValueError, TypeError, decimal.InvalidOperation):
                     self.logger.error("Invalid equity value in snapshot")
                     return False
@@ -657,7 +682,7 @@ class PositionTracking:
             # Try to reconstruct realized pnl if balance provided: realized = equity - balance
             if balance_str is not None:
                 try:
-                    balance_dec = _d(balance_str)
+                    balance_dec = decimal.Decimal(str(balance_str))
                     # realized_pnl = equity - balance
                     self._realized_pnl = self._equity - balance_dec
                 except (ValueError, TypeError, decimal.InvalidOperation):

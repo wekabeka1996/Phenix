@@ -109,7 +109,10 @@ class ManageFlowFSM:
                 dst="any",
                 rid=getattr(msg, "rid", None),
                 why="manage_disabled",
-                pld={"symbol": (msg.pld or {}).get("symbol"), "reason": "auto_manage_disabled"},
+                pld={
+                    "symbol": (msg.pld or {}).get("symbol"),
+                    "reason": "auto_manage_disabled",
+                },
             )
 
         if msg.op not in ("EVT", "UPD"):
@@ -122,7 +125,9 @@ class ManageFlowFSM:
             "TRADE_EXECUTED",
         ):
             self._on_fill(msg)
-            self.state = ManageState.BRACKETS_PENDING  # Place brackets after position opens
+            self.state = (
+                ManageState.BRACKETS_PENDING
+            )  # Place brackets after position opens
             print(f"[ManageFlowFSM] Position opened, placing brackets on {msg.verb}")
             # Place bracket orders immediately
             return self._place_brackets(msg)
@@ -337,11 +342,15 @@ class ManageFlowFSM:
             current_price = pld.get("price")
             if current_price is not None:
                 current_price_dec = Decimal(str(current_price))
-                trail_trigger = self.position_entry_price * (1 + Decimal(str(self.trail_pct / 100)))
+                trail_trigger = self.position_entry_price * (
+                    1 + Decimal(str(self.trail_pct / 100))
+                )
 
                 if current_price_dec > trail_trigger:
                     return self._emit_adjust(
-                        msg, "ADJUST_TRAIL", {"rule": "trail", "trigger_price": str(trail_trigger)}
+                        msg,
+                        "ADJUST_TRAIL",
+                        {"rule": "trail", "trigger_price": str(trail_trigger)},
                     )
 
             # Rule 2: Breakeven (stub: move SL to BE after X seconds)
@@ -372,14 +381,18 @@ class ManageFlowFSM:
         # Check if this is a bracket fill
         if order_id == self.sl_order_id:
             # SL filled - cancel TP (OCO emulation)
-            if self.tp_order_id and self.config.get("brackets", {}).get("oco_emulation", False):
+            if self.tp_order_id and self.config.get("brackets", {}).get(
+                "oco_emulation", False
+            ):
                 print(f"[ManageFlowFSM] SL filled, cancelling TP: {self.tp_order_id}")
                 return self._emit_cancel_order(msg, self.tp_order_id, "OCO_SL_filled")
             self.sl_order_id = None
 
         elif order_id == self.tp_order_id:
             # TP filled - cancel SL (OCO emulation)
-            if self.sl_order_id and self.config.get("brackets", {}).get("oco_emulation", False):
+            if self.sl_order_id and self.config.get("brackets", {}).get(
+                "oco_emulation", False
+            ):
                 print(f"[ManageFlowFSM] TP filled, cancelling SL: {self.sl_order_id}")
                 return self._emit_cancel_order(msg, self.sl_order_id, "OCO_TP_filled")
             self.tp_order_id = None
@@ -408,10 +421,16 @@ class ManageFlowFSM:
                     + Decimal(str(trailing_config.get("activation_profit_atr_k", 1.0)))
                     * Decimal("0.01")  # Simplified ATR
                 )
-                if self.position_side == "BUY" and current_price_dec >= activation_threshold:
+                if (
+                    self.position_side == "BUY"
+                    and current_price_dec >= activation_threshold
+                ):
                     self.trailing_activated = True
                     print(f"[ManageFlowFSM] Trailing stop activated at {current_price}")
-                elif self.position_side == "SELL" and current_price_dec <= activation_threshold:
+                elif (
+                    self.position_side == "SELL"
+                    and current_price_dec <= activation_threshold
+                ):
                     self.trailing_activated = True
                     print(f"[ManageFlowFSM] Trailing stop activated at {current_price}")
                 else:
@@ -426,14 +445,16 @@ class ManageFlowFSM:
             if self.position_side == "BUY":
                 # For long position, trail up
                 new_sl_price = max(
-                    self.sl_price, current_price_dec * (1 - Decimal(str(step_bps)) / 10000)
+                    self.sl_price,
+                    current_price_dec * (1 - Decimal(str(step_bps)) / 10000),
                 )
                 if new_sl_price > self.sl_price:
                     return self._adjust_trailing_stop(msg, new_sl_price)
             else:
                 # For short position, trail down
                 new_sl_price = min(
-                    self.sl_price, current_price_dec * (1 + Decimal(str(step_bps)) / 10000)
+                    self.sl_price,
+                    current_price_dec * (1 + Decimal(str(step_bps)) / 10000),
                 )
                 if new_sl_price < self.sl_price:
                     return self._adjust_trailing_stop(msg, new_sl_price)
@@ -507,6 +528,42 @@ class ManageFlowFSM:
     def get_metrics(self) -> Dict[str, int]:
         """Return metrics for observability."""
         return self._metrics.copy()
+
+    def hydrate(self, state_data: Dict[str, Any]) -> None:
+        """
+        Restore FSM state from persisted data.
+
+        Args:
+            state_data: Dictionary containing position and bracket state
+        """
+        try:
+            # Validate required fields
+            if "qty" not in state_data:
+                self.state = ManageState.ERROR
+                return
+
+            # Restore position data
+            self.position_qty = Decimal(str(state_data.get("qty", 0))) if state_data.get("qty") else None
+            self.position_entry_price = Decimal(str(state_data.get("entry_price", 0))) if state_data.get("entry_price") else None
+            self.position_side = state_data.get("side")
+            self.position_open_ts = float(state_data.get("open_ts", 0))
+
+            # Restore bracket data
+            self.sl_order_id = state_data.get("sl_order_id")
+            self.tp_order_id = state_data.get("tp_order_id")
+
+            # Set appropriate state based on what data is available
+            if self.position_qty and self.position_qty != 0:
+                if self.sl_order_id:
+                    self.state = ManageState.BRACKETS_PLACED
+                else:
+                    self.state = ManageState.TRACKING
+            else:
+                self.state = ManageState.FLAT
+
+        except (ValueError, TypeError, KeyError) as e:
+            print(f"Failed to hydrate ManageFlowFSM: {e}")
+            self.state = ManageState.ERROR
 
     def reset(self):
         """Reset FSM state (for testing)."""

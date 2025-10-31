@@ -117,7 +117,7 @@ class TestDailyGate:
         assert ok is False
         assert data["reason"] == "DAILY_RISK_LIMIT"
         assert data["detail"] == "MAX_DRAWDOWN"
-        assert data["drawdown_pct"] == "10"
+        assert data["drawdown_pct"] == "10.0"
 
     def test_can_open_allows_when_limits_not_exceeded(self):
         """Test allowing trades when limits not exceeded."""
@@ -139,7 +139,7 @@ class TestDailyGate:
         assert data["equity_open_usd"] == "1000"
         assert data["equity_now_usd"] == "950"
         assert data["realized_pnl_usd"] == "-10"
-        assert data["drawdown_pct"] == "5"
+        assert data["drawdown_pct"] == "5.0"
 
     def test_decimal_conversion(self):
         """Test decimal conversion helper."""

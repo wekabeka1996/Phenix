@@ -3,7 +3,7 @@
 ## Продуктивна конфігурація (production.yaml)
 
 ```yaml
-# Повна конфігурація системи з account_observer доменом
+# Повна конфігурація � и� теми з account_observer доменом
 trading_mode: live
 
 binance_api:
@@ -13,10 +13,10 @@ binance_api:
 
 account_observer:
   # Параметри моніторингу
-  poll_interval: 5          # Опитування кожні 5 секунд
-  trade_limit: 50          # Останні 50 трейдів за запит
+  poll_interval: 5          # Опитування кожні 5 � екунд
+  trade_limit: 50          # О� танні 50 трейдів за запит
 
-  # Список символів для моніторингу
+  # Спи� ок � имволів для моніторингу
   symbols:
     - BTCUSDT
     - ETHUSDT
@@ -28,7 +28,7 @@ account_observer:
     - LTCUSDT
 ```
 
-## Тестова конфігурація (testnet.yaml)
+## Те� това конфігурація (testnet.yaml)
 
 ```yaml
 trading_mode: testnet
@@ -74,7 +74,7 @@ account_observer:
   poll_interval: 3
   trade_limit: 100
 
-  # Розширений список символів
+  # Розширений � пи� ок � имволів
   symbols:
     - BTCUSDT
     - ETHUSDT
@@ -88,7 +88,7 @@ account_observer:
     - ALGOUSDT
 ```
 
-## Конфігурація для високої частоти (high_frequency.yaml)
+## Конфігурація для ви� окої ча� тоти (high_frequency.yaml)
 
 ```yaml
 trading_mode: live
@@ -99,10 +99,10 @@ binance_api:
     api_secret: "${BINANCE_LIVE_API_SECRET}"
 
 account_observer:
-  poll_interval: 1           # Агресивне опитування
+  poll_interval: 1           # Агре� ивне опитування
   trade_limit: 100          # Більше трейдів за раз
 
-  # Обмежений набір високоліквідних символів
+  # Обмежений набір ви� околіквідних � имволів
   symbols:
     - BTCUSDT
     - ETHUSDT

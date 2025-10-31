@@ -1,36 +1,36 @@
 # Функції домену Account Observer
 
-## Основний клас: AccountObserver
+## О� новний кла� : AccountObserver
 
-Клас `AccountObserver` реалізує моніторинг торгової активності через Binance API з автоматичною дедуплікацією та емісією подій FSM.
+Кла�  `AccountObserver` реалізує моніторинг торгової активно� ті через Binance API з автоматичною дедуплікацією та емі� ією подій FSM.
 
-### Конструктор: `__init__(self, fsm: Any, config: dict[str, Any]) -> None`
+### Кон� труктор: `__init__(self, fsm: Any, config: dict[str, Any]) -> None`
 
 Ініціалізує екземпляр AccountObserver з FSM та конфігурацією.
 
 **Параметри:**
-- `fsm: Any` - Екземпляр FSM core для емісії подій
-- `config: dict[str, Any]` - Конфігурація домену з наступною структурою:
+- `fsm: Any` - Екземпляр FSM core для емі� ії подій
+- `config: dict[str, Any]` - Конфігурація домену з на� тупною � труктурою:
   - `trading_mode: str` - Режим роботи ('live', 'testnet', 'hybrid_*')
   - `binance_api: dict` - Конфігурація API з ключами для live/testnet
     - `live: dict` - API ключі для mainnet
       - `api_key: str` - Binance API ключ
-      - `api_secret: str` - Binance API секрет
+      - `api_secret: str` - Binance API � екрет
     - `testnet: dict` - API ключі для testnet
       - `api_key: str` - Testnet API ключ
-      - `api_secret: str` - Testnet API секрет
+      - `api_secret: str` - Testnet API � екрет
   - `account_observer: dict` - Специфічна конфігурація домену
-    - `poll_interval: int` - Інтервал опитування в секундах (за замовчуванням 5)
-    - `symbols: list[str]` - Список символів для моніторингу (за замовчуванням ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'])
-    - `trade_limit: int` - Кількість трейдів для отримання за раз (за замовчуванням 50)
+    - `poll_interval: int` - Інтервал опитування в � екундах (за замовчуванням 5)
+    - `symbols: list[str]` - Спи� ок � имволів для моніторингу (за замовчуванням ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'])
+    - `trade_limit: int` - Кількі� ть трейдів для отримання за раз (за замовчуванням 50)
 
 **Повертає:** `None`
 
 **Викидає:**
-- `ImportError` - якщо не встановлена бібліотека python-binance
+- `ImportError` - якщо не в� тановлена бібліотека python-binance
 - `ValueError` - при невалідній конфігурації API ключів
 
-**Приклад використання:**
+**Приклад викори� тання:**
 ```python
 config = {
     'trading_mode': 'testnet',
@@ -54,18 +54,18 @@ observer = AccountObserver(fsm, config)
 
 ### Метод: `start(self) -> None`
 
-Запускає фонове опитування торгової активності.
+Запу� кає фонове опитування торгової активно� ті.
 
 **Параметри:** Немає
 
 **Повертає:** `None`
 
 **Побічні ефекти:**
-- Запускає daemon thread для `_poll_loop()`
-- Встановлює прапор `running = True`
+- Запу� кає daemon thread для `_poll_loop()`
+- В� тановлює прапор `running = True`
 - Логує початок роботи
 
-**Приклад використання:**
+**Приклад викори� тання:**
 ```python
 observer.start()
 # Тепер працює у фоні
@@ -82,12 +82,12 @@ observer.start()
 **Повертає:** `None`
 
 **Побічні ефекти:**
-- Встановлює `running = False`
-- Очікує завершення потоку (timeout 10 секунд)
+- В� тановлює `running = False`
+- Очікує завершення потоку (timeout 10 � екунд)
 - Логує завершення роботи
-- Очищає ресурси
+- Очищає ре� ур� и
 
-**Приклад використання:**
+**Приклад викори� тання:**
 ```python
 observer.stop()
 # Моніторинг зупинено
@@ -103,7 +103,7 @@ observer.stop()
 
 **Повертає:** `bool` - `True` якщо моніторинг активний
 
-**Приклад використання:**
+**Приклад викори� тання:**
 ```python
 if observer.is_running():
     print("Моніторинг активний")
@@ -113,12 +113,12 @@ if observer.is_running():
 
 ### Приватний метод: `_poll_loop(self) -> None`
 
-Основний цикл опитування API. Виконується у окремому потоці.
+О� новний цикл опитування API. Виконуєть� я у окремому потоці.
 
 **Алгоритм:**
 1. Перевіряє прапор `running`
 2. Якщо активний - викликає `_poll_trades()`
-3. Очікує `poll_interval` секунд
+3. Очікує `poll_interval` � екунд
 4. Повторює цикл
 
 **Обробка помилок:**
@@ -129,22 +129,22 @@ if observer.is_running():
 
 ### Приватний метод: `_poll_trades(self) -> None`
 
-Опитує трейди для всіх символів у конфігурації.
+Опитує трейди для в� іх � имволів у конфігурації.
 
 **Алгоритм:**
-1. Для кожного символу в `symbols`:
+1. Для кожного � имволу в `symbols`:
    - Викликає `_poll_symbol_trades(symbol)`
-2. Агрегує статистику викликів
+2. Агрегує � тати� тику викликів
 
 **Обробка помилок:**
-- Продовжує з іншими символами при помилці одного
-- Логує помилки для кожного символу окремо
+- Продовжує з іншими � имволами при помилці одного
+- Логує помилки для кожного � имволу окремо
 
 ---
 
 ### Приватний метод: `_poll_symbol_trades(self, symbol: str) -> None`
 
-Опитує трейди для конкретного символу.
+Опитує трейди для конкретного � имволу.
 
 **Параметри:**
 - `symbol: str` - Торгова пара (наприклад, 'BTCUSDT')
@@ -162,14 +162,14 @@ if observer.is_running():
 
 ### Приватний метод: `_process_trades(self, trades: list, symbol: str) -> None`
 
-Обробляє список трейдів для символу з дедуплікацією.
+Обробляє � пи� ок трейдів для � имволу з дедуплікацією.
 
 **Параметри:**
-- `trades: list` - Список трейдів від Binance API
+- `trades: list` - Спи� ок трейдів від Binance API
 - `symbol: str` - Торгова пара
 
 **Алгоритм:**
-1. Для кожного трейду в списку:
+1. Для кожного трейду в � пи� ку:
    - Перевіряє чи `trade['id']` вже оброблений
    - Якщо ні - додає в `processed_trade_ids`
    - Конвертує через `_trade_to_payload()`
@@ -177,9 +177,9 @@ if observer.is_running():
 2. Оновлює метрики обробки
 
 **Дедуплікація:**
-- Використовує `processed_trade_ids: Set[int]`
-- Перевіряє наявність перед обробкою
-- Додає після успішної обробки
+- Викори� товує `processed_trade_ids: Set[int]`
+- Перевіряє наявні� ть перед обробкою
+- Додає пі� ля у� пішної обробки
 
 ---
 
@@ -197,10 +197,10 @@ if observer.is_running():
 {
     'symbol': str,      # Торгова пара
     'side': str,        # 'buy' або 'sell'
-    'price': str,       # Ціна як рядок для точності
-    'quantity': str,    # Кількість (від'ємна для продажу)
-    'ts': int,          # Timestamp в мілісекундах
-    'fees': str,        # Комісія як рядок
+    'price': str,       # Ціна як рядок для точно� ті
+    'quantity': str,    # Кількі� ть (від'ємна для продажу)
+    'ts': int,          # Timestamp в мілі� екундах
+    'fees': str,        # Комі� ія як рядок
     'venue': str        # 'binance'
 }
 ```
@@ -209,5 +209,5 @@ if observer.is_running():
 - `isBuyer: true` → `side: 'buy'`
 - `isBuyer: false` → `side: 'sell'`
 - `qty` → `quantity` (від'ємне для продажу)
-- `price`, `commission` → зберігаються як рядки</content>
+- `price`, `commission` → зберігають� я як рядки</content>
 <parameter name="filePath">c:\Users\job11\Music\Olimp_v1\docs\domains\account_observer\functions.md

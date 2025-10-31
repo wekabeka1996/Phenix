@@ -508,16 +508,33 @@ class ManageFlowFSM:
         """Return metrics for observability."""
         return self._metrics.copy()
 
-    def reset(self):
-        """Reset FSM state (for testing)."""
-        self.state = ManageState.FLAT
-        self.position_qty = None
-        self.position_entry_price = None
-        self.position_open_ts = 0.0
-        self.position_side = None
-        self.sl_order_id = None
-        self.tp_order_id = None
-        self.sl_price = None
-        self.tp_price = None
-        self.trailing_activated = False
-        self.last_trailing_ts = 0.0
+    def hydrate(self, state_data: Dict[str, Any]) -> None:
+        """
+        Restore FSM state from persisted data.
+
+        Args:
+            state_data: Dictionary containing position and bracket state
+        """
+        try:
+            # Restore position data
+            self.position_qty = Decimal(str(state_data.get("qty", 0))) if state_data.get("qty") else None
+            self.position_entry_price = Decimal(str(state_data.get("entry_price", 0))) if state_data.get("entry_price") else None
+            self.position_side = state_data.get("side")
+            self.position_open_ts = float(state_data.get("open_ts", 0))
+
+            # Restore bracket data
+            self.sl_order_id = state_data.get("sl_order_id")
+            self.tp_order_id = state_data.get("tp_order_id")
+
+            # Set appropriate state based on what data is available
+            if self.position_qty and self.position_qty != 0:
+                if self.sl_order_id:
+                    self.state = ManageState.BRACKETS_PLACED
+                else:
+                    self.state = ManageState.TRACKING
+            else:
+                self.state = ManageState.FLAT
+
+        except (ValueError, TypeError, KeyError) as e:
+            self.logger.error(f"Failed to hydrate ManageFlowFSM: {e}")
+            self.state = ManageState.ERROR

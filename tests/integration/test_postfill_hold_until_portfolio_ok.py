@@ -36,7 +36,7 @@ async def test_postfill_hold_until_portfolio_ok():
 
     fsm_mock = MagicMock()
     emitted_events = []
-    fsm_mock.emit = lambda op, **kwargs: emitted_events.append((op, kwargs))
+    fsm_mock.emit = MagicMock(side_effect=lambda *args: emitted_events.append(args))
 
     fsm = ExecPosFSM(config, fsm_mock, shadow_mode=True)
 
@@ -68,8 +68,8 @@ async def test_postfill_hold_until_portfolio_ok():
             "idempotent_key": reserve_key,
             "qty": "1.0",
             "price": "2000.0",
-            "symbol": "ETHUSDT"
-        }
+            "symbol": "ETHUSDT",
+        },
     )
 
     fsm.handle(fill_msg)
@@ -90,17 +90,17 @@ async def test_postfill_hold_until_portfolio_ok():
             "side": "BUY",
             "qty": "0.01",
             "price_ref": "50000.0",
-            "idempotent_key": "open_key_456"
-        }
+            "idempotent_key": "open_key_456",
+        },
     )
 
     result = fsm.handle(open_msg)
     assert result is None  # Should be blocked
 
     await asyncio.sleep(0.1)
-    error_events = [e for e in emitted_events if e[0] == "ERR"]
+    error_events = [e for e in emitted_events if len(e) > 0 and hasattr(e[0], 'op') and e[0].op == "ERR"]
     assert len(error_events) == 1
-    assert error_events[0][1]["payload"]["reason"] == "EXPOSURE_LIMIT_EXCEEDED"
+    assert error_events[0][0].pld["reason"] == "EXPOSURE_LIMIT_EXCEEDED"
 
     # Now simulate fresh portfolio update (positions updated)
     updated_ts = int(time.time() * 1000)
@@ -114,7 +114,7 @@ async def test_postfill_hold_until_portfolio_ok():
             "equity_free_usdt": "10000.0",
             "open_positions_usd": "3000.0",  # Now includes the filled position
             "positions_last_ts_ms": updated_ts,
-        }
+        },
     )
 
     fsm.handle(portfolio_update_msg)
@@ -148,7 +148,7 @@ async def test_postfill_hold_expires_after_ttl():
 
     fsm_mock = MagicMock()
     emitted_events = []
-    fsm_mock.emit = lambda op, **kwargs: emitted_events.append((op, kwargs))
+    fsm_mock.emit = MagicMock(side_effect=lambda *args: emitted_events.append(args))
 
     fsm = ExecPosFSM(config, fsm_mock, shadow_mode=True)
 
@@ -175,8 +175,8 @@ async def test_postfill_hold_expires_after_ttl():
             "idempotent_key": reserve_key,
             "qty": "1.0",
             "price": "2000.0",
-            "symbol": "ETHUSDT"
-        }
+            "symbol": "ETHUSDT",
+        },
     )
 
     fsm.handle(fill_msg)

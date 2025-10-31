@@ -129,7 +129,7 @@ Note: Documentation and project listings ignore temporary and generated 'junk' f
 - `DR_PLAYBOOK.md` - Disaster recovery playbook
 - `project_structure.md` - This file
 - `docs_vfoundation/` - vFoundation-specific documentation
-- `Хазяйство/` - Additional documentation
+- `Хазяй� тво/` - Additional documentation
 
 ### ops/
 - `reports/` - Operational reports

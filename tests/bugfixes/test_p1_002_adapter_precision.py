@@ -29,11 +29,10 @@ async def test_decimal_precision_is_preserved_on_response():
     from a mocked API JSON response without losing precision.
     """
     # Mock aiohttp.ClientSession to return precise data
-    with patch("aiohttp.ClientSession") as mock_session_class:
+    with patch("httpx.AsyncClient") as mock_client_class:
         # Create mock session instance
         mock_session = AsyncMock()
-        mock_session_class.return_value = mock_session
-        mock_session.closed = False
+        mock_client_class.return_value = mock_session
 
         # Create mock response
         mock_response = AsyncMock()
@@ -41,10 +40,8 @@ async def test_decimal_precision_is_preserved_on_response():
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
 
-        # Set up the context manager for session.request()
-        mock_session.request = MagicMock()
-        mock_session.request.return_value.__aenter__.return_value = mock_response
-        mock_session.request.return_value.__aexit__.return_value = None
+        # Set up session.request to return the mock response
+        mock_session.request = AsyncMock(return_value=mock_response)
 
         # Initialize the adapter
         adapter = BinanceAdapter(
@@ -52,6 +49,9 @@ async def test_decimal_precision_is_preserved_on_response():
             api_secret="test_secret",
             rest_url="https://testnet.binancefuture.com",
         )
+
+        # Mock _sync_time to avoid time sync issues
+        adapter._sync_time = AsyncMock()
 
         # Call the method that makes the API request (mocked)
         positions = await adapter.get_open_positions()

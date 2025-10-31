@@ -1,0 +1,63 @@
+{
+  "files": {
+    ".github\\workflows\\ci.yml": {},
+    ".github\\workflows\\gemini-dispatch.yml": {},
+    ".github\\workflows\\gemini-invoke.yml": {},
+    ".github\\workflows\\gemini-review.yml": {},
+    ".github\\workflows\\gemini-scheduled-triage.yml": {},
+    ".github\\workflows\\gemini-triage.yml": {},
+    "config\\aurora\\regime.yaml": {},
+    "config\\aurora\\system.yaml": {},
+    "config\\aurora\\trading.staging.override.yaml": {},
+    "config\\aurora\\trading.yaml": {},
+    "configs\\master_config_v1.yaml": {
+      "execution": {
+        "manage": {
+          "auto": true
+        }
+      },
+      "ops": {
+        "metrics_url": "http://127.0.0.1:8000/metrics",
+        "reports_dir": "reports"
+      }
+    },
+    "configs\\frozen\\master_config_v1_20251030.yaml": {
+      "execution": {
+        "manage": {
+          "auto": false
+        }
+      },
+      "ops": {
+        "metrics_url": "http://127.0.0.1:8000/metrics",
+        "reports_dir": "reports"
+      }
+    },
+    "vfoundation\\configs\\adapter.yaml": {},
+    "vfoundation\\configs\\idempotency.yaml": {},
+    "vfoundation\\dictionaries\\global_v2_2.yaml": {
+      "ops": [
+        "ASK",
+        "DEC",
+        "CMD",
+        "EVT",
+        "UPD",
+        "ERR"
+      ]
+    },
+    "vfoundation\\dictionaries\\domain\\audit_xai.yaml": {},
+    "vfoundation\\dictionaries\\domain\\execution_position.yaml": {},
+    "vfoundation\\dictionaries\\domain\\risk_strategy.yaml": {},
+    "vfoundation\\examples\\flow.yaml": {}
+  },
+  "merged_master": {
+    "execution": {
+      "manage": {
+        "auto": true
+      }
+    },
+    "ops": {
+      "metrics_url": "http://127.0.0.1:8000/metrics",
+      "reports_dir": "reports"
+    }
+  }
+}

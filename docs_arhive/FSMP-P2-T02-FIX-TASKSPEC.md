@@ -9,10 +9,10 @@
 
 ## 🎯 Цель (Goal)
 
-Довести **FSMP-P2-T02** до DoD без изменения API/логики:
-- Coverage ≥ 90% (сейчас 81%)
-- Tests 14/14 PASS (сейчас 7/14)
-- mypy --strict = 0 warnings (сейчас 3)
+Дове� ти **FSMP-P2-T02** до DoD без изменения API/логики:
+- Coverage ≥ 90% (� ейча�  81%)
+- Tests 14/14 PASS (� ейча�  7/14)
+- mypy --strict = 0 warnings (� ейча�  3)
 - SLO validated: p95 ≤ 10ms, timeout_rate ≤ 1%
 
 ---
@@ -25,9 +25,9 @@
 
 **Решение**:
 - Создать `EmbeddedRedisHarness` или инжектируемый `LuaExecutor`:
-  - Эмулирует Lua-скрипты из `redis_store.py` (RESERVE_SCRIPT, CONFIRM_SCRIPT, RELEASE_SCRIPT)
-  - Гарантирует атомарность в рамках теста (mutex/lock)
-  - Совместим с `fakeredis` (базовые команды: GET/SET/DEL/PEXPIRE/EXISTS)
+  - Эмулирует Lua-� крипты из `redis_store.py` (RESERVE_SCRIPT, CONFIRM_SCRIPT, RELEASE_SCRIPT)
+  - Гарантирует атомарно� ть в рамках те� та (mutex/lock)
+  - Совме� тим �  `fakeredis` (базовые команды: GET/SET/DEL/PEXPIRE/EXISTS)
 
 **Файл**: `tests/idempotency/fixtures/lua_executor.py`
 
@@ -41,11 +41,11 @@ class LuaExecutor:
         ...
 ```
 
-**Критерий**: `RedisIdempotencyStore` работает с `LuaExecutor` вместо реального Redis в тестах.
+**Критерий**: `RedisIdempotencyStore` работает �  `LuaExecutor` вме� то реального Redis в те� тах.
 
 ---
 
-### 2. Добавить 7 пропущенных тестов
+### 2. Добавить 7 пропущенных те� тов
 
 #### Test 8: Concurrent reserve race (race.py)
 
@@ -125,18 +125,18 @@ def test_idemp_metrics_counters_p95():
 - `simple_redis_store.py`: 81%
 - `errors.py`: 82%
 - `store.py`: 76%
-- `redis_store.py`: 0% (не тестировался)
+- `redis_store.py`: 0% (не те� тировал� я)
 
 **Target**: ≥90% на ВСЕ модули
 
 **Подход**:
-1. Использовать `LuaExecutor` для тестирования `RedisIdempotencyStore` (основная имплементация)
-2. Покрыть граничные случаи:
+1. И� пользовать `LuaExecutor` для те� тирования `RedisIdempotencyStore` (о� новная имплементация)
+2. Покрыть граничные � лучаи:
    - CB transitions (CLOSED → OPEN → HALF_OPEN → CLOSED)
    - Retry exhaustion
    - Missing record on release/confirm
    - Race conditions (owner mismatch)
-3. Property-based tests (если времени достаточно): `hypothesis` для fuzz-тестов
+3. Property-based tests (е� ли времени до� таточно): `hypothesis` для fuzz-те� тов
 
 **Команда проверки**:
 ```bash
@@ -164,7 +164,7 @@ class RedisClientProtocol(Protocol):
     # ...
 ```
 
-2. Использовать `cast()` или `# type: ignore[no-untyped-call]` с комментарием WHY.
+2. И� пользовать `cast()` или `# type: ignore[no-untyped-call]` �  комментарием WHY.
 
 **Файлы**: `redis_store.py`, `simple_redis_store.py`
 
@@ -175,7 +175,7 @@ mypy vfoundation/vfoundation/core/idempotency --strict
 
 ---
 
-### 5. Validate SLO в тестах
+### 5. Validate SLO в те� тах
 
 **Метрики**:
 - `p95(reserve) ≤ 10ms`
@@ -202,7 +202,7 @@ def test_slo_validation():
 
 ### 6. WHY≤80 Automated Validators
 
-Создать хелпер для проверки WHY в тестах:
+Создать хелпер для проверки WHY в те� тах:
 
 ```python
 def assert_why_valid(err: IdempotencyError) -> None:
@@ -211,7 +211,7 @@ def assert_why_valid(err: IdempotencyError) -> None:
     assert err.code.startswith("ERR.idemp."), f"Invalid code: {err.code}"
 ```
 
-Использовать во ВСЕХ тестах с ошибками.
+И� пользовать во ВСЕХ те� тах �  ошибками.
 
 ---
 
@@ -219,7 +219,7 @@ def assert_why_valid(err: IdempotencyError) -> None:
 
 **Файл**: `docs/FSMP-P2-T02-COMPLETION-REPORT.md`
 
-Обновить секции:
+Обновить � екции:
 - Test Results: 14/14 PASS ✅
 - Coverage: ≥90% ✅
 - mypy: 0 warnings ✅
@@ -246,10 +246,10 @@ def assert_why_valid(err: IdempotencyError) -> None:
 
 ## 🚫 Out of Scope (STOP-рамка)
 
-- ❌ NO изменения API/логики (только тесты/типы)
+- ❌ NO изменения API/логики (только те� ты/типы)
 - ❌ NO изменения FSM/WAL
 - ❌ NO новые фичи
-- ❌ NO внешние зависимости (Docker Redis)
+- ❌ NO внешние зави� имо� ти (Docker Redis)
 
 ---
 

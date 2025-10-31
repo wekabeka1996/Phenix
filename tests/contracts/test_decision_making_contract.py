@@ -12,6 +12,7 @@ against formal contracts [FSMP-PORTING-T02A]
 import json
 from pathlib import Path
 import pytest
+import time
 from jsonschema import validate
 from unittest.mock import MagicMock
 import sys
@@ -109,7 +110,7 @@ def test_emitted_trade_intent_conforms_to_schema(decision_domain_for_contract_te
         src="feature_engineering",
         dst="decision_making",
         pld={
-            "ts": 123456,
+            "ts": int(time.time() * 1000),
             "symbol": "ETHUSDT",
             "features": {
                 "obi": 0.9,  # Strong positive order book imbalance

@@ -1,1 +1,1 @@
-# vfoundation apps package
+# Apps package

@@ -5,10 +5,16 @@ from vfoundation.core.protocol import Message
 def test_symbol_upper_and_required_fields():
     # Simple test to check that Message can handle lowercase symbols
     # and required fields are present
-    msg = Message(op="EVT", verb="FEATURES_CALCULATED", intent="OBSERVATION",
-                  src="test", dst="any", rid="r4",
-                  pld={"symbol": "ethusdt", "obi": 0.1, "tfi": 0.2, "delta_price": 0.0, "ts": 1},
-                  why="test")
+    msg = Message(
+        op="EVT",
+        verb="FEATURES_CALCULATED",
+        intent="OBSERVATION",
+        src="test",
+        dst="any",
+        rid="r4",
+        pld={"symbol": "ethusdt", "obi": 0.1, "tfi": 0.2, "delta_price": 0.0, "ts": 1},
+        why="test",
+    )
 
     # Check that the message was created successfully
     assert msg.pld["symbol"] == "ethusdt"

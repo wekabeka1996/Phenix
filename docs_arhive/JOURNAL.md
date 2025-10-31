@@ -88,28 +88,28 @@
 
 ## 2025-10-28 | RID: PACK-EXP-4-5-QOS-NRR | ✅ PASS — QoS Anti-Intent Spam + Normalized Reject Reasons
 
-**WHY**: PACK EXP-4: Decision QoS rate-limit для запобігання intent spam при exposure block; PACK EXP-5: Normalized Reject Reasons для стандартизації error codes.
+**WHY**: PACK EXP-4: Decision QoS rate-limit для запобігання intent spam при exposure block; PACK EXP-5: Normalized Reject Reasons для � тандартизації error codes.
 
-**STATUS**: ✅ **PASS** (QoS захищає від spam, NRR стандартизує errors, всі тести проходять)
+**STATUS**: ✅ **PASS** (QoS захищає від spam, NRR � тандартизує errors, в� і те� ти проходять)
 
 **IMPLEMENTATION SUMMARY**:
 - **PACK EXP-4: Decision QoS & Anti-Intent Spam**
-  - QoS Configuration: Додано qos секцію в config/aurora/trading.yaml (exposure_block_cooldown_sec=10, symbol_cooldown_sec=3, max_intents_per_minute_per_symbol=6)
+  - QoS Configuration: Додано qos � екцію в config/aurora/trading.yaml (exposure_block_cooldown_sec=10, symbol_cooldown_sec=3, max_intents_per_minute_per_symbol=6)
   - Schema Validation: Оновлено config/_schemas/aurora_trading.schema.json з qos валідацією (1-300s, 1-60s, 1-60 ranges)
   - QoS Logic: Реалізовано _qos_allow(), _update_symbol_cooldown(), _update_intent_count(), _handle_exposure_block() у DecisionMaking
   - Exposure Block Handling: Автоматичне виявлення exposure limit та активація 10s cooldown
   - Rate Limiting: Per-symbol rate limiting з sliding window (60s) та intent counting (max 6/min)
-  - Symbol Cooldowns: Незалежні cooldowns для кожного символу між рішеннями (3s)
+  - Symbol Cooldowns: Незалежні cooldowns для кожного � имволу між рішеннями (3s)
   - Integration: QoS перевірки інтегровано в _make_decision_for_symbol() з NRR кодами
-  - Tests: Створено test_decision_making_qos.py з повним покриттям QoS сценаріїв (8 тестів)
+  - Tests: Створено test_decision_making_qos.py з повним покриттям QoS � ценаріїв (8 те� тів)
 
 - **PACK EXP-5: Normalized Reject Reasons**
-  - NRR Module: Створено normalized_reject_reasons.py з 14 стандартними error кодами (NRR-001 до NRR-014)
-  - Regex Patterns: Реалізовано pattern matching для Binance API помилок → стандартизовані коди
+  - NRR Module: Створено normalized_reject_reasons.py з 14 � тандартними error кодами (NRR-001 до NRR-014)
+  - Regex Patterns: Реалізовано pattern matching для Binance API помилок → � тандартизовані коди
   - Error Mapping: Insufficient balance, invalid params, market closed, exposure limits, rate limits, network errors, timeouts
-  - Integration: Всі reject reasons у DecisionMaking тепер нормалізуються з NRR кодами у логах
+  - Integration: В� і reject reasons у DecisionMaking тепер нормалізують� я з NRR кодами у логах
   - Unknown Fallback: NRR-999 для невідомих помилок з UNKNOWN_ERROR кодом
-  - Tests: Створено test_normalized_reject_reasons.py з pattern matching тестами (7 тестів)
+  - Tests: Створено test_normalized_reject_reasons.py з pattern matching те� тами (7 те� тів)
 
 **TECHNICAL DETAILS**:
 - **QoS State Management**: defaultdict для symbol_cooldowns, symbol_intent_counts з window tracking
@@ -128,7 +128,7 @@
 - ✅ **Integration** (DecisionMaking logs NRR codes, QoS prevents spam)
 
 **FILES MODIFIED**:
-- `config/aurora/trading.yaml`: додано decision.qos секцію
+- `config/aurora/trading.yaml`: додано decision.qos � екцію
 - `config/_schemas/aurora_trading.schema.json`: додано qos properties валідація
 - `apps/reference/domains/decision_making/decision_making.py`: QoS logic + NRR integration
 - `apps/reference/domains/decision_making/normalized_reject_reasons.py`: NEW (NRR module)
@@ -136,28 +136,28 @@
 - `tests/test_decision_making_qos.py`: NEW (8 tests)
 - `TODO.md`: додано PACK EXP-4/5 completion status
 
-**NEXT**: PACK EXP-6 або інші експерименти з exposure guard reliability
+**NEXT**: PACK EXP-6 або інші ек� перименти з exposure guard reliability
 
 ## 2025-10-30 | RID: PACK-EXP-3-TELEMETRY | ✅ PASS — Telemetry & Metrics (Prometheus + FSM hooks)
 
-**WHY**: PACK EXP-3: Telemetry & Metrics - додавання метрик Prometheus для експозиції та лічильників подій, /metrics endpoint, FSM hooks для моніторингу guard performance.
+**WHY**: PACK EXP-3: Telemetry & Metrics - додавання метрик Prometheus для ек� позиції та лічильників подій, /metrics endpoint, FSM hooks для моніторингу guard performance.
 
-**STATUS**: ✅ **PASS** (метрики експортуються, /metrics працює, всі hooks інтегровані, тести проходять)
+**STATUS**: ✅ **PASS** (метрики ек� портують� я, /metrics працює, в� і hooks інтегровані, те� ти проходять)
 
 **IMPLEMENTATION SUMMARY**:
 - **Metrics Module**: Створено `vfoundation/apps/reference/telemetry/metrics.py` з gauges для exposure (equity/positions/pending/limit) та counters для подій (guard_rejects, pending_expired, manage_skipped, orders_placed/filled, decision_rate_limited)
 - **API Endpoint**: Додано `/metrics` у `apps/reference/api/main.py` з Response для Prometheus формату (production mode)
 - **FSM Hooks**: Інтегровано виклики у `vfoundation/apps/reference/domains/execution_position/fsm.py` - update_exposure на PORTFOLIO_STATE_UPDATED, inc_exposure_guard_block на ERR:OPEN з PORTFOLIO_EXPOSURE_LIMIT
 - **Manage Hook**: Додано kill-switch у `fsm_manage.py` - inc_manage_skipped коли auto_manage_enabled=false
-- **Adapter Hooks**: Інтегровано у `binance_execution_adapter.py` - inc_order_placed після успішного place, inc_order_filled у WebSocket handler для FILLED статусу
-- **Fail-Closed**: Заглушки для відсутності prometheus_client, graceful degradation
-- **Tests**: Створено unit/integration тести - test_metrics_update.py, test_metrics_endpoint.py, test_exposure_guard_reject_counter
+- **Adapter Hooks**: Інтегровано у `binance_execution_adapter.py` - inc_order_placed пі� ля у� пішного place, inc_order_filled у WebSocket handler для FILLED � тату� у
+- **Fail-Closed**: Заглушки для від� утно� ті prometheus_client, graceful degradation
+- **Tests**: Створено unit/integration те� ти - test_metrics_update.py, test_metrics_endpoint.py, test_exposure_guard_reject_counter
 
 **TECHNICAL DETAILS**:
 - **Metrics Format**: Prometheus-compatible з HELP/TYPE/# VALUE рядками
 - **Exposure Calculation**: equity_usd * fraction = limit_usd, positions_usd + pending_usd = total exposure
 - **Event Hooks**: update_exposure() на кожному portfolio update, counters на terminal events (ERR:OPEN, ORDER_FILLED)
-- **Production Mode**: /metrics доступний тільки коли TRADING_ENV != 'production' (debug API fallback)
+- **Production Mode**: /metrics до� тупний тільки коли TRADING_ENV != 'production' (debug API fallback)
 - **Decimal Safety**: _d() функція для безпечного перетворення у float з fallback
 
 **VALIDATION RESULTS**:
@@ -657,7 +657,7 @@ B) **SDK Binding (Paper/Testnet)**:
 - FSM edges (~0.3%): diminishing returns
 - **Next 1% = inflated coverage** without value
 
-**P1 Gate**: ✅ **CLOSED** | **Ядро стабільне, CI дисциплінує, метрики підв'язані**
+**P1 Gate**: ✅ **CLOSED** | **Ядро � табільне, CI ди� циплінує, метрики підв'язані**
 
 ---
 
@@ -837,7 +837,7 @@ B) **SDK Binding (Paper/Testnet)**:
 - **Documentation**: ACL-Adapter.md with interfaces, contracts, examples
 
 **RESULTS**:
-- **Tests: 141 → 159 passed** (+18 новых тестов)
+- **Tests: 141 → 159 passed** (+18 новых те� тов)
 - **Coverage ACL**: acl.py 90%, contracts.py 97%
 - **Shadow-mode**: stub exchange для testing (no live orders)
 - **Contracts validated**: all messages conform to protocol
@@ -855,7 +855,7 @@ B) **SDK Binding (Paper/Testnet)**:
 
 ---
 
-## 2025-01-12 | RID: FSMP-P1-INIT | P1 Baseline створено
+## 2025-01-12 | RID: FSMP-P1-INIT | P1 Baseline � творено
 
 **WHY**: start P1 epic (execution_position shadow-mode federation)
 
@@ -876,21 +876,21 @@ B) **SDK Binding (Paper/Testnet)**:
 
 ## 2025-01-12 | RID: FSMP-P0-T07-SECURITY-XAI | RBAC+Signature+WHY-discipline
 
-**WHY**: Тайтнинг безпеки (RBAC, Ed25519 для DEC/CMD) та XAI-дисципліна (why≤80)
+**WHY**: Тайтнинг безпеки (RBAC, Ed25519 для DEC/CMD) та XAI-ди� ципліна (why≤80)
 
 **ACTIONS**:
 - **RBAC**: `/debug` і `/replay` endpoints захищено через `require_admin()` (403 без токена)
-- **Signature verification**: DEC/CMD ops потребують валідного Ed25519 підпису (401 без sig)
+- **Signature verification**: DEC/CMD ops потребують валідного Ed25519 підпи� у (401 без sig)
   - `routing.py` додано перевірку перед WAL-write
   - Стаб через `signing_ed25519.sign()` / `verify()`
 - **WHY-discipline**: Router-level validation для `why > 80` chars → 400 без WAL-write
 - **Contracts**: Додано CMD до `global_v2_2.yaml` ops list, regenerated `message_v1.json` schema
 - **CLI**: Виправлено `vfound dict_lint` шляхи до `vfoundation/dictionaries/`
-- **Dependencies**: Встановлено `typer` (CLI) та `pynacl` (Ed25519 crypto)
-- **Breaking change**: Оновлено 4 тести в `test_single_flight_routing.py` для підпису DEC ops
+- **Dependencies**: В� тановлено `typer` (CLI) та `pynacl` (Ed25519 crypto)
+- **Breaking change**: Оновлено 4 те� ти в `test_single_flight_routing.py` для підпи� у DEC ops
 
 **RESULTS**:
-- **Тести: 137 → 141 passed** (13 нових security тестів, 4 виправлених)
+- **Те� ти: 137 → 141 passed** (13 нових security те� тів, 4 виправлених)
 - **Coverage: 89% → 90%** (517/572 рядків) ✅ **TARGET ДОСЯГНУТО!**
 - **Security coverage**: RBAC 100%, signature stub 100%, WHY-discipline validated
 - **Модулі з 100% покриттям**: idempotency, protocol, retry_cb, replay, why, rbac_abac, signing_ed25519
@@ -898,7 +898,7 @@ B) **SDK Binding (Paper/Testnet)**:
 - **Commits**:
   - `chore(security): rbac+signature stub; xai why-limit enforced [FSMP-P0-T07]` (2fa56a7)
   - Branch: `chore/p0-security-xai-tighten`
-- **Artefacts**: `tests/test_security_xai_tighten.py` (13 тестів), `schemas/message_v1.json`
+- **Artefacts**: `tests/test_security_xai_tighten.py` (13 те� тів), `schemas/message_v1.json`
 
 ---
 
@@ -907,27 +907,27 @@ B) **SDK Binding (Paper/Testnet)**:
 **WHY**: Виконання вимоги FSMP-P0-T03 щодо test coverage ≥ 90% для core FSM модулів
 
 **ACTIONS**:
-- Створено комплексні тестові сюїти для edge cases:
-  - `test_why_chain.py` (6 тестів) → why.py 100%
-  - `test_rbac.py` (8 тестів) → rbac_abac.py 100%
-  - `test_idempotency_edge_cases.py` (11 тестів) → idempotency.py 100%
-  - `test_wal_fallback.py` (11 тестів) → wal.py покращено до 75%
-  - `test_wal_additional.py` (7 тестів) → додаткові WAL сценарії
-  - `test_retry_cb_edge_cases.py` (3 тести) → retry_cb.py 100%
-  - `test_final_coverage_push.py` (7 тестів) → edge cases для CB і WAL
-  - `test_coverage_boost.py` (7 тестів) → RetryPolicy, WAL metrics
-  - `test_90_percent_target.py` (8 тестів) → CAS, integrity, JSON edge cases
-  - `test_debug_api_metrics.py` (9 тестів) → debug_api.py метрики покращено до 76%
-  - `test_exact_90_percent.py` (8 тестів) → специфічні непокриті лінії
-  - `test_final_90_push.py` (11 тестів) → chain integrity, спецсимволи
+- Створено комплек� ні те� тові � юїти для edge cases:
+  - `test_why_chain.py` (6 те� тів) → why.py 100%
+  - `test_rbac.py` (8 те� тів) → rbac_abac.py 100%
+  - `test_idempotency_edge_cases.py` (11 те� тів) → idempotency.py 100%
+  - `test_wal_fallback.py` (11 те� тів) → wal.py покращено до 75%
+  - `test_wal_additional.py` (7 те� тів) → додаткові WAL � ценарії
+  - `test_retry_cb_edge_cases.py` (3 те� ти) → retry_cb.py 100%
+  - `test_final_coverage_push.py` (7 те� тів) → edge cases для CB і WAL
+  - `test_coverage_boost.py` (7 те� тів) → RetryPolicy, WAL metrics
+  - `test_90_percent_target.py` (8 те� тів) → CAS, integrity, JSON edge cases
+  - `test_debug_api_metrics.py` (9 те� тів) → debug_api.py метрики покращено до 76%
+  - `test_exact_90_percent.py` (8 те� тів) → � пецифічні непокриті лінії
+  - `test_final_90_push.py` (11 те� тів) → chain integrity, � пец� имволи
 
-- Виправлено 2 падаючих тести в test_wal_replay.py:
-  - Проблема: replay_for_rid() шукав WAL у `ops/wal`, але тести створювали в tmp_path
-  - Рішення: Використання `wal.set_wal_dir()` для налаштування тимчасових директорій
+- Виправлено 2 падаючих те� ти в test_wal_replay.py:
+  - Проблема: replay_for_rid() шукав WAL у `ops/wal`, але те� ти � творювали в tmp_path
+  - Рішення: Викори� тання `wal.set_wal_dir()` для налаштування тимча� ових директорій
 
 **RESULTS**:
 - **Покриття: 82% → 89%** (476/537 рядків)
-- **Тести: 72 → 128 passed** (78% зростання)
+- **Те� ти: 72 → 128 passed** (78% зро� тання)
 - **Модулі з 100% покриттям**:
   - `protocol.py` (38 рядків)
   - `routing.py` (68 рядків)
@@ -937,22 +937,22 @@ B) **SDK Binding (Paper/Testnet)**:
   - `rbac_abac.py` (9 рядків)
   - `retry_cb.py` (40 рядків)
 
-- **Модулі з високим покриттям**:
+- **Модулі з ви� оким покриттям**:
   - `wal.py`: 75% (44 непокритих — Unix fcntl код)
   - `debug_api.py`: 76% (17 непокритих — FastAPI endpoints)
 
 **BLOCKERS**:
 - Непокритий Unix fcntl код у wal.py (44 рядки) неможливо виконати на Windows без mock'ування
-- FastAPI endpoints у debug_api.py (17 рядків) потребують async тестування з TestClient
+- FastAPI endpoints у debug_api.py (17 рядків) потребують async те� тування з TestClient
 
 **ARTIFACTS**:
-- 13 нових тестових файлів
+- 13 нових те� тових файлів
 - HTML звіт покриття: `htmlcov/index.html`
 - Покриття термінал звіт: `coverage.xml`
 
 **NEXT STEPS**:
-- Розгляд можливості використання `# pragma: no cover` для platform-specific коду
-- Або додавання mock'ів для fcntl для досягнення 90%+
+- Розгляд можливо� ті викори� тання `# pragma: no cover` для platform-specific коду
+- Або додавання mock'ів для fcntl для до� ягнення 90%+
 
 ---
 
@@ -963,7 +963,7 @@ B) **SDK Binding (Paper/Testnet)**:
 **ACTIONS**:
 - Створено `docs/docs_vfoundation/ADR-004-WAL-Concurrency.md` (449 рядків)
 - Секції:
-  - Context: Проблематика, вимоги (атомарність, ідемпотентність, cross-platform)
+  - Context: Проблематика, вимоги (атомарні� ть, ідемпотентні� ть, cross-platform)
   - Decision: Windows global Lock vs Unix fcntl.flock, single-flight state machine
   - Consequences: 502 rec/sec throughput, 0% timeouts, memory footprint
   - Alternatives: Відкинуто DB-backed WAL, lock-free CAS, async queue
@@ -978,7 +978,7 @@ B) **SDK Binding (Paper/Testnet)**:
 
 ## 2025-01-12 | RID: FSMP-P0-T03-PROTOCOL | Виправлено protocol.py
 
-**WHY**: Виправлення архітектурної помилки — відсутність "CMD" у дозволених Op values
+**WHY**: Виправлення архітектурної помилки — від� утні� ть "CMD" у дозволених Op values
 
 **ACTIONS**:
 - Додано "CMD" до `Op = Literal["ASK","DEC","CMD","EVT","UPD","ERR"]` (protocol.py:7)
@@ -987,11 +987,11 @@ B) **SDK Binding (Paper/Testnet)**:
   - DEC: рішення FSM (approve/reject/position size)
   - CMD: команди виконання (OPEN/CLOSE/ADJUST order)
   - EVT: події-нотифікації
-  - UPD: оновлення стану
+  - UPD: оновлення � тану
   - ERR: повідомлення про помилки
 
 **RESULTS**:
-- Усунуто ValidationError у apps/reference FSM domains
+- У� унуто ValidationError у apps/reference FSM domains
 - MyPy: Success (24 source files)
 
 **ARTIFACTS**:

@@ -36,7 +36,9 @@ class AuroraLogAdapter:
         self.logger.setLevel(getattr(logging, level.upper()))
 
         # Avoid duplicate handlers
-        if not self.logger.handlers:
+        already = any(isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", "") == str(self.log_file)
+                      for h in self.logger.handlers)
+        if not already:
             # File handler with trade-specific format
             file_handler = logging.FileHandler(self.log_file, encoding="utf-8")
             formatter = logging.Formatter(
@@ -45,8 +47,8 @@ class AuroraLogAdapter:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
 
-            # Prevent propagation to root logger
-            self.logger.propagate = False
+        # Prevent propagation to root logger
+        self.logger.propagate = False
 
     def log_trade_intent(
         self,

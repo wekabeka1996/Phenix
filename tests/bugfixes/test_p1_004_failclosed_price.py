@@ -6,6 +6,7 @@ which could cause catastrophic losses if market data is unavailable.
 """
 
 import pytest
+import time
 from unittest.mock import Mock, MagicMock
 from vfoundation.core.protocol import Message
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
@@ -98,9 +99,9 @@ class TestFailClosedPricePattern:
         }
 
         # Feed data to trigger decision logic
-        dm.on_features(Mock(pld=features_payload))
-        dm.on_risk(Mock(pld=risk_payload))
-        dm.on_portfolio(Mock(pld=portfolio_payload))
+        dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED", src="test", dst="test", pld=features_payload))
+        dm.on_risk(Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED", src="test", dst="test", pld=risk_payload))
+        dm.on_portfolio(Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="test", dst="test", pld=portfolio_payload))
 
         # Assert: NO event should be emitted (fail-closed)
         assert len(emitted_events) == 0, (
@@ -164,7 +165,7 @@ class TestFailClosedPricePattern:
             dst="test",
             pld={
                 "symbol": "ETHUSDT",
-                "ts": 1640995200000,
+                "ts": int(time.time() * 1000),
                 "features": {
                     "price": "3850.50",
                     "obi": "0.5",

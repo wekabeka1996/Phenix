@@ -43,6 +43,15 @@ class MetricsCollector:
             "executions_filled": 0,
             "executions_cancelled": 0,
             "executions_rejected": 0,
+            # New correlation metrics
+            "open_success_total": 0,
+            "cmd_open_total": 0,
+            "defer_rate": 0.0,
+            "block_rate": 0.0,
+            "retry_count": 0,
+            "qos_cooldown_hits": 0,
+            "time_to_open_ms_sum": 0.0,
+            "time_to_open_count": 0,
             # EXP-FIX: Exposure gate metrics
             "exposure_fail_closed_total": defaultdict(int),
             "postfill_hold_active": 0,
@@ -152,12 +161,35 @@ class MetricsCollector:
     def record_postfill_released(self) -> None:
         """EXP-FIX: Record released post-fill hold."""
         with self._lock:
-            self._metrics["postfill_hold_released_total"] = self._metrics.get("postfill_hold_released_total", 0) + 1
+            self._metrics["postfill_hold_released_total"] = (
+                self._metrics.get("postfill_hold_released_total", 0) + 1
+            )
 
-    def record_exposure_mismatch(self, check_type: str) -> None:
-        """EXP-FIX: Record exposure mismatch detection."""
+    def record_cmd_open(self) -> None:
+        """Record CMD:OPEN received."""
         with self._lock:
-            self._metrics["exposure_mismatch_total"][check_type] += 1
+            self._metrics["cmd_open_total"] += 1
+
+    def record_open_success(self) -> None:
+        """Record successful DEC:OPEN."""
+        with self._lock:
+            self._metrics["open_success_total"] += 1
+
+    def record_time_to_open(self, ms: float) -> None:
+        """Record time from CMD:OPEN to DEC:OPEN in ms."""
+        with self._lock:
+            self._metrics["time_to_open_ms_sum"] += ms
+            self._metrics["time_to_open_count"] += 1
+
+    def record_retry(self, reason: str) -> None:
+        """Record retry event."""
+        with self._lock:
+            self._metrics["retry_count"] += 1
+
+    def record_qos_cooldown_hit(self) -> None:
+        """Record QoS cooldown hit."""
+        with self._lock:
+            self._metrics["qos_cooldown_hits"] += 1
 
     def get_summary_metrics(self) -> Dict[str, Any]:
         """Get summary metrics for the entire system."""
@@ -179,6 +211,24 @@ class MetricsCollector:
                 else 0.0
             )
 
+            # New metrics calculations
+            cmd_open_total = self._metrics["cmd_open_total"]
+            defer_rate = (
+                self._metrics["guard_rejections_other"] / cmd_open_total
+                if cmd_open_total > 0
+                else 0.0
+            )
+            block_rate = (
+                self._metrics["qos_cooldown_hits"] / cmd_open_total
+                if cmd_open_total > 0
+                else 0.0
+            )
+            mean_time_to_open_ms = (
+                self._metrics["time_to_open_ms_sum"] / self._metrics["time_to_open_count"]
+                if self._metrics["time_to_open_count"] > 0
+                else 0.0
+            )
+
             return {
                 "total_intents": self._metrics["trade_intents_total"],
                 "total_accepted": self._metrics["trade_decisions_accepted"],
@@ -191,10 +241,22 @@ class MetricsCollector:
                 "executions_filled": self._metrics["executions_filled"],
                 "executions_cancelled": self._metrics["executions_cancelled"],
                 "executions_rejected": self._metrics["executions_rejected"],
+                # New correlation metrics
+                "open_success_total": self._metrics["open_success_total"],
+                "cmd_open_total": self._metrics["cmd_open_total"],
+                "mean_time_to_open_ms": mean_time_to_open_ms,
+                "defer_rate": defer_rate,
+                "block_rate": block_rate,
+                "retry_count": self._metrics["retry_count"],
+                "qos_cooldown_hits": self._metrics["qos_cooldown_hits"],
                 # EXP-FIX: Exposure gate metrics
-                "exposure_fail_closed": dict(self._metrics["exposure_fail_closed_total"]),
+                "exposure_fail_closed": dict(
+                    self._metrics["exposure_fail_closed_total"]
+                ),
                 "postfill_hold_active": self._metrics["postfill_hold_active"],
-                "postfill_hold_expired_total": self._metrics["postfill_hold_expired_total"],
+                "postfill_hold_expired_total": self._metrics[
+                    "postfill_hold_expired_total"
+                ],
                 "exposure_mismatch": dict(self._metrics["exposure_mismatch_total"]),
             }
 
@@ -287,6 +349,30 @@ class MetricsCollector:
     def reset(self) -> None:
         """Reset all metrics (useful for testing)."""
         with self._lock:
-            self._metrics = {k: 0 for k in self._metrics}
+            self._metrics = {
+                "trade_intents_total": 0,
+                "trade_decisions_accepted": 0,
+                "trade_decisions_rejected": 0,
+                "guard_rejections_cooldown": 0,
+                "guard_rejections_other": 0,
+                "executions_placed": 0,
+                "executions_filled": 0,
+                "executions_cancelled": 0,
+                "executions_rejected": 0,
+                # New correlation metrics
+                "open_success_total": 0,
+                "cmd_open_total": 0,
+                "defer_rate": 0.0,
+                "block_rate": 0.0,
+                "retry_count": 0,
+                "qos_cooldown_hits": 0,
+                "time_to_open_ms_sum": 0.0,
+                "time_to_open_count": 0,
+                # EXP-FIX: Exposure gate metrics
+                "exposure_fail_closed_total": defaultdict(int),
+                "postfill_hold_active": 0,
+                "postfill_hold_expired_total": 0,
+                "exposure_mismatch_total": defaultdict(int),
+            }
             self._symbol_metrics.clear()
             self._rolling_data.clear()

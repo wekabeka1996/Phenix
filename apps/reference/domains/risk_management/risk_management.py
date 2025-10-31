@@ -15,9 +15,21 @@ from vfoundation.core.protocol import Message
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
 
+from vfoundation.core.why_codes import WhyCode, format_why_with_details
+
 
 logger = logging.getLogger(__name__)
 chain_logger = logging.getLogger("event_chain")
+
+
+def _to_dec(x, default=decimal.Decimal("0")):
+    """Safely convert value to Decimal, handling None and invalid inputs."""
+    try:
+        if x is None:
+            return default
+        return decimal.Decimal(str(x))
+    except (decimal.InvalidOperation, ValueError, TypeError):
+        return default
 
 
 class RiskManagement:
@@ -150,34 +162,39 @@ class RiskManagement:
                 f"PORTFOLIO RISK BREACH: Daily drawdown {self.current_daily_drawdown:.2%} > {max_drawdown:.2%}. "
                 f"Disabling all trading."
             )
+            # XAI instrumentation: daily_drawdown gate
+            logger.warning(
+                format_why_with_details(
+                    WhyCode.RISK_DRAWDOWN_LIMIT,
+                    f"gate=daily_drawdown value={float(self.current_daily_drawdown):.4f} threshold={float(max_drawdown):.4f}"
+                )
+            )
             return {"is_trading_allowed": False}
 
         # 2. Instrument-level risk check (if portfolio risk is OK)
-        # Extract features as Decimal
-        obi = decimal.Decimal(str(features.get("obi", 0.0)))
-        tfi = decimal.Decimal(str(features.get("tfi", 0.0)))
-        delta_price = decimal.Decimal(str(features.get("delta_price", 0.0)))
-        absorption = decimal.Decimal(str(features.get("absorption", 0.0)))
+        # Extract features with safe parsing
+        obi = _to_dec(features.get("obi"))
+        tfi = _to_dec(features.get("tfi"))
+        delta_price = _to_dec(features.get("delta_price"))
+        absorption = _to_dec(features.get("absorption"))
 
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
         score_weights = self.config.get("risk", {}).get("score_weights", {})
-        delta_price_weight = decimal.Decimal(
-            str(score_weights.get("delta_price", "0.1"))
-        )
-        obi_weight = decimal.Decimal(str(score_weights.get("obi", "0.3")))
-        tfi_weight = decimal.Decimal(str(score_weights.get("tfi", "0.3")))
-        absorption_inverse_weight = decimal.Decimal(
-            str(score_weights.get("absorption_inverse", "0.3"))
-        )
+        delta_price_weight = _to_dec(score_weights.get("delta_price", "0.1"))
+        obi_weight = _to_dec(score_weights.get("obi", "0.3"))
+        tfi_weight = _to_dec(score_weights.get("tfi", "0.3"))
+        absorption_inverse_weight = _to_dec(score_weights.get("absorption_inverse", "0.3"))
+
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
-        price = decimal.Decimal(str(features.get("price", 1.0)))  # Current price
+        price = _to_dec(features.get("price", 1.0))  # Current price
         delta_price_pct = (
             (abs(delta_price) / price) if price > 0 else decimal.Decimal("0")
         )
+
         # Risk score uses normalized features (all in [0, 1] range approximately)
-        # - delta_price_pct: percentage change (0.01 = 1%)
+        # - delta_price_pct: percentage change (0.01 = 1% change)
         # - obi, tfi, absorption: already normalized to [-1, 1] or [0, 1]
         risk_score = (
             delta_price_pct * delta_price_weight
@@ -185,10 +202,26 @@ class RiskManagement:
             + abs(tfi) * tfi_weight
             + (decimal.Decimal("1") - absorption) * absorption_inverse_weight
         )
+
+        # Clamp risk_score to [0, 1] range
+        if risk_score < 0:
+            risk_score = decimal.Decimal("0")
+        if risk_score > 1:
+            risk_score = decimal.Decimal("1")
+
         # Determine if trading is allowed based on risk thresholds
         thresholds = self.config.get("risk", {}).get("trading_allowed_thresholds", {})
-        max_risk_score = decimal.Decimal(str(thresholds.get("max_risk_score", "0.8")))
+        max_risk_score = _to_dec(thresholds.get("max_risk_score", "0.8"))
         is_trading_allowed = risk_score <= max_risk_score
+
+        if not is_trading_allowed:
+            # XAI instrumentation: score gate
+            logger.warning(
+                format_why_with_details(
+                    WhyCode.RISK_SCORE_HIGH,
+                    f"gate=score value={float(risk_score):.4f} threshold={float(max_risk_score):.4f}"
+                )
+            )
 
         self.logger.info(
             f"Risk assessment: risk_score={float(risk_score):.4f}, "
@@ -196,7 +229,8 @@ class RiskManagement:
         )
 
         return {
-            "is_trading_allowed": is_trading_allowed
+            "is_trading_allowed": is_trading_allowed,
+            "risk_score": float(risk_score),  # Always numeric, never null
             # Note: kelly_fraction and cvar_limit_usd are calculated in DecisionMaking from SSOT
         }
 

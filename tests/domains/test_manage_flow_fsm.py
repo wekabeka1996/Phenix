@@ -44,6 +44,7 @@ def test_hydrate_missing_key_sets_error():
 
 def test_should_place_brackets_and_place_flow():
     cfg = {
+        "execution": {"manage": {"auto": True}},
         "brackets": {"enable": True, "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}
     }
     fsm = ManageFlowFSM(config=cfg)

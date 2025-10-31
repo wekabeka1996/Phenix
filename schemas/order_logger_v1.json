@@ -1,0 +1,94 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://phenix.trade/schemas/order-logger/v1",
+    "type": "object",
+    "properties": {
+        "rid": {
+            "type": "string"
+        },
+        "timestamp": {
+            "type": "integer"
+        },
+        "event_type": {
+            "enum": [
+                "ORDER_INTENT",
+                "ORDER_PLACED",
+                "ORDER_REJECTED",
+                "ORDER_STATE_CHANGED"
+            ]
+        },
+        "order_id": {
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "client_order_id": {
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "symbol": {
+            "type": "string"
+        },
+        "side": {
+            "enum": [
+                "BUY",
+                "SELL",
+                "NONE"
+            ]
+        },
+        "quantity": {
+            "type": [
+                "number",
+                "null"
+            ]
+        },
+        "price": {
+            "type": [
+                "number",
+                "null"
+            ]
+        },
+        "nrr_code": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^NRR-\\d{3}$"
+        },
+        "why": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "maxLength": 80
+        },
+        "source_fsm": {
+            "type": "string"
+        },
+        "reservation_id": {
+            "type": [
+                "string",
+                "null"
+            ]
+        },
+        "adapter_response": {
+            "type": [
+                "object",
+                "null"
+            ]
+        },
+        "metadata": {
+            "type": "object"
+        }
+    },
+    "required": [
+        "rid",
+        "timestamp",
+        "event_type",
+        "symbol",
+        "source_fsm"
+    ]
+}

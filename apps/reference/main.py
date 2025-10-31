@@ -48,8 +48,405 @@ from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
 )
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 
+# Import telemetry
+from vfoundation.apps.reference.telemetry.metrics import inc_bridge_deferred, inc_bridge_retry
+
 # Import config loader
 from apps.reference.config_loader import ConfigLoader
+from apps.reference.bootstrap.preflight import check_hybrid_coherence # NEW IMPORT
+
+
+class AuroraBridge:
+    """
+    Bridge component that handles TRADE_INTENT_PROPOSED → CMD:OPEN conversion
+    with portfolio freshness gate to prevent race conditions.
+    """
+
+    def __init__(self, fsm: FSMCore, config: dict[str, Any], logger: logging.Logger | None = None):
+        self.fsm = fsm
+        self.config = config
+        self.logger = logger or logging.getLogger("AuroraBridge")
+
+        # Portfolio freshness state
+        self._last_portfolio = {}
+        self._last_portfolio_ts = 0
+
+        # Deferred intents queue (key: idempotent_key or rid, value: intent Message)
+        self._deferred: dict[str, Message] = {}
+        self._deferred_tries: dict[str, int] = {}
+
+        # QoS state for symbol cooldowns (from DecisionMaking deferrals)
+        self._qos_next_allowed_ts_per_symbol: dict[str, int] = {}
+
+        # Configuration
+        position_tracking_config = config.get("position_tracking", {})
+        self._ttl_sec = int(position_tracking_config.get("positions_stale_ttl_sec", 5))
+        self._retry_delay_sec = 0.5
+        self._max_retries = 2
+
+        # Register event listeners
+        self.fsm.listen("EVT:TRADE_INTENT_PROPOSED", self.on_trade_intent_proposed)
+        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self.on_portfolio_state_updated)
+        self.fsm.listen("EVT:INTENT_DEFERRED", self.on_intent_deferred)
+
+    def _is_portfolio_fresh(self) -> bool:
+        """Check if portfolio data is fresh (within TTL)."""
+        if not self._last_portfolio_ts:
+            return False
+        now_ms = int(time.time() * 1000)
+        return (now_ms - self._last_portfolio_ts) <= self._ttl_sec * 1000
+
+    def _is_qos_allowed(self, symbol: str) -> bool:
+        """Check if QoS allows trading for the given symbol."""
+        if not symbol:
+            return True  # Allow if no symbol specified
+
+        next_allowed_ts = self._qos_next_allowed_ts_per_symbol.get(symbol, 0)
+        current_ts = int(time.time() * 1000)
+        return current_ts >= next_allowed_ts
+
+    async def on_portfolio_state_updated(self, event: Message) -> None:
+        """Handle fresh portfolio updates and flush deferred intents."""
+        self._last_portfolio = event.pld or {}
+        self._last_portfolio_ts = int(
+            self._last_portfolio.get("positions_last_ts_ms", 0)
+        ) or int(time.time() * 1000)
+
+        # Flush any deferred intents now that portfolio is fresh
+        await self._flush_deferred_if_fresh()
+
+    async def on_intent_deferred(self, event: Message) -> None:
+        """Handle INTENT_DEFERRED events from DecisionMaking QoS."""
+        symbol = event.pld.get("symbol")
+        reason = event.pld.get("reason", "unknown")
+        next_allowed_ts = event.pld.get("next_allowed_ts", 0)
+
+        if not symbol:
+            self.logger.warning(f"BRIDGE: INTENT_DEFERRED missing symbol: {event.pld}")
+            return
+
+        # Register QoS cooldown
+        self._qos_next_allowed_ts_per_symbol[symbol] = next_allowed_ts
+
+        self.logger.info(f"BRIDGE: QoS defer registered for {symbol} until {next_allowed_ts} (reason: {reason})")
+
+        # Increment metrics
+        inc_bridge_deferred(reason, symbol)
+
+        # Schedule retry when QoS allows
+        import asyncio
+
+        async def _retry_after_qos():
+            # Wait until QoS allows
+            current_ts = int(time.time() * 1000)
+            if next_allowed_ts > current_ts:
+                delay_sec = (next_allowed_ts - current_ts) / 1000.0
+                await asyncio.sleep(delay_sec)
+
+            # Check if still blocked by QoS
+            if not self._is_qos_allowed(symbol):
+                self.logger.info(f"BRIDGE: {symbol} still QoS blocked after defer wait")
+                return
+
+            # Re-emit the original signal to trigger new decision
+            # This will cause DecisionMaking to re-evaluate with fresh data
+            original_context = event.pld.get("original_context", {})
+            if original_context:
+                # Re-emit features to trigger new decision cycle
+                features_msg = Message(
+                    op="EVT",
+                    verb="FEATURES_CALCULATED",
+                    src="bridge",
+                    dst="decision_making",
+                    rid=event.rid,
+                    pld=original_context.get("features", {}),
+                    why="qos_defer_retry"
+                )
+                self.fsm.emit(features_msg)
+                self.logger.info(f"BRIDGE: Re-triggered decision cycle for {symbol} after QoS defer")
+            else:
+                self.logger.warning(f"BRIDGE: No original context to retry {symbol} QoS defer")
+
+        asyncio.create_task(_retry_after_qos())
+
+    async def on_trade_intent_proposed(self, event: Message) -> None:
+        """
+        Handle trade intent with QoS and portfolio freshness gates.
+
+        Checks QoS first, then portfolio freshness.
+        If QoS blocks → defer intent
+        If portfolio stale → defer intent
+        If both OK → convert immediately to CMD:OPEN
+        """
+        symbol = event.pld.get("instrument") or event.pld.get("symbol")
+
+        # Check for forbidden LIMIT entry
+        order_details = event.pld.get("order", {})
+        if order_details.get("order_type") == "LIMIT":
+            self.logger.error(
+                "BRIDGE: LIMIT entry forbidden. Only MARKET entry allowed."
+            )
+            return
+
+        # Check QoS first
+        if not self._is_qos_allowed(symbol):
+            # QoS blocked - defer the intent
+            key = event.pld.get("idempotent_key") or event.rid or str(time.time())
+            self._deferred[key] = event
+            self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+
+            # Emit deferred event
+            defer_evt = Message(
+                op="EVT",
+                verb="INTENT_DEFERRED",
+                src="bridge",
+                dst="*",
+                rid=event.rid,
+                pld={
+                    "reason": "QOS_COOLDOWN",
+                    "symbol": symbol,
+                    "idempotent_key": event.pld.get("idempotent_key"),
+                },
+                why="bridge_qoS_blocked",
+            )
+            self.fsm.emit(defer_evt)
+
+            self.logger.info(
+                f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
+                f"(QoS blocked, try #{self._deferred_tries[key]})"
+            )
+
+            # Schedule QoS retry
+            import asyncio
+
+            async def _retry_after_qos():
+                await asyncio.sleep(1.0)  # Check every second
+                if self._is_qos_allowed(symbol):
+                    # QoS now allows - try to process
+                    await self._flush_deferred_if_fresh()
+                else:
+                    # Still blocked - reschedule
+                    asyncio.create_task(_retry_after_qos())
+
+            asyncio.create_task(_retry_after_qos())
+            return
+
+        # QoS OK - check portfolio freshness
+        if self._is_portfolio_fresh():
+            self._dispatch_open(event)
+            return
+
+        # Portfolio stale - defer the intent
+        key = event.pld.get("idempotent_key") or event.rid or str(time.time())
+        self._deferred[key] = event
+        self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+
+        # Emit deferred event
+        defer_evt = Message(
+            op="EVT",
+            verb="INTENT_DEFERRED",
+            src="bridge",
+            dst="*",
+            rid=event.rid,
+            pld={
+                "reason": "PORTFOLIO_STALE",
+                "symbol": symbol,
+                "idempotent_key": event.pld.get("idempotent_key"),
+            },
+            why="bridge_waits_fresh_portfolio",
+        )
+        self.fsm.emit(defer_evt)
+
+        self.logger.info(
+            f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
+            f"(portfolio stale, try #{self._deferred_tries[key]})"
+        )
+
+        # Schedule retry after delay
+        import asyncio
+
+        async def _retry_once():
+            await asyncio.sleep(self._retry_delay_sec)
+            # Check if we should drop due to timeout
+            if self._deferred_tries.get(key, 0) >= self._max_retries:
+                # Drop after max retries
+                drop_evt = Message(
+                    op="EVT",
+                    verb="INTENT_DROPPED",
+                    src="bridge",
+                    dst="*",
+                    rid=event.rid,
+                    pld={
+                        "reason": "STALE_PORTFOLIO_TIMEOUT",
+                        "symbol": symbol,
+                        "idempotent_key": event.pld.get("idempotent_key"),
+                    },
+                    why="bridge_drop_after_retries",
+                )
+                self.fsm.emit(drop_evt)
+                self._deferred.pop(key, None)
+                self._deferred_tries.pop(key, None)
+                self.logger.info(
+                    f"BRIDGE: Dropped deferred intent after {self._max_retries} retries: {key}"
+                )
+                return
+
+            # Otherwise, try to flush if portfolio became fresh
+            await self._flush_deferred_if_fresh()
+
+        asyncio.create_task(_retry_once())
+
+    async def _flush_deferred_if_fresh(self) -> None:
+        """Flush deferred intents if portfolio is now fresh and QoS allows."""
+        if not self._is_portfolio_fresh():
+            return
+
+        dropped_count = 0
+        processed_count = 0
+
+        for key, intent_msg in list(self._deferred.items()):
+            symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol")
+
+            # Check QoS for this symbol
+            if not self._is_qos_allowed(symbol):
+                continue  # Still QoS blocked, keep deferred
+
+            tries = self._deferred_tries.get(key, 0)
+            if tries > self._max_retries:
+                # Drop after max retries
+                drop_evt = Message(
+                    op="EVT",
+                    verb="INTENT_DROPPED",
+                    src="bridge",
+                    dst="*",
+                    rid=intent_msg.rid,
+                    pld={
+                        "reason": "STALE_PORTFOLIO_TIMEOUT",
+                        "symbol": symbol,
+                        "idempotent_key": intent_msg.pld.get("idempotent_key"),
+                    },
+                    why="bridge_drop_after_retries",
+                )
+                self.fsm.emit(drop_evt)
+                self._deferred.pop(key, None)
+                self._deferred_tries.pop(key, None)
+                dropped_count += 1
+                continue
+
+            # Process the deferred intent
+            self._dispatch_open(intent_msg)
+            self._deferred.pop(key, None)
+            self._deferred_tries.pop(key, None)
+            processed_count += 1
+
+            # Increment retry metric if this was retried
+            if tries > 1:
+                symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol")
+                inc_bridge_retry(symbol)
+
+        if dropped_count > 0 or processed_count > 0:
+            self.logger.info(
+                f"BRIDGE: Flushed deferred intents - processed: {processed_count}, dropped: {dropped_count}"
+            )
+
+    def _dispatch_open(self, intent_msg: Message) -> None:
+        """Convert TRADE_INTENT_PROPOSED to CMD:OPEN and dispatch."""
+        self.logger.info(
+            f"BRIDGE: Converting TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {intent_msg.pld.get('instrument', 'unknown')} to CMD:OPEN"
+        )
+
+        # Extract order details from nested structure
+        order_details = intent_msg.pld.get("order", {})
+
+        command_payload = {
+            "rid": intent_msg.pld.get("rid"),  # Pass through request ID for tracing
+            "symbol": intent_msg.pld.get("instrument"),  # Map 'instrument' to 'symbol'
+            "side": intent_msg.pld.get("side"),
+            "qty": order_details.get("qty"),  # Get qty from order.qty (as string)
+            "price": order_details.get(
+                "price"
+            ),  # Get price from order.price (as string)
+            "order_type": "LIMIT",  # Use LIMIT orders with specified price
+            "tif": "GTC",  # Good-Till-Cancel
+            "idempotent_key": intent_msg.pld.get(
+                "idempotent_key"
+            ),  # Pass through for deduplication
+            "price_ref": order_details.get(
+                "price_ref"
+            ),  # Pass current market price for min_notional checks
+        }
+
+        # XAI instrumentation: exec_open_enter
+        from vfoundation.core.why_codes import WhyCode, format_why_with_details
+        exposure_reservation_state = "unknown"  # TODO: get actual reservation state
+        self.logger.info(
+            format_why_with_details(
+                WhyCode.SUCCESS_ORDER_PLACED,  # closest match for execution entry
+                f"rid={command_payload.get('rid')} symbol={command_payload.get('symbol')} side={command_payload.get('side')} qty={command_payload.get('qty')} clientOrderId={command_payload.get('idempotent_key')} exposure_reservation_state={exposure_reservation_state} why=exec_open_enter"
+            )
+        )
+
+        self.logger.debug(f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
+
+        # Preserve XAI chain: take first why from event payload, or fallback
+        event_why_chain = intent_msg.pld.get("why", [])
+        bridge_why = (
+            event_why_chain[0]
+            if event_why_chain
+            else "Execute trade intent from decision"
+        )
+
+        # Create Message for CMD:OPEN
+        open_command = Message(
+            op="CMD",
+            verb="OPEN",
+            src="decision_making",  # Source is decision_making
+            dst="execution_position",
+            parent_span_id=intent_msg.span_id,  # Link to parent event for tracing
+            why=bridge_why,  # Preserve XAI chain from decision
+            pld=command_payload,
+        )
+
+        self.logger.info(
+            f"BRIDGE: Dispatched CMD:OPEN with rid={open_command.rid}, parent_span={intent_msg.span_id}"
+        )
+
+        # Emit the command to the FSM for processing by execution_position
+        self.fsm.emit(open_command)
+
+        # Also handle the command directly with execution_position FSM if available
+        if execution_position is not None:
+            result = execution_position.handle(open_command)
+            if result:
+                self.logger.info(
+                    f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}"
+                )
+                if result.op == "ERR":
+                    self.logger.error(
+                        f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}"
+                    )
+        else:
+            self.logger.error("BRIDGE: execution_position FSM not initialized")
+
+
+# Global bridge instance for backward compatibility
+_bridge_instance: AuroraBridge | None = None
+
+
+def on_trade_intent_proposed(event: Message) -> None:
+    """Global handler for TRADE_INTENT_PROPOSED events - delegates to bridge."""
+    global _bridge_instance
+    if _bridge_instance is not None:
+        # Run async method in sync context
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_bridge_instance.on_trade_intent_proposed(event))
+        except RuntimeError:
+            # No running loop, create new one
+            asyncio.run(_bridge_instance.on_trade_intent_proposed(event))
+    else:
+        LOG.error("BRIDGE: No bridge instance available for on_trade_intent_proposed")
 
 
 # Local FSMCore mock has been removed. The real FSMCore from vfoundation is now used.
@@ -213,91 +610,6 @@ root_logger.addHandler(chain_handler)
 LOG = logging.getLogger("AuroraCore")
 
 
-def on_trade_intent_proposed(event: Any) -> None:
-    """
-    Listens for trade intents from the decision_making domain and transforms
-    them into executable commands for the execution_position domain.
-
-    Bridge pattern: EVT:TRADE_INTENT_PROPOSED → CMD:OPEN
-    - Preserves XAI chain via why field
-    - Maps analytical output to execution command
-    - Shadow mode: execution_position processes but doesn't execute
-    """
-    LOG.info(
-        f"BRIDGE: Received TRADE_INTENT_PROPOSED rid={event.pld.get('rid')} for {event.pld.get('instrument', 'unknown')} "
-        f"with side {event.pld.get('side', 'unknown')}. Transforming to CMD:OPEN."
-    )
-
-    # Check for forbidden LIMIT entry
-    order_details = event.pld.get("order", {})
-    if order_details.get("order_type") == "LIMIT":
-        LOG.error("BRIDGE: LIMIT entry forbidden. Only MARKET entry allowed.")
-        return
-
-    # Transform EVT to CMD
-    # Extract order details from nested structure
-    order_details = event.pld.get("order", {})
-
-    command_payload = {
-        "rid": event.pld.get("rid"),  # Pass through request ID for tracing
-        "symbol": event.pld.get("instrument"),  # Map 'instrument' to 'symbol'
-        "side": event.pld.get("side"),
-        "qty": order_details.get("qty"),  # Get qty from order.qty (as string)
-        "price": order_details.get("price"),  # Get price from order.price (as string)
-        "order_type": "LIMIT",  # Use LIMIT orders with specified price
-        "tif": "GTC",  # Good-Till-Cancel
-        "idempotent_key": event.pld.get(
-            "idempotent_key"
-        ),  # Pass through for deduplication (AURORA_IDEMPOTENCY_V1)
-        "price_ref": order_details.get(
-            "price_ref"
-        ),  # Pass current market price for min_notional checks
-    }
-
-    LOG.debug(f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
-    LOG.info(
-        f"BRIDGE: Idempotent key passed through: {command_payload.get('idempotent_key')}"
-    )
-
-    # Preserve XAI chain: take first why from event payload, or fallback
-    event_why_chain = event.pld.get("why", [])
-    bridge_why = (
-        event_why_chain[0] if event_why_chain else "Execute trade intent from decision"
-    )
-
-    # Create Message for CMD:OPEN
-    # RID will be auto-generated by Message, linking to event.rid via span_id
-    open_command = Message(
-        op="CMD",
-        verb="OPEN",
-        src="decision_making",  # Source is decision_making
-        dst="execution_position",
-        parent_span_id=event.span_id,  # Link to parent event for tracing
-        why=bridge_why,  # Preserve XAI chain from decision
-        pld=command_payload,
-    )
-
-    LOG.info(
-        f"BRIDGE: Dispatched CMD:OPEN with rid={open_command.rid}, parent_span={event.span_id}"
-    )
-
-    # Handle the command with execution_position FSM
-    if execution_position is not None:
-        result = execution_position.handle(open_command)
-        if result:
-            LOG.info(
-                f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}"
-            )
-            if result.op == "ERR":
-                LOG.error(
-                    f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}"
-                )
-        else:
-            LOG.info("BRIDGE: Execution FSM processed CMD:OPEN, no decision emitted")
-    else:
-        LOG.error("BRIDGE: execution_position FSM not initialized")
-
-
 def debug_event_listener(event: Any) -> None:
     """
     Debug listener to see all events flowing through the system.
@@ -381,6 +693,16 @@ def main() -> None:
     config = config_loader.load_config()
     LOG.info("Configuration loaded successfully")
 
+    # FSMP-P3-T01: Pre-flight check for hybrid coherence
+    is_coherent, reasons = check_hybrid_coherence(config.to_dict())
+    if not is_coherent:
+        LOG.critical(
+            f"🚨 CRITICAL: Hybrid mode is incoherent. Trading will be deferred. Reasons: {'; '.join(reasons)}"
+        )
+        # In a real scenario, this would trigger a system-wide deferral or shutdown.
+        # For now, we just log and continue, assuming downstream components will handle deferral.
+        # TODO: Implement a global deferral mechanism or graceful shutdown here.
+
     # Step 2: Initialize FSM Core
     LOG.info("Initializing FSM Core...")
     global fsm
@@ -388,7 +710,12 @@ def main() -> None:
 
     # Step 2: Create event listeners
     LOG.info("Setting up event listeners...")
-    fsm.listen("EVT:TRADE_INTENT_PROPOSED", on_trade_intent_proposed)
+    # Initialize AuroraBridge (handles TRADE_INTENT_PROPOSED → CMD:OPEN with freshness gate)
+    bridge = AuroraBridge(fsm=fsm, config=config.to_dict(), logger=LOG)
+
+    # Set global bridge instance for backward compatibility
+    global _bridge_instance
+    _bridge_instance = bridge
 
     # Add debug listener for all events (optional, can be removed for production)
     debug_events = [
@@ -408,7 +735,9 @@ def main() -> None:
     account_balance = AccountConnector(fsm=fsm, config=config.to_dict())
 
     # Account Observer (observes trades and sends portfolio updates)
-    account_observer = AccountObserver(fsm=fsm, config=config.to_dict())
+    # FSMP-P3-T01: Use resolved risk_portfolio_source for AccountObserver environment
+    risk_portfolio_source = config.get("_resolved", {}).get("risk_portfolio_source", "testnet") # Default to testnet for safety
+    account_observer = AccountObserver(fsm=fsm, config=config.to_dict(), environment=risk_portfolio_source)
 
     # Market Data Connector (source of market ticks)
     # Pass full config dict to access both system.yaml (trading section) and use_testnet

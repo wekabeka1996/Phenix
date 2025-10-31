@@ -41,30 +41,79 @@ def _d(x: Any) -> float:
 
 
 # Gauges (поточні значення)
-g_exposure_equity_usd = Gauge("exposure_equity_usd", "Free equity (USDT-M) used for sizing")
-g_exposure_positions_usd = Gauge("exposure_positions_usd", "Open positions notional in USD")
-g_exposure_pending_usd = Gauge("exposure_pending_usd", "Pending (reserved) notional in USD")
-g_exposure_limit_usd = Gauge("exposure_limit_usd", "Exposure limit in USD (equity * fraction)")
+g_exposure_equity_usd = Gauge(
+    "exposure_equity_usd", "Free equity (USDT-M) used for sizing")
+g_exposure_positions_usd = Gauge(
+    "exposure_positions_usd", "Open positions notional in USD")
+g_exposure_pending_usd = Gauge(
+    "exposure_pending_usd", "Pending (reserved) notional in USD")
+g_exposure_limit_usd = Gauge(
+    "exposure_limit_usd", "Exposure limit in USD (equity * fraction)")
 
 # Counters (події)
-c_guard_rejects_total = Counter("fsm_guard_rejects_total", "FSM guard rejects", ["guard"])
+c_guard_rejects_total = Counter(
+    "fsm_guard_rejects_total", "FSM guard rejects", ["guard"])
 c_pending_expired_total = Counter(
     "pending_exposure_expired_total", "Expired pending reservations by TTL"
 )
-c_manage_skipped_total = Counter("manage_skipped_total", "Auto-manage skipped due to bracket mode")
-c_orders_placed_total = Counter("orders_placed_total", "Orders placed (entry & brackets)")
+c_manage_skipped_total = Counter(
+    "manage_skipped_total", "Auto-manage skipped due to bracket mode")
+c_orders_placed_total = Counter(
+    "orders_placed_total", "Orders placed (entry & brackets)")
 c_orders_filled_total = Counter("orders_filled_total", "Orders filled")
 c_decision_rate_limited = Counter(
     "decision_rate_limited_total", "Decision intents rate-limited", ["symbol"]
 )
+c_decision_deferred_total = Counter(
+    "decision_deferred_total", "Decision deferrals", ["reason", "symbol"]
+)
+c_bridge_deferred_total = Counter(
+    "bridge_deferred_total", "Bridge deferrals", ["reason", "symbol"]
+)
+c_bridge_retry_total = Counter(
+    "bridge_retry_total", "Bridge defer retries", ["symbol"]
+)
 
 # Order lifecycle metrics (AUR-004)
-c_order_state_total = Counter("order_state_total", "Order state changes", ["status"])
+c_order_state_total = Counter(
+    "order_state_total", "Order state changes", ["status"])
 h_order_lifecycle_seconds = Histogram(
     "order_lifecycle_seconds",
     "Order lifecycle duration from NEW to terminal",
     buckets=(1, 5, 10, 30, 60, 300, 600),
 )
+
+
+# Metrics for hybrid coherence
+AURORA_HYBRID_COHERENT = Gauge(
+    'aurora_hybrid_coherent',
+    'Indicates if the hybrid mode is coherent (1) or incoherent (0).',
+    ['mode']
+)
+AURORA_HYBRID_INCOHERENT_REASONS_TOTAL = Counter(
+    'aurora_hybrid_incoherent_reasons_total',
+    'Counts the total number of times a specific reason for hybrid incoherence occurred.',
+    ['reason']
+)
+
+
+def update_hybrid_coherence_metrics(state: dict):
+    is_coherent = state['last_result']['ok']
+    reasons = state['last_result']['reasons']
+    # Assuming this is the 'mode' label
+    execution_mode = state['execution_mode']
+
+    mode_label = f"hybrid_{execution_mode}" if execution_mode else "hybrid_unknown"
+
+    if is_coherent:
+        AURORA_HYBRID_COHERENT.labels(mode=mode_label).set(1)
+    else:
+        AURORA_HYBRID_COHERENT.labels(mode=mode_label).set(0)
+        for reason in reasons:
+            # Slugify reason for metric label
+            reason_slug = reason.lower().replace(' ', '_').replace('.', '').replace("'", '')
+            AURORA_HYBRID_INCOHERENT_REASONS_TOTAL.labels(
+                reason=reason_slug).inc()
 
 
 def update_exposure(equity_usd: Any, positions_usd: Any, pending_usd: Any, fraction: float) -> None:
@@ -101,6 +150,18 @@ def inc_order_filled() -> None:
 
 def inc_decision_rl(symbol: str) -> None:
     c_decision_rate_limited.labels(symbol=symbol).inc()
+
+
+def inc_decision_deferred(reason: str, symbol: str) -> None:
+    c_decision_deferred_total.labels(reason=reason, symbol=symbol).inc()
+
+
+def inc_bridge_deferred(reason: str, symbol: str) -> None:
+    c_bridge_deferred_total.labels(reason=reason, symbol=symbol).inc()
+
+
+def inc_bridge_retry(symbol: str) -> None:
+    c_bridge_retry_total.labels(symbol=symbol).inc()
 
 
 def inc_order_state(status: str) -> None:

@@ -29,6 +29,9 @@ class NormalizedRejectReasons:
     RATE_LIMIT_EXCEEDED = "NRR-012"
     NETWORK_ERROR = "NRR-013"
     TIMEOUT_ERROR = "NRR-014"
+    SYMBOL_COOLDOWN_ACTIVE = "NRR-017"
+    EXCHANGE_REJECTED_ORDER = "NRR-018"
+    ORDER_TIMEOUT_EXPIRED = "NRR-019"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex patterns for normalization
@@ -89,6 +92,9 @@ class NormalizedRejectReasons:
         ],
         NETWORK_ERROR: [r"network.*error", r"connection.*failed", r"timeout.*network"],
         TIMEOUT_ERROR: [r"timeout", r"request.*timed.*out", r"operation.*timeout"],
+        SYMBOL_COOLDOWN_ACTIVE: [r"symbol.*cooldown.*active", r"cooldown.*remaining"],
+        EXCHANGE_REJECTED_ORDER: [r"exchange.*reject", r"order.*reject.*exchange", r"-1013", r"-1021", r"-2010"],
+        ORDER_TIMEOUT_EXPIRED: [r"order.*timeout.*expired", r"ack.*timeout", r"fill.*timeout"],
     }
 
     @classmethod
@@ -140,6 +146,9 @@ class NormalizedRejectReasons:
             cls.RATE_LIMIT_EXCEEDED: "Request rate limit has been exceeded",
             cls.NETWORK_ERROR: "Network connectivity or communication error",
             cls.TIMEOUT_ERROR: "Operation timed out",
+            cls.SYMBOL_COOLDOWN_ACTIVE: "Symbol cooldown period is active",
+            cls.EXCHANGE_REJECTED_ORDER: "Exchange rejected the order",
+            cls.ORDER_TIMEOUT_EXPIRED: "Order timeout expired",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
 

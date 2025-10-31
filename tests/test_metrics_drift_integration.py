@@ -114,9 +114,9 @@ def test_metrics_limits_report_storage_to_100():
     with _drift_lock:
         assert len(_drift_reports) == 100
         # First report should be from iteration 50 (tp=50)
-        assert _drift_reports[0].confusion.tp == 50
+        assert _drift_reports[0]["confusion"]["tp"] == 50
         # Last report should be from iteration 149 (tp=149)
-        assert _drift_reports[-1].confusion.tp == 149
+        assert _drift_reports[-1]["confusion"]["tp"] == 149
 
 
 def test_metrics_perfect_accuracy_zero_drift():

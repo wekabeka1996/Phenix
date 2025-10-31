@@ -16,7 +16,7 @@ def test_metrics_endpoint_shape():
     record_router_timing(10.0)
     record_router_timing(15.0)
 
-    response = client.get("/metrics")
+    response = client.get("/metrics/json")
     assert response.status_code == 200
 
     data = response.json()
@@ -63,7 +63,7 @@ def test_health_endpoint_performance():
         end = time.time()
 
         assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+        assert response.json() == {"status": "healthy", "service": "aurora-core"}
 
         duration_ms = (end - start) * 1000
         times.append(duration_ms)

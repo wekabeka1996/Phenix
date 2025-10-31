@@ -1,14 +1,14 @@
 # Словники даних домену Account Balance
 
-# Версія словника: FSMP-P1-T04
-# Остання зміна: 2025-01-28
+# Вер� ія � ловника: FSMP-P1-T04
+# О� тання зміна: 2025-01-28
 # Автор: Aurora System Documentation
 
 # =============================================================================
 # КОНФІГУРАЦІЙНІ СЛОВНИКИ
 # =============================================================================
 
-# Основні режими роботи системи
+# О� новні режими роботи � и� теми
 trading_modes:
   live: "live"
   testnet: "testnet"
@@ -20,7 +20,7 @@ margin_types:
   isolated: "isolated"
   cross: "cross"
 
-# Статуси позицій
+# Стату� и позицій
 position_statuses:
   open: "open"
   closed: "closed"
@@ -36,13 +36,13 @@ balance_response_schema:
   properties:
     accountAlias: { type: string, description: "Alias рахунку" }
     asset: { type: string, description: "Назва активу (USDT, BTC, etc.)" }
-    balance: { type: string, description: "Загальний баланс активу" }
-    crossWalletBalance: { type: string, description: "Баланс в cross margin" }
+    balance: { type: string, description: "Загальний балан�  активу" }
+    crossWalletBalance: { type: string, description: "Балан�  в cross margin" }
     crossUnPnl: { type: string, description: "Нереалізований P&L в cross margin" }
-    availableBalance: { type: string, description: "Доступний баланс" }
-    maxWithdrawAmount: { type: string, description: "Максимальна сума виведення" }
-    marginAvailable: { type: boolean, description: "Доступність для маржі" }
-    updateTime: { type: integer, description: "Час оновлення (timestamp)" }
+    availableBalance: { type: string, description: "До� тупний балан� " }
+    maxWithdrawAmount: { type: string, description: "Мак� имальна � ума виведення" }
+    marginAvailable: { type: boolean, description: "До� тупні� ть для маржі" }
+    updateTime: { type: integer, description: "Ча�  оновлення (timestamp)" }
 
 # Структура відповіді Binance Position Risk API (/fapi/v2/positionRisk)
 position_response_schema:
@@ -55,25 +55,25 @@ position_response_schema:
     unRealizedProfit: { type: string, description: "Нереалізований прибуток" }
     liquidationPrice: { type: string, description: "Ціна ліквідації" }
     leverage: { type: integer, description: "Плече" }
-    maxNotionalValue: { type: string, description: "Максимальне номінальне значення" }
+    maxNotionalValue: { type: string, description: "Мак� имальне номінальне значення" }
     marginType: { type: string, enum: ["isolated", "cross"] }
     isolatedMargin: { type: string, description: "Ізольована маржа" }
     isAutoAddMargin: { type: boolean, description: "Автоматичне додавання маржі" }
     positionSide: { type: string, enum: ["LONG", "SHORT", "BOTH"] }
     notional: { type: string, description: "Номінальне значення" }
     isolatedWallet: { type: string, description: "Ізольований гаманець" }
-    updateTime: { type: integer, description: "Час оновлення" }
+    updateTime: { type: integer, description: "Ча�  оновлення" }
 
 # =============================================================================
 # FSM ПОДІЇ
 # =============================================================================
 
-# Подія оновлення балансу
+# Подія оновлення балан� у
 evt_balance_update_received:
   event_type: "EVT:BALANCE_UPDATE_RECEIVED"
   version: "1.0"
-  description: "Оновлення балансу активів рахунку"
-  frequency: "30 секунд (конфігурується)"
+  description: "Оновлення балан� у активів рахунку"
+  frequency: "30 � екунд (конфігуруєть� я)"
   direction: "Decision Making, Risk Management, Position Tracking"
   payload_schema:
     type: object
@@ -91,12 +91,12 @@ evt_balance_update_received:
       updateTime: { type: integer }
     required: ["assets", "updateTime"]
 
-# Подія оновлення стану рахунку та позицій
+# Подія оновлення � тану рахунку та позицій
 evt_account_update_received:
   event_type: "EVT:ACCOUNT_UPDATE_RECEIVED"
   version: "1.0"
-  description: "Оновлення загального стану рахунку та всіх позицій"
-  frequency: "30 секунд (конфігурується)"
+  description: "Оновлення загального � тану рахунку та в� іх позицій"
+  frequency: "30 � екунд (конфігуруєть� я)"
   direction: "Position Tracking, Risk Management, Decision Making"
   payload_schema:
     type: object
@@ -133,31 +133,31 @@ domain_config_schema:
       minimum: 5
       maximum: 300
       default: 30
-      description: "Інтервал опитування API в секундах"
+      description: "Інтервал опитування API в � екундах"
     retry_attempts:
       type: integer
       minimum: 1
       maximum: 10
       default: 3
-      description: "Кількість повторів при помилці API"
+      description: "Кількі� ть повторів при помилці API"
     backoff_multiplier:
       type: number
       minimum: 1.0
       maximum: 5.0
       default: 2.0
-      description: "Множник для експоненціального backoff"
+      description: "Множник для ек� поненціального backoff"
     timeout:
       type: integer
       minimum: 5
       maximum: 60
       default: 10
-      description: "Таймаут API викликів в секундах"
+      description: "Таймаут API викликів в � екундах"
     max_concurrent_requests:
       type: integer
       minimum: 1
       maximum: 5
       default: 2
-      description: "Максимальна кількість паралельних запитів"
+      description: "Мак� имальна кількі� ть паралельних запитів"
     enable_position_filtering:
       type: boolean
       default: true
@@ -165,7 +165,7 @@ domain_config_schema:
     enable_balance_filtering:
       type: boolean
       default: true
-      description: "Фільтрувати тільки активи з балансом > 0"
+      description: "Фільтрувати тільки активи з балан� ом > 0"
 
 # =============================================================================
 # СЛОВНИКИ АКТИВІВ
@@ -215,7 +215,7 @@ domain_error_types:
   api_connection_error: "Помилка з'єднання з Binance API"
   authentication_error: "Помилка аутентифікації API ключів"
   rate_limit_error: "Перевищення ліміту запитів"
-  data_parsing_error: "Помилка парсингу відповіді API"
+  data_parsing_error: "Помилка пар� ингу відповіді API"
   invalid_config_error: "Некоректна конфігурація домену"
   timeout_error: "Таймаут очікування відповіді API"
 
@@ -223,14 +223,14 @@ domain_error_types:
 # МЕТРИКИ ТА МОНІТОРИНГ
 # =============================================================================
 
-# Метрики продуктивності
+# Метрики продуктивно� ті
 performance_metrics:
-  account_balance_updates_success: "Кількість успішних оновлень балансу"
-  account_balance_updates_failed: "Кількість невдалих оновлень балансу"
-  account_balance_api_latency: "Середній час відповіді API (ms)"
-  account_balance_last_update_age: "Вік останніх даних (секунди)"
-  account_balance_position_count: "Кількість активних позицій"
-  account_balance_asset_count: "Кількість активів з балансом"
+  account_balance_updates_success: "Кількі� ть у� пішних оновлень балан� у"
+  account_balance_updates_failed: "Кількі� ть невдалих оновлень балан� у"
+  account_balance_api_latency: "Середній ча�  відповіді API (ms)"
+  account_balance_last_update_age: "Вік о� танніх даних (� екунди)"
+  account_balance_position_count: "Кількі� ть активних позицій"
+  account_balance_asset_count: "Кількі� ть активів з балан� ом"
 
 # Рівні логування
 log_levels:
@@ -243,7 +243,7 @@ log_levels:
 # ТЕСТОВІ ДАНІ
 # =============================================================================
 
-# Приклад тестового балансу
+# Приклад те� тового балан� у
 test_balance_data:
   assets:
     - asset: "USDT"
@@ -258,7 +258,7 @@ test_balance_data:
       updateTime: 1640995200000
   updateTime: 1640995200000
 
-# Приклад тестових позицій
+# Приклад те� тових позицій
 test_position_data:
   positions:
     - symbol: "BTCUSDT"

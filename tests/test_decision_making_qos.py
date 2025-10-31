@@ -80,15 +80,12 @@ class TestDecisionMakingQoS:
         # Allow first decision
         allowed, reason = decision_making._qos_allow(symbol)
         assert allowed is True
-        decision_making._update_symbol_cooldown(symbol)
-
-        # Wait for cooldown but stay within rate limit window
-        time.sleep(3.1)
+        decision_making._update_intent_count(symbol)
 
         # Allow second decision
         allowed, reason = decision_making._qos_allow(symbol)
         assert allowed is True
-        decision_making._update_symbol_cooldown(symbol)
+        decision_making._update_intent_count(symbol)
 
         # Third decision should be rate limited
         allowed, reason = decision_making._qos_allow(symbol)
@@ -103,7 +100,8 @@ class TestDecisionMakingQoS:
         decision_making._handle_exposure_block(symbol)
 
         # Decision should be blocked due to exposure cooldown
-        allowed, reason = decision_making._qos_allow(symbol, is_exposure_block=True)
+        allowed, reason = decision_making._qos_allow(
+            symbol, is_exposure_block=True)
         assert allowed is False
         assert reason == NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED
 
@@ -115,7 +113,8 @@ class TestDecisionMakingQoS:
         decision_making._handle_exposure_block(symbol)
 
         # Normal decision should still be allowed (only exposure checks are blocked)
-        allowed, reason = decision_making._qos_allow(symbol, is_exposure_block=False)
+        allowed, reason = decision_making._qos_allow(
+            symbol, is_exposure_block=False)
         assert allowed is True
 
     def test_rate_limit_window_reset(self, decision_making):

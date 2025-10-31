@@ -1,27 +1,27 @@
 # vFoundation ⇆ LLA Transition Roadmap (CA-FSM, Bridges, Proof Kernel) — v1.0
 
-> **Мета документа:** дати чітке, технічно конкретне бачення переходу на архітектуру vFoundation-CA з LLA як осьового ядра (Meta-FSM → CA-FSM → домени).
-> Тут описані: ціль, поетапний план, Definition of Done (DoD) для кожного етапу, типові ризики/складнощі й способи їх вирішення, артефакти, команди та чек-листи приймання.
+> **Мета документа:** дати чітке, технічно конкретне бачення переходу на архітектуру vFoundation-CA з LLA як о� ьового ядра (Meta-FSM → CA-FSM → домени).
+> Тут опи� ані: ціль, поетапний план, Definition of Done (DoD) для кожного етапу, типові ризики/� кладнощі й � по� оби їх вирішення, артефакти, команди та чек-ли� ти приймання.
 
 ---
 
 ## 0) Коротко про цілі
 
-1. **LLA як “душа” системи:** LLA керує **Meta-FSM/CA-FSM**, збирає індикатори з доменів (execution, risk, data_provider), планує послідовність і ієрархію сигналів, адаптує пороги/ваги переходів.
-2. **Causal Adaptation:** усі переходи FSM мають **причинний слід** і оцінюються **Axial Gradient** (AG), який ми концентруємо на **+PnL** (з балансом CVaR/латентності/стабільності).
-3. **Bridges як нервова система:** стандартні **EventBridge / MetricBridge / CommandBridge** дають прозорий канал між vFoundation і LLA.
-4. **Proof Kernel + LTL інваріанти:** формальна перевірка, що адаптації не порушують інваріанти безпеки/живучості.
-5. **72h Shadow readiness:** перед боєм — 72 години стабільного тікання контуру з логами, acceptance-зрізами, freeze/SBOM і GO-флагом.
+1. **LLA як “душа” � и� теми:** LLA керує **Meta-FSM/CA-FSM**, збирає індикатори з доменів (execution, risk, data_provider), планує по� лідовні� ть і ієрархію � игналів, адаптує пороги/ваги переходів.
+2. **Causal Adaptation:** у� і переходи FSM мають **причинний � лід** і оцінюють� я **Axial Gradient** (AG), який ми концентруємо на **+PnL** (з балан� ом CVaR/латентно� ті/� табільно� ті).
+3. **Bridges як нервова � и� тема:** � тандартні **EventBridge / MetricBridge / CommandBridge** дають прозорий канал між vFoundation і LLA.
+4. **Proof Kernel + LTL інваріанти:** формальна перевірка, що адаптації не порушують інваріанти безпеки/живучо� ті.
+5. **72h Shadow readiness:** перед боєм — 72 години � табільного тікання контуру з логами, acceptance-зрізами, freeze/SBOM і GO-флагом.
 
 ---
 
-## 1) Поточний контекст (узагальнення з ваших інпутів)
+## 1) Поточний контек� т (узагальнення з ваших інпутів)
 
-* **Репозиторій A (складніший, R2Hybrid майже PASS):** робочі тести/CI, але ще немає vFoundation; є R2Hybrid оркестратор, DoD, strict gates.
-* **Репозиторій B (простішій, базовий vFoundation):** домени (execution, risk, data_provider) є, формат “без моноліту”, словники/домени, **але керування доменами ще кульгає**; саме тут найпростіше швидко поставити LLA як Meta-FSM/CA-FSM поверх доменів через мости.
+* **Репозиторій A (� кладніший, R2Hybrid майже PASS):** робочі те� ти/CI, але ще немає vFoundation; є R2Hybrid орке� тратор, DoD, strict gates.
+* **Репозиторій B (про� тішій, базовий vFoundation):** домени (execution, risk, data_provider) є, формат “без моноліту”, � ловники/домени, **але керування доменами ще кульгає**; � аме тут найпро� тіше швидко по� тавити LLA як Meta-FSM/CA-FSM поверх доменів через мо� ти.
 
-**Рекомендація старту:**
-Почати з **B (простішого vFoundation)** як “референсної платформи” — тут **швидше** підняти CA-FSM + Bridges + Proof Kernel і досягти **72h readiness**. Потім повторно використати цей каркас у складнішому A (R2Hybrid).
+**Рекомендація � тарту:**
+Почати з **B (про� тішого vFoundation)** як “референ� ної платформи” — тут **швидше** підняти CA-FSM + Bridges + Proof Kernel і до� ягти **72h readiness**. Потім повторно викори� тати цей карка�  у � кладнішому A (R2Hybrid).
 
 ---
 
@@ -44,28 +44,28 @@ vFoundation
   └─ Domain: data_provider
 ```
 
-**Ключові властивості:**
+**Ключові вла� тиво� ті:**
 
 * **Адаптації параметризовані:** змінюємо не код доменів, а параметри гвардів/ваг переходів.
-* **Повна трасованість:** кожний перехід має causal_event, кожне рішення прив’язане до AG.
-* **Безпека змін:** LTL-монітор блокує небезпечні оновлення; checksum-gate дає тампер-евіденс.
+* **Повна тра� овані� ть:** кожний перехід має causal_event, кожне рішення прив’язане до AG.
+* **Безпека змін:** LTL-монітор блокує небезпечні оновлення; checksum-gate дає тампер-евіден� .
 
 ---
 
 ## 3) Дорожня карта (етапи → DoD, ризики та вирішення)
 
-> Всі етапи нижче — **інкрементальні**, з **артефактами** і **командами**, які фіксують стан.
+> В� і етапи нижче — **інкрементальні**, з **артефактами** і **командами**, які фік� ують � тан.
 
-### Етап S0. Інфраструктурний базис & Preflight
+### Етап S0. Інфра� труктурний бази�  & Preflight
 
-**Ціль:** “чистий стіл” для дев/CI, одна комбінація Python (3.11) + мінімальні залежності, **warnings-as-errors** (Deprecation/Runtime).
+**Ціль:** “чи� тий � тіл” для дев/CI, одна комбінація Python (3.11) + мінімальні залежно� ті, **warnings-as-errors** (Deprecation/Runtime).
 
 **Кроки:**
 
-* [ ] Перенести каркас LLA у `foundation/meta_fsm/` (без важких залежностей: “шим” замість numpy/scipy у юніт-матриці).
-* [ ] Завести `adapters/` (event/metric/command), без побічних ефектів.
+* [ ] Перене� ти карка�  LLA у `foundation/meta_fsm/` (без важких залежно� тей: “шим” замі� ть numpy/scipy у юніт-матриці).
+* [ ] Заве� ти `adapters/` (event/metric/command), без побічних ефектів.
 * [ ] Підготувати `pytest.ini` (asyncio_mode=auto, error::DeprecationWarning/RuntimeWarning).
-* [ ] Додати dev-залежності `requirements-dev.txt` (pytest, pytest-asyncio, pyyaml, jsonschema).
+* [ ] Додати dev-залежно� ті `requirements-dev.txt` (pytest, pytest-asyncio, pyyaml, jsonschema).
 
 **DoD (артефакти):**
 
@@ -73,16 +73,16 @@ vFoundation
 * [ ] `reports/sbom_*`, `reports/cfg_freeze_pre.yaml, .sha256`.
 * [ ] `logs/hybrid/preflight_status.json` (overall_pass: true).
 
-**Типові складнощі та рішення:**
+**Типові � кладнощі та рішення:**
 
-* **Windows шляхи (`runs/runs\last`)** → стандартизувати через `pathlib`, жодних конкатенацій рядками.
-* **Важкі залежності** → юніт-матриця з “шимами” та lazy-imports.
+* **Windows шляхи (`runs/runs\last`)** → � тандартизувати через `pathlib`, жодних конкатенацій рядками.
+* **Важкі залежно� ті** → юніт-матриця з “шимами” та lazy-imports.
 
 ---
 
 ### Етап S1. Bridges v1 (минимальний інтеграційний шар)
 
-**Ціль:** підключити виконані домени до LLA через три мости.
+**Ціль:** підключити виконані домени до LLA через три мо� ти.
 
 **Кроки:**
 
@@ -92,64 +92,64 @@ vFoundation
 
 **DoD:**
 
-* [ ] Події доменів реально з’являються у `logs/causal_events.jsonl` (≥ 50 подій у smoke-прогоні).
+* [ ] Події доменів реально з’являють� я у `logs/causal_events.jsonl` (≥ 50 подій у smoke-прогоні).
 * [ ] `collect_metrics()` повертає валідні значення (не `None`, не `nan`).
-* [ ] Команди з LLA викликають очікувану реакцію доменів (ідемпотентність + rate-limit).
+* [ ] Команди з LLA викликають очікувану реакцію доменів (ідемпотентні� ть + rate-limit).
 
 **Складнощі:**
 
-* **Немає зв’язку або події не пишуться:** перевірити дозволи/шляхи/асинхронність, додати ретраї.
-* **Команди небезпечні у LIVE:** додати “shadow” прапорець (логувати замість виконувати).
+* **Немає зв’язку або події не пишуть� я:** перевірити дозволи/шляхи/а� инхронні� ть, додати ретраї.
+* **Команди небезпечні у LIVE:** додати “shadow” прапорець (логувати замі� ть виконувати).
 
 ---
 
-### Етап S2. CA-FSM каркас (без адаптацій)
+### Етап S2. CA-FSM карка�  (без адаптацій)
 
-**Ціль:** **Meta-FSM** керує послідовністю дій між доменами; **CA-FSM** зберігає параметри гвардів/ваг; **без** автоматичних оновлень.
+**Ціль:** **Meta-FSM** керує по� лідовні� тю дій між доменами; **CA-FSM** зберігає параметри гвардів/ваг; **без** автоматичних оновлень.
 
 **Кроки:**
 
-* [ ] `meta_fsm/ca_fsm.py`: модель станів, подій і декларативні гварди (yaml).
-* [ ] Контур “спостереження → перехід → запис у causal_events”.
-* [ ] Планувальник послідовностей: за замовчуванням фіксований (щоб перевірити базовий цикл).
+* [ ] `meta_fsm/ca_fsm.py`: модель � танів, подій і декларативні гварди (yaml).
+* [ ] Контур “� по� тереження → перехід → запи�  у causal_events”.
+* [ ] Планувальник по� лідовно� тей: за замовчуванням фік� ований (щоб перевірити базовий цикл).
 
 **DoD:**
 
-* [ ] Демонстрація “епізоду” від intent до термінального стану (open→manage→close).
-* [ ] 0 критичних помилок у логах під час серії з ≥100 епізодів у sandbox.
+* [ ] Демон� трація “епізоду” від intent до термінального � тану (open→manage→close).
+* [ ] 0 критичних помилок у логах під ча�  � ерії з ≥100 епізодів у sandbox.
 
 **Складнощі:**
 
-* **Несинхронність сигналів доменів:** усі call-backs доменів обгорнути у timeouts/guards; логіку “ready” стандартизувати через словники-інтерфейси.
+* **Не� инхронні� ть � игналів доменів:** у� і call-backs доменів обгорнути у timeouts/guards; логіку “ready” � тандартизувати через � ловники-інтерфей� и.
 
 ---
 
 ### Етап S3. Axial Gradient (+PnL-центрична) та Gradient Evaluator
 
-**Ціль:** вбудувати **AG** і **оцінювач градієнта** (EMA, Hoeffding-порогування; безпечний безградієнтний тюнер на перший час).
+**Ціль:** вбудувати **AG** і **оцінювач градієнта** (EMA, Hoeffding-порогування; безпечний безградієнтний тюнер на перший ча� ).
 
 **Кроки:**
 
 * [ ] `ag/axial_gradient.py` з параметрами ваг (pnl, cvar, stability, latency).
-* [ ] `ge/evaluator.py`: EMA над епізодами + Hoeffding для n вибірок; **без** зміни \theta на старті (тільки облік).
-* [ ] Потім увімкнути дискретний тюнер: пробні ±δ зміни порогу в одному guard, приймаємо напрям з кращим \bar{AG}.
+* [ ] `ge/evaluator.py`: EMA над епізодами + Hoeffding для n вибірок; **без** зміни \theta на � тарті (тільки облік).
+* [ ] Потім увімкнути ди� кретний тюнер: пробні ±δ зміни порогу в одному guard, приймаємо напрям з кращим \bar{AG}.
 
 **DoD:**
 
-* [ ] AG логуються для кожного епізоду (`logs/ag_eval.jsonl`).
-* [ ] Для стабільної серії (n≥30) — \bar{AG} має адекватний розподіл (не вся маса в ±∞/NaN).
+* [ ] AG логують� я для кожного епізоду (`logs/ag_eval.jsonl`).
+* [ ] Для � табільної � ерії (n≥30) — \bar{AG} має адекватний розподіл (не в� я ма� а в ±∞/NaN).
 * [ ] Безпечно увімкнений тюнер: не порушує інваріанти (див. S4).
 
 **Складнощі:**
 
-* **Small-N шум:** не ескалювати до RuntimeWarning; залишити як UserWarning і тримати Hoeffding-фільтр.
+* **Small-N шум:** не е� калювати до RuntimeWarning; залишити як UserWarning і тримати Hoeffding-фільтр.
 * **Дрейф бази:** періодично перераховувати baseline.
 
 ---
 
 ### Етап S4. Proof Kernel (LTL + Ontological Checksum)
 
-**Ціль:** **ніякої адаптації**, якщо порушуються інваріанти або не пройдено checksum-gate.
+**Ціль:** **ніякої адаптації**, якщо порушують� я інваріанти або не пройдено checksum-gate.
 
 **Кроки:**
 
@@ -159,24 +159,24 @@ vFoundation
 
 **DoD:**
 
-* [ ] Будь-яке застосування оновлення має запис “proof_record” (ok/denied + причина).
-* [ ] При порушенні LTL — оновлення не застосовується, CA-FSM лишається консистентною.
+* [ ] Будь-яке за� то� ування оновлення має запи�  “proof_record” (ok/denied + причина).
+* [ ] При порушенні LTL — оновлення не за� то� овуєть� я, CA-FSM лишаєть� я кон� и� тентною.
 * [ ] TS-гейтинг вмикає safe-policy при деградації.
 
 **Складнощі:**
 
-* **Хибні позитиви/негативи у LTL:** ізолювати семантику, тести-сценарії для ядра переходів.
+* **Хибні позитиви/негативи у LTL:** ізолювати � емантику, те� ти-� ценарії для ядра переходів.
 
 ---
 
-### Етап S5. Інтеграція з оркестратором & DoD-машинка
+### Етап S5. Інтеграція з орке� тратором & DoD-машинка
 
-**Ціль:** привести **DoD-артефакти** у стандартну форму й залити в CI.
+**Ціль:** приве� ти **DoD-артефакти** у � тандартну форму й залити в CI.
 
 **Кроки:**
 
 * [ ] Скрипти: freeze (`cfg_freeze_*`), SBOM (`sbom_*`), DoD-звіт (R2_DOD_*), acceptance snapshots, strict gate events, GO-flag.
-* [ ] Run-ID інжекція у DoD (для трасування).
+* [ ] Run-ID інжекція у DoD (для тра� ування).
 * [ ] Перевірки wirehead-scan (`--fail-on any`), preflight, unit strict.
 
 **DoD (артефакти у `reports/` і `logs/`):**
@@ -187,30 +187,30 @@ vFoundation
 
 **Складнощі:**
 
-* **Платформені path-баги:** все через `pathlib`.
-* **Конфіги роз’їжджаються:** `r2_cfg_guard` + “autofix” профіль.
+* **Платформені path-баги:** в� е через `pathlib`.
+* **Конфіги роз’їжджають� я:** `r2_cfg_guard` + “autofix” профіль.
 
 ---
 
 ### Етап S6. 72h Shadow (readiness)
 
-**Ціль:** **72 години** без критичних збоїв, з **AG > 0** (на вибраному інтервалі), **TS ≥ τ**, **інваріанти виконуються**, Acceptance PASS.
+**Ціль:** **72 години** без критичних збоїв, з **AG > 0** (на вибраному інтервалі), **TS ≥ τ**, **інваріанти виконують� я**, Acceptance PASS.
 
 **Кроки:**
 
-* [ ] Запуск в “shadow” режимі: команди **логуються**, але обмежено виконуються (лише безпечні).
+* [ ] Запу� к в “shadow” режимі: команди **логують� я**, але обмежено виконують� я (лише безпечні).
 * [ ] Моніторинг heartbeat/lock, causal_events, ag_eval, proof_record.
 * [ ] Періодична генерація acceptance та DoD.
 
 **DoD:**
 
-* [ ] `R2_72H_READY=YES` (власний checker-скрипт, exit 0/1).
+* [ ] `R2_72H_READY=YES` (вла� ний checker-� крипт, exit 0/1).
 * [ ] 0 CRITICAL у журналах; TS не падає нижче τ; LTL-порушення = 0.
 * [ ] Acceptance SUMMARY: READY.
 
 **Складнощі:**
 
-* **Перезапуски через strict PRE-gate:** дати тестові дані для CVaR/online, виправити шляхи “runs/last”, зменшити “flaky” контури (timeouts/ретраї).
+* **Перезапу� ки через strict PRE-gate:** дати те� тові дані для CVaR/online, виправити шляхи “runs/last”, зменшити “flaky” контури (timeouts/ретраї).
 
 ---
 
@@ -225,31 +225,31 @@ vFoundation
 
 **DoD:**
 
-* [ ] Staging PASS: стабільний TS і AG, LTL=0, інцидентів=0.
+* [ ] Staging PASS: � табільний TS і AG, LTL=0, інцидентів=0.
 * [ ] Live PASS: контрольоване розширення периметра.
 
 **Складнощі:**
 
-* **Осциляції при агресивному тюнері:** адаптивні η_t, обмеження Δ на крок, EMA з більшою інерцією.
+* **О� циляції при агре� ивному тюнері:** адаптивні η_t, обмеження Δ на крок, EMA з більшою інерцією.
 
 ---
 
 ## 4) Єдина табличка DoD (огляд)
 
-| Етап | Що саме готово                | Обов’язкові артефакти                                                                                 |
+| Етап | Що � аме готово                | Обов’язкові артефакти                                                                                 |
 | ---- | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
-| S0   | Dev/CI базис, strict warnings | Unit GREEN, `cfg_freeze_pre.*`, `preflight_status.json`, SBOM                                         |
-| S1   | Три мости працюють            | `logs/causal_events.jsonl`, валідні метрики, перевірені команди                                       |
+| S0   | Dev/CI бази� , strict warnings | Unit GREEN, `cfg_freeze_pre.*`, `preflight_status.json`, SBOM                                         |
+| S1   | Три мо� ти працюють            | `logs/causal_events.jsonl`, валідні метрики, перевірені команди                                       |
 | S2   | CA-FSM без адаптацій          | 100+ епізодів sandbox, 0 критичних помилок                                                            |
-| S3   | AG & Evaluator                | `logs/ag_eval.jsonl`, серії \bar{AG}, увімкнений тюнер (без LTL порушень)                             |
+| S3   | AG & Evaluator                | `logs/ag_eval.jsonl`, � ерії \bar{AG}, увімкнений тюнер (без LTL порушень)                             |
 | S4   | Proof Kernel                  | `logs/proof_record.jsonl`, відхилення небезпечних оновлень                                            |
 | S5   | DoD-машинка                   | `reports/R2_DOD_*.md`, `sbom_*`, `acceptance_*`, `strict_gate_events.jsonl`, `R2_FULL_PASS_OK_*.flag` |
 | S6   | 72h Shadow                    | `R2_72H_READY=YES`, Acceptance READY                                                                  |
-| S7   | Staging/Live                  | TS/AG стабільні, LTL=0, snapshots/rollback                                                            |
+| S7   | Staging/Live                  | TS/AG � табільні, LTL=0, snapshots/rollback                                                            |
 
 ---
 
-## 5) Дані та контракти (мінімум для старту)
+## 5) Дані та контракти (мінімум для � тарту)
 
 ### 5.1. `causal_events.jsonl` (вивід EventBridge)
 
@@ -273,46 +273,46 @@ vFoundation
 
 ---
 
-## 6) Axial Gradient (AG) — стартова формула
+## 6) Axial Gradient (AG) — � тартова формула
 
 ```
 AG = w_p * norm(PnL) + w_c * (τ_cvar - norm(CVaR))_+ + w_s * (1 - norm(Stability)) + w_l * (τ_lat - norm(Latency))_+
 ```
 
-* На старті — **PnL-центрична** (w_p найбільше).
-* **EMA** поверх епізодів; Hoeffding визначає, чи достатньо вибірок для зміни \theta.
+* На � тарті — **PnL-центрична** (w_p найбільше).
+* **EMA** поверх епізодів; Hoeffding визначає, чи до� татньо вибірок для зміни \theta.
 * Зміна ваг — **через тюнер**, не руками.
 
 ---
 
-## 7) CI/CD і репродуктивність
+## 7) CI/CD і репродуктивні� ть
 
 * **Unit (strict):** Deprecation/Runtime → error, pytest-asyncio підключено (без конфіг-warning).
-* **Artifacts:** `reports/*`, `logs/hybrid/*` завжди вантажаться у CI.
+* **Artifacts:** `reports/*`, `logs/hybrid/*` завжди вантажать� я у CI.
 * **Freeze/SBOM:** на preflight та при кожному “release candidate”.
-* **Run-ID в DoD:** для трасування артефактів і acceptance.
+* **Run-ID в DoD:** для тра� ування артефактів і acceptance.
 
 ---
 
-## 8) Ризики й як їх гасять
+## 8) Ризики й як їх га� ять
 
-* **Windows path мікси:** тільки `pathlib`, у тестах — контрольовані root/env.
+* **Windows path мік� и:** тільки `pathlib`, у те� тах — контрольовані root/env.
 * **Heavy deps:** у unit — шими/lazy; у інтеграції — реальні пакети.
-* **“Гойдання” політик:** η_t зменшується, крок обмежений, оновлення не частіше K/год.
-* **Хибна каузальність:** тест-A/B, інструментальні змінні, регуляризація.
+* **“Гойдання” політик:** η_t зменшуєть� я, крок обмежений, оновлення не ча� тіше K/год.
+* **Хибна каузальні� ть:** те� т-A/B, ін� трументальні змінні, регуляризація.
 
 ---
 
 ## 9) План міграції (рекомендований)
 
-1. **База в B (простий vFoundation):** S0→S4 (Bridges, CA-FSM, AG, Proof Kernel).
-2. **72h Shadow у B:** S5→S6 (DoD, acceptance, готовність).
-3. **Перенесення каркасу в A:** заміна локальних glue на стандартні bridges; reuse Proof Kernel; стягування DoD.
+1. **База в B (про� тий vFoundation):** S0→S4 (Bridges, CA-FSM, AG, Proof Kernel).
+2. **72h Shadow у B:** S5→S6 (DoD, acceptance, готовні� ть).
+3. **Перене� ення карка� у в A:** заміна локальних glue на � тандартні bridges; reuse Proof Kernel; � тягування DoD.
 4. **Стейджинг у A → Live:** з тим же checklist.
 
 ---
 
-## 10) Команди (корисні підказки)
+## 10) Команди (кори� ні підказки)
 
 ```bash
 # Unit strict (локально)
@@ -329,39 +329,39 @@ python tools/r2_dod_report.py --out reports/R2_DOD_$(date -u +%Y%m%dT%H%M%SZ).md
 # Wirehead scan
 python tools/wirehead_scan.py --fail-on any
 
-# Readiness checker (власний)
+# Readiness checker (вла� ний)
 python tools/r2_readiness_check.py   # друкує R2_72H_READY=YES/NO і віддає 0/1
 ```
 
 ---
 
-## 11) Готовність до 72h (Definition of Ready)
+## 11) Готовні� ть до 72h (Definition of Ready)
 
 * [ ] S0–S5 DoD виконані; acceptance READY; strict gates PASS.
 * [ ] Proof Kernel блокує небезпечні адаптації; checksum-gate увімкнено.
 * [ ] Моніторинг heartbeat/lock; ротація логів; алерти на CRITICAL.
-* **Формула:** коли `r2_readiness_check.py` → `R2_72H_READY=YES` **та** acceptance READY, дозволено старт.
+* **Формула:** коли `r2_readiness_check.py` → `R2_72H_READY=YES` **та** acceptance READY, дозволено � тарт.
 
 ---
 
-## 12) Що автоматизуємо Copilot’ом першими (операційний список)
+## 12) Що автоматизуємо Copilot’ом першими (операційний � пи� ок)
 
-1. Створити `foundation/meta_fsm/adapters/{event,metric,command}_bridge.py` (скелети з вище).
+1. Створити `foundation/meta_fsm/adapters/{event,metric,command}_bridge.py` (� келети з вище).
 2. Додати виклики `emit_event()` у ключові точки доменів (execution/risk/data_provider).
-3. Поставити `axial_gradient.py` і `evaluator.py` (EMA + Hoeffding; без оновлень \theta перші 1–2 дні).
-4. Впровадити `ca_fsm.py` з yaml-конфігом гвардів/ваг, **без** адаптацій (тільки запис).
+3. По� тавити `axial_gradient.py` і `evaluator.py` (EMA + Hoeffding; без оновлень \theta перші 1–2 дні).
+4. Впровадити `ca_fsm.py` з yaml-конфігом гвардів/ваг, **без** адаптацій (тільки запи� ).
 5. Додати Proof Kernel: мінімальний LTL-набір + checksum-gate; логувати `proof_record.jsonl`.
-6. Налаштувати скрипти DoD/Freeze/SBOM/Acceptance, додати run_id у DoD.
-7. Провести **72h shadow** (Сhecker: `R2_72H_READY=YES`).
-8. Перенести каркас у складніший репозиторій A.
+6. Налаштувати � крипти DoD/Freeze/SBOM/Acceptance, додати run_id у DoD.
+7. Прове� ти **72h shadow** (Сhecker: `R2_72H_READY=YES`).
+8. Перене� ти карка�  у � кладніший репозиторій A.
 
 ---
 
-## 13) Висновок
+## 13) Ви� новок
 
-* **Мости** роблять домени “видимими” для LLA.
-* **CA-FSM** надає пластичність поведінки без хаосу — адаптуємо **параметри** під контролем інваріантів.
-* **Proof Kernel** гарантує консистентність; **DoD-машинка** — відтворюваність і трасовність.
+* **Мо� ти** роблять домени “видимими” для LLA.
+* **CA-FSM** надає пла� тичні� ть поведінки без хао� у — адаптуємо **параметри** під контролем інваріантів.
+* **Proof Kernel** гарантує кон� и� тентні� ть; **DoD-машинка** — відтворювані� ть і тра� овні� ть.
 * **72h Shadow** — наша лінія оборони перед staging/live.
 
 
@@ -370,19 +370,19 @@ python tools/r2_readiness_check.py   # друкує R2_72H_READY=YES/NO і ві�
 
 ---
 
-# План запуску LLA ⇆ vFoundation в Olimp_v1 (до “72h READY”)
+# План запу� ку LLA ⇆ vFoundation в Olimp_v1 (до “72h READY”)
 
 ## 0) Стратегія інтеграції (рішення)
 
-* **Цільовий репозиторій:** той, що “простішій”, але **вже працює на testnet** і побудований на vFoundation (домени вже виділені). Це дасть найшвидший практичний результат.
-* **Підхід:** переносимо лише **потрібні вузли LLA** (оркестрація/гейти/шари) і одразу обгортаємо в структуру vFoundation. Все інше дописуємо легкими адаптерами.
-* **Основа управління:** LLA виступає як **Meta-FSM / CA-FSM**, “мозок над доменами” (execution, risk, data_provider). Весь рух іде через Bridges.
+* **Цільовий репозиторій:** той, що “про� тішій”, але **вже працює на testnet** і побудований на vFoundation (домени вже виділені). Це да� ть найшвидший практичний результат.
+* **Підхід:** перено� имо лише **потрібні вузли LLA** (орке� трація/гейти/шари) і одразу обгортаємо в � труктуру vFoundation. В� е інше допи� уємо легкими адаптерами.
+* **О� нова управління:** LLA ви� тупає як **Meta-FSM / CA-FSM**, “мозок над доменами” (execution, risk, data_provider). Ве� ь рух іде через Bridges.
 
 ---
 
-## 1) Sprint A — Bridges (нервова система)
+## 1) Sprint A — Bridges (нервова � и� тема)
 
-### Створити структуру
+### Створити � труктуру
 
 ```
 foundation/
@@ -391,7 +391,7 @@ foundation/
     metric_bridge.py
     command_bridge.py
   meta_fsm/
-    ca_fsm.py            # поки мінімальний каркас
+    ca_fsm.py            # поки мінімальний карка� 
   system/
     paths.py             # якщо нема — централізуємо тут
 logs/
@@ -421,7 +421,7 @@ def emit_event(domain: str, event: str, payload: dict):
 ```python
 def collect_metrics():
     # TODO: підключити до ваших доменів
-    # Повертаємо PnL/CVaR/latency/volatility хоча б у “стаб”-вигляді
+    # Повертаємо PnL/CVaR/latency/volatility хоча б у “� таб”-вигляді
     return {"pnl_delta": 0.0, "cvar": 0.0, "latency_ms": 0, "volatility_ratio": 0.0}
 ```
 
@@ -433,13 +433,13 @@ ALLOW = {"execution": {"place_order","cancel_all"}, "risk": {"rebalance"}, "data
 def send_command(domain: str, command: str, **params):
     if command not in ALLOW.get(domain, {}):
         return {"ok": False, "err": "denied"}
-    # TODO: виклик вашого домену (фасад/порт)
+    # TODO: виклик вашого домену (фа� ад/порт)
     return {"ok": True, "info": {"domain": domain, "command": command, "params": params}}
 ```
 
-### Інструментування доменів
+### Ін� трументування доменів
 
-* У ключових точках `execution`, `risk`, `data_provider` викликаємо `emit_event(...)` (після обробки сигналів, перед/після ключових дій).
+* У ключових точках `execution`, `risk`, `data_provider` викликаємо `emit_event(...)` (пі� ля обробки � игналів, перед/пі� ля ключових дій).
 * Легкий smoke-луп на 100+ подій (sandbox/testrun).
 
 ### Команди
@@ -456,12 +456,12 @@ PY
 
 ### DoD (A)
 
-* `logs/causal_events.jsonl` містить ≥ 50 записів, формат валідний.
+* `logs/causal_events.jsonl` мі� тить ≥ 50 запи� ів, формат валідний.
 * Unit strict — зелено.
 
 ---
 
-## 2) Sprint B — CA-FSM (каркас, без адаптацій)
+## 2) Sprint B — CA-FSM (карка� , без адаптацій)
 
 **meta_fsm/ca_fsm.py**
 
@@ -476,7 +476,7 @@ class Transition:
     from_state: str
     event: str
     to_state: str
-    guard: str     # вираз у стилі "signal_confidence > 0.7"
+    guard: str     # вираз у � тилі "signal_confidence > 0.7"
     weight: float  # початкова вага
 
 class CAFSM:
@@ -487,7 +487,7 @@ class CAFSM:
     def step(self, event:str, ctx:dict):
         cand = [t for t in self.transitions if t.from_state==self.s and t.event==event]
         if not cand: return self.s
-        t = max(cand, key=lambda x: x.weight)  # поки простий вибір
+        t = max(cand, key=lambda x: x.weight)  # поки про� тий вибір
         # TODO: оцінка guard із ctx (безпечний eval/інтерпретатор)
         self.s = t.to_state
         emit_event("meta_fsm","transition",{"from": t.from_state,"event": event,"to": t.to_state})
@@ -511,13 +511,13 @@ transitions:
 
 **Вбудування у ваш `run_r0.py` / головний цикл:**
 
-* Ініціалізуємо `CAFSM` зі стартового стану.
+* Ініціалізуємо `CAFSM` зі � тартового � тану.
 * На кожній події від доменів — викликаємо `fsm.step(event, ctx)`.
 * На timer/heartbeat — `fsm.on_tick()`.
 
 ### DoD (B)
 
-* FSM “ходить” по мінімальному сценарію (IDLE→SCAN→RISK_CHECK→EXECUTE→IDLE), події пишуться у `causal_events.jsonl`.
+* FSM “ходить” по мінімальному � ценарію (IDLE→SCAN→RISK_CHECK→EXECUTE→IDLE), події пишуть� я у `causal_events.jsonl`.
 * Немає падінь/блокувань.
 
 ---
@@ -557,22 +557,22 @@ def eval_once():
 
 ### DoD (C)
 
-* `logs/ag_eval.jsonl` має записи; **ag** не NaN/inf; розподіл реалістичний (може бути ~0 на старті).
+* `logs/ag_eval.jsonl` має запи� и; **ag** не NaN/inf; розподіл реалі� тичний (може бути ~0 на � тарті).
 * Unit strict — зелено.
 
 ---
 
 ## 4) Sprint D — Proof Kernel (LTL мінімум + checksum-gate)
 
-**proof_kernel/ltl_invariants.yaml** (мінімальний старт)
+**proof_kernel/ltl_invariants.yaml** (мінімальний � тарт)
 
 ```yaml
 safety:
   - "G ! duplicate_entry"     # ніколи не подвійний submit
-  - "G (OPEN -> F BRACKETS)"  # якщо відкрили — мають з’явитись брекети
+  - "G (OPEN -> F BRACKETS)"  # якщо відкрили — мають з’явити� ь брекети
 ```
 
-**proof_kernel/ltl_shield.py** — простий монітор (легкі правила, унітарні перевірки трас), плюс:
+**proof_kernel/ltl_shield.py** — про� тий монітор (легкі правила, унітарні перевірки тра� ), плю� :
 **proof_kernel/ontological_checksum.py**
 
 ```python
@@ -585,29 +585,29 @@ def checksum_ok(proposal: dict, P=97, c=4):
 
 ### DoD (D)
 
-* Порушення safety тестом → “denied” у `proof_record.jsonl`.
-* Коректні оновлення (коли з’являться) → “accepted”.
+* Порушення safety те� том → “denied” у `proof_record.jsonl`.
+* Коректні оновлення (коли з’являть� я) → “accepted”.
 
 ---
 
 ## 5) Sprint E — Підмішати LLA вузли (мінімально необхідне)
 
-Переносимо **тільки** те, що реально дає цінність зараз:
+Перено� имо **тільки** те, що реально дає цінні� ть зараз:
 
 * `tools/r2_hybrid_stage.py`, `tools/r2_readiness_check.py`, `tools/r2_cfg_freeze.py`, `tools/r2_sbom.py`, `tools/r2_dod_report.py`, `tools/r2_full_pass_gate.py`, `tools/r2_all_gates.py`, `tools/r2_cfg_guard.py`, `tools/cfg_patch_defaults.json`.
-* `living_latent/r2/hybrid/ltl_shield.py` → як надбудова над нашим мінімальним PK (якщо хочеш); або залишаємо наш мін PK на перших 2 спринти.
-* (Опційно, пізніше) `pipeline.py`, `conf_gate.py`, `dro_gate.py` — **тільки** якщо потрібен їхній функціонал і ми готові до шима важких залежностей.
+* `living_latent/r2/hybrid/ltl_shield.py` → як надбудова над нашим мінімальним PK (якщо хочеш); або залишаємо наш мін PK на перших 2 � принти.
+* (Опційно, пізніше) `pipeline.py`, `conf_gate.py`, `dro_gate.py` — **тільки** якщо потрібен їхній функціонал і ми готові до шима важких залежно� тей.
 
-Правило: **жодних hard-deps** у unit-циклі. Все важке — за флагами/маркером `@pytest.mark.integration` і через шими/lazy-imports (як ми робили раніше).
+Правило: **жодних hard-deps** у unit-циклі. В� е важке — за флагами/маркером `@pytest.mark.integration` і через шими/lazy-imports (як ми робили раніше).
 
 ### DoD (E)
 
-* Префлайт з `tools/r2_hybrid_stage.py` → **OK**, артефакти на місці.
+* Префлайт з `tools/r2_hybrid_stage.py` → **OK**, артефакти на мі� ці.
 * Readiness check → `R2_72H_READY=YES`.
 
 ---
 
-## 6) Sprint F — CI/Unit “strict” (стабільний baseline)
+## 6) Sprint F — CI/Unit “strict” (� табільний baseline)
 
 * Додаємо workflow з **strict warnings** і `pytest-asyncio` у матриці (ubuntu/windows × 3.10/3.11).
 * Артефакти: `UNIT_TEST_LOG.txt`, freeze, sbom, DoD.
@@ -620,7 +620,7 @@ def checksum_ok(proposal: dict, P=97, c=4):
 
 ## 7) Sprint G — 72h Shadow
 
-* Запуск у **shadow-режимі** (команди в лог, без реальних side-effects).
+* Запу� к у **shadow-режимі** (команди в лог, без реальних side-effects).
 * Моніторимо heartbeat/lock, causal_events, ag_eval, proof_record; генеруємо acceptance/DoD за розкладом.
 
 ### Команди (приклад)
@@ -628,7 +628,7 @@ def checksum_ok(proposal: dict, P=97, c=4):
 ```bash
 python tools/r2_hybrid_stage.py start --ensure-cfg --mode ab --out logs/hybrid/preflight_status.json
 python tools/r2_readiness_check.py   # очікуємо R2_72H_READY=YES
-# далі — запуск shadow-цикла (ваш runner), лог у logs/hybrid/run_stdout.log
+# далі — запу� к shadow-цикла (ваш runner), лог у logs/hybrid/run_stdout.log
 ```
 
 ### DoD (G)
@@ -639,24 +639,24 @@ python tools/r2_readiness_check.py   # очікуємо R2_72H_READY=YES
 
 ## Ризики та як закривати
 
-* **Windows пути/“runs\runs/last”** → тільки `pathlib` у `foundation/system/paths.py`; окремі тести на це (ми їх додамо).
-* **Флаки PRE-гейтів** (порожні метрики CVaR/obs) → у shadow створюємо мінімальні “снапшоти”/сурогатні метрики, щоб PRE не падав від пустого входу.
-* **Осциляції при тюнері** → поки **вимкнуто**; спочатку збираємо причинний слід і AG, лише потім вмикаємо на одному порозі з Hoeffding-порогами.
-* **Важкі залежності** → геть із unit; все важке — за інтеграційним маркером + шим.
+* **Windows пути/“runs\runs/last”** → тільки `pathlib` у `foundation/system/paths.py`; окремі те� ти на це (ми їх додамо).
+* **Флаки PRE-гейтів** (порожні метрики CVaR/obs) → у shadow � творюємо мінімальні “� напшоти”/� урогатні метрики, щоб PRE не падав від пу� того входу.
+* **О� циляції при тюнері** → поки **вимкнуто**; � початку збираємо причинний � лід і AG, лише потім вмикаємо на одному порозі з Hoeffding-порогами.
+* **Важкі залежно� ті** → геть із unit; в� е важке — за інтеграційним маркером + шим.
 
 ---
 
-## Що отримаємо після Sprint G
+## Що отримаємо пі� ля Sprint G
 
 * LLA керує **Meta-FSM / CA-FSM** поверх ваших доменів.
-* Є **причинний слід** (causal_events), **AG-оцінка** і **Proof Kernel** (мінімум safety).
-* CI green, базові релізні артефакти, і **система готова до 72h shadow**.
+* Є **причинний � лід** (causal_events), **AG-оцінка** і **Proof Kernel** (мінімум safety).
+* CI green, базові релізні артефакти, і **� и� тема готова до 72h shadow**.
 
 ---
 
-## Фінальне: команда для “72h готові до запуску”
+## Фінальне: команда для “72h готові до запу� ку”
 
-Після того як пройдеш Sprints A–F і `python tools/r2_readiness_check.py` видрукує `R2_72H_READY=YES`, запуск shadow-циклу (у вашому раннері) вважаємо стартом “72 годин”.
+Пі� ля того як пройдеш Sprints A–F і `python tools/r2_readiness_check.py` видрукує `R2_72H_READY=YES`, запу� к shadow-циклу (у вашому раннері) вважаємо � тартом “72 годин”.
 
 ---
 
@@ -666,23 +666,23 @@ python tools/r2_readiness_check.py   # очікуємо R2_72H_READY=YES
 
 # ВАРІАНТ A — “візьми готові файли з LLA” (мінімальний порт)
 
-Оце те, що **достатньо перенести** з LLA в твій проєкт, щоб LLA-шар накрив твій r0-оркестратор і ми запустили CA-FSM + 72h Shadow:
+Оце те, що **до� татньо перене� ти** з LLA в твій проєкт, щоб LLA-шар накрив твій r0-орке� тратор і ми запу� тили CA-FSM + 72h Shadow:
 
 1. **tools/**
 
-* `r2_hybrid_stage.py` — запуск/оркестратор стадій (preflight, shadow, acceptance).
+* `r2_hybrid_stage.py` — запу� к/орке� тратор � тадій (preflight, shadow, acceptance).
 * `r2_readiness_check.py` — інтегрований чекер, який дає однозначний прапор `R2_72H_READY=YES/NO`.
 * `r2_cfg_guard.py` + `cfg_patch_defaults.json` — автопатч і валідація `cfg/r2.yaml`.
 * `r2_cfg_freeze.py` — freeze конфігів (yaml + sha256).
-* `r2_sbom.py` — SBOM/інвентар залежностей.
-* `r2_all_gates.py`, `r2_full_pass_gate.py`, `r2_dod_report.py` — строгі гейти, рішення “GO/NO-GO”, DoD-звіт.
+* `r2_sbom.py` — SBOM/інвентар залежно� тей.
+* `r2_all_gates.py`, `r2_full_pass_gate.py`, `r2_dod_report.py` — � трогі гейти, рішення “GO/NO-GO”, DoD-звіт.
 
 2. **foundation/hybrid/**
 
-* `stage_orchestrator.py` — цикл стадій + таймінги + артефакти.
+* `stage_orchestrator.py` — цикл � тадій + таймінги + артефакти.
 * `pi_bridge.py` — ліміт/бюджет рішень (policy interface, rate/latency бюджети).
-* `rate_limit.py` — токен-бакет/дросель для змін.
-* `conf_gate.py`, `dro_gate.py` — конфігураційні/робастні гейти (детектують небезпечні зміни).
+* `rate_limit.py` — токен-бакет/дро� ель для змін.
+* `conf_gate.py`, `dro_gate.py` — конфігураційні/роба� тні гейти (детектують небезпечні зміни).
 
 3. **foundation/proof_kernel/**
 
@@ -694,55 +694,55 @@ python tools/r2_readiness_check.py   # очікуємо R2_72H_READY=YES
 
 5. **cfg/**
 
-* `r2.yaml` — базова конфігурація стадій/гейтів (відразу після копіювання проганяєш `r2_cfg_guard.py --autofix`).
+* `r2.yaml` — базова конфігурація � тадій/гейтів (відразу пі� ля копіювання проганяєш `r2_cfg_guard.py --autofix`).
 
 6. **foundation/hybrid/r0_adapter.py** *(новий у твоєму репо)*
-   тонкий адаптер, що стартує твій `r0_*.py` через 3 гачки: `r0_on_start/step/stop`.
+   тонкий адаптер, що � тартує твій `r0_*.py` через 3 гачки: `r0_on_start/step/stop`.
 
-> **Примітка:** назви каталогів `foundation/*` можеш перейменувати під свою структуру (наприклад `vfoundation/*`). Головне — зберегти функціональні ролі.
+> **Примітка:** назви каталогів `foundation/*` можеш перейменувати під � вою � труктуру (наприклад `vfoundation/*`). Головне — зберегти функціональні ролі.
 
 ---
 
-# ВАРІАНТ B — “що ці файли мають робити” (якщо пишеш свої, без копіювання)
+# ВАРІАНТ B — “що ці файли мають робити” (якщо пишеш � вої, без копіювання)
 
 Нижче — **обов’язкові модулі та їхня роль**. Можеш назвати їх як завгодно; важливо, щоб виконували ці задачі.
 
-### 1) Оркестратор стадій
+### 1) Орке� тратор � тадій
 
-* **Що робить:** запускає префлайт → тіньовий режим → acceptance → freeze/SBOM → DoD.
+* **Що робить:** запу� кає префлайт → тіньовий режим → acceptance → freeze/SBOM → DoD.
 * **API:** `start(mode: str, out: Path)`, `simulate(ticks: int)`.
-* **DoD:** створює `logs/hybrid/preflight_status.json`, `acceptance_summary_*.json`, `strict_gate_events.jsonl`.
+* **DoD:** � творює `logs/hybrid/preflight_status.json`, `acceptance_summary_*.json`, `strict_gate_events.jsonl`.
 
 ### 2) Readiness-checker
 
 * **Що робить:** читає артефакти та друкує однозначно `R2_72H_READY=YES/NO` (exit-code 0/1).
 * **Вхід:** `preflight_status.json`, `acceptance_summary_*.json`, freeze/sha, SBOM.
-* **DoD:** одна команда дає відповідь; інтегрується в CI.
+* **DoD:** одна команда дає відповідь; інтегруєть� я в CI.
 
 ### 3) Config-guard (+ автопатч)
 
-* **Що робить:** валідатор/автопоповнювач `cfg/r2.yaml` (додає секцію `hybrid.*`, дефолти, часові вікна).
-* **DoD:** після запуску — завжди валідний `r2.yaml` без ручного редагування.
+* **Що робить:** валідатор/автопоповнювач `cfg/r2.yaml` (додає � екцію `hybrid.*`, дефолти, ча� ові вікна).
+* **DoD:** пі� ля запу� ку — завжди валідний `r2.yaml` без ручного редагування.
 
 ### 4) Freeze/SBOM/DoD-репортери
 
 * **Що роблять:**
   freeze — зберігає snapshot конфіга + sha256;
-  sbom — знімає залежності;
+  sbom — знімає залежно� ті;
   dod — робить короткий звіт “що виконано і чому GO/NO-GO”.
 * **DoD:** наявні файли у `reports/` (`cfg_freeze_*.yaml/.sha256`, `sbom_*`, `R2_DOD_*.md`).
 
 ### 5) Stage-orchestrator core
 
-* **Що робить:** цикл стадій (S0…Sn), таймери, heartbeat, file-locks, state-машина, логіка повторних спроб.
-* **DoD:** `logs/hybrid/.heartbeat`, `stage_state.json`, коректне відновлення після рестарту.
+* **Що робить:** цикл � тадій (S0…Sn), таймери, heartbeat, file-locks, state-машина, логіка повторних � проб.
+* **DoD:** `logs/hybrid/.heartbeat`, `stage_state.json`, коректне відновлення пі� ля ре� тарту.
 
 ### 6) R0-adapter (двигун)
 
-* **Що робить:** запускає твій `r0_*.py` як підсистему через 3 гачки:
+* **Що робить:** запу� кає твій `r0_*.py` як під� и� тему через 3 гачки:
 
   * `r0_on_start(ctx)`, `r0_on_step(ctx)`, `r0_on_stop(ctx)`
-* **DoD:** один `step()` = один «тік» системи; енджін не падає при помилці домену (ізолює винятки).
+* **DoD:** один `step()` = один «тік» � и� теми; енджін не падає при помилці домену (ізолює винятки).
 
 ### 7) Bridges (твоя “ізюмінка”)
 
@@ -752,49 +752,49 @@ python tools/r2_readiness_check.py   # очікуємо R2_72H_READY=YES
   `collect_metrics() -> dict`
 * **command_bridge:** безпечне виконання команд у домени (whitelist + rate-limit)
   `send_command(domain, command, args) -> Result`
-* **DoD:** є ≥50 `causal_events` за smoke-сесію; latency/CVaR не нулі.
+* **DoD:** є ≥50 `causal_events` за smoke-� е� ію; latency/CVaR не нулі.
 
 ### 8) Proof-kernel
 
 * **Що робить:** LTL-монітор + checksum-gate для блокування небезпечних переходів/апдейтів.
 * **API:** `ltl_accepts(trace|proposal) -> bool`, `checksum_ok(proposal) -> bool`.
-* **DoD:** при порушенні — подія блокується; `logs/proof_record.jsonl` містить причину.
+* **DoD:** при порушенні — подія блокуєть� я; `logs/proof_record.jsonl` мі� тить причину.
 
 ### 9) Policy-interface (PI-bridge)
 
-* **Що робить:** єдиний інтерфейс керування політикою/порогами з rate-limit/latency-budget.
+* **Що робить:** єдиний інтерфей�  керування політикою/порогами з rate-limit/latency-budget.
 * **API:** `should_accept_candidate(key, delta, cost, clock) -> (bool, info)`.
-* **DoD:** частота змін і бюджет не порушуються; логи `policy_updates.jsonl`.
+* **DoD:** ча� тота змін і бюджет не порушують� я; логи `policy_updates.jsonl`.
 
 ### 10) Rate-limit
 
-* **Що робить:** токен-бакет, що дроселить зміни параметрів та частоту команд.
+* **Що робить:** токен-бакет, що дро� елить зміни параметрів та ча� тоту команд.
 * **DoD:** ніколи не перевищує K оновлень/год; метрики в логах.
 
 ### 11) CA-FSM (Meta-FSM над доменами)
 
-* **Що робить:** вирішує, у якому порядку викликати домени (`execution`, `risk`, `data_provider`) і які дії робити; спочатку політика фіксована.
+* **Що робить:** вирішує, у якому порядку викликати домени (`execution`, `risk`, `data_provider`) і які дії робити; � початку політика фік� ована.
 * **API:** `tick(obs)`, `transition(state, event) -> (next_state, action)`.
-* **DoD:** smoke 100–500 тікiв без падінь; `causal_events.jsonl` наповнюється.
+* **DoD:** smoke 100–500 тікiв без падінь; `causal_events.jsonl` наповнюєть� я.
 
 ### 12) Axial-gradient + адаптації (мінімально)
 
-* **Що робить:** перетворює метрики у скалярний AG (PnL-центричний) + легкі зміни порогів раз на K кроків (**тільки** якщо Proof-kernel дозволив).
-* **DoD:** `ag_eval.jsonl` заповнюється; зміни рідкі, маленькі, без осциляцій.
+* **Що робить:** перетворює метрики у � калярний AG (PnL-центричний) + легкі зміни порогів раз на K кроків (**тільки** якщо Proof-kernel дозволив).
+* **DoD:** `ag_eval.jsonl` заповнюєть� я; зміни рідкі, маленькі, без о� циляцій.
 
 ### 13) Paths helper
 
-* **Що робить:** нормалізує всі шляхи (особливо на Windows): `get_logs_dir()`, `get_runs_dir()`, `ensure_dir()`.
-* **DoD:** жодних `runs/runs\last`; все під єдиним коренем.
+* **Що робить:** нормалізує в� і шляхи (о� обливо на Windows): `get_logs_dir()`, `get_runs_dir()`, `ensure_dir()`.
+* **DoD:** жодних `runs/runs\last`; в� е під єдиним коренем.
 
 ### 14) Config (`cfg/r2.yaml`)
 
-* **Що робить:** описує стадії, бюджети, частоти, точки інтеграції.
-* **DoD:** валідний після guard-скрипта; оркестратор не просить ручних правок.
+* **Що робить:** опи� ує � тадії, бюджети, ча� тоти, точки інтеграції.
+* **DoD:** валідний пі� ля guard-� крипта; орке� тратор не про� ить ручних правок.
 
 ---
 
-## Щоб стартувати просто зараз
+## Щоб � тартувати про� то зараз
 
 1. **У r0** додай гачки:
 
@@ -804,19 +804,19 @@ def r0_on_step(ctx):  ...
 def r0_on_stop(ctx):  ...
 ```
 
-2. **Створи** адаптер і бриджі (навіть зі стубами метрик):
+2. **Створи** адаптер і бриджі (навіть зі � тубами метрик):
 
 ```python
 from foundation.hybrid.r0_adapter import R0Engine
 e = R0Engine('r0_main'); e.start(); e.step(); e.stop()
 ```
 
-3. **Або** скопіюй файли з Варіанта A, далі:
+3. **Або** � копіюй файли з Варіанта A, далі:
 
 ```bash
 python tools/r2_cfg_guard.py cfg/r2.yaml --autofix --patch-file tools/cfg_patch_defaults.json
 python tools/r2_hybrid_stage.py start --ensure-cfg --mode ab --out logs/hybrid/preflight_status.json
-python tools/r2_readiness_check.py   # має вивести R2_72H_READY=YES (коли все на місці)
+python tools/r2_readiness_check.py   # має виве� ти R2_72H_READY=YES (коли в� е на мі� ці)
 ```
 
 

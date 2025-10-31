@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from unittest import mock
 import pytest
+import time
 from vfoundation.core.protocol import Message
 
 # Add paths for imports
@@ -138,7 +139,7 @@ def test_decision_making_aggregates_events_and_proposes_intent(
         src="risk_strategy",
         dst="decision_making",
         pld={
-            "ts": 1693526400000,
+            "ts": int(time.time() * 1000),
             "symbol": "ETHUSDT",
             "risk_parameters": {"is_trading_allowed": True},
         },
@@ -150,7 +151,7 @@ def test_decision_making_aggregates_events_and_proposes_intent(
         src="analyzer",
         dst="decision_making",
         pld={
-            "ts": 1693526400000,
+            "ts": int(time.time() * 1000),
             "symbol": "ETHUSDT",
             "features": {
                 "obi": 0.02,

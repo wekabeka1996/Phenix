@@ -12,13 +12,13 @@ trading_mode: "hybrid_live_data_testnet_exec"
 # =============================================================================
 
 binance_api:
-  # Конфігурація для бойового середовища
+  # Конфігурація для бойового � ередовища
   live:
     api_key: "${BINANCE_LIVE_API_KEY}"
     api_secret: "${BINANCE_LIVE_API_SECRET}"
     rest_url: "https://fapi.binance.com"
 
-  # Конфігурація для тестового середовища
+  # Конфігурація для те� тового � ередовища
   testnet:
     api_key: "${BINANCE_TESTNET_API_KEY}"
     api_secret: "${BINANCE_TESTNET_API_SECRET}"
@@ -29,7 +29,7 @@ binance_api:
 # =============================================================================
 
 account_balance:
-  # Інтервал опитування API в секундах
+  # Інтервал опитування API в � екундах
   poll_interval: 30
 
   # Налаштування повторів при помилках
@@ -41,7 +41,7 @@ account_balance:
   max_concurrent_requests: 2
 
   # Фільтри даних
-  enable_balance_filtering: true    # Тільки активи з балансом > 0
+  enable_balance_filtering: true    # Тільки активи з балан� ом > 0
   enable_position_filtering: true   # Тільки відкриті позиції
 
   # Додаткові налаштування логування
@@ -49,11 +49,11 @@ account_balance:
   enable_detailed_balance_logging: true
 
 # =============================================================================
-# ЗАГАЛЬНІ НАЛАШТУВАННЯ ACCOUNT_OBSERVER (для сумісності)
+# ЗАГАЛЬНІ НАЛАШТУВАННЯ ACCOUNT_OBSERVER (для � умі� но� ті)
 # =============================================================================
 
 account_observer:
-  poll_interval: 30  # Має співпадати з account_balance.poll_interval
+  poll_interval: 30  # Має � півпадати з account_balance.poll_interval
 
 # =============================================================================
 # ПРИКЛАДИ РІЗНИХ КОНФІГУРАЦІЙ
@@ -74,7 +74,7 @@ production_config:
     log_level: "WARN"
     enable_detailed_balance_logging: false
 
-# Для тестування з швидкими інтервалами
+# Для те� тування з швидкими інтервалами
 testing_config:
   account_balance:
     poll_interval: 5
@@ -95,9 +95,9 @@ testing_config:
 # ПРИКЛАД КОНФІГУРАЦІЇ З КОМЕНТАРЯМИ
 # =============================================================================
 
-# Детальний приклад з поясненнями
+# Детальний приклад з поя� неннями
 detailed_example:
-  trading_mode: "testnet"  # Використовувати testnet для безпеки
+  trading_mode: "testnet"  # Викори� товувати testnet для безпеки
 
   binance_api:
     testnet:
@@ -106,19 +106,19 @@ detailed_example:
       rest_url: "https://testnet.binancefuture.com"
 
   account_balance:
-    # Як часто опитувати API (в секундах)
+    # Як ча� то опитувати API (в � екундах)
     poll_interval: 30
 
     # Поведінка при помилках
     retry_attempts: 3          # Спробувати 3 рази
-    backoff_multiplier: 2.0    # Подвоювати затримку між спробами
-    timeout: 10               # Максимальний час очікування відповіді
+    backoff_multiplier: 2.0    # Подвоювати затримку між � пробами
+    timeout: 10               # Мак� имальний ча�  очікування відповіді
 
     # Фільтрація даних
-    enable_balance_filtering: true   # Показувати тільки активи з балансом
+    enable_balance_filtering: true   # Показувати тільки активи з балан� ом
     enable_position_filtering: true  # Показувати тільки відкриті позиції
 
     # Логування
     log_level: "INFO"                    # Рівень логування
-    enable_detailed_balance_logging: true # Детальне логування балансу USDT</content>
+    enable_detailed_balance_logging: true # Детальне логування балан� у USDT</content>
 <parameter name="filePath">c:\Users\job11\Music\Olimp_v1\docs\domains\account_balance\examples\config.yaml

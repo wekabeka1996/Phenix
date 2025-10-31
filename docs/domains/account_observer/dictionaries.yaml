@@ -1,6 +1,6 @@
 # Словники домену Account Observer
 
-# Конфігураційні словники
+# Конфігураційні � ловники
 config:
   # Режими роботи
   trading_modes:
@@ -9,7 +9,7 @@ config:
     hybrid_live: "hybrid_live"
     hybrid_testnet: "hybrid_testnet"
 
-  # Інтервали опитування (секунди)
+  # Інтервали опитування (� екунди)
   poll_intervals:
     fast: 1
     normal: 5
@@ -23,7 +23,7 @@ config:
     extended: 100
     maximum: 500
 
-  # Максимальна кількість кешованих ID трейдів (автоматичне очищення при потребі)
+  # Мак� имальна кількі� ть кешованих ID трейдів (автоматичне очищення при потребі)
   max_cached_trade_ids:
     small: 1000
     medium: 5000
@@ -61,12 +61,12 @@ events:
 
 # Словник типів даних
 data_types:
-  # Типи сторін торгівлі
+  # Типи � торін торгівлі
   trade_sides:
     buy: "buy"
     sell: "sell"
 
-  # Типи комісій
+  # Типи комі� ій
   commission_types:
     maker: "maker"
     taker: "taker"
@@ -76,9 +76,9 @@ data_types:
     binance: "binance"
     binance_testnet: "binance_testnet"
 
-# Словник символів для моніторингу
+# Словник � имволів для моніторингу
 symbols:
-  # Основні криптовалюти
+  # О� новні криптовалюти
   major_crypto:
     - BTCUSDT
     - ETHUSDT
@@ -89,7 +89,7 @@ symbols:
     - LINKUSDT
     - LTCUSDT
 
-  # Altcoins середньої капіталізації
+  # Altcoins � ередньої капіталізації
   mid_cap:
     - AVAXUSDT
     - MATICUSDT
@@ -117,11 +117,11 @@ error_codes:
   memory_limit_exceeded: "AO007"
 
 error_messages:
-  AO001: "Не вдалося підключитися до Binance API"
+  AO001: "Не вдало� я підключити� я до Binance API"
   AO002: "Перевищено ліміт запитів до API"
   AO003: "Помилка аутентифікації API ключів"
   AO004: "Отримано невалідні дані трейду"
-  AO005: "Помилка системи дедуплікації"
+  AO005: "Помилка � и� теми дедуплікації"
   AO006: "Невалідна конфігурація домену"
   AO007: "Перевищено ліміт пам'яті для кешу"
 
@@ -135,7 +135,7 @@ metrics:
     api_errors_total: "account_observer_api_errors_total"
     poll_cycles_total: "account_observer_poll_cycles_total"
 
-  # Гістограми
+  # Гі� тограми
   histograms:
     api_call_duration: "account_observer_api_call_duration_seconds"
     trade_processing_duration: "account_observer_trade_processing_duration_seconds"
@@ -171,9 +171,9 @@ logging:
     standard: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     json: '{"timestamp": "%(asctime)s", "logger": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}'
 
-# Словник конфігурації тестування
+# Словник конфігурації те� тування
 testing:
-  # Тестові дані
+  # Те� тові дані
   mock_trades:
     - symbol: "BTCUSDT"
       id: 12345
@@ -201,34 +201,34 @@ testing:
       isMaker: false
       isBestMatch: true
 
-  # Тестові сценарії
+  # Те� тові � ценарії
   scenarios:
     normal_operation: "Нормальна робота з новими трейдами"
     duplicate_trades: "Обробка дублікатів трейдів"
     api_errors: "Симуляція помилок API"
-    high_volume: "Високий обсяг трейдів"
-    memory_pressure: "Тестування обмежень пам'яті"
+    high_volume: "Ви� окий об� яг трейдів"
+    memory_pressure: "Те� тування обмежень пам'яті"
 
 # Словник конфігурації безпеки
 security:
   # Мінімальні дозволи API ключів
   required_permissions:
-    - "Read Info"        # Для читання балансу
+    - "Read Info"        # Для читання балан� у
     - "Enable Spot & Margin Trading"  # Для торгівлі (якщо потрібно)
-    - "Enable Futures"   # Для ф'ючерсів
+    - "Enable Futures"   # Для ф'ючер� ів
     - "Enable Reading"   # Для читання трейдів
 
-  # Час життя кешу (секунди)
+  # Ча�  життя кешу (� екунди)
   cache_ttl:
     trade_ids: 86400    # 24 години
     api_responses: 300  # 5 хвилин
 
-  # Ліміт швидкості
+  # Ліміт швидко� ті
   rate_limits:
     api_calls_per_minute: 1200
     api_calls_per_hour: 72000
 
-# Словник конфігурації продуктивності
+# Словник конфігурації продуктивно� ті
 performance:
   # Цільові метрики SLA
   targets:

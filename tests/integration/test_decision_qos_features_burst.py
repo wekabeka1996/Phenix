@@ -22,7 +22,11 @@ async def test_burst_features_rate_limited():
         def __init__(self, bus, cfg):
             self.bus = bus
             self.cfg = cfg
-            self.qos_max_intents_per_minute_per_symbol = cfg.get("decision", {}).get("qos", {}).get("max_intents_per_minute_per_symbol", 2)
+            self.qos_max_intents_per_minute_per_symbol = (
+                cfg.get("decision", {})
+                .get("qos", {})
+                .get("max_intents_per_minute_per_symbol", 2)
+            )
             self._qos_state = {
                 "symbol_intent_counts": {"BTCUSDT": {"count": 0, "window_start": 0}}
             }
@@ -42,20 +46,40 @@ async def test_burst_features_rate_limited():
             qos_allowed, reject_reason = self._qos_allow(symbol)
             if not qos_allowed:
                 # Emit rate limited event
-                rate_limited_msg = Message(op="EVT", verb="DECISION_RATE_LIMITED", src="test", dst="any", payload={"symbol": symbol, "reason": reject_reason})
+                rate_limited_msg = Message(
+                    op="EVT",
+                    verb="DECISION_RATE_LIMITED",
+                    src="test",
+                    dst="any",
+                    payload={"symbol": symbol, "reason": reject_reason},
+                )
                 await self.bus.emit(rate_limited_msg)
             else:
                 self._update_intent_count(symbol)
 
-    cfg = {"decision": {"qos": {"symbol_cooldown_sec": 0, "max_intents_per_minute_per_symbol": 2}}}
+    cfg = {
+        "decision": {
+            "qos": {"symbol_cooldown_sec": 0, "max_intents_per_minute_per_symbol": 2}
+        }
+    }
     dm = MockDecisionMaking(bus, cfg)
 
     sym = "BTCUSDT"
     feats = {"symbol": sym, "obi": 0.3, "tfi": 0.3, "delta_price": 0.0, "ts": 1}
 
     for i in range(3):
-        await dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED", intent="OBSERVATION",
-                                     src="t", dst="any", rid=f"r{i}", pld=feats, why="burst"))
+        await dm.on_features(
+            Message(
+                op="EVT",
+                verb="FEATURES_CALCULATED",
+                intent="OBSERVATION",
+                src="t",
+                dst="any",
+                rid=f"r{i}",
+                pld=feats,
+                why="burst",
+            )
+        )
         await asyncio.sleep(0.01)
 
     # Ожидаем DECISION_RATE_LIMITED среди событий

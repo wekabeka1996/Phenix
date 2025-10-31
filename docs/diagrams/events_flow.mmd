@@ -1,0 +1,14 @@
+---
+title: Events flow
+---
+graph LR
+  LiveData --> MarketDataConnector
+  MarketDataConnector --> FeatureEngineering
+  FeatureEngineering --> RiskManagement
+  RiskManagement --> DecisionMaking
+  DecisionMaking --> AuroraBridge
+  AuroraBridge --> ExecPosFSM
+  ExecPosFSM --> Adapter
+  Adapter --> Binance
+  Binance --> UserStream
+  UserStream --> PositionTracking

@@ -8,7 +8,7 @@
 
 ## 🎯 Mission Accomplished
 
-Реалізовано повний цикл disaster recovery для Aurora Core FSM з фокусом на domain `position_tracking`. Система тепер має можливість автоматично відновлювати стан після будь-якого збою з гарантованою цілісністю даних.
+Реалізовано повний цикл disaster recovery для Aurora Core FSM з фоку� ом на domain `position_tracking`. Си� тема тепер має можливі� ть автоматично відновлювати � тан пі� ля будь-якого збою з гарантованою цілі� ні� тю даних.
 
 ---
 
@@ -16,15 +16,15 @@
 
 ### 1. **Snapshot Generation** (T01-B) ✅
 - **File**: `apps/reference/domains/position_tracking/position_tracking.py`
-- **Method**: `get_snapshot()` - Серіалізує FSM стан з Decimal precision
+- **Method**: `get_snapshot()` - Серіалізує FSM � тан з Decimal precision
 - **Schema**: Compliant with `snapshot_v1.schema.json`
 - **Features**: SHA-256 hash, metadata (worker_id, positions_count, sequence_number)
 - **Tests**: 10 tests у `test_position_tracking_snapshot.py`
 
 ### 2. **Write-Ahead Log (WAL) Integration** (T03-A) ✅
 - **File**: `apps/reference/domains/position_tracking/position_tracking.py`
-- **Pattern**: Fail-Closed - критична зупинка якщо WAL запис неможливий
-- **Events**: `TRADE_EXECUTED`, `ACCOUNT_UPDATE_RECEIVED` логуються ПЕРЕД обробкою
+- **Pattern**: Fail-Closed - критична зупинка якщо WAL запи�  неможливий
+- **Events**: `TRADE_EXECUTED`, `ACCOUNT_UPDATE_RECEIVED` логують� я ПЕРЕД обробкою
 - **Format**: Flat dict з hash chain (`_prev` → `_hash`)
 - **Tests**: 4 tests у `test_position_tracking_wal_integration.py`
 
@@ -60,17 +60,17 @@
 ### Recovery Time Objective (RTO)
 - **Target**: ≤ 5 minutes
 - **Achieved**: < 1 second (для snapshot load) + залежить від розміру WAL
-- **Bottleneck**: WAL replay швидкість (мітигується через щоденну ротацію)
+- **Bottleneck**: WAL replay швидкі� ть (мітигуєть� я через щоденну ротацію)
 
 ### Recovery Point Objective (RPO)
-- **Target**: ≤ 1 minute (максимальна втрата даних)
+- **Target**: ≤ 1 minute (мак� имальна втрата даних)
 - **Achieved**: **0 втрат** через Fail-Closed pattern
-- **Guarantee**: Жодна подія не обробляється без durable WAL запису
+- **Guarantee**: Жодна подія не обробляєть� я без durable WAL запи� у
 
 ### Data Integrity
-- **Hash Chain**: Кожен WAL запис містить `_prev` (previous hash) для верифікації цілісності
-- **Snapshot Hash**: SHA-256 hash всього стану для tamper detection
-- **Fail-Closed**: Система зупиняється якщо WAL запис неможливий
+- **Hash Chain**: Кожен WAL запи�  мі� тить `_prev` (previous hash) для верифікації цілі� но� ті
+- **Snapshot Hash**: SHA-256 hash в� ього � тану для tamper detection
+- **Fail-Closed**: Си� тема зупиняєть� я якщо WAL запи�  неможливий
 
 ---
 
@@ -79,7 +79,7 @@
 ### ✅ Completed
 1. Snapshot generation з Decimal precision
 2. WAL write перед обробкою подій
-3. Automatic state restoration при старті
+3. Automatic state restoration при � тарті
 4. Comprehensive test coverage (23 DR tests)
 5. Error handling та graceful degradation
 6. Logging для audit trail
@@ -91,7 +91,7 @@
 # Видалити DR директорії
 rm -rf ops/snapshots ops/wal
 
-# Запустити систему
+# Запу� тити � и� тему
 python apps/reference/main.py
 
 # Expected: "No snapshot found. Starting with a clean state."
@@ -99,15 +99,15 @@ python apps/reference/main.py
 
 #### Scenario 2: State Recovery
 ```bash
-# Запустити систему, дочекатися snapshot + WAL записів
+# Запу� тити � и� тему, дочекати� я snapshot + WAL запи� ів
 python apps/reference/main.py
 
-# Зупинити систему (Ctrl+C)
+# Зупинити � и� тему (Ctrl+C)
 
-# Видалити внутрішній стан (якщо зберігається окремо)
-# або просто перезапустити
+# Видалити внутрішній � тан (якщо зберігаєть� я окремо)
+# або про� то перезапу� тити
 
-# Запустити знову
+# Запу� тити знову
 python apps/reference/main.py
 
 # Expected logs:
@@ -121,10 +121,10 @@ python apps/reference/main.py
 # Додати corrupted line до WAL файлу
 echo "{ CORRUPTED JSON" >> ops/wal/2025-10-20.jsonl
 
-# Запустити систему
+# Запу� тити � и� тему
 python apps/reference/main.py
 
-# Expected: Система skip corrupted line і продовжує replay
+# Expected: Си� тема skip corrupted line і продовжує replay
 ```
 
 ---
@@ -138,7 +138,7 @@ python apps/reference/main.py
 
 ### WAL Operations
 - **Single append**: ~1-5ms (з file locking)
-- **Replay rate**: ~1000 events/sec (залежить від handler складності)
+- **Replay rate**: ~1000 events/sec (залежить від handler � кладно� ті)
 - **Lock contention**: < 1% (monitored через metrics)
 
 ### Storage
@@ -171,10 +171,10 @@ wal_lock_timeout_sec = 5.0  # Max wait for file lock
 
 ## 🎓 Lessons Learned
 
-1. **Fail-Closed > Fail-Open**: Краще зупинити систему ніж втратити consistency
-2. **Hash Chain**: Простий механізм для integrity verification
-3. **Timestamp Filtering**: Критично для точного replay після snapshot
-4. **Graceful Degradation**: Система працює навіть якщо DR files відсутні
+1. **Fail-Closed > Fail-Open**: Краще зупинити � и� тему ніж втратити consistency
+2. **Hash Chain**: Про� тий механізм для integrity verification
+3. **Timestamp Filtering**: Критично для точного replay пі� ля snapshot
+4. **Graceful Degradation**: Си� тема працює навіть якщо DR files від� утні
 5. **Comprehensive Testing**: 23 DR tests catch edge cases (corrupted files, missing timestamps, etc.)
 
 ---
@@ -183,7 +183,7 @@ wal_lock_timeout_sec = 5.0  # Max wait for file lock
 
 - **Playbook**: `docs/DR_PLAYBOOK.md` - Comprehensive DR guide
 - **Schemas**: `config/_schemas/snapshot_v1.schema.json`
-- **Code**: Inline WHY comments у всіх DR functions
+- **Code**: Inline WHY comments у в� іх DR functions
 - **Tests**: Self-documenting test names + docstrings
 
 ---
@@ -206,7 +206,7 @@ wal_lock_timeout_sec = 5.0  # Max wait for file lock
 1. **Production Deployment**: Deploy з DR capability enabled
 2. **Monitoring**: Setup alerts для WAL write failures
 3. **Backup**: Configure S3/Azure Blob для snapshot backups
-4. **Testing**: Perform chaos engineering tests (kill процес during trade)
+4. **Testing**: Perform chaos engineering tests (kill проце�  during trade)
 5. **Documentation**: Update operational runbooks
 
 ---

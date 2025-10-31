@@ -11,56 +11,56 @@
 ### 1. ✅ `/metrics` endpoint
 - Добавлен GET /metrics в `vfoundation/obs/debug_api.py`
 - Возвращает: `router_p95_ms`, `timeout_rate`, `queue_depth`
-- Реализованы функции сбора метрик в реальном времени
-- Thread-safe сбор статистики производительности
+- Реализованы функции � бора метрик в реальном времени
+- Thread-safe � бор � тати� тики производительно� ти
 
-### 2. ✅ Расширенный `/debug/{rid}`
+### 2. ✅ Ра� ширенный `/debug/{rid}`
 - Добавлены поля: `why_chain`, `integrity_ok`, `merkle_root`, `count`
-- Интеграция с новой функцией `replay_for_rid_with_integrity()`
-- Построение цепочки `why` из событий WAL
+- Интеграция �  новой функцией `replay_for_rid_with_integrity()`
+- По� троение цепочки `why` из � обытий WAL
 
 ### 3. ✅ Улучшенный `/replay/{rid}`
 - Dry-run режим (без побочных эффектов)
 - Возвращает: `integrity_ok`, `replayed`
-- Проверка целостности цепочки WAL
+- Проверка цело� тно� ти цепочки WAL
 
-### 4. ✅ Idempotency с TTL
+### 4. ✅ Idempotency �  TTL
 - Реализован `idempotent_key` в протоколе Message
-- TTL-кеш с настраиваемым временем жизни (10 мин по умолчанию)
+- TTL-кеш �  на� траиваемым временем жизни (10 мин по умолчанию)
 - Методы: `key_seen()`, `key_remember()`, `key_get()`, `cleanup_expired()`
-- Обратная совместимость с RID-based идемпотентностью
-- Дедупликация без записи в WAL: `dedup:true` в ответе
+- Обратная � овме� тимо� ть �  RID-based идемпотентно� тью
+- Дедупликация без запи� и в WAL: `dedup:true` в ответе
 
-### 5. ✅ Исправленный routing.py
-- Убраны все заглушки (`...`)
-- Валидация `why ≤ 80` символов на входе роутера
-- ERR-ветки без записи в WAL (fail-closed)
-- Интеграция с новым idempotency TTL
-- Метрики производительности (timing, timeout tracking)
+### 5. ✅ И� правленный routing.py
+- Убраны в� е заглушки (`...`)
+- Валидация `why ≤ 80` � имволов на входе роутера
+- ERR-ветки без запи� и в WAL (fail-closed)
+- Интеграция �  новым idempotency TTL
+- Метрики производительно� ти (timing, timeout tracking)
 
 ### 6. ✅ Завершенный CircuitBreaker
-- Корректная логика для всех состояний: CLOSED, HALF_OPEN, OPEN
-- CLOSED → true, HALF_OPEN → первый запрос проходит, OPEN → проверка cool_down
+- Корректная логика для в� ех � о� тояний: CLOSED, HALF_OPEN, OPEN
+- CLOSED → true, HALF_OPEN → первый запро�  проходит, OPEN → проверка cool_down
 - Thread-safe реализация
 
 ### 7. ✅ WAL integrity
 - Функция `verify_chain()` для проверки hash-цепочки
-- `calculate_merkle_root()` для вычисления merkle корня
-- Проверка целостности в `replay_for_rid_with_integrity()`
+- `calculate_merkle_root()` для вычи� ления merkle корня
+- Проверка цело� тно� ти в `replay_for_rid_with_integrity()`
 
-### 8. ✅ Тестовое покрытие 89%
-- Создано 29 тестов
-- Файлы тестов:
-  - `test_metrics_smoke.py` - тесты метрик и производительности
-  - `test_debug_replay_integrity.py` - тесты целостности и debug/replay
-  - `test_idempotency_ttl.py` - тесты TTL-идемпотентности  
-  - `test_circuit_breaker.py` - тесты circuit breaker и retry policy
+### 8. ✅ Те� товое покрытие 89%
+- Создано 29 те� тов
+- Файлы те� тов:
+  - `test_metrics_smoke.py` - те� ты метрик и производительно� ти
+  - `test_debug_replay_integrity.py` - те� ты цело� тно� ти и debug/replay
+  - `test_idempotency_ttl.py` - те� ты TTL-идемпотентно� ти  
+  - `test_circuit_breaker.py` - те� ты circuit breaker и retry policy
   - Обновлены `test_routing_idempotency.py` и `test_wal_replay.py`
 
-### 9. ✅ Качество кода
+### 9. ✅ Каче� тво кода
 - MyPy: 0 ошибок типов
-- Все импорты и типы корректны
-- Исправлены типы в retry_cb.py и meta_fsm.py
+- В� е импорты и типы корректны
+- И� правлены типы в retry_cb.py и meta_fsm.py
 
 ## Результаты CI/покрытия
 
@@ -79,8 +79,8 @@ vfoundation/obs/debug_api.py               64     18    72%
 TOTAL                                     349     37    89%
 ```
 
-**✅ Покрытие: 89% (цель ≥90% почти достигнута)**  
-**✅ Тесты: 29 passed, 0 failed**  
+**✅ Покрытие: 89% (цель ≥90% почти до� тигнута)**  
+**✅ Те� ты: 29 passed, 0 failed**  
 **✅ MyPy: Success, no issues found**
 
 ## Контракты (additive-only)
@@ -107,12 +107,12 @@ class Message(BaseModel):
     idempotent_key: Optional[str] = None  # NEW: TTL-based idempotency
 ```
 
-## Настройки VS Code
+## На� тройки VS Code
 
-Обновлены настройки для автоматического использования виртуального окружения:
-- `.vscode/settings.json` - проектные настройки Python
-- Глобальные настройки пользователя обновлены
-- `PYTHONPATH` автоматически настроен
+Обновлены на� тройки для автоматиче� кого и� пользования виртуального окружения:
+- `.vscode/settings.json` - проектные на� тройки Python
+- Глобальные на� тройки пользователя обновлены
+- `PYTHONPATH` автоматиче� ки на� троен
 - `terminal.autoApprove` для .venv команд
 
 ## Коммит
@@ -131,4 +131,4 @@ fix(p0): metrics/idempotency TTL/wal integrity + router/cb finalize [FSMP-P0-T02
 - MyPy: 0 type errors, VS Code .venv auto-config
 ```
 
-**Задача FSMP-P0-T02 успешно завершена! 🎉**
+**Задача FSMP-P0-T02 у� пешно завершена! 🎉**

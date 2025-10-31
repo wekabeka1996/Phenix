@@ -279,15 +279,15 @@
 
 ### Implementation Summary
 
-- **Problem**: Система НЕ встановлює leverage через API, покладається на ручне налаштування
-- **Risk Level**: 🔴 HIGH - невідповідність між очікуваним (x50) та реальним плечем
-- **Solution**: Реалізовано автоматичне встановлення leverage та margin_type через Binance API
+- **Problem**: Си� тема НЕ в� тановлює leverage через API, покладаєть� я на ручне налаштування
+- **Risk Level**: 🔴 HIGH - невідповідні� ть між очікуваним (x50) та реальним плечем
+- **Solution**: Реалізовано автоматичне в� тановлення leverage та margin_type через Binance API
 
 ### Changes
 
 1. **Configuration** (`config/aurora/trading.yaml`):
    - ✅ Додано `leverage: 50` для BTCUSDT та ETHUSDT
-   - ✅ Додано `margin_type: cross` для обох інструментів
+   - ✅ Додано `margin_type: cross` для обох ін� трументів
 
 2. **BinanceExecutionAdapter** (new methods):
    - ✅ `initialize_margin_settings(instruments_config)` - orchestrates setup
@@ -301,7 +301,7 @@
    - ✅ Passes `instruments_config` from trading configuration
 
 4. **Documentation**:
-   - ✅ Research report: `docs/Хазяйство/LEVERAGE_RESEARCH_REPORT.md`
+   - ✅ Research report: `docs/Хазяй� тво/LEVERAGE_RESEARCH_REPORT.md`
    - ✅ Journal entry: `JOURNAL.md` with RID: AURORA_LEVERAGE_SETUP_V1
 
 ---
@@ -425,26 +425,26 @@
 ### Investigation Summary
 
 - **Problem**: BTCUSDT не генерував торгові наміри (qty=0), тільки ETHUSDT працював
-- **Root Cause**: BTCUSDT відсутній у `config/aurora/trading.yaml` → `instruments` section
+- **Root Cause**: BTCUSDT від� утній у `config/aurora/trading.yaml` → `instruments` section
 - **Diagnostic Approach**:
   1. Додано DEBUG логування в `decision_making.py` (position sizing + qty conversion)
-  2. Аналіз логів `aurora_trades.log` (455 рядків) - тільки ETHUSDT записи
-  3. Перевірка конфігурації - виявлено відсутність BTCUSDT
+  2. Аналіз логів `aurora_trades.log` (455 рядків) - тільки ETHUSDT запи� и
+  3. Перевірка конфігурації - виявлено від� утні� ть BTCUSDT
 - **Solution**: Додано BTCUSDT до `trading.yaml` з параметрами:
   - `min_qty: 0.001`
   - `lot_step: 0.001`
   - `tick_size: 0.01`
   - `max_notional_usd: 10000000`
 - **Modified Files**:
-  - `apps/reference/domains/decision_making/decision_making.py` - діагностичне логування
+  - `apps/reference/domains/decision_making/decision_making.py` - діагно� тичне логування
   - `config/aurora/trading.yaml` - додано BTCUSDT instrument
   - `JOURNAL.md` - документовано аналіз з RID: AURORA_QTY0_DIAG_V1
 
 ### Next Steps
 
-- [ ] Перезапустити систему з `LOG_LEVEL=DEBUG` для верифікації розрахунків qty
-- [ ] Зібрати логи з діагностичними мітками `[QTY_DIAG]` для обох інструментів
-- [ ] Можливо знадобиться коригування параметрів ризику (`cvar_limit_usd`) для BTCUSDT через високу ціну
+- [ ] Перезапу� тити � и� тему з `LOG_LEVEL=DEBUG` для верифікації розрахунків qty
+- [ ] Зібрати логи з діагно� тичними мітками `[QTY_DIAG]` для обох ін� трументів
+- [ ] Можливо знадобить� я коригування параметрів ризику (`cvar_limit_usd`) для BTCUSDT через ви� оку ціну
 
 ---
 
@@ -484,7 +484,7 @@
 - [x] **Part E**: Implement snapshot + WAL replay logic ✅ DONE [2025-10-20]
   - **Module**: `apps/reference/dr_loader.py` with 2 core functions
   - **Function 1**: `find_latest_snapshot()` - Знаходить найновіший snapshot за mtime
-  - **Function 2**: `replay_wal_after()` - Відтворює WAL події після snapshot timestamp
+  - **Function 2**: `replay_wal_after()` - Відтворює WAL події пі� ля snapshot timestamp
   - **Integration**: Modified `main.py` with 42-line DR restoration section
   - **Process**: Load snapshot → replay WAL → validate state
   - **Features**: Timestamp filtering, corrupted line handling, event type filtering
@@ -1353,7 +1353,7 @@
   - ✅ Test verifies EVT:TRADE_INTENT_PROPOSED → CMD:OPEN transformation and execution_position.handle() call
   - ✅ Used mock domains to avoid import issues in integration test environment
   - ✅ Test passed: 1/1 ✅ (bridge correctly maps fields, creates Message, calls execution FSM)
-  - 📝 **DoD MET**: Integration test confirms "міст" працює, події трансформуються в команди
+  - 📝 **DoD MET**: Integration test confirms "мі� т" працює, події тран� формують� я в команди
 
 - [x] **FSMP-EXECUTE-T04-A**: Abstract Execution Adapter Class → DONE; AbstractExecutionAdapter created with place_order, cancel_order, get_status methods [2025-10-17]
   - ✅ Created apps/reference/domains/execution_position/execution_adapter.py with abstract interface
@@ -1372,12 +1372,12 @@
   - ✅ Tests cover inheritance, interface compliance, error handling, symbol adaptation, feedback creation
   - 📝 **DoD MET**: Concrete adapter implements all abstract methods, passes unit tests, ready for integration with execution FSM
 
-- [x] **FSMP-EXECUTE-T05**: Інтеграція Адаптера Виконання в Execution FSM → DONE; тест інтеграції пройшов; адаптер викликається на DEC:OPEN [2025-10-17]
+- [x] **FSMP-EXECUTE-T05**: Інтеграція Адаптера Виконання в Execution FSM → DONE; те� т інтеграції пройшов; адаптер викликаєть� я на DEC:OPEN [2025-10-17]
   - ✅ Модифіковано ExecPosFSM.__init__ для прийому config/fsm/shadow_mode та ініціалізації BinanceExecutionAdapter
-  - ✅ Додано логіку виклику adapter.place_order() після генерації DEC:OPEN в handle_event
-  - ✅ Створено tests/integration/test_fsm_adapter_integration.py з інтеграційним тестом
-  - ✅ Тест пройшов: FSM правильно маршрутизує CMD:OPEN → DEC:OPEN → adapter.place_order()
-  - 📝 **GATE PASSED**: Інтеграція адаптера завершена, наскрізний потік від рішення до виконання встановлено
+  - ✅ Додано логіку виклику adapter.place_order() пі� ля генерації DEC:OPEN в handle_event
+  - ✅ Створено tests/integration/test_fsm_adapter_integration.py з інтеграційним те� том
+  - ✅ Те� т пройшов: FSM правильно маршрутизує CMD:OPEN → DEC:OPEN → adapter.place_order()
+  - 📝 **GATE PASSED**: Інтеграція адаптера завершена, на� крізний потік від рішення до виконання в� тановлено
 
 - [ ] **FSMP-P2-T03**: Portfolio Accounting → Branch: `feat/p2-portfolio-accounting` [NEXT]
   - [ ] Position aggregator FSM (LONG/SHORT/FLAT sum by symbol)
@@ -1464,24 +1464,24 @@
 
 ### 🎯 Task 01: Централізована Конфігурація Компонентів (FSMP-PROD-PREP-T01)
 
-- [x] **Part A**: Централізувати операційні параметри (символи, стріми) ✅ DONE [2025-01-25]
-  - **Problem**: Хардкоджені значення `symbols = ["ethusdt"]` у `MarketDataConnector` → неможливість перемикання без змін коду
-  - **Solution**: Винести до `config/aurora/system.yaml` з fallback-логікою
+- [x] **Part A**: Централізувати операційні параметри (� имволи, � тріми) ✅ DONE [2025-01-25]
+  - **Problem**: Хардкоджені значення `symbols = ["ethusdt"]` у `MarketDataConnector` → неможливі� ть перемикання без змін коду
+  - **Solution**: Вине� ти до `config/aurora/system.yaml` з fallback-логікою
   - **Changes**:
-    - Розширено `config/aurora/system.yaml` з новою секцією `trading` (symbols_to_track, websocket_streams)
+    - Розширено `config/aurora/system.yaml` з новою � екцією `trading` (symbols_to_track, websocket_streams)
     - Рефакторинг `MarketDataConnector.__init__`: читання з `config['system']['trading']`, fallback-ланцюг (system.yaml → trading.yaml instruments → defaults)
-    - Рефакторинг `_ws_loop`: динамічний цикл створення стрімів замість хардкоджених викликів
-    - Оновлено `main.py`: передача `config.to_dict()` замість `config.trading`
+    - Рефакторинг `_ws_loop`: динамічний цикл � творення � трімів замі� ть хардкоджених викликів
+    - Оновлено `main.py`: передача `config.to_dict()` замі� ть `config.trading`
   - **DoD Verification**:
-    - ✅ Система запускається без помилок
-    - ✅ Логи показують підписку на всі символи: `['btcusdt', 'ethusdt']`
-    - ✅ WebSocket підтвердження: обидва bookTicker і trade створені
+    - ✅ Си� тема запу� каєть� я без помилок
+    - ✅ Логи показують підпи� ку на в� і � имволи: `['btcusdt', 'ethusdt']`
+    - ✅ WebSocket підтвердження: обидва bookTicker і trade � творені
     - ✅ Жодних хардкоджених параметрів у коді
   - **Validation**: 723 tests passing, zero regressions
   - **WHY**: "Enable flexible, testable config without code changes [FSMP-PROD-PREP-T01A]"
 
-- [ ] **Part B**: Простий скрипт перевірки API-ключів Binance
-  - **Goal**: Створити автономний скрипт для тестування підключення до Binance API
+- [ ] **Part B**: Про� тий � крипт перевірки API-ключів Binance
+  - **Goal**: Створити автономний � крипт для те� тування підключення до Binance API
   - **Outputs**: GET /account, GET /balance, timestamp/signature validation
   - **Success**: 200 OK, valid JSON response with account data
   - **WHY**: "Isolate connectivity testing from application complexity [FSMP-PROD-PREP-T01B]"
@@ -1490,8 +1490,8 @@
 
 ### 🎯 Task 02: Розширений Live End-to-End Test (FSMP-PROD-PREP-T02)
 
-- [ ] **Part A**: Повернутися до FSMP-EXECUTE-T05-LIVE з extended runtime
-  - **Goal**: Отримати market ticks протягом 30+ секунд
+- [ ] **Part A**: Повернути� я до FSMP-EXECUTE-T05-LIVE з extended runtime
+  - **Goal**: Отримати market ticks протягом 30+ � екунд
   - **Success**: Повний потік MARKET_TICK → FEATURES → RISK → DECISION → BRIDGE → EXECUTION
   - **WHY**: "Complete live system validation [FSMP-PROD-PREP-T02A]"
 

@@ -12,9 +12,11 @@ trading:
       min_position_size_usd: 10
       liquidity_based_cap_usd: 10000
     qos:
-      exposure_block_cooldown_sec: 10
-      symbol_cooldown_sec: 3
-      max_intents_per_minute_per_symbol: 6
+      mode: "defer"        # QoS mode: defer intents instead of blocking
+      enforce: false       # Legacy: disable QoS enforcement
+      exposure_block_cooldown_sec: 30
+      symbol_cooldown_sec: 5       # Conservative cooldown
+      max_intents_per_minute_per_symbol: 6  # Conservative rate limit
 
   # ==============================================================================
   # INSTRUMENT SPECIFICATIONS (BINANCE FUTURES)
@@ -110,6 +112,11 @@ trading:
 
     audit_trail:
       trading_mode: "live"  # Log from live data
+
+  risk_management:
+    data_sources:
+      portfolio_state: "testnet"   # ["live"|"testnet"], default: follow-execution
+      market_data: "live"          # � правочно; не влияет на текущий pipeline
 
 # ==============================================================================
 # BINANCE API CONFIGURATION
