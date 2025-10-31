@@ -6,6 +6,7 @@ and emit EVT:TRADE_INTENT_PROPOSED events.
 """
 import decimal
 import logging
+import time
 import uuid
 from collections import defaultdict
 from typing import Dict, Any, Optional, TYPE_CHECKING
@@ -30,7 +31,12 @@ class DecisionMaking:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.logger.info("🚀 DecisionMaking initialized and registering event listeners")
 
-        self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(lambda: {'features': None, 'risk': None})
+        self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+            'features': None, 
+            'risk': None, 
+            'last_updated': time.time(),
+            'ttl_seconds': 30  # 30 seconds TTL for partial states
+        })
         self.latest_portfolio: Optional[Dict[str, Any]] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
         self.pending_symbols: set[str] = set()
@@ -58,12 +64,27 @@ class DecisionMaking:
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self.on_portfolio)
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
 
+    def _get_startup_portfolio_state(self) -> Dict[str, Any]:
+        """Create a default startup portfolio state with zero positions and initial capital from config."""
+        # Get initial capital from config, default to 1000 USD if not specified
+        initial_capital = self.config.get('trading', {}).get('initial_capital_usd', 1000)
+        
+        return {
+            "ts": int(time.time() * 1000),
+            "equity": str(initial_capital),
+            "realized_pnl": "0",
+            "unrealized_pnl": "0",
+            "total_commissions": "0",
+            "positions": []  # Empty positions list
+        }
+
     def on_features(self, event: Message) -> None:
         symbol = event.pld.get("symbol", "unknown")
         self.logger.info(f"✅ on_features() called for {symbol}")
         self.logger.info(f"   Event payload keys: {list(event.pld.keys()) if event.pld else 'None'}")
         self.logger.info(f"   Event payload: {event.pld}")
         self.symbol_states[symbol]['features'] = event.pld
+        self.symbol_states[symbol]['last_updated'] = time.time()
         self.logger.info(f"   Stored features for {symbol}: {bool(self.symbol_states[symbol]['features'])}")
         self._check_and_trigger_decision_for_symbol(symbol)
 
@@ -71,6 +92,7 @@ class DecisionMaking:
         symbol = event.pld.get("symbol", "unknown")
         self.logger.info(f"✅ on_risk() called for {symbol}. Risk params: {event.pld}")
         self.symbol_states[symbol]['risk'] = event.pld
+        self.symbol_states[symbol]['last_updated'] = time.time()
         self._check_and_trigger_decision_for_symbol(symbol)
 
     def on_portfolio(self, event: Message) -> None:
@@ -91,7 +113,11 @@ class DecisionMaking:
     def _check_and_trigger_decision_for_symbol(self, symbol: str) -> None:
         self.logger.info(f"[{symbol}] 🔍 _check_and_trigger_decision_for_symbol() called")
         
+        # First, clean up any expired states across all symbols
+        self._cleanup_expired_states()
+        
         # CHECK 1: Portfolio state MUST exist AND have valid equity
+        # Only defer if no real portfolio received yet (don't use startup portfolio for deferral logic)
         if not self.latest_portfolio or decimal.Decimal(str(self.latest_portfolio.get('equity', '0'))) <= 0:
             self.logger.debug(f"[{symbol}] Decision deferred: Portfolio state not yet available or equity is zero.")
             self.pending_symbols.add(symbol)
@@ -124,11 +150,27 @@ class DecisionMaking:
         decision_context = {
             "features": state['features'],
             "risk_params": state['risk'],
-            "portfolio": self.latest_portfolio,
+            "portfolio": self.latest_portfolio or self._get_startup_portfolio_state(),
             "regime": self.latest_regime
         }
         rid = str(uuid.uuid4())
         self._make_decision_for_symbol(symbol, decision_context, rid)
+
+    def _cleanup_expired_states(self) -> None:
+        """Clean up symbol states that have exceeded their TTL."""
+        current_time = time.time()
+        expired_symbols = []
+        
+        for symbol, state in self.symbol_states.items():
+            last_updated = state.get('last_updated', 0)
+            ttl_seconds = state.get('ttl_seconds', 30)
+            
+            if current_time - last_updated > ttl_seconds:
+                expired_symbols.append(symbol)
+        
+        for symbol in expired_symbols:
+            self.logger.warning(f"[{symbol}] 🧹 Cleaning up expired state (TTL exceeded). Last updated: {time.ctime(self.symbol_states[symbol]['last_updated'])}")
+            del self.symbol_states[symbol]
 
     def _make_decision_for_symbol(self, symbol: str, context: dict, rid: str) -> None:
         self.logger.info(f"[{symbol}] 🚀 _make_decision_for_symbol() START - RID: {rid}")

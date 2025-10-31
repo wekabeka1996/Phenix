@@ -43,7 +43,7 @@ def find_latest_snapshot(snapshot_dir: str = "ops/snapshots") -> Optional[Path]:
     return latest
 
 
-def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
+def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm, config: Optional[dict] = None) -> int:
     """
     Replays WAL entries created after a given timestamp.
     
@@ -51,6 +51,7 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
         wal_dir: Directory containing WAL files (*.jsonl)
         start_timestamp_utc: ISO format timestamp to replay from
         target_fsm: FSM domain object with event handler methods
+        config: Configuration dictionary containing critical_verbs list
         
     Returns:
         Number of events replayed
@@ -79,6 +80,22 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
     
     logger.info(f"Found {len(wal_files)} WAL file(s) to scan for replay")
     logger.info(f"Replaying events after: {start_dt.isoformat()}")
+    
+    # Get critical verbs from config, default to current hardcoded values
+    critical_verbs = config.get('critical_verbs', ["TRADE_EXECUTED", "ACCOUNT_UPDATE_RECEIVED"]) if config else ["TRADE_EXECUTED", "ACCOUNT_UPDATE_RECEIVED"]
+    
+    # Define verb-to-handler mapping
+    verb_handlers = {
+        "TRADE_EXECUTED": lambda msg: target_fsm.on_trade_executed(msg),
+        "ACCOUNT_UPDATE_RECEIVED": lambda msg: target_fsm.on_account_update(msg),
+    }
+    
+    # Allow config to override or extend handlers
+    if config and 'verb_handlers' in config:
+        verb_handlers.update(config['verb_handlers'])
+    
+    logger.info(f"Critical verbs for replay: {critical_verbs}")
+    logger.info(f"Available verb handlers: {list(verb_handlers.keys())}")
     
     replayed_count = 0
     skipped_count = 0
@@ -118,7 +135,7 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
                         
                         # Replay only position-tracking events
                         verb = msg_dict.get("verb")
-                        if verb in ["TRADE_EXECUTED", "ACCOUNT_UPDATE_RECEIVED"]:
+                        if verb in critical_verbs:
                             # Reconstruct Message object
                             msg = Message(
                                 op=msg_dict.get("op"),
@@ -132,12 +149,12 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
                             )
                             
                             # Dispatch to appropriate handler
-                            if verb == "TRADE_EXECUTED":
-                                target_fsm.on_trade_executed(msg)
-                            elif verb == "ACCOUNT_UPDATE_RECEIVED":
-                                target_fsm.on_account_update(msg)
-                            
-                            replayed_count += 1
+                            if verb in verb_handlers:
+                                verb_handlers[verb](msg)
+                                replayed_count += 1
+                            else:
+                                logger.warning(f"No handler defined for verb '{verb}', skipping event")
+                                skipped_count += 1
                             
                             if replayed_count % 100 == 0:
                                 logger.debug(f"Replayed {replayed_count} events so far...")

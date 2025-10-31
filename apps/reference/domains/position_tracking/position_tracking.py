@@ -336,16 +336,31 @@ class PositionTracking:
 
     def _calculate_unrealized_pnl(self) -> decimal.Decimal:
         """
-        Calculate unrealized P&L based on current positions.
-
-        For simplicity, assumes current price = last trade price (stored in position).
-        In real implementation, this would use current market prices.
+        Calculate unrealized P&L based on current positions and market prices.
+        
+        Formula: unrealized_pnl = sum((current_price - avg_entry_price) * net_position) for all positions
+        If current market price is not available, uses avg_entry_price as approximation (unrealized = 0).
         """
         unrealized = decimal.Decimal('0')
+        
         for symbol, position in self._positions.items():
-            # For this simple implementation, assume unrealized P&L is 0
-            # In real system, would need current market price
-            pass
+            net_position = position.get('net_position', decimal.Decimal('0'))
+            avg_entry_price = position.get('avg_entry_price', decimal.Decimal('0'))
+            
+            # TODO: Get current market price from market data feed
+            # For now, use entry price as fallback (unrealized P&L = 0)
+            current_price = avg_entry_price  # Fallback: assume no price movement
+            
+            if net_position != 0 and avg_entry_price > 0:
+                # Calculate P&L for this position
+                position_pnl = (current_price - avg_entry_price) * net_position
+                unrealized += position_pnl
+                self.logger.debug(
+                    f"Unrealized P&L for {symbol}: position={net_position}, "
+                    f"entry_price={avg_entry_price}, current_price={current_price}, pnl={position_pnl}"
+                )
+        
+        self.logger.info(f"Total unrealized P&L: {unrealized}")
         return unrealized
 
     def get_positions(self) -> Dict[str, Dict[str, Any]]:

@@ -7,6 +7,7 @@ from features data and emits EVT:RISK_ASSESSMENT_COMPLETED events.
 import decimal
 import logging
 import uuid
+from datetime import datetime
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
@@ -34,6 +35,7 @@ class RiskManagement:
         self.portfolio_state: Optional[Dict[str, Any]] = None
         self.peak_equity: Optional[decimal.Decimal] = None
         self.current_daily_drawdown = decimal.Decimal('0')
+        self.current_day: Optional[str] = None  # Track current trading day for daily drawdown reset
 
         # Subscribe to events
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features_calculated)
@@ -112,6 +114,16 @@ class RiskManagement:
         self.portfolio_state = event.pld
         current_equity = decimal.Decimal(str(self.portfolio_state.get('equity', '0')))
 
+        # Check if we need to reset daily peak equity (new trading day)
+        timestamp_ms = self.portfolio_state.get('ts', 0)
+        current_date = datetime.fromtimestamp(timestamp_ms / 1000).strftime('%Y-%m-%d')
+
+        if self.current_day != current_date:
+            # New trading day - reset peak equity for daily drawdown calculation
+            self.logger.info(f"New trading day detected ({current_date}). Resetting daily peak equity for drawdown calculation.")
+            self.peak_equity = None
+            self.current_day = current_date
+
         if self.peak_equity is None:
             self.peak_equity = current_equity
 
@@ -158,8 +170,30 @@ class RiskManagement:
         absorption_inverse_weight = decimal.Decimal(str(score_weights.get('absorption_inverse', '0.3')))
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
-        price = decimal.Decimal(str(features.get("price", 1.0)))  # Current price
-        delta_price_pct = (abs(delta_price) / price) if price > 0 else decimal.Decimal('0')
+        price_str = features.get("price")
+        if price_str is None:
+            self.logger.error("CRITICAL: Price data missing from features - disabling trading for safety")
+            return {
+                "is_trading_allowed": False,
+                "error": "missing_price_data"
+            }
+        
+        try:
+            price = decimal.Decimal(str(price_str))
+            if price <= 0:
+                self.logger.error(f"CRITICAL: Invalid price {price} - disabling trading for safety")
+                return {
+                    "is_trading_allowed": False,
+                    "error": "invalid_price_data"
+                }
+        except (ValueError, decimal.InvalidOperation) as e:
+            self.logger.error(f"CRITICAL: Failed to parse price '{price_str}' - disabling trading for safety: {e}")
+            return {
+                "is_trading_allowed": False,
+                "error": "price_parse_error"
+            }
+        
+        delta_price_pct = abs(delta_price) / price
         # Risk score uses normalized features (all in [0, 1] range approximately)
         # - delta_price_pct: percentage change (0.01 = 1%)
         # - obi, tfi, absorption: already normalized to [-1, 1] or [0, 1]

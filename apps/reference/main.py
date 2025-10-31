@@ -193,12 +193,6 @@ def on_trade_intent_proposed(event: Any) -> None:
         f"with side {event.pld.get('side', 'unknown')}. Transforming to CMD:OPEN."
     )
 
-    # Check for forbidden LIMIT entry
-    order_details = event.pld.get("order", {})
-    if order_details.get("order_type") == "LIMIT":
-        LOG.error("BRIDGE: LIMIT entry forbidden. Only MARKET entry allowed.")
-        return
-
     # Transform EVT to CMD
     # Extract order details from nested structure
     order_details = event.pld.get("order", {})
@@ -363,9 +357,6 @@ def main() -> None:
     account_observer = fsm.get_domain("account_observer")
     account_observer.start()
 
-    LOG.info("Starting market data connector...")
-    market_data.start()
-
     LOG.info("Starting feature engineering...")
     feature_engineering = fsm.get_domain("feature_engineering")
     feature_engineering.start()
@@ -385,6 +376,10 @@ def main() -> None:
     LOG.info("Starting snapshot scheduler (DR)...")
     snapshot_scheduler = fsm.get_domain("snapshot_scheduler")
     snapshot_scheduler.start()
+
+    LOG.info("Starting execution position FSM...")
+    execution_position = fsm.get_domain("execution_position")
+    execution_position.start()
 
     # Step 5: Keep the application running
     LOG.info("Aurora Core is running... Press Ctrl+C to stop.")

@@ -148,6 +148,18 @@ class ExecPosFSM:
         self.manage_flow = ManageFlowFSM(trail_pct=0.5, breakeven_after_sec=300.0)
         self.close_flow = CloseFlowFSM(max_hold_sec=7200.0)
 
+    def start(self) -> None:
+        """Start the execution position FSM by initializing the adapter and flow FSMs."""
+        LOG.info("Starting ExecPosFSM...")
+        self._initialize_adapter()
+        LOG.info("✅ ExecPosFSM started successfully")
+
+    def stop(self) -> None:
+        """Stop the execution position FSM."""
+        LOG.info("Stopping ExecPosFSM...")
+        # Clean up any resources if needed
+        LOG.info("✅ ExecPosFSM stopped")
+
     def _get_or_create_flows(self, symbol: str) -> Tuple[OpenFlowFSM, ManageFlowFSM, CloseFlowFSM]:
         """Get or create the set of FSMs for a given symbol."""
         if symbol not in self.manage_flows:
@@ -260,7 +272,6 @@ class ExecPosFSM:
                     if result.verb in ["ADJUST", "OPEN"]:
                         # This is likely bracket placement after a trade execution or initial order placement
                         # We can execute this synchronously since it's just placing orders
-                        import asyncio
                         try:
                             # Try to get or create an event loop
                             loop = asyncio.new_event_loop()
