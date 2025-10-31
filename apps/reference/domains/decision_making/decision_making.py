@@ -152,7 +152,7 @@ class DecisionMaking:
             remaining = self.qos_symbol_cooldown_sec - time_since_last_decision
             reject_reason = f"symbol_cooldown_active_{remaining:.1f}s_remaining"
             self.logger.warning(f"[{symbol}] QoS REJECT: {reject_reason}")
-            return False, NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
+            return False, NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE
 
         # Check rate limit (intents per minute per symbol) - separate from cooldown
         intent_data = self._qos_state["symbol_intent_counts"][symbol]

@@ -1,8 +1,8 @@
-# FSMP-P0-T03 Completion Report â€” Test Coverage 82% â†’ 89%
+# FSMP-P0-T03 Completion Report â ” Test Coverage 82% â†’ 89%
 
 **Date**: 2025-01-12  
 **RID**: FSMP-P0-T03-COVERAGE  
-**Status**: âœ… **COMPLETED** (89% achieved, target 90% â€” Unix platform limitation)
+**Status**: âœ… **COMPLETED** (89% achieved, target 90% â ” Unix platform limitation)
 
 ---
 
@@ -178,7 +178,7 @@ async def debug_rid(rid: str, admin_token: str = Header(...)):
 
 **Root Cause**: Platform-specific code (Unix fcntl) and async endpoints cannot be covered on Windows test environment.
 
-**Impact**: Minimal â€” all **critical FSM modules at 100%** coverage. Uncovered code is:
+**Impact**: Minimal â ” all **critical FSM modules at 100%** coverage. Uncovered code is:
 - Infrastructure (file locking implementation details)
 - API layer (FastAPI async wrappers)
 

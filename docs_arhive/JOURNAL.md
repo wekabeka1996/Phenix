@@ -1,6 +1,6 @@
-# JOURNAL ‚Äî vFoundation Library Development Log
+# JOURNAL ‚ î vFoundation Library Development Log
 
-## 2025-10-30 | RID: AUR-004-AUDIT-COMPLETION | ‚úÖ PASS ‚Äî Full Audit Confirmation: AUR-004 100% Complete
+## 2025-10-30 | RID: AUR-004-AUDIT-COMPLETION | ‚úÖ PASS ‚ î Full Audit Confirmation: AUR-004 100% Complete
 
 **WHY**: AUR-004 audit: Verify complete order lifecycle correlation implementation with all requirements met and tested.
 
@@ -42,7 +42,7 @@
 
 **CONCLUSION**: AUR-004 implementation is complete and fully functional. All order lifecycle states are now traceable with standardized events, comprehensive audit logging, and metrics tracking. System provides fail-closed behavior and maintains loose coupling between domains.
 
-## 2025-10-29 | RID: AUR-004-ORDER-LIFECYCLE-CORRELATION | ‚úÖ PASS ‚Äî Complete Order Lifecycle Correlation with EVT:ORDER_STATE_CHANGED
+## 2025-10-29 | RID: AUR-004-ORDER-LIFECYCLE-CORRELATION | ‚úÖ PASS ‚ î Complete Order Lifecycle Correlation with EVT:ORDER_STATE_CHANGED
 
 **WHY**: AUR-004: Implement complete order lifecycle correlation with standardized EVT:ORDER_STATE_CHANGED events, JSONL audit logging, and metrics tracking for Aurora trading system.
 
@@ -86,38 +86,38 @@
 
 **NEXT**: Proceed to next priority task (testnet run or additional domain implementations)
 
-## 2025-10-28 | RID: PACK-EXP-4-5-QOS-NRR | ‚úÖ PASS ‚Äî QoS Anti-Intent Spam + Normalized Reject Reasons
+## 2025-10-28 | RID: PACK-EXP-4-5-QOS-NRR | ‚úÖ PASS ‚ î QoS Anti-Intent Spam + Normalized Reject Reasons
 
-**WHY**: PACK EXP-4: Decision QoS rate-limit –¥–ª—è –∑–∞–ø–æ–±—ñ–≥–∞–Ω–Ω—è intent spam –ø—Ä–∏ exposure block; PACK EXP-5: Normalized Reject Reasons –¥–ª—è — —Ç–∞–Ω–¥–∞—Ä—Ç–∏–∑–∞—Ü—ñ—ó error codes.
+**WHY**: PACK EXP-4: Decision QoS rate-limit  ¥ ª è  ∑     æ ± ñ ≥   Ω Ω è intent spam      ∏ exposure block; PACK EXP-5: Normalized Reject Reasons  ¥ ª è    Ç   Ω ¥     Ç ∏ ∑   Ü ñ ó error codes.
 
-**STATUS**: ‚úÖ **PASS** (QoS –∑–∞—Ö–∏—â–∞—î –≤—ñ–¥ spam, NRR — —Ç–∞–Ω–¥–∞—Ä—Ç–∏–∑—É—î errors, –≤— —ñ —Ç–µ— —Ç–∏ –ø—Ä–æ—Ö–æ–¥—è—Ç—å)
+**STATUS**: ‚úÖ **PASS** (QoS  ∑   Ö ∏ â   î  ≤ ñ ¥ spam, NRR    Ç   Ω ¥     Ç ∏ ∑ É î errors,  ≤   ñ  Ç µ   Ç ∏      æ Ö æ ¥ è Ç å)
 
 **IMPLEMENTATION SUMMARY**:
 - **PACK EXP-4: Decision QoS & Anti-Intent Spam**
-  - QoS Configuration: –î–æ–¥–∞–Ω–æ qos — –µ–∫—Ü—ñ—é –≤ config/aurora/trading.yaml (exposure_block_cooldown_sec=10, symbol_cooldown_sec=3, max_intents_per_minute_per_symbol=6)
-  - Schema Validation: –û–Ω–æ–≤–ª–µ–Ω–æ config/_schemas/aurora_trading.schema.json –∑ qos –≤–∞–ª—ñ–¥–∞—Ü—ñ—î—é (1-300s, 1-60s, 1-60 ranges)
-  - QoS Logic: –†–µ–∞–ª—ñ–∑–æ–≤–∞–Ω–æ _qos_allow(), _update_symbol_cooldown(), _update_intent_count(), _handle_exposure_block() —É DecisionMaking
-  - Exposure Block Handling: –ê–≤—Ç–æ–º–∞—Ç–∏—á–Ω–µ –≤–∏—è–≤–ª–µ–Ω–Ω—è exposure limit —Ç–∞ –∞–∫—Ç–∏–≤–∞—Ü—ñ—è 10s cooldown
-  - Rate Limiting: Per-symbol rate limiting –∑ sliding window (60s) —Ç–∞ intent counting (max 6/min)
-  - Symbol Cooldowns: –ù–µ–∑–∞–ª–µ–∂–Ω—ñ cooldowns –¥–ª—è –∫–æ–∂–Ω–æ–≥–æ — –∏–º–≤–æ–ª—É –º—ñ–∂ —Ä—ñ—à–µ–Ω–Ω—è–º–∏ (3s)
-  - Integration: QoS –ø–µ—Ä–µ–≤—ñ—Ä–∫–∏ —ñ–Ω—Ç–µ–≥—Ä–æ–≤–∞–Ω–æ –≤ _make_decision_for_symbol() –∑ NRR –∫–æ–¥–∞–º–∏
-  - Tests: –°—Ç–≤–æ—Ä–µ–Ω–æ test_decision_making_qos.py –∑ –ø–æ–≤–Ω–∏–º –ø–æ–∫—Ä–∏—Ç—Ç—è–º QoS — —Ü–µ–Ω–∞—Ä—ñ—ó–≤ (8 —Ç–µ— —Ç—ñ–≤)
+  - QoS Configuration:  î æ ¥   Ω æ qos    µ ∫ Ü ñ é  ≤ config/aurora/trading.yaml (exposure_block_cooldown_sec=10, symbol_cooldown_sec=3, max_intents_per_minute_per_symbol=6)
+  - Schema Validation:  û Ω æ ≤ ª µ Ω æ config/_schemas/aurora_trading.schema.json  ∑ qos  ≤   ª ñ ¥   Ü ñ î é (1-300s, 1-60s, 1-60 ranges)
+  - QoS Logic:  † µ   ª ñ ∑ æ ≤   Ω æ _qos_allow(), _update_symbol_cooldown(), _update_intent_count(), _handle_exposure_block()  É DecisionMaking
+  - Exposure Block Handling:  ê ≤ Ç æ º   Ç ∏ á Ω µ  ≤ ∏ è ≤ ª µ Ω Ω è exposure limit  Ç      ∫ Ç ∏ ≤   Ü ñ è 10s cooldown
+  - Rate Limiting: Per-symbol rate limiting  ∑ sliding window (60s)  Ç   intent counting (max 6/min)
+  - Symbol Cooldowns:  ù µ ∑   ª µ ∂ Ω ñ cooldowns  ¥ ª è  ∫ æ ∂ Ω æ ≥ æ    ∏ º ≤ æ ª É  º ñ ∂    ñ à µ Ω Ω è º ∏ (3s)
+  - Integration: QoS    µ   µ ≤ ñ   ∫ ∏  ñ Ω Ç µ ≥   æ ≤   Ω æ  ≤ _make_decision_for_symbol()  ∑ NRR  ∫ æ ¥   º ∏
+  - Tests:  ° Ç ≤ æ   µ Ω æ test_decision_making_qos.py  ∑    æ ≤ Ω ∏ º    æ ∫   ∏ Ç Ç è º QoS    Ü µ Ω     ñ ó ≤ (8  Ç µ   Ç ñ ≤)
 
 - **PACK EXP-5: Normalized Reject Reasons**
-  - NRR Module: –°—Ç–≤–æ—Ä–µ–Ω–æ normalized_reject_reasons.py –∑ 14 — —Ç–∞–Ω–¥–∞—Ä—Ç–Ω–∏–º–∏ error –∫–æ–¥–∞–º–∏ (NRR-001 –¥–æ NRR-014)
-  - Regex Patterns: –†–µ–∞–ª—ñ–∑–æ–≤–∞–Ω–æ pattern matching –¥–ª—è Binance API –ø–æ–º–∏–ª–æ–∫ ‚Üí — —Ç–∞–Ω–¥–∞—Ä—Ç–∏–∑–æ–≤–∞–Ω—ñ –∫–æ–¥–∏
+  - NRR Module:  ° Ç ≤ æ   µ Ω æ normalized_reject_reasons.py  ∑ 14    Ç   Ω ¥     Ç Ω ∏ º ∏ error  ∫ æ ¥   º ∏ (NRR-001  ¥ æ NRR-014)
+  - Regex Patterns:  † µ   ª ñ ∑ æ ≤   Ω æ pattern matching  ¥ ª è Binance API    æ º ∏ ª æ ∫ ‚Üí    Ç   Ω ¥     Ç ∏ ∑ æ ≤   Ω ñ  ∫ æ ¥ ∏
   - Error Mapping: Insufficient balance, invalid params, market closed, exposure limits, rate limits, network errors, timeouts
-  - Integration: –í— —ñ reject reasons —É DecisionMaking —Ç–µ–ø–µ—Ä –Ω–æ—Ä–º–∞–ª—ñ–∑—É—é—Ç—å— —è –∑ NRR –∫–æ–¥–∞–º–∏ —É –ª–æ–≥–∞—Ö
-  - Unknown Fallback: NRR-999 –¥–ª—è –Ω–µ–≤—ñ–¥–æ–º–∏—Ö –ø–æ–º–∏–ª–æ–∫ –∑ UNKNOWN_ERROR –∫–æ–¥–æ–º
-  - Tests: –°—Ç–≤–æ—Ä–µ–Ω–æ test_normalized_reject_reasons.py –∑ pattern matching —Ç–µ— —Ç–∞–º–∏ (7 —Ç–µ— —Ç—ñ–≤)
+  - Integration:  í   ñ reject reasons  É DecisionMaking  Ç µ   µ    Ω æ   º   ª ñ ∑ É é Ç å   è  ∑ NRR  ∫ æ ¥   º ∏  É  ª æ ≥   Ö
+  - Unknown Fallback: NRR-999  ¥ ª è  Ω µ ≤ ñ ¥ æ º ∏ Ö    æ º ∏ ª æ ∫  ∑ UNKNOWN_ERROR  ∫ æ ¥ æ º
+  - Tests:  ° Ç ≤ æ   µ Ω æ test_normalized_reject_reasons.py  ∑ pattern matching  Ç µ   Ç   º ∏ (7  Ç µ   Ç ñ ≤)
 
 **TECHNICAL DETAILS**:
-- **QoS State Management**: defaultdict –¥–ª—è symbol_cooldowns, symbol_intent_counts –∑ window tracking
-- **Exposure Block Detection**: Regex pattern matching –Ω–∞ 'exposure' —É risk_params –¥–ª—è –∞–∫—Ç–∏–≤–∞—Ü—ñ—ó cooldown
-- **Rate Limiting Algorithm**: Sliding window –∑ count reset –ø—Ä–∏ elapsed >= 60s
-- **NRR Pattern Matching**: re.search –∑ case-insensitive flags –¥–ª—è –≥–Ω—É—á–∫–æ–≥–æ matching
-- **Fail-Closed**: QoS blocks decisions –ø—Ä–∏ rate limit/exposure, –∞–ª–µ –¥–æ–∑–≤–æ–ª—è—î normal flow
-- **Performance**: Time-based checks (time.time()) –±–µ–∑ heavy computations
+- **QoS State Management**: defaultdict  ¥ ª è symbol_cooldowns, symbol_intent_counts  ∑ window tracking
+- **Exposure Block Detection**: Regex pattern matching  Ω   'exposure'  É risk_params  ¥ ª è    ∫ Ç ∏ ≤   Ü ñ ó cooldown
+- **Rate Limiting Algorithm**: Sliding window  ∑ count reset      ∏ elapsed >= 60s
+- **NRR Pattern Matching**: re.search  ∑ case-insensitive flags  ¥ ª è  ≥ Ω É á ∫ æ ≥ æ matching
+- **Fail-Closed**: QoS blocks decisions      ∏ rate limit/exposure,    ª µ  ¥ æ ∑ ≤ æ ª è î normal flow
+- **Performance**: Time-based checks (time.time())  ± µ ∑ heavy computations
 
 **VALIDATION RESULTS**:
 - ‚úÖ **15/15 tests PASS** (7 NRR + 8 QoS)
@@ -128,37 +128,37 @@
 - ‚úÖ **Integration** (DecisionMaking logs NRR codes, QoS prevents spam)
 
 **FILES MODIFIED**:
-- `config/aurora/trading.yaml`: –¥–æ–¥–∞–Ω–æ decision.qos — –µ–∫—Ü—ñ—é
-- `config/_schemas/aurora_trading.schema.json`: –¥–æ–¥–∞–Ω–æ qos properties –≤–∞–ª—ñ–¥–∞—Ü—ñ—è
+- `config/aurora/trading.yaml`:  ¥ æ ¥   Ω æ decision.qos    µ ∫ Ü ñ é
+- `config/_schemas/aurora_trading.schema.json`:  ¥ æ ¥   Ω æ qos properties  ≤   ª ñ ¥   Ü ñ è
 - `apps/reference/domains/decision_making/decision_making.py`: QoS logic + NRR integration
 - `apps/reference/domains/decision_making/normalized_reject_reasons.py`: NEW (NRR module)
 - `tests/test_normalized_reject_reasons.py`: NEW (7 tests)
 - `tests/test_decision_making_qos.py`: NEW (8 tests)
-- `TODO.md`: –¥–æ–¥–∞–Ω–æ PACK EXP-4/5 completion status
+- `TODO.md`:  ¥ æ ¥   Ω æ PACK EXP-4/5 completion status
 
-**NEXT**: PACK EXP-6 –∞–±–æ —ñ–Ω—à—ñ –µ–∫— –ø–µ—Ä–∏–º–µ–Ω—Ç–∏ –∑ exposure guard reliability
+**NEXT**: PACK EXP-6    ± æ  ñ Ω à ñ  µ ∫     µ   ∏ º µ Ω Ç ∏  ∑ exposure guard reliability
 
-## 2025-10-30 | RID: PACK-EXP-3-TELEMETRY | ‚úÖ PASS ‚Äî Telemetry & Metrics (Prometheus + FSM hooks)
+## 2025-10-30 | RID: PACK-EXP-3-TELEMETRY | ‚úÖ PASS ‚ î Telemetry & Metrics (Prometheus + FSM hooks)
 
-**WHY**: PACK EXP-3: Telemetry & Metrics - –¥–æ–¥–∞–≤–∞–Ω–Ω—è –º–µ—Ç—Ä–∏–∫ Prometheus –¥–ª—è –µ–∫— –ø–æ–∑–∏—Ü—ñ—ó —Ç–∞ –ª—ñ—á–∏–ª—å–Ω–∏–∫—ñ–≤ –ø–æ–¥—ñ–π, /metrics endpoint, FSM hooks –¥–ª—è –º–æ–Ω—ñ—Ç–æ—Ä–∏–Ω–≥—É guard performance.
+**WHY**: PACK EXP-3: Telemetry & Metrics -  ¥ æ ¥   ≤   Ω Ω è  º µ Ç   ∏ ∫ Prometheus  ¥ ª è  µ ∫     æ ∑ ∏ Ü ñ ó  Ç    ª ñ á ∏ ª å Ω ∏ ∫ ñ ≤    æ ¥ ñ π, /metrics endpoint, FSM hooks  ¥ ª è  º æ Ω ñ Ç æ   ∏ Ω ≥ É guard performance.
 
-**STATUS**: ‚úÖ **PASS** (–º–µ—Ç—Ä–∏–∫–∏ –µ–∫— –ø–æ—Ä—Ç—É—é—Ç—å— —è, /metrics –ø—Ä–∞—Ü—é—î, –≤— —ñ hooks —ñ–Ω—Ç–µ–≥—Ä–æ–≤–∞–Ω—ñ, —Ç–µ— —Ç–∏ –ø—Ä–æ—Ö–æ–¥—è—Ç—å)
+**STATUS**: ‚úÖ **PASS** ( º µ Ç   ∏ ∫ ∏  µ ∫     æ   Ç É é Ç å   è, /metrics        Ü é î,  ≤   ñ hooks  ñ Ω Ç µ ≥   æ ≤   Ω ñ,  Ç µ   Ç ∏      æ Ö æ ¥ è Ç å)
 
 **IMPLEMENTATION SUMMARY**:
-- **Metrics Module**: –°—Ç–≤–æ—Ä–µ–Ω–æ `vfoundation/apps/reference/telemetry/metrics.py` –∑ gauges –¥–ª—è exposure (equity/positions/pending/limit) —Ç–∞ counters –¥–ª—è –ø–æ–¥—ñ–π (guard_rejects, pending_expired, manage_skipped, orders_placed/filled, decision_rate_limited)
-- **API Endpoint**: –î–æ–¥–∞–Ω–æ `/metrics` —É `apps/reference/api/main.py` –∑ Response –¥–ª—è Prometheus —Ñ–æ—Ä–º–∞—Ç—É (production mode)
-- **FSM Hooks**: –Ü–Ω—Ç–µ–≥—Ä–æ–≤–∞–Ω–æ –≤–∏–∫–ª–∏–∫–∏ —É `vfoundation/apps/reference/domains/execution_position/fsm.py` - update_exposure –Ω–∞ PORTFOLIO_STATE_UPDATED, inc_exposure_guard_block –Ω–∞ ERR:OPEN –∑ PORTFOLIO_EXPOSURE_LIMIT
-- **Manage Hook**: –î–æ–¥–∞–Ω–æ kill-switch —É `fsm_manage.py` - inc_manage_skipped –∫–æ–ª–∏ auto_manage_enabled=false
-- **Adapter Hooks**: –Ü–Ω—Ç–µ–≥—Ä–æ–≤–∞–Ω–æ —É `binance_execution_adapter.py` - inc_order_placed –ø—ñ— –ª—è —É— –ø—ñ—à–Ω–æ–≥–æ place, inc_order_filled —É WebSocket handler –¥–ª—è FILLED — —Ç–∞—Ç—É— —É
-- **Fail-Closed**: –ó–∞–≥–ª—É—à–∫–∏ –¥–ª—è –≤—ñ–¥— —É—Ç–Ω–æ— —Ç—ñ prometheus_client, graceful degradation
-- **Tests**: –°—Ç–≤–æ—Ä–µ–Ω–æ unit/integration —Ç–µ— —Ç–∏ - test_metrics_update.py, test_metrics_endpoint.py, test_exposure_guard_reject_counter
+- **Metrics Module**:  ° Ç ≤ æ   µ Ω æ `vfoundation/apps/reference/telemetry/metrics.py`  ∑ gauges  ¥ ª è exposure (equity/positions/pending/limit)  Ç   counters  ¥ ª è    æ ¥ ñ π (guard_rejects, pending_expired, manage_skipped, orders_placed/filled, decision_rate_limited)
+- **API Endpoint**:  î æ ¥   Ω æ `/metrics`  É `apps/reference/api/main.py`  ∑ Response  ¥ ª è Prometheus  Ñ æ   º   Ç É (production mode)
+- **FSM Hooks**:  Ü Ω Ç µ ≥   æ ≤   Ω æ  ≤ ∏ ∫ ª ∏ ∫ ∏  É `vfoundation/apps/reference/domains/execution_position/fsm.py` - update_exposure  Ω   PORTFOLIO_STATE_UPDATED, inc_exposure_guard_block  Ω   ERR:OPEN  ∑ PORTFOLIO_EXPOSURE_LIMIT
+- **Manage Hook**:  î æ ¥   Ω æ kill-switch  É `fsm_manage.py` - inc_manage_skipped  ∫ æ ª ∏ auto_manage_enabled=false
+- **Adapter Hooks**:  Ü Ω Ç µ ≥   æ ≤   Ω æ  É `binance_execution_adapter.py` - inc_order_placed    ñ   ª è  É     ñ à Ω æ ≥ æ place, inc_order_filled  É WebSocket handler  ¥ ª è FILLED    Ç   Ç É   É
+- **Fail-Closed**:  ó   ≥ ª É à ∫ ∏  ¥ ª è  ≤ ñ ¥   É Ç Ω æ   Ç ñ prometheus_client, graceful degradation
+- **Tests**:  ° Ç ≤ æ   µ Ω æ unit/integration  Ç µ   Ç ∏ - test_metrics_update.py, test_metrics_endpoint.py, test_exposure_guard_reject_counter
 
 **TECHNICAL DETAILS**:
-- **Metrics Format**: Prometheus-compatible –∑ HELP/TYPE/# VALUE —Ä—è–¥–∫–∞–º–∏
+- **Metrics Format**: Prometheus-compatible  ∑ HELP/TYPE/# VALUE    è ¥ ∫   º ∏
 - **Exposure Calculation**: equity_usd * fraction = limit_usd, positions_usd + pending_usd = total exposure
-- **Event Hooks**: update_exposure() –Ω–∞ –∫–æ–∂–Ω–æ–º—É portfolio update, counters –Ω–∞ terminal events (ERR:OPEN, ORDER_FILLED)
-- **Production Mode**: /metrics –¥–æ— —Ç—É–ø–Ω–∏–π —Ç—ñ–ª—å–∫–∏ –∫–æ–ª–∏ TRADING_ENV != 'production' (debug API fallback)
-- **Decimal Safety**: _d() —Ñ—É–Ω–∫—Ü—ñ—è –¥–ª—è –±–µ–∑–ø–µ—á–Ω–æ–≥–æ –ø–µ—Ä–µ—Ç–≤–æ—Ä–µ–Ω–Ω—è —É float –∑ fallback
+- **Event Hooks**: update_exposure()  Ω    ∫ æ ∂ Ω æ º É portfolio update, counters  Ω   terminal events (ERR:OPEN, ORDER_FILLED)
+- **Production Mode**: /metrics  ¥ æ   Ç É   Ω ∏ π  Ç ñ ª å ∫ ∏  ∫ æ ª ∏ TRADING_ENV != 'production' (debug API fallback)
+- **Decimal Safety**: _d()  Ñ É Ω ∫ Ü ñ è  ¥ ª è  ± µ ∑   µ á Ω æ ≥ æ    µ   µ Ç ≤ æ   µ Ω Ω è  É float  ∑ fallback
 
 **VALIDATION RESULTS**:
 - ‚úÖ **3/3 tests PASS** (unit metrics export, integration /metrics endpoint, guard reject counter)
@@ -169,19 +169,19 @@
 - ‚úÖ **FSM integration** (hooks called on correct events, metrics updated)
 
 **FILES MODIFIED**:
-- `requirements.txt`: –¥–æ–¥–∞–Ω–æ prometheus_client>=0.20.0
-- `vfoundation/apps/reference/telemetry/metrics.py`: NEW (metrics module –∑ gauges/counters)
-- `apps/reference/api/main.py`: –¥–æ–¥–∞–Ω–æ /metrics endpoint
-- `vfoundation/apps/reference/domains/execution_position/fsm.py`: hooks –¥–ª—è exposure update —Ç–∞ guard reject
-- `vfoundation/apps/reference/domains/execution_position/fsm_manage.py`: kill-switch hook –¥–ª—è manage skipped
-- `vfoundation/apps/reference/domains/execution_position/binance_execution_adapter.py`: hooks –¥–ª—è order placed/filled
-- `tests/units/test_metrics_update.py`: NEW (unit test –¥–ª—è metrics export)
-- `tests/integration/test_metrics_endpoint.py`: NEW (integration test –¥–ª—è /metrics)
-- `tests/integration/test_exposure_release_hooks.py`: –¥–æ–¥–∞–Ω–æ test_exposure_guard_reject_counter
+- `requirements.txt`:  ¥ æ ¥   Ω æ prometheus_client>=0.20.0
+- `vfoundation/apps/reference/telemetry/metrics.py`: NEW (metrics module  ∑ gauges/counters)
+- `apps/reference/api/main.py`:  ¥ æ ¥   Ω æ /metrics endpoint
+- `vfoundation/apps/reference/domains/execution_position/fsm.py`: hooks  ¥ ª è exposure update  Ç   guard reject
+- `vfoundation/apps/reference/domains/execution_position/fsm_manage.py`: kill-switch hook  ¥ ª è manage skipped
+- `vfoundation/apps/reference/domains/execution_position/binance_execution_adapter.py`: hooks  ¥ ª è order placed/filled
+- `tests/units/test_metrics_update.py`: NEW (unit test  ¥ ª è metrics export)
+- `tests/integration/test_metrics_endpoint.py`: NEW (integration test  ¥ ª è /metrics)
+- `tests/integration/test_exposure_release_hooks.py`:  ¥ æ ¥   Ω æ test_exposure_guard_reject_counter
 
-**NEXT**: PACK EXP-4: Decision QoS rate-limit –∞–±–æ PACK EXP-5: Documentation
+**NEXT**: PACK EXP-4: Decision QoS rate-limit    ± æ PACK EXP-5: Documentation
 
-## 2025-10-28 | RID: PORTFOLIO-EXPOSURE-GATE-V1 | ‚úÖ PASS ‚Äî Portfolio exposure gate (20%) implemented
+## 2025-10-28 | RID: PORTFOLIO-EXPOSURE-GATE-V1 | ‚úÖ PASS ‚ î Portfolio exposure gate (20%) implemented
 
 **WHY**: Portfolio exposure gate (20%) blocks CMD:OPEN when total exposure > equity_free_usdt * 0.2
 
@@ -223,7 +223,7 @@
 
 **NEXT**: Proceed to next priority task (testnet run or next domain implementation)
 
-## 2025-10-28 | RID: EQUITY-FLOW-FIX-V1 | ‚úÖ PASS ‚Äî DecisionMaking equity=0 issue resolved
+## 2025-10-28 | RID: EQUITY-FLOW-FIX-V1 | ‚úÖ PASS ‚ î DecisionMaking equity=0 issue resolved
 
 **WHY**: `DecisionMaking blocked trades due to equity=0; fixed equity flow between PositionTracking‚ÜíDecisionMaking`
 
@@ -259,15 +259,15 @@
 
 **NEXT**: Proceed to next priority task (testnet run or metrics implementation)
 
-## 2025-10-15 | RID: FSMP-P2-T02 | ‚úÖ PASS ‚Äî Coverage 90%, mypy=0, p95‚â§10ms
+## 2025-10-15 | RID: FSMP-P2-T02 | ‚úÖ PASS ‚ î Coverage 90%, mypy=0, p95‚â§10ms
 
 **WHY**: `48/48 PASS; cov=90%; mypy=0; p95‚â§10ms; WHY‚â§80 (gate complete)`
 
 **STATUS**: ‚úÖ **PASS** (all P2-T02 gates met)
 
 **FINAL RESULTS**:
-- ‚úÖ **48/48 tests PASS** (100% success rate) ‚Äî +2 new tests (ImportError guard MetaPathFinder, CB full cycle controlled clock)
-- ‚úÖ **Coverage 90%** (redis_store.py: 220 statements, 21 miss) ‚Äî **GATE MET** (+6% from 84% baseline)
+- ‚úÖ **48/48 tests PASS** (100% success rate) ‚ î +2 new tests (ImportError guard MetaPathFinder, CB full cycle controlled clock)
+- ‚úÖ **Coverage 90%** (redis_store.py: 220 statements, 21 miss) ‚ î **GATE MET** (+6% from 84% baseline)
 - ‚úÖ **mypy --strict = 0 warnings** (RedisClientProtocol, RecordTD, cast[] wrappers)
 - ‚úÖ **p95 ‚â§ 10ms** (no sleep in hot path)
 - ‚úÖ **WHY ‚â§ 80** on all errors
@@ -284,8 +284,8 @@
 - **TOTAL vfoundation**: 37% (includes all domains, only idempotency fully tested)
 
 **NEW TESTS (FSMP-P2-T02-FINAL)**:
-1. `test_import_guard_sets_false.py` ‚Äî MetaPathFinder blocks redis import before redis_store.py loads ‚Üí REDIS_AVAILABLE=False, Redis=None (covers lines 19-21)
-2. `test_cb_full_cycle_controlled.py` ‚Äî CB state machine with controlled clock (patch time_ns), direct _record_cb_result calls:
+1. `test_import_guard_sets_false.py` ‚ î MetaPathFinder blocks redis import before redis_store.py loads ‚Üí REDIS_AVAILABLE=False, Redis=None (covers lines 19-21)
+2. `test_cb_full_cycle_controlled.py` ‚ î CB state machine with controlled clock (patch time_ns), direct _record_cb_result calls:
    - Phase 1: error_rate=51% (51 errors / 100 total) ‚Üí CB OPEN (lines 271-274)
    - Phase 2: CBOpenError during OPEN, metrics increment (lines 252-254)
    - Phase 3: Advance clock > cooldown ‚Üí HALF_OPEN transition (lines 247-251)
@@ -321,7 +321,7 @@
 - ‚Üí T03 Portfolio Accounting (Position aggregator, P&L, Equity curve)
 
 
-## 2025-10-14 | RID: FSMP-P2-T02 | PARTIAL PASS ‚Äî Coverage 83%, mypy=20 ‚ö†Ô∏è
+## 2025-10-14 | RID: FSMP-P2-T02 | PARTIAL PASS ‚ î Coverage 83%, mypy=20 ‚ö†Ô∏è
 
 **WHY**: `44/44 PASS; cov=83% (fakeredis limit); mypy=20 (async/sync Redis typing)`
 
@@ -370,7 +370,7 @@
   - No real timeouts (CB state requires sleep mocks, not real timeout injection)
 - **Unpatchable edge cases**:
   - script_load returning None (line 212-214)
-  - CB state machine internal counters (lines 260-265) ‚Äî functionally covered but not line-executed
+  - CB state machine internal counters (lines 260-265) ‚ î functionally covered but not line-executed
 - **Real Redis needed** for 90%: docker + pytest-docker + timeout injection ‚Üí **+2 hours work**
 
 **MYPY 20 WARNINGS**:
@@ -396,7 +396,7 @@
 **WHY (‚â§80)**: `83% max fakeredis; 90% needs real Redis (2h); mypy=20 defer T03.`
 
 
-## 2025-10-14 | RID: FSMP-P2-T02 | PASS ‚Äî Coverage 83%, 35/35 Tests ‚úÖ
+## 2025-10-14 | RID: FSMP-P2-T02 | PASS ‚ î Coverage 83%, 35/35 Tests ‚úÖ
 
 **WHY**: `35/35 PASS; cov=83% (goal 90% partial); error/CB/retry paths covered`
 
@@ -419,7 +419,7 @@
    - +10 error tests: 82%
    - +3 Redis/retry/CB: 83%
    - +6 simple_store: 83%
-   - **Final: 83%** (goal 90%, gap 7% ‚Äî unpatchable edge cases: REDIS_AVAILABLE, script_load None, CB state machine branches)
+   - **Final: 83%** (goal 90%, gap 7% ‚ î unpatchable edge cases: REDIS_AVAILABLE, script_load None, CB state machine branches)
 
 3. **Test suite**:
    - Total: **35 tests** (was 15)
@@ -451,7 +451,7 @@
 
 **WHY**: `Fix 5 FAIL tests: module-scope patch eliminates fixture conflicts`
 
-**STATUS**: ‚úÖ **COMPLETED** ‚Äî 15/15 PASS (100%), coverage 74%
+**STATUS**: ‚úÖ **COMPLETED** ‚ î 15/15 PASS (100%), coverage 74%
 
 **ACTIONS**:
 1. **Module-level patching** in `conftest.py` (called at import, no pytest fixtures)
@@ -481,7 +481,7 @@
 
 **RESULTS**:
 - ‚úÖ 15/15 tests PASS (100%)
-- ‚ö†Ô∏è Coverage 74% (target 90%) ‚Äî baseline established, gaps in error handling/CB/retry paths
+- ‚ö†Ô∏è Coverage 74% (target 90%) ‚ î baseline established, gaps in error handling/CB/retry paths
 - ‚úÖ TTL expiry works (1s lease validated)
 - ‚úÖ Metrics counters/latency tracking functional
 - ‚úÖ Adapter integration (duplicate no-op, busy handling) working
@@ -496,7 +496,7 @@
 **NEXT**: FSMP-P2-T03 ‚Üí Coverage uplift to 90% (add error paths, CB, retry tests) OR move to T04 (mypy strict)
 
 
-## 2025-10-14 | RID: FSMP-P2-T02 | REJECTED ‚Äî DoD Gates Failed
+## 2025-10-14 | RID: FSMP-P2-T02 | REJECTED ‚ î DoD Gates Failed
 
 **WHY**: `REJECT: cov 81%<90%, tests 7/14, mypy 3 warns; WVR not allowed per STOP-frame`
 
@@ -526,10 +526,10 @@
 - Tests: 14 tests (functional, race, TTL, adapter integration) ‚Üí coverage ‚â•90%
 
 **FILES CREATED (IN PROGRESS)**:
-- `vfoundation/vfoundation/core/idempotency/errors.py` ‚Äî 7 error classes, WHY‚â§80 ‚úÖ
-- `vfoundation/vfoundation/core/idempotency/store.py` ‚Äî abstract interface + metrics ‚úÖ
-- `vfoundation/vfoundation/core/idempotency/backends/` ‚Äî Redis backend (TODO)
-- `vfoundation/configs/idempotency.yaml` ‚Äî config (TODO)
+- `vfoundation/vfoundation/core/idempotency/errors.py` ‚ î 7 error classes, WHY‚â§80 ‚úÖ
+- `vfoundation/vfoundation/core/idempotency/store.py` ‚ î abstract interface + metrics ‚úÖ
+- `vfoundation/vfoundation/core/idempotency/backends/` ‚ î Redis backend (TODO)
+- `vfoundation/configs/idempotency.yaml` ‚ î config (TODO)
 
 **DoD (TARGET)**:
 - Coverage ‚â• 90% on idempotency module
@@ -561,7 +561,7 @@
 
 ## 2025-10-14 | RID: FSMP-P2-T01-REVISION | Execution Adapter Coverage + SDK Binding
 
-**WHY**: Initial P2-T01 rejected ‚Äî coverage 83% (< 90% DoD) + real SDK missing
+**WHY**: Initial P2-T01 rejected ‚ î coverage 83% (< 90% DoD) + real SDK missing
 
 **REVISIONS (DOGANKA)**:
 A) **Coverage Uplift** (83% ‚Üí 91%):
@@ -579,13 +579,13 @@ B) **SDK Binding (Paper/Testnet)**:
    - **RESULT**: Real SDK integration validated with 10/10 tests passing
 
 **FILES ADDED/MODIFIED**:
-- `vfoundation/vfoundation/core/adapters/sdk_adapter_binance.py` ‚Äî NEW (226 lines, Binance testnet adapter)
-- `tests/adapters/test_execution_adapter_coverage_uplift.py` ‚Äî NEW (8 tests)
-- `tests/adapters/test_idempotency_ledger_stats.py` ‚Äî NEW (2 tests)
-- `tests/adapters/test_execution_adapter_stream_timeout.py` ‚Äî NEW (2 tests)
-- `tests/adapters/test_sdk_adapter_binance.py` ‚Äî NEW (10 tests)
-- `tests/adapters/test_sdk_adapter_binance_coverage.py` ‚Äî NEW (7 tests)
-- `docs/ADAPTER_GUIDE.md` ‚Äî MODIFIED (added Paper/Testnet Binding section)
+- `vfoundation/vfoundation/core/adapters/sdk_adapter_binance.py` ‚ î NEW (226 lines, Binance testnet adapter)
+- `tests/adapters/test_execution_adapter_coverage_uplift.py` ‚ î NEW (8 tests)
+- `tests/adapters/test_idempotency_ledger_stats.py` ‚ î NEW (2 tests)
+- `tests/adapters/test_execution_adapter_stream_timeout.py` ‚ î NEW (2 tests)
+- `tests/adapters/test_sdk_adapter_binance.py` ‚ î NEW (10 tests)
+- `tests/adapters/test_sdk_adapter_binance_coverage.py` ‚ î NEW (7 tests)
+- `docs/ADAPTER_GUIDE.md` ‚ î MODIFIED (added Paper/Testnet Binding section)
 
 **DoD (FINAL)**:
 ‚úÖ Coverage ‚â• 90% (91% achieved: exec 90%, ledger 91%, exceptions 93%, sdk 93%)
@@ -596,7 +596,7 @@ B) **SDK Binding (Paper/Testnet)**:
 
 ---
 
-## 2025-10-14 | RID: FSMP-P2-T01 | Execution Adapter (dry_run/paper) ‚Äî INITIAL
+## 2025-10-14 | RID: FSMP-P2-T01 | Execution Adapter (dry_run/paper) ‚ î INITIAL
 
 **WHY**: Real SDK adapter over ACL contract, support dry_run/paper modes
 
@@ -611,15 +611,15 @@ B) **SDK Binding (Paper/Testnet)**:
 - 5 test files: dry_run, idempotency, CB/retry, ENV, stream (‚â•90% coverage target)
 
 **FILES CREATED**:
-- `vfoundation/configs/adapter.yaml` ‚Äî retry/CB/timeout/rate-limit config
-- `vfoundation/vfoundation/config.py` ‚Äî extended for adapter ENV vars
-- `vfoundation/vfoundation/core/adapters/execution_exceptions.py` ‚Äî normalized errors (ERR.code + WHY‚â§80)
-- `vfoundation/vfoundation/core/adapters/idempotency_ledger.py` ‚Äî in-memory ledger with TTL/LRU
-- `vfoundation/vfoundation/core/adapters/execution_adapter.py` ‚Äî base + mock (650 lines)
-- `tests/adapters/test_execution_adapter_*.py` ‚Äî 5 test files (dry_run, idem, CB, ENV, stream)
-- `docs/ADAPTER_GUIDE.md` ‚Äî comprehensive docs (modes, API, metrics, WHY examples)
+- `vfoundation/configs/adapter.yaml` ‚ î retry/CB/timeout/rate-limit config
+- `vfoundation/vfoundation/config.py` ‚ î extended for adapter ENV vars
+- `vfoundation/vfoundation/core/adapters/execution_exceptions.py` ‚ î normalized errors (ERR.code + WHY‚â§80)
+- `vfoundation/vfoundation/core/adapters/idempotency_ledger.py` ‚ î in-memory ledger with TTL/LRU
+- `vfoundation/vfoundation/core/adapters/execution_adapter.py` ‚ î base + mock (650 lines)
+- `tests/adapters/test_execution_adapter_*.py` ‚ î 5 test files (dry_run, idem, CB, ENV, stream)
+- `docs/ADAPTER_GUIDE.md` ‚ î comprehensive docs (modes, API, metrics, WHY examples)
 
-**DoD (INITIAL ‚Äî REJECTED)**:
+**DoD (INITIAL ‚ î REJECTED)**:
 ‚úÖ submit/cancel/stream API works in dry_run + paper
 ‚úÖ Idempotent submit/cancel (no duplicates)
 ‚úÖ ENV required for non-dry_run (fail-obvious)
@@ -636,28 +636,28 @@ B) **SDK Binding (Paper/Testnet)**:
 **STATUS**: ‚úÖ **PASS** (with WVR-01)
 
 **P1 DELIVERABLES**:
-1. ACL adapter ‚Äî execution_position ‚áÑ exchange events (185 tests, 90%)
-2. ENV config ‚Äî 9 params, validation, ADR-005 (300 tests)
-3. Shadow replay ‚Äî CLI, fixtures, integrity (11 tests)
-4. CI gates ‚Äî lint/type/test‚â•89%/smoke/build ‚úÖ
-5. Drift monitor ‚Äî confusion matrix, accuracy tracking
-6. FSM flows ‚Äî open/manage/close shadow-mode
+1. ACL adapter ‚ î execution_position ‚áÑ exchange events (185 tests, 90%)
+2. ENV config ‚ î 9 params, validation, ADR-005 (300 tests)
+3. Shadow replay ‚ î CLI, fixtures, integrity (11 tests)
+4. CI gates ‚ î lint/type/test‚â•89%/smoke/build ‚úÖ
+5. Drift monitor ‚ î confusion matrix, accuracy tracking
+6. FSM flows ‚ î open/manage/close shadow-mode
 
 **METRICS**:
 - Tests: 337 passing ‚úÖ
-- Coverage: **89%** (88.77% raw) ‚Äî WVR-01: platform code untestable
-- mypy: **0 errors** ‚úÖ (–±—É–ª–æ 37 warnings)
+- Coverage: **89%** (88.77% raw) ‚ î WVR-01: platform code untestable
+- mypy: **0 errors** ‚úÖ ( ± É ª æ 37 warnings)
 - Drift: <1%, accuracy 98%+
 - WHY: ‚â§80 chars discipline
 
 **WVR-01 RATIONALE**:
 - Critical paths covered 95%+
-- Platform-specific (~0.5%): Unix fcntl –Ω–∞ Windows CI
+- Platform-specific (~0.5%): Unix fcntl  Ω   Windows CI
 - CLI infra (~0.4%): schema/simulate needs full setup
 - FSM edges (~0.3%): diminishing returns
 - **Next 1% = inflated coverage** without value
 
-**P1 Gate**: ‚úÖ **CLOSED** | **–Ø–¥—Ä–æ — —Ç–∞–±—ñ–ª—å–Ω–µ, CI –¥–∏— —Ü–∏–ø–ª—ñ–Ω—É—î, –º–µ—Ç—Ä–∏–∫–∏ –ø—ñ–¥–≤'—è–∑–∞–Ω—ñ**
+**P1 Gate**: ‚úÖ **CLOSED** | ** Ø ¥   æ    Ç   ± ñ ª å Ω µ, CI  ¥ ∏   Ü ∏   ª ñ Ω É î,  º µ Ç   ∏ ∫ ∏    ñ ¥ ≤' è ∑   Ω ñ**
 
 ---
 
@@ -670,7 +670,7 @@ B) **SDK Binding (Paper/Testnet)**:
 - **coverage 88%‚Üí89%**: Added 16 tests (WAL, idem, FSM, CLI, drift, debug)
 - Fixed: FSM.handle signature, fsm_manage.py Decimal guard, CLI dict access
 - Files: `test_coverage_uplift_gate.py`, `test_cli_coverage.py`, `test_fsm_coverage_gaps.py`, `test_final_90_percent.py`
-- Created `.coveragerc` –¥–ª—è platform exclusions
+- Created `.coveragerc`  ¥ ª è platform exclusions
 
 **RESULTS**: mypy=0 ‚úÖ | coverage=89% (337 tests) | WVR-01 approved
 
@@ -837,9 +837,9 @@ B) **SDK Binding (Paper/Testnet)**:
 - **Documentation**: ACL-Adapter.md with interfaces, contracts, examples
 
 **RESULTS**:
-- **Tests: 141 ‚Üí 159 passed** (+18 –Ω–æ–≤—ã—Ö —Ç–µ— —Ç–æ–≤)
+- **Tests: 141 ‚Üí 159 passed** (+18  Ω æ ≤ ã Ö  Ç µ   Ç æ ≤)
 - **Coverage ACL**: acl.py 90%, contracts.py 97%
-- **Shadow-mode**: stub exchange –¥–ª—è testing (no live orders)
+- **Shadow-mode**: stub exchange  ¥ ª è testing (no live orders)
 - **Contracts validated**: all messages conform to protocol
 - **WHY-discipline**: enforced ‚â§80 chars in all responses
 - **Files created**:
@@ -849,26 +849,26 @@ B) **SDK Binding (Paper/Testnet)**:
   - `tests/test_acl_message_contracts.py` (11 tests)
   - `docs/ACL-Adapter.md` (documentation)
 
-**NEXT**: FSMP-P1-T02 ‚Äî 3 FSM flows (open/manage/close) integration with ACL
+**NEXT**: FSMP-P1-T02 ‚ î 3 FSM flows (open/manage/close) integration with ACL
 
 **Links**: Branch `feat/p1-acl-adapter-execpos`
 
 ---
 
-## 2025-01-12 | RID: FSMP-P1-INIT | P1 Baseline — —Ç–≤–æ—Ä–µ–Ω–æ
+## 2025-01-12 | RID: FSMP-P1-INIT | P1 Baseline    Ç ≤ æ   µ Ω æ
 
 **WHY**: start P1 epic (execution_position shadow-mode federation)
 
 **ACTIONS**:
 - Merged FSMP-P0-T07 ‚Üí v2-clean (100 files, +7931 lines)
 - Created tag: `v2-clean-P0-PASS` (coverage 90%, RBAC+signature+WHY enforced)
-- Baseline branch: `feat/p1-execpos-shadow` –¥–ª—è P1 tasks
-- Ready –¥–ª—è FSMP-P1-T01: ACL adapter + shadow wiring
+- Baseline branch: `feat/p1-execpos-shadow`  ¥ ª è P1 tasks
+- Ready  ¥ ª è FSMP-P1-T01: ACL adapter + shadow wiring
 
 **RESULTS**:
 - P0 gates passed: tests 141/141, coverage 90%, schema-lint OK
 - Repository state: production-ready foundation
-- Next: ACL adapter –¥–ª—è execution_position domain
+- Next: ACL adapter  ¥ ª è execution_position domain
 
 **Links**: branch `feat/p1-execpos-shadow`, tag `v2-clean-P0-PASS`
 
@@ -876,97 +876,97 @@ B) **SDK Binding (Paper/Testnet)**:
 
 ## 2025-01-12 | RID: FSMP-P0-T07-SECURITY-XAI | RBAC+Signature+WHY-discipline
 
-**WHY**: –¢–∞–π—Ç–Ω–∏–Ω–≥ –±–µ–∑–ø–µ–∫–∏ (RBAC, Ed25519 –¥–ª—è DEC/CMD) —Ç–∞ XAI-–¥–∏— —Ü–∏–ø–ª—ñ–Ω–∞ (why‚â§80)
+**WHY**:  ¢   π Ç Ω ∏ Ω ≥  ± µ ∑   µ ∫ ∏ (RBAC, Ed25519  ¥ ª è DEC/CMD)  Ç   XAI- ¥ ∏   Ü ∏   ª ñ Ω   (why‚â§80)
 
 **ACTIONS**:
-- **RBAC**: `/debug` —ñ `/replay` endpoints –∑–∞—Ö–∏—â–µ–Ω–æ —á–µ—Ä–µ–∑ `require_admin()` (403 –±–µ–∑ —Ç–æ–∫–µ–Ω–∞)
-- **Signature verification**: DEC/CMD ops –ø–æ—Ç—Ä–µ–±—É—é—Ç—å –≤–∞–ª—ñ–¥–Ω–æ–≥–æ Ed25519 –ø—ñ–¥–ø–∏— —É (401 –±–µ–∑ sig)
-  - `routing.py` –¥–æ–¥–∞–Ω–æ –ø–µ—Ä–µ–≤—ñ—Ä–∫—É –ø–µ—Ä–µ–¥ WAL-write
-  - –°—Ç–∞–± —á–µ—Ä–µ–∑ `signing_ed25519.sign()` / `verify()`
-- **WHY-discipline**: Router-level validation –¥–ª—è `why > 80` chars ‚Üí 400 –±–µ–∑ WAL-write
-- **Contracts**: –î–æ–¥–∞–Ω–æ CMD –¥–æ `global_v2_2.yaml` ops list, regenerated `message_v1.json` schema
-- **CLI**: –í–∏–ø—Ä–∞–≤–ª–µ–Ω–æ `vfound dict_lint` —à–ª—è—Ö–∏ –¥–æ `vfoundation/dictionaries/`
-- **Dependencies**: –í— —Ç–∞–Ω–æ–≤–ª–µ–Ω–æ `typer` (CLI) —Ç–∞ `pynacl` (Ed25519 crypto)
-- **Breaking change**: –û–Ω–æ–≤–ª–µ–Ω–æ 4 —Ç–µ— —Ç–∏ –≤ `test_single_flight_routing.py` –¥–ª—è –ø—ñ–¥–ø–∏— —É DEC ops
+- **RBAC**: `/debug`  ñ `/replay` endpoints  ∑   Ö ∏ â µ Ω æ  á µ   µ ∑ `require_admin()` (403  ± µ ∑  Ç æ ∫ µ Ω  )
+- **Signature verification**: DEC/CMD ops    æ Ç   µ ± É é Ç å  ≤   ª ñ ¥ Ω æ ≥ æ Ed25519    ñ ¥   ∏   É (401  ± µ ∑ sig)
+  - `routing.py`  ¥ æ ¥   Ω æ    µ   µ ≤ ñ   ∫ É    µ   µ ¥ WAL-write
+  -  ° Ç   ±  á µ   µ ∑ `signing_ed25519.sign()` / `verify()`
+- **WHY-discipline**: Router-level validation  ¥ ª è `why > 80` chars ‚Üí 400  ± µ ∑ WAL-write
+- **Contracts**:  î æ ¥   Ω æ CMD  ¥ æ `global_v2_2.yaml` ops list, regenerated `message_v1.json` schema
+- **CLI**:  í ∏       ≤ ª µ Ω æ `vfound dict_lint`  à ª è Ö ∏  ¥ æ `vfoundation/dictionaries/`
+- **Dependencies**:  í   Ç   Ω æ ≤ ª µ Ω æ `typer` (CLI)  Ç   `pynacl` (Ed25519 crypto)
+- **Breaking change**:  û Ω æ ≤ ª µ Ω æ 4  Ç µ   Ç ∏  ≤ `test_single_flight_routing.py`  ¥ ª è    ñ ¥   ∏   É DEC ops
 
 **RESULTS**:
-- **–¢–µ— —Ç–∏: 137 ‚Üí 141 passed** (13 –Ω–æ–≤–∏—Ö security —Ç–µ— —Ç—ñ–≤, 4 –≤–∏–ø—Ä–∞–≤–ª–µ–Ω–∏—Ö)
-- **Coverage: 89% ‚Üí 90%** (517/572 —Ä—è–¥–∫—ñ–≤) ‚úÖ **TARGET –î–û–°–Ø–ì–ù–£–¢–û!**
+- ** ¢ µ   Ç ∏: 137 ‚Üí 141 passed** (13  Ω æ ≤ ∏ Ö security  Ç µ   Ç ñ ≤, 4  ≤ ∏       ≤ ª µ Ω ∏ Ö)
+- **Coverage: 89% ‚Üí 90%** (517/572    è ¥ ∫ ñ ≤) ‚úÖ **TARGET  î û ° Ø ì ù £ ¢ û!**
 - **Security coverage**: RBAC 100%, signature stub 100%, WHY-discipline validated
-- **–ú–æ–¥—É–ª—ñ –∑ 100% –ø–æ–∫—Ä–∏—Ç—Ç—è–º**: idempotency, protocol, retry_cb, replay, why, rbac_abac, signing_ed25519
+- ** ú æ ¥ É ª ñ  ∑ 100%    æ ∫   ∏ Ç Ç è º**: idempotency, protocol, retry_cb, replay, why, rbac_abac, signing_ed25519
 - **High coverage**: routing.py 98%, debug_api.py 87%
 - **Commits**:
   - `chore(security): rbac+signature stub; xai why-limit enforced [FSMP-P0-T07]` (2fa56a7)
   - Branch: `chore/p0-security-xai-tighten`
-- **Artefacts**: `tests/test_security_xai_tighten.py` (13 —Ç–µ— —Ç—ñ–≤), `schemas/message_v1.json`
+- **Artefacts**: `tests/test_security_xai_tighten.py` (13  Ç µ   Ç ñ ≤), `schemas/message_v1.json`
 
 ---
 
-## 2025-01-12 | RID: FSMP-P0-T03-COVERAGE | –ü—ñ–¥–Ω—è—Ç–∏ –ø–æ–∫—Ä–∏—Ç—Ç—è –¥–æ 89%
+## 2025-01-12 | RID: FSMP-P0-T03-COVERAGE |  ü ñ ¥ Ω è Ç ∏    æ ∫   ∏ Ç Ç è  ¥ æ 89%
 
-**WHY**: –í–∏–∫–æ–Ω–∞–Ω–Ω—è –≤–∏–º–æ–≥–∏ FSMP-P0-T03 —â–æ–¥–æ test coverage ‚â• 90% –¥–ª—è core FSM –º–æ–¥—É–ª—ñ–≤
+**WHY**:  í ∏ ∫ æ Ω   Ω Ω è  ≤ ∏ º æ ≥ ∏ FSMP-P0-T03  â æ ¥ æ test coverage ‚â• 90%  ¥ ª è core FSM  º æ ¥ É ª ñ ≤
 
 **ACTIONS**:
-- –°—Ç–≤–æ—Ä–µ–Ω–æ –∫–æ–º–ø–ª–µ–∫— –Ω—ñ —Ç–µ— —Ç–æ–≤—ñ — —é—ó—Ç–∏ –¥–ª—è edge cases:
-  - `test_why_chain.py` (6 —Ç–µ— —Ç—ñ–≤) ‚Üí why.py 100%
-  - `test_rbac.py` (8 —Ç–µ— —Ç—ñ–≤) ‚Üí rbac_abac.py 100%
-  - `test_idempotency_edge_cases.py` (11 —Ç–µ— —Ç—ñ–≤) ‚Üí idempotency.py 100%
-  - `test_wal_fallback.py` (11 —Ç–µ— —Ç—ñ–≤) ‚Üí wal.py –ø–æ–∫—Ä–∞—â–µ–Ω–æ –¥–æ 75%
-  - `test_wal_additional.py` (7 —Ç–µ— —Ç—ñ–≤) ‚Üí –¥–æ–¥–∞—Ç–∫–æ–≤—ñ WAL — —Ü–µ–Ω–∞—Ä—ñ—ó
-  - `test_retry_cb_edge_cases.py` (3 —Ç–µ— —Ç–∏) ‚Üí retry_cb.py 100%
-  - `test_final_coverage_push.py` (7 —Ç–µ— —Ç—ñ–≤) ‚Üí edge cases –¥–ª—è CB —ñ WAL
-  - `test_coverage_boost.py` (7 —Ç–µ— —Ç—ñ–≤) ‚Üí RetryPolicy, WAL metrics
-  - `test_90_percent_target.py` (8 —Ç–µ— —Ç—ñ–≤) ‚Üí CAS, integrity, JSON edge cases
-  - `test_debug_api_metrics.py` (9 —Ç–µ— —Ç—ñ–≤) ‚Üí debug_api.py –º–µ—Ç—Ä–∏–∫–∏ –ø–æ–∫—Ä–∞—â–µ–Ω–æ –¥–æ 76%
-  - `test_exact_90_percent.py` (8 —Ç–µ— —Ç—ñ–≤) ‚Üí — –ø–µ—Ü–∏—Ñ—ñ—á–Ω—ñ –Ω–µ–ø–æ–∫—Ä–∏—Ç—ñ –ª—ñ–Ω—ñ—ó
-  - `test_final_90_push.py` (11 —Ç–µ— —Ç—ñ–≤) ‚Üí chain integrity, — –ø–µ—Ü— –∏–º–≤–æ–ª–∏
+-  ° Ç ≤ æ   µ Ω æ  ∫ æ º   ª µ ∫   Ω ñ  Ç µ   Ç æ ≤ ñ    é ó Ç ∏  ¥ ª è edge cases:
+  - `test_why_chain.py` (6  Ç µ   Ç ñ ≤) ‚Üí why.py 100%
+  - `test_rbac.py` (8  Ç µ   Ç ñ ≤) ‚Üí rbac_abac.py 100%
+  - `test_idempotency_edge_cases.py` (11  Ç µ   Ç ñ ≤) ‚Üí idempotency.py 100%
+  - `test_wal_fallback.py` (11  Ç µ   Ç ñ ≤) ‚Üí wal.py    æ ∫     â µ Ω æ  ¥ æ 75%
+  - `test_wal_additional.py` (7  Ç µ   Ç ñ ≤) ‚Üí  ¥ æ ¥   Ç ∫ æ ≤ ñ WAL    Ü µ Ω     ñ ó
+  - `test_retry_cb_edge_cases.py` (3  Ç µ   Ç ∏) ‚Üí retry_cb.py 100%
+  - `test_final_coverage_push.py` (7  Ç µ   Ç ñ ≤) ‚Üí edge cases  ¥ ª è CB  ñ WAL
+  - `test_coverage_boost.py` (7  Ç µ   Ç ñ ≤) ‚Üí RetryPolicy, WAL metrics
+  - `test_90_percent_target.py` (8  Ç µ   Ç ñ ≤) ‚Üí CAS, integrity, JSON edge cases
+  - `test_debug_api_metrics.py` (9  Ç µ   Ç ñ ≤) ‚Üí debug_api.py  º µ Ç   ∏ ∫ ∏    æ ∫     â µ Ω æ  ¥ æ 76%
+  - `test_exact_90_percent.py` (8  Ç µ   Ç ñ ≤) ‚Üí      µ Ü ∏ Ñ ñ á Ω ñ  Ω µ   æ ∫   ∏ Ç ñ  ª ñ Ω ñ ó
+  - `test_final_90_push.py` (11  Ç µ   Ç ñ ≤) ‚Üí chain integrity,      µ Ü   ∏ º ≤ æ ª ∏
 
-- –í–∏–ø—Ä–∞–≤–ª–µ–Ω–æ 2 –ø–∞–¥–∞—é—á–∏—Ö —Ç–µ— —Ç–∏ –≤ test_wal_replay.py:
-  - –ü—Ä–æ–±–ª–µ–º–∞: replay_for_rid() —à—É–∫–∞–≤ WAL —É `ops/wal`, –∞–ª–µ —Ç–µ— —Ç–∏ — —Ç–≤–æ—Ä—é–≤–∞–ª–∏ –≤ tmp_path
-  - –†—ñ—à–µ–Ω–Ω—è: –í–∏–∫–æ—Ä–∏— —Ç–∞–Ω–Ω—è `wal.set_wal_dir()` –¥–ª—è –Ω–∞–ª–∞—à—Ç—É–≤–∞–Ω–Ω—è —Ç–∏–º—á–∞— –æ–≤–∏—Ö –¥–∏—Ä–µ–∫—Ç–æ—Ä—ñ–π
+-  í ∏       ≤ ª µ Ω æ 2      ¥   é á ∏ Ö  Ç µ   Ç ∏  ≤ test_wal_replay.py:
+  -  ü   æ ± ª µ º  : replay_for_rid()  à É ∫   ≤ WAL  É `ops/wal`,    ª µ  Ç µ   Ç ∏    Ç ≤ æ   é ≤   ª ∏  ≤ tmp_path
+  -  † ñ à µ Ω Ω è:  í ∏ ∫ æ   ∏   Ç   Ω Ω è `wal.set_wal_dir()`  ¥ ª è  Ω   ª   à Ç É ≤   Ω Ω è  Ç ∏ º á     æ ≤ ∏ Ö  ¥ ∏   µ ∫ Ç æ   ñ π
 
 **RESULTS**:
-- **–ü–æ–∫—Ä–∏—Ç—Ç—è: 82% ‚Üí 89%** (476/537 —Ä—è–¥–∫—ñ–≤)
-- **–¢–µ— —Ç–∏: 72 ‚Üí 128 passed** (78% –∑—Ä–æ— —Ç–∞–Ω–Ω—è)
-- **–ú–æ–¥—É–ª—ñ –∑ 100% –ø–æ–∫—Ä–∏—Ç—Ç—è–º**:
-  - `protocol.py` (38 —Ä—è–¥–∫—ñ–≤)
-  - `routing.py` (68 —Ä—è–¥–∫—ñ–≤)
-  - `idempotency.py` (104 —Ä—è–¥–∫–∏)
-  - `replay.py` (25 —Ä—è–¥–∫—ñ–≤)
-  - `why.py` (6 —Ä—è–¥–∫—ñ–≤)
-  - `rbac_abac.py` (9 —Ä—è–¥–∫—ñ–≤)
-  - `retry_cb.py` (40 —Ä—è–¥–∫—ñ–≤)
+- ** ü æ ∫   ∏ Ç Ç è: 82% ‚Üí 89%** (476/537    è ¥ ∫ ñ ≤)
+- ** ¢ µ   Ç ∏: 72 ‚Üí 128 passed** (78%  ∑   æ   Ç   Ω Ω è)
+- ** ú æ ¥ É ª ñ  ∑ 100%    æ ∫   ∏ Ç Ç è º**:
+  - `protocol.py` (38    è ¥ ∫ ñ ≤)
+  - `routing.py` (68    è ¥ ∫ ñ ≤)
+  - `idempotency.py` (104    è ¥ ∫ ∏)
+  - `replay.py` (25    è ¥ ∫ ñ ≤)
+  - `why.py` (6    è ¥ ∫ ñ ≤)
+  - `rbac_abac.py` (9    è ¥ ∫ ñ ≤)
+  - `retry_cb.py` (40    è ¥ ∫ ñ ≤)
 
-- **–ú–æ–¥—É–ª—ñ –∑ –≤–∏— –æ–∫–∏–º –ø–æ–∫—Ä–∏—Ç—Ç—è–º**:
-  - `wal.py`: 75% (44 –Ω–µ–ø–æ–∫—Ä–∏—Ç–∏—Ö ‚Äî Unix fcntl –∫–æ–¥)
-  - `debug_api.py`: 76% (17 –Ω–µ–ø–æ–∫—Ä–∏—Ç–∏—Ö ‚Äî FastAPI endpoints)
+- ** ú æ ¥ É ª ñ  ∑  ≤ ∏   æ ∫ ∏ º    æ ∫   ∏ Ç Ç è º**:
+  - `wal.py`: 75% (44  Ω µ   æ ∫   ∏ Ç ∏ Ö ‚ î Unix fcntl  ∫ æ ¥)
+  - `debug_api.py`: 76% (17  Ω µ   æ ∫   ∏ Ç ∏ Ö ‚ î FastAPI endpoints)
 
 **BLOCKERS**:
-- –ù–µ–ø–æ–∫—Ä–∏—Ç–∏–π Unix fcntl –∫–æ–¥ —É wal.py (44 —Ä—è–¥–∫–∏) –Ω–µ–º–æ–∂–ª–∏–≤–æ –≤–∏–∫–æ–Ω–∞—Ç–∏ –Ω–∞ Windows –±–µ–∑ mock'—É–≤–∞–Ω–Ω—è
-- FastAPI endpoints —É debug_api.py (17 —Ä—è–¥–∫—ñ–≤) –ø–æ—Ç—Ä–µ–±—É—é—Ç—å async —Ç–µ— —Ç—É–≤–∞–Ω–Ω—è –∑ TestClient
+-  ù µ   æ ∫   ∏ Ç ∏ π Unix fcntl  ∫ æ ¥  É wal.py (44    è ¥ ∫ ∏)  Ω µ º æ ∂ ª ∏ ≤ æ  ≤ ∏ ∫ æ Ω   Ç ∏  Ω   Windows  ± µ ∑ mock' É ≤   Ω Ω è
+- FastAPI endpoints  É debug_api.py (17    è ¥ ∫ ñ ≤)    æ Ç   µ ± É é Ç å async  Ç µ   Ç É ≤   Ω Ω è  ∑ TestClient
 
 **ARTIFACTS**:
-- 13 –Ω–æ–≤–∏—Ö —Ç–µ— —Ç–æ–≤–∏—Ö —Ñ–∞–π–ª—ñ–≤
-- HTML –∑–≤—ñ—Ç –ø–æ–∫—Ä–∏—Ç—Ç—è: `htmlcov/index.html`
-- –ü–æ–∫—Ä–∏—Ç—Ç—è —Ç–µ—Ä–º—ñ–Ω–∞–ª –∑–≤—ñ—Ç: `coverage.xml`
+- 13  Ω æ ≤ ∏ Ö  Ç µ   Ç æ ≤ ∏ Ö  Ñ   π ª ñ ≤
+- HTML  ∑ ≤ ñ Ç    æ ∫   ∏ Ç Ç è: `htmlcov/index.html`
+-  ü æ ∫   ∏ Ç Ç è  Ç µ   º ñ Ω   ª  ∑ ≤ ñ Ç: `coverage.xml`
 
 **NEXT STEPS**:
-- –†–æ–∑–≥–ª—è–¥ –º–æ–∂–ª–∏–≤–æ— —Ç—ñ –≤–∏–∫–æ—Ä–∏— —Ç–∞–Ω–Ω—è `# pragma: no cover` –¥–ª—è platform-specific –∫–æ–¥—É
-- –ê–±–æ –¥–æ–¥–∞–≤–∞–Ω–Ω—è mock'—ñ–≤ –¥–ª—è fcntl –¥–ª—è –¥–æ— —è–≥–Ω–µ–Ω–Ω—è 90%+
+-  † æ ∑ ≥ ª è ¥  º æ ∂ ª ∏ ≤ æ   Ç ñ  ≤ ∏ ∫ æ   ∏   Ç   Ω Ω è `# pragma: no cover`  ¥ ª è platform-specific  ∫ æ ¥ É
+-  ê ± æ  ¥ æ ¥   ≤   Ω Ω è mock' ñ ≤  ¥ ª è fcntl  ¥ ª è  ¥ æ   è ≥ Ω µ Ω Ω è 90%+
 
 ---
 
-## 2025-01-12 | RID: FSMP-P0-T03-ADR | –°—Ç–≤–æ—Ä–µ–Ω–æ ADR-004 WAL Concurrency
+## 2025-01-12 | RID: FSMP-P0-T03-ADR |  ° Ç ≤ æ   µ Ω æ ADR-004 WAL Concurrency
 
-**WHY**: –î–æ–∫—É–º–µ–Ω—Ç—É–≤–∞–Ω–Ω—è –∞—Ä—Ö—ñ—Ç–µ–∫—Ç—É—Ä–Ω–∏—Ö —Ä—ñ—à–µ–Ω—å –¥–ª—è –∫–æ–Ω–∫—É—Ä–µ–Ω—Ç–æ–±–µ–∑–ø–µ—á–Ω–æ–≥–æ WAL
+**WHY**:  î æ ∫ É º µ Ω Ç É ≤   Ω Ω è      Ö ñ Ç µ ∫ Ç É   Ω ∏ Ö    ñ à µ Ω å  ¥ ª è  ∫ æ Ω ∫ É   µ Ω Ç æ ± µ ∑   µ á Ω æ ≥ æ WAL
 
 **ACTIONS**:
-- –°—Ç–≤–æ—Ä–µ–Ω–æ `docs/docs_vfoundation/ADR-004-WAL-Concurrency.md` (449 —Ä—è–¥–∫—ñ–≤)
-- –°–µ–∫—Ü—ñ—ó:
-  - Context: –ü—Ä–æ–±–ª–µ–º–∞—Ç–∏–∫–∞, –≤–∏–º–æ–≥–∏ (–∞—Ç–æ–º–∞—Ä–Ω—ñ— —Ç—å, —ñ–¥–µ–º–ø–æ—Ç–µ–Ω—Ç–Ω—ñ— —Ç—å, cross-platform)
+-  ° Ç ≤ æ   µ Ω æ `docs/docs_vfoundation/ADR-004-WAL-Concurrency.md` (449    è ¥ ∫ ñ ≤)
+-  ° µ ∫ Ü ñ ó:
+  - Context:  ü   æ ± ª µ º   Ç ∏ ∫  ,  ≤ ∏ º æ ≥ ∏ (   Ç æ º     Ω ñ   Ç å,  ñ ¥ µ º   æ Ç µ Ω Ç Ω ñ   Ç å, cross-platform)
   - Decision: Windows global Lock vs Unix fcntl.flock, single-flight state machine
   - Consequences: 502 rec/sec throughput, 0% timeouts, memory footprint
-  - Alternatives: –í—ñ–¥–∫–∏–Ω—É—Ç–æ DB-backed WAL, lock-free CAS, async queue
+  - Alternatives:  í ñ ¥ ∫ ∏ Ω É Ç æ DB-backed WAL, lock-free CAS, async queue
   - Benchmarks: 100 threads, 500 appends, 0.91s, 549 rec/sec
   - Monitoring: Alert thresholds, metrics structure
   - Future: WAL sharding, batch writes, mmap, compression
@@ -976,26 +976,26 @@ B) **SDK Binding (Paper/Testnet)**:
 
 ---
 
-## 2025-01-12 | RID: FSMP-P0-T03-PROTOCOL | –í–∏–ø—Ä–∞–≤–ª–µ–Ω–æ protocol.py
+## 2025-01-12 | RID: FSMP-P0-T03-PROTOCOL |  í ∏       ≤ ª µ Ω æ protocol.py
 
-**WHY**: –í–∏–ø—Ä–∞–≤–ª–µ–Ω–Ω—è –∞—Ä—Ö—ñ—Ç–µ–∫—Ç—É—Ä–Ω–æ—ó –ø–æ–º–∏–ª–∫–∏ ‚Äî –≤—ñ–¥— —É—Ç–Ω—ñ— —Ç—å "CMD" —É –¥–æ–∑–≤–æ–ª–µ–Ω–∏—Ö Op values
+**WHY**:  í ∏       ≤ ª µ Ω Ω è      Ö ñ Ç µ ∫ Ç É   Ω æ ó    æ º ∏ ª ∫ ∏ ‚ î  ≤ ñ ¥   É Ç Ω ñ   Ç å "CMD"  É  ¥ æ ∑ ≤ æ ª µ Ω ∏ Ö Op values
 
 **ACTIONS**:
-- –î–æ–¥–∞–Ω–æ "CMD" –¥–æ `Op = Literal["ASK","DEC","CMD","EVT","UPD","ERR"]` (protocol.py:7)
-- –°–µ–º–∞–Ω—Ç–∏–∫–∞:
-  - ASK: –∑–∞–ø–∏—Ç–∏ –Ω–∞ —ñ–Ω—Ñ–æ—Ä–º–∞—Ü—ñ—é/–¥–æ–∑–≤—ñ–ª
-  - DEC: —Ä—ñ—à–µ–Ω–Ω—è FSM (approve/reject/position size)
-  - CMD: –∫–æ–º–∞–Ω–¥–∏ –≤–∏–∫–æ–Ω–∞–Ω–Ω—è (OPEN/CLOSE/ADJUST order)
-  - EVT: –ø–æ–¥—ñ—ó-–Ω–æ—Ç–∏—Ñ—ñ–∫–∞—Ü—ñ—ó
-  - UPD: –æ–Ω–æ–≤–ª–µ–Ω–Ω—è — —Ç–∞–Ω—É
-  - ERR: –ø–æ–≤—ñ–¥–æ–º–ª–µ–Ω–Ω—è –ø—Ä–æ –ø–æ–º–∏–ª–∫–∏
+-  î æ ¥   Ω æ "CMD"  ¥ æ `Op = Literal["ASK","DEC","CMD","EVT","UPD","ERR"]` (protocol.py:7)
+-  ° µ º   Ω Ç ∏ ∫  :
+  - ASK:  ∑     ∏ Ç ∏  Ω    ñ Ω Ñ æ   º   Ü ñ é/ ¥ æ ∑ ≤ ñ ª
+  - DEC:    ñ à µ Ω Ω è FSM (approve/reject/position size)
+  - CMD:  ∫ æ º   Ω ¥ ∏  ≤ ∏ ∫ æ Ω   Ω Ω è (OPEN/CLOSE/ADJUST order)
+  - EVT:    æ ¥ ñ ó- Ω æ Ç ∏ Ñ ñ ∫   Ü ñ ó
+  - UPD:  æ Ω æ ≤ ª µ Ω Ω è    Ç   Ω É
+  - ERR:    æ ≤ ñ ¥ æ º ª µ Ω Ω è      æ    æ º ∏ ª ∫ ∏
 
 **RESULTS**:
-- –£— —É–Ω—É—Ç–æ ValidationError —É apps/reference FSM domains
+-  £   É Ω É Ç æ ValidationError  É apps/reference FSM domains
 - MyPy: Success (24 source files)
 
 **ARTIFACTS**:
-- `vfoundation/vfoundation/core/protocol.py` (–∑–º—ñ–Ω–µ–Ω–æ —Ä—è–¥–æ–∫ 7)
+- `vfoundation/vfoundation/core/protocol.py` ( ∑ º ñ Ω µ Ω æ    è ¥ æ ∫ 7)
 
 ---
 

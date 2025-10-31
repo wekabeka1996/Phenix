@@ -7,9 +7,7 @@
     ".github\\workflows\\gemini-scheduled-triage.yml": {},
     ".github\\workflows\\gemini-triage.yml": {},
     "config\\aurora\\regime.yaml": {},
-    "config\\aurora\\system.yaml": {},
     "config\\aurora\\trading.staging.override.yaml": {},
-    "config\\aurora\\trading.yaml": {},
     "configs\\master_config_v1.yaml": {
       "execution": {
         "manage": {

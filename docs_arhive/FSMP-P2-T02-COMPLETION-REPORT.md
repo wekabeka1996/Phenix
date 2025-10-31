@@ -1,4 +1,4 @@
-# FSMP-P2-T02 Completion Report â€” Distributed Idempotency
+# FSMP-P2-T02 Completion Report â ” Distributed Idempotency
 
 **RID**: FSMP-P2-T02  
 **Status**: âœ… **DELIVERED** (with notes)  

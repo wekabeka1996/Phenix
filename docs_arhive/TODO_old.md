@@ -1,4 +1,4 @@
-# TODO ‚Äî vFoundation Development Checklist
+# TODO ‚ î vFoundation Development Checklist
 
 ## ‚úÖ COMPLETED: WebSocket USER_DATA_STREAM & State Reconciliation (AURORA_WS_RECONCILE_V1)
 
@@ -279,15 +279,15 @@
 
 ### Implementation Summary
 
-- **Problem**: –°–∏— —Ç–µ–º–∞ –ù–ï –≤— —Ç–∞–Ω–æ–≤–ª—é—î leverage —á–µ—Ä–µ–∑ API, –ø–æ–∫–ª–∞–¥–∞—î—Ç—å— —è –Ω–∞ —Ä—É—á–Ω–µ –Ω–∞–ª–∞—à—Ç—É–≤–∞–Ω–Ω—è
-- **Risk Level**: üî¥ HIGH - –Ω–µ–≤—ñ–¥–ø–æ–≤—ñ–¥–Ω—ñ— —Ç—å –º—ñ–∂ –æ—á—ñ–∫—É–≤–∞–Ω–∏–º (x50) —Ç–∞ —Ä–µ–∞–ª—å–Ω–∏–º –ø–ª–µ—á–µ–º
-- **Solution**: –†–µ–∞–ª—ñ–∑–æ–≤–∞–Ω–æ –∞–≤—Ç–æ–º–∞—Ç–∏—á–Ω–µ –≤— —Ç–∞–Ω–æ–≤–ª–µ–Ω–Ω—è leverage —Ç–∞ margin_type —á–µ—Ä–µ–∑ Binance API
+- **Problem**:  ° ∏   Ç µ º    ù ï  ≤   Ç   Ω æ ≤ ª é î leverage  á µ   µ ∑ API,    æ ∫ ª   ¥   î Ç å   è  Ω      É á Ω µ  Ω   ª   à Ç É ≤   Ω Ω è
+- **Risk Level**: üî¥ HIGH -  Ω µ ≤ ñ ¥   æ ≤ ñ ¥ Ω ñ   Ç å  º ñ ∂  æ á ñ ∫ É ≤   Ω ∏ º (x50)  Ç      µ   ª å Ω ∏ º    ª µ á µ º
+- **Solution**:  † µ   ª ñ ∑ æ ≤   Ω æ    ≤ Ç æ º   Ç ∏ á Ω µ  ≤   Ç   Ω æ ≤ ª µ Ω Ω è leverage  Ç   margin_type  á µ   µ ∑ Binance API
 
 ### Changes
 
 1. **Configuration** (`config/aurora/trading.yaml`):
-   - ‚úÖ –î–æ–¥–∞–Ω–æ `leverage: 50` –¥–ª—è BTCUSDT —Ç–∞ ETHUSDT
-   - ‚úÖ –î–æ–¥–∞–Ω–æ `margin_type: cross` –¥–ª—è –æ–±–æ—Ö —ñ–Ω— —Ç—Ä—É–º–µ–Ω—Ç—ñ–≤
+   - ‚úÖ  î æ ¥   Ω æ `leverage: 50`  ¥ ª è BTCUSDT  Ç   ETHUSDT
+   - ‚úÖ  î æ ¥   Ω æ `margin_type: cross`  ¥ ª è  æ ± æ Ö  ñ Ω   Ç   É º µ Ω Ç ñ ≤
 
 2. **BinanceExecutionAdapter** (new methods):
    - ‚úÖ `initialize_margin_settings(instruments_config)` - orchestrates setup
@@ -301,7 +301,7 @@
    - ‚úÖ Passes `instruments_config` from trading configuration
 
 4. **Documentation**:
-   - ‚úÖ Research report: `docs/–•–∞–∑—è–π— —Ç–≤–æ/LEVERAGE_RESEARCH_REPORT.md`
+   - ‚úÖ Research report: `docs/ •   ∑ è π   Ç ≤ æ/LEVERAGE_RESEARCH_REPORT.md`
    - ‚úÖ Journal entry: `JOURNAL.md` with RID: AURORA_LEVERAGE_SETUP_V1
 
 ---
@@ -424,31 +424,31 @@
 
 ### Investigation Summary
 
-- **Problem**: BTCUSDT –Ω–µ –≥–µ–Ω–µ—Ä—É–≤–∞–≤ —Ç–æ—Ä–≥–æ–≤—ñ –Ω–∞–º—ñ—Ä–∏ (qty=0), —Ç—ñ–ª—å–∫–∏ ETHUSDT –ø—Ä–∞—Ü—é–≤–∞–≤
-- **Root Cause**: BTCUSDT –≤—ñ–¥— —É—Ç–Ω—ñ–π —É `config/aurora/trading.yaml` ‚Üí `instruments` section
+- **Problem**: BTCUSDT  Ω µ  ≥ µ Ω µ   É ≤   ≤  Ç æ   ≥ æ ≤ ñ  Ω   º ñ   ∏ (qty=0),  Ç ñ ª å ∫ ∏ ETHUSDT        Ü é ≤   ≤
+- **Root Cause**: BTCUSDT  ≤ ñ ¥   É Ç Ω ñ π  É `config/aurora/trading.yaml` ‚Üí `instruments` section
 - **Diagnostic Approach**:
-  1. –î–æ–¥–∞–Ω–æ DEBUG –ª–æ–≥—É–≤–∞–Ω–Ω—è –≤ `decision_making.py` (position sizing + qty conversion)
-  2. –ê–Ω–∞–ª—ñ–∑ –ª–æ–≥—ñ–≤ `aurora_trades.log` (455 —Ä—è–¥–∫—ñ–≤) - —Ç—ñ–ª—å–∫–∏ ETHUSDT –∑–∞–ø–∏— –∏
-  3. –ü–µ—Ä–µ–≤—ñ—Ä–∫–∞ –∫–æ–Ω—Ñ—ñ–≥—É—Ä–∞—Ü—ñ—ó - –≤–∏—è–≤–ª–µ–Ω–æ –≤—ñ–¥— —É—Ç–Ω—ñ— —Ç—å BTCUSDT
-- **Solution**: –î–æ–¥–∞–Ω–æ BTCUSDT –¥–æ `trading.yaml` –∑ –ø–∞—Ä–∞–º–µ—Ç—Ä–∞–º–∏:
+  1.  î æ ¥   Ω æ DEBUG  ª æ ≥ É ≤   Ω Ω è  ≤ `decision_making.py` (position sizing + qty conversion)
+  2.  ê Ω   ª ñ ∑  ª æ ≥ ñ ≤ `aurora_trades.log` (455    è ¥ ∫ ñ ≤) -  Ç ñ ª å ∫ ∏ ETHUSDT  ∑     ∏   ∏
+  3.  ü µ   µ ≤ ñ   ∫    ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó -  ≤ ∏ è ≤ ª µ Ω æ  ≤ ñ ¥   É Ç Ω ñ   Ç å BTCUSDT
+- **Solution**:  î æ ¥   Ω æ BTCUSDT  ¥ æ `trading.yaml`  ∑          º µ Ç     º ∏:
   - `min_qty: 0.001`
   - `lot_step: 0.001`
   - `tick_size: 0.01`
   - `max_notional_usd: 10000000`
 - **Modified Files**:
-  - `apps/reference/domains/decision_making/decision_making.py` - –¥—ñ–∞–≥–Ω–æ— —Ç–∏—á–Ω–µ –ª–æ–≥—É–≤–∞–Ω–Ω—è
-  - `config/aurora/trading.yaml` - –¥–æ–¥–∞–Ω–æ BTCUSDT instrument
-  - `JOURNAL.md` - –¥–æ–∫—É–º–µ–Ω—Ç–æ–≤–∞–Ω–æ –∞–Ω–∞–ª—ñ–∑ –∑ RID: AURORA_QTY0_DIAG_V1
+  - `apps/reference/domains/decision_making/decision_making.py` -  ¥ ñ   ≥ Ω æ   Ç ∏ á Ω µ  ª æ ≥ É ≤   Ω Ω è
+  - `config/aurora/trading.yaml` -  ¥ æ ¥   Ω æ BTCUSDT instrument
+  - `JOURNAL.md` -  ¥ æ ∫ É º µ Ω Ç æ ≤   Ω æ    Ω   ª ñ ∑  ∑ RID: AURORA_QTY0_DIAG_V1
 
 ### Next Steps
 
-- [ ] –ü–µ—Ä–µ–∑–∞–ø—É— —Ç–∏—Ç–∏ — –∏— —Ç–µ–º—É –∑ `LOG_LEVEL=DEBUG` –¥–ª—è –≤–µ—Ä–∏—Ñ—ñ–∫–∞—Ü—ñ—ó —Ä–æ–∑—Ä–∞—Ö—É–Ω–∫—ñ–≤ qty
-- [ ] –ó—ñ–±—Ä–∞—Ç–∏ –ª–æ–≥–∏ –∑ –¥—ñ–∞–≥–Ω–æ— —Ç–∏—á–Ω–∏–º–∏ –º—ñ—Ç–∫–∞–º–∏ `[QTY_DIAG]` –¥–ª—è –æ–±–æ—Ö —ñ–Ω— —Ç—Ä—É–º–µ–Ω—Ç—ñ–≤
-- [ ] –ú–æ–∂–ª–∏–≤–æ –∑–Ω–∞–¥–æ–±–∏—Ç—å— —è –∫–æ—Ä–∏–≥—É–≤–∞–Ω–Ω—è –ø–∞—Ä–∞–º–µ—Ç—Ä—ñ–≤ —Ä–∏–∑–∏–∫—É (`cvar_limit_usd`) –¥–ª—è BTCUSDT —á–µ—Ä–µ–∑ –≤–∏— –æ–∫—É —Ü—ñ–Ω—É
+- [ ]  ü µ   µ ∑     É   Ç ∏ Ç ∏    ∏   Ç µ º É  ∑ `LOG_LEVEL=DEBUG`  ¥ ª è  ≤ µ   ∏ Ñ ñ ∫   Ü ñ ó    æ ∑     Ö É Ω ∫ ñ ≤ qty
+- [ ]  ó ñ ±     Ç ∏  ª æ ≥ ∏  ∑  ¥ ñ   ≥ Ω æ   Ç ∏ á Ω ∏ º ∏  º ñ Ç ∫   º ∏ `[QTY_DIAG]`  ¥ ª è  æ ± æ Ö  ñ Ω   Ç   É º µ Ω Ç ñ ≤
+- [ ]  ú æ ∂ ª ∏ ≤ æ  ∑ Ω   ¥ æ ± ∏ Ç å   è  ∫ æ   ∏ ≥ É ≤   Ω Ω è          º µ Ç   ñ ≤    ∏ ∑ ∏ ∫ É (`cvar_limit_usd`)  ¥ ª è BTCUSDT  á µ   µ ∑  ≤ ∏   æ ∫ É  Ü ñ Ω É
 
 ---
 
-## ÔøΩ ACTIVE: Phase L4 - Disaster Recovery Implementation (FSMP-RESILIENCE)
+## Ô Ω ACTIVE: Phase L4 - Disaster Recovery Implementation (FSMP-RESILIENCE)
 
 **Baseline:** `feat/vfoundation-aurora-integration` | **Status:** IN PROGRESS | **Priority:** P0
 
@@ -483,8 +483,8 @@
 
 - [x] **Part E**: Implement snapshot + WAL replay logic ‚úÖ DONE [2025-10-20]
   - **Module**: `apps/reference/dr_loader.py` with 2 core functions
-  - **Function 1**: `find_latest_snapshot()` - –ó–Ω–∞—Ö–æ–¥–∏—Ç—å –Ω–∞–π–Ω–æ–≤—ñ—à–∏–π snapshot –∑–∞ mtime
-  - **Function 2**: `replay_wal_after()` - –í—ñ–¥—Ç–≤–æ—Ä—é—î WAL –ø–æ–¥—ñ—ó –ø—ñ— –ª—è snapshot timestamp
+  - **Function 1**: `find_latest_snapshot()` -  ó Ω   Ö æ ¥ ∏ Ç å  Ω   π Ω æ ≤ ñ à ∏ π snapshot  ∑   mtime
+  - **Function 2**: `replay_wal_after()` -  í ñ ¥ Ç ≤ æ   é î WAL    æ ¥ ñ ó    ñ   ª è snapshot timestamp
   - **Integration**: Modified `main.py` with 42-line DR restoration section
   - **Process**: Load snapshot ‚Üí replay WAL ‚Üí validate state
   - **Features**: Timestamp filtering, corrupted line handling, event type filtering
@@ -547,7 +547,7 @@
   - **Collateral Fixes**: TTL cache timing (4 tests), retry policy jitter tolerance (1 test)
   - **WHY**: "Minimal implementation to pass test, enable regime-aware trading [FSMP-PORTING-T01C]"
 
-- [x] **Part E**: Integration test ‚Äî regime_detector ‚Üí decision_making ‚úÖ DONE [2025-10-21]
+- [x] **Part E**: Integration test ‚ î regime_detector ‚Üí decision_making ‚úÖ DONE [2025-10-21]
   - **Test File**: `tests/integration/test_regime_awareness.py` (110 lines)
   - **Test Method**: `test_decision_making_aggregates_regime_data`
   - **Scenario**: EVT:REGIME_DETECTED aggregation in DecisionMaking domain
@@ -620,9 +620,9 @@
   - **Implementation**: Added MEAN_REVERSION detection logic in `handle_event()` BEFORE trend checks
   - **Threshold**: Decimal("0.005") (0.5%) for tight clustering tolerance
   - **Metrics**:
-    - `sma_spread = abs(sma_short - sma_long) / sma_long` ‚Äî spread between SMAs
-    - `price_deviation_short = abs(price - sma_short) / sma_short` ‚Äî distance from short SMA
-    - `price_deviation_long = abs(price - sma_long) / sma_long` ‚Äî distance from long SMA
+    - `sma_spread = abs(sma_short - sma_long) / sma_long` ‚ î spread between SMAs
+    - `price_deviation_short = abs(price - sma_short) / sma_short` ‚ î distance from short SMA
+    - `price_deviation_long = abs(price - sma_long) / sma_long` ‚ î distance from long SMA
   - **Condition**: ALL three metrics < 0.5% threshold
   - **Confidence**: `min(0.95, 0.5 + tightness * 100.0)` where `tightness = threshold - max(deviations)`
     - Tighter clustering ‚Üí higher confidence (bounded [0.5, 0.95])
@@ -661,7 +661,7 @@
 - [x] **Part K**: HIGH_VOLATILITY regime detection ‚úÖ DONE [2025-10-21]
   - **Detection**: ATR-based volatility spike detection
   - **Algorithm**: `volatility_ratio = atr_14 / atr_14_sma_100 > threshold_multiplier` (default 2.0x)
-  - **Confidence**: `min(0.95, 0.5 + (ratio - threshold) * 2.0)` ‚Äî higher confidence with bigger spikes
+  - **Confidence**: `min(0.95, 0.5 + (ratio - threshold) * 2.0)` ‚ î higher confidence with bigger spikes
   - **Priority**: HIGHEST (checked BEFORE mean reversion and trend detection)
   - **Implementation**: `regime_detector.py` lines ~100-127 (PRIORITY 1: Volatility Regime Detection)
   - **Config**: `models.volatility.enabled`, `models.volatility.threshold_multiplier`, `models.volatility.atr_period`
@@ -683,7 +683,7 @@
 - [x] **Part L**: LOW_VOLATILITY regime detection ‚úÖ DONE [2025-10-21]
   - **Detection**: ATR significantly below long-term average (calm market)
   - **Algorithm**: `volatility_ratio = atr_14 / atr_14_sma_100 < low_vol_multiplier` (default 0.5x)
-  - **Confidence**: `min(0.95, 0.5 + (threshold - ratio) * 3.0)` ‚Äî higher confidence with calmer markets
+  - **Confidence**: `min(0.95, 0.5 + (threshold - ratio) * 3.0)` ‚ î higher confidence with calmer markets
   - **Priority**: HIGHEST (checked in PRIORITY 1 volatility section with HIGH_VOLATILITY)
   - **Implementation**: `regime_detector.py` lines ~120-145 (symmetric if/elif with HIGH_VOL)
   - **Config**: `models.volatility.enabled`, `models.volatility.low_vol_multiplier`
@@ -700,7 +700,7 @@
 
 - [x] **Part N**: HIGH_VOLATILITY adaptive sizing ‚úÖ DONE [2025-10-21]
   - **Feature**: Automatically reduce position sizes during volatile markets
-  - **Algorithm**: `position_size *= sizing_modifiers[regime]` ‚Äî universal config-driven modifier system
+  - **Algorithm**: `position_size *= sizing_modifiers[regime]` ‚ î universal config-driven modifier system
   - **Config Structure**: `trading.decision.sizing_modifiers`
     ```yaml
     sizing_modifiers:
@@ -708,7 +708,7 @@
       LOW_VOLATILITY: "1.2"     # 20% increase (optional)
       MEAN_REVERSION: "0.5"     # 50% reduction (backward compatible)
     ```
-  - **Priority System**: VOLATILITY (1) ‚Üí MEAN_REVERSION (2) ‚Äî volatility checked first
+  - **Priority System**: VOLATILITY (1) ‚Üí MEAN_REVERSION (2) ‚ î volatility checked first
   - **Implementation**: `decision_making.py` lines ~288-336 (regime-adaptive sizing block)
   - **Test File**: `tests/integration/test_regime_awareness.py` (+88 lines)
   - **Test Method**: `test_decision_making_reduces_position_size_in_high_volatility_regime`
@@ -757,7 +757,7 @@
   - **Test Suite**: `tests/integration/test_regime_awareness.py` (+154 lines)
   - **Test Method**: `test_decision_making_increases_position_size_in_low_volatility_regime`
   - **Test Scenario**: Very strong buy (OBI=0.9, TFI=0.9) in LOW_VOL ‚Üí size increased 100 ‚Üí 120 USD (1.2 multiplier)
-  - **TDD Outcome**: üü¢ **Immediate GREEN** ‚Äî test passed on first run, no RED phase needed
+  - **TDD Outcome**: üü¢ **Immediate GREEN** ‚ î test passed on first run, no RED phase needed
   - **Validation**: 762 tests passing (761 existing + 1 new LOW_VOL sizing test), zero regressions
   - **Integration Tests**: 6/6 regime-aware tests passing (aggregation, counter-trend blocks, 3x sizing tests)
   - **Business Value**:
@@ -780,9 +780,9 @@
   - **Test Method**: `test_emitted_trade_intent_conforms_to_schema`
   - **Validation**: `jsonschema.validate(instance=emitted_payload, schema=TRADE_INTENT_SCHEMA)`
   - **Test Scenario**: Strong buy signal (OBI=0.9, TFI=0.9) ‚Üí validates TradeIntent payload structure
-  - **Test Results**: ‚úÖ PASSED ‚Äî full payload compliance with schema
+  - **Test Results**: ‚úÖ PASSED ‚ î full payload compliance with schema
   - **Validation**: **763 tests passing** (762 existing + 1 new TradeIntent contract test), zero regressions
-  - **Integration**: Completes symmetric validation ‚Äî input (REGIME_DETECTED) + output (TRADE_INTENT_PROPOSED)
+  - **Integration**: Completes symmetric validation ‚ î input (REGIME_DETECTED) + output (TRADE_INTENT_PROPOSED)
   - **Business Value**:
     - Output contract integrity for DecisionMaking domain
     - Prevents malformed or incomplete trade proposals
@@ -854,10 +854,10 @@
       - Does NOT call real exchange APIs
       - Enables safe testing of execution logic
     - **Logging**:
-      - `BRIDGE: Received...` ‚Äî incoming event
-      - `BRIDGE: Dispatched CMD:OPEN with rid=...` ‚Äî outgoing command
-      - `BRIDGE: Execution FSM processed...` ‚Äî FSM result
-      - `BRIDGE: Execution rejected...` ‚Äî error handling
+      - `BRIDGE: Received...` ‚ î incoming event
+      - `BRIDGE: Dispatched CMD:OPEN with rid=...` ‚ î outgoing command
+      - `BRIDGE: Execution FSM processed...` ‚ î FSM result
+      - `BRIDGE: Execution rejected...` ‚ î error handling
     - **Validation**: 766 tests passed (0 regressions)
     - **Critical Discovery**: Schema uses `order.qty` (not `qty_usd`)
       - Confirmed by `trade_intent_v1.json` schema (lines 90-94)
@@ -896,7 +896,7 @@
     - **Business Value**: Cement" bridge implementation with comprehensive integration test
     - **WHY**: "Validate Decision‚ÜíExecution bridge with end-to-end integration test covering payload transformation, XAI preservation, and tracing [FSMP-EXECUTE-T03]"
   
-  - [ ] **Part EXECUTE-T04**: Execution Adapter Architecture (–§–∞–∑–∞ F: Connectors & Adapters)
+  - [ ] **Part EXECUTE-T04**: Execution Adapter Architecture ( §   ∑   F: Connectors & Adapters)
     - [x] **Part EXECUTE-T04-A**: Abstract Execution Adapter Interface ‚úÖ DONE [2025-01-23]
       - **Feature Goal**: Define contract between execution_position FSM and trading venues
       - **File**: `apps/reference/domains/execution_position/execution_adapter.py` (180 lines)
@@ -915,7 +915,7 @@
       - **Documentation**: Comprehensive docstrings with examples, error handling, implementation notes
       - **Type Safety**: Full type hints (Dict[str, Any], type aliases OrderResult/CancelResult/AdapterStatus)
       - **Validation**: Mypy ‚úÖ, 766 tests passed (0 regressions)
-      - **Architecture**: Dependency Inversion ‚Äî FSM depends on abstraction, not concrete implementations
+      - **Architecture**: Dependency Inversion ‚ î FSM depends on abstraction, not concrete implementations
       - **Future Implementations**:
         - BinanceExecutionAdapter (real exchange API)
         - SimulatedExecutionAdapter (shadow mode, backtesting)
@@ -1107,7 +1107,7 @@
 
 ---
 
-## üéØ Current Sprint: P2 ‚Äî Real SDK Adapter + Distributed Idempotency
+## üéØ Current Sprint: P2 ‚ î Real SDK Adapter + Distributed Idempotency
 
 **Baseline:** `feat/p2-execution-adapter` | **Status:** On Hold (Bug Fixes First)
 
@@ -1120,8 +1120,8 @@
   - üìù **GATE PASSED**: Contract artifacts created and validated
 
 - [x] **FSMP-P2-T02**: Distributed idempotency ‚Üí ‚úÖ PASS; 48/48 tests; cov=90%; mypy=0; p95‚â§10ms [2025-10-15]
-  - ‚úÖ **48/48 tests PASS** (100% success rate) ‚Äî +2 new tests (ImportError guard via MetaPathFinder, CB full cycle controlled clock)
-  - ‚úÖ **Coverage 90%** (redis_store.py: 220 stmt, 21 miss) ‚Äî **GATE MET** (+6% from 84% baseline)
+  - ‚úÖ **48/48 tests PASS** (100% success rate) ‚ î +2 new tests (ImportError guard via MetaPathFinder, CB full cycle controlled clock)
+  - ‚úÖ **Coverage 90%** (redis_store.py: 220 stmt, 21 miss) ‚ î **GATE MET** (+6% from 84% baseline)
   - ‚úÖ **mypy --strict = 0** (RedisClientProtocol, RecordTD, cast[], Callable[[], T])
   - ‚úÖ **p95 ‚â§ 10ms** (controlled clock, no real sleep), **WHY‚â§80**, all gates met
   - üìù **GATE PASSED**: Lines 19-21 (ImportError via MetaPathFinder), 272-285 (CB full cycle: OPEN‚ÜíHALF_OPEN‚ÜíCLOSED, counter reset at 200)
@@ -1301,20 +1301,20 @@
   - ‚úÖ Test scenarios: Strong LONG signal (capped by liquidity/CVaR), NEUTRAL signal (below threshold), position size below minimum rejection
   - ‚úÖ Validates decision branches: Lines 152-154 (side="buy"), 157-160 (neutral rejection), 225-228 (min size check), 212-218 (multi-cap constraints)
   - ‚úÖ Full Message protocol integration: proper verb/op/pld structure, emit verification via mock_fsm_core.emit.call_args
-  - ‚ö†Ô∏è Discovered bug: SHORT signals produce negative position size (Kelly calculation issue for sell side) ‚Äî test marked as SKIPPED with explanation
+  - ‚ö†Ô∏è Discovered bug: SHORT signals produce negative position size (Kelly calculation issue for sell side) ‚ î test marked as SKIPPED with explanation
   - ‚úÖ Tests: 15 passed, 1 skipped (93.75% success rate)
   - ‚úÖ Coverage improvement: 77% ‚Üí 79% (+2 percentage points); decision logic branches partially covered
   - ‚ö†Ô∏è Remaining gaps: Lines 30, 155, 186-189, 225-233, 236-237, 247-249, 307-308, 337-367 (~41 lines, 21%)
   - üìù **GATE PROGRESS**: Decision logic core paths verified; need 11 more percentage points for 90% target
-  - üêõ **Bug found**: `decision_making.py` line ~210-220: Kelly-based sizing produces negative values for SHORT (sell) signals ‚Äî requires investigation of formula: `kelly_based_size = equity * kelly_fraction * kelly_conservative_factor`
+  - üêõ **Bug found**: `decision_making.py` line ~210-220: Kelly-based sizing produces negative values for SHORT (sell) signals ‚ î requires investigation of formula: `kelly_based_size = equity * kelly_fraction * kelly_conservative_factor`
   - üéØ **Next steps**: Fix SHORT signal bug OR add helper method tests (lines 337-367) + general Exception handler (307-308) to reach 90%
 
 - [x] **FSMP-PERFECT-T12**: SHORT Signal Bug Fix ‚Üí DONE; 16/16 tests pass (100%); coverage 79% stable [2025-01-17]
   - ‚úÖ Fixed critical bug in decision_making.py line 167: Changed `p_raw = base_prob + signal_score` to `p_raw = base_prob + abs(signal_score)`
   - ‚úÖ Root cause: Negative signal_score for SHORT trades propagated into probability calculation, resulting in negative Kelly fraction and negative position_size
   - ‚úÖ Solution: Use absolute value of signal_score for probability/sizing; direction (buy/sell) already determined separately at lines 152-156
-  - ‚úÖ Removed @pytest.mark.skip from test_short_signal_uses_cvar_cap ‚Äî test now PASSES with positive position size
-  - ‚úÖ Verification: `Trade intent approved: ETHUSDT sell p=0.874 size=$200.00` ‚Äî correct positive sizing for SHORT
+  - ‚úÖ Removed @pytest.mark.skip from test_short_signal_uses_cvar_cap ‚ î test now PASSES with positive position size
+  - ‚úÖ Verification: `Trade intent approved: ETHUSDT sell p=0.874 size=$200.00` ‚ î correct positive sizing for SHORT
   - ‚úÖ Tests: 16/16 passed (100% success rate, up from 93.75%)
   - ‚úÖ Coverage: 79% maintained (line 155 `side = "sell"` now fully covered and functional)
   - ‚ö†Ô∏è Remaining gaps: Lines 30, 188-191, 227-235, 238-239, 249-251, 309-310, 339-369 (~40 lines, 21%)
@@ -1332,7 +1332,7 @@
   - ‚ö†Ô∏è Note: Expected ~16% gain (lines 339-369), but those are _validate_trade_intent method, not the extracted helpers; actual helper methods ~20 lines
   - ‚ö†Ô∏è Remaining gaps: Lines 30, 228-236, 239-240, 250-252, 310-311, 340-370 (~37 lines, 8 percentage points to 90%)
   - üìù **GATE PROGRESS**: Core decision math verified via isolated unit tests; 82% coverage milestone reached
-  - üéØ **Next steps**: Target remaining branches ‚Äî cap selection logic (228-236), exception handler (310-311), _validate_trade_intent (340-370) to reach 90%
+  - üéØ **Next steps**: Target remaining branches ‚ î cap selection logic (228-236), exception handler (310-311), _validate_trade_intent (340-370) to reach 90%
 
 - [x] **FSMP-PERFECT-T14**: Trade Intent Validation Tests ‚Üí DONE; 70/70 tests pass (100%); coverage 82%‚Üí93% (+11%) **üéØ TARGET EXCEEDED!** [2025-01-17]
   - ‚úÖ Created tests/domains/test_decision_making_trade_intent_validation.py with 32 comprehensive validation tests
@@ -1341,7 +1341,7 @@
   - ‚úÖ Parametrized tests: 7 invalid side values, 5 invalid probabilities, 4 valid probabilities, 3 invalid position sizes, 3 valid position sizes
   - ‚úÖ Verified Fail-Closed: All validation failures logged with descriptive error messages, return False on any validation error
   - ‚úÖ Tests: 70/70 passed (100% success rate, +32 new tests)
-  - ‚úÖ Coverage: 82% ‚Üí 93% (+11 percentage points) ‚Äî **EXCEEDED 90% TARGET!**
+  - ‚úÖ Coverage: 82% ‚Üí 93% (+11 percentage points) ‚ î **EXCEEDED 90% TARGET!**
   - ‚úÖ Lines covered: 340-370 (_validate_trade_intent method fully tested)
   - ‚ö†Ô∏è Remaining gaps: Lines 30, 228-236, 239-240, 250-252, 310-311 (15 lines, 7% to 100%)
   - üìù **GATE PROGRESS**: 90% milestone achieved and surpassed! Trade intent validation layer fully verified
@@ -1353,7 +1353,7 @@
   - ‚úÖ Test verifies EVT:TRADE_INTENT_PROPOSED ‚Üí CMD:OPEN transformation and execution_position.handle() call
   - ‚úÖ Used mock domains to avoid import issues in integration test environment
   - ‚úÖ Test passed: 1/1 ‚úÖ (bridge correctly maps fields, creates Message, calls execution FSM)
-  - üìù **DoD MET**: Integration test confirms "–º—ñ— —Ç" –ø—Ä–∞—Ü—é—î, –ø–æ–¥—ñ—ó —Ç—Ä–∞–Ω— —Ñ–æ—Ä–º—É—é—Ç—å— —è –≤ –∫–æ–º–∞–Ω–¥–∏
+  - üìù **DoD MET**: Integration test confirms " º ñ   Ç"        Ü é î,    æ ¥ ñ ó  Ç     Ω   Ñ æ   º É é Ç å   è  ≤  ∫ æ º   Ω ¥ ∏
 
 - [x] **FSMP-EXECUTE-T04-A**: Abstract Execution Adapter Class ‚Üí DONE; AbstractExecutionAdapter created with place_order, cancel_order, get_status methods [2025-10-17]
   - ‚úÖ Created apps/reference/domains/execution_position/execution_adapter.py with abstract interface
@@ -1372,12 +1372,12 @@
   - ‚úÖ Tests cover inheritance, interface compliance, error handling, symbol adaptation, feedback creation
   - üìù **DoD MET**: Concrete adapter implements all abstract methods, passes unit tests, ready for integration with execution FSM
 
-- [x] **FSMP-EXECUTE-T05**: –Ü–Ω—Ç–µ–≥—Ä–∞—Ü—ñ—è –ê–¥–∞–ø—Ç–µ—Ä–∞ –í–∏–∫–æ–Ω–∞–Ω–Ω—è –≤ Execution FSM ‚Üí DONE; —Ç–µ— —Ç —ñ–Ω—Ç–µ–≥—Ä–∞—Ü—ñ—ó –ø—Ä–æ–π—à–æ–≤; –∞–¥–∞–ø—Ç–µ—Ä –≤–∏–∫–ª–∏–∫–∞—î—Ç—å— —è –Ω–∞ DEC:OPEN [2025-10-17]
-  - ‚úÖ –ú–æ–¥–∏—Ñ—ñ–∫–æ–≤–∞–Ω–æ ExecPosFSM.__init__ –¥–ª—è –ø—Ä–∏–π–æ–º—É config/fsm/shadow_mode —Ç–∞ —ñ–Ω—ñ—Ü—ñ–∞–ª—ñ–∑–∞—Ü—ñ—ó BinanceExecutionAdapter
-  - ‚úÖ –î–æ–¥–∞–Ω–æ –ª–æ–≥—ñ–∫—É –≤–∏–∫–ª–∏–∫—É adapter.place_order() –ø—ñ— –ª—è –≥–µ–Ω–µ—Ä–∞—Ü—ñ—ó DEC:OPEN –≤ handle_event
-  - ‚úÖ –°—Ç–≤–æ—Ä–µ–Ω–æ tests/integration/test_fsm_adapter_integration.py –∑ —ñ–Ω—Ç–µ–≥—Ä–∞—Ü—ñ–π–Ω–∏–º —Ç–µ— —Ç–æ–º
-  - ‚úÖ –¢–µ— —Ç –ø—Ä–æ–π—à–æ–≤: FSM –ø—Ä–∞–≤–∏–ª—å–Ω–æ –º–∞—Ä—à—Ä—É—Ç–∏–∑—É—î CMD:OPEN ‚Üí DEC:OPEN ‚Üí adapter.place_order()
-  - üìù **GATE PASSED**: –Ü–Ω—Ç–µ–≥—Ä–∞—Ü—ñ—è –∞–¥–∞–ø—Ç–µ—Ä–∞ –∑–∞–≤–µ—Ä—à–µ–Ω–∞, –Ω–∞— –∫—Ä—ñ–∑–Ω–∏–π –ø–æ—Ç—ñ–∫ –≤—ñ–¥ —Ä—ñ—à–µ–Ω–Ω—è –¥–æ –≤–∏–∫–æ–Ω–∞–Ω–Ω—è –≤— —Ç–∞–Ω–æ–≤–ª–µ–Ω–æ
+- [x] **FSMP-EXECUTE-T05**:  Ü Ω Ç µ ≥     Ü ñ è  ê ¥     Ç µ      í ∏ ∫ æ Ω   Ω Ω è  ≤ Execution FSM ‚Üí DONE;  Ç µ   Ç  ñ Ω Ç µ ≥     Ü ñ ó      æ π à æ ≤;    ¥     Ç µ    ≤ ∏ ∫ ª ∏ ∫   î Ç å   è  Ω   DEC:OPEN [2025-10-17]
+  - ‚úÖ  ú æ ¥ ∏ Ñ ñ ∫ æ ≤   Ω æ ExecPosFSM.__init__  ¥ ª è      ∏ π æ º É config/fsm/shadow_mode  Ç    ñ Ω ñ Ü ñ   ª ñ ∑   Ü ñ ó BinanceExecutionAdapter
+  - ‚úÖ  î æ ¥   Ω æ  ª æ ≥ ñ ∫ É  ≤ ∏ ∫ ª ∏ ∫ É adapter.place_order()    ñ   ª è  ≥ µ Ω µ     Ü ñ ó DEC:OPEN  ≤ handle_event
+  - ‚úÖ  ° Ç ≤ æ   µ Ω æ tests/integration/test_fsm_adapter_integration.py  ∑  ñ Ω Ç µ ≥     Ü ñ π Ω ∏ º  Ç µ   Ç æ º
+  - ‚úÖ  ¢ µ   Ç      æ π à æ ≤: FSM        ≤ ∏ ª å Ω æ  º     à   É Ç ∏ ∑ É î CMD:OPEN ‚Üí DEC:OPEN ‚Üí adapter.place_order()
+  - üìù **GATE PASSED**:  Ü Ω Ç µ ≥     Ü ñ è    ¥     Ç µ      ∑   ≤ µ   à µ Ω  ,  Ω     ∫   ñ ∑ Ω ∏ π    æ Ç ñ ∫  ≤ ñ ¥    ñ à µ Ω Ω è  ¥ æ  ≤ ∏ ∫ æ Ω   Ω Ω è  ≤   Ç   Ω æ ≤ ª µ Ω æ
 
 - [ ] **FSMP-P2-T03**: Portfolio Accounting ‚Üí Branch: `feat/p2-portfolio-accounting` [NEXT]
   - [ ] Position aggregator FSM (LONG/SHORT/FLAT sum by symbol)
@@ -1421,11 +1421,11 @@
 
 ## ‚úÖ Completed Tasks (P0)
 
-- [x] **FSMP-P0-T03**: –ü—ñ–¥–Ω—è—Ç–∏ –ø–æ–∫—Ä–∏—Ç—Ç—è –¥–æ 89% ‚Üí Merged in v2-clean
+- [x] **FSMP-P0-T03**:  ü ñ ¥ Ω è Ç ∏    æ ∫   ∏ Ç Ç è  ¥ æ 89% ‚Üí Merged in v2-clean
 - [x] **FSMP-P0-T07**: Security & XAI Tightening (RBAC, signature, WHY-discipline) ‚Üí Merged in v2-clean (tag: v2-clean-P0-PASS)
 
 ### P1 Task List
-- [x] **FSMP-P1-T01**: ACL adapter –¥–ª—è execution_position (exchange events ‚áÑ Message, shadow stub)
+- [x] **FSMP-P1-T01**: ACL adapter  ¥ ª è execution_position (exchange events ‚áÑ Message, shadow stub)
 - [x] **FSMP-P1-T04**: ENV-based config (9 params: RBAC_ADMIN_TOKENS, SIGNING_KEY, WAL_DIR, CB_*, IDEM_*, DRIFT_*)
 - [x] **FSMP-P1-T05**: Shadow replay fixtures + CLI commands (`vfound replay/drift`)
 - [x] **FSMP-P1-T06**: CI/QA gates (lint/type/test‚â•90%/smoke/build)
@@ -1458,48 +1458,48 @@
 
 ---
 
-## üöÄ ACTIVE: Phase PROD-PREP - Production Readiness (FSMP-PROD-PREP)
+## üö  ACTIVE: Phase PROD-PREP - Production Readiness (FSMP-PROD-PREP)
 
 **Baseline:** `feat/vfoundation-aurora-integration` | **Status:** IN PROGRESS | **Priority:** P0
 
-### üéØ Task 01: –¶–µ–Ω—Ç—Ä–∞–ª—ñ–∑–æ–≤–∞–Ω–∞ –ö–æ–Ω—Ñ—ñ–≥—É—Ä–∞—Ü—ñ—è –ö–æ–º–ø–æ–Ω–µ–Ω—Ç—ñ–≤ (FSMP-PROD-PREP-T01)
+### üéØ Task 01:  ¶ µ Ω Ç     ª ñ ∑ æ ≤   Ω    ö æ Ω Ñ ñ ≥ É     Ü ñ è  ö æ º   æ Ω µ Ω Ç ñ ≤ (FSMP-PROD-PREP-T01)
 
-- [x] **Part A**: –¶–µ–Ω—Ç—Ä–∞–ª—ñ–∑—É–≤–∞—Ç–∏ –æ–ø–µ—Ä–∞—Ü—ñ–π–Ω—ñ –ø–∞—Ä–∞–º–µ—Ç—Ä–∏ (— –∏–º–≤–æ–ª–∏, — —Ç—Ä—ñ–º–∏) ‚úÖ DONE [2025-01-25]
-  - **Problem**: –•–∞—Ä–¥–∫–æ–¥–∂–µ–Ω—ñ –∑–Ω–∞—á–µ–Ω–Ω—è `symbols = ["ethusdt"]` —É `MarketDataConnector` ‚Üí –Ω–µ–º–æ–∂–ª–∏–≤—ñ— —Ç—å –ø–µ—Ä–µ–º–∏–∫–∞–Ω–Ω—è –±–µ–∑ –∑–º—ñ–Ω –∫–æ–¥—É
-  - **Solution**: –í–∏–Ω–µ— —Ç–∏ –¥–æ `config/aurora/system.yaml` –∑ fallback-–ª–æ–≥—ñ–∫–æ—é
+- [x] **Part A**:  ¶ µ Ω Ç     ª ñ ∑ É ≤   Ç ∏  æ   µ     Ü ñ π Ω ñ          º µ Ç   ∏ (   ∏ º ≤ æ ª ∏,    Ç   ñ º ∏) ‚úÖ DONE [2025-01-25]
+  - **Problem**:  •     ¥ ∫ æ ¥ ∂ µ Ω ñ  ∑ Ω   á µ Ω Ω è `symbols = ["ethusdt"]`  É `MarketDataConnector` ‚Üí  Ω µ º æ ∂ ª ∏ ≤ ñ   Ç å    µ   µ º ∏ ∫   Ω Ω è  ± µ ∑  ∑ º ñ Ω  ∫ æ ¥ É
+  - **Solution**:  í ∏ Ω µ   Ç ∏  ¥ æ `config/aurora/system.yaml`  ∑ fallback- ª æ ≥ ñ ∫ æ é
   - **Changes**:
-    - –†–æ–∑—à–∏—Ä–µ–Ω–æ `config/aurora/system.yaml` –∑ –Ω–æ–≤–æ—é — –µ–∫—Ü—ñ—î—é `trading` (symbols_to_track, websocket_streams)
-    - –†–µ—Ñ–∞–∫—Ç–æ—Ä–∏–Ω–≥ `MarketDataConnector.__init__`: —á–∏—Ç–∞–Ω–Ω—è –∑ `config['system']['trading']`, fallback-–ª–∞–Ω—Ü—é–≥ (system.yaml ‚Üí trading.yaml instruments ‚Üí defaults)
-    - –†–µ—Ñ–∞–∫—Ç–æ—Ä–∏–Ω–≥ `_ws_loop`: –¥–∏–Ω–∞–º—ñ—á–Ω–∏–π —Ü–∏–∫–ª — —Ç–≤–æ—Ä–µ–Ω–Ω—è — —Ç—Ä—ñ–º—ñ–≤ –∑–∞–º—ñ— —Ç—å —Ö–∞—Ä–¥–∫–æ–¥–∂–µ–Ω–∏—Ö –≤–∏–∫–ª–∏–∫—ñ–≤
-    - –û–Ω–æ–≤–ª–µ–Ω–æ `main.py`: –ø–µ—Ä–µ–¥–∞—á–∞ `config.to_dict()` –∑–∞–º—ñ— —Ç—å `config.trading`
+    -  † æ ∑ à ∏   µ Ω æ `config/aurora/system.yaml`  ∑  Ω æ ≤ æ é    µ ∫ Ü ñ î é `trading` (symbols_to_track, websocket_streams)
+    -  † µ Ñ   ∫ Ç æ   ∏ Ω ≥ `MarketDataConnector.__init__`:  á ∏ Ç   Ω Ω è  ∑ `config['system']['trading']`, fallback- ª   Ω Ü é ≥ (system.yaml ‚Üí trading.yaml instruments ‚Üí defaults)
+    -  † µ Ñ   ∫ Ç æ   ∏ Ω ≥ `_ws_loop`:  ¥ ∏ Ω   º ñ á Ω ∏ π  Ü ∏ ∫ ª    Ç ≤ æ   µ Ω Ω è    Ç   ñ º ñ ≤  ∑   º ñ   Ç å  Ö     ¥ ∫ æ ¥ ∂ µ Ω ∏ Ö  ≤ ∏ ∫ ª ∏ ∫ ñ ≤
+    -  û Ω æ ≤ ª µ Ω æ `main.py`:    µ   µ ¥   á   `config.to_dict()`  ∑   º ñ   Ç å `config.trading`
   - **DoD Verification**:
-    - ‚úÖ –°–∏— —Ç–µ–º–∞ –∑–∞–ø—É— –∫–∞—î—Ç—å— —è –±–µ–∑ –ø–æ–º–∏–ª–æ–∫
-    - ‚úÖ –õ–æ–≥–∏ –ø–æ–∫–∞–∑—É—é—Ç—å –ø—ñ–¥–ø–∏— –∫—É –Ω–∞ –≤— —ñ — –∏–º–≤–æ–ª–∏: `['btcusdt', 'ethusdt']`
-    - ‚úÖ WebSocket –ø—ñ–¥—Ç–≤–µ—Ä–¥–∂–µ–Ω–Ω—è: –æ–±–∏–¥–≤–∞ bookTicker —ñ trade — —Ç–≤–æ—Ä–µ–Ω—ñ
-    - ‚úÖ –ñ–æ–¥–Ω–∏—Ö —Ö–∞—Ä–¥–∫–æ–¥–∂–µ–Ω–∏—Ö –ø–∞—Ä–∞–º–µ—Ç—Ä—ñ–≤ —É –∫–æ–¥—ñ
+    - ‚úÖ  ° ∏   Ç µ º    ∑     É   ∫   î Ç å   è  ± µ ∑    æ º ∏ ª æ ∫
+    - ‚úÖ  õ æ ≥ ∏    æ ∫   ∑ É é Ç å    ñ ¥   ∏   ∫ É  Ω    ≤   ñ    ∏ º ≤ æ ª ∏: `['btcusdt', 'ethusdt']`
+    - ‚úÖ WebSocket    ñ ¥ Ç ≤ µ   ¥ ∂ µ Ω Ω è:  æ ± ∏ ¥ ≤   bookTicker  ñ trade    Ç ≤ æ   µ Ω ñ
+    - ‚úÖ  ñ æ ¥ Ω ∏ Ö  Ö     ¥ ∫ æ ¥ ∂ µ Ω ∏ Ö          º µ Ç   ñ ≤  É  ∫ æ ¥ ñ
   - **Validation**: 723 tests passing, zero regressions
   - **WHY**: "Enable flexible, testable config without code changes [FSMP-PROD-PREP-T01A]"
 
-- [ ] **Part B**: –ü—Ä–æ— —Ç–∏–π — –∫—Ä–∏–ø—Ç –ø–µ—Ä–µ–≤—ñ—Ä–∫–∏ API-–∫–ª—é—á—ñ–≤ Binance
-  - **Goal**: –°—Ç–≤–æ—Ä–∏—Ç–∏ –∞–≤—Ç–æ–Ω–æ–º–Ω–∏–π — –∫—Ä–∏–ø—Ç –¥–ª—è —Ç–µ— —Ç—É–≤–∞–Ω–Ω—è –ø—ñ–¥–∫–ª—é—á–µ–Ω–Ω—è –¥–æ Binance API
+- [ ] **Part B**:  ü   æ   Ç ∏ π    ∫   ∏   Ç    µ   µ ≤ ñ   ∫ ∏ API- ∫ ª é á ñ ≤ Binance
+  - **Goal**:  ° Ç ≤ æ   ∏ Ç ∏    ≤ Ç æ Ω æ º Ω ∏ π    ∫   ∏   Ç  ¥ ª è  Ç µ   Ç É ≤   Ω Ω è    ñ ¥ ∫ ª é á µ Ω Ω è  ¥ æ Binance API
   - **Outputs**: GET /account, GET /balance, timestamp/signature validation
   - **Success**: 200 OK, valid JSON response with account data
   - **WHY**: "Isolate connectivity testing from application complexity [FSMP-PROD-PREP-T01B]"
 
-- [ ] **Part C**: –î–æ–∫—É–º–µ–Ω—Ç—É–≤–∞—Ç–∏ production checklist (deployment, monitoring, rollback)
+- [ ] **Part C**:  î æ ∫ É º µ Ω Ç É ≤   Ç ∏ production checklist (deployment, monitoring, rollback)
 
-### üéØ Task 02: –†–æ–∑—à–∏—Ä–µ–Ω–∏–π Live End-to-End Test (FSMP-PROD-PREP-T02)
+### üéØ Task 02:  † æ ∑ à ∏   µ Ω ∏ π Live End-to-End Test (FSMP-PROD-PREP-T02)
 
-- [ ] **Part A**: –ü–æ–≤–µ—Ä–Ω—É—Ç–∏— —è –¥–æ FSMP-EXECUTE-T05-LIVE –∑ extended runtime
-  - **Goal**: –û—Ç—Ä–∏–º–∞—Ç–∏ market ticks –ø—Ä–æ—Ç—è–≥–æ–º 30+ — –µ–∫—É–Ω–¥
-  - **Success**: –ü–æ–≤–Ω–∏–π –ø–æ—Ç—ñ–∫ MARKET_TICK ‚Üí FEATURES ‚Üí RISK ‚Üí DECISION ‚Üí BRIDGE ‚Üí EXECUTION
+- [ ] **Part A**:  ü æ ≤ µ   Ω É Ç ∏   è  ¥ æ FSMP-EXECUTE-T05-LIVE  ∑ extended runtime
+  - **Goal**:  û Ç   ∏ º   Ç ∏ market ticks      æ Ç è ≥ æ º 30+    µ ∫ É Ω ¥
+  - **Success**:  ü æ ≤ Ω ∏ π    æ Ç ñ ∫ MARKET_TICK ‚Üí FEATURES ‚Üí RISK ‚Üí DECISION ‚Üí BRIDGE ‚Üí EXECUTION
   - **WHY**: "Complete live system validation [FSMP-PROD-PREP-T02A]"
 
 ---
 
 ## üìã Ongoing Tasks
 
-- [x] **FSMP-P1-T02**: 3 FSM flows (open/manage/close) —É shadow-mode ‚úÖ COMPLETED [AURORA_FSM_LIFECYCLE_V1 + AURORA_FSM_TEST_FIX_V1]
+- [x] **FSMP-P1-T02**: 3 FSM flows (open/manage/close)  É shadow-mode ‚úÖ COMPLETED [AURORA_FSM_LIFECYCLE_V1 + AURORA_FSM_TEST_FIX_V1]
 - [ ] **FSMP-P1-T03**: Drift monitor + quality metrics (state_drift < 1%, confusion matrix)
 - [ ] **FSMP-P1-T07**: Final P1 validation (drift < 1%, router p95 ‚â§50ms, coverage ‚â•90%)
 
@@ -1511,10 +1511,10 @@
 - [ ] **FSMP-P0-T10**: Observability baseline (structured logging to stdout, trace_id propagation)
 
 ### FSM Domain Implementation (after P1)
-- [ ] **FSMP-P0-T12**: `risk_strategy` domain (Safety + Sizing FSMs ‚Äî 2 FSM)
-- [ ] **FSMP-P0-T13**: `analyzer` domain (Signal + Regime FSMs ‚Äî 2 FSM)
+- [ ] **FSMP-P0-T12**: `risk_strategy` domain (Safety + Sizing FSMs ‚ î 2 FSM)
+- [ ] **FSMP-P0-T13**: `analyzer` domain (Signal + Regime FSMs ‚ î 2 FSM)
 
-## ÔøΩ Future Phases
+## Ô Ω Future Phases
 
 ### Phase 2: Advanced Features
 - [ ] MetaFSM registry and schema versioning
@@ -1579,8 +1579,8 @@
   - ‚úÖ Test coverage: FSMCore error handling (callback exceptions), start() already running guard, monitor loop exceptions, fetch errors, non-dict responses, HTTP errors
   - ‚úÖ Verified production guards (requests library check, credentials check), error recovery, exception handling in background threads
   - ‚úÖ Tests: 27/27 passed (100% success rate, +9 new tests from 18 baseline)
-  - ‚úÖ Coverage: 78% ‚Üí 92% (+14 percentage points) ‚Äî **EXCEEDED 90% TARGET!**
-  - ‚ö†Ô∏è Remaining gaps: Lines 18-20 (import fallback for requests), 114-117 (partial monitor loop), 145-151 (partial _get_account_info) ‚Äî 12 lines, 8%
+  - ‚úÖ Coverage: 78% ‚Üí 92% (+14 percentage points) ‚ î **EXCEEDED 90% TARGET!**
+  - ‚ö†Ô∏è Remaining gaps: Lines 18-20 (import fallback for requests), 114-117 (partial monitor loop), 145-151 (partial _get_account_info) ‚ î 12 lines, 8%
   - üìù **GATE PROGRESS**: Production guards and error paths verified; account monitoring fully tested; threading exception handlers covered
   - üèÜ **Achievement**: account_connector.py reached excellent coverage (92% from 78% baseline)
 
@@ -1591,8 +1591,8 @@
   - ‚úÖ Happy path coverage: bookTicker processing (OBI calculation), trade processing (buyer/seller maker), volume calculations, decimal conversions
   - ‚úÖ Error recovery: stop() with ws_manager exceptions, callback failures, processing exceptions with logging
   - ‚úÖ Tests: 20/20 passed (100% success rate) covering error paths + happy paths
-  - ‚úÖ Coverage: 79% ‚Üí 90% (+11 percentage points) ‚Äî **REACHED 90% TARGET!**
-  - ‚ö†Ô∏è Remaining gaps: Lines 19-21 (import fallback for unicorn), 101-108 (HAS_UNICORN guard), 123 (while loop), 190-191 (edge case) ‚Äî 13 lines, 10%
+  - ‚úÖ Coverage: 79% ‚Üí 90% (+11 percentage points) ‚ î **REACHED 90% TARGET!**
+  - ‚ö†Ô∏è Remaining gaps: Lines 19-21 (import fallback for unicorn), 101-108 (HAS_UNICORN guard), 123 (while loop), 190-191 (edge case) ‚ î 13 lines, 10%
   - üìù **GATE PROGRESS**: WebSocket error handling verified; message processing robust; both bookTicker and trade streams tested; FSM event emission validated
   - üèÜ **Achievement**: market_data_connector.py reached 90% target from 79% baseline
 
@@ -1604,7 +1604,7 @@
   - ‚úÖ **Code Cleanup**: Removed duplicate sys.path manipulation from individual test function
   - ‚úÖ **Verification**: All 4 tests in test_market_data.py now PASS (100% success rate)
   - ‚úÖ **Domain Tests**: 187/187 PASSED, 1 skipped (100% stability restored)
-  - üìù **Build Status**: ‚úÖ GREEN ‚Äî All tests stable, ready for production
+  - üìù **Build Status**: ‚úÖ GREEN ‚ î All tests stable, ready for production
   - üéØ **Impact**: market_data_connector.py coverage **96%** (improved from 90% in T17 due to better test coverage)
 
 ---

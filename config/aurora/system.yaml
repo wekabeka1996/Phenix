@@ -23,8 +23,8 @@ risk_core:
     - flash_crash
     - volatility_spike
   inventory_limits:
-    max_abs_position: 500  # –ú–ê–ö–°–ò–ú–ê–õ–¨–ù–û –ø—ñ–¥ x50 pl–µ—á–µ
-    max_daily_notional: 10000000  # $10M –¥–µ–Ω–Ω–∏–π –ª—ñ–º—ñ—Ç –¥–ª—è x50
+    max_abs_position: 500  #  ú ê ö ° ò ú ê õ ¨ ù û    ñ ¥ x50 pl µ á µ
+    max_daily_notional: 10000000  # $10M  ¥ µ Ω Ω ∏ π  ª ñ º ñ Ç  ¥ ª è x50
 kelly:
   fraction_cap: 0.85  # Increased for full testnet operation
   decay_half_life_days: 5
@@ -91,14 +91,14 @@ position_tracking:
   positions_stale_ttl_sec: 8  # TTL for portfolio freshness check in bridge
 
 trading:
-  # –¶–µ–Ω—Ç—Ä–∞–ª—ñ–∑–æ–≤–∞–Ω–∞ –∫–æ–Ω—Ñ—ñ–≥—É—Ä–∞—Ü—ñ—è –¥–ª—è –æ–ø–µ—Ä–∞—Ü—ñ–π–Ω–∏—Ö –ø–∞—Ä–∞–º–µ—Ç—Ä—ñ–≤ — –∏— —Ç–µ–º–∏
+  #  ¶ µ Ω Ç     ª ñ ∑ æ ≤   Ω    ∫ æ Ω Ñ ñ ≥ É     Ü ñ è  ¥ ª è  æ   µ     Ü ñ π Ω ∏ Ö          º µ Ç   ñ ≤    ∏   Ç µ º ∏
   symbols_to_track:
     - "BTCUSDT"
     - "ETHUSDT"
 
   market_data:
-    # –°—Ç—Ä—ñ–º–∏, —è–∫—ñ –±—É–¥–µ — –ª—É—Ö–∞—Ç–∏ MarketDataConnector
+    #  ° Ç   ñ º ∏,  è ∫ ñ  ± É ¥ µ    ª É Ö   Ç ∏ MarketDataConnector
     websocket_streams:
-      - "bookTicker"  # –î–ª—è OBI (Order Book Imbalance)
-      - "trade"       # –î–ª—è TFI (Trade Flow Imbalance) —Ç–∞ delta_price
+      - "bookTicker"  #  î ª è OBI (Order Book Imbalance)
+      - "trade"       #  î ª è TFI (Trade Flow Imbalance)  Ç   delta_price
 

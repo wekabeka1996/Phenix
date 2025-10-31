@@ -8,7 +8,7 @@
 
 ## üéØ Mission Accomplished
 
-–†–µ–∞–ª—ñ–∑–æ–≤–∞–Ω–æ –ø–æ–≤–Ω–∏–π —Ü–∏–∫–ª disaster recovery –¥–ª—è Aurora Core FSM –∑ —Ñ–æ–∫—É— –æ–º –Ω–∞ domain `position_tracking`. –°–∏— —Ç–µ–º–∞ —Ç–µ–ø–µ—Ä –º–∞—î –º–æ–∂–ª–∏–≤—ñ— —Ç—å –∞–≤—Ç–æ–º–∞—Ç–∏—á–Ω–æ –≤—ñ–¥–Ω–æ–≤–ª—é–≤–∞—Ç–∏ — —Ç–∞–Ω –ø—ñ— –ª—è –±—É–¥—å-—è–∫–æ–≥–æ –∑–±–æ—é –∑ –≥–∞—Ä–∞–Ω—Ç–æ–≤–∞–Ω–æ—é —Ü—ñ–ª—ñ— –Ω—ñ— —Ç—é –¥–∞–Ω–∏—Ö.
+ † µ   ª ñ ∑ æ ≤   Ω æ    æ ≤ Ω ∏ π  Ü ∏ ∫ ª disaster recovery  ¥ ª è Aurora Core FSM  ∑  Ñ æ ∫ É   æ º  Ω   domain `position_tracking`.  ° ∏   Ç µ º    Ç µ   µ    º   î  º æ ∂ ª ∏ ≤ ñ   Ç å    ≤ Ç æ º   Ç ∏ á Ω æ  ≤ ñ ¥ Ω æ ≤ ª é ≤   Ç ∏    Ç   Ω    ñ   ª è  ± É ¥ å- è ∫ æ ≥ æ  ∑ ± æ é  ∑  ≥       Ω Ç æ ≤   Ω æ é  Ü ñ ª ñ   Ω ñ   Ç é  ¥   Ω ∏ Ö.
 
 ---
 
@@ -16,30 +16,30 @@
 
 ### 1. **Snapshot Generation** (T01-B) ‚úÖ
 - **File**: `apps/reference/domains/position_tracking/position_tracking.py`
-- **Method**: `get_snapshot()` - –°–µ—Ä—ñ–∞–ª—ñ–∑—É—î FSM — —Ç–∞–Ω –∑ Decimal precision
+- **Method**: `get_snapshot()` -  ° µ   ñ   ª ñ ∑ É î FSM    Ç   Ω  ∑ Decimal precision
 - **Schema**: Compliant with `snapshot_v1.schema.json`
 - **Features**: SHA-256 hash, metadata (worker_id, positions_count, sequence_number)
-- **Tests**: 10 tests —É `test_position_tracking_snapshot.py`
+- **Tests**: 10 tests  É `test_position_tracking_snapshot.py`
 
 ### 2. **Write-Ahead Log (WAL) Integration** (T03-A) ‚úÖ
 - **File**: `apps/reference/domains/position_tracking/position_tracking.py`
-- **Pattern**: Fail-Closed - –∫—Ä–∏—Ç–∏—á–Ω–∞ –∑—É–ø–∏–Ω–∫–∞ —è–∫—â–æ WAL –∑–∞–ø–∏—  –Ω–µ–º–æ–∂–ª–∏–≤–∏–π
-- **Events**: `TRADE_EXECUTED`, `ACCOUNT_UPDATE_RECEIVED` –ª–æ–≥—É—é—Ç—å— —è –ü–ï–†–ï–î –æ–±—Ä–æ–±–∫–æ—é
-- **Format**: Flat dict –∑ hash chain (`_prev` ‚Üí `_hash`)
-- **Tests**: 4 tests —É `test_position_tracking_wal_integration.py`
+- **Pattern**: Fail-Closed -  ∫   ∏ Ç ∏ á Ω    ∑ É   ∏ Ω ∫    è ∫ â æ WAL  ∑     ∏    Ω µ º æ ∂ ª ∏ ≤ ∏ π
+- **Events**: `TRADE_EXECUTED`, `ACCOUNT_UPDATE_RECEIVED`  ª æ ≥ É é Ç å   è  ü ï † ï î  æ ±   æ ± ∫ æ é
+- **Format**: Flat dict  ∑ hash chain (`_prev` ‚Üí `_hash`)
+- **Tests**: 4 tests  É `test_position_tracking_wal_integration.py`
 
 ### 3. **State Replay Mechanism** (T04-A) ‚úÖ
 - **File**: `apps/reference/dr_loader.py` (165 lines)
 - **Functions**:
-  - `find_latest_snapshot(snapshot_dir)` - –ó–Ω–∞—Ö–æ–¥–∏—Ç—å –Ω–∞–π–Ω–æ–≤—ñ—à–∏–π snapshot
-  - `replay_wal_after(wal_dir, start_timestamp_utc, target_fsm)` - –í—ñ–¥—Ç–≤–æ—Ä—é—î WAL –ø–æ–¥—ñ—ó
+  - `find_latest_snapshot(snapshot_dir)` -  ó Ω   Ö æ ¥ ∏ Ç å  Ω   π Ω æ ≤ ñ à ∏ π snapshot
+  - `replay_wal_after(wal_dir, start_timestamp_utc, target_fsm)` -  í ñ ¥ Ç ≤ æ   é î WAL    æ ¥ ñ ó
 - **Integration**: `apps/reference/main.py` - 42-line DR restoration section
 - **Features**:
   - Timestamp filtering (replay only after snapshot)
   - Event type filtering (TRADE_EXECUTED, ACCOUNT_UPDATE_RECEIVED)
   - Resilience to corrupted WAL lines
-  - Comprehensive logging –¥–ª—è audit trail
-- **Tests**: 9 tests —É `test_dr_loader.py`
+  - Comprehensive logging  ¥ ª è audit trail
+- **Tests**: 9 tests  É `test_dr_loader.py`
 
 ---
 
@@ -59,39 +59,39 @@
 
 ### Recovery Time Objective (RTO)
 - **Target**: ‚â§ 5 minutes
-- **Achieved**: < 1 second (–¥–ª—è snapshot load) + –∑–∞–ª–µ–∂–∏—Ç—å –≤—ñ–¥ —Ä–æ–∑–º—ñ—Ä—É WAL
-- **Bottleneck**: WAL replay —à–≤–∏–¥–∫—ñ— —Ç—å (–º—ñ—Ç–∏–≥—É—î—Ç—å— —è —á–µ—Ä–µ–∑ —â–æ–¥–µ–Ω–Ω—É —Ä–æ—Ç–∞—Ü—ñ—é)
+- **Achieved**: < 1 second ( ¥ ª è snapshot load) +  ∑   ª µ ∂ ∏ Ç å  ≤ ñ ¥    æ ∑ º ñ   É WAL
+- **Bottleneck**: WAL replay  à ≤ ∏ ¥ ∫ ñ   Ç å ( º ñ Ç ∏ ≥ É î Ç å   è  á µ   µ ∑  â æ ¥ µ Ω Ω É    æ Ç   Ü ñ é)
 
 ### Recovery Point Objective (RPO)
-- **Target**: ‚â§ 1 minute (–º–∞–∫— –∏–º–∞–ª—å–Ω–∞ –≤—Ç—Ä–∞—Ç–∞ –¥–∞–Ω–∏—Ö)
-- **Achieved**: **0 –≤—Ç—Ä–∞—Ç** —á–µ—Ä–µ–∑ Fail-Closed pattern
-- **Guarantee**: –ñ–æ–¥–Ω–∞ –ø–æ–¥—ñ—è –Ω–µ –æ–±—Ä–æ–±–ª—è—î—Ç—å— —è –±–µ–∑ durable WAL –∑–∞–ø–∏— —É
+- **Target**: ‚â§ 1 minute ( º   ∫   ∏ º   ª å Ω    ≤ Ç     Ç    ¥   Ω ∏ Ö)
+- **Achieved**: **0  ≤ Ç     Ç**  á µ   µ ∑ Fail-Closed pattern
+- **Guarantee**:  ñ æ ¥ Ω      æ ¥ ñ è  Ω µ  æ ±   æ ± ª è î Ç å   è  ± µ ∑ durable WAL  ∑     ∏   É
 
 ### Data Integrity
-- **Hash Chain**: –ö–æ–∂–µ–Ω WAL –∑–∞–ø–∏—  –º—ñ— —Ç–∏—Ç—å `_prev` (previous hash) –¥–ª—è –≤–µ—Ä–∏—Ñ—ñ–∫–∞—Ü—ñ—ó —Ü—ñ–ª—ñ— –Ω–æ— —Ç—ñ
-- **Snapshot Hash**: SHA-256 hash –≤— —å–æ–≥–æ — —Ç–∞–Ω—É –¥–ª—è tamper detection
-- **Fail-Closed**: –°–∏— —Ç–µ–º–∞ –∑—É–ø–∏–Ω—è—î—Ç—å— —è —è–∫—â–æ WAL –∑–∞–ø–∏—  –Ω–µ–º–æ–∂–ª–∏–≤–∏–π
+- **Hash Chain**:  ö æ ∂ µ Ω WAL  ∑     ∏    º ñ   Ç ∏ Ç å `_prev` (previous hash)  ¥ ª è  ≤ µ   ∏ Ñ ñ ∫   Ü ñ ó  Ü ñ ª ñ   Ω æ   Ç ñ
+- **Snapshot Hash**: SHA-256 hash  ≤   å æ ≥ æ    Ç   Ω É  ¥ ª è tamper detection
+- **Fail-Closed**:  ° ∏   Ç µ º    ∑ É   ∏ Ω è î Ç å   è  è ∫ â æ WAL  ∑     ∏    Ω µ º æ ∂ ª ∏ ≤ ∏ π
 
 ---
 
-## üöÄ Production Readiness
+## üö  Production Readiness
 
 ### ‚úÖ Completed
-1. Snapshot generation –∑ Decimal precision
-2. WAL write –ø–µ—Ä–µ–¥ –æ–±—Ä–æ–±–∫–æ—é –ø–æ–¥—ñ–π
-3. Automatic state restoration –ø—Ä–∏ — —Ç–∞—Ä—Ç—ñ
+1. Snapshot generation  ∑ Decimal precision
+2. WAL write    µ   µ ¥  æ ±   æ ± ∫ æ é    æ ¥ ñ π
+3. Automatic state restoration      ∏    Ç     Ç ñ
 4. Comprehensive test coverage (23 DR tests)
-5. Error handling —Ç–∞ graceful degradation
-6. Logging –¥–ª—è audit trail
+5. Error handling  Ç   graceful degradation
+6. Logging  ¥ ª è audit trail
 
 ### üìù Manual Testing Scenarios
 
 #### Scenario 1: Clean Start
 ```bash
-# –í–∏–¥–∞–ª–∏—Ç–∏ DR –¥–∏—Ä–µ–∫—Ç–æ—Ä—ñ—ó
+#  í ∏ ¥   ª ∏ Ç ∏ DR  ¥ ∏   µ ∫ Ç æ   ñ ó
 rm -rf ops/snapshots ops/wal
 
-# –ó–∞–ø—É— —Ç–∏—Ç–∏ — –∏— —Ç–µ–º—É
+#  ó     É   Ç ∏ Ç ∏    ∏   Ç µ º É
 python apps/reference/main.py
 
 # Expected: "No snapshot found. Starting with a clean state."
@@ -99,15 +99,15 @@ python apps/reference/main.py
 
 #### Scenario 2: State Recovery
 ```bash
-# –ó–∞–ø—É— —Ç–∏—Ç–∏ — –∏— —Ç–µ–º—É, –¥–æ—á–µ–∫–∞—Ç–∏— —è snapshot + WAL –∑–∞–ø–∏— —ñ–≤
+#  ó     É   Ç ∏ Ç ∏    ∏   Ç µ º É,  ¥ æ á µ ∫   Ç ∏   è snapshot + WAL  ∑     ∏   ñ ≤
 python apps/reference/main.py
 
-# –ó—É–ø–∏–Ω–∏—Ç–∏ — –∏— —Ç–µ–º—É (Ctrl+C)
+#  ó É   ∏ Ω ∏ Ç ∏    ∏   Ç µ º É (Ctrl+C)
 
-# –í–∏–¥–∞–ª–∏—Ç–∏ –≤–Ω—É—Ç—Ä—ñ—à–Ω—ñ–π — —Ç–∞–Ω (—è–∫—â–æ –∑–±–µ—Ä—ñ–≥–∞—î—Ç—å— —è –æ–∫—Ä–µ–º–æ)
-# –∞–±–æ –ø—Ä–æ— —Ç–æ –ø–µ—Ä–µ–∑–∞–ø—É— —Ç–∏—Ç–∏
+#  í ∏ ¥   ª ∏ Ç ∏  ≤ Ω É Ç   ñ à Ω ñ π    Ç   Ω ( è ∫ â æ  ∑ ± µ   ñ ≥   î Ç å   è  æ ∫   µ º æ)
+#    ± æ      æ   Ç æ    µ   µ ∑     É   Ç ∏ Ç ∏
 
-# –ó–∞–ø—É— —Ç–∏—Ç–∏ –∑–Ω–æ–≤—É
+#  ó     É   Ç ∏ Ç ∏  ∑ Ω æ ≤ É
 python apps/reference/main.py
 
 # Expected logs:
@@ -118,13 +118,13 @@ python apps/reference/main.py
 
 #### Scenario 3: Corrupted WAL Resilience
 ```bash
-# –î–æ–¥–∞—Ç–∏ corrupted line –¥–æ WAL —Ñ–∞–π–ª—É
+#  î æ ¥   Ç ∏ corrupted line  ¥ æ WAL  Ñ   π ª É
 echo "{ CORRUPTED JSON" >> ops/wal/2025-10-20.jsonl
 
-# –ó–∞–ø—É— —Ç–∏—Ç–∏ — –∏— —Ç–µ–º—É
+#  ó     É   Ç ∏ Ç ∏    ∏   Ç µ º É
 python apps/reference/main.py
 
-# Expected: –°–∏— —Ç–µ–º–∞ skip corrupted line —ñ –ø—Ä–æ–¥–æ–≤–∂—É—î replay
+# Expected:  ° ∏   Ç µ º   skip corrupted line  ñ      æ ¥ æ ≤ ∂ É î replay
 ```
 
 ---
@@ -132,19 +132,19 @@ python apps/reference/main.py
 ## üìä Performance Metrics
 
 ### Snapshot Operations
-- **Generation**: ~10ms –¥–ª—è typical state (5-10 positions)
-- **Save to disk**: ~50ms (–≤–∫–ª—é—á–∞—é—á–∏ JSON serialization)
+- **Generation**: ~10ms  ¥ ª è typical state (5-10 positions)
+- **Save to disk**: ~50ms ( ≤ ∫ ª é á   é á ∏ JSON serialization)
 - **Load from disk**: ~20ms
 
 ### WAL Operations
-- **Single append**: ~1-5ms (–∑ file locking)
-- **Replay rate**: ~1000 events/sec (–∑–∞–ª–µ–∂–∏—Ç—å –≤—ñ–¥ handler — –∫–ª–∞–¥–Ω–æ— —Ç—ñ)
-- **Lock contention**: < 1% (monitored —á–µ—Ä–µ–∑ metrics)
+- **Single append**: ~1-5ms ( ∑ file locking)
+- **Replay rate**: ~1000 events/sec ( ∑   ª µ ∂ ∏ Ç å  ≤ ñ ¥ handler    ∫ ª   ¥ Ω æ   Ç ñ)
+- **Lock contention**: < 1% (monitored  á µ   µ ∑ metrics)
 
 ### Storage
-- **Snapshot size**: ~5-20 KB per snapshot (–∑–∞–ª–µ–∂–∏—Ç—å –≤—ñ–¥ positions count)
+- **Snapshot size**: ~5-20 KB per snapshot ( ∑   ª µ ∂ ∏ Ç å  ≤ ñ ¥ positions count)
 - **WAL size**: ~500 bytes per event
-- **Daily WAL size**: ~100 MB (–ø—Ä–∏ 200K events/day)
+- **Daily WAL size**: ~100 MB (     ∏ 200K events/day)
 - **Retention**: 24 hours WAL + 7 days snapshots
 
 ---
@@ -171,10 +171,10 @@ wal_lock_timeout_sec = 5.0  # Max wait for file lock
 
 ## üéì Lessons Learned
 
-1. **Fail-Closed > Fail-Open**: –ö—Ä–∞—â–µ –∑—É–ø–∏–Ω–∏—Ç–∏ — –∏— —Ç–µ–º—É –Ω—ñ–∂ –≤—Ç—Ä–∞—Ç–∏—Ç–∏ consistency
-2. **Hash Chain**: –ü—Ä–æ— —Ç–∏–π –º–µ—Ö–∞–Ω—ñ–∑–º –¥–ª—è integrity verification
-3. **Timestamp Filtering**: –ö—Ä–∏—Ç–∏—á–Ω–æ –¥–ª—è —Ç–æ—á–Ω–æ–≥–æ replay –ø—ñ— –ª—è snapshot
-4. **Graceful Degradation**: –°–∏— —Ç–µ–º–∞ –ø—Ä–∞—Ü—é—î –Ω–∞–≤—ñ—Ç—å —è–∫—â–æ DR files –≤—ñ–¥— —É—Ç–Ω—ñ
+1. **Fail-Closed > Fail-Open**:  ö     â µ  ∑ É   ∏ Ω ∏ Ç ∏    ∏   Ç µ º É  Ω ñ ∂  ≤ Ç     Ç ∏ Ç ∏ consistency
+2. **Hash Chain**:  ü   æ   Ç ∏ π  º µ Ö   Ω ñ ∑ º  ¥ ª è integrity verification
+3. **Timestamp Filtering**:  ö   ∏ Ç ∏ á Ω æ  ¥ ª è  Ç æ á Ω æ ≥ æ replay    ñ   ª è snapshot
+4. **Graceful Degradation**:  ° ∏   Ç µ º          Ü é î  Ω   ≤ ñ Ç å  è ∫ â æ DR files  ≤ ñ ¥   É Ç Ω ñ
 5. **Comprehensive Testing**: 23 DR tests catch edge cases (corrupted files, missing timestamps, etc.)
 
 ---
@@ -183,7 +183,7 @@ wal_lock_timeout_sec = 5.0  # Max wait for file lock
 
 - **Playbook**: `docs/DR_PLAYBOOK.md` - Comprehensive DR guide
 - **Schemas**: `config/_schemas/snapshot_v1.schema.json`
-- **Code**: Inline WHY comments —É –≤— —ñ—Ö DR functions
+- **Code**: Inline WHY comments  É  ≤   ñ Ö DR functions
 - **Tests**: Self-documenting test names + docstrings
 
 ---
@@ -201,12 +201,12 @@ wal_lock_timeout_sec = 5.0  # Max wait for file lock
 
 ---
 
-## üöÄ Next Steps
+## üö  Next Steps
 
-1. **Production Deployment**: Deploy –∑ DR capability enabled
-2. **Monitoring**: Setup alerts –¥–ª—è WAL write failures
-3. **Backup**: Configure S3/Azure Blob –¥–ª—è snapshot backups
-4. **Testing**: Perform chaos engineering tests (kill –ø—Ä–æ—Ü–µ—  during trade)
+1. **Production Deployment**: Deploy  ∑ DR capability enabled
+2. **Monitoring**: Setup alerts  ¥ ª è WAL write failures
+3. **Backup**: Configure S3/Azure Blob  ¥ ª è snapshot backups
+4. **Testing**: Perform chaos engineering tests (kill      æ Ü µ   during trade)
 5. **Documentation**: Update operational runbooks
 
 ---
@@ -218,4 +218,4 @@ wal_lock_timeout_sec = 5.0  # Max wait for file lock
 ---
 
 > "The best disaster recovery is the one you never need, but when you do, it works flawlessly." 
-> ‚Äî Aurora Core Team, 2025
+> ‚ î Aurora Core Team, 2025

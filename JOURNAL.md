@@ -457,7 +457,7 @@ async def _retry_once():
 
 ### Git Information
 - **Commit**: release(v0.1.0): freeze SSOT, notes, artifacts [REL-001]
-- **Tag**: v0.1.0 - "Aurora+Scalp v0.1.0 â€” Exposure/Daily/OPS gates, AUR-004, telemetry, full E2E tests"
+- **Tag**: v0.1.0 - "Aurora+Scalp v0.1.0 â ” Exposure/Daily/OPS gates, AUR-004, telemetry, full E2E tests"
 - **Branch**: Test_MyPC (ready for merge to main)
 
 ### Verification Commands

@@ -40,7 +40,7 @@ We have successfully completed Priority 1. We now move to Priority 2 from the pr
 
 **Next Step:**
 
-#### üìù **Task for IDE-Agent #31: FSMP-REFACTOR-T02-A ‚Äî Centralize FSM Core**
+#### üìù **Task for IDE-Agent #31: FSMP-REFACTOR-T02-A ‚ î Centralize FSM Core**
 **WHY:** To resolve the architectural violation by removing all local `FSMCore` mocks and refactoring the system to use a single, central instance of the FSM core from the `vfoundation` library, as required by Priority 2 of the audit report.
 
 **Actions:**

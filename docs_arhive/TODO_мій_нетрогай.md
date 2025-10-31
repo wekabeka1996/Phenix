@@ -1,12 +1,12 @@
-# TODO â€” FSMP-P0 Task Tracking
+# TODO â ” FSMP-P0 Task Tracking
 
 ## Active Tasks
 
-_No active tasks â€” FSMP-P0-T03 completed!_
+_No active tasks â ” FSMP-P0-T03 completed!_
 
 ## Completed Tasks (Latest First)
 
-### FSMP-P0-T03 â€” Concurrent WAL & Idempotency Integration âœ…
+### FSMP-P0-T03 â ” Concurrent WAL & Idempotency Integration âœ…
 
 - [x] **Router integration** with single-flight idempotency API (idem.begin/complete)
 - [x] **Stress tests** for concurrent WAL appends (100 threads, chain integrity verified)
@@ -21,7 +21,7 @@ _No active tasks â€” FSMP-P0-T03 completed!_
 - High coverage: wal.py (75%), debug_api.py (76%)
 - Remaining gaps: Unix fcntl code (platform-specific), FastAPI endpoints (async testing)
 
-### FSMP-P0-T02 â€” Observability & DR Foundation âœ…
+### FSMP-P0-T02 â ” Observability & DR Foundation âœ…
 
 - [x] **FSMP-P0-T02:** Implement GET /metrics endpoint with router_p95_ms, timeout_rate, queue_depth
 - [x] **FSMP-P0-T02:** Extend /debug/{rid} with why_chain, integrity_ok, merkle_root

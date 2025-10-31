@@ -1,79 +1,79 @@
-# –°–ª–æ–≤–Ω–∏–∫–∏ –¥–∞–Ω–∏—Ö –¥–æ–º–µ–Ω—É Account Balance
+#  ° ª æ ≤ Ω ∏ ∫ ∏  ¥   Ω ∏ Ö  ¥ æ º µ Ω É Account Balance
 
-# –í–µ—Ä— —ñ—è — –ª–æ–≤–Ω–∏–∫–∞: FSMP-P1-T04
-# –û— —Ç–∞–Ω–Ω—è –∑–º—ñ–Ω–∞: 2025-01-28
-# –ê–≤—Ç–æ—Ä: Aurora System Documentation
+#  í µ     ñ è    ª æ ≤ Ω ∏ ∫  : FSMP-P1-T04
+#  û   Ç   Ω Ω è  ∑ º ñ Ω  : 2025-01-28
+#  ê ≤ Ç æ  : Aurora System Documentation
 
 # =============================================================================
-# –ö–û–ù–§–Ü–ì–£–†–ê–¶–Ü–ô–ù–Ü –°–õ–û–í–ù–ò–ö–ò
+#  ö û ù § Ü ì £ † ê ¶ Ü ô ù Ü  ° õ û í ù ò ö ò
 # =============================================================================
 
-# –û— –Ω–æ–≤–Ω—ñ —Ä–µ–∂–∏–º–∏ —Ä–æ–±–æ—Ç–∏ — –∏— —Ç–µ–º–∏
+#  û   Ω æ ≤ Ω ñ    µ ∂ ∏ º ∏    æ ± æ Ç ∏    ∏   Ç µ º ∏
 trading_modes:
   live: "live"
   testnet: "testnet"
   hybrid_live_data_testnet_exec: "hybrid_live_data_testnet_exec"
   hybrid_testnet_data_live_exec: "hybrid_testnet_data_live_exec"
 
-# –¢–∏–ø–∏ –º–∞—Ä–∂—ñ –¥–ª—è –ø–æ–∑–∏—Ü—ñ–π
+#  ¢ ∏   ∏  º     ∂ ñ  ¥ ª è    æ ∑ ∏ Ü ñ π
 margin_types:
   isolated: "isolated"
   cross: "cross"
 
-# –°—Ç–∞—Ç—É— –∏ –ø–æ–∑–∏—Ü—ñ–π
+#  ° Ç   Ç É   ∏    æ ∑ ∏ Ü ñ π
 position_statuses:
   open: "open"
   closed: "closed"
   liquidating: "liquidating"
 
 # =============================================================================
-# –°–¢–†–£–ö–¢–£–†–ò –î–ê–ù–ò–• API
+#  ° ¢ † £ ö ¢ £ † ò  î ê ù ò • API
 # =============================================================================
 
-# –°—Ç—Ä—É–∫—Ç—É—Ä–∞ –≤—ñ–¥–ø–æ–≤—ñ–¥—ñ Binance Balance API (/fapi/v2/balance)
+#  ° Ç   É ∫ Ç É      ≤ ñ ¥   æ ≤ ñ ¥ ñ Binance Balance API (/fapi/v2/balance)
 balance_response_schema:
   type: object
   properties:
-    accountAlias: { type: string, description: "Alias —Ä–∞—Ö—É–Ω–∫—É" }
-    asset: { type: string, description: "–ù–∞–∑–≤–∞ –∞–∫—Ç–∏–≤—É (USDT, BTC, etc.)" }
-    balance: { type: string, description: "–ó–∞–≥–∞–ª—å–Ω–∏–π –±–∞–ª–∞–Ω—  –∞–∫—Ç–∏–≤—É" }
-    crossWalletBalance: { type: string, description: "–ë–∞–ª–∞–Ω—  –≤ cross margin" }
-    crossUnPnl: { type: string, description: "–ù–µ—Ä–µ–∞–ª—ñ–∑–æ–≤–∞–Ω–∏–π P&L –≤ cross margin" }
-    availableBalance: { type: string, description: "–î–æ— —Ç—É–ø–Ω–∏–π –±–∞–ª–∞–Ω— " }
-    maxWithdrawAmount: { type: string, description: "–ú–∞–∫— –∏–º–∞–ª—å–Ω–∞ — —É–º–∞ –≤–∏–≤–µ–¥–µ–Ω–Ω—è" }
-    marginAvailable: { type: boolean, description: "–î–æ— —Ç—É–ø–Ω—ñ— —Ç—å –¥–ª—è –º–∞—Ä–∂—ñ" }
-    updateTime: { type: integer, description: "–ß–∞—  –æ–Ω–æ–≤–ª–µ–Ω–Ω—è (timestamp)" }
+    accountAlias: { type: string, description: "Alias      Ö É Ω ∫ É" }
+    asset: { type: string, description: " ù   ∑ ≤      ∫ Ç ∏ ≤ É (USDT, BTC, etc.)" }
+    balance: { type: string, description: " ó   ≥   ª å Ω ∏ π  ±   ª   Ω      ∫ Ç ∏ ≤ É" }
+    crossWalletBalance: { type: string, description: " ë   ª   Ω    ≤ cross margin" }
+    crossUnPnl: { type: string, description: " ù µ   µ   ª ñ ∑ æ ≤   Ω ∏ π P&L  ≤ cross margin" }
+    availableBalance: { type: string, description: " î æ   Ç É   Ω ∏ π  ±   ª   Ω  " }
+    maxWithdrawAmount: { type: string, description: " ú   ∫   ∏ º   ª å Ω      É º    ≤ ∏ ≤ µ ¥ µ Ω Ω è" }
+    marginAvailable: { type: boolean, description: " î æ   Ç É   Ω ñ   Ç å  ¥ ª è  º     ∂ ñ" }
+    updateTime: { type: integer, description: " ß      æ Ω æ ≤ ª µ Ω Ω è (timestamp)" }
 
-# –°—Ç—Ä—É–∫—Ç—É—Ä–∞ –≤—ñ–¥–ø–æ–≤—ñ–¥—ñ Binance Position Risk API (/fapi/v2/positionRisk)
+#  ° Ç   É ∫ Ç É      ≤ ñ ¥   æ ≤ ñ ¥ ñ Binance Position Risk API (/fapi/v2/positionRisk)
 position_response_schema:
   type: object
   properties:
-    symbol: { type: string, description: "–¢–æ—Ä–≥–æ–≤–∞ –ø–∞—Ä–∞ (BTCUSDT)" }
-    positionAmt: { type: string, description: "–†–æ–∑–º—ñ—Ä –ø–æ–∑–∏—Ü—ñ—ó" }
-    entryPrice: { type: string, description: "–¶—ñ–Ω–∞ –≤—Ö–æ–¥—É" }
-    markPrice: { type: string, description: "–ü–æ–∑–Ω–∞—á–µ–Ω–∞ —Ü—ñ–Ω–∞" }
-    unRealizedProfit: { type: string, description: "–ù–µ—Ä–µ–∞–ª—ñ–∑–æ–≤–∞–Ω–∏–π –ø—Ä–∏–±—É—Ç–æ–∫" }
-    liquidationPrice: { type: string, description: "–¶—ñ–Ω–∞ –ª—ñ–∫–≤—ñ–¥–∞—Ü—ñ—ó" }
-    leverage: { type: integer, description: "–ü–ª–µ—á–µ" }
-    maxNotionalValue: { type: string, description: "–ú–∞–∫— –∏–º–∞–ª—å–Ω–µ –Ω–æ–º—ñ–Ω–∞–ª—å–Ω–µ –∑–Ω–∞—á–µ–Ω–Ω—è" }
+    symbol: { type: string, description: " ¢ æ   ≥ æ ≤            (BTCUSDT)" }
+    positionAmt: { type: string, description: " † æ ∑ º ñ      æ ∑ ∏ Ü ñ ó" }
+    entryPrice: { type: string, description: " ¶ ñ Ω    ≤ Ö æ ¥ É" }
+    markPrice: { type: string, description: " ü æ ∑ Ω   á µ Ω    Ü ñ Ω  " }
+    unRealizedProfit: { type: string, description: " ù µ   µ   ª ñ ∑ æ ≤   Ω ∏ π      ∏ ± É Ç æ ∫" }
+    liquidationPrice: { type: string, description: " ¶ ñ Ω    ª ñ ∫ ≤ ñ ¥   Ü ñ ó" }
+    leverage: { type: integer, description: " ü ª µ á µ" }
+    maxNotionalValue: { type: string, description: " ú   ∫   ∏ º   ª å Ω µ  Ω æ º ñ Ω   ª å Ω µ  ∑ Ω   á µ Ω Ω è" }
     marginType: { type: string, enum: ["isolated", "cross"] }
-    isolatedMargin: { type: string, description: "–Ü–∑–æ–ª—å–æ–≤–∞–Ω–∞ –º–∞—Ä–∂–∞" }
-    isAutoAddMargin: { type: boolean, description: "–ê–≤—Ç–æ–º–∞—Ç–∏—á–Ω–µ –¥–æ–¥–∞–≤–∞–Ω–Ω—è –º–∞—Ä–∂—ñ" }
+    isolatedMargin: { type: string, description: " Ü ∑ æ ª å æ ≤   Ω    º     ∂  " }
+    isAutoAddMargin: { type: boolean, description: " ê ≤ Ç æ º   Ç ∏ á Ω µ  ¥ æ ¥   ≤   Ω Ω è  º     ∂ ñ" }
     positionSide: { type: string, enum: ["LONG", "SHORT", "BOTH"] }
-    notional: { type: string, description: "–ù–æ–º—ñ–Ω–∞–ª—å–Ω–µ –∑–Ω–∞—á–µ–Ω–Ω—è" }
-    isolatedWallet: { type: string, description: "–Ü–∑–æ–ª—å–æ–≤–∞–Ω–∏–π –≥–∞–º–∞–Ω–µ—Ü—å" }
-    updateTime: { type: integer, description: "–ß–∞—  –æ–Ω–æ–≤–ª–µ–Ω–Ω—è" }
+    notional: { type: string, description: " ù æ º ñ Ω   ª å Ω µ  ∑ Ω   á µ Ω Ω è" }
+    isolatedWallet: { type: string, description: " Ü ∑ æ ª å æ ≤   Ω ∏ π  ≥   º   Ω µ Ü å" }
+    updateTime: { type: integer, description: " ß      æ Ω æ ≤ ª µ Ω Ω è" }
 
 # =============================================================================
-# FSM –ü–û–î–Ü–á
+# FSM  ü û î Ü á
 # =============================================================================
 
-# –ü–æ–¥—ñ—è –æ–Ω–æ–≤–ª–µ–Ω–Ω—è –±–∞–ª–∞–Ω— —É
+#  ü æ ¥ ñ è  æ Ω æ ≤ ª µ Ω Ω è  ±   ª   Ω   É
 evt_balance_update_received:
   event_type: "EVT:BALANCE_UPDATE_RECEIVED"
   version: "1.0"
-  description: "–û–Ω–æ–≤–ª–µ–Ω–Ω—è –±–∞–ª–∞–Ω— —É –∞–∫—Ç–∏–≤—ñ–≤ —Ä–∞—Ö—É–Ω–∫—É"
-  frequency: "30 — –µ–∫—É–Ω–¥ (–∫–æ–Ω—Ñ—ñ–≥—É—Ä—É—î—Ç—å— —è)"
+  description: " û Ω æ ≤ ª µ Ω Ω è  ±   ª   Ω   É    ∫ Ç ∏ ≤ ñ ≤      Ö É Ω ∫ É"
+  frequency: "30    µ ∫ É Ω ¥ ( ∫ æ Ω Ñ ñ ≥ É   É î Ç å   è)"
   direction: "Decision Making, Risk Management, Position Tracking"
   payload_schema:
     type: object
@@ -91,12 +91,12 @@ evt_balance_update_received:
       updateTime: { type: integer }
     required: ["assets", "updateTime"]
 
-# –ü–æ–¥—ñ—è –æ–Ω–æ–≤–ª–µ–Ω–Ω—è — —Ç–∞–Ω—É —Ä–∞—Ö—É–Ω–∫—É —Ç–∞ –ø–æ–∑–∏—Ü—ñ–π
+#  ü æ ¥ ñ è  æ Ω æ ≤ ª µ Ω Ω è    Ç   Ω É      Ö É Ω ∫ É  Ç      æ ∑ ∏ Ü ñ π
 evt_account_update_received:
   event_type: "EVT:ACCOUNT_UPDATE_RECEIVED"
   version: "1.0"
-  description: "–û–Ω–æ–≤–ª–µ–Ω–Ω—è –∑–∞–≥–∞–ª—å–Ω–æ–≥–æ — —Ç–∞–Ω—É —Ä–∞—Ö—É–Ω–∫—É —Ç–∞ –≤— —ñ—Ö –ø–æ–∑–∏—Ü—ñ–π"
-  frequency: "30 — –µ–∫—É–Ω–¥ (–∫–æ–Ω—Ñ—ñ–≥—É—Ä—É—î—Ç—å— —è)"
+  description: " û Ω æ ≤ ª µ Ω Ω è  ∑   ≥   ª å Ω æ ≥ æ    Ç   Ω É      Ö É Ω ∫ É  Ç    ≤   ñ Ö    æ ∑ ∏ Ü ñ π"
+  frequency: "30    µ ∫ É Ω ¥ ( ∫ æ Ω Ñ ñ ≥ É   É î Ç å   è)"
   direction: "Position Tracking, Risk Management, Decision Making"
   payload_schema:
     type: object
@@ -121,10 +121,10 @@ evt_account_update_received:
     required: ["totalWalletBalance", "totalUnrealizedProfit", "totalCrossWalletBalance", "positions", "updateTime"]
 
 # =============================================================================
-# –ö–û–ù–§–Ü–ì–£–†–ê–¶–Ü–ô–ù–Ü –ü–ê–†–ê–ú–ï–¢–†–ò
+#  ö û ù § Ü ì £ † ê ¶ Ü ô ù Ü  ü ê † ê ú ï ¢ † ò
 # =============================================================================
 
-# –ö–æ–Ω—Ñ—ñ–≥—É—Ä–∞—Ü—ñ—è –¥–æ–º–µ–Ω—É account_balance
+#  ö æ Ω Ñ ñ ≥ É     Ü ñ è  ¥ æ º µ Ω É account_balance
 domain_config_schema:
   type: object
   properties:
@@ -133,45 +133,45 @@ domain_config_schema:
       minimum: 5
       maximum: 300
       default: 30
-      description: "–Ü–Ω—Ç–µ—Ä–≤–∞–ª –æ–ø–∏—Ç—É–≤–∞–Ω–Ω—è API –≤ — –µ–∫—É–Ω–¥–∞—Ö"
+      description: " Ü Ω Ç µ   ≤   ª  æ   ∏ Ç É ≤   Ω Ω è API  ≤    µ ∫ É Ω ¥   Ö"
     retry_attempts:
       type: integer
       minimum: 1
       maximum: 10
       default: 3
-      description: "–ö—ñ–ª—å–∫—ñ— —Ç—å –ø–æ–≤—Ç–æ—Ä—ñ–≤ –ø—Ä–∏ –ø–æ–º–∏–ª—Ü—ñ API"
+      description: " ö ñ ª å ∫ ñ   Ç å    æ ≤ Ç æ   ñ ≤      ∏    æ º ∏ ª Ü ñ API"
     backoff_multiplier:
       type: number
       minimum: 1.0
       maximum: 5.0
       default: 2.0
-      description: "–ú–Ω–æ–∂–Ω–∏–∫ –¥–ª—è –µ–∫— –ø–æ–Ω–µ–Ω—Ü—ñ–∞–ª—å–Ω–æ–≥–æ backoff"
+      description: " ú Ω æ ∂ Ω ∏ ∫  ¥ ª è  µ ∫     æ Ω µ Ω Ü ñ   ª å Ω æ ≥ æ backoff"
     timeout:
       type: integer
       minimum: 5
       maximum: 60
       default: 10
-      description: "–¢–∞–π–º–∞—É—Ç API –≤–∏–∫–ª–∏–∫—ñ–≤ –≤ — –µ–∫—É–Ω–¥–∞—Ö"
+      description: " ¢   π º   É Ç API  ≤ ∏ ∫ ª ∏ ∫ ñ ≤  ≤    µ ∫ É Ω ¥   Ö"
     max_concurrent_requests:
       type: integer
       minimum: 1
       maximum: 5
       default: 2
-      description: "–ú–∞–∫— –∏–º–∞–ª—å–Ω–∞ –∫—ñ–ª—å–∫—ñ— —Ç—å –ø–∞—Ä–∞–ª–µ–ª—å–Ω–∏—Ö –∑–∞–ø–∏—Ç—ñ–≤"
+      description: " ú   ∫   ∏ º   ª å Ω    ∫ ñ ª å ∫ ñ   Ç å          ª µ ª å Ω ∏ Ö  ∑     ∏ Ç ñ ≤"
     enable_position_filtering:
       type: boolean
       default: true
-      description: "–§—ñ–ª—å—Ç—Ä—É–≤–∞—Ç–∏ —Ç—ñ–ª—å–∫–∏ –≤—ñ–¥–∫—Ä–∏—Ç—ñ –ø–æ–∑–∏—Ü—ñ—ó"
+      description: " § ñ ª å Ç   É ≤   Ç ∏  Ç ñ ª å ∫ ∏  ≤ ñ ¥ ∫   ∏ Ç ñ    æ ∑ ∏ Ü ñ ó"
     enable_balance_filtering:
       type: boolean
       default: true
-      description: "–§—ñ–ª—å—Ç—Ä—É–≤–∞—Ç–∏ —Ç—ñ–ª—å–∫–∏ –∞–∫—Ç–∏–≤–∏ –∑ –±–∞–ª–∞–Ω— –æ–º > 0"
+      description: " § ñ ª å Ç   É ≤   Ç ∏  Ç ñ ª å ∫ ∏    ∫ Ç ∏ ≤ ∏  ∑  ±   ª   Ω   æ º > 0"
 
 # =============================================================================
-# –°–õ–û–í–ù–ò–ö–ò –ê–ö–¢–ò–í–Ü–í
+#  ° õ û í ù ò ö ò  ê ö ¢ ò í Ü í
 # =============================================================================
 
-# –ü—ñ–¥—Ç—Ä–∏–º—É–≤–∞–Ω—ñ –∞–∫—Ç–∏–≤–∏ –¥–ª—è —Ç–æ—Ä–≥—ñ–≤–ª—ñ
+#  ü ñ ¥ Ç   ∏ º É ≤   Ω ñ    ∫ Ç ∏ ≤ ∏  ¥ ª è  Ç æ   ≥ ñ ≤ ª ñ
 supported_assets:
   - USDT
   - BUSD
@@ -184,7 +184,7 @@ supported_assets:
   - LINK
   - UNI
 
-# –°–ª–æ–≤–Ω–∏–∫ —Ç–æ—Ä–≥–æ–≤–∏—Ö –ø–∞—Ä (–¥–ª—è –≤–∞–ª—ñ–¥–∞—Ü—ñ—ó)
+#  ° ª æ ≤ Ω ∏ ∫  Ç æ   ≥ æ ≤ ∏ Ö        ( ¥ ª è  ≤   ª ñ ¥   Ü ñ ó)
 trading_pairs:
   BTCUSDT: { base: BTC, quote: USDT, min_qty: 0.001, step_size: 0.001 }
   ETHUSDT: { base: ETH, quote: USDT, min_qty: 0.01, step_size: 0.01 }
@@ -193,10 +193,10 @@ trading_pairs:
   SOLUSDT: { base: SOL, quote: USDT, min_qty: 0.1, step_size: 0.1 }
 
 # =============================================================================
-# –°–õ–û–í–ù–ò–ö–ò –ü–û–ú–ò–õ–û–ö
+#  ° õ û í ù ò ö ò  ü û ú ò õ û ö
 # =============================================================================
 
-# –ö–æ–¥–∏ –ø–æ–º–∏–ª–æ–∫ Binance API
+#  ö æ ¥ ∏    æ º ∏ ª æ ∫ Binance API
 binance_error_codes:
   -1000: "UNKNOWN"
   -1001: "DISCONNECTED"
@@ -210,40 +210,40 @@ binance_error_codes:
   -1021: "INVALID_TIMESTAMP"
   -1022: "INVALID_SIGNATURE"
 
-# –¢–∏–ø–∏ –ø–æ–º–∏–ª–æ–∫ –¥–æ–º–µ–Ω—É
+#  ¢ ∏   ∏    æ º ∏ ª æ ∫  ¥ æ º µ Ω É
 domain_error_types:
-  api_connection_error: "–ü–æ–º–∏–ª–∫–∞ –∑'—î–¥–Ω–∞–Ω–Ω—è –∑ Binance API"
-  authentication_error: "–ü–æ–º–∏–ª–∫–∞ –∞—É—Ç–µ–Ω—Ç–∏—Ñ—ñ–∫–∞—Ü—ñ—ó API –∫–ª—é—á—ñ–≤"
-  rate_limit_error: "–ü–µ—Ä–µ–≤–∏—â–µ–Ω–Ω—è –ª—ñ–º—ñ—Ç—É –∑–∞–ø–∏—Ç—ñ–≤"
-  data_parsing_error: "–ü–æ–º–∏–ª–∫–∞ –ø–∞—Ä— –∏–Ω–≥—É –≤—ñ–¥–ø–æ–≤—ñ–¥—ñ API"
-  invalid_config_error: "–ù–µ–∫–æ—Ä–µ–∫—Ç–Ω–∞ –∫–æ–Ω—Ñ—ñ–≥—É—Ä–∞—Ü—ñ—è –¥–æ–º–µ–Ω—É"
-  timeout_error: "–¢–∞–π–º–∞—É—Ç –æ—á—ñ–∫—É–≤–∞–Ω–Ω—è –≤—ñ–¥–ø–æ–≤—ñ–¥—ñ API"
+  api_connection_error: " ü æ º ∏ ª ∫    ∑' î ¥ Ω   Ω Ω è  ∑ Binance API"
+  authentication_error: " ü æ º ∏ ª ∫      É Ç µ Ω Ç ∏ Ñ ñ ∫   Ü ñ ó API  ∫ ª é á ñ ≤"
+  rate_limit_error: " ü µ   µ ≤ ∏ â µ Ω Ω è  ª ñ º ñ Ç É  ∑     ∏ Ç ñ ≤"
+  data_parsing_error: " ü æ º ∏ ª ∫            ∏ Ω ≥ É  ≤ ñ ¥   æ ≤ ñ ¥ ñ API"
+  invalid_config_error: " ù µ ∫ æ   µ ∫ Ç Ω    ∫ æ Ω Ñ ñ ≥ É     Ü ñ è  ¥ æ º µ Ω É"
+  timeout_error: " ¢   π º   É Ç  æ á ñ ∫ É ≤   Ω Ω è  ≤ ñ ¥   æ ≤ ñ ¥ ñ API"
 
 # =============================================================================
-# –ú–ï–¢–†–ò–ö–ò –¢–ê –ú–û–ù–Ü–¢–û–†–ò–ù–ì
+#  ú ï ¢ † ò ö ò  ¢ ê  ú û ù Ü ¢ û † ò ù ì
 # =============================================================================
 
-# –ú–µ—Ç—Ä–∏–∫–∏ –ø—Ä–æ–¥—É–∫—Ç–∏–≤–Ω–æ— —Ç—ñ
+#  ú µ Ç   ∏ ∫ ∏      æ ¥ É ∫ Ç ∏ ≤ Ω æ   Ç ñ
 performance_metrics:
-  account_balance_updates_success: "–ö—ñ–ª—å–∫—ñ— —Ç—å —É— –ø—ñ—à–Ω–∏—Ö –æ–Ω–æ–≤–ª–µ–Ω—å –±–∞–ª–∞–Ω— —É"
-  account_balance_updates_failed: "–ö—ñ–ª—å–∫—ñ— —Ç—å –Ω–µ–≤–¥–∞–ª–∏—Ö –æ–Ω–æ–≤–ª–µ–Ω—å –±–∞–ª–∞–Ω— —É"
-  account_balance_api_latency: "–°–µ—Ä–µ–¥–Ω—ñ–π —á–∞—  –≤—ñ–¥–ø–æ–≤—ñ–¥—ñ API (ms)"
-  account_balance_last_update_age: "–í—ñ–∫ –æ— —Ç–∞–Ω–Ω—ñ—Ö –¥–∞–Ω–∏—Ö (— –µ–∫—É–Ω–¥–∏)"
-  account_balance_position_count: "–ö—ñ–ª—å–∫—ñ— —Ç—å –∞–∫—Ç–∏–≤–Ω–∏—Ö –ø–æ–∑–∏—Ü—ñ–π"
-  account_balance_asset_count: "–ö—ñ–ª—å–∫—ñ— —Ç—å –∞–∫—Ç–∏–≤—ñ–≤ –∑ –±–∞–ª–∞–Ω— –æ–º"
+  account_balance_updates_success: " ö ñ ª å ∫ ñ   Ç å  É     ñ à Ω ∏ Ö  æ Ω æ ≤ ª µ Ω å  ±   ª   Ω   É"
+  account_balance_updates_failed: " ö ñ ª å ∫ ñ   Ç å  Ω µ ≤ ¥   ª ∏ Ö  æ Ω æ ≤ ª µ Ω å  ±   ª   Ω   É"
+  account_balance_api_latency: " ° µ   µ ¥ Ω ñ π  á      ≤ ñ ¥   æ ≤ ñ ¥ ñ API (ms)"
+  account_balance_last_update_age: " í ñ ∫  æ   Ç   Ω Ω ñ Ö  ¥   Ω ∏ Ö (   µ ∫ É Ω ¥ ∏)"
+  account_balance_position_count: " ö ñ ª å ∫ ñ   Ç å    ∫ Ç ∏ ≤ Ω ∏ Ö    æ ∑ ∏ Ü ñ π"
+  account_balance_asset_count: " ö ñ ª å ∫ ñ   Ç å    ∫ Ç ∏ ≤ ñ ≤  ∑  ±   ª   Ω   æ º"
 
-# –†—ñ–≤–Ω—ñ –ª–æ–≥—É–≤–∞–Ω–Ω—è
+#  † ñ ≤ Ω ñ  ª æ ≥ É ≤   Ω Ω è
 log_levels:
-  DEBUG: "–î–µ—Ç–∞–ª—å–Ω–µ –ª–æ–≥—É–≤–∞–Ω–Ω—è –¥–ª—è —Ä–æ–∑—Ä–æ–±–∫–∏"
-  INFO: "–Ü–Ω—Ñ–æ—Ä–º–∞—Ü—ñ–π–Ω—ñ –ø–æ–≤—ñ–¥–æ–º–ª–µ–Ω–Ω—è –ø—Ä–æ –Ω–æ—Ä–º–∞–ª—å–Ω—É —Ä–æ–±–æ—Ç—É"
-  WARN: "–ü–æ–ø–µ—Ä–µ–¥–∂–µ–Ω–Ω—è –ø—Ä–æ –ø–æ—Ç–µ–Ω—Ü—ñ–π–Ω—ñ –ø—Ä–æ–±–ª–µ–º–∏"
-  ERROR: "–ö—Ä–∏—Ç–∏—á–Ω—ñ –ø–æ–º–∏–ª–∫–∏ —â–æ –ø–æ—Ç—Ä–µ–±—É—é—Ç—å —É–≤–∞–≥–∏"
+  DEBUG: " î µ Ç   ª å Ω µ  ª æ ≥ É ≤   Ω Ω è  ¥ ª è    æ ∑   æ ± ∫ ∏"
+  INFO: " Ü Ω Ñ æ   º   Ü ñ π Ω ñ    æ ≤ ñ ¥ æ º ª µ Ω Ω è      æ  Ω æ   º   ª å Ω É    æ ± æ Ç É"
+  WARN: " ü æ   µ   µ ¥ ∂ µ Ω Ω è      æ    æ Ç µ Ω Ü ñ π Ω ñ      æ ± ª µ º ∏"
+  ERROR: " ö   ∏ Ç ∏ á Ω ñ    æ º ∏ ª ∫ ∏  â æ    æ Ç   µ ± É é Ç å  É ≤   ≥ ∏"
 
 # =============================================================================
-# –¢–ï–°–¢–û–í–Ü –î–ê–ù–Ü
+#  ¢ ï ° ¢ û í Ü  î ê ù Ü
 # =============================================================================
 
-# –ü—Ä–∏–∫–ª–∞–¥ —Ç–µ— —Ç–æ–≤–æ–≥–æ –±–∞–ª–∞–Ω— —É
+#  ü   ∏ ∫ ª   ¥  Ç µ   Ç æ ≤ æ ≥ æ  ±   ª   Ω   É
 test_balance_data:
   assets:
     - asset: "USDT"
@@ -258,7 +258,7 @@ test_balance_data:
       updateTime: 1640995200000
   updateTime: 1640995200000
 
-# –ü—Ä–∏–∫–ª–∞–¥ —Ç–µ— —Ç–æ–≤–∏—Ö –ø–æ–∑–∏—Ü—ñ–π
+#  ü   ∏ ∫ ª   ¥  Ç µ   Ç æ ≤ ∏ Ö    æ ∑ ∏ Ü ñ π
 test_position_data:
   positions:
     - symbol: "BTCUSDT"

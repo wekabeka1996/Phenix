@@ -1,4 +1,4 @@
-# ACL Adapter â€” Exchange Integration
+# ACL Adapter â ” Exchange Integration
 
 ## Overview
 

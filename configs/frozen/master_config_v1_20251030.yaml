@@ -1,5 +1,5 @@
 ops:
-  metrics_url: "http://127.0.0.1:8000/metrics"   # —è–∫—â–æ –≤–∞—à API –Ω–∞ —ñ–Ω—à–æ–º—É –ø–æ—Ä—Ç—É ‚Äî –æ–Ω–æ–≤—ñ—Ç—å —Ç—É—Ç
+  metrics_url: "http://127.0.0.1:8000/metrics"   #  è ∫ â æ  ≤   à API  Ω    ñ Ω à æ º É    æ   Ç É ‚ î  æ Ω æ ≤ ñ Ç å  Ç É Ç
   reports_dir: "reports"
 
 execution:

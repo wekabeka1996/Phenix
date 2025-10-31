@@ -27,29 +27,29 @@ Implement **minimal ENV-based config** with these constraints:
 ### 1. **Single Config Module** (`vfoundation/config.py`)
 - Load all ENV vars at import time (singleton pattern)
 - No framework dependencies (pure stdlib)
-- No YAML/JSON files ‚Äî ENV vars only
+- No YAML/JSON files ‚ î ENV vars only
 - Validation with bounds checking, no crashes on invalid input
 
 ### 2. **Extracted Parameters (9 total)**
 
 **Security:**
-- `RBAC_ADMIN_TOKENS` ‚Äî comma-separated list of admin bearer tokens
-- `SIGNING_KEY` ‚Äî 64-char hex Ed25519 private key
+- `RBAC_ADMIN_TOKENS` ‚ î comma-separated list of admin bearer tokens
+- `SIGNING_KEY` ‚ î 64-char hex Ed25519 private key
 
 **DR/WAL:**
-- `WAL_DIR` ‚Äî write-ahead log directory path
-- `WAL_LOCK_TIMEOUT_SEC` ‚Äî cross-platform file lock timeout
+- `WAL_DIR` ‚ î write-ahead log directory path
+- `WAL_LOCK_TIMEOUT_SEC` ‚ î cross-platform file lock timeout
 
 **Circuit Breaker:**
-- `CB_THRESHOLD` ‚Äî failure count before opening circuit
-- `CB_COOLDOWN_SEC` ‚Äî cooldown period after circuit opens
+- `CB_THRESHOLD` ‚ î failure count before opening circuit
+- `CB_COOLDOWN_SEC` ‚ î cooldown period after circuit opens
 
 **Idempotency:**
-- `IDEM_TTL_MS` ‚Äî cache entry time-to-live
-- `IDEM_MAX_ENTRIES` ‚Äî max cache size before eviction
+- `IDEM_TTL_MS` ‚ î cache entry time-to-live
+- `IDEM_MAX_ENTRIES` ‚ î max cache size before eviction
 
 **Drift Monitoring:**
-- `DRIFT_TIME_WINDOW_SEC` ‚Äî time window for shadow-mode drift calculation
+- `DRIFT_TIME_WINDOW_SEC` ‚ î time window for shadow-mode drift calculation
 
 ### 3. **Dev-Obvious Defaults**
 All defaults trigger `UserWarning` to ensure visibility:
@@ -76,7 +76,7 @@ def some_function(param: Optional[int] = None):
     actual_value = param if param is not None else config.some_setting
 ```
 
-Backward compatible ‚Äî existing code with hardcoded values works unchanged.
+Backward compatible ‚ î existing code with hardcoded values works unchanged.
 
 ---
 
@@ -120,31 +120,31 @@ Backward compatible ‚Äî existing code with hardcoded values works unchanged.
 - ‚ùå Requires file distribution (containers, deployment complexity)
 - ‚ùå Secrets in files (not ENV) harder to manage
 - ‚úÖ Hierarchical structure
-- **Decision:** Rejected ‚Äî ENV is cloud-native standard
+- **Decision:** Rejected ‚ î ENV is cloud-native standard
 
 ### C. **Hardcoded Constants (Status Quo)**
 - ‚ùå Security risk (secrets in source)
 - ‚ùå No environment flexibility
 - ‚úÖ Zero complexity
-- **Decision:** Rejected ‚Äî unacceptable for production
+- **Decision:** Rejected ‚ î unacceptable for production
 
 ---
 
 ## Implementation Notes
 
 ### Modified Modules (5)
-1. `vfoundation/security/rbac_abac.py` ‚Äî lazy import for test support
-2. `vfoundation/dr/wal.py` ‚Äî WAL_DIR and lock timeout
-3. `vfoundation/core/retry_cb.py` ‚Äî CB threshold/cooldown defaults
-4. `vfoundation/core/idempotency.py` ‚Äî TTL and max_entries defaults
-5. `vfoundation/apps/reference/domains/execution_position/drift_monitor.py` ‚Äî time_window_sec default
+1. `vfoundation/security/rbac_abac.py` ‚ î lazy import for test support
+2. `vfoundation/dr/wal.py` ‚ î WAL_DIR and lock timeout
+3. `vfoundation/core/retry_cb.py` ‚ î CB threshold/cooldown defaults
+4. `vfoundation/core/idempotency.py` ‚ î TTL and max_entries defaults
+5. `vfoundation/apps/reference/domains/execution_position/drift_monitor.py` ‚ î time_window_sec default
 
 ### Test Updates (2)
-1. `tests/test_rbac.py` ‚Äî added `reload_config()` calls
-2. `tests/test_security_xai_tighten.py` ‚Äî added `reload_config()` calls
+1. `tests/test_rbac.py` ‚ î added `reload_config()` calls
+2. `tests/test_security_xai_tighten.py` ‚ î added `reload_config()` calls
 
 ### New Test Suite
-- `tests/test_config_env_overrides.py` ‚Äî 20 tests covering:
+- `tests/test_config_env_overrides.py` ‚ î 20 tests covering:
   - Defaults (3 tests)
   - ENV overrides (7 tests)
   - Validation bounds (8 tests)
@@ -159,10 +159,10 @@ Backward compatible ‚Äî existing code with hardcoded values works unchanged.
 
 ## Related Documents
 
-- `docs/ROADMAP_DELTA_EMPTY_BRANCH.md` ‚Äî Task FSMP-P1-T04 specification
-- `docs/docs_vfoundation/Security.md` ‚Äî RBAC token usage
-- `docs/docs_vfoundation/Operations.md` ‚Äî Deployment ENV vars
-- `tests/test_config_env_overrides.py` ‚Äî Config test suite
+- `docs/ROADMAP_DELTA_EMPTY_BRANCH.md` ‚ î Task FSMP-P1-T04 specification
+- `docs/docs_vfoundation/Security.md` ‚ î RBAC token usage
+- `docs/docs_vfoundation/Operations.md` ‚ î Deployment ENV vars
+- `tests/test_config_env_overrides.py` ‚ î Config test suite
 
 ---
 

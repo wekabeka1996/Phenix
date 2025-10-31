@@ -1,14 +1,1 @@
-[
-  {
-    "symbol": "BTCUSDT",
-    "step_size": "0.00001",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading.yaml"
-  },
-  {
-    "symbol": "ETHUSDT",
-    "step_size": "0.001",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading.yaml"
-  }
-]
+[]

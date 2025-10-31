@@ -81,7 +81,7 @@ if response.status_code == 200:
     server_time = response.json()['serverTime']
     local_time = int(time.time() * 1000)
     offset = server_time - local_time
-    print(f'⏰ Time offset: {offset}ms')
+    print(f'�  Time offset: {offset}ms')
 else:
     print('❌ Binance Testnet API unreachable')
 "

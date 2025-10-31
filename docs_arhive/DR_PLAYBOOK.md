@@ -278,17 +278,17 @@ WAL entries use the standard **vFoundation Message protocol**:
 **Local Cache:**
 ```
 logs/dr/snapshots/
-  ├── position_tracking_20251018_120000_seq_001.json
-  ├── position_tracking_20251018_120500_seq_002.json
-  └── ...
+  ├� �  position_tracking_20251018_120000_seq_001.json
+  ├� �  position_tracking_20251018_120500_seq_002.json
+  └� �  ...
 ```
 
 **Remote Storage (S3 example):**
 ```
 s3://aurora-dr-prod/snapshots/position_tracking/
-  ├── 2025/10/18/120000_seq_001.json
-  ├── 2025/10/18/120500_seq_002.json
-  └── ...
+  ├� �  2025/10/18/120000_seq_001.json
+  ├� �  2025/10/18/120500_seq_002.json
+  └� �  ...
 ```
 
 ### 4.2 WAL Storage
@@ -296,17 +296,17 @@ s3://aurora-dr-prod/snapshots/position_tracking/
 **Local:**
 ```
 logs/dr/wal/
-  ├── wal_2025-10-18.jsonl      (current day, append-only)
-  ├── wal_2025-10-17.jsonl.gz   (rotated, compressed)
-  └── ...
+  ├� �  wal_2025-10-18.jsonl      (current day, append-only)
+  ├� �  wal_2025-10-17.jsonl.gz   (rotated, compressed)
+  └� �  ...
 ```
 
 **Remote Storage:**
 ```
 s3://aurora-dr-prod/wal/
-  ├── 2025/10/18/wal_2025-10-18.jsonl
-  ├── 2025/10/17/wal_2025-10-17.jsonl.gz
-  └── ...
+  ├� �  2025/10/18/wal_2025-10-18.jsonl
+  ├� �  2025/10/17/wal_2025-10-17.jsonl.gz
+  └� �  ...
 ```
 
 ## 5. Monitoring & Alerts

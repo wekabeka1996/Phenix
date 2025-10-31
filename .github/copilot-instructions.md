@@ -1,4 +1,4 @@
-# Copilot Instructions — QuantumTraderX → vFoundation (FSM Federation)
+# Copilot Instructions � � QuantumTraderX → vFoundation (FSM Federation)
 
 **Respond to humans in Ukrainian. Generate files in English.** Work ADDITIVE-ONLY.
 .venv/Scripts/Activate.ps1 all run commands.
@@ -29,12 +29,12 @@
 - **Logs**: structured JSONL to stdout (event stream); heavy XAI to cold storage via `why_explain_ref`.
 
 ## Domain order & FSM counts (v1)
-1) `execution_position` — Order/Position/Bracket (3 FSM)  
-2) `risk_strategy` — Safety + Sizing (2)  
-3) `analyzer` — Signal + Regime (2)  
+1) `execution_position` � � Order/Position/Bracket (3 FSM)  
+2) `risk_strategy` � � Safety + Sizing (2)  
+3) `analyzer` � � Signal + Regime (2)  
 4) `xai_audit` (1) → then `data_monitoring` (2), `reward_alysha` (1), `rl_core` (3)
 
 ## Folder-by-folder playbook
-Contracts → ACL/Adapter → FSM wrapper → Shadow (dual-read, zero-write; drift < 1%) → Canary (single-writer 10–20%) → Cutover → DR replay.
+Contracts → ACL/Adapter → FSM wrapper → Shadow (dual-read, zero-write; drift < 1%) → Canary (single-writer 10� �20%) → Cutover → DR replay.
 
 > If any required doc is missing, answer `NOOP` with the missing paths and stop.

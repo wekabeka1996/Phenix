@@ -1,6 +1,6 @@
 # Aurora+Scalp v0.1.0 Release Notes
 
-**Release Date**: 30 –∂–æ–≤—Ç–Ω—è 2025
+**Release Date**: 30  ∂ æ ≤ Ç Ω è 2025
 **Version**: v0.1.0
 **Status**: Production Ready (64/64 tests passing)
 

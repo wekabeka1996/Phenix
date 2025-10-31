@@ -729,17 +729,12 @@ def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPI
 
     # використай модульну змінну 'log', якщо її підмінили в тесті
     try:
-        _log = globals().get("log", None)
-        if _log is not None and hasattr(_log, "warning"):
-            _log.warning(
-                "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
-            )
-        else:
-            logging.getLogger(__name__).warning(
-                "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
-            )
+        _log = globals().get("log", LOG)
+        _log.warning(
+            "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
+        )
     except Exception:
-        logging.getLogger(__name__).warning(
+        LOG.warning(
             "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
         )
 

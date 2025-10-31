@@ -1,19 +1,19 @@
-# Drift Monitor ‚Äî Shadow-Mode Validation (FSMP-P1-T03)
+# Drift Monitor ‚ î Shadow-Mode Validation (FSMP-P1-T03)
 
 ## Overview
 
-Drift Monitor –æ–±—á–∏— –ª—é—î **drift%** —Ç–∞ **confusion matrix** –º—ñ–∂ —Ç—ñ–Ω—å–æ–≤–∏–º–∏ —Ä—ñ—à–µ–Ω–Ω—è–º–∏ FSM (DEC:OPEN/CLOSE) —Ç–∞ —Ñ–∞–∫—Ç–∏—á–Ω–∏–º–∏ –ø–æ–¥—ñ—è–º–∏ –≤—ñ–¥ –±—ñ—Ä–∂—ñ (EVT:ORDER_PLACED/FILL/CANCELLED).
+Drift Monitor  æ ± á ∏   ª é î **drift%**  Ç   **confusion matrix**  º ñ ∂  Ç ñ Ω å æ ≤ ∏ º ∏    ñ à µ Ω Ω è º ∏ FSM (DEC:OPEN/CLOSE)  Ç    Ñ   ∫ Ç ∏ á Ω ∏ º ∏    æ ¥ ñ è º ∏  ≤ ñ ¥  ± ñ   ∂ ñ (EVT:ORDER_PLACED/FILL/CANCELLED).
 
-**–ü—Ä–∏–∑–Ω–∞—á–µ–Ω–Ω—è**: –≤–∞–ª—ñ–¥–∞—Ü—ñ—è shadow-mode FSM –ø–µ—Ä–µ–¥ –ø–µ—Ä–µ–≤–µ–¥–µ–Ω–Ω—è–º —É hot-path production.
+** ü   ∏ ∑ Ω   á µ Ω Ω è**:  ≤   ª ñ ¥   Ü ñ è shadow-mode FSM    µ   µ ¥    µ   µ ≤ µ ¥ µ Ω Ω è º  É hot-path production.
 
-## –ú–µ—Ç–æ–¥–æ–ª–æ–≥—ñ—è
+##  ú µ Ç æ ¥ æ ª æ ≥ ñ è
 
 ### Confusion Matrix
 
-- **TP (True Positive)**: DEC:OPEN/CLOSE –º–∞—î –≤—ñ–¥–ø–æ–≤—ñ–¥–Ω–∏–π EVT —É time-window
-- **FP (False Positive)**: DEC:OPEN/CLOSE –±–µ–∑ –≤—ñ–¥–ø–æ–≤—ñ–¥–Ω–æ–≥–æ EVT
-- **FN (False Negative)**: EVT –±–µ–∑ –≤—ñ–¥–ø–æ–≤—ñ–¥–Ω–æ–≥–æ DEC (— –∞–º–æ–≤—ñ–ª—å–Ω–∞ –ø–æ–¥—ñ—è)
-- **TN (True Negative)**: –ø–µ—Ä—ñ–æ–¥–∏ –±–µ–∑ DEC —ñ –±–µ–∑ EVT (stub: TN=0)
+- **TP (True Positive)**: DEC:OPEN/CLOSE  º   î  ≤ ñ ¥   æ ≤ ñ ¥ Ω ∏ π EVT  É time-window
+- **FP (False Positive)**: DEC:OPEN/CLOSE  ± µ ∑  ≤ ñ ¥   æ ≤ ñ ¥ Ω æ ≥ æ EVT
+- **FN (False Negative)**: EVT  ± µ ∑  ≤ ñ ¥   æ ≤ ñ ¥ Ω æ ≥ æ DEC (     º æ ≤ ñ ª å Ω      æ ¥ ñ è)
+- **TN (True Negative)**:    µ   ñ æ ¥ ∏  ± µ ∑ DEC  ñ  ± µ ∑ EVT (stub: TN=0)
 
 ### Drift Formula
 
@@ -21,42 +21,42 @@ Drift Monitor –æ–±—á–∏— –ª—é—î **drift%** —Ç–∞ **confusion matrix** –º—ñ–∂ —Ç—ñ–
 drift_pct = (FP + FN) / (TP + FP + FN + TN) * 100
 ```
 
-**–Ü–Ω—Ç–µ—Ä–ø—Ä–µ—Ç–∞—Ü—ñ—è**:
+** Ü Ω Ç µ       µ Ç   Ü ñ è**:
 - `drift_pct < 1%` ‚Üí FSM ready for canary (10%)
 - `drift_pct < 5%` ‚Üí FSM needs minor tuning
 - `drift_pct > 10%` ‚Üí FSM needs major review
 
 ### Matching Rules
 
-**–Ü–Ω–¥–µ–∫— –∞—Ü—ñ—è**: –ø–æ `RID` (primary key), `symbol` —ñ–≥–Ω–æ—Ä—É—î—Ç—å— —è —è–∫—â–æ –≤—ñ–¥— —É—Ç–Ω—ñ–π —É DEC.
+** Ü Ω ¥ µ ∫     Ü ñ è**:    æ `RID` (primary key), `symbol`  ñ ≥ Ω æ   É î Ç å   è  è ∫ â æ  ≤ ñ ¥   É Ç Ω ñ π  É DEC.
 
-**Time window**: ¬±1s (default), –Ω–∞–ª–∞—à—Ç–æ–≤—É—î—Ç—å— —è —á–µ—Ä–µ–∑ `time_window_sec`.
+**Time window**: ¬±1s (default),  Ω   ª   à Ç æ ≤ É î Ç å   è  á µ   µ ∑ `time_window_sec`.
 
-**–ü—Ä–∞–≤–∏–ª–∞ –∑–≤—ñ—Ä–∫–∏**:
-1. `DEC:OPEN` ‚Üí `EVT:ORDER_PLACED` –∞–±–æ `EVT:FILL`
-2. `DEC:CLOSE` ‚Üí `EVT:CANCELLED` –∞–±–æ `EVT:FILL` (reduce)
-3. `DEC:ADJUST` ‚Üí —Ç—Ä–∞–∫—Ç—É—î—Ç—å— —è —è–∫ `CLOSE` –¥–ª—è confusion
+** ü     ≤ ∏ ª    ∑ ≤ ñ   ∫ ∏**:
+1. `DEC:OPEN` ‚Üí `EVT:ORDER_PLACED`    ± æ `EVT:FILL`
+2. `DEC:CLOSE` ‚Üí `EVT:CANCELLED`    ± æ `EVT:FILL` (reduce)
+3. `DEC:ADJUST` ‚Üí  Ç     ∫ Ç É î Ç å   è  è ∫ `CLOSE`  ¥ ª è confusion
 
 ## API
 
 ### `compute_drift(decisions, events, time_window_sec=1.0) -> DriftReport`
 
-–û–±—á–∏— –ª—é—î drift –º—ñ–∂ — –ø–∏— –∫–∞–º–∏ decisions —Ç–∞ events.
+ û ± á ∏   ª é î drift  º ñ ∂      ∏   ∫   º ∏ decisions  Ç   events.
 
 **Args**:
-- `decisions`: List[Dict] ‚Äî DEC messages (op="DEC", verb="OPEN"|"CLOSE")
-- `events`: List[Dict] ‚Äî EVT messages (op="EVT", verb="ORDER_PLACED"|"FILL"|"CANCELLED")
-- `time_window_sec`: float ‚Äî time window –¥–ª—è matching (default: 1.0s)
+- `decisions`: List[Dict] ‚ î DEC messages (op="DEC", verb="OPEN"|"CLOSE")
+- `events`: List[Dict] ‚ î EVT messages (op="EVT", verb="ORDER_PLACED"|"FILL"|"CANCELLED")
+- `time_window_sec`: float ‚ î time window  ¥ ª è matching (default: 1.0s)
 
-**Returns**: `DriftReport` –∑ –ø–æ–ª—è–º–∏:
+**Returns**: `DriftReport`  ∑    æ ª è º ∏:
 - `confusion`: ConfusionMatrix (tp/fp/fn/tn, drift_pct, accuracy)
-- `mismatches`: List[Mismatch] (–æ–±–º–µ–∂–µ–Ω–æ –¥–æ 5 –¥–ª—è /debug)
+- `mismatches`: List[Mismatch] ( æ ± º µ ∂ µ Ω æ  ¥ æ 5  ¥ ª è /debug)
 - `computed_at`: timestamp
-- `records_processed`: –∫—ñ–ª—å–∫—ñ— —Ç—å –æ–±—Ä–æ–±–ª–µ–Ω–∏—Ö –∑–∞–ø–∏— —ñ–≤
+- `records_processed`:  ∫ ñ ª å ∫ ñ   Ç å  æ ±   æ ± ª µ Ω ∏ Ö  ∑     ∏   ñ ≤
 
 ### `aggregate_drift_metrics(reports) -> Dict`
 
-–ê–≥—Ä–µ–≥—É—î –∫—ñ–ª—å–∫–∞ DriftReport —É summary metrics –¥–ª—è `/metrics`.
+ ê ≥   µ ≥ É î  ∫ ñ ª å ∫   DriftReport  É summary metrics  ¥ ª è `/metrics`.
 
 **Returns**:
 ```python
@@ -74,22 +74,22 @@ drift_pct = (FP + FN) / (TP + FP + FN + TN) * 100
 
 ### /metrics Endpoint
 
-–î–æ–¥–∞—Ç–∏ –∞–≥—Ä–µ–≥–æ–≤–∞–Ω—ñ –º–µ—Ç—Ä–∏–∫–∏:
+ î æ ¥   Ç ∏    ≥   µ ≥ æ ≤   Ω ñ  º µ Ç   ∏ ∫ ∏:
 ```python
 from apps.reference.domains.execution_position.drift_monitor import aggregate_drift_metrics
 
-# ... —É /metrics handler:
+# ...  É /metrics handler:
 drift_metrics = aggregate_drift_metrics(drift_reports)
 metrics.update(drift_metrics)
 ```
 
 ### /debug/{rid} Endpoint
 
-–î–æ–¥–∞—Ç–∏ `drift_report` — –µ–∫—Ü—ñ—é (–ø—ñ–¥ RBAC):
+ î æ ¥   Ç ∏ `drift_report`    µ ∫ Ü ñ é (   ñ ¥ RBAC):
 ```python
 from apps.reference.domains.execution_position.drift_monitor import compute_drift
 
-# ... —É /debug/{rid} handler:
+# ...  É /debug/{rid} handler:
 if rid in drift_cache:
     drift_report = drift_cache[rid].to_dict()
     response["drift_report"] = drift_report
@@ -97,15 +97,15 @@ if rid in drift_cache:
 
 ## Performance
 
-**Off-path computation**: –æ–±—á–∏— –ª–µ–Ω–Ω—è –Ω–µ –≤–∏–∫–æ–Ω—É—é—Ç—å— —è —É hot-path —Ä–æ—É—Ç–µ—Ä–∞.
+**Off-path computation**:  æ ± á ∏   ª µ Ω Ω è  Ω µ  ≤ ∏ ∫ æ Ω É é Ç å   è  É hot-path    æ É Ç µ    .
 
 **Benchmark**:
-- 1k records: ~25ms (–ª–æ–∫–∞–ª—å–Ω–æ)
-- Memory: O(n) –¥–ª—è —ñ–Ω–¥–µ–∫— –∞—Ü—ñ—ó events –ø–æ RID
+- 1k records: ~25ms ( ª æ ∫   ª å Ω æ)
+- Memory: O(n)  ¥ ª è  ñ Ω ¥ µ ∫     Ü ñ ó events    æ RID
 
 ## Testing
 
-**Unit tests** (`test_drift_unit.py`): 9 —Ç–µ— —Ç—ñ–≤, 100% PASS
+**Unit tests** (`test_drift_unit.py`): 9  Ç µ   Ç ñ ≤, 100% PASS
 - Perfect match (drift=0)
 - Only decisions (all FP)
 - Only events (all FN)
@@ -113,7 +113,7 @@ if rid in drift_cache:
 - Time window validation
 - Edge cases (empty matrix, serialization)
 
-**E2E tests** (`test_drift_roundtrip.py`): 5 —Ç–µ— —Ç—ñ–≤, 100% PASS
+**E2E tests** (`test_drift_roundtrip.py`): 5  Ç µ   Ç ñ ≤, 100% PASS
 - Open flow roundtrip (DEC‚ÜíEVT match)
 - Manage flow (trail trigger, no match)
 - Close flow (max_hold_sec trigger, match)
@@ -124,10 +124,10 @@ if rid in drift_cache:
 
 ## Limitations (STOP-scope)
 
-- ‚úÖ Only OPEN/CLOSE –≤ confusion matrix
-- ‚úÖ No real-time streaming –∞–±–æ –∞–ª–µ—Ä—Ç–∏
-- ‚úÖ No –Ω–æ–≤–∏—Ö –µ–Ω–¥–ø–æ—ñ–Ω—Ç—ñ–≤ (–ª–∏—à–µ —Ä–æ–∑—à–∏—Ä–µ–Ω–Ω—è —ñ— –Ω—É—é—á–∏—Ö)
-- ‚úÖ No –ø—ñ–¥–∫–ª—é—á–µ–Ω–Ω—è —Ä–µ–∞–ª—å–Ω–∏—Ö SDK (ACL-stub + WAL/fixtures)
+- ‚úÖ Only OPEN/CLOSE  ≤ confusion matrix
+- ‚úÖ No real-time streaming    ± æ    ª µ   Ç ∏
+- ‚úÖ No  Ω æ ≤ ∏ Ö  µ Ω ¥   æ ñ Ω Ç ñ ≤ ( ª ∏ à µ    æ ∑ à ∏   µ Ω Ω è  ñ   Ω É é á ∏ Ö)
+- ‚úÖ No    ñ ¥ ∫ ª é á µ Ω Ω è    µ   ª å Ω ∏ Ö SDK (ACL-stub + WAL/fixtures)
 - ‚ö†Ô∏è TN=0 (requires baseline tracking)
 
 ## Future Enhancements (not in scope)
@@ -140,7 +140,7 @@ if rid in drift_cache:
 
 ## References
 
-- **ADR-001**: WAL Format (–¥–ª—è replay drift scenarios)
-- **ADR-003**: RBAC Model (–¥–ª—è /debug protection)
+- **ADR-001**: WAL Format ( ¥ ª è replay drift scenarios)
+- **ADR-003**: RBAC Model ( ¥ ª è /debug protection)
 - **FSMP-P1-T02**: 3 FSM flows (OPEN/MANAGE/CLOSE)
-- **FSMP-P0-T04**: TTL Cache (–¥–ª—è drift_report caching)
+- **FSMP-P0-T04**: TTL Cache ( ¥ ª è drift_report caching)

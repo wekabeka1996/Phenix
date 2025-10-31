@@ -1,4 +1,4 @@
-# FSM Execution Position â€” 3 Flow Specification (FSMP-P1-T02)
+# FSM Execution Position â ” 3 Flow Specification (FSMP-P1-T02)
 
 **Status**: Shadow-mode (stub logic, no live API calls)  
 **Domain**: `execution_position`  
