@@ -10,7 +10,7 @@ The system has taken a crucial step in the right direction. The successful elimi
 However, the critical architectural violations identified in the first audit remain unresolved. The system is still a collection of isolated modules rather than a unified whole, which significantly complicates its maintenance, testing, and future development. Although the "spine" (data processing) is now healthy, the "nervous system" (architecture) remains paralyzed.
 
 ### Key Strengths:
-- ‚úÖ **Numerical Stability Achieved:** The fundamental issue with `Decimal` is now resolved. This is the most important achievement.
+-     **Numerical Stability Achieved:** The fundamental issue with `Decimal` is now resolved. This is the most important achievement.
 - **High-Quality Test Coverage:** The 99.6% test pass rate after a massive refactoring is a testament to the quality of the test suite.
 
 ### Critical Risks & Weaknesses:
@@ -40,7 +40,7 @@ We have successfully completed Priority 1. We now move to Priority 2 from the pr
 
 **Next Step:**
 
-#### üìù **Task for IDE-Agent #31: FSMP-REFACTOR-T02-A ‚ î Centralize FSM Core**
+####      **Task for IDE-Agent #31: FSMP-REFACTOR-T02-A     Centralize FSM Core**
 **WHY:** To resolve the architectural violation by removing all local `FSMCore` mocks and refactoring the system to use a single, central instance of the FSM core from the `vfoundation` library, as required by Priority 2 of the audit report.
 
 **Actions:**

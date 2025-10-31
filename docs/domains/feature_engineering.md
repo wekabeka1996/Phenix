@@ -1,62 +1,62 @@
-#  î æ º µ Ω Feature Engineering ( Ü Ω ∂ µ Ω µ   ñ è  û   æ ± ª ∏ ≤ æ   Ç µ π)
+#            Feature Engineering (                                           )
 
-##  ó   ≥   ª å Ω    ñ Ω Ñ æ   º   Ü ñ è
+##                                      
 
-** Ü ¥ µ Ω Ç ∏ Ñ ñ ∫   Ç æ    ¥ æ º µ Ω É:** `feature_engineering`  
-** † æ ª å  ≤    ∏   Ç µ º ñ:**  † æ ∑     Ö É Ω æ ∫  Ç µ Ö Ω ñ á Ω ∏ Ö  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤  Ç    æ   æ ± ª ∏ ≤ æ   Ç µ π    ∏ Ω ∫ É
+**                                       :** `feature_engineering`  
+**                          :**                                                                                                        
 
-##  ê   Ö ñ Ç µ ∫ Ç É   Ω      æ ª å
+##                                  
 
- î æ º µ Ω `feature_engineering`  î  º   Ç µ º   Ç ∏ á Ω ∏ º  è ¥   æ º    Ω   ª ñ Ç ∏ á Ω æ ó  á     Ç ∏ Ω ∏    ∏   Ç µ º ∏ Aurora.  í ñ Ω    µ   µ Ç ≤ æ   é î    ∏   ñ    ∏ Ω ∫ æ ≤ ñ  ¥   Ω ñ  ≤    Ç   É ∫ Ç É   æ ≤   Ω ñ  Ç µ Ö Ω ñ á Ω ñ  ñ Ω ¥ ∏ ∫   Ç æ   ∏,  è ∫ ñ  ≤ ∏ ∫ æ   ∏   Ç æ ≤ É é Ç å   è  ¥ ª è      ∏ π Ω è Ç Ç è  Ç æ   ≥ æ ≤ ∏ Ö    ñ à µ Ω å.
+           `feature_engineering`                                                                                             Aurora.                                                                                                                                 ,                                                                                                .
 
-###  í ñ ¥   æ ≤ ñ ¥   ª å Ω ñ   Ç å
--  † æ ∑     Ö É Ω æ ∫ Order Book Imbalance (OBI)
--  û ± á ∏   ª µ Ω Ω è Trade Flow Imbalance (TFI)
--  í ∏ ∑ Ω   á µ Ω Ω è  ∑ º ñ Ω ∏  Ü ñ Ω ∏ (delta_price)
--  ü µ   µ Ç ≤ æ   µ Ω Ω è    ∏ Ω ∫ æ ≤ ∏ Ö  ¥   Ω ∏ Ö  ≤    Ω   ª ñ Ç ∏ á Ω ñ    ∏ ≥ Ω   ª ∏
+###                                 
+-                      Order Book Imbalance (OBI)
+-                      Trade Flow Imbalance (TFI)
+-                                          (delta_price)
+-                                                                                            
 
-##  ° Ç   É ∫ Ç É      ¥ æ º µ Ω É
+##                                
 
-###  û   Ω æ ≤ Ω ñ  ∫ æ º   æ Ω µ Ω Ç ∏
+###                                    
 
 #### FeatureEngineering
- ì æ ª æ ≤ Ω ∏ π  ∫ ª      ¥ æ º µ Ω É,  â æ    µ   ª ñ ∑ É î    æ ∑     Ö É Ω æ ∫  Ç µ Ö Ω ñ á Ω ∏ Ö  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤.
+                                      ,                                                                                     .
 
-** Ü Ω ñ Ü ñ   ª ñ ∑   Ü ñ è:**
--  ü ñ ¥   ∏   ∫    Ω      æ ¥ ñ ó `EVT:MARKET_TICK_RECEIVED`
--  Ü Ω ñ Ü ñ   ª ñ ∑   Ü ñ è    Ö æ ≤ ∏ â    æ   Ç   Ω Ω ñ Ö tick  ¥   Ω ∏ Ö
--  ù   ª   à Ç É ≤   Ω Ω è  ª æ ≥ É ≤   Ω Ω è
+**                          :**
+-                                  `EVT:MARKET_TICK_RECEIVED`
+-                                                            tick           
+-                                            
 
-** ú µ Ç æ ¥ ∏  ∂ ∏ Ç Ç î ≤ æ ≥ æ  Ü ∏ ∫ ª É:**
-- `start()` -  ∑     É   ∫  ∫ æ º   æ Ω µ Ω Ç É
-- `stop()` -  ∑ É   ∏ Ω ∫    ∫ æ º   æ Ω µ Ω Ç É
+**                                          :**
+- `start()` -                                  
+- `stop()` -                                    
 
-###  í Ω É Ç   ñ à Ω è      Ö ñ Ç µ ∫ Ç É    
+###                                          
 
-####  ¶ ∏ ∫ ª  æ ±   æ ± ∫ ∏
+####                        
 ```
 on_market_tick() -> _calculate_and_emit_features()
-    ‚îú‚î ‚î   û Ç   ∏ º   Ω Ω è    æ Ç æ á Ω ∏ Ö  Ç      æ   µ   µ ¥ Ω ñ Ö tick  ¥   Ω ∏ Ö
-    ‚îú‚î ‚î   † æ ∑     Ö É Ω æ ∫ OBI (Order Book Imbalance)
-    ‚îú‚î ‚î   † æ ∑     Ö É Ω æ ∫ TFI (Trade Flow Imbalance)
-    ‚îú‚î ‚î   † æ ∑     Ö É Ω æ ∫ delta_price
-    ‚îî‚î ‚î   ï º ñ   ñ è EVT:FEATURES_CALCULATED
+                                                                            tick           
+                                   OBI (Order Book Imbalance)
+                                   TFI (Trade Flow Imbalance)
+                                   delta_price
+                           EVT:FEATURES_CALCULATED
 ```
 
-####  ö µ à É ≤   Ω Ω è  ¥   Ω ∏ Ö
--  ó ± µ   µ ∂ µ Ω Ω è  æ   Ç   Ω Ω ñ Ö tick  ¥   Ω ∏ Ö  ¥ ª è  ∫ æ ∂ Ω æ ≥ æ    ∏ º ≤ æ ª É
--  ü æ   ñ ≤ Ω è Ω Ω è    æ Ç æ á Ω ∏ Ö  Ç      æ   µ   µ ¥ Ω ñ Ö  ∑ Ω   á µ Ω å
--  ê ≤ Ç æ º   Ç ∏ á Ω µ  æ Ω æ ≤ ª µ Ω Ω è      ∏  æ Ç   ∏ º   Ω Ω ñ  Ω æ ≤ ∏ Ö  ¥   Ω ∏ Ö
+####                              
+-                                       tick                                                
+-                                                                               
+-                                                                                          
 
-## FSM    æ ¥ ñ ó
+## FSM           
 
-###  ì µ Ω µ   æ ≤   Ω ñ    æ ¥ ñ ó
+###                                
 
 #### EVT:FEATURES_CALCULATED
-** ß     Ç æ Ç  :**  ü   ∏  æ Ç   ∏ º   Ω Ω ñ  ∫ æ ∂ Ω æ ≥ æ  Ω æ ≤ æ ≥ æ MARKET_TICK_RECEIVED  
-** ù         ≤ ª µ Ω Ω è:** Decision Making, Risk Management, Regime Detector  
+**              :**                                                       MARKET_TICK_RECEIVED  
+**                      :** Decision Making, Risk Management, Regime Detector  
 
-**Payload    Ç   É ∫ Ç É    :**
+**Payload                   :**
 ```json
 {
   "ts": 1640995200000,
@@ -71,108 +71,108 @@ on_market_tick() -> _calculate_and_emit_features()
 }
 ```
 
-** û   ∏  :**  ü µ   µ ¥   î    æ ∑     Ö æ ≤   Ω ñ  Ç µ Ö Ω ñ á Ω ñ  ñ Ω ¥ ∏ ∫   Ç æ   ∏  ¥ ª è      ∏ π Ω è Ç Ç è    ñ à µ Ω å.
+**        :**                                                                                                                   .
 
-###  °   æ ∂ ∏ ≤   Ω ñ    æ ¥ ñ ó
+###                              
 
 #### EVT:MARKET_TICK_RECEIVED
-** î ∂ µ   µ ª æ:** Market Data  
-** í ∏ ∫ æ   ∏   Ç   Ω Ω è:**  û Ç   ∏ º   Ω Ω è    ∏   ∏ Ö    ∏ Ω ∫ æ ≤ ∏ Ö  ¥   Ω ∏ Ö  ¥ ª è    æ ∑     Ö É Ω ∫ É  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤  
-** ß     Ç æ Ç  :**  † µ   ª å Ω æ ≥ æ  á     É (5    µ ∫  Ω      ∏ º ≤ æ ª)
+**              :** Market Data  
+**                        :**                                                                                                               
+**              :**                             (5                         )
 
-##  í ∑   î º æ ¥ ñ è  ∑  ñ Ω à ∏ º ∏  ¥ æ º µ Ω   º ∏
+##                                                    
 
-###  ° ∏ Ω Ö   æ Ω Ω ñ  ∑ ≤' è ∑ ∫ ∏
+###                        '        
 
 #### Decision Making
-- ** í Ö ñ ¥:** EVT:FEATURES_CALCULATED
-- ** í ∏ ∫ æ   ∏   Ç   Ω Ω è:**  í ∏ ∫ æ   ∏   Ç   Ω Ω è  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤  ¥ ª è  æ Ü ñ Ω ∫ ∏  Ç æ   ≥ æ ≤ ∏ Ö    ∏ ≥ Ω   ª ñ ≤
-- ** ß     Ç æ Ç  :**  † µ   ª å Ω æ ≥ æ  á     É
+- **        :** EVT:FEATURES_CALCULATED
+- **                        :**                                                                                                      
+- **              :**                            
 
 #### Risk Management
-- ** í Ö ñ ¥:** EVT:FEATURES_CALCULATED
-- ** í ∏ ∫ æ   ∏   Ç   Ω Ω è:**  ê Ω   ª ñ ∑  ≤ æ ª   Ç ∏ ª å Ω æ   Ç ñ  á µ   µ ∑ delta_price  Ç   imbalance  º µ Ç   ∏ ∫ ∏
-- ** ß     Ç æ Ç  :**  † µ   ª å Ω æ ≥ æ  á     É
+- **        :** EVT:FEATURES_CALCULATED
+- **                        :**                                                    delta_price      imbalance               
+- **              :**                            
 
 #### Regime Detector
-- ** í Ö ñ ¥:** EVT:FEATURES_CALCULATED
-- ** í ∏ ∫ æ   ∏   Ç   Ω Ω è:**  í ∏ ∑ Ω   á µ Ω Ω è    ∏ Ω ∫ æ ≤ æ ≥ æ    µ ∂ ∏ º É  Ω    æ   Ω æ ≤ ñ  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤
-- ** ß     Ç æ Ç  :**  † µ   ª å Ω æ ≥ æ  á     É
+- **        :** EVT:FEATURES_CALCULATED
+- **                        :**                                                                                              
+- **              :**                            
 
-###  ê   ∏ Ω Ö   æ Ω Ω ñ  ∑   ª µ ∂ Ω æ   Ç ñ
- ó   ª µ ∂ ∏ Ç å  ≤ ñ ¥ Market Data  ¥ ª è  æ Ç   ∏ º   Ω Ω è    ∏   ∏ Ö  ¥   Ω ∏ Ö.
+###                                          
+                        Market Data                                                .
 
-##  † æ ∑     Ö É Ω æ ∫  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤
+##                                            
 
 ### Order Book Imbalance (OBI)
 ```
 OBI = (bid_size - ask_size) / (bid_size + ask_size)
 ```
-** î ñ       ∑ æ Ω:** [-1, 1]  
-** Ü Ω Ç µ       µ Ç   Ü ñ è:**  ü æ ∑ ∏ Ç ∏ ≤ Ω µ  ∑ Ω   á µ Ω Ω è  ≤ ∫   ∑ É î  Ω    ± ñ ª å à ∏ π bid volume,  Ω µ ≥   Ç ∏ ≤ Ω µ -  Ω    ± ñ ª å à ∏ π ask volume.
+**                :** [-1, 1]  
+**                          :**                                                                      bid volume,                    -                     ask volume.
 
 ### Trade Flow Imbalance (TFI)
 ```
 TFI = (buy_volume - sell_volume) / (buy_volume + sell_volume)
 ```
-** î ñ       ∑ æ Ω:** [-1, 1]  
-** Ü Ω Ç µ       µ Ç   Ü ñ è:**  ü æ ∑ ∏ Ç ∏ ≤ Ω µ  ∑ Ω   á µ Ω Ω è  ≤ ∫   ∑ É î  Ω      µ   µ ≤   ∂   Ω Ω è    æ ∫ É   æ ∫,  Ω µ ≥   Ç ∏ ≤ Ω µ -      æ ¥   ∂ ñ ≤.
+**                :** [-1, 1]  
+**                          :**                                                                                            ,                    -                 .
 
 ### Delta Price
 ```
 delta_price = current_price - previous_price
 ```
-** Ü Ω Ç µ       µ Ç   Ü ñ è:**  ó º ñ Ω    Ü ñ Ω ∏  º ñ ∂ ticks.  û ± º µ ∂ µ Ω æ 1000ms  ¥ ª è  É Ω ∏ ∫ Ω µ Ω Ω è  ≤ µ ª ∏ ∫ ∏ Ö    Ç   ∏ ± ∫ ñ ≤.
+**                          :**                            ticks.                  1000ms                                                          .
 
-##  ö æ Ω Ñ ñ ≥ É     Ü ñ è
+##                         
 
-###  û   Ω æ ≤ Ω ñ          º µ Ç   ∏
+###                                  
 ```yaml
 domain_configuration:
   feature_engineering:
-    trading_mode: "live"  #  ó   ∑ ≤ ∏ á   π live  ¥ ª è  æ Ç   ∏ º   Ω Ω è    µ   ª å Ω ∏ Ö  ¥   Ω ∏ Ö
+    trading_mode: "live"  #                  live                                                      
 ```
 
-###  † µ ∂ ∏ º ∏    æ ± æ Ç ∏
-- **live:**  û ±   æ ± ∫    ± æ π æ ≤ ∏ Ö    ∏ Ω ∫ æ ≤ ∏ Ö  ¥   Ω ∏ Ö
-- **testnet:**  û ±   æ ± ∫    Ç µ   Ç æ ≤ ∏ Ö    ∏ Ω ∫ æ ≤ ∏ Ö  ¥   Ω ∏ Ö
+###                          
+- **live:**                                                          
+- **testnet:**                                                            
 
-##  ú æ Ω ñ Ç æ   ∏ Ω ≥  Ç    ¥ ñ   ≥ Ω æ   Ç ∏ ∫  
+##                                                 
 
-###  õ æ ≥ É ≤   Ω Ω è
-- ** Ü Ω Ñ æ   º   Ü ñ π Ω ñ    æ ≤ ñ ¥ æ º ª µ Ω Ω è:**  ó     É   ∫/ ∑ É   ∏ Ω ∫    ∫ æ º   æ Ω µ Ω Ç É
-- ** ü æ º ∏ ª ∫ ∏:**  ü   æ ± ª µ º ∏  ∑    æ ∑     Ö É Ω ∫ æ º  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤,  Ω µ ≤   ª ñ ¥ Ω ñ  ¥   Ω ñ
+###                   
+- **                                                 :**             /                                   
+- **              :**                                                                  ,                            
 
-###  ú µ Ç   ∏ ∫ ∏
--  ö ñ ª å ∫ ñ   Ç å  æ ±   æ ± ª µ Ω ∏ Ö tick' ñ ≤
--  ß     Ç æ Ç      æ ∑     Ö É Ω ∫ É  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤
--  ü æ º ∏ ª ∫ ∏    æ ∑     Ö É Ω ∫ ñ ≤
+###               
+-                                         tick'    
+-                                                           
+-                                      
 
-##  û ±   æ ± ∫      æ º ∏ ª æ ∫
+##                              
 
-###  ° Ç     Ç µ ≥ ñ ó  ≤ ñ ¥ Ω æ ≤ ª µ Ω Ω è
-1. ** ù µ ≤   ª ñ ¥ Ω ñ  ¥   Ω ñ:**  ü   æ   É   ∫      æ ± ª µ º Ω ∏ Ö tick' ñ ≤  ∑  ª æ ≥ É ≤   Ω Ω è º
-2. ** î ñ ª µ Ω Ω è  Ω    Ω É ª å:**  ü µ   µ ≤ ñ   ∫   denominator    µ   µ ¥    æ ∑     Ö É Ω ∫ æ º
-3. **Exception handling:**  õ æ ≥ É ≤   Ω Ω è    æ º ∏ ª æ ∫  ± µ ∑  ∑ É   ∏ Ω ∫ ∏  æ ±   æ ± ∫ ∏
+###                                          
+1. **                           :**                                     tick'                            
+2. **                            :**                    denominator                                  
+3. **Exception handling:**                                                                       
 
 ### Graceful degradation
- ü   ∏      æ ± ª µ º   Ö  ∑  æ ∫   µ º ∏ º ∏    æ ∑     Ö É Ω ∫   º ∏      æ ¥ æ ≤ ∂ É î  æ ±   æ ± ∫ É  ñ Ω à ∏ Ö  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤.
+                                                                                                                                          .
 
-##  ¢ µ   Ç É ≤   Ω Ω è
+##                     
 
-###  Ü Ω Ç µ ≥     Ü ñ π Ω ñ  Ç µ   Ç ∏
--  í   ª ñ ¥   Ü ñ è  ∫ æ   µ ∫ Ç Ω æ   Ç ñ    æ ∑     Ö É Ω ∫ É  ≤   ñ Ö  ñ Ω ¥ ∏ ∫   Ç æ   ñ ≤
--  ü µ   µ ≤ ñ   ∫    æ ±   æ ± ∫ ∏ edge cases ( Ω É ª å æ ≤ ñ  æ ±' î º ∏,  Ü ñ Ω ∏)
--  ¢ µ   Ç É ≤   Ω Ω è  µ º ñ   ñ ó    æ ¥ ñ π  ∑        ≤ ∏ ª å Ω ∏ º payload
+###                                    
+-                                                                                               
+-                                   edge cases (                   '      ,         )
+-                                                                      payload
 
-###  ú æ ¥ É ª å Ω ñ  Ç µ   Ç ∏
--  ü µ   µ ≤ ñ   ∫    º   Ç µ º   Ç ∏ á Ω ∏ Ö  Ñ æ   º É ª OBI/TFI
--  í   ª ñ ¥   Ü ñ è  ¥ ñ       ∑ æ Ω ñ ≤  ∑ Ω   á µ Ω å
--  ¢ µ   Ç É ≤   Ω Ω è  æ ±   æ ± ∫ ∏  Ω µ ≤   ª ñ ¥ Ω ∏ Ö  ≤ Ö ñ ¥ Ω ∏ Ö  ¥   Ω ∏ Ö
+###                            
+-                                                          OBI/TFI
+-                                                       
+-                                                                                   
 
-##  † æ ∑ à ∏   µ Ω Ω è
+##                     
 
-###  ú   π ± É Ç Ω ñ  ñ Ω ¥ ∏ ∫   Ç æ   ∏
-- **Absorption:**  ú ñ        æ ≥ ª ∏ Ω   Ω Ω è  ª ñ ∫ ≤ ñ ¥ Ω æ   Ç ñ
-- **Volatility measures:**  î æ ¥   Ç ∫ æ ≤ ñ  º µ Ç   ∏ ∫ ∏  ≤ æ ª   Ç ∏ ª å Ω æ   Ç ñ
-- **Higher timeframe features:**  Ü Ω ¥ ∏ ∫   Ç æ   ∏  Ω    ± ñ ª å à ∏ Ö  Ç   π º Ñ   µ π º   Ö
+###                                      
+- **Absorption:**                                                     
+- **Volatility measures:**                                                             
+- **Higher timeframe features:**                                                                

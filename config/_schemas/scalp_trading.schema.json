@@ -69,7 +69,7 @@
           "type": "number",
           "minimum": 0.0,
           "maximum": 10.0,
-          "description": "Blend factor between spread and EWMA sigma (≥0; was code default 0.5)"
+          "description": "Blend factor between spread and EWMA sigma (   0; was code default 0.5)"
         },
         "latency_base_ms": {
           "type": "number",
@@ -447,7 +447,7 @@
                 },
                 "pnl_vs_sim_min": {
                   "type": "number",
-                  "description": "T1.5: Minimum ΔPnL canary vs shadow (bps)"
+                  "description": "T1.5: Minimum   PnL canary vs shadow (bps)"
                 },
                 "es_breaches_max": {
                   "type": "integer",
@@ -606,13 +606,13 @@
               "type": "number",
               "minimum": 50.0,
               "maximum": 500.0,
-              "description": "Time budget in milliseconds for p95 ≤ 200ms SLO compliance"
+              "description": "Time budget in milliseconds for p95     200ms SLO compliance"
             },
             "tail_buffer_ratio": {
               "type": "number",
               "minimum": 0.05,
               "maximum": 0.50,
-              "description": "Buffer ratio beyond (1-α)N for initial tail selection"
+              "description": "Buffer ratio beyond (1-  )N for initial tail selection"
             },
             "max_cuts_per_iter": {
               "type": "integer",

@@ -32,26 +32,29 @@ def _nested_get(d: dict, path: List[str], default: Any = None) -> Any:
 
 def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
     reasons: List[str] = []
-    mode_label = 'hybrid_testnet'
+    mode_label = "hybrid_testnet"
 
-    # market_data.trading_mode може лежати в різних місцях
-    md_mode = _nested_get(cfg, ['trading', 'domain_configuration', 'market_data', 'trading_mode'],
-                          _nested_get(cfg, ['domain_configuration', 'market_data', 'trading_mode'],
-                                      _nested_get(cfg, ['market_data', 'trading_mode'], None)))
-    if md_mode != 'live':
+    # 1) data must be live if будь-який з data-доменів live
+    dc = _nested_get(cfg, ["domain_configuration"], {}) or {}
+    md_mode_candidates = [
+        _nested_get(dc, ["market_data", "trading_mode"]),
+        _nested_get(dc, ["feature_engineering", "trading_mode"]),
+        _nested_get(dc, ["decision_making", "trading_mode"]),
+        _nested_get(cfg, ["market_data", "trading_mode"])
+    ]
+    any_live = any(m == "live" for m in md_mode_candidates if m is not None)
+    if not any_live:
         reasons.append(
-            'Market data trading_mode is \'testnet\', expected \'live\'.')
+            "Market data trading_mode is 'testnet', expected 'live'.")
 
-    # risk_portfolio_source: приймаємо як _resolved або як явне в trading.yaml
-    rps = _nested_get(cfg, ['_resolved', 'risk_portfolio_source'],
-                      _nested_get(cfg, ['trading', 'domain_configuration', 'risk_management', 'data_sources', 'portfolio_state'],
-                                  _nested_get(cfg, ['risk_management', 'data_sources', 'portfolio_state'], None)))
-    # follow_execution у гібриді означає testnet
-    if rps == 'follow_execution':
-        rps = 'testnet'
-    if rps != 'testnet':
-        reasons.append(
-            'Risk portfolio source is \'live\', expected \'testnet\'.')
+    # 2) risk portfolio source → testnet (follow_execution у гібриді = testnet)
+    rps = _nested_get(cfg, ["_resolved", "risk_portfolio_source"],
+                      _nested_get(cfg, ["trading", "domain_configuration", "risk_management", "data_sources", "portfolio_state"],
+                                  _nested_get(cfg, ["risk_management", "data_sources", "portfolio_state"])))
+    if rps == "follow_execution":
+        rps = "testnet"
+    if rps != "testnet":
+        reasons.append("Risk portfolio source is 'live', expected 'testnet'.")
 
     ok = (len(reasons) == 0)
     AURORA_HYBRID_COHERENT.labels(mode=mode_label).set(1.0 if ok else 0.0)
@@ -60,13 +63,7 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
             AURORA_HYBRID_INCOHERENT_REASONS_TOTAL.labels(
                 reason=_slug(r)).inc()
         log.warning(
-            'HYBRID_INCOHERENT: Hybrid mode pre-flight check failed. Reasons: %s', '; '.join(reasons))
+            "HYBRID_INCOHERENT: Hybrid mode pre-flight check failed. Reasons: %s", "; ".join(reasons))
     else:
-        log.info(' Hybrid mode pre-flight check passed.')
-
-    # Update state
-    _HYBRID_COHERENCE_STATE['last_result'] = {'ok': ok, 'reasons': reasons}
-    _HYBRID_COHERENCE_STATE['risk_portfolio_source'] = rps
-    _HYBRID_COHERENCE_STATE['execution_mode'] = 'testnet'
-
+        log.info("✅ Hybrid mode pre-flight check passed.")
     return ok, reasons

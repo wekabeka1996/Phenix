@@ -1,4 +1,4 @@
-name: 'ðŸ”  Gemini Triage'
+name: '     Gemini Triage'
 
 on:
   workflow_call:

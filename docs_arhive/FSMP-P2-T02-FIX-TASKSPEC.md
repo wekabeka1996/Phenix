@@ -1,4 +1,4 @@
-# FSMP-P2-T02-FIX â ” TaskSpec  ´ »  Copilot
+# FSMP-P2-T02-FIX     TaskSpec        Copilot
 
 **RID**: FSMP-P2-T02-FIX  
 **Priority**: P0 (URGENT)  
@@ -7,29 +7,29 @@
 
 ---
 
-## ðŸŽ¯  ¦ µ » Œ (Goal)
+##               (Goal)
 
- ” ¾ ² µ   ‚ ¸ **FSMP-P2-T02**  ´ ¾ DoD  ± µ ·  ¸ · ¼ µ ½ µ ½ ¸  API/ » ¾ ³ ¸ º ¸:
-- Coverage â‰¥ 90% (   µ ¹ ‡     81%)
-- Tests 14/14 PASS (   µ ¹ ‡     7/14)
-- mypy --strict = 0 warnings (   µ ¹ ‡     3)
-- SLO validated: p95 â‰¤ 10ms, timeout_rate â‰¤ 1%
+               **FSMP-P2-T02**      DoD                           API/            :
+- Coverage     90% (             81%)
+- Tests 14/14 PASS (             7/14)
+- mypy --strict = 0 warnings (             3)
+- SLO validated: p95     10ms, timeout_rate     1%
 
 ---
 
-## ðŸ“‹  —   ´   ‡ ¸ (Tasks)
+##                   (Tasks)
 
-### 1. Embedded Lua Runtime ( Ÿ   ¸ ¾   ¸ ‚ µ ‚: P0)
+### 1. Embedded Lua Runtime (                  : P0)
 
-** Ÿ   ¾ ± » µ ¼  **: `fakeredis`  ½ µ    ¾ ´ ´ µ   ¶ ¸ ²   µ ‚ Lua scripts (EVAL/EVALSHA).
+**                **: `fakeredis`                               Lua scripts (EVAL/EVALSHA).
 
-**   µ ˆ µ ½ ¸ µ**:
--  ¡ ¾ · ´   ‚ Œ `EmbeddedRedisHarness`  ¸ » ¸  ¸ ½ ¶ µ º ‚ ¸   ƒ µ ¼ ‹ ¹ `LuaExecutor`:
-  -  ­ ¼ ƒ » ¸   ƒ µ ‚ Lua-   º   ¸   ‚ ‹  ¸ · `redis_store.py` (RESERVE_SCRIPT, CONFIRM_SCRIPT, RELEASE_SCRIPT)
-  -  “       ½ ‚ ¸   ƒ µ ‚    ‚ ¾ ¼     ½ ¾   ‚ Œ  ²      ¼ º   …  ‚ µ   ‚   (mutex/lock)
-  -  ¡ ¾ ² ¼ µ   ‚ ¸ ¼    `fakeredis` ( ±   · ¾ ² ‹ µ  º ¾ ¼   ½ ´ ‹: GET/SET/DEL/PEXPIRE/EXISTS)
+**              **:
+-                `EmbeddedRedisHarness`                                   `LuaExecutor`:
+  -                    Lua-                    `redis_store.py` (RESERVE_SCRIPT, CONFIRM_SCRIPT, RELEASE_SCRIPT)
+  -                                                                          (mutex/lock)
+  -                       `fakeredis` (                             : GET/SET/DEL/PEXPIRE/EXISTS)
 
-** ¤   ¹ »**: `tests/idempotency/fixtures/lua_executor.py`
+**        **: `tests/idempotency/fixtures/lua_executor.py`
 
 **API**:
 ```python
@@ -41,17 +41,17 @@ class LuaExecutor:
         ...
 ```
 
-** š   ¸ ‚ µ   ¸ ¹**: `RedisIdempotencyStore`      ± ¾ ‚   µ ‚    `LuaExecutor`  ² ¼ µ   ‚ ¾    µ   » Œ ½ ¾ ³ ¾ Redis  ²  ‚ µ   ‚   ….
+**                **: `RedisIdempotencyStore`                     `LuaExecutor`                                 Redis                .
 
 ---
 
-### 2.  ” ¾ ±   ² ¸ ‚ Œ 7      ¾   ƒ ‰ µ ½ ½ ‹ …  ‚ µ   ‚ ¾ ²
+### 2.                  7                                    
 
 #### Test 8: Concurrent reserve race (race.py)
 
 ```python
 def test_idemp_concurrency_reserve_race():
-    """10 threads/processes â†’ exactly 1 NEW, rest DUPLICATE_SAME/EXTERN_OWNER."""
+    """10 threads/processes     exactly 1 NEW, rest DUPLICATE_SAME/EXTERN_OWNER."""
     # Barrier sync
     # Assert: new_count == 1, no double "victory"
 ```
@@ -60,7 +60,7 @@ def test_idemp_concurrency_reserve_race():
 
 ```python
 def test_idemp_conflict_under_race():
-    """Parallel different digests â†’ all but one get CONFLICT/BUSY."""
+    """Parallel different digests     all but one get CONFLICT/BUSY."""
     # Assert: new_count == 1, conflict_count + busy_count == N-1
 ```
 
@@ -68,7 +68,7 @@ def test_idemp_conflict_under_race():
 
 ```python
 def test_idemp_ttl_expiry():
-    """After TTL expires, key disappears; repeat reserve â†’ NEW."""
+    """After TTL expires, key disappears; repeat reserve     NEW."""
     # time.sleep(ttl_ms / 1000 + buffer)
     # Assert: get_status() == EMPTY, reserve() == NEW
 ```
@@ -77,9 +77,9 @@ def test_idemp_ttl_expiry():
 
 ```python
 def test_idemp_store_timeout_retry_cb():
-    """Inject timeouts â†’ backoff/CB/ERR; WHYâ‰¤80 present."""
+    """Inject timeouts     backoff/CB/ERR; WHY   80 present."""
     # Mock Redis failures
-    # Assert: CBOpenError raised, metrics.idemp_cb_open_total > 0, WHYâ‰¤80
+    # Assert: CBOpenError raised, metrics.idemp_cb_open_total > 0, WHY   80
 ```
 
 #### Test 12: Adapter integration - no-op on duplicate (adapter_integration.py)
@@ -87,8 +87,8 @@ def test_idemp_store_timeout_retry_cb():
 ```python
 def test_adapter_with_distributed_idemp_noop_on_duplicate():
     """Repeated submit returns same EVT (no SDK I/O)."""
-    # First: reserveâ†’NEW â†’ SDK called
-    # Second: reserveâ†’DUPLICATE_SAME â†’ SDK NOT called
+    # First: reserve   NEW     SDK called
+    # Second: reserve   DUPLICATE_SAME     SDK NOT called
     # Assert: sdk.submit.call_count == 1
 ```
 
@@ -96,9 +96,9 @@ def test_adapter_with_distributed_idemp_noop_on_duplicate():
 
 ```python
 def test_adapter_busy_owner():
-    """EXTERN_OWNER â†’ ERR.idemp.busy with WHYâ‰¤80."""
+    """EXTERN_OWNER     ERR.idemp.busy with WHY   80."""
     # Worker 1 reserves
-    # Worker 2 tries â†’ BusyError
+    # Worker 2 tries     BusyError
     # Assert: err.code == "ERR.idemp.busy", len(err.why) <= 80
 ```
 
@@ -106,39 +106,39 @@ def test_adapter_busy_owner():
 
 ```python
 def test_idemp_metrics_counters_p95():
-    """100 ops â†’ counters + p95 â‰¤ 10ms."""
+    """100 ops     counters + p95     10ms."""
     # Assert: p95_reserve <= 10.0, p95_confirm <= 10.0
     # Assert: idemp_reserve_total["NEW"] == 100
 ```
 
-** ¤   ¹ » ‹**:
-- `tests/idempotency/test_race.py` ( ¾ ± ½ ¾ ² ¸ ‚ Œ    ¾ ´ `LuaExecutor`)
-- `tests/idempotency/test_ttl_resilience.py` ( ¾ ± ½ ¾ ² ¸ ‚ Œ)
-- `tests/idempotency/test_adapter_integration.py` ( ¾ ± ½ ¾ ² ¸ ‚ Œ)
-- `tests/idempotency/test_metrics.py` ( ¾ ± ½ ¾ ² ¸ ‚ Œ)
+**          **:
+- `tests/idempotency/test_race.py` (                        `LuaExecutor`)
+- `tests/idempotency/test_ttl_resilience.py` (                )
+- `tests/idempotency/test_adapter_integration.py` (                )
+- `tests/idempotency/test_metrics.py` (                )
 
 ---
 
-### 3. Coverage Uplift: â‰¥90%
+### 3. Coverage Uplift:    90%
 
 **Current**:
 - `simple_redis_store.py`: 81%
 - `errors.py`: 82%
 - `store.py`: 76%
-- `redis_store.py`: 0% ( ½ µ  ‚ µ   ‚ ¸   ¾ ²   »   )
+- `redis_store.py`: 0% (                             )
 
-**Target**: â‰¥90%  ½    ’ ¡ •  ¼ ¾ ´ ƒ » ¸
+**Target**:    90%                         
 
-** Ÿ ¾ ´ … ¾ ´**:
-1.  ˜     ¾ » Œ · ¾ ²   ‚ Œ `LuaExecutor`  ´ »   ‚ µ   ‚ ¸   ¾ ²   ½ ¸  `RedisIdempotencyStore` ( ¾   ½ ¾ ² ½     ¸ ¼   » µ ¼ µ ½ ‚   † ¸ )
-2.  Ÿ ¾ º   ‹ ‚ Œ  ³     ½ ¸ ‡ ½ ‹ µ    » ƒ ‡   ¸:
-   - CB transitions (CLOSED â†’ OPEN â†’ HALF_OPEN â†’ CLOSED)
+**            **:
+1.                          `LuaExecutor`                                 `RedisIdempotencyStore` (                                           )
+2.                                               :
+   - CB transitions (CLOSED     OPEN     HALF_OPEN     CLOSED)
    - Retry exhaustion
    - Missing record on release/confirm
    - Race conditions (owner mismatch)
-3. Property-based tests ( µ   » ¸  ²   µ ¼ µ ½ ¸  ´ ¾   ‚   ‚ ¾ ‡ ½ ¾): `hypothesis`  ´ »  fuzz- ‚ µ   ‚ ¾ ²
+3. Property-based tests (                                            ): `hypothesis`        fuzz-            
 
-** š ¾ ¼   ½ ´        ¾ ² µ   º ¸**:
+**                               **:
 ```bash
 pytest tests/idempotency/ --cov=vfoundation.core.idempotency --cov-report=term-missing --cov-fail-under=90
 ```
@@ -151,8 +151,8 @@ pytest tests/idempotency/ --cov=vfoundation.core.idempotency --cov-report=term-m
 - `redis.from_url`: untyped call
 - Redis client type issues
 
-**   µ ˆ µ ½ ¸ µ**:
-1.  ¡ ¾ · ´   ‚ Œ `Protocol`  ´ »  Redis client:
+**              **:
+1.                `Protocol`        Redis client:
 ```python
 from typing import Protocol
 
@@ -164,28 +164,28 @@ class RedisClientProtocol(Protocol):
     # ...
 ```
 
-2.  ˜     ¾ » Œ · ¾ ²   ‚ Œ `cast()`  ¸ » ¸ `# type: ignore[no-untyped-call]`     º ¾ ¼ ¼ µ ½ ‚     ¸ µ ¼ WHY.
+2.                          `cast()`        `# type: ignore[no-untyped-call]`                             WHY.
 
-** ¤   ¹ » ‹**: `redis_store.py`, `simple_redis_store.py`
+**          **: `redis_store.py`, `simple_redis_store.py`
 
-** š ¾ ¼   ½ ´        ¾ ² µ   º ¸**:
+**                               **:
 ```bash
 mypy vfoundation/vfoundation/core/idempotency --strict
 ```
 
 ---
 
-### 5. Validate SLO  ²  ‚ µ   ‚   …
+### 5. Validate SLO                
 
-** œ µ ‚   ¸ º ¸**:
-- `p95(reserve) â‰¤ 10ms`
-- `p95(confirm) â‰¤ 10ms`
-- `timeout_rate â‰¤ 1%`
+**              **:
+- `p95(reserve)     10ms`
+- `p95(confirm)     10ms`
+- `timeout_rate     1%`
 
-**   µ   » ¸ ·   † ¸ **:
+**                    **:
 ```python
 def test_slo_validation():
-    """Run 1000 ops, check p95 â‰¤ 10ms, timeout_rate â‰¤ 1%."""
+    """Run 1000 ops, check p95     10ms, timeout_rate     1%."""
     for i in range(1000):
         store.reserve(...)
     
@@ -196,77 +196,77 @@ def test_slo_validation():
     assert timeout_rate <= 0.01, f"timeout_rate={timeout_rate} exceeds 1%"
 ```
 
-** ¤   ¹ »**: `tests/idempotency/test_slo.py`
+**        **: `tests/idempotency/test_slo.py`
 
 ---
 
-### 6. WHYâ‰¤80 Automated Validators
+### 6. WHY   80 Automated Validators
 
- ¡ ¾ · ´   ‚ Œ  … µ »   µ    ´ »       ¾ ² µ   º ¸ WHY  ²  ‚ µ   ‚   …:
+                                                    WHY                :
 
 ```python
 def assert_why_valid(err: IdempotencyError) -> None:
-    """Assert WHY â‰¤ 80 chars."""
+    """Assert WHY     80 chars."""
     assert len(err.why) <= 80, f"WHY too long ({len(err.why)}): {err.why}"
     assert err.code.startswith("ERR.idemp."), f"Invalid code: {err.code}"
 ```
 
- ˜     ¾ » Œ · ¾ ²   ‚ Œ  ² ¾  ’ ¡ • ¥  ‚ µ   ‚   …     ¾ ˆ ¸ ± º   ¼ ¸.
+                                                                       .
 
 ---
 
 ### 7. Update Documentation
 
-** ¤   ¹ »**: `docs/FSMP-P2-T02-COMPLETION-REPORT.md`
+**        **: `docs/FSMP-P2-T02-COMPLETION-REPORT.md`
 
- ž ± ½ ¾ ² ¸ ‚ Œ    µ º † ¸ ¸:
-- Test Results: 14/14 PASS âœ…
-- Coverage: â‰¥90% âœ…
-- mypy: 0 warnings âœ…
-- SLO: p95â‰¤10ms, timeout_rateâ‰¤1% âœ…
--  £ ´   » ¸ ‚ Œ WVR-02
+                             :
+- Test Results: 14/14 PASS    
+- Coverage:    90%    
+- mypy: 0 warnings    
+- SLO: p95   10ms, timeout_rate   1%    
+-                WVR-02
 
 ---
 
-## ðŸšª Definition of Done (DoD)
+##      Definition of Done (DoD)
 
 | Criterion | Target | Current | Status |
 |-----------|--------|---------|--------|
-| Tests PASS | 14/14 | 7/14 | âŒ |
-| Coverage | â‰¥90% | 81% | âŒ |
-| mypy --strict | 0 warnings | 3 | âŒ |
-| p95 latency | â‰¤10ms | <2ms | âœ… |
-| timeout_rate | â‰¤1% | 0% | âœ… |
-| WHYâ‰¤80 validators | All ERR paths | Partial | âŒ |
-| Documentation | Updated | Partial | âŒ |
+| Tests PASS | 14/14 | 7/14 |     |
+| Coverage |    90% | 81% |     |
+| mypy --strict | 0 warnings | 3 |     |
+| p95 latency |    10ms | <2ms |     |
+| timeout_rate |    1% | 0% |     |
+| WHY   80 validators | All ERR paths | Partial |     |
+| Documentation | Updated | Partial |     |
 
-**Gate**: ALL âœ… before merge.
-
----
-
-## ðŸš« Out of Scope (STOP-     ¼ º  )
-
-- âŒ NO  ¸ · ¼ µ ½ µ ½ ¸  API/ » ¾ ³ ¸ º ¸ ( ‚ ¾ » Œ º ¾  ‚ µ   ‚ ‹/ ‚ ¸   ‹)
-- âŒ NO  ¸ · ¼ µ ½ µ ½ ¸  FSM/WAL
-- âŒ NO  ½ ¾ ² ‹ µ  „ ¸ ‡ ¸
-- âŒ NO  ² ½ µ ˆ ½ ¸ µ  ·   ² ¸   ¸ ¼ ¾   ‚ ¸ (Docker Redis)
+**Gate**: ALL     before merge.
 
 ---
 
-## ðŸ“¦ Deliverables
+##      Out of Scope (STOP-          )
 
-1. `tests/idempotency/fixtures/lua_executor.py` â ” embedded Lua runtime
-2. `tests/idempotency/test_race.py` â ” 2 race tests
-3. `tests/idempotency/test_ttl_resilience.py` â ” 2 TTL/resilience tests
-4. `tests/idempotency/test_adapter_integration.py` â ” 2 adapter tests
-5. `tests/idempotency/test_metrics.py` â ” 1 metrics test
-6. `tests/idempotency/test_slo.py` â ” SLO validation test
+-     NO                    API/             (                       /        )
+-     NO                    FSM/WAL
+-     NO                    
+-     NO                                       (Docker Redis)
+
+---
+
+##      Deliverables
+
+1. `tests/idempotency/fixtures/lua_executor.py`     embedded Lua runtime
+2. `tests/idempotency/test_race.py`     2 race tests
+3. `tests/idempotency/test_ttl_resilience.py`     2 TTL/resilience tests
+4. `tests/idempotency/test_adapter_integration.py`     2 adapter tests
+5. `tests/idempotency/test_metrics.py`     1 metrics test
+6. `tests/idempotency/test_slo.py`     SLO validation test
 7. Type annotations in `redis_store.py`, `simple_redis_store.py`
 8. Updated `docs/FSMP-P2-T02-COMPLETION-REPORT.md`
 
 ---
 
-## ðŸ”§ Commands
+##      Commands
 
 ```bash
 # Run all tests
@@ -284,7 +284,7 @@ pytest tests/idempotency/ -v --cov=vfoundation.core.idempotency --cov-fail-under
 
 ---
 
-## â±ï¸ Estimate
+##        Estimate
 
 - **Lua executor**: 1-2h
 - **7 tests**: 2-3h
@@ -296,7 +296,7 @@ pytest tests/idempotency/ -v --cov=vfoundation.core.idempotency --cov-fail-under
 
 ---
 
-**Approval Required**: After 14/14 PASS + covâ‰¥90% + mypy=0
+**Approval Required**: After 14/14 PASS + cov   90% + mypy=0
 
 **Next**: FSMP-P2-T03 (Portfolio Accounting)
 

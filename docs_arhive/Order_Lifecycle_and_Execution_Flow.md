@@ -1,109 +1,109 @@
-#  – ¸ ‚ ‚ ” ² ¸ ¹  ¦ ¸ º »  ž   ´ µ      ‚    Ÿ ¾ ‚ – º  ’ ¸ º ¾ ½   ½ ½   ²  ¡ ¸   ‚ µ ¼ – Aurora
+#                                                                                             Aurora
 
-** ’ µ     – :** 1.0
-** ”   ‚  :** 2025-10-26
+**            :** 1.0
+**        :** 2025-10-26
 
-## 1.  œ µ ‚    ´ ¾ º ƒ ¼ µ ½ ‚  
+## 1.                            
 
- ¦ µ ¹  ´ ¾ º ƒ ¼ µ ½ ‚  ´ µ ‚   » Œ ½ ¾  ¾   ¸   ƒ ”      ¾ † µ        ¸ ¹ ½  ‚ ‚   ‚ ¾   ³ ¾ ² ¸ …    – ˆ µ ½ Œ  ‚    ² ¸ º ¾ ½   ½ ½   ¾   ´ µ   – ²  ƒ    ¸   ‚ µ ¼ –.  œ µ ‚   â ”  ½   ´   ‚ ¸    ¾ ² ½ µ    ¾ · ƒ ¼ – ½ ½   ‚ ¾ ³ ¾, **  º –    ¸ ³ ½   » ¸**  ² ¸ º ¾   ¸   ‚ ¾ ² ƒ Ž ‚ Œ   , **  º  ½    — …  ¾   ½ ¾ ² –  „ ¾   ¼ ƒ ” ‚ Œ     ‚ ¾   ³ ¾ ² ¸ ¹  ½   ¼ –  **, **  º –  ‚ ¸   ¸  ¾   ´ µ   – ²**    ‚ ² ¾   Ž Ž ‚ Œ   ,  ‚   ** ²   º ¾ ¼ ƒ  „ ¾   ¼   ‚ –**  ² ¾ ½ ¸  ² – ´       ² »  Ž ‚ Œ     ½    ± –   ¶ ƒ.
+                                                                                                                                                                            .                                                                 , **                     **                                 , **                                                                            **, **                              **                       ,      **                            **                                                      .
 
-## 2.  ¤   ·   1:  “ µ ½ µ     † –   ¡ ¸ ³ ½   » ƒ (Signal Generation)
+## 2.          1:                                   (Signal Generation)
 
- ’   µ    ¾ ‡ ¸ ½   ” ‚ Œ     ·    ¸   ¸ …    ¸ ½ º ¾ ² ¸ …  ´   ½ ¸ …,   º –    µ   µ ‚ ² ¾   Ž Ž ‚ Œ     ½      ‚   ½ ´     ‚ ¸ · ¾ ²   ½ –    ½   » – ‚ ¸ ‡ ½ –    ¸ ³ ½   » ¸.
+                                                                       ,                                                                                                            .
 
-** ’ … – ´ ½ –  ´   ½ –:**
--    Ÿ ¾ ‚ ¾ º ¸    ¸ ½ º ¾ ² ¸ …  ´   ½ ¸ …  ·  ± –   ¶ – ( ‡ µ   µ · `MarketDataConnector`):
-    -   `bookTicker`:  ”   ½ –      ¾  ½   ¹ º     ‰ –  † – ½ ¸  º ƒ   – ² » – (bid)  ‚        ¾ ´   ¶ ƒ (ask)  ‚    — …  ¾ ±    ³ ¸.
-    -   `trade`:  ”   ½ –      ¾  º ¾ ¶ ½ ƒ  ¾ º   µ ¼ ƒ  ƒ ³ ¾ ´ ƒ,  ‰ ¾  ² – ´ ± ƒ »       ½      ¸ ½ º ƒ.
+**                     :**
+-                                                          (           `MarketDataConnector`):
+    -   `bookTicker`:                                                          (bid)                     (ask)                       .
+    -   `trade`:                                                   ,                                        .
 
-** Ÿ   ¾ † µ   ( ²  ´ ¾ ¼ µ ½ – `FeatureEngineering`):**
-1.  **   ¾ ·     … ƒ ½ ¾ º OBI (Order Book Imbalance):**
-    -   ** ¤ ¾   ¼ ƒ »  :** `(bid_volume - ask_volume) / (bid_volume + ask_volume)`
-    -   ** † ½ ‚ µ       µ ‚   † – :**  Ÿ ¾ º   · ½ ¸ º  ´ ¸   ±   »   ½   ƒ  ²  º ½ ¸ · –  ¾   ´ µ   – ².  Ÿ ¾ · ¸ ‚ ¸ ² ½ µ  · ½   ‡ µ ½ ½   ² º   · ƒ ”  ½    ‚ ¸   º    ¾ º ƒ   † – ²,  ½ µ ³   ‚ ¸ ² ½ µ â ”  ½    ‚ ¸   º      ¾ ´   ² † – ².
-2.  **   ¾ ·     … ƒ ½ ¾ º TFI (Trade Flow Imbalance):**
-    -   ** › ¾ ³ – º  :**   ½   » – · ƒ ”    ¾ ‚ – º  ƒ ³ ¾ ´,    – ´   ƒ ¼ ¾ ² ƒ Ž ‡ ¸  ¾ ±    ³ ¸  ƒ ³ ¾ ´,  ‰ ¾  ² – ´ ± ƒ » ¸     ·    † – ½ ¾ Ž    ¾ º ƒ   †  (   ³   µ   ¸ ² ½ –      ¾ ´   ¶ –)  ‚    † – ½ ¾ Ž      ¾ ´   ² †  (   ³   µ   ¸ ² ½ –    ¾ º ƒ   º ¸).
-    -   ** † ½ ‚ µ       µ ‚   † – :**  Ÿ ¾ º   · ½ ¸ º    ³   µ   – —  ½      ¸ ½ º ƒ.  Ÿ ¾ · ¸ ‚ ¸ ² ½ µ  · ½   ‡ µ ½ ½  â ”  ´ ¾ ¼ – ½ ƒ Ž ‚ Œ    ³   µ   ¸ ² ½ –    ¾ º ƒ   º ¸,  ½ µ ³   ‚ ¸ ² ½ µ â ”    ³   µ   ¸ ² ½ –      ¾ ´   ¶ –.
-3.  **   ¾ ·     … ƒ ½ ¾ º `delta_price`:**
-    -   ** › ¾ ³ – º  :**  — ¼ – ½    † – ½ ¸  ·    º ¾   ¾ ‚ º ¸ ¹      ¾ ¼ – ¶ ¾ º  ‡     ƒ.
-    -   ** † ½ ‚ µ       µ ‚   † – :**  Ÿ ¾ º   · ½ ¸ º  » ¾ º   » Œ ½ ¾ —  ² ¾ »   ‚ ¸ » Œ ½ ¾   ‚ –  ‚    – ¼   ƒ » Œ   ƒ.
-4.  **   ¾ ·     … ƒ ½ ¾ º `absorption`:**
-    -   ** › ¾ ³ – º  :**  ž † – ½ Ž ”,  ½     º – » Œ º ¸    ¸ ½ ¾ º "   ¾ ³ » ¸ ½   ”"  ² µ » ¸ º –    ¸ ½ º ¾ ² –  ¾   ´ µ   ¸  ± µ ·  · ½   ‡ ½ ¾ —  · ¼ – ½ ¸  † – ½ ¸.
-    -   ** † ½ ‚ µ       µ ‚   † – :**  ’ ¸   ¾ º      ±   ¾   ± † –   ¼ ¾ ¶ µ  ² º   · ƒ ²   ‚ ¸  ½    ½    ² ½ –   ‚ Œ  ² µ » ¸ º ¸ …  » – ¼ – ‚ ½ ¸ …  ¾   ´ µ   – ²,  ‰ ¾    ‚   ¸ ¼ ƒ Ž ‚ Œ  † – ½ ƒ.
+**             (                `FeatureEngineering`):**
+1.  **                     OBI (Order Book Imbalance):**
+    -   **              :** `(bid_volume - ask_volume) / (bid_volume + ask_volume)`
+    -   **                          :**                                                                   .                                                                                ,                                                        .
+2.  **                     TFI (Trade Flow Imbalance):**
+    -   **            :**                                     ,                                               ,                                                        (                                 )                                  (                                 ).
+    -   **                          :**                                                .                                                                                             ,                                                         .
+3.  **                     `delta_price`:**
+    -   **            :**                                                                    .
+    -   **                          :**                                                                                     .
+4.  **                     `absorption`:**
+    -   **            :**             ,                               "                "                                                                                   .
+    -   **                          :**                                                                                                                                   ,                                 .
 
-** ’ ¸ … – ´:**
--    Ÿ ¾ ´ –  `EVT:FEATURES_CALCULATED`  ·  ½   ± ¾   ¾ ¼  ‡ ¸   » ¾ ² ¸ …  · ½   ‡ µ ½ Œ (features)  ´ »   º ¾ ½ º   µ ‚ ½ ¾ ³ ¾  – ½   ‚   ƒ ¼ µ ½ ‚ ƒ ( ½      ., ETHUSDT).
+**          :**
+-              `EVT:FEATURES_CALCULATED`                                                   (features)                                                      (        ., ETHUSDT).
 
-## 3.  ¤   ·   2:  Ÿ   ¸ ¹ ½  ‚ ‚     – ˆ µ ½ ½  (Decision Making)
+## 3.          2:                                   (Decision Making)
 
-     † Œ ¾ ¼ ƒ  µ ‚     –    ¸   ‚ µ ¼      ³   µ ³ ƒ ”  ²   –  ´ ¾   ‚ ƒ   ½ –  ´   ½ –  ´ »       ¸ ¹ ½  ‚ ‚   · ²   ¶ µ ½ ¾ ³ ¾    – ˆ µ ½ ½ .
+                                                                                                                                                     .
 
-** ’ … – ´ ½ –  ´   ½ – ( ²  ´ ¾ ¼ µ ½ – `DecisionMaking`):**
-1.  `EVT:FEATURES_CALCULATED` ( · `FeatureEngineering`)
-2.  `EVT:RISK_ASSESSMENT_COMPLETED` ( · `RiskManagement`)
-3.  `EVT:PORTFOLIO_STATE_UPDATED` ( · `PositionTracking`)
-4.  `EVT:REGIME_DETECTED` ( · `RegimeDetector`)
+**                      (                `DecisionMaking`):**
+1.  `EVT:FEATURES_CALCULATED` (   `FeatureEngineering`)
+2.  `EVT:RISK_ASSESSMENT_COMPLETED` (   `RiskManagement`)
+3.  `EVT:PORTFOLIO_STATE_UPDATED` (   `PositionTracking`)
+4.  `EVT:REGIME_DETECTED` (   `RegimeDetector`)
 
-** Ÿ   ¾ † µ  :**
-1.  **   ¾ ·     … ƒ ½ ¾ º `signal_score`:**
-    -   ** › ¾ ³ – º  :**  — ²   ¶ µ ½      ƒ ¼    ¾   ½ ¾ ² ½ ¸ …  „ – ‡ (OBI, TFI, absorption).  ’   ³ ¸ (`signal_weights`)  ± µ   ƒ ‚ Œ     ·  º ¾ ½ „ – ³ ƒ     † – — (`trading.yaml`).
-    -   ** Ÿ   ¸ º »   ´:** `signal_score = (obi * 0.4) + (tfi * 0.4) + (absorption * 0.2)`
-2.  ** ’ ¸ · ½   ‡ µ ½ ½           ¼ º ƒ (`side`):**
-    -    ¯ º ‰ ¾ `signal_score > signal_threshold` ( ½      ., 0.2) â†’ `side = "buy"` (LONG).
-    -    ¯ º ‰ ¾ `signal_score < -signal_threshold` â†’ `side = "sell"` (SHORT).
-    -    † ½   º ˆ µ â†’ **   – ˆ µ ½ ½   ½ µ      ¸ ¹ ¼   ” ‚ Œ    ( ½ µ ¹ ‚     » Œ ½ ¸ ¹    ¸ ³ ½   »).**
-3.  ** Ÿ µ   µ ² –   º      ¸ ½ º ¾ ² ¾ ³ ¾    µ ¶ ¸ ¼ ƒ (Regime Filter):**
-    -    ¡ ¸   ‚ µ ¼      µ   µ ² –    ”    ¾ ‚ ¾ ‡ ½ ¸ ¹    ¸ ½ º ¾ ² ¸ ¹    µ ¶ ¸ ¼ ( ½      ., `TREND_UP`, `TREND_DOWN`).
-    -   ** › ¾ ³ – º  :**  ‘ » ¾ º ƒ Ž ‚ Œ     º ¾ ½ ‚   ‚   µ ½ ´ ¾ ² –    ¸ ³ ½   » ¸.         ¸ º »   ´,  ƒ    µ ¶ ¸ ¼ – `TREND_UP`    ¸ ³ ½   » `side = "sell"`  ± ƒ ´ µ  ·   ± » ¾ º ¾ ²   ½ ¸ ¹.
-4.  **   ¾ ·     … ƒ ½ ¾ º    ¾ · ¼ –   ƒ  Ÿ ¾ · ¸ † – — (Position Sizing):**
-    -   ** ‘   · ¾ ² ¸ ¹    ¾ · ¼ –  :**    ¾ ·     … ¾ ² ƒ ” ‚ Œ     ½    ¾   ½ ¾ ² – ** ´   ¾ ± ƒ  š µ » » –**,    º ¾   ¸ ³ ¾ ²   ½ ¾ ³ ¾  ½    º ¾ ½   µ   ²   ‚ ¸ ² ½ –  „   º ‚ ¾   ¸ (`kelly_alpha`, `kelly_conservative_factor`).
-    -   ** ž ± ¼ µ ¶ µ ½ ½  (Caps):**  ¤ – ½   » Œ ½ ¸ ¹    ¾ · ¼ –      ¾ · ¸ † – —  ² USD  ” ** ¼ – ½ – ¼   » Œ ½ ¸ ¼**  ·  ½     ‚ ƒ   ½ ¸ …  · ½   ‡ µ ½ Œ:
-        1.     ¾ · ¼ –  ,    ¾ ·     … ¾ ²   ½ ¸ ¹    ¾  š µ » » –.
-        2.   › – ¼ – ‚  ½    ¾   ½ ¾ ² –    ¸ · ¸ º ƒ (`trade_cvar95_max_bps`  ² – ´  ·   ³   » Œ ½ ¾ ³ ¾  º     – ‚   » ƒ).
-        3.   › – ¼ – ‚  » – º ² – ´ ½ ¾   ‚ – (`liquidity_based_cap_usd`).
-    -   ** Ÿ µ   µ ² –   º    ¼ – ½ – ¼   » Œ ½ ¾ ³ ¾    ¾ · ¼ –   ƒ:**  ¯ º ‰ ¾  „ – ½   » Œ ½ ¸ ¹    ¾ · ¼ –    ² USD  ¼ µ ½ ˆ ¸ ¹  ·   `min_position_size_usd`,  ƒ ³ ¾ ´    ² – ´ … ¸ »  ” ‚ Œ   .
-5.  ** š ¾ ½ ² µ   ‚   † –   ²  š – » Œ º –   ‚ Œ   º ‚ ¸ ² ƒ (`qty`):**
-    -   ** ¤ ¾   ¼ ƒ »  :** `qty_raw = final_pos_size_usd / current_price`
-    -   ** ž º   ƒ ³ » µ ½ ½ :** `qty`  ¾ º   ƒ ³ » Ž ” ‚ Œ    ** ² ½ ¸ ·**  ´ ¾  ½   ¹ ± » ¸ ¶ ‡ ¾ ³ ¾  · ½   ‡ µ ½ ½ ,  º     ‚ ½ ¾ ³ ¾ `step_size`  – ½   ‚   ƒ ¼ µ ½ ‚   ( ½      ., 0.001  ´ »  BTC).  ¦ µ    ¾ ± ¸ ‚ Œ     ·    ´ ¾   ¾ ¼ ¾ ³ ¾ Ž `Decimal.quantize`,  ‰ ¾ ±  ƒ ½ ¸ º ½ ƒ ‚ ¸    ¾ ¼ ¸ » ¾ º  ‚ ¾ ‡ ½ ¾   ‚ –.
-    -   ** Ÿ µ   µ ² –   º  :**  ¯ º ‰ ¾    –   »   ¾ º   ƒ ³ » µ ½ ½  `qty`  ´ ¾   – ² ½ Ž ”  ½ ƒ » Ž,  ƒ ³ ¾ ´    ² – ´ … ¸ »  ” ‚ Œ   .
-6.  ** ¤ ¾   ¼ ƒ ²   ½ ½   ¢ ¾   ³ ¾ ² ¾ ³ ¾     ¼ –   ƒ (`Trade Intent`):**
-    -    ¯ º ‰ ¾  ²   –    µ   µ ² –   º ¸      ¾ ¹ ´ µ ½ –,    ¸   ‚ µ ¼    ³ µ ½ µ   ƒ ”  ¾ ±' ” º ‚ `TradeIntent`.
+**            :**
+1.  **                     `signal_score`:**
+    -   **            :**                                                 (OBI, TFI, absorption).          (`signal_weights`)                                              (`trading.yaml`).
+    -   **              :** `signal_score = (obi * 0.4) + (tfi * 0.4) + (absorption * 0.2)`
+2.  **                                      (`side`):**
+    -            `signal_score > signal_threshold` (        ., 0.2)     `side = "buy"` (LONG).
+    -            `signal_score < -signal_threshold`     `side = "sell"` (SHORT).
+    -                    **                                           (                                   ).**
+3.  **                                                   (Regime Filter):**
+    -                                                                                  (        ., `TREND_UP`, `TREND_DOWN`).
+    -   **            :**                                                               .                   ,                 `TREND_UP`              `side = "sell"`                                  .
+4.  **                                                   (Position Sizing):**
+    -   **                           :**                                                **                     **,                                                                           (`kelly_alpha`, `kelly_conservative_factor`).
+    -   **                   (Caps):**                                                   USD    **                      **                                     :
+        1.              ,                                         .
+        2.                                            (`trade_cvar95_max_bps`                                             ).
+        3.                                    (`liquidity_based_cap_usd`).
+    -   **                                                          :**                                             USD                   `min_position_size_usd`,                                    .
+5.  **                                                          (`qty`):**
+    -   **              :** `qty_raw = final_pos_size_usd / current_price`
+    -   **                    :** `qty`                          **        **                                             ,                  `step_size`                        (        ., 0.001        BTC).                                               `Decimal.quantize`,                                                        .
+    -   **                  :**                                          `qty`                          ,                                    .
+6.  **                                                     (`Trade Intent`):**
+    -                                                      ,                                   '       `TradeIntent`.
 
-** ’ ¸ … – ´:**
--    Ÿ ¾ ´ –  `EVT:TRADE_INTENT_PROPOSED`  · –    ‚   ƒ º ‚ ƒ   ¾ Ž,  ‰ ¾  ² – ´   ¾ ² – ´   ”    … µ ¼ – `trade_intent.schema.json`.
+**          :**
+-              `EVT:TRADE_INTENT_PROPOSED`                          ,                                      `trade_intent.schema.json`.
 
-## 4.  ¤   ·   3:  ’ ¸ º ¾ ½   ½ ½   ž   ´ µ     (Order Execution)
+## 4.          3:                                 (Order Execution)
 
-     † Œ ¾ ¼ ƒ  µ ‚     –  ‚ ¾   ³ ¾ ² ¸ ¹  ½   ¼ –      µ   µ ‚ ² ¾   Ž ” ‚ Œ     ½    º ¾ ½ º   µ ‚ ½ ƒ  º ¾ ¼   ½ ´ ƒ  ´ »   ± –   ¶ –.
+                                                                                                                                            .
 
-** ’ … – ´ ½ –  ´   ½ –:**
--    Ÿ ¾ ´ –  `EVT:TRADE_INTENT_PROPOSED`.
+**                     :**
+-              `EVT:TRADE_INTENT_PROPOSED`.
 
-** Ÿ   ¾ † µ  :**
-1.  ** ¢     ½   „ ¾   ¼   † –  (Bridge):**
-    -    ž ±   ¾ ± ½ ¸ º `on_trade_intent_proposed`  ƒ `main.py`    µ   µ ‚ ² ¾   Ž ”    ½   » – ‚ ¸ ‡ ½ ¸ ¹ `EVT:TRADE_INTENT_PROPOSED`  ½    ² ¸ º ¾ ½   ² ‡ ƒ  º ¾ ¼   ½ ´ ƒ `CMD:OPEN`.
-    -    š » Ž ‡ ¾ ² –    ¾ »  (   ¸ ¼ ² ¾ »,    ‚ ¾   ¾ ½  ,  º – » Œ º –   ‚ Œ,  † – ½  )  º ¾   – Ž Ž ‚ Œ   .
-2.  ** ž ±   ¾ ± º    ² `ExecPosFSM`:**
-    -    š ¾ ¼   ½ ´   `CMD:OPEN`  ½   ´ … ¾ ´ ¸ ‚ Œ  ´ ¾ `OpenFlowFSM`  ´ »   ² – ´   ¾ ² – ´ ½ ¾ ³ ¾    ¸ ¼ ² ¾ » ƒ.
-    -   ** † ´ µ ¼   ¾ ‚ µ ½ ‚ ½ –   ‚ Œ:**  Ÿ µ   µ ² –    ” ‚ Œ    `idempotent_key`.  ¯ º ‰ ¾  º ¾ ¼   ½ ´    ·  ‚   º ¸ ¼  º » Ž ‡ µ ¼  ² ¶ µ  ¾ ±   ¾ ± »  »       ½ µ ‰ ¾ ´   ² ½ ¾,  ² ¾ ½    ² – ´ … ¸ »  ” ‚ Œ   .
-    -   ** “     ´ ¸ (Guards):**  Ÿ   ¾ ² ¾ ´  ‚ Œ     „ – ½   » Œ ½ –    µ   µ ² –   º ¸:
-        -   **Cooldown:**  § ¸  ½ µ  ½   ´ ‚ ¾  ‡     ‚ ¾  ½   ´   ¸ »   Ž ‚ Œ     ¾   ´ µ   ¸?
-        -   **Min Notional:**  § ¸  ² – ´   ¾ ² – ´   ”  ²     ‚ –   ‚ Œ  ¾   ´ µ     (`qty * price`)  ¼ – ½ – ¼   » Œ ½ ¾ ¼ ƒ  » – ¼ – ‚ ƒ  ± –   ¶ –?
-3.  ** ¤ ¾   ¼ ƒ ²   ½ ½   ž   ´ µ      ´ »   ‘ –   ¶ –:**
-    -    ¯ º ‰ ¾  ²   –  ³     ´ ¸      ¾ ¹ ´ µ ½ –, `OpenFlowFSM`  ³ µ ½ µ   ƒ ” `DEC:OPEN`.
-    -    ¦ µ    ¾ ² – ´ ¾ ¼ » µ ½ ½     µ   µ ´   ” ‚ Œ     ´ ¾ **  ´     ‚ µ    ** (`BinanceExecutionAdapter`).
-    -     ´     ‚ µ    „ ¾   ¼   ‚ ƒ ”  ´   ½ –  ƒ      µ † ¸ „ – ‡ ½ ¸ ¹  ´ »  Binance API  ·     ¸ ‚.
+**            :**
+1.  **                           (Bridge):**
+    -                    `on_trade_intent_proposed`    `main.py`                                             `EVT:TRADE_INTENT_PROPOSED`                                        `CMD:OPEN`.
+    -                           (            ,               ,                   ,         )                     .
+2.  **                  `ExecPosFSM`:**
+    -                  `CMD:OPEN`                         `OpenFlowFSM`                                               .
+    -   **                              :**                            `idempotent_key`.                                                                                                    ,                                  .
+    -   **           (Guards):**                                                           :
+        -   **Cooldown:**                                                                      ?
+        -   **Min Notional:**                                                         (`qty * price`)                                                 ?
+3.  **                                                   :**
+    -                                              , `OpenFlowFSM`                `DEC:OPEN`.
+    -                                                             **                ** (`BinanceExecutionAdapter`).
+    -                                                                             Binance API           .
 
-** ’ ¸ … – ´ ( ¢ ¸   ¸  ‚    ¤ ¾   ¼   ‚ ¸  ž   ´ µ   – ²):**
+**           (                                           ):**
 
-     ´   ½ ¸ ¹  ¼ ¾ ¼ µ ½ ‚    ¸   ‚ µ ¼    ³ µ ½ µ   ƒ ” ** ¾ ´ ¸ ½  ¾   ½ ¾ ² ½ ¸ ¹  ‚ ¸    ¾   ´ µ    **  ´ »   ² … ¾ ´ ƒ  ²    ¾ · ¸ † – Ž:
+                                                           **                                             **                                    :
 
--   ** ¢ ¸    ž   ´ µ    :** `LIMIT` ( › – ¼ – ‚ ½ ¸ ¹  ¾   ´ µ  )
-    -   ** § ¾ ¼ ƒ `LIMIT`?**  ¦ µ  ´ ¾ · ² ¾ »  ”  º ¾ ½ ‚   ¾ » Ž ²   ‚ ¸  † – ½ ƒ  ² … ¾ ´ ƒ  –    ¾ ‚ µ ½ † – ¹ ½ ¾  ¾ ‚   ¸ ¼ ƒ ²   ‚ ¸  º ¾ ¼ –   – Ž " ¼ µ ¹ º µ    " (maker fee).
-    -   ** ¦ – ½   (`price`):**  ’   ‚   ½ ¾ ² » Ž ” ‚ Œ     ½    ¾   ½ ¾ ² – `price_ref`  · `TradeIntent`,   º  ,  ²    ² ¾ Ž  ‡ µ   ³ ƒ,  ± µ   µ ‚ Œ     ·    ¾ »  `price`  ƒ `features`.  ¦ µ,    ¾    ƒ ‚ –,  ¾   ‚   ½ ½   ² – ´ ¾ ¼      ¸ ½ º ¾ ²    † – ½  .
-    -   ** §      ²    ¸ » – (`timeInForce`):** `GTC` (Good-Till-Cancel) -  ¾   ´ µ    ± ƒ ´ µ    º ‚ ¸ ² ½ ¸ ¼,  ´ ¾ º ¸  ½ µ  ± ƒ ´ µ  ² ¸ º ¾ ½   ½ ¸ ¹    ± ¾    º     ¾ ²   ½ ¸ ¹.
+-   **                   :** `LIMIT` (                           )
+    -   **         `LIMIT`?**                                                                                                                                "              " (maker fee).
+    -   **         (`price`):**                                                `price_ref`    `TradeIntent`,       ,                       ,                              `price`    `features`.     ,              ,                                                    .
+    -   **                   (`timeInForce`):** `GTC` (Good-Till-Cancel) -                                     ,                                                                      .
 
-** ¤ ¾   ¼   ‚  ² – ´       ² º ¸  ½    ± –   ¶ ƒ (     ¸ º »   ´  ´ »  `DEC:OPEN`):**
--   ** Ÿ ¾ ² – ´ ¾ ¼ » µ ½ ½   ²    ¸   ‚ µ ¼ –:**
+**                                                (                      `DEC:OPEN`):**
+-   **                                          :**
     ```json
     {
       "op": "DEC",
@@ -119,7 +119,7 @@
       }
     }
     ```
--   ** —     ¸ ‚  ´ ¾ Binance API (       ¾ ‰ µ ½ ¾):**
+-   **                Binance API (                ):**
     ```
     POST /fapi/v1/order
     {
@@ -133,8 +133,8 @@
     }
     ```
 
-** ’   ¶ » ¸ ² ¾:**  ž   ´ µ   ¸  ´ »   ·   º   ¸ ‚ ‚     ¾ · ¸ † – — (Stop Loss, Take Profit),   º –  ³ µ ½ µ   ƒ Ž ‚ Œ     ² `ManageFlowFSM`,  ‚   º ¾ ¶  ² ¸ º ¾   ¸   ‚ ¾ ² ƒ Ž ‚ Œ `LIMIT` ( ´ »  Take Profit)  ‚   `STOP_MARKET` ( ´ »  Stop Loss)  ·          ¾   ¾ ¼ `reduceOnly=true`,  ‰ ¾ ±  ³       ½ ‚ ƒ ²   ‚ ¸,  ‰ ¾  † –  ¾   ´ µ   ¸  ¼ ¾ ¶ ƒ ‚ Œ  » ¸ ˆ µ  ·   º   ¸ ‚ ¸  –   ½ ƒ Ž ‡ ƒ    ¾ · ¸ † – Ž,     ½ µ  ² – ´ º   ¸ ‚ ¸  ½ ¾ ² ƒ.
+**              :**                                                     (Stop Loss, Take Profit),                                  `ManageFlowFSM`,                                         `LIMIT` (       Take Profit)      `STOP_MARKET` (       Stop Loss)                     `reduceOnly=true`,                              ,                                                                                          ,                                  .
 
-## 5.  ’ ¸   ½ ¾ ² ¾ º
+## 5.                 
 
- ¡ ¸   ‚ µ ¼    ² ¸ º ¾   ¸   ‚ ¾ ² ƒ ”  ±   ³   ‚ ¾   – ² ½ µ ² ¸ ¹    – ´ … – ´  ´ ¾      ¸ ¹ ½  ‚ ‚     – ˆ µ ½ Œ,  ´ µ    ¸   –  ´   ½ –    ¾   » – ´ ¾ ² ½ ¾  · ±   ³   ‡ ƒ Ž ‚ Œ   ,  „ – » Œ ‚   ƒ Ž ‚ Œ     ‡ µ   µ ·    ¸ · ¸ º- ¼ µ ½ µ ´ ¶ ¼ µ ½ ‚  ‚      ¸ ½ º ¾ ² –    µ ¶ ¸ ¼ ¸,  –  » ¸ ˆ µ    ¾ ‚ – ¼    µ   µ ‚ ² ¾   Ž Ž ‚ Œ     ½    º ¾ ½ º   µ ‚ ½ ¸ ¹,  ²   » – ´ ¾ ²   ½ ¸ ¹ ** » – ¼ – ‚ ½ ¸ ¹  ¾   ´ µ  **,   º ¸ ¹  ² – ´       ² »  ” ‚ Œ     ½    ± –   ¶ ƒ.  š ¾ ¶ µ ½  º   ¾ º  † Œ ¾ ³ ¾      ¾ † µ   ƒ  » ¾ ³ ƒ ” ‚ Œ     –  ¼   ”  ‡ – ‚ º ¸ ¹ "     ¸ ‡ ¸ ½ ½ ¸ ¹    » – ´"  ´ »     ¾ ´   » Œ ˆ ¾ ³ ¾    ½   » – · ƒ.
+                                                                                                                      ,                                                                     ,                                               -                                                     ,                                                                              ,                        **                           **,                                                      .                                                                                         "                           "                                           .

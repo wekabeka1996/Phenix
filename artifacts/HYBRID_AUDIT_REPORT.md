@@ -1,76 +1,76 @@
-#  ó ≤ ñ Ç      æ    É ¥ ∏ Ç  ≥ ñ ±   ∏ ¥ Ω æ ≥ æ    µ ∂ ∏ º É  Ç    ¥ ∂ µ   µ ª  ¥   Ω ∏ Ö
+#                                                                                          
 
-##  † µ ∑ é º µ
+##             
 
- ê É ¥ ∏ Ç    ñ ¥ Ç ≤ µ   ¥ ∏ ≤,  â æ    ∏   Ç µ º    ∫ æ   µ ∫ Ç Ω æ        Ü é î  ≤  ≥ ñ ±   ∏ ¥ Ω æ º É    µ ∂ ∏ º ñ,  ≤ ∏ ∫ æ   ∏   Ç æ ≤ É é á ∏    ∏ Ω ∫ æ ≤ ñ  ¥   Ω ñ  ≤    µ   ª å Ω æ º É  á     ñ  ¥ ª è    Ω   ª ñ ∑ É  Ç    ¥   Ω ñ  ∑ **testnet**  ¥ ª è  É       ≤ ª ñ Ω Ω è    ∏ ∑ ∏ ∫   º ∏  Ç    ≤ ∏ ∫ æ Ω   Ω Ω è.
+                               ,                                                                                       ,                                                                                                                            **testnet**                                                                     .
 
-** ö ª é á æ ≤ ∏ π  ≤ ∏   Ω æ ≤ æ ∫:**  î ∂ µ   µ ª æ º  ¥   Ω ∏ Ö      æ    Ç   Ω    æ   Ç Ñ µ ª è (   æ ∑ ∏ Ü ñ ó, PnL,  ∫     ñ Ç   ª)  ¥ ª è  ¥ æ º µ Ω É `risk_management`  î  ¥ æ º µ Ω `position_tracking`.  £    ≤ æ é  á µ   ≥ É, `position_tracking`  æ Ç   ∏ º É î  ¥   Ω ñ      æ  ≤ ∏ ∫ æ Ω   Ω ñ  É ≥ æ ¥ ∏  ≤ ñ ¥ `account_observer`,  è ∫ ∏ π  Ω   ª   à Ç æ ≤   Ω ∏ π  Ω    º æ Ω ñ Ç æ   ∏ Ω ≥    µ   µ ¥ æ ≤ ∏ â   **testnet**,  ∫ æ ª ∏ `trading_mode`  ≤   Ç   Ω æ ≤ ª µ Ω æ  è ∫ `hybrid_live_data_testnet_exec`.
+**                                 :**                                                              (              , PnL,               )                     `risk_management`               `position_tracking`.                       , `position_tracking`                                                                   `account_observer`,                                                                                  **testnet**,          `trading_mode`                             `hybrid_live_data_testnet_exec`.
 
- ¶ µ  æ ∑ Ω   á   î,  â æ ** É       ≤ ª ñ Ω Ω è    ∏ ∑ ∏ ∫   º ∏ ( ª ñ º ñ Ç ∏,      æ     ¥ ∫  )  ±   ∑ É î Ç å   è  Ω    ¥   Ω ∏ Ö  ∑ testnet**,  â æ  ≤ ñ ¥   æ ≤ ñ ¥   î  ≤ ∏ º æ ≥   º  ± µ ∑   µ á Ω æ ó  ≥ ñ ±   ∏ ¥ Ω æ ó  Ç æ   ≥ ñ ≤ ª ñ.
+                   ,      **                                      (            ,                 )                                       testnet**,                                                                                                .
 
-##  † µ ∑ É ª å Ç   Ç ∏
+##                     
 
-### 1.  ü æ Ç ñ ∫  ¥   Ω ∏ Ö      æ    Ç   Ω    æ   Ç Ñ µ ª è
+### 1.                                                       
 
 1.  **`AccountObserver`**:
-    *    ß ∏ Ç   î  ≥ ª æ ±   ª å Ω ∏ π `trading_mode`.
-    *    û   ∫ ñ ª å ∫ ∏    µ ∂ ∏ º `hybrid_live_data_testnet_exec`  Ω µ  î `"live"`,  ≤ ñ Ω    ñ ¥ ∫ ª é á   î Ç å   è  ¥ æ **testnet** API.
-    *    û   ∏ Ç É î  ≤ ∏ ∫ æ Ω   Ω ñ  É ≥ æ ¥ ∏ (`get_my_trades`).
-    *    î ª è  ∫ æ ∂ Ω æ ó  Ω æ ≤ æ ó  É ≥ æ ¥ ∏  ≥ µ Ω µ   É î    æ ¥ ñ é `EVT:TRADE_EXECUTED`.
+    *                                   `trading_mode`.
+    *                               `hybrid_live_data_testnet_exec`         `"live"`,                                        **testnet** API.
+    *                                            (`get_my_trades`).
+    *                                                                       `EVT:TRADE_EXECUTED`.
 
 2.  **`PositionTracking`**:
-    *    ü ñ ¥   ∏     Ω ∏ π  Ω   `EVT:TRADE_EXECUTED`.
-    *    û Ç   ∏ º É î  ¥   Ω ñ      æ  É ≥ æ ¥ ∏  ∑ testnet.
-    *    û Ω æ ≤ ª é î    ≤ æ é  ≤ Ω É Ç   ñ à Ω é  º æ ¥ µ ª å    æ ∑ ∏ Ü ñ π  Ç   PnL.
-    *    ì µ Ω µ   É î    æ ¥ ñ é `EVT:PORTFOLIO_STATE_UPDATED`  ∑    ∫ Ç É   ª å Ω ∏ º    Ç   Ω æ º    æ   Ç Ñ µ ª è.
+    *                             `EVT:TRADE_EXECUTED`.
+    *                                                testnet.
+    *                                                                               PnL.
+    *                             `EVT:PORTFOLIO_STATE_UPDATED`                                                      .
 
 3.  **`RiskManagement`**:
-    *    ü ñ ¥   ∏     Ω ∏ π  Ω   `EVT:PORTFOLIO_STATE_UPDATED`.
-    *    û Ç   ∏ º É î    Ç   Ω    æ   Ç Ñ µ ª è,  è ∫ ∏ π  ±   ∑ É î Ç å   è  Ω    ¥   Ω ∏ Ö  ∑ testnet.
-    *    í ∏ ∫ æ   ∏   Ç æ ≤ É î  Ü ñ  ¥   Ω ñ  ¥ ª è    æ ∑     Ö É Ω ∫ É      æ     ¥ ∫ ∏  Ç    ñ Ω à ∏ Ö  ª ñ º ñ Ç ñ ≤    ∏ ∑ ∏ ∫ É.
+    *                             `EVT:PORTFOLIO_STATE_UPDATED`.
+    *                                           ,                                                testnet.
+    *                                                                                                                                  .
 
-### 2.  ê Ω   ª ñ ∑  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó
+### 2.                                      
 
-*   **`config/aurora/system.yaml`**:  í   Ç   Ω æ ≤ ª é î `trading_mode: "hybrid_live_data_testnet_exec"`.
-*   **`config/aurora/trading.yaml`**:  † æ ∑ ¥ ñ ª è î    µ ∂ ∏ º ∏  ¥ ª è  ¥ æ º µ Ω ñ ≤: `market_data`        Ü é î  ≤    µ ∂ ∏ º ñ `live`,    `execution_position` ‚ î  ≤    µ ∂ ∏ º ñ `testnet`.
-*   **`apps/reference/domains/account_observer/account_observer.py`**:  õ æ ≥ ñ ∫    ≤ ∏ ± æ   É    µ   µ ¥ æ ≤ ∏ â   (live/testnet)  ±   ∑ É î Ç å   è  Ω    ≥ ª æ ±   ª å Ω æ º É `trading_mode`,  â æ  ∑   ± µ ∑   µ á É î  æ Ç   ∏ º   Ω Ω è  ¥   Ω ∏ Ö      æ  É ≥ æ ¥ ∏  ∑        ≤ ∏ ª å Ω æ ≥ æ  ¥ ∂ µ   µ ª   (testnet).
+*   **`config/aurora/system.yaml`**:                      `trading_mode: "hybrid_live_data_testnet_exec"`.
+*   **`config/aurora/trading.yaml`**:                                                    : `market_data`                              `live`,    `execution_position`                     `testnet`.
+*   **`apps/reference/domains/account_observer/account_observer.py`**:                                                (live/testnet)                                                `trading_mode`,                                                                                                                    (testnet).
 
-### 3.  ü   æ ≥   ª ∏ Ω ∏  Ç      ∏ ∑ ∏ ∫ ∏
+### 3.                                     
 
-*   ** ù µ è ≤ Ω    ∑   ª µ ∂ Ω ñ   Ç å:**  ü æ Ç æ á Ω        Ö ñ Ç µ ∫ Ç É      º   î  Ω µ è ≤ Ω É  ∑   ª µ ∂ Ω ñ   Ç å. `RiskManagement`  ∑   ª µ ∂ ∏ Ç å  ≤ ñ ¥        ≤ ∏ ª å Ω æ ≥ æ  Ω   ª   à Ç É ≤   Ω Ω è `AccountObserver`,    ª µ  Ü µ  Ω µ  î  æ á µ ≤ ∏ ¥ Ω ∏ º  ∑  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó.  Ø ∫ â æ  Ö Ç æ   å  ∑ º ñ Ω ∏ Ç å  ª æ ≥ ñ ∫ É  ≤ `AccountObserver`,  Ü µ  º æ ∂ µ  Ω µ   æ º ñ Ç Ω æ  ∑ º ñ Ω ∏ Ç ∏  ¥ ∂ µ   µ ª æ  ¥   Ω ∏ Ö  ¥ ª è    ∏ ∑ ∏ ∫ ñ ≤.
-*   ** í ñ ¥   É Ç Ω ñ   Ç å  ≥ Ω É á ∫ æ   Ç ñ:**  ù µ º æ ∂ ª ∏ ≤ æ  ª µ ≥ ∫ æ    µ   µ ∫ ª é á ∏ Ç ∏  ¥ ∂ µ   µ ª æ  ¥   Ω ∏ Ö  ¥ ª è    ∏ ∑ ∏ ∫ ñ ≤  ± µ ∑  ∑ º ñ Ω ∏  ∫ æ ¥ É.
+*   **                                 :**                                                                               . `RiskManagement`                                                                         `AccountObserver`,                                                                   .                                                    `AccountObserver`,                                                                                                .
+*   **                                         :**                                                                                                                                .
 
-##  † µ ∫ æ º µ Ω ¥ æ ≤   Ω ∏ π  ≤     ñ   Ω Ç  ¥ ∏ ∑   π Ω É
+##                                                           
 
- † µ ∫ æ º µ Ω ¥ É î Ç å   è  ≤     ñ   Ω Ç **C)  Ø ≤ Ω µ    µ   µ ≤ ∏ ∑ Ω   á µ Ω Ω è (`explicit override`)**.
+                                            **C)                                       (`explicit override`)**.
 
- ¶ µ    µ   µ ¥ ±   á   î  ¥ æ ¥   ≤   Ω Ω è  Ω æ ≤ æ ó    µ ∫ Ü ñ ó  ¥ æ  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó,  Ω       ∏ ∫ ª   ¥,  É `trading.yaml`:
+                                                                                                  ,                   ,    `trading.yaml`:
 
 ```yaml
 risk_management:
   data_sources:
-    market_data: "live"  #  í ∂ µ  ñ   Ω É î  æ   æ   µ   µ ¥ ∫ æ ≤   Ω æ
-    portfolio_state: "testnet" #  ù æ ≤ ∏ π,  è ≤ Ω ∏ π          º µ Ç  
+    market_data: "live"  #                                               
+    portfolio_state: "testnet" #           ,                            
 ```
 
- ¶ µ  ∑   æ ± ∏ Ç å  ∫ æ Ω Ñ ñ ≥ É     Ü ñ é  ± ñ ª å à      æ ∑ æ   æ é,  Ω   ¥ ñ π Ω æ é  Ç    ª µ ≥ ∫ æ é  ¥ ª è    æ ∑ É º ñ Ω Ω è.
+                                                                        ,                                                             .
 
-##  ü ª   Ω        ≤ æ ∫ ( ¥ ª è  º   π ± É Ç Ω å æ ≥ æ  É ∑ ≥ æ ¥ ∂ µ Ω Ω è)
+##                       (                                                  )
 
- î ª è    µ   ª ñ ∑   Ü ñ ó  ≤     ñ   Ω Ç É C,  Ω µ æ ± Ö ñ ¥ Ω æ  ± É ¥ µ  ∑ º ñ Ω ∏ Ç ∏  Ω     Ç É   Ω ñ  Ñ   π ª ∏:
+                                             C,                                                                       :
 
 1.  **`apps/reference/config_loader.py`**:
-    *   ** ú µ Ç  :**  î æ ¥   Ç ∏  ª æ ≥ ñ ∫ É  ¥ ª è  á ∏ Ç   Ω Ω è  Ω æ ≤ æ ó    µ ∫ Ü ñ ó `risk_management.data_sources`.
-    *   ** ü   ∏ ± ª ∏ ∑ Ω ∏ π diff:**  î æ ¥   Ç ∏  ≤   ª ñ ¥   Ü ñ é  Ç            ∏ Ω ≥  Ω æ ≤ ∏ Ö  ∫ ª é á ñ ≤  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó.
+    *   **        :**                                                                         `risk_management.data_sources`.
+    *   **                     diff:**                                                                                                     .
 
 2.  **`apps/reference/domains/position_tracking/position_tracking.py`**:
-    *   ** ú µ Ç  :**  ú æ ¥ ∏ Ñ ñ ∫ É ≤   Ç ∏  ª æ ≥ ñ ∫ É,  â æ ±  ≤ æ Ω    º æ ≥ ª          Ü é ≤   Ç ∏  ∑    ñ ∑ Ω ∏ º ∏  ¥ ∂ µ   µ ª   º ∏  ¥   Ω ∏ Ö    ± æ  ± É Ç ∏  ñ Ω   Ç   Ω Ü ñ π æ ≤   Ω æ é  ¥ ª è    ñ ∑ Ω ∏ Ö    µ   µ ¥ æ ≤ ∏ â.  ê ± æ,  â æ      æ   Ç ñ à µ,    µ   µ ∫ æ Ω   Ç ∏   è,  â æ  ≤ æ Ω          ≤ ∏ ª å Ω æ    µ   ≥ É î  Ω      æ ¥ ñ ó,  â æ  Ω   ¥ Ö æ ¥ è Ç å  ≤ ñ ¥    ñ ∑ Ω ∏ Ö `AccountObserver`.
-    *   ** ü   ∏ ± ª ∏ ∑ Ω ∏ π diff:**  ú æ ∂ ª ∏ ≤ æ,  Ω µ  ∑ Ω   ¥ æ ± ∏ Ç å   è  ∑ º ñ Ω,  è ∫ â æ  ª æ ≥ ñ ∫    ∑   ª ∏ à ∏ Ç å   è  ∫ µ   æ ≤   Ω æ é    æ ¥ ñ è º ∏.
+    *   **        :**                                      ,                                                                                                                                                                                    .       ,                      ,                         ,                                                              ,                                             `AccountObserver`.
+    *   **                     diff:**               ,                                     ,                                                                             .
 
 3.  **`apps/reference/domains/account_observer/account_observer.py`**:
-    *   ** ú µ Ç  :**  ó º ñ Ω ∏ Ç ∏  ª æ ≥ ñ ∫ É,  â æ ±  ≤ æ Ω    ñ Ω   Ç   Ω Ü ñ é ≤   ª     è  ∑  è ≤ Ω æ é  ∫ æ Ω Ñ ñ ≥ É     Ü ñ î é    µ   µ ¥ æ ≤ ∏ â   (`live`    ± æ `testnet`),     Ω µ  ≤ ∏ ≤ æ ¥ ∏ ª    ó ó  ∑  ≥ ª æ ±   ª å Ω æ ≥ æ `trading_mode`.
-    *   ** ü   ∏ ± ª ∏ ∑ Ω ∏ π diff:**  ó º ñ Ω ∏ Ç ∏  ∫ æ Ω   Ç   É ∫ Ç æ  ,  â æ ±  ≤ ñ Ω      ∏ π º   ≤          º µ Ç   `environment`  ñ  ≤ ∏ ∫ æ   ∏   Ç æ ≤ É ≤   ≤  π æ ≥ æ  ¥ ª è  Ω   ª   à Ç É ≤   Ω Ω è  ∫ ª ñ î Ω Ç   `python-binance`.
+    *   **        :**                            ,                                                                                                              (`live`        `testnet`),                                                         `trading_mode`.
+    *   **                     diff:**                                      ,                                               `environment`                                                                                         `python-binance`.
 
-4.  **`apps/reference/main.py` (   ± æ  ñ Ω à ∏ π  Ñ   π ª  ñ Ω ñ Ü ñ   ª ñ ∑   Ü ñ ó)**:
-    *   ** ú µ Ç  :**  ù    æ   Ω æ ≤ ñ  Ω æ ≤ æ ó  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó  ñ Ω ñ Ü ñ   ª ñ ∑ É ≤   Ç ∏  ≤ ñ ¥   æ ≤ ñ ¥ Ω ∏ π `AccountObserver` (live    ± æ testnet)  ñ    µ   µ ∫ æ Ω   Ç ∏   è,  â æ `PositionTracking`    ñ ¥   ∏     Ω ∏ π  Ω          ≤ ∏ ª å Ω ñ    æ ¥ ñ ó.
-    *   ** ü   ∏ ± ª ∏ ∑ Ω ∏ π diff:**  î æ ¥   Ç ∏  ª æ ≥ ñ ∫ É  ¥ ª è    Ç ≤ æ   µ Ω Ω è  Ç    ∑ ≤' è ∑ É ≤   Ω Ω è  ∫ æ º   æ Ω µ Ω Ç ñ ≤  ≤ ñ ¥   æ ≤ ñ ¥ Ω æ  ¥ æ  Ω æ ≤ æ ó,  è ≤ Ω æ ó  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó.
+4.  **`apps/reference/main.py` (                                                     )**:
+    *   **        :**                                                                                                           `AccountObserver` (live        testnet)                            ,      `PositionTracking`                                                        .
+    *   **                     diff:**                                                              '                                                                            ,                                    .

@@ -1,34 +1,34 @@
-# FSM Execution Position � � 3 Flow Specification (FSMP-P1-T02)
+# FSM Execution Position     3 Flow Specification (FSMP-P1-T02)
 
 **Status**: Shadow-mode (stub logic, no live API calls)  
 **Domain**: `execution_position`  
 **Flows**: `open_flow`, `manage_flow`, `close_flow`  
-**Coverage**: ≥90% (unit + e2e)  
-**Latency Target**: p95 ≤ 25ms (FSM decisions), p95 ≤ 50ms (overall)
+**Coverage**:    90% (unit + e2e)  
+**Latency Target**: p95     25ms (FSM decisions), p95     50ms (overall)
 
 ---
 
 ## Architecture Overview
 
 ```
-CMD:OPEN → OpenFlowFSM → DEC:OPEN → ACL-stub → EVT:ORDER_PLACED
-                ↓                                      ↓
+CMD:OPEN     OpenFlowFSM     DEC:OPEN     ACL-stub     EVT:ORDER_PLACED
+                                                            
               WAL                                  WAL
                 
-EVT:FILL → ManageFlowFSM → DEC:ADJUST (trail/BE/time)
-              ↓
+EVT:FILL     ManageFlowFSM     DEC:ADJUST (trail/BE/time)
+                 
             WAL
 
-EVT:REJECTED/EXPIRED → CloseFlowFSM → DEC:CLOSE(reduce_only=true)
-                           ↓
+EVT:REJECTED/EXPIRED     CloseFlowFSM     DEC:CLOSE(reduce_only=true)
+                              
                          WAL
 ```
 
 **Key Principles**:
 - **Shadow-mode**: all decisions logged to WAL, but no live orders
-- **Fail-closed**: guard failures → ERR, no DEC emission
-- **Idempotency**: duplicate CMD with same `idempotent_key` → dedup
-- **WHY-discipline**: all messages `why ≤ 80 chars`
+- **Fail-closed**: guard failures     ERR, no DEC emission
+- **Idempotency**: duplicate CMD with same `idempotent_key`     dedup
+- **WHY-discipline**: all messages `why     80 chars`
 - **Metrics**: exported via `/metrics` (p95 latency, decision counts)
 
 ---
@@ -38,8 +38,8 @@ EVT:REJECTED/EXPIRED → CloseFlowFSM → DEC:CLOSE(reduce_only=true)
 ### States
 
 ```
-IDLE → CANDIDATE → READY → EMIT_DEC_OPEN → DONE
-                              ↓
+IDLE     CANDIDATE     READY     EMIT_DEC_OPEN     DONE
+                                 
                            ERROR (guard fail)
 ```
 
@@ -50,12 +50,12 @@ IDLE → CANDIDATE → READY → EMIT_DEC_OPEN → DONE
 ### Guards (Fail-Closed)
 
 1. **Symbol/Side Presence**: must exist
-2. **Qty Bounds**: `MIN_ORDER_QTY (0.001) ≤ qty ≤ MAX_ORDER_QTY (1000.0)`
-3. **Price Bounds** (LIMIT only): `MIN_PRICE (0.01) ≤ price ≤ MAX_PRICE (1000000.0)`
+2. **Qty Bounds**: `MIN_ORDER_QTY (0.001)     qty     MAX_ORDER_QTY (1000.0)`
+3. **Price Bounds** (LIMIT only): `MIN_PRICE (0.01)     price     MAX_PRICE (1000000.0)`
 4. **Qty Step**: `qty % QTY_STEP (0.001) == 0`
 5. **Price Step** (LIMIT): `price % PRICE_STEP (0.01) == 0`
-6. **Min Notional** (LIMIT): `qty * price ≥ MIN_NOTIONAL (10.0)`
-7. **Cooldown**: `now - last_open_ts ≥ cooldown_sec`
+6. **Min Notional** (LIMIT): `qty * price     MIN_NOTIONAL (10.0)`
+7. **Cooldown**: `now - last_open_ts     cooldown_sec`
 
 ### Outputs
 
@@ -65,7 +65,7 @@ IDLE → CANDIDATE → READY → EMIT_DEC_OPEN → DONE
 ### Example
 
 ```python
-CMD:OPEN → {
+CMD:OPEN     {
   symbol: "BTCUSDT",
   side: "BUY",
   qty: "1.5",
@@ -74,8 +74,8 @@ CMD:OPEN → {
   tif: "GTC"
 }
 
-Guards PASS → DEC:OPEN with why="OPEN_OK"
-Guards FAIL → ERR with why="OPEN_GUARD_FAIL" + reason
+Guards PASS     DEC:OPEN with why="OPEN_OK"
+Guards FAIL     ERR with why="OPEN_GUARD_FAIL" + reason
 ```
 
 ---
@@ -85,7 +85,7 @@ Guards FAIL → ERR with why="OPEN_GUARD_FAIL" + reason
 ### States
 
 ```
-FLAT → OPENED (on FILL) → TRACKING (on UPD) → EMIT_DEC_ADJUST → TRACKING
+FLAT     OPENED (on FILL)     TRACKING (on UPD)     EMIT_DEC_ADJUST     TRACKING
 ```
 
 ### Inputs
@@ -95,9 +95,9 @@ FLAT → OPENED (on FILL) → TRACKING (on UPD) → EMIT_DEC_ADJUST → TRACKING
 
 ### Rules (Stub Logic)
 
-1. **Trail**: if `current_price > entry_price * (1 + trail_pct/100)` → `DEC:ADJUST(why="ADJUST_TRAIL")`
-2. **Breakeven**: if `elapsed_sec > breakeven_after_sec` → `DEC:ADJUST(why="ADJUST_BE")`
-3. **Time Stop**: if `elapsed_sec > 3600` → `DEC:ADJUST(why="ADJUST_TIME")`
+1. **Trail**: if `current_price > entry_price * (1 + trail_pct/100)`     `DEC:ADJUST(why="ADJUST_TRAIL")`
+2. **Breakeven**: if `elapsed_sec > breakeven_after_sec`     `DEC:ADJUST(why="ADJUST_BE")`
+3. **Time Stop**: if `elapsed_sec > 3600`     `DEC:ADJUST(why="ADJUST_TIME")`
 
 ### Outputs
 
@@ -106,8 +106,8 @@ FLAT → OPENED (on FILL) → TRACKING (on UPD) → EMIT_DEC_ADJUST → TRACKING
 ### Example
 
 ```python
-EVT:FILL → position_qty=1.5, entry_price=50000
-UPD:PRICE → 50600 (> 50000*1.005=50250) → DEC:ADJUST(why="ADJUST_TRAIL")
+EVT:FILL     position_qty=1.5, entry_price=50000
+UPD:PRICE     50600 (> 50000*1.005=50250)     DEC:ADJUST(why="ADJUST_TRAIL")
 ```
 
 ---
@@ -117,7 +117,7 @@ UPD:PRICE → 50600 (> 50000*1.005=50250) → DEC:ADJUST(why="ADJUST_TRAIL")
 ### States
 
 ```
-FLAT → OPENED (on FILL) → CLOSE_COND → EMIT_DEC_CLOSE → DONE
+FLAT     OPENED (on FILL)     CLOSE_COND     EMIT_DEC_CLOSE     DONE
 ```
 
 ### Inputs
@@ -128,8 +128,8 @@ FLAT → OPENED (on FILL) → CLOSE_COND → EMIT_DEC_CLOSE → DONE
 
 ### Rules (Stub Logic)
 
-1. **Max Hold Time**: if `elapsed_sec > max_hold_sec (7200)` → `DEC:CLOSE(why="CLOSE_RULE")`
-2. **Emergency**: if `EVT:REJECTED or EVT:EXPIRED` → `DEC:CLOSE(why="CLOSE_EMERGENCY")`
+1. **Max Hold Time**: if `elapsed_sec > max_hold_sec (7200)`     `DEC:CLOSE(why="CLOSE_RULE")`
+2. **Emergency**: if `EVT:REJECTED or EVT:EXPIRED`     `DEC:CLOSE(why="CLOSE_EMERGENCY")`
 
 ### Outputs
 
@@ -138,8 +138,8 @@ FLAT → OPENED (on FILL) → CLOSE_COND → EMIT_DEC_CLOSE → DONE
 ### Example
 
 ```python
-EVT:FILL → position_active=True
-TIMER:TICK (after 7300 sec) → DEC:CLOSE(why="CLOSE_RULE", reduce_only=true)
+EVT:FILL     position_active=True
+TIMER:TICK (after 7300 sec)     DEC:CLOSE(why="CLOSE_RULE", reduce_only=true)
 ```
 
 ---
@@ -147,10 +147,10 @@ TIMER:TICK (after 7300 sec) → DEC:CLOSE(why="CLOSE_RULE", reduce_only=true)
 ## Orchestration (fsm.py)
 
 **Router Bindings**:
-- `CMD:OPEN` → `open_flow.handle()`
-- `EVT:PARTIAL_FILL|FILL|UPD:*` → `manage_flow.handle()` → `close_flow.handle()`
-- `EVT:REJECTED|EXPIRED` → `close_flow.handle()`
-- `TIMER:*` → `close_flow.handle()`
+- `CMD:OPEN`     `open_flow.handle()`
+- `EVT:PARTIAL_FILL|FILL|UPD:*`     `manage_flow.handle()`     `close_flow.handle()`
+- `EVT:REJECTED|EXPIRED`     `close_flow.handle()`
+- `TIMER:*`     `close_flow.handle()`
 
 **WAL Integration**:
 - All `DEC:*` messages appended to WAL
@@ -178,7 +178,7 @@ All messages: `{op, verb, src, dst, rid, ts?, why, idempotent_key?, payload}`
 
 - **op**: `CMD | DEC | EVT | UPD | ERR | TIMER`
 - **verb**: action-specific (OPEN, CLOSE, ADJUST, FILL, etc.)
-- **why**: ≤80 chars (enforced; 400 error if violated)
+- **why**:    80 chars (enforced; 400 error if violated)
 - **idempotent_key**: deterministic from (op, verb, payload, ts_bucket)
 
 ### Decimal Precision
@@ -203,21 +203,21 @@ All messages: `{op, verb, src, dst, rid, ts?, why, idempotent_key?, payload}`
 
 ### Unit Tests (per flow)
 
-1. **Open**: valid → DEC, each guard → ERR, cooldown → ERR
-2. **Manage**: FILL → OPENED, trail/BE/time → DEC:ADJUST
-3. **Close**: max_hold → DEC:CLOSE, REJECTED/EXPIRED → DEC:CLOSE(emergency)
+1. **Open**: valid     DEC, each guard     ERR, cooldown     ERR
+2. **Manage**: FILL     OPENED, trail/BE/time     DEC:ADJUST
+3. **Close**: max_hold     DEC:CLOSE, REJECTED/EXPIRED     DEC:CLOSE(emergency)
 
 ### E2E Tests
 
-1. **Shadow Round-Trip**: CMD → ACL stub → EVT → FSM → DEC → WAL
-2. **Idempotency**: 50 parallel CMD with same key → 1 DEC
+1. **Shadow Round-Trip**: CMD     ACL stub     EVT     FSM     DEC     WAL
+2. **Idempotency**: 50 parallel CMD with same key     1 DEC
 3. **Metrics**: export p95, totals after activity
 
 ### Coverage Target
 
-- **Unit**: ≥90% per file (`fsm_open.py`, `fsm_manage.py`, `fsm_close.py`)
-- **E2E**: ≥80% integration paths
-- **Overall Repo**: maintain ≥90%
+- **Unit**:    90% per file (`fsm_open.py`, `fsm_manage.py`, `fsm_close.py`)
+- **E2E**:    80% integration paths
+- **Overall Repo**: maintain    90%
 
 ---
 
@@ -225,11 +225,11 @@ All messages: `{op, verb, src, dst, rid, ts?, why, idempotent_key?, payload}`
 
 | Metric                     | Target       | Measurement        |
 | -------------------------- | ------------ | ------------------ |
-| FSM decision latency (p95) | ≤ 25ms       | `fsm_decision_ms_p95` |
-| Router total latency (p95) | ≤ 50ms       | via `/metrics`     |
-| WAL append latency         | ≤ 5ms        | `wal_append_ms`    |
-| Guard reject rate          | ≤ 5%         | `guard_rejects / open_decisions` |
-| Error rate                 | ≤ 1%         | `errors / total_messages` |
+| FSM decision latency (p95) |     25ms       | `fsm_decision_ms_p95` |
+| Router total latency (p95) |     50ms       | via `/metrics`     |
+| WAL append latency         |     5ms        | `wal_append_ms`    |
+| Guard reject rate          |     5%         | `guard_rejects / open_decisions` |
+| Error rate                 |     1%         | `errors / total_messages` |
 
 ---
 

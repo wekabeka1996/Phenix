@@ -116,7 +116,7 @@ trading:
   risk_management:
     data_sources:
       portfolio_state: "testnet"   # ["live"|"testnet"], default: follow-execution
-      market_data: "live"          #          ≤ æ á Ω æ;  Ω µ  ≤ ª ∏ è µ Ç  Ω    Ç µ ∫ É â ∏ π pipeline
+      market_data: "live"          #                   ;                                       pipeline
 
 # ==============================================================================
 # BINANCE API CONFIGURATION

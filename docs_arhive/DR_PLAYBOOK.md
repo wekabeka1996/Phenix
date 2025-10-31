@@ -4,8 +4,8 @@
 **Version:** 1.0  
 **Based on:** PLAN_AURORA_TO_VFOUNDATION.md (Phase L4)  
 **Created:** 2025-10-18  
-**RTO Target:** ‚â§ 5 minutes  
-**RPO Target:** ‚â§ 1 minute
+**RTO Target:**     5 minutes  
+**RPO Target:**     1 minute
 
 ## 1. Mechanism Overview
 
@@ -28,7 +28,7 @@ The system uses a combination of periodic state snapshots and a continuous Write
 - **Naming:** `wal_<YYYY-MM-DD>.jsonl` (e.g., `wal_2025-10-18.jsonl`)
 - **Storage:** Local disk + async replication to remote storage
 
-## 2. Recovery Process (RTO ‚â§ 5 min)
+## 2. Recovery Process (RTO     5 min)
 
 ### 2.1 Automated Recovery Steps
 
@@ -37,30 +37,30 @@ The system uses a combination of periodic state snapshots and a continuous Write
    - Health check detects state inconsistency
    - Manual DR trigger via admin endpoint
 
-2. **Fetch Latest Snapshot** (‚è±Ô∏è ~30 seconds)
+2. **Fetch Latest Snapshot** (       ~30 seconds)
    - Connect to remote storage (S3/Azure Blob/GCS)
    - Download most recent successful snapshot for `position_tracking`
    - Verify snapshot integrity via state_hash
    - Fallback to previous snapshot if corrupted
 
-3. **Load Base State** (‚è±Ô∏è ~10 seconds)
+3. **Load Base State** (       ~10 seconds)
    - Initialize `position_tracking` FSM with snapshot state
    - Validate loaded state (schema compliance, balance checks)
    - Log snapshot metadata (timestamp, hash, positions count)
 
-4. **Fetch WAL Segments** (‚è±Ô∏è ~60 seconds)
-   - Calculate time gap: `snapshot_timestamp` ‚Üí `current_time`
+4. **Fetch WAL Segments** (       ~60 seconds)
+   - Calculate time gap: `snapshot_timestamp`     `current_time`
    - Download all WAL files covering the gap
    - Verify WAL integrity (checksums, sequence continuity)
 
-5. **Replay Events** (‚è±Ô∏è ~120 seconds for 1000 events)
+5. **Replay Events** (       ~120 seconds for 1000 events)
    - Parse WAL entries (JSONL format)
    - Filter critical events: `EVT:TRADE_EXECUTED`, `EVT:POSITION_ADJUSTED`
    - Replay events in chronological order into FSM
    - Skip duplicate events (idempotency check via RID)
    - Log replay progress every 100 events
 
-6. **Resume Normal Operations** (‚è±Ô∏è ~30 seconds)
+6. **Resume Normal Operations** (       ~30 seconds)
    - Run post-recovery validation:
      * Portfolio balance check
      * Position consistency with exchange
@@ -78,7 +78,7 @@ The system uses a combination of periodic state snapshots and a continuous Write
 | WAL Download | 60s | Network transfer (assuming <100MB WAL) |
 | Event Replay | 120s | Processing ~1000 events at 8 events/sec |
 | Validation | 30s | Balance checks, exchange reconciliation |
-| **Total RTO** | **‚â§ 5 min** | **End-to-end recovery time** |
+| **Total RTO** | **    5 min** | **End-to-end recovery time** |
 
 ### 2.3 Manual Recovery Procedures
 
@@ -278,17 +278,17 @@ WAL entries use the standard **vFoundation Message protocol**:
 **Local Cache:**
 ```
 logs/dr/snapshots/
-  ‚îú‚î ‚î  position_tracking_20251018_120000_seq_001.json
-  ‚îú‚î ‚î  position_tracking_20251018_120500_seq_002.json
-  ‚îî‚î ‚î  ...
+            position_tracking_20251018_120000_seq_001.json
+            position_tracking_20251018_120500_seq_002.json
+            ...
 ```
 
 **Remote Storage (S3 example):**
 ```
 s3://aurora-dr-prod/snapshots/position_tracking/
-  ‚îú‚î ‚î  2025/10/18/120000_seq_001.json
-  ‚îú‚î ‚î  2025/10/18/120500_seq_002.json
-  ‚îî‚î ‚î  ...
+            2025/10/18/120000_seq_001.json
+            2025/10/18/120500_seq_002.json
+            ...
 ```
 
 ### 4.2 WAL Storage
@@ -296,17 +296,17 @@ s3://aurora-dr-prod/snapshots/position_tracking/
 **Local:**
 ```
 logs/dr/wal/
-  ‚îú‚î ‚î  wal_2025-10-18.jsonl      (current day, append-only)
-  ‚îú‚î ‚î  wal_2025-10-17.jsonl.gz   (rotated, compressed)
-  ‚îî‚î ‚î  ...
+            wal_2025-10-18.jsonl      (current day, append-only)
+            wal_2025-10-17.jsonl.gz   (rotated, compressed)
+            ...
 ```
 
 **Remote Storage:**
 ```
 s3://aurora-dr-prod/wal/
-  ‚îú‚î ‚î  2025/10/18/wal_2025-10-18.jsonl
-  ‚îú‚î ‚î  2025/10/17/wal_2025-10-17.jsonl.gz
-  ‚îî‚î ‚î  ...
+            2025/10/18/wal_2025-10-18.jsonl
+            2025/10/17/wal_2025-10-17.jsonl.gz
+            ...
 ```
 
 ## 5. Monitoring & Alerts

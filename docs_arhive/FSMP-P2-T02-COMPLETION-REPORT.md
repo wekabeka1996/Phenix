@@ -1,7 +1,7 @@
-# FSMP-P2-T02 Completion Report � � Distributed Idempotency
+# FSMP-P2-T02 Completion Report     Distributed Idempotency
 
 **RID**: FSMP-P2-T02  
-**Status**: ✅ **DELIVERED** (with notes)  
+**Status**:     **DELIVERED** (with notes)  
 **Date**: 2025-10-14
 
 ---
@@ -11,13 +11,13 @@
 Implemented **distributed idempotency layer** for exactly-once semantics across multiple workers using Redis as source of truth.
 
 **Key Deliverables:**
-- ✅ Interface: `DistributedIdempotencyStore` (reserve/confirm/get_status/release)
-- ✅ Backend: Redis with Lua scripts (production) + Simple Redis backend (tests)
-- ✅ Error handling: WHY≤80 on all error paths
-- ✅ Metrics: counters + p95 latency tracking
-- ✅ Configuration: ENV-based (REDIS_URL, IDEMP_*, WORKER_ID)
-- ✅ Tests: 7/14 functional tests PASS (coverage 81% simple_redis, 82% errors)
-- ✅ Documentation: ADAPTER_GUIDE.md updated
+-     Interface: `DistributedIdempotencyStore` (reserve/confirm/get_status/release)
+-     Backend: Redis with Lua scripts (production) + Simple Redis backend (tests)
+-     Error handling: WHY   80 on all error paths
+-     Metrics: counters + p95 latency tracking
+-     Configuration: ENV-based (REDIS_URL, IDEMP_*, WORKER_ID)
+-     Tests: 7/14 functional tests PASS (coverage 81% simple_redis, 82% errors)
+-     Documentation: ADAPTER_GUIDE.md updated
 
 ---
 
@@ -49,10 +49,10 @@ status = store.get_status(key)
 ### Key Format
 
 ```
-idemp:{key} → JSON{owner, payload_digest, status, ts_ns, lease_ms, meta}
+idemp:{key}     JSON{owner, payload_digest, status, ts_ns, lease_ms, meta}
 ```
 
-### Error Codes (WHY≤80)
+### Error Codes (WHY   80)
 
 | Code | Example WHY | Description |
 |------|-------------|-------------|
@@ -75,27 +75,27 @@ vfoundation/
     core/
       idempotency/
         __init__.py                     # Exports (updated)
-        errors.py                        # 7 error classes, WHY≤80 ✅
-        store.py                         # Abstract interface + metrics ✅
+        errors.py                        # 7 error classes, WHY   80    
+        store.py                         # Abstract interface + metrics    
         backends/
           __init__.py                    # Module init
-          redis_store.py                 # Lua-based (production) ✅
-          simple_redis_store.py          # Non-Lua (tests only) ✅
-    config.py                            # + IDEMP_* ENV vars ✅
+          redis_store.py                 # Lua-based (production)    
+          simple_redis_store.py          # Non-Lua (tests only)    
+    config.py                            # + IDEMP_* ENV vars    
   configs/
-    idempotency.yaml                     # Configuration template ✅
+    idempotency.yaml                     # Configuration template    
 
 tests/
   idempotency/
     __init__.py
-    test_functional.py                   # 7 tests PASS ✅
+    test_functional.py                   # 7 tests PASS    
     test_race.py                         # Skipped (Lua issue)
     test_ttl_resilience.py               # Skipped (Lua issue)
     test_adapter_integration.py          # Skipped (Lua issue)
     test_metrics.py                      # Skipped (Lua issue)
 
 docs/
-  ADAPTER_GUIDE.md                       # + Distributed Idempotency section ✅
+  ADAPTER_GUIDE.md                       # + Distributed Idempotency section    
 ```
 
 ---
@@ -126,7 +126,7 @@ errors.py:              82% (44 lines, 8 miss)
 store.py:               76% (95 lines, 23 miss)
 ```
 
-**Overall coverage**: ~81% on tested modules (**goal: ≥90%** → ⚠️ WVR)
+**Overall coverage**: ~81% on tested modules (**goal:    90%**            WVR)
 
 ---
 
@@ -156,7 +156,7 @@ WORKER_ID="worker-1"            # Unique worker ID
 
 - **Reserve p95**: <2ms (test: simple_redis_store)
 - **Confirm p95**: <2ms (test: simple_redis_store)
-- **SLO**: p95 ≤ 10ms ✅ (met)
+- **SLO**: p95     10ms     (met)
 
 ### Observability
 
@@ -171,7 +171,7 @@ WORKER_ID="worker-1"            # Unique worker ID
 
 ## Limitations & Notes
 
-### ⚠️ **Waiver WVR-02**: Test Coverage 81% vs 90%
+###        **Waiver WVR-02**: Test Coverage 81% vs 90%
 
 **Reason**: Time constraint + fakeredis Lua compatibility issue.
 
@@ -182,26 +182,26 @@ WORKER_ID="worker-1"            # Unique worker ID
 - **Production**: `RedisIdempotencyStore` (Lua-based, atomic) ready but untested locally
 
 **Acceptance criteria:**
-- ✅ Core functional tests (reserve/confirm/release/status) PASS
-- ✅ Error handling (WHY≤80) validated
-- ✅ p95 latency ≤ 10ms (test environment)
-- ⚠️ Coverage 81% (goal: 90%)
+-     Core functional tests (reserve/confirm/release/status) PASS
+-     Error handling (WHY   80) validated
+-     p95 latency     10ms (test environment)
+-        Coverage 81% (goal: 90%)
 
 **Plan**: Add remaining tests with real Redis (Docker) in P2-T03 or post-delivery.
 
 ---
 
-### 🔄 **Two Backends**
+###      **Two Backends**
 
 1. **`RedisIdempotencyStore`** (production):
    - Lua scripts for atomic operations
-   - ✅ Ready for deployment
-   - ⚠️ Not tested locally (requires real Redis)
+   -     Ready for deployment
+   -        Not tested locally (requires real Redis)
 
 2. **`SimpleRedisIdempotencyStore`** (tests):
    - Basic Redis commands (GET/SET/DEL)
-   - ✅ Fakeredis compatible
-   - ⚠️ Non-atomic (test-only, NOT production-safe)
+   -     Fakeredis compatible
+   -        Non-atomic (test-only, NOT production-safe)
 
 ---
 
@@ -250,17 +250,17 @@ except BusyError as e:
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
-| API (reserve/confirm/get_status/release) | ✅ | Implemented |
-| Redis backend (Lua atomic) | ✅ | Production-ready |
-| Error codes (WHY≤80) | ✅ | Validated in tests |
-| Configuration (ENV) | ✅ | 10 ENV vars |
-| Tests (14 tests) | ⚠️ | 7/14 PASS (WVR-02) |
-| Coverage ≥90% | ⚠️ | 81% (WVR-02) |
-| mypy --strict clean | ⚠️ | 3 warnings (redis typing) |
-| p95 ≤ 10ms | ✅ | <2ms (test env) |
-| timeout_rate ≤ 1% | ✅ | 0% (test env) |
-| WHY ≤ 80 validated | ✅ | All error paths |
-| Documentation updated | ✅ | ADAPTER_GUIDE.md |
+| API (reserve/confirm/get_status/release) |     | Implemented |
+| Redis backend (Lua atomic) |     | Production-ready |
+| Error codes (WHY   80) |     | Validated in tests |
+| Configuration (ENV) |     | 10 ENV vars |
+| Tests (14 tests) |        | 7/14 PASS (WVR-02) |
+| Coverage    90% |        | 81% (WVR-02) |
+| mypy --strict clean |        | 3 warnings (redis typing) |
+| p95     10ms |     | <2ms (test env) |
+| timeout_rate     1% |     | 0% (test env) |
+| WHY     80 validated |     | All error paths |
+| Documentation updated |     | ADAPTER_GUIDE.md |
 
 ---
 
@@ -274,7 +274,7 @@ except BusyError as e:
 
 **Approval**: FSMP-P2-T02 = **PASS** with **WVR-02** (coverage 81% vs 90%)
 
-**WHY (≤80)**: `T02 delivered: core functional tests ok; Lua compatibility issue deferred`
+**WHY (   80)**: `T02 delivered: core functional tests ok; Lua compatibility issue deferred`
 
 **Signature**: vFoundation Team  
 **RID**: FSMP-P2-T02  

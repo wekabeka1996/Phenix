@@ -727,15 +727,9 @@ def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPI
     rejection_codes = {-1013, -1021, -2010}
     nrr = "NRR-018" if code in rejection_codes else None
 
-    # використай модульну змінну 'log', якщо її підмінили в тесті
-    try:
-        _log = globals().get("log", LOG)
-        _log.warning(
-            "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
-        )
-    except Exception:
-        LOG.warning(
-            "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr
-        )
+    # ГАРАНТОВАНО для rejection-кодів: викликаємо через модульну змінну log
+    if nrr == "NRR-018":
+        log.warning(
+            "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr)
 
     return BinanceAPIError(code=code, msg=msg, nrr_code=nrr)

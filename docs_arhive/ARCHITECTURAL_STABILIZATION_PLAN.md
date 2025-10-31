@@ -9,9 +9,9 @@
 **Overarching Definition of Done (DoD):**
 - All 14+ critical issues from `CRITICAL_ISSUES_ANALYSIS_REPORT.md` are resolved and validated by targeted tests.
 - The system operates deterministically, with clear state transitions within all FSMs.
-- A comprehensive, multi-layered test suite (Unit, Integration, E2E) is in place, with coverage of key business logic ≥ 95%.
+- A comprehensive, multi-layered test suite (Unit, Integration, E2E) is in place, with coverage of key business logic     95%.
 - The system demonstrates resilience to common failures (API errors, restarts) through robust error handling and state recovery mechanisms.
-- Stated SLOs (p95 latency ≤ 50ms, timeout_rate ≤ 1%) are met under simulated load.
+- Stated SLOs (p95 latency     50ms, timeout_rate     1%) are met under simulated load.
 - The platform is declared "Alpha-Ready," meaning it is a stable and reliable tool for strategy research and execution.
 
 ---

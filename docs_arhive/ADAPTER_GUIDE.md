@@ -1,6 +1,6 @@
 # Execution Adapter Guide (FSMP-P2-T01)
 
-**Status**: ✅ Implemented  
+**Status**:     Implemented  
 **Version**: v1.0 (dry_run + paper modes)
 
 ---
@@ -11,7 +11,7 @@ The **Execution Adapter** is a thin layer over exchange SDK that provides:
 - **Execution modes**: `dry_run` (default), `paper`, `live`
 - **Idempotency**: Exactly-once semantics via deterministic `client_order_id`
 - **Reliability**: Retry with exponential backoff, circuit breaker
-- **Observability**: Metrics (p95 latency, counters), structured logging with WHY≤80
+- **Observability**: Metrics (p95 latency, counters), structured logging with WHY   80
 
 ---
 
@@ -153,7 +153,7 @@ async for event in adapter.stream():
 
 2. **Ledger Storage**: First submission stores `{key, first_seen_ts, last_status, last_event}`
 
-3. **Duplicate Detection**: Subsequent submissions with same key → `IdempotentDuplicateError`
+3. **Duplicate Detection**: Subsequent submissions with same key     `IdempotentDuplicateError`
 
 ### Example
 
@@ -209,10 +209,10 @@ Protects system from cascading failures.
 - `ADAPTER_CB_HALF_OPEN_PROBES`: Probes before closing (default 3)
 
 **Behavior**:
-- Error rate > threshold → OPEN
-- After cooldown → HALF_OPEN
-- N successful probes → CLOSED
-- Any failure in HALF_OPEN → back to OPEN
+- Error rate > threshold     OPEN
+- After cooldown     HALF_OPEN
+- N successful probes     CLOSED
+- Any failure in HALF_OPEN     back to OPEN
 
 **Example**:
 ```python
@@ -237,7 +237,7 @@ except CBOpenError as e:
 
 ### Latency (p95)
 
-- `sdk_submit_latency_ms`: p95 latency for submit (SLO: ≤25ms for mock)
+- `sdk_submit_latency_ms`: p95 latency for submit (SLO:    25ms for mock)
 - `sdk_cancel_latency_ms`: p95 latency for cancel
 
 **Access**:
@@ -280,7 +280,7 @@ print(f"Retries: {adapter.metrics.sdk_retries_total}")
 
 ## Error Handling
 
-All adapter errors include `ERR.code` + `WHY≤80`.
+All adapter errors include `ERR.code` + `WHY   80`.
 
 ### Error Classes
 
@@ -455,13 +455,13 @@ mypy --strict vfoundation/core/adapters
 
 All adapter operations log structured events:
 
-**Format**: `ts|rid|op|verb|src→dst|key|lat_ms|err?` + `why (≤80)`
+**Format**: `ts|rid|op|verb|src   dst|key|lat_ms|err?` + `why (   80)`
 
 **Examples**:
 ```
-2025-10-14T10:30:45.123Z|RID-123|adapter|submit|client→exchange|BTCUSDT|15ms|OK why="Order placed"
-2025-10-14T10:30:46.456Z|RID-124|adapter|submit|client→exchange|ETHUSDT|250ms|ERR why="Timeout submit 250ms > 200ms"
-2025-10-14T10:30:47.789Z|RID-125|adapter|cancel|client→exchange|abc123...|8ms|OK why="Order cancelled"
+2025-10-14T10:30:45.123Z|RID-123|adapter|submit|client   exchange|BTCUSDT|15ms|OK why="Order placed"
+2025-10-14T10:30:46.456Z|RID-124|adapter|submit|client   exchange|ETHUSDT|250ms|ERR why="Timeout submit 250ms > 200ms"
+2025-10-14T10:30:47.789Z|RID-125|adapter|cancel|client   exchange|abc123...|8ms|OK why="Order cancelled"
 ```
 
 ---
@@ -469,11 +469,11 @@ All adapter operations log structured events:
 ## Roadmap
 
 ### P2-T01 (Current)
-- ✅ dry_run mode
-- ✅ paper mode (mock SDK)
-- ✅ Idempotency ledger
-- ✅ Retry + CB
-- ✅ Metrics (p95, counters)
+-     dry_run mode
+-     paper mode (mock SDK)
+-     Idempotency ledger
+-     Retry + CB
+-     Metrics (p95, counters)
 
 ### P2-T02 (Future)
 - [ ] Real SDK integration (CCXT, python-binance, etc.)
@@ -526,7 +526,7 @@ if entry:
 
 ## Distributed Idempotency (FSMP-P2-T02)
 
-**Status**: ✅ Implemented  
+**Status**:     Implemented  
 **Version**: v1.0 (Redis backend)
 
 ### Overview
@@ -606,7 +606,7 @@ WORKER_ID="worker-1"            # Unique worker ID
 
 ---
 
-### Error Codes (WHY≤80)
+### Error Codes (WHY   80)
 
 | Error | Code | WHY Example | Description |
 |-------|------|-------------|-------------|
@@ -681,8 +681,8 @@ except BusyError as e:
 | `idemp_busy_total` | Counter | Busy errors |
 | `idemp_retries_total` | Counter | Retry attempts |
 | `idemp_cb_open_total` | Counter | CB open events |
-| `idemp_reserve_latency_ms` | Histogram | Reserve latency (p95 ≤ 10ms SLO) |
-| `idemp_confirm_latency_ms` | Histogram | Confirm latency (p95 ≤ 10ms SLO) |
+| `idemp_reserve_latency_ms` | Histogram | Reserve latency (p95     10ms SLO) |
+| `idemp_confirm_latency_ms` | Histogram | Confirm latency (p95     10ms SLO) |
 
 ---
 
@@ -692,7 +692,7 @@ except BusyError as e:
 # Run idempotency tests
 pytest tests/idempotency/ -v
 
-# Coverage check (target ≥90%)
+# Coverage check (target    90%)
 pytest tests/idempotency/ --cov=vfoundation.core.idempotency --cov-report=term-missing
 ```
 

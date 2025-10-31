@@ -4,7 +4,7 @@
 
 Aurora Core requires Binance Futures API credentials to execute trades. For testnet deployment, you need **testnet-specific API keys** that work only on Binance Futures Testnet.
 
-⚠️ **IMPORTANT**: Never use mainnet API keys for testnet, and vice versa. Testnet keys only work on testnet.binancefuture.com.
+       **IMPORTANT**: Never use mainnet API keys for testnet, and vice versa. Testnet keys only work on testnet.binancefuture.com.
 
 ## Getting Testnet API Keys
 
@@ -17,16 +17,16 @@ Aurora Core requires Binance Futures API credentials to execute trades. For test
 1. In the testnet dashboard, click on **API Management** (left sidebar)
 2. Click **Create API Key**
 3. Set permissions:
-   - ✅ **Enable Futures** (required for futures trading)
-   - ✅ **Enable Spot & Margin Trading** (recommended)
-   - ❌ **Perm_R_Orders** (read-only orders - optional)
-   - ❌ **Perm_W_Orders** (place orders - will be enabled)
-   - ❌ **Perm_W_Withdrawals** (withdrawals - keep disabled for security)
+   -     **Enable Futures** (required for futures trading)
+   -     **Enable Spot & Margin Trading** (recommended)
+   -     **Perm_R_Orders** (read-only orders - optional)
+   -     **Perm_W_Orders** (place orders - will be enabled)
+   -     **Perm_W_Withdrawals** (withdrawals - keep disabled for security)
 4. Complete 2FA verification
 5. **Save your API Key and Secret immediately** - they won't be shown again!
 
 ### Step 3: Get Testnet USDT
-1. In testnet dashboard, go to **Wallet** → **Futures Wallet**
+1. In testnet dashboard, go to **Wallet**     **Futures Wallet**
 2. Click **Transfer** to get test USDT from spot wallet
 3. Transfer some test USDT to your futures account for trading
 
@@ -75,20 +75,20 @@ export TRADING_ENV=testnet
 
 ## Security Best Practices
 
-### 🔐 API Key Security
+###      API Key Security
 - **Never commit API keys to version control**
 - **Use separate keys for testnet and mainnet**
 - **Restrict API key permissions** (disable withdrawals)
 - **Regenerate keys regularly**
 - **Monitor API key usage** in Binance dashboard
 
-### 🔐 Environment File Security
+###      Environment File Security
 - Add `.env` to `.gitignore`
 - Set file permissions to read-only for your user only
 - Never share `.env` files
 - Use different `.env` files for different environments
 
-### 🔐 Network Security
+###      Network Security
 - Use HTTPS for all API communications (handled automatically)
 - Enable 2FA on your Binance account
 - Monitor account activity regularly
@@ -102,12 +102,12 @@ After setup, verify your configuration:
 .venv\Scripts\Activate.ps1
 
 # Test configuration loading
-python -c "from apps.reference.config_loader import ConfigLoader; c = ConfigLoader(); config = c.load_config(); print('✅ Config loaded successfully'); print(f'USE_TESTNET: {config.use_testnet}'); print(f'API_KEY configured: {bool(config.binance_api_key)}')"
+python -c "from apps.reference.config_loader import ConfigLoader; c = ConfigLoader(); config = c.load_config(); print('    Config loaded successfully'); print(f'USE_TESTNET: {config.use_testnet}'); print(f'API_KEY configured: {bool(config.binance_api_key)}')"
 ```
 
 Expected output:
 ```
-✅ Config loaded successfully
+    Config loaded successfully
 USE_TESTNET: True
 API_KEY configured: True
 ```
@@ -141,7 +141,7 @@ USE_TESTNET=true
 ```bash
 USE_TESTNET=false
 # Use BINANCE_MAINNET_API_KEY/SECRET
-# ⚠️ ENSURE FUTURES TRADING ENABLED AND SUFFICIENT BALANCE!
+#        ENSURE FUTURES TRADING ENABLED AND SUFFICIENT BALANCE!
 ```
 
 Always double-check `USE_TESTNET=true` before running in development!</content>

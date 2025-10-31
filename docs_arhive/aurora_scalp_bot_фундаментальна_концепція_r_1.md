@@ -1,355 +1,355 @@
-# Aurora+Scalp Bot ‚ î  § É Ω ¥   º µ Ω Ç   ª å Ω    ö æ Ω Ü µ   Ü ñ è R1
+# Aurora+Scalp Bot                                                     R1
 
->  ü   ∏ Ω Ü ∏  : ** ö µ   É π,  Ω µ    ∏ à ∏  ∫ æ ¥.**  ù   ≤ µ ¥ µ Ω ñ  Ñ æ   º É ª ∏,        ≤ ∏ ª    Ç    ∫   ∏ Ç µ   ñ ó ‚ î  Ü µ  ∫ æ Ω Ç     ∫ Ç    µ   ª ñ ∑   Ü ñ ó.  † ñ à µ Ω Ω è      ∏ π º   é Ç å   è  ¥   Ω ∏ º ∏  Ç      Ç   Ç ∏   Ç ∏ ∫ æ é,     Ω µ  ñ Ω Ç É ó Ü ñ î é. ** ¢ µ   Ç‚ ë   æ ∫   ∏ Ç Ç è ‚â•‚ Ø90%**, **XAI‚ ë ª æ ≥ É ≤   Ω Ω è  æ ± æ ≤‚ ô è ∑ ∫ æ ≤ µ**  Ω    ∫ æ ∂ Ω µ    ñ à µ Ω Ω è.
-
----
-
-## 1)  ú µ Ç    π  ú     à Ç   ±
-
-** ú µ Ç  .**  ü æ ± É ¥ É ≤   Ç ∏ 24/7    ∏   Ç µ º É  ∑  ¥ ≤ æ Ö  á     Ç ∏ Ω:
-- **Aurora (Research+Orchestrator)** ‚ î ¬´   ∏ Ω ∫ æ ≤ ∏ π  º æ ∑ æ ∫¬ª,  è ∫ ∏ π  Ω   ≤ á   î Ç å   è  Ω   L2/L3,    Ω   ª ñ ∑ É î    µ ∂ ∏ º ∏,  ∫   ª ñ ±   É î  π º æ ≤ ñ   Ω æ   Ç ñ,  æ Ü ñ Ω é î  Ö ≤ æ   Ç æ ≤ ∏ π    ∏ ∑ ∏ ∫ (EVT‚ ëCVaR),  ∫ µ   É î ** ¥ ∏ Ω   º ñ á Ω ∏ º  ö µ ª ª ñ**  Ç      æ   Ç Ñ µ ª å Ω æ é  µ ∫     æ ∑ ∏ Ü ñ î é.
-- **Scalp Bot (Execution)** ‚ î  ≤ ∏ ∫ æ Ω   Ω Ω è  É ≥ æ ¥  É    µ ∂ ∏ º   Ö shadow/paper/live  ∑ maker/taker  ª æ ≥ ñ ∫ æ é, TCA  Ç   fill‚ ë   ∏ º É ª è Ç æ   æ º.
-
-** ú     à Ç   ±.**  § æ ∫ É    Ω   **   µ   µ ¥ Ω å æ/ ≤ ∏   æ ∫ æ ≤ æ ª   Ç ∏ ª å Ω ∏ Ö    ª å Ç   Ö**  ñ ∑  ¥ æ   Ç   Ç Ω å æ é  ª ñ ∫ ≤ ñ ¥ Ω ñ   Ç é.  ü   ∏ ∫ ª   ¥          ¥ ∏ ≥ º ∏: **SOL ‚Üí    ª å Ç ∏ ( Ω      . SOON)**  ∑  ª ñ ¥‚ ë ª   ≥      µ ¥ ∏ ∫ Ç ∏ ≤ Ω ñ   Ç é. BTC/ETH ‚ î  Ω µ  ±   ∑ æ ≤ ñ  ñ Ω   Ç   É º µ Ω Ç ∏,       µ Ñ µ   µ Ω    ¥ ª è    µ ∂ ∏ º Ω æ ≥ æ    Ω   ª ñ ∑ É.
-
-** ö ª é á æ ≤    ñ ¥ µ è.** ** ê ≥   µ   ∏ ≤ Ω ∏ π,    ª µ  ∫ µ   æ ≤   Ω ∏ π    ∏ ∑ ∏ ∫**: Aurora  º     à Ç   ± É î  Ñ     ∫ Ü ñ é  ∫     ñ Ç   ª É ** â æ   µ ∫ É Ω ¥ Ω æ**  á µ   µ ∑  º Ω æ ∂ Ω ∏ ∫ ∏  è ∫ æ   Ç ñ  ∫   ª ñ ±   É ≤   Ω Ω è,    µ ∂ ∏ º É    ∏ Ω ∫ É,  ª ñ ∫ ≤ ñ ¥ Ω æ   Ç ñ,  ª   Ç µ Ω Ç Ω æ   Ç ñ  π    æ Ç æ á Ω æ ≥ æ DD.  ¶ ñ ª å ‚ î **   æ ∑ ∏ Ç ∏ ≤ Ω    æ á ñ ∫ É ≤   Ω ñ   Ç å    ñ   ª è TCA**      ∏  ∫ æ Ω Ç   æ ª å æ ≤   Ω æ º É CVaR.
+>               : **          ,                     .**                                ,                                                                                    .                                                                               ,                           . **                                  90%**, **XAI                                             **                               .
 
 ---
 
-## 2)  ü   ∏ Ω Ü ∏   ∏ (   ∫   ñ æ º ∏)
-1. **Edge    ñ   ª è TCA.**  ë É ¥ å‚ ë è ∫    æ á ñ ∫ É ≤   Ω ñ   Ç å  ≤ ∏ º ñ   é î Ç å   è **   ñ   ª è** fees,  ∫ æ ≤ ∑   Ω Ω è, adverse selection,  ª   Ç µ Ω Ç Ω æ   Ç ñ  Ç      µ ± µ π Ç ñ ≤.
-2. ** ô º æ ≤ ñ   Ω æ   Ç ñ  ∫   ª ñ ±   æ ≤   Ω ñ.**  ö æ ∂ Ω    æ Ü ñ Ω ∫   p    É     æ ≤ æ ¥ ∂ É î Ç å   è ECE/Brier/LogLoss  ñ  ¥ æ ≤ ñ   á ∏ º ∏  º µ ∂   º ∏ (ICP/ ∫ æ Ω Ñ æ   º   ª).
-3. ** † ∏ ∑ ∏ ∫ ‚ î  á µ   µ ∑  Ö ≤ æ   Ç ∏.**  û   Ω æ ≤ Ω ∏ π  ∫ æ Ω Ç   æ ª å ‚ î **CVaR95** ( É ≥ æ ¥  /   µ   ñ è/   æ   Ç Ñ µ ª å)  ∑ EVT‚ ë æ Ü ñ Ω ∫ æ é  Ö ≤ æ   Ç ñ ≤.
-4. ** î ∏ Ω   º ñ á Ω ∏ π  ö µ ª ª ñ.**  ß     Ç ∫      ∏ ∑ ∏ ∫ É ‚ î  Ñ É Ω ∫ Ü ñ è  è ∫ æ   Ç ñ    ∏ ≥ Ω   ª É,    µ ∂ ∏ º É  Ç      Ç   Ω É  ≤ ∏ ∫ æ Ω   Ω Ω è (TCA).  ù ñ è ∫ æ ≥ æ    Ç   Ç ∏ á Ω æ ≥ æ  ª ñ º ñ Ç É,  ª ∏ à µ ** ∫ µ   æ ≤   Ω ñ  º Ω æ ∂ Ω ∏ ∫ ∏**.
-5. ** ° Ç   Ç ∏   Ç ∏ á Ω      µ   Ç ∏ Ñ ñ ∫   Ü ñ è.**  ö æ ∂ Ω µ  æ Ω æ ≤ ª µ Ω Ω è    æ ª ñ Ç ∏ ∫ ∏      æ Ö æ ¥ ∏ Ç å **SPRT/GLR**      æ Ç ∏ baseline  É shadow    µ   µ ¥        É ≤ æ º.
-6. ** † µ ∂ ∏ º ∏    ∏ Ω ∫ É.**  ¢ æ   ≥ É î º æ  ª ∏ à µ  É      ∏ ¥   Ç Ω ∏ Ö    µ ∂ ∏ º   Ö ( ¥ µ Ç µ ∫ Ç æ      µ ∂ ∏ º ñ ≤  æ ± æ ≤‚ ô è ∑ ∫ æ ≤ ∏ π).
-7. **XAI‚ ë   æ ≤ Ω æ Ç  .**  ù    ∫ æ ∂ Ω µ    ñ à µ Ω Ω è  î  ∂ É   Ω   ª: features‚Üíscore‚Üíp‚ÜíE[Œ†]‚Üírisk‚ ëgates‚ÜíWHY‚ ë ∫ æ ¥ ∏,  ∫   ª ñ ±   É ≤   ª å Ω ñ      Ç µ Ñ   ∫ Ç ∏  π edge‚ ëbreakdown.
-8. ** í ñ ¥   É Ç Ω ñ   Ç å hard‚ ëcode.**  £   ñ          º µ Ç   ∏ ‚ î  ∑ SSOT‚ ë ∫ æ Ω Ñ ñ ≥ ñ ≤;  ≤   ª ñ ¥   Ü ñ è    µ   µ ¥  ∑     É   ∫ æ º.
+## 1)                           
+
+**        .**                      24/7                                        :
+- **Aurora (Research+Orchestrator)**                                    ,                                    L2/L3,                              ,                                        ,                                            (EVT   CVaR),            **                               **                                                   .
+- **Scalp Bot (Execution)**                                                   shadow/paper/live    maker/taker               , TCA      fill                         .
+
+**              .**                 **                /                                               **                                                 .                                  : **SOL                (        . SOON)**                                                . BTC/ETH                                             ,                                                             .
+
+**                       .** **                    ,                                     **: Aurora                                                    **                    **                                                                  ,                        ,                       ,                                              DD.              **                                                       TCA**                                       CVaR.
 
 ---
 
-## 3)  ù æ Ç   Ü ñ è
--  ß     ∏:  ¥ ∏   ∫   µ Ç Ω ñ  Ç ∏ ∫ ∏ \(t \in \mathbb{N}\) (event‚ ëtime),  ≤ ñ ∫ Ω   \(\Delta t\)  ¥ ª è  æ ∑ Ω   ∫.
--  ¶ ñ Ω  / ∫ Ω ∏ ≥  : \(P_{bid}(t), P_{ask}(t)\),        µ ¥ \(\mathrm{spr}(t)=P_{ask}-P_{bid}\).
--  û ±   è ≥ ∏  Ω    Ω   π ∫     â ∏ Ö    ñ ≤ Ω è Ö: \(V_{bid}, V_{ask}\);    É º     Ω ñ  Ω   Lk: \(\sum_{\ell\le k}V^{(\ell)}\).
--  § ñ á ñ ( ≤ µ ∫ Ç æ  ): \(x_t \in \mathbb{R}^d\);    ∫ æ  : \(S_t\);  ñ º æ ≤ ñ   Ω ñ   Ç å  Ω       è º ∫ É: \(p_t\in(0,1)\).
--  ü       º µ Ç   ∏  ≤ ∏ Ö æ ¥ É:  ≤ ∏ ≥     à/ ≤ Ç     Ç   \(G, L\) ( É  Ç ñ ∫   Ö/ ±  ),  ≤ ∏ Ç     Ç ∏ \(c\) (fees+slippage+latency ‚àí rebates).
--  û á ñ ∫ É ≤   Ω ñ   Ç å  Ω    É ≥ æ ¥ É: \(E[\Pi]\);    æ   Ç Ñ µ ª å Ω ñ  ≤ µ ∫ Ç æ   ∏ \(\boldsymbol{\mu},\ \Sigma\).
--  §     ∫ Ü ñ è  ö µ ª ª ñ: \(f\in[0,f_{\max}]\);  º Ω æ ∂ Ω ∏ ∫ ∏  ê ≤   æ   ∏: \(\lambda_{cal},\lambda_{reg},\lambda_{liq},\lambda_{dd},\lambda_{lat}\).
+## 2)                  (              )
+1. **Edge            TCA.**                                                                   **          ** fees,                 , adverse selection,                                             .
+2. **                                             .**                         p                                ECE/Brier/LogLoss                                    (ICP/                  ).
+3. **                                      .**                                       **CVaR95** (          /          /                )    EVT                                .
+4. **                               .**                                                                         ,                                                 (TCA).                                                 ,          **                                 **.
+5. **                                               .**                                                                   **SPRT/GLR**            baseline    shadow                          .
+6. **                       .**                                                                (                                                         ).
+7. **XAI                 .**                                               : features   score   p   E[  ]   risk   gates   WHY           ,                                                  edge   breakdown.
+8. **                       hard   code.**                                  SSOT                   ;                                               .
 
 ---
 
-## 4) Edge‚ ë ± é ¥ ∂ µ Ç  ñ  æ á ñ ∫ É ≤   Ω ñ   Ç å  É ≥ æ ¥ ∏
+## 3)               
+-         :                             \(t \in \mathbb{N}\) (event   time),            \(\Delta t\)                  .
+-         /          : \(P_{bid}(t), P_{ask}(t)\),            \(\mathrm{spr}(t)=P_{ask}-P_{bid}\).
+-                                                  : \(V_{bid}, V_{ask}\);                     Lk: \(\sum_{\ell\le k}V^{(\ell)}\).
+-          (            ): \(x_t \in \mathbb{R}^d\);         : \(S_t\);                                        : \(p_t\in(0,1)\).
+-                                :             /             \(G, L\) (             /    ),                \(c\) (fees+slippage+latency     rebates).
+-                                         : \(E[\Pi]\);                                     \(\boldsymbol{\mu},\ \Sigma\).
+-                          : \(f\in[0,f_{\max}]\);                              : \(\lambda_{cal},\lambda_{reg},\lambda_{liq},\lambda_{dd},\lambda_{lat}\).
 
-### 4.1.  ë   ∑ æ ≤    Ñ æ   º É ª    æ á ñ ∫ É ≤   Ω æ   Ç ñ
+---
+
+## 4) Edge                                                      
+
+### 4.1.                                                     
 \[
 E[\Pi] \,=\, p\,G\; -\; (1-p)\,L\; -\; c.
 \]
- í Ö ñ ¥  ¥ æ ∑ ≤ æ ª µ Ω æ,  è ∫ â æ \(E[\Pi]>0\) **   ñ   ª è TCA‚ ë ∫ æ   µ ∫ Ü ñ π**.  í  ∑   É á Ω ñ π  Ñ æ   º ñ  á µ   µ ∑ payoff‚ ëratio \(r=G/L\)  ñ  Ω æ   º æ ≤   Ω ñ  ≤ ∏ Ç     Ç ∏ \(c'=c/L\):
+                           ,          \(E[\Pi]>0\) **           TCA                   **.                                         payoff   ratio \(r=G/L\)                                      \(c'=c/L\):
 \[
 E[\Pi]>0 \iff p > p^*(c') \,=\, \frac{1+c'}{1+r}.
 \]
- ü     ∫ Ç ∏ ∫  :  ≤ ∏ ∫ æ   ∏   Ç æ ≤ É ≤   Ç ∏  ∑         \(\delta\ge 0.01\): \(p>p^*(c')+\delta\).
+                :                                           \(\delta\ge 0.01\): \(p>p^*(c')+\delta\).
 
-### 4.2.  í ∏ º æ ≥    ¥ æ    µ   µ ¥ Ω å æ ≥ æ edge vs Sharpe
- ù µ Ö   π \(m\) ‚ î    µ   µ ¥ Ω ñ π PnL/ É ≥ æ ¥  , \(s\) ‚ î  ° ö í/ É ≥ æ ¥  , \(N\) ‚ î  É ≥ æ ¥/ ¥ µ Ω å.  ¢ æ ¥ ñ  ¥ µ Ω Ω ∏ π Sharpe:
+### 4.2.                                        edge vs Sharpe
+           \(m\)                      PnL/          , \(s\)           /          , \(N\)             /        .                       Sharpe:
 \[
-SR_d=\frac{\sqrt{N}\,m}{s}, \qquad SR_{\text{ º ñ  }}\approx SR_d\sqrt{21}.
+SR_d=\frac{\sqrt{N}\,m}{s}, \qquad SR_{\text{      }}\approx SR_d\sqrt{21}.
 \]
- ¶ ñ ª å \(SR_{\text{ º ñ  }}\ge2\Rightarrow SR_d\ge 2/\sqrt{21}\).  ë É ¥ å‚ ë è ∫    Ω æ ≤      æ ª ñ Ç ∏ ∫      æ ≤ ∏ Ω Ω      æ ∫   ∑   Ç ∏ \(m\)  ≤ ∏ â µ  Ü ñ î ó  º µ ∂ ñ **   ñ   ª è TCA**  ñ ∑  ¥ æ ≤ ñ   á ∏ º ∏  ñ Ω Ç µ   ≤   ª   º ∏.
+         \(SR_{\text{      }}\ge2\Rightarrow SR_d\ge 2/\sqrt{21}\).                                                                             \(m\)                            **           TCA**                                               .
 
-### 4.3. Edge‚ ëBudget (   æ ∑ ∫ ª   ¥  ∫ æ º   æ Ω µ Ω Ç)
+### 4.3. Edge   Budget (                                 )
 \[
-E[\Pi] = \underbrace{E[\Pi]_{raw}}_{\text{   ª å Ñ  }}\; -\; \underbrace{c_{fees}}_{\text{ ∫ æ º ñ   ñ ó}}\; -\; \underbrace{c_{slip, in/out}}_{\text{ ∫ æ ≤ ∑   Ω Ω è}}\; -\; \underbrace{c_{adv}}_{\text{adverse sel.}}\; -\; \underbrace{c_{lat}}_{\text{ ª   Ç µ Ω Ç Ω ñ   Ç å}}\; +\; \underbrace{r_{reb}}_{\text{   µ ± µ π Ç ∏}}.
+E[\Pi] = \underbrace{E[\Pi]_{raw}}_{\text{          }}\; -\; \underbrace{c_{fees}}_{\text{              }}\; -\; \underbrace{c_{slip, in/out}}_{\text{                }}\; -\; \underbrace{c_{adv}}_{\text{adverse sel.}}\; -\; \underbrace{c_{lat}}_{\text{                      }}\; +\; \underbrace{r_{reb}}_{\text{              }}.
 \]
- £   ñ  ∫ æ º   æ Ω µ Ω Ç ∏  ≤ ∏ º ñ   é é Ç å   è  π  ª æ ≥ É é Ç å   è  æ ∫   µ º æ ( ¥   à ± æ   ¥  ∫     ó ≤).
+                                                                                      (                         ).
 
 ---
 
-## 5)  î   Ω ñ  Ç    º ñ ∫   æ   Ç   É ∫ Ç É   Ω ñ  æ ∑ Ω   ∫ ∏
+## 5)                                                          
 
-### 5.1.  ë   ∑ æ ≤ ñ  Ñ ñ á ñ
-- **OBI (Order Book Imbalance)**  Ω   best    ± æ Lk:
+### 5.1.                      
+- **OBI (Order Book Imbalance)**      best        Lk:
 \[
 \mathrm{OBI} = \frac{V_{bid}-V_{ask}}{V_{bid}+V_{ask}}.
 \]
-- ** ú ñ ∫   æ‚ ë       π  **  á µ   µ ∑ best‚ ëvolumes:
+- **                       **            best   volumes:
 \[
 P_{\mathrm{micro}}=\frac{V_{ask}\,P_{bid}+V_{bid}\,P_{ask}}{V_{bid}+V_{ask}},\quad \Delta P_{\mathrm{micro}}=P_{\mathrm{micro}}(t)-P_{\mathrm{micro}}(t-\Delta t).
 \]
-- **TFI (Trade Flow Imbalance)**  ∑      æ ¥ ñ è º ∏  É ≥ æ ¥  É  ≤ ñ ∫ Ω ñ \(W\):
+- **TFI (Trade Flow Imbalance)**                                            \(W\):
 \[
 \mathrm{TFI} = \frac{\sum_{\tau\in W}\mathrm{sign}(\text{trade}\_\tau)\cdot \mathrm{size}_\tau}{\sum_{\tau\in W}\mathrm{size}_\tau}.
 \]
-- **Absorption.**  ú ñ     ¬´ ≤ ± ∏     Ω Ω è¬ª  É ¥     Ω ∏ Ö  É ≥ æ ¥  æ ±   è ≥ æ º  ∫ Ω ∏ ≥ ∏:      ñ ≤ ≤ ñ ¥ Ω æ à µ Ω Ω è    æ ≥ ª ∏ Ω É Ç æ ≥ æ  æ ±   è ≥ É  ¥ æ  Ω µ Ç Ç æ‚ ë ∑   É ≤ É  Ü ñ Ω ∏  ≤  º µ ∂   Ö \(W\).
+- **Absorption.**                                                                                :                                                                                                                      \(W\).
 
-### 5.2.  ù æ   º É ≤   Ω Ω è  ñ  Ω     ñ ≤   æ ∑     ¥
- † æ ±     Ç Ω µ  º     à Ç   ± É ≤   Ω Ω è (MAD/Huber).  ö æ Ω Ç   æ ª é î º æ **half‚ ëlife    ª å Ñ ∏** ‚ î  è ∫ â æ  ∫ æ   µ ª è Ü ñ è  ∑  ª   ≥ æ º        ¥   î  à ≤ ∏ ¥ à µ    æ   æ ≥ É,  ≤   ≥    Ñ ñ á ñ  ∑ º µ Ω à É î Ç å   è ( µ ∫     æ Ω µ Ω Ü ñ π Ω ∏ π  ¥ µ ∫ µ π).
+### 5.2.                                               
+                                            (MAD/Huber).                        **half   life           **                                                                                     ,                                          (                                       ).
 
-### 5.3. Universe    ª å Ç ñ ≤
- †   Ω ∂ É ≤   Ω Ω è  æ Ω ª   π Ω:  ª ñ ∫ ≤ ñ ¥ Ω ñ   Ç å L5,  æ ±   è ≥/ Ö ≤,  º µ ¥ ñ   Ω Ω ∏ π        µ ¥ (bps),      æ ≥ Ω æ ∑ Ω µ  ∫ æ ≤ ∑   Ω Ω è,  á     Ç ∫   ¬´     ∏ ¥   Ç Ω ∏ Ö¬ª    µ ∂ ∏ º ñ ≤.  í ∏ ± ∏     î º æ \(K\)  Ω   π ∫     â ∏ Ö;    ≤ Ç æ º   Ç ∏ á Ω      ñ ¥ º ñ Ω        ∏   ∫ É.
+### 5.3. Universe             
+                                 :                        L5,           /    ,                               (bps),                                    ,                                                   .                    \(K\)                   ;                                                   .
 
 ---
 
-## 6)  ° ∏ ≥ Ω   ª å Ω ∏ π  ¥ ≤ ∏ ≥ É Ω (Score ‚Üí Probability)
+## 6)                                   (Score     Probability)
 
-### 6.1.  õ ñ Ω ñ π Ω æ‚ ë   ¥ ∏ Ç ∏ ≤ Ω ∏ π  ∫     ∫      ñ ∑  ∫   æ  ‚ ë   ∫ Ç ∏ ≤ Ω ∏ º  á ª µ Ω æ º
+### 6.1.                                                                                               
 \[
 S_i(t) = w^\top x_i(t) \; + \; \gamma\,\beta_{i|\mathrm{SOL}}(t)\, r_{\mathrm{SOL}}(t-\tau^*(t)).
 \]
- ¢ É Ç \(r_{\mathrm{SOL}}\) ‚ î  ∫ æ   æ Ç ∫ ∏ π  ¥ æ Ö ñ ¥ SOL    ± æ  π æ ≥ æ LOB‚ ë   ∫ æ  ; \(\beta_{i|\mathrm{SOL}}\) ‚ î  ª æ ∫   ª å Ω    ± µ Ç      ª å Ç   i  Ω   SOL; \(\tau^*\) ‚ î    µ   µ ¥ ±   á É ≤   Ω ∏ π  ª   ≥ ( ¥ ∏ ≤. ¬ß7).
+       \(r_{\mathrm{SOL}}\)                                 SOL                 LOB           ; \(\beta_{i|\mathrm{SOL}}\)                                          i      SOL; \(\tau^*\)                                         (      .   7).
 
-### 6.2.  ü µ   µ Ö ñ ¥  É  π º æ ≤ ñ   Ω ñ   Ç å
+### 6.2.                                         
 \[
 \tilde p_i(t) = \sigma\big(a + b\,S_i(t)\big),\qquad p_i(t)=\mathrm{Calibrate}\big(\tilde p_i(t)\big),
 \]
- ¥ µ **Calibrate** ‚ î Platt/Isotonic  ∑  º æ Ω ñ Ç æ   ∏ Ω ≥ æ º ECE/Brier/LogLoss  ñ ICP‚ ë ¥ æ ≤ ñ   æ é.
+     **Calibrate**     Platt/Isotonic                             ECE/Brier/LogLoss    ICP                 .
 
-### 6.3. ICP/ í ñ ¥ º æ ≤    ≤ ñ ¥  Ç æ   ≥ ñ ≤
- § æ   º É î º æ  ñ Ω Ç µ   ≤   ª ∏  ¥ æ ≤ ñ   ∏/   ñ ≤ Ω ñ p‚ ëvalues;  è ∫ â æ  Ω µ ≤ ∏ ∑ Ω   á µ Ω ñ   Ç å  ≤ µ ª ∏ ∫   ‚ î ** ≤ ñ ¥ º æ ≤    ≤ ñ ¥  ≤ Ö æ ¥ É** (coverage/efficiency    ñ ¥  ∫ æ Ω Ç   æ ª µ º).
+### 6.3. ICP/                                  
+                                                /           p   values;                                                        **                                ** (coverage/efficiency                          ).
 
 ---
 
-## 7)  í ∏ ∑ Ω   á µ Ω Ω è  ± µ Ç Ç    π  ª   ≥ É ( ª ñ ¥ µ  ‚Üí   ª Ç)
+## 7)                                             (                   )
 
-### 7.1.  õ æ ∫   ª å Ω    ± µ Ç  
- û Ü ñ Ω ∫   \(\beta_{i|\mathrm{SOL}}\)  Ω    ∫ æ ≤ ∑ Ω æ º É  ≤ ñ ∫ Ω ñ (   æ ±     Ç Ω      µ ≥   µ   ñ è/GLM):
+### 7.1.                          
+             \(\beta_{i|\mathrm{SOL}}\)                                  (                                 /GLM):
 \[
-r_i(t) = \alpha + \beta_{i|\mathrm{SOL}}\, r_{\mathrm{SOL}}(t) + \varepsilon_t,\quad \beta\text{ ‚ î  Ñ É Ω ∫ Ü ñ è  á     É}.
+r_i(t) = \alpha + \beta_{i|\mathrm{SOL}}\, r_{\mathrm{SOL}}(t) + \varepsilon_t,\quad \beta\text{                            }.
 \]
-### 7.2.  õ   ≥ \(\tau^*\)
- ® É ∫   î º æ \(\tau\)  ∑  º   ∫   ∏ º É º æ º    µ   µ ¥ ±   á É ≤   Ω æ   Ç ñ ( ∫   æ  ‚ ë ∫ æ   µ ª è Ü ñ è/GLR/transfer entropy):
+### 7.2.        \(\tau^*\)
+               \(\tau\)                                                          (                             /GLR/transfer entropy):
 \[
 \tau^*(t) = \arg\max_{\tau\in\mathcal{T}}\; \mathrm{Predictability}\big(r_{\mathrm{SOL}}(t-\tau)\to r_i(t)\big).
 \]
- ° Ç   ± ñ ª ñ ∑ É î º æ \(\tau^*\)    µ ≥ É ª è   ∏ ∑   Ü ñ î é,  ≤ ñ ¥ ∫ ∏ ¥   î º æ  Ω µ   Ç ñ π ∫ ñ  æ Ü ñ Ω ∫ ∏ (SPRT  Ω    Ω   è ≤ Ω ñ   Ç å  ª ñ ¥‚ ë ª   ≥ É).
+                         \(\tau^*\)                             ,                                                    (SPRT                                          ).
 
 ---
 
-## 8)  î µ Ç µ ∫ Ç æ      µ ∂ ∏ º É
+## 8)                              
 
-### 8.1. Page‚ ëHinkley / GLR
- ö æ Ω Ç   æ ª å  ∑   É ≤ ñ ≤    µ   µ ¥ Ω å æ ≥ æ/   æ ∑   æ ¥ ñ ª É  ¥ ª è  Ñ ñ á/     ∏ ± É Ç ∫ æ ≤ æ   Ç ñ:
+### 8.1. Page   Hinkley / GLR
+                                                  /                                /                          :
 \[
-PH_t = PH_{t-1} + (x_t - \mu_0 - \delta)\quad \text{ ∑    µ   µ Ç æ º      ∏ } PH_t<\min_{s\le t}PH_s;\ \text{ Ç   ñ ≥ µ        ∏ } PH_t-\min PH > h.
+PH_t = PH_{t-1} + (x_t - \mu_0 - \delta)\quad \text{                         } PH_t<\min_{s\le t}PH_s;\ \text{                    } PH_t-\min PH > h.
 \]
-GLR ‚ î  ≤ ñ ¥ Ω æ à µ Ω Ω è        ≤ ¥ æ   æ ¥ ñ ± Ω æ   Ç µ π  º ñ ∂  º æ ¥ µ ª è º ∏ ¬´ ¥ æ/   ñ   ª è¬ª.
+GLR                                                                                           /            .
 
-### 8.2. HMM ( ∑      æ Ç   µ ± ∏)
- î ∏   ∫   µ Ç Ω ñ    Ç   Ω ∏ ¬´ Ç è ≥ É á ∫  / Ç   µ Ω ¥/ Ö   æ  ¬ª;  ¥ æ ∑ ≤ æ ª ∏  Ω    Ç æ   ≥ ñ ≤ ª é/ º æ ¥ ∏ Ñ ñ ∫   Ü ñ é \(\lambda_{reg}\)  ª ∏ à µ  É      ∏ ¥   Ç Ω ∏ Ö    Ç   Ω   Ö.
+### 8.2. HMM (                   )
+                                              /          /          ;                                     /                       \(\lambda_{reg}\)                                            .
 
 ---
 
-## 9) TCA  ñ Fill Simulator
+## 9) TCA    Fill Simulator
 
-### 9.1.  ú æ ¥ µ ª å  ∑     æ ≤ Ω µ Ω å
-- **Maker:**  á µ   ≥  ,    æ ∑ ∏ Ü ñ è  ≤  Ω ñ π,  ñ Ω Ç µ Ω   ∏ ≤ Ω ñ   Ç å      æ Ç ∏ **trade‚ ëto‚ ëbook ratio (TBR)**; hazard‚ ë º æ ¥ µ ª å:
+### 9.1.                                
+- **Maker:**           ,                         ,                                       **trade   to   book ratio (TBR)**; hazard               :
 \[
 \Pr(\text{fill by }t) = 1 - \exp\Big(-\int_0^t \lambda_{\text{fill}}(u)\,du\Big),\quad \lambda_{\text{fill}} = f(\text{TBR},\ \text{queue pos},\ \mathrm{spr}).
 \]
-- **Taker:**  ∫ æ ≤ ∑   Ω Ω è  è ∫  Ñ É Ω ∫ Ü ñ è        µ ¥ É,  ≤ æ ª   Ç ∏ ª å Ω æ   Ç ñ,  ≥ ª ∏ ± ∏ Ω ∏  Ç    ª   Ç µ Ω Ç Ω æ   Ç ñ.
+- **Taker:**                                                  ,                           ,                                           .
 
-### 9.2.  õ   Ç µ Ω Ç Ω ñ   Ç å  ñ adverse selection
- ï º   ñ   ∏ á Ω    ¥ µ ≥     ¥   Ü ñ è  æ á ñ ∫ É ≤   Ω æ   Ç ñ  ≤ ñ ¥  ∑   Ç   ∏ º ∫ ∏ \(\ell\):
+### 9.2.                           adverse selection
+                                                                                         \(\ell\):
 \[
-E[\Pi(\ell)] \approx E[\Pi(0)] - \kappa\,\ell,\quad \kappa\,\text{( ±  / º  )  ∑ live‚ ëshadow}.
+E[\Pi(\ell)] \approx E[\Pi(0)] - \kappa\,\ell,\quad \kappa\,\text{(    /    )    live   shadow}.
 \]
-SLA‚ ë ≥ µ π Ç:  ¥ æ ∑ ≤ æ ª µ Ω æ,  è ∫ â æ \(E[\Pi(\ell)]>0\)  ∑  ∑         æ º; \(\ell\le E[\Pi(0)]/\kappa\).
+SLA           :                   ,          \(E[\Pi(\ell)]>0\)                  ; \(\ell\le E[\Pi(0)]/\kappa\).
 
-### 9.3. Edge‚ ëBudget Dashboard
- † æ ∑ ∫ ª   ¥  ∫ æ º   æ Ω µ Ω Ç ( ¥ ∏ ≤. ¬ß4.3)  ∑  ª æ ≥ É ≤   Ω Ω è º  Ω    É ≥ æ ¥ É  Ç    ¥ æ ± æ ≤ ∏ º ∏    ≥   µ ≥   Ç   º ∏.
-
----
-
-## 10)  ü     ≤ ∏ ª    ≤ Ö æ ¥ É (Entry Rules)
-
-1. ** ü æ   ñ ≥ p:** \(p_i(t) > p^*_i(c'_i)+\delta\),  ¥ µ \(p^*_i(c')=\tfrac{1+c'}{1+r}\), \(r=G/L\), \(c'=c/L\).
-2. ** † µ ∂ ∏ º Ω ∏ π  ≥ µ π Ç:**    Ç   Ω \(\in\) ¬´     ∏ ¥   Ç Ω ∏ π¬ª (Page‚ ëHinkley/GLR/HMM).
-3. **TCA‚ ë ≥ µ π Ç:**    ∏ º É ª è Ç æ      æ ∫   ∑ É î \(E[\Pi(\ell)]>0\)      ∏    æ Ç æ á Ω æ º É SLA.
-4. **Risk‚ ë ≥ µ π Ç ∏:**        µ ¥‚â§ ª ñ º ñ Ç,  ≤ æ ª   Ç ∏ ª å Ω ñ   Ç å/ ª ñ ∫ ≤ ñ ¥ Ω ñ   Ç å  É  º µ ∂   Ö; **CVaR95**  É ≥ æ ¥ ∏ ‚â§    æ   æ ≥ É;  ñ Ω ≤ µ Ω Ç    / ¥ µ Ω Ω ñ  ª ñ º ñ Ç ∏  Ω µ    æ   É à µ Ω æ.
-5. ** ö   Ω     µ π ∫  /   æ ª ñ Ç ∏ ∫  :**  è ∫ â æ    æ ª ñ Ç ∏ ∫    æ Ω æ ≤ ª µ Ω  ,  ≤ æ Ω    º   î    æ ∑ ∏ Ç ∏ ≤ Ω µ    ñ à µ Ω Ω è **SPRT/GLR**      æ Ç ∏ baseline.
+### 9.3. Edge   Budget Dashboard
+                                  (      .   4.3)                                                                                   .
 
 ---
 
-## 11)  °   π ∑ ∏ Ω ≥    æ ∑ ∏ Ü ñ ó:  î ∏ Ω   º ñ á Ω ∏ π  ö µ ª ª ñ    ñ ¥  ∫ æ Ω Ç   æ ª µ º  ê ≤   æ   ∏
+## 10)                           (Entry Rules)
 
-### 11.1.  ° ∏   ∏ π  ö µ ª ª ñ  Ω    ñ Ω   Ç   É º µ Ω Ç ñ i
+1. **           p:** \(p_i(t) > p^*_i(c'_i)+\delta\),      \(p^*_i(c')=\tfrac{1+c'}{1+r}\), \(r=G/L\), \(c'=c/L\).
+2. **                         :**          \(\in\)                        (Page   Hinkley/GLR/HMM).
+3. **TCA           :**                                   \(E[\Pi(\ell)]>0\)                           SLA.
+4. **Risk             :**                        ,                           /                                    ; **CVaR95**                            ;                 /                                             .
+5. **                  /                :**                                           ,                                                   **SPRT/GLR**            baseline.
+
+---
+
+## 11)                              :                                                                       
+
+### 11.1.                                                   i
 \[
  f^{raw}_{i} = \mathrm{clip}\!\left(\frac{b_i p_i-(1-p_i)}{b_i},\ 0,\ f_{\max}\right),\quad b_i = \frac{G_i}{L_i}.
 \]
 
-### 11.2.  ü æ   Ç Ñ µ ª å Ω ∏ π  ö µ ª ª ñ ( ∫ æ   µ ª å æ ≤   Ω ñ    ª å Ç ∏)
+### 11.2.                                   (                                 )
 \[
-\boldsymbol{f}^{port} = \rho\,\Sigma^{-1}\,\boldsymbol{\mu},\quad \text{ ¥ µ }\boldsymbol{\mu}=\{E[\Pi_i]\},\ \Sigma=\mathrm{Cov}(\text{PnL/ É ≥ æ ¥  }).
+\boldsymbol{f}^{port} = \rho\,\Sigma^{-1}\,\boldsymbol{\mu},\quad \text{     }\boldsymbol{\mu}=\{E[\Pi_i]\},\ \Sigma=\mathrm{Cov}(\text{PnL/          }).
 \]
-\(\rho\)  ≤ ∏ ± ∏     î º æ  Ç   ∫,  â æ ± \(\mathrm{CVaR}^{port}_{95}\le \tau\) (   æ   Ç Ñ µ ª å Ω ∏ π  Ö ≤ æ   Ç æ ≤ ∏ π  ª ñ º ñ Ç).
+\(\rho\)                          ,        \(\mathrm{CVaR}^{port}_{95}\le \tau\) (                                                    ).
 
-### 11.3.  û   ∫ µ   Ç     Ü ñ è  ê ≤   æ    ‚ ë º Ω æ ∂ Ω ∏ ∫ æ º
+### 11.3.                                                         
 \[
  M = \lambda_{cal}\cdot\lambda_{reg}\cdot\lambda_{liq}\cdot\lambda_{dd}\cdot\lambda_{lat},\qquad f_i = \mathrm{clip}\big(M\cdot f^{comb}_i, 0, f_{\max}\big).
 \]
-- \(\lambda_{cal}\) ‚ î  è ∫ ñ   Ç å  ∫   ª ñ ±   É ≤   Ω Ω è (ECE/LogLoss),  ∑ Ω ∏ ∂ µ Ω Ω è      ∏  ¥   ∏ Ñ Ç ñ;  
-- \(\lambda_{reg}\) ‚ î    µ ∂ ∏ º Ω ∏ π    Ç   Ω;  
-- \(\lambda_{liq}\) ‚ î  ª ñ ∫ ≤ ñ ¥ Ω ñ   Ç å/       µ ¥;  
-- \(\lambda_{dd}\) ‚ î  Ñ É Ω ∫ Ü ñ è    æ Ç æ á Ω æ ≥ æ drawdown;  
-- \(\lambda_{lat}\) ‚ î  ª   Ç µ Ω Ç Ω ñ   Ç å  ≤ ñ ¥ Ω æ   Ω æ SLA.
+- \(\lambda_{cal}\)                                           (ECE/LogLoss),                                     ;  
+- \(\lambda_{reg}\)                              ;  
+- \(\lambda_{liq}\)                           /          ;  
+- \(\lambda_{dd}\)                                       drawdown;  
+- \(\lambda_{lat}\)                                             SLA.
 
-### 11.4.  † æ ±     Ç Ω ñ   Ç å
-- **Fractional‚ ëKelly:**  ±   ∑ æ ≤ æ 0.3‚ ì0.6√ó,  ∑  º æ ∂ ª ∏ ≤ ñ   Ç é \(\uparrow\)  ¥ æ 1.0√ó  É ¬´ ∑ µ ª µ Ω ∏ Ö¬ª  É º æ ≤   Ö.  
-- **Shrinkage p:**      ∏  ¥   ∏ Ñ Ç ñ  ∫   ª ñ ±   É ≤   Ω Ω è: \(p\leftarrow \lambda p + (1-\lambda)\cdot 0.5\).  
-- **CVaR‚ ë ≥ µ π Ç:**  Ω    É ≥ æ ¥ É  π    æ   Ç Ñ µ ª å ‚ î  æ ± æ ≤‚ ô è ∑ ∫ æ ≤ ∏ π.
+### 11.4.                       
+- **Fractional   Kelly:**              0.3   0.6  ,                         \(\uparrow\)      1.0                                     .  
+- **Shrinkage p:**                                             : \(p\leftarrow \lambda p + (1-\lambda)\cdot 0.5\).  
+- **CVaR           :**                                                                  .
 
 ---
 
-## 12)  † ∏ ∑ ∏ ∫  ñ  Ö ≤ æ   Ç ∏ (EVT‚ ëCVaR)
+## 12)                            (EVT   CVaR)
 
 ### 12.1. CVaR95
 \[
 \mathrm{CVaR}_{95}(\Pi) = E\big[\Pi\mid \Pi\le q_{0.05}\big],\quad q_{0.05}=\text{VaR}_{95}.
 \]
 
-### 12.2. POT/GPD  Ω    Ω µ ≥   Ç ∏ ≤ Ω ∏ Ö  Ö ≤ æ   Ç   Ö
- ü æ   ñ ≥ \(u\),  Ω   ¥ ª ∏ à ∫ ∏ \(Y=\Pi-u\mid \Pi\le u\).  ü       º µ Ç   ∏ GPD (\(\xi,\beta\))  æ Ü ñ Ω é î º æ MLE/ ±   π î   ñ ≤   å ∫ ∏  ∑  ± É Ç   Ç   µ  ‚ ëCI;    µ ≥ É ª è   Ω ∏ π    µ Ñ ñ Ç.  ü µ   µ ∫ ª   ¥   î º æ  É \(\mathrm{CVaR}_{95}\)  Ω    É ≥ æ ¥ É/   µ   ñ é  π    æ   Ç Ñ µ ª å.
+### 12.2. POT/GPD                                         
+           \(u\),                  \(Y=\Pi-u\mid \Pi\le u\).                    GPD (\(\xi,\beta\))                  MLE/                                             CI;                                .                             \(\mathrm{CVaR}_{95}\)                /                              .
 
 ---
 
-## 13)  ö   ª ñ ±   É ≤   Ω Ω è,  ¥   ∏ Ñ Ç  ñ    µ   Ç ∏ Ñ ñ ∫   Ü ñ è
+## 13)                         ,                                       
 
-### 13.1.  ö   ª ñ ±   É ≤   Ω Ω è
-- **Platt/Isotonic**  ∑    ¥     Ç ∏ ≤ Ω ∏ º  ± ñ Ω ñ Ω ≥ æ º.  ú µ Ç   ∏ ∫ ∏: **ECE ‚â§ 0.05**, **Brier ‚â§ 0.17**, **LogLoss**  É ¬´ ∑ µ ª µ Ω ñ π¬ª  ∑ æ Ω ñ.  
-- **Reliability‚ ë ∫   ∏ ≤  **  ª æ ≥ É é Ç å   è  â æ ¥ æ ± ∏  Ç    Ω   100%    ñ à µ Ω å (     Ç µ Ñ   ∫ Ç  Ω    ±   Ç á).
+### 13.1.                         
+- **Platt/Isotonic**                                         .               : **ECE     0.05**, **Brier     0.17**, **LogLoss**                               .  
+- **Reliability             **                                           100%              (                              ).
 
-### 13.2.  î   ∏ Ñ Ç
-- **CUSUM/Page‚ ëHinkley/GLR**  Ω    ∑   ª ∏ à ∫   Ö  ∫   ª ñ ±   É ≤   Ω Ω è;      ∏  Ç   ∏ ≥ µ   ñ ‚ î  ∑ Ω ∏ ∂ µ Ω Ω è \(\lambda_{cal}\)  ñ/   ± æ fractional‚ ëKelly.  
-- **PIT‚ ë ¥ ñ   ≥     º ∏**  ¥ ª è  º æ Ω ñ Ç æ   ∏ Ω ≥ É  ∫ ≤   Ω Ç ñ ª ñ ≤.
+### 13.2.           
+- **CUSUM/Page   Hinkley/GLR**                                               ;                                            \(\lambda_{cal}\)   /       fractional   Kelly.  
+- **PIT                   **                                                 .
 
-### 13.3. SPRT/GLR  É Governance
- î ª è  Ω æ ≤ æ ó    æ ª ñ Ç ∏ ∫ ∏ vs baseline  É shadow:
+### 13.3. SPRT/GLR    Governance
+                                   vs baseline    shadow:
 \[
-\Lambda_t=\sum_{i\le t}\log\frac{f(x_i\mid H_1)}{f(x_i\mid H_0)},\quad \text{   ñ à µ Ω Ω è      ∏ } \Lambda_t>\log A \text{  á ∏ } <\log B.
+\Lambda_t=\sum_{i\le t}\log\frac{f(x_i\mid H_1)}{f(x_i\mid H_0)},\quad \text{                      } \Lambda_t>\log A \text{      } <\log B.
 \]
- ü æ   æ ≥ ∏ \(A=(1-\beta)/\alpha\), \(B=\beta/(1-\alpha)\),  Ω      . \(\alpha=0.05,\ \beta=0.2\).  û Ω æ ≤ ª µ Ω Ω è ‚ î  ª ∏ à µ    ñ   ª è    Ç   Ç ∏   Ç ∏ á Ω æ  ∑ Ω   á ∏ º æ ≥ æ **   æ ∫     â µ Ω Ω è net‚ ëexpectancy    ñ   ª è TCA**.
+             \(A=(1-\beta)/\alpha\), \(B=\beta/(1-\alpha)\),         . \(\alpha=0.05,\ \beta=0.2\).                                                                                      **                     net   expectancy            TCA**.
 
 ---
 
-## 14)  í ∏ ∫ æ Ω   Ω Ω è (Execution)  ñ SLA
+## 14)                    (Execution)    SLA
 
 ### 14.1. Maker vs Taker
- í ∏ ± ñ      µ ∂ ∏ º É  º ñ Ω ñ º ñ ∑ É î **c**  É ¬ß4.3  ∑    ∑   ¥   Ω æ ≥ æ \(E[\Pi]_{raw}\)  ñ  æ ± º µ ∂ µ Ω å \(\ell\). Maker  ≤     Ö æ ≤ É î    µ ± µ π Ç ∏  π hazard  ∑     æ ≤ Ω µ Ω Ω è; Taker ‚ î      è º µ  ∫ æ ≤ ∑   Ω Ω è  Ç    π º æ ≤ ñ   Ω ñ   Ç å adverse selection.
+                                           **c**      4.3                       \(E[\Pi]_{raw}\)                     \(\ell\). Maker                                    hazard                     ; Taker                                                             adverse selection.
 
-### 14.2.  ß     Ç ∫ æ ≤ ñ  ≤ ∏ ∫ æ Ω   Ω Ω è  Ç    ñ ¥ µ º   æ Ç µ Ω Ç Ω ñ   Ç å
- ú æ ¥ µ ª å/       ≤ ∏ ª      æ ≤ ∏ Ω Ω ñ  ∫ æ   µ ∫ Ç Ω æ    ≥   µ ≥ É ≤   Ç ∏ partial fills  Ç    ≥       Ω Ç É ≤   Ç ∏  ≤ ñ ¥   É Ç Ω ñ   Ç å  ¥ É ± ª é ≤   Ω Ω è  ñ Ω   Ç   É ∫ Ü ñ π ( ∫ æ Ω Ç     ∫ Ç    ñ ≤ Ω è    ∏   Ç µ º ∏).
+### 14.2.                                                                        
+            /                                                                    partial fills                                                                                              (                                          ).
 
-### 14.3. SLA  ª   Ç µ Ω Ç Ω æ   Ç ñ
- § ñ ∫   É î º æ  ± é ¥ ∂ µ Ç ¬´ Ç ñ ∫‚Üí ∑   è ≤ ∫  ¬ª; deny,  è ∫ â æ    µ   µ ≤ ∏ â µ Ω æ  Ç   \(E[\Pi(\ell)]\)    µ   µ Ö æ ¥ ∏ Ç å  É  Ω µ ≥   Ç ∏ ≤.
-
----
-
-## 15) XAI‚ ë ª æ ≥ É ≤   Ω Ω è  Ç        æ   Ç µ   µ ∂ É ≤   Ω ñ   Ç å
- ù   ** ∫ æ ∂ Ω µ    ñ à µ Ω Ω è**  ∑ ± µ   ñ ≥   î º æ:
--  Ñ ñ á ñ (   ñ   ª è  Ω æ   º É ≤   Ω Ω è),  ≤   ≥ ∏/   ∫ æ  /\(\tilde p\)/\(p\) +  ∫   ª ñ ±   É ≤   ª å Ω ñ      Ç µ Ñ   ∫ Ç ∏;
-- **edge‚ ëbreakdown** ( ¥ ∏ ≤. ¬ß4.3);
--  ≥ µ π Ç ∏: spread/vol/latency/CVaR/inventory + WHY‚ ë ∫ æ ¥ ∏  ¥ æ ∑ ≤ æ ª É/ ≤ ñ ¥ º æ ≤ ∏;
--    µ ∂ ∏ º/ ª   Ç µ Ω Ç Ω ñ   Ç å/   Ç   Ω  á µ   ≥ ∏/ ≤ ñ ¥   æ ≤ ñ ¥ ñ  ± ñ   ∂ ñ;
--    æ   µ   ñ π Ω ñ  º µ Ç   ∏ ∫ ∏ (Sharpe, ECE/Brier/LogLoss, CVaR CI).
-
- ê ª     º ∏: no‚ ëtrades‚ ëtoo‚ ëlong, spike‚ ëdenies, latency spikes, calibration‚ ëdrift, CVaR breach.
+### 14.3. SLA                       
+                                                       ; deny,                                    \(E[\Pi(\ell)]\)                                       .
 
 ---
 
-## 16) High‚ ëlevel Architecture Diagram ‚ î  Ç µ ∫   Ç æ ≤ ∏ π  æ   ∏  
+## 15) XAI                                                             
+     **                         **                     :
+-          (                               ),         /        /\(\tilde p\)/\(p\) +                                              ;
+- **edge   breakdown** (      .   4.3);
+-           : spread/vol/latency/CVaR/inventory + WHY                          /              ;
+-           /                      /                   /                             ;
+-                                   (Sharpe, ECE/Brier/LogLoss, CVaR CI).
 
-** ü æ Ç ñ ∫  ¥   Ω ∏ Ö  ñ  ∫ µ   É ≤   Ω Ω è ( ≤ ñ ¥  ª ñ ≤ æ ≥ æ  ¥ æ        ≤ æ ≥ æ):**
-1. **Market Data Ingestion (L2/L3, Trades)** ‚Üí  Ω æ   º É ≤   Ω Ω è,  Ç   π º‚ ë   ∏ Ω Ö   æ Ω ñ ∑   Ü ñ è,    Ω Ç ∏‚ ëlook‚ ëahead.  
-2. **Feature Builder** ‚Üí OBI/TFI/ŒîP_micro/Absorption, SOL‚ ëreferenced  æ ∑ Ω   ∫ ∏, robust scaling.  
-3. **Signal Engine** ‚Üí \(S_i(t)=w^\top x_i + \gamma\,\beta_{i|SOL}\,r_{SOL}(t-\tau^*)\).  
-4. **Calibrator + ICP** ‚Üí \(\tilde p\to p\), reliability/ECE/LogLoss.  
-5. **Regime Detector (PH/GLR/HMM)** ‚Üí \(\lambda_{reg}\)  Ç   ¬´allow¬ª  Ω    Ç æ   ≥ ñ ≤ ª é.  
-6. **TCA + Fill Simulator** ‚Üí  æ Ü ñ Ω ∫   \(c\), \(E[\Pi(\ell)]\), SLA‚ ë   µ   µ ≤ ñ   ∫ ∏.  
-7. **Risk Engine (EVT‚ ëCVaR)** ‚Üí per‚ ëtrade/   µ   ñ è/   æ   Ç Ñ µ ª å Ω ñ  Ö ≤ æ   Ç ∏, **CVaR‚ ë ≥ µ π Ç ∏**.  
-8. **Aurora Kelly Orchestrator** ‚Üí \(f^{raw}\), \(\boldsymbol{f}^{port}=\rho\Sigma^{-1}\boldsymbol{\mu}\),  º Ω æ ∂ Ω ∏ ∫ \(M\);  Ñ ñ Ω   ª å Ω ñ \(f_i\).  
-9. **Execution Layer (Scalp Bot)** ‚Üí maker/taker    ñ à µ Ω Ω è,  ∫ æ Ç ∏   É ≤   Ω Ω è, SLA  ª   Ç µ Ω Ç Ω æ   Ç ñ,  á     Ç ∫ æ ≤ ñ  ≤ ∏ ∫ æ Ω   Ω Ω è.  
-10. **Exchange** ‚Üî    ñ ¥ Ç ≤ µ   ¥ ∂ µ Ω Ω è/ ≤ ñ ¥ Ö ∏ ª ∏/   Ç   Ç É   ∏.  
-11. **XAI/Observability** ‚Üí    æ ≤ Ω ∏ π  ∂ É   Ω   ª, edge‚ ëdashboard,    ª µ   Ç ∏.  
-12. **Knowledge Base** ‚Üí    æ   Ç‚ ë º æ   Ç µ º ∏,    µ ∂ ∏ º Ω      Ç   Ç ∏   Ç ∏ ∫  ,    ≤ Ç æ‚ ë   µ ∫ æ º µ Ω ¥   Ü ñ ó  ∫ æ Ω Ñ ñ ≥ ñ ≤/ ≤   ≥.  
-13. **Governance + SPRT/GLR** ‚Üí        É ≤/rollback    æ ª ñ Ç ∏ ∫  á µ   µ ∑  ∫   Ω     µ π ∫ É;  ª ∏ à µ  ¥ æ ≤ µ ¥ µ Ω ñ    æ ∫     â µ Ω Ω è  π ¥ É Ç å  É live.
-
-** ó ≤ æ   æ Ç Ω ñ  ∑ ≤‚ ô è ∑ ∫ ∏:**
--  í ∏ ∫ æ Ω   Ω Ω è ‚Üí TCA‚ ë ≥     ¥ ñ î Ω Ç ∏ ‚Üí  æ Ω æ ≤ ª µ Ω Ω è  ∫ æ ≤ ∑   Ω Ω è/\(\kappa\).  
--  † µ ∂ ∏ º ∏/ ∫   ª ñ ±   É ≤   Ω Ω è ‚Üí \(\lambda_{cal},\lambda_{reg}\) ‚Üí  ¥ ∏ Ω   º ñ á Ω ∏ π  ö µ ª ª ñ.  
-- Knowledge Base ‚Üí    µ ∫ æ º µ Ω ¥   Ü ñ ó    æ universe    ª å Ç ñ ≤  ñ  ≤   ≥   º  Ñ ñ á.
+            : no   trades   too   long, spike   denies, latency spikes, calibration   drift, CVaR breach.
 
 ---
 
-## 17)  ü     ≤ ∏ ª    ≤ ∏ Ö æ ¥ É (Exit) ‚ î  ∫ æ Ω Ç     ∫ Ç  ∫ µ   É ≤   Ω Ω è
-- **TP/Trail/Breakeven**  è ∫  Ñ É Ω ∫ Ü ñ ó \(p, r, \mathrm{spr}, \ell\)  ñ ∑ **SPRT**  ¥ ª è      Ω Ω å æ ≥ æ    Ç æ   É/ ≤ ∑ è Ç Ç è      ∏ ± É Ç ∫ É      ∏  ∑ Ω ∏ ∫ Ω µ Ω Ω ñ  ¥ æ ∫   ∑ ñ ≤.  
--  í ∏ Ö ñ ¥  Ç   ∫ æ ∂    ñ ¥ ∫ æ   è î Ç å   è **CVaR‚ ë ≥ µ π Ç   º**  ñ    µ ∂ ∏ º Ω ∏ º  ∑ º ñ Ω   º.  
--  £   ñ  µ ∫ ∑ ∏ Ç ∏  ª æ ≥ É é Ç å   è  ∑ edge‚ ëbreakdown  ¥ æ/   ñ   ª è.
+## 16) High   level Architecture Diagram                                
+
+**                                            (                                       ):**
+1. **Market Data Ingestion (L2/L3, Trades)**                         ,                                      ,            look   ahead.  
+2. **Feature Builder**     OBI/TFI/  P_micro/Absorption, SOL   referenced             , robust scaling.  
+3. **Signal Engine**     \(S_i(t)=w^\top x_i + \gamma\,\beta_{i|SOL}\,r_{SOL}(t-\tau^*)\).  
+4. **Calibrator + ICP**     \(\tilde p\to p\), reliability/ECE/LogLoss.  
+5. **Regime Detector (PH/GLR/HMM)**     \(\lambda_{reg}\)        allow                        .  
+6. **TCA + Fill Simulator**                  \(c\), \(E[\Pi(\ell)]\), SLA                     .  
+7. **Risk Engine (EVT   CVaR)**     per   trade/          /                                 , **CVaR             **.  
+8. **Aurora Kelly Orchestrator**     \(f^{raw}\), \(\boldsymbol{f}^{port}=\rho\Sigma^{-1}\boldsymbol{\mu}\),                \(M\);                  \(f_i\).  
+9. **Execution Layer (Scalp Bot)**     maker/taker               ,                       , SLA                       ,                                    .  
+10. **Exchange**                               /              /              .  
+11. **XAI/Observability**                              , edge   dashboard,             .  
+12. **Knowledge Base**                              ,                                    ,                                                     /      .  
+13. **Governance + SPRT/GLR**               /rollback                                             ;                                                              live.
+
+**                                :**
+-                        TCA                                                             /\(\kappa\).  
+-             /                             \(\lambda_{cal},\lambda_{reg}\)                                    .  
+- Knowledge Base                                   universe                                  .
 
 ---
 
-## 18)  ö   ∏ Ç µ   ñ ó  è ∫ æ   Ç ñ ( ± µ ∑  ∫ æ ¥ É)
-- ** ü ñ   ª è TCA:** \(E[\Pi]>0\)  Ω    ∫ æ ∂ Ω æ º É  ¥ æ ∑ ≤ æ ª µ Ω æ º É    ª å Ç ñ;  ¥   à ± æ   ¥    æ ∫   ∑ É î    Ç   ± ñ ª å Ω ∏ π  ≤ Ω µ   æ ∫ raw‚ ëedge.  
-- ** ö   ª ñ ±   É ≤   Ω Ω è:** ECE ‚â§ 0.05, Brier ‚â§ 0.17, LogLoss  É ¬´ ∑ µ ª µ Ω ñ π¬ª  ∑ æ Ω ñ; reliability‚ ë ∫   ∏ ≤ ñ  ∑  ¥ æ ≤ ñ   á ∏ º ∏  ∫ æ   ∏ ¥ æ     º ∏.  
-- ** † ∏ ∑ ∏ ∫:** \(\mathrm{CVaR}_{95}\) per‚ ëtrade/   æ   Ç Ñ µ ª å  ≤  ª ñ º ñ Ç   Ö  ñ ∑ CI; EVT‚ ë   Ç   ± ñ ª å Ω ñ   Ç å  Ω    ± É Ç   Ç   µ   ñ.  
-- **Perf:** SLA ¬´ Ç ñ ∫‚Üí ∑   è ≤ ∫  ¬ª  É  º µ ∂   Ö; \(\kappa\)  ≤ ∏ º ñ   è Ω æ  π    ñ ¥  ∫ æ Ω Ç   æ ª µ º.  
-- ** ° Ç   Ç ∏   Ç ∏ ∫  :** SR_{ º ñ  } ‚â• 2 (Newey‚ ìWest),    æ ∑ ∏ Ç ∏ ≤ Ω ∏ π Œîexpectancy  ≤ ñ ¥  ∫   æ  ‚ ë   ∫ Ç ∏ ≤ Ω æ ≥ æ  á ª µ Ω    Ω   SOON/ â µ ‚â•2    ª å Ç   Ö.  
-- **SPRT/GLR:**  É   ñ    æ ª ñ Ç ∏ ∫ ∏,  â æ    æ Ç       ∏ ª ∏  ≤ live,  º   é Ç å      æ π ¥ µ Ω ∏ π  Ç µ   Ç    æ Ç É ∂ Ω æ   Ç ñ.
+## 17)                             (Exit)                                        
+- **TP/Trail/Breakeven**                     \(p, r, \mathrm{spr}, \ell\)      **SPRT**                                   /                                                                      .  
+-                                                **CVaR               **                                 .  
+-                                           edge   breakdown     /          .
 
 ---
 
-## 19)  ë µ ∑   µ ∫  ,  ñ Ω Ñ       Ç   É ∫ Ç É    ,  µ ∫     ª É   Ç   Ü ñ è ( ∫ æ   æ Ç ∫ æ)
-- **Windows Service/Docker**  ¥ ª è 24/7;  ∫   Ω     µ π ∫      µ   µ ¥  æ Ω æ ≤ ª µ Ω Ω è º; rollback.  
-- ** ê ª µ   Ç ∏:** no‚ ëtrades, spike‚ ëdenies, latency/CVaR/calibration drift;    æ Ç   Ü ñ è  ª æ ≥ ñ ≤;    µ ∑ µ   ≤ Ω ñ  ∫   Ω   ª ∏  ∑ ≤‚ ô è ∑ ∫ É.  
-- **SSOT‚ ë ∫ æ Ω Ñ ñ ≥ ∏**  ∑  ≤   ª ñ ¥   Ü ñ î é    µ   µ ¥  ∑     É   ∫ æ º;  Ω É ª å hard‚ ëcode.  
-- ** î æ ∫ É º µ Ω Ç   Ü ñ è‚ ë ∫ æ Ω Ç     ∫ Ç:**  Ü µ π  ¥ æ ∫ É º µ Ω Ç  î ¬´ î ¥ ∏ Ω ∏ º  ¥ ∂ µ   µ ª æ º        ≤ ¥ ∏¬ª      æ  º   Ç µ º   Ç ∏ ∫ É  Ç          ≤ ∏ ª  .
+## 18)                               (               )
+- **           TCA:** \(E[\Pi]>0\)                                                      ;                                                                 raw   edge.  
+- **                        :** ECE     0.05, Brier     0.17, LogLoss                               ; reliability                                                        .  
+- **          :** \(\mathrm{CVaR}_{95}\) per   trade/                                        CI; EVT                                                   .  
+- **Perf:** SLA                                        ; \(\kappa\)                                              .  
+- **                    :** SR_{      }     2 (Newey   West),                        expectancy                                                      SOON/        2             .  
+- **SPRT/GLR:**                        ,                            live,                                                            .
 
 ---
 
-###  ó   ∫ ª é á µ Ω Ω è
-Aurora+Scalp Bot ‚ î  Ü µ    ∏   Ç µ º  ,  ¥ µ **   ª å Ñ    Ñ æ   º É î Ç å   è  º ñ ∫   æ   Ç   É ∫ Ç É   æ é  Ç    ∫   æ  ‚ ë   ∫ Ç ∏ ≤ Ω ∏ º ∏  ∑   ª µ ∂ Ω æ   Ç è º ∏ (SOL‚Üí   ª å Ç ∏)**,    µ   µ Ç ≤ æ   é î Ç å   è  É ** ∫   ª ñ ±   æ ≤   Ω ñ  π º æ ≤ ñ   Ω æ   Ç ñ**,      æ Ö æ ¥ ∏ Ç å **   µ ∂ ∏ º Ω ñ  Ç   TCA‚ ë ≥ µ π Ç ∏**,  º     à Ç   ± É î Ç å   è ** ¥ ∏ Ω   º ñ á Ω ∏ º  ö µ ª ª ñ**    ñ ¥ **EVT‚ ëCVaR**  ñ **SLA  ª   Ç µ Ω Ç Ω æ   Ç ñ**,     ∫ æ ∂ µ Ω  ∫   æ ∫    É     æ ≤ æ ¥ ∂ É î Ç å   è **XAI‚ ë ª æ ≥ É ≤   Ω Ω è º**  ñ **   Ç   Ç ∏   Ç ∏ á Ω æ é    µ   Ç ∏ Ñ ñ ∫   Ü ñ î é**.  ù   ≤ ñ Ç å      ∏  ≤ Ç     Ç ñ  ∫ æ Ω Ç µ ∫   Ç É  Ü µ π  ∫ æ Ω Ç     ∫ Ç    æ ≤ µ   Ω µ    µ   ª ñ ∑   Ç æ   ñ ≤  Ω          ≤ ∏ ª å Ω ∏ π  à ª è Ö:  Ñ æ   º É ª ∏,  ≥ µ π Ç ∏,  º µ Ç   ∏ ∫ ∏,      Ç µ Ñ   ∫ Ç ∏ ‚ î  É   µ  ≤ ∏ ∑ Ω   á µ Ω æ  ± µ ∑  ∫ æ ¥ É.
+## 19)               ,                             ,                          (              )
+- **Windows Service/Docker**        24/7;                                                   ; rollback.  
+- **            :** no   trades, spike   denies, latency/CVaR/calibration drift;                          ;                                              .  
+- **SSOT                 **                                                    ;          hard   code.  
+- **                                           :**                                                                                                                          .
+
+---
+
+###                     
+Aurora+Scalp Bot                        ,      **                                                                                                                           (SOL             )**,                                 **                                             **,                    **                    TCA             **,                            **                               **        **EVT   CVaR**    **SLA                       **,                                                       **XAI                       **    **                                                   **.                                                                                                                                                       :               ,           ,               ,                                                                 .
 
 
 
 ---
 
-## R1.2 ‚ î  î æ ¥   Ç æ ∫:  ñ Ω Ç µ ≥     Ü ñ è  ∫ æ º µ Ω Ç     ñ ≤ Grok 4 ( É ∑ ≥ æ ¥ ∂ µ Ω æ)
+## R1.2                   :                                           Grok 4 (                  )
 
-### A) Live Regime‚ ëStratified OOS‚ ëboard
- ú   î º æ  º Ω æ ∂ ∏ Ω É    µ ∂ ∏ º ñ ≤: {trend, grind, chaos}.  î ª è  ∫ æ ∂ Ω æ ≥ æ    µ ∂ ∏ º É  ≤ µ ¥ µ º æ  ∫ æ ≤ ∑ Ω ñ  º µ Ç   ∏ ∫ ∏    ñ   ª è TCA: ŒîE[Pi]^R ( æ á ñ ∫ É ≤   Ω ñ   Ç å), SR^R (Sharpe  ∑ HAC/Newey‚ ìWest), ECE^R, Brier^R, LogLoss^R.  ü   ∏ π Ω è Ç Ç è: ŒîE[Pi]^R > 0  Ç   SR^R  É  ¥ æ ≤ ñ   á æ º É  ñ Ω Ç µ   ≤   ª ñ  Ω    ∫ æ ∂ Ω æ º É  ¥ æ ∑ ≤ æ ª µ Ω æ º É    µ ∂ ∏ º ñ;    ª     º      ∏  ≤ ∏ Ö æ ¥ ñ  ∑      æ   æ ≥ ∏.
+### A) Live Regime   Stratified OOS   board
+                                        : {trend, grind, chaos}.                                                                                        TCA:   E[Pi]^R (                        ), SR^R (Sharpe    HAC/Newey   West), ECE^R, Brier^R, LogLoss^R.                   :   E[Pi]^R > 0      SR^R                                                                                                 ;                                                 .
 
-### B)  † æ ±     Ç Ω    ∫ æ ≤     ñ   Ü ñ è  Ç   shrinkage (Ledoit‚ ìWolf)
- û Ü ñ Ω ∫      æ   Ç Ñ µ ª å Ω æ ó  ∫ æ ≤     ñ   Ü ñ ó: Sigma_hat = Œ¥ * F + (1 ‚àí Œ¥) * S,  ¥ µ S ‚ î  ≤ ∏ ± ñ   ∫ æ ≤    ∫ æ ≤     ñ   Ü ñ è PnL/ É ≥ æ ¥  , F ‚ î diag(S)    ± æ œÉ¬≤ * I, Œ¥ ‚àà [0,1] ‚ î  ∑      Ω   ª ñ Ç ∏ á Ω ∏ º Ledoit‚ ìWolf.  î ª è ‚â•3    ª å Ç ñ ≤  ≤     Ö æ ≤ É î º æ tail‚ ë ∑   ª µ ∂ Ω ñ   Ç å  á µ   µ ∑ tail‚ ëcopula / co‚ ëCVaR  É    Ü µ Ω     ñ è Ö CVaR‚ ë æ   Ç ∏ º ñ ∑   Ü ñ ó.
+### B)                                            shrinkage (Ledoit   Wolf)
+                                                        : Sigma_hat =    * F + (1       ) * S,      S                                             PnL/          , F     diag(S)             * I,        [0,1]                                 Ledoit   Wolf.           3                                   tail                                   tail   copula / co   CVaR                       CVaR                         .
 
-### C) Prequential ( æ Ω ª   π Ω æ ≤ µ)  ∫   ª ñ ±   É ≤   Ω Ω è  ñ    ∫ æ   ∏
- ö   ª ñ ±   É ≤   ª å Ω ñ  º µ Ç   ∏ ∫ ∏  ≤ µ ¥ µ º æ  µ ∫     æ Ω µ Ω Ü ñ π Ω æ‚ ë ∑ ≥ ª   ¥ ∂ µ Ω æ: M_t = (1‚àíŒª) * M_{t‚àí1} + Œª * m_t,  ¥ µ M ‚àà {ECE, Brier, LogLoss}.  ù   residual logit    Ç   ≤ ∏ º æ CUSUM/GLR;      ∏    ª µ   Ç ñ ‚ î shrink p ‚Üê Œª p + (1‚àíŒª)*0.5  Ç    ∑ º µ Ω à µ Ω Ω è Œª_cal.
+### C) Prequential (                  )                                       
+                                                                                                      : M_t = (1     ) * M_{t   1} +    * m_t,      M     {ECE, Brier, LogLoss}.      residual logit                CUSUM/GLR;                         shrink p        p + (1     )*0.5                           _cal.
 
-### D) Alpha‚ ëspending / FDR  É Governance
- í µ ¥ µ º æ ledger  ≤ ∏ Ç     Ç ∏ Œ±  ¥ ª è    æ   ª ñ ¥ æ ≤ Ω ∏ Ö  Ç µ   Ç ñ ≤ ( º µ ∂ ñ  Ç ∏   É Pocock/OBF)    ± æ  ∫ æ Ω Ç   æ ª é î º æ FDR      æ Ü µ ¥ É   æ é Benjamini‚ ìHochberg  ¥ ª è          ª µ ª å Ω ∏ Ö    æ ª ñ Ç ∏ ∫/   ª å Ç ñ ≤.  ü     ≤ ∏ ª æ:  ∂ æ ¥ µ Ω    µ ª ñ ∑  É live  ± µ ∑  ∑     ∏   É ID  µ ∫     µ   ∏ º µ Ω Ç É,  ∫   Ω     µ π ∫ ∏  Ç   Œ±‚ ë ∑ ≤ ñ Ç É.
+### D) Alpha   spending / FDR    Governance
+             ledger                                                              (                  Pocock/OBF)                               FDR                      Benjamini   Hochberg                                             /            .               :                          live                     ID                         ,                                        .
 
-### E)  õ ñ ¥‚ ë ª   ≥  ∑      ∏ Ω Ö   æ Ω ñ î é (Hayashi‚ ìYoshida)
- ê   ∏ Ω Ö   æ Ω Ω ñ  ∫ æ ≤     ñ   Ü ñ ó/ ± µ Ç ∏  Ω    Ç ñ ∫ æ ≤ ∏ Ö    è ¥   Ö ‚ î  º µ Ç æ ¥ æ º HY;  ª   ≥ œÑ* ‚ î GLR    æ    ñ Ç Ü ñ  ∑ SPRT‚ ë ≤ µ   ∏ Ñ ñ ∫   Ü ñ î é  Ç   purged CV + embargo.  î ª è  º Ω æ ∂ ∏ Ω ∏    ª å Ç ñ ≤ ‚ î FDR‚ ë ∫ æ Ω Ç   æ ª å;    ≤ Ç æ‚ ë ¥ µ   ∫ Ç ∏ ≤   Ü ñ è  ∫   æ  ‚ ë Ç µ   º        ∏  ≤ Ç     Ç ñ  ∑ Ω   á É â æ   Ç ñ.
+### E)                                           (Hayashi   Yoshida)
+                                         /                                                           HY;          *     GLR                    SPRT                                 purged CV + embargo.                                        FDR                   ;                                                                                                 .
 
-### F) Fill‚ ëhazard  ñ ∑ Cox + Hawkes
- Ü Ω Ç µ Ω   ∏ ≤ Ω ñ   Ç å  ∑     æ ≤ Ω µ Ω Ω è (maker): Œª_fill(t|Z) = Œª0(t) * exp(Œ∏^T Z),  ¥ µ Z = {TBR,    æ ∑ ∏ Ü ñ è  ≤  á µ   ∑ ñ,        µ ¥, OBI, cancel rate}. Order‚ ëflow  º æ ¥ µ ª é î º æ Hawkes  ¥ ª è  ∫ ª     Ç µ   ∏ ∑   Ü ñ ó  Ç   µ π ¥ ñ ≤ (adverse‚ ëbursts). Acceptance: MAE  á     É fill ‚â§ X  º  ; Brier(P(fill)) ‚â§ 0.18; 3 ¬´ á µ   ≤ æ Ω ñ¬ª  ±   Ç á ñ ‚Üí    ≤ Ç æ‚ ë Ñ æ ª ± µ ∫  Ω   taker  ñ    ñ ¥ ≤ ∏ â µ Ω ∏ π p*(c').
+### F) Fill   hazard      Cox + Hawkes
+                                                (maker):   _fill(t|Z) =   0(t) * exp(  ^T Z),      Z = {TBR,                             ,           , OBI, cancel rate}. Order   flow                    Hawkes                                                  (adverse   bursts). Acceptance: MAE          fill     X     ; Brier(P(fill))     0.18; 3                                                                taker                         p*(c').
 
-### G)  î ∏ Ω   º ñ á Ω ñ  º Ω æ ∂ Ω ∏ ∫ ∏ Œª‚ ¢ ‚ î  è ≤ Ω ñ  Ñ æ   º ∏
-Œª_cal = exp(‚àíŒ∑_cal * ECE_t) * exp(‚àíŒ∂_cal * LogLoss_t);
-Œª_dd = (1 + DD_t/Œ∏)^(‚àíŒ≥);
-Œª_lat = max{0, 1 ‚àí Œ∫ * (latency)/E};
-Œª_liq = min{1, Q_depth_Lk / Q_target}.
+### G)                                                                  
+  _cal = exp(     _cal * ECE_t) * exp(     _cal * LogLoss_t);
+  _dd = (1 + DD_t/  )^(     );
+  _lat = max{0, 1        * (latency)/E};
+  _liq = min{1, Q_depth_Lk / Q_target}.
 
-### H)  ü æ   Ç Ñ µ ª å    ñ ¥ CVaR‚ ë æ ± º µ ∂ µ Ω Ω è º (Rockafellar‚ ìUryasev)
- ë   ∑ æ ≤ ñ  ≤   ≥ ∏ w*  æ ± á ∏   ª é î º æ  Ω      Ü µ Ω     ñ è Ö L2/L3‚ ëreplay  á µ   µ ∑  ª ñ Ω ñ π Ω æ‚ ë æ   É ∫ ª É  ∑   ¥   á É RU  ¥ ª è CVaR (Œ± = 0.95).  î   ª ñ ‚ î  ±   π î  ‚ ë ö µ ª ª ñ:    ± æ E[f*]  ∑      æ   Ç µ   ñ æ   æ º œ (p,r),    ± æ  ∫ ≤   Ω Ç ∏ ª å Ω ∏ π f* (20‚ ë π    µ   Ü µ Ω Ç ∏ ª å).  § æ ª ± µ ∫ ‚ î 1/2‚ ëKelly.
+### H)                         CVaR                        (Rockafellar   Uryasev)
+                      w*                                              L2/L3   replay                                                       RU        CVaR (   = 0.95).                                     :        E[f*]                               (p,r),                               f* (20                          ).                  1/2   Kelly.
 
-### I)  û   µ     Ü ñ π Ω ñ SLO/SLA  Ç    ¥ µ ≥     ¥   Ü ñ è
-SLA ¬´ Ç ñ ∫‚Üí ∑   è ≤ ∫  ¬ª,      Ç   π º, circuit‚ ëbreakers (     ª µ   ∫        µ ¥ É/ ∫ æ ª       L5).  ü   ∏  ¥ µ ≥     ¥   Ü ñ ó ‚ î  Ñ æ ª ± µ ∫  ¥ æ Core‚ ëLane (taker‚ ëonly,  Ñ ñ ∫   æ ≤   Ω ñ    æ   æ ≥ ∏). Chaos‚ ë Ç µ   Ç ∏    æ ∑      ñ ∫ æ º.
+### I)                      SLO/SLA                          
+SLA                          ,             , circuit   breakers (                         /             L5).                                                   Core   Lane (taker   only,                                ). Chaos                                 .
 
-### J) Acceptance‚ ë ∫ æ Ω Ç     ∫ Ç ∏ ( ¥ æ   æ ≤ Ω µ Ω Ω è)
-‚ ¢ Regime‚ ëOOS: ŒîE[Pi]^R > 0, SR  É  º µ ∂   Ö HAC‚ ë ñ Ω Ç µ   ≤   ª É,  ± µ ∑    æ ≥ ñ   à µ Ω Ω è CVaR.
-‚ ¢ LW‚ ë ∫ æ ≤     ñ   Ü ñ è:    Ç   ± ñ ª å Ω ñ   Ç å    æ   Ç Ñ µ ª å Ω ∏ Ö f_i  Ç   co‚ ëCVaR  É    Ç   µ  ‚ ë   Ü µ Ω     ñ è Ö.
-‚ ¢ Prequential:    ª     º      ∏  ≤ ∏ Ö æ ¥ ñ ECE/Brier/LogLoss  ∑      æ   æ ≥ ∏;    ≤ Ç æ ∑ º µ Ω à µ Ω Ω è M.
-‚ ¢ Governance: alpha‚ ëledger  æ ± æ ≤‚ ô è ∑ ∫ æ ≤ ∏ π; FDR  ¥ ª è          ª µ ª å Ω ∏ Ö  Ç µ   Ç ñ ≤.
+### J) Acceptance                      (                    )
+    Regime   OOS:   E[Pi]^R > 0, SR               HAC                     ,                             CVaR.
+    LW                       :                                                 f_i      co   CVaR                                   .
+    Prequential:                                ECE/Brier/LogLoss                  ;                            M.
+    Governance: alpha   ledger                          ; FDR                                           .
 
- ü   ∏ º ñ Ç ∫  :  É   µ  ≤ ∏ â µ  É ∑ ≥ æ ¥ ∂ µ Ω µ  ∑ ¬´Two‚ ëLane + Complexity Budget¬ª:  ± É ¥ å‚ ë è ∫ µ  É   ∫ ª   ¥ Ω µ Ω Ω è  π ¥ µ  ≤ live  ª ∏ à µ  á µ   µ ∑  ∫   Ω     µ π ∫ É, SPRT/GLR  Ç    æ ± ª ñ ∫  ≤ ∏ Ç     á µ Ω æ ó Œ±.
+                :                                         Two   Lane + Complexity Budget  :                                                    live                                       , SPRT/GLR                                        .
 

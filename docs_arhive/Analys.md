@@ -1,7 +1,7 @@
 
-  1.  î æ   ª ñ ¥ ∂ µ Ω Ω è  ∫ æ ¥ É  Ç    π æ ≥ æ      ∏ ∑ Ω   á µ Ω Ω è
+  1.                                                                     
 
-   ê Ω   ª ñ ∑ æ ≤   Ω ñ    è ¥ ∫ ∏  ∑ `apps/reference/domains/decision_making/decision_making.py`:
+                                       `apps/reference/domains/decision_making/decision_making.py`:
 
     1 # ...
     2 notional_cap = decimal.Decimal(str(risk_params.get("cvar_limit_usd", 1000.0)))
@@ -24,63 +24,63 @@
    19     # ...
    20 }
 
-   ü   ∏ ∑ Ω   á µ Ω Ω è  ∑    ∑   ¥ É º æ º:
+                                            :
 
-   ¶ µ π  ± ª æ ∫  ∫ æ ¥ É  ≤ ñ ¥   æ ≤ ñ ¥   î  ∑    Ñ ñ Ω   ª å Ω É  ∫ æ Ω   Ç   É ∫ Ü ñ é  Ç æ   ≥ æ ≤ æ ≥ æ  Ω   º ñ   É (trade_intent_payload)    µ   µ ¥  π æ ≥ æ  ≤ ñ ¥       ≤ ∫ æ é  ≤
-  FSM- à ∏ Ω É  è ∫    æ ¥ ñ ó EVT:TRADE_INTENT_PROPOSED.  í ñ Ω  ∑ ± ∏     î          º µ Ç   ∏,  â æ  ≤ ∏ ∑ Ω   á   é Ç å  É º æ ≤ ∏  Ç    æ ± º µ ∂ µ Ω Ω è  ¥ ª è  ≤ ∏ ∫ æ Ω   Ω Ω è 
-   É ≥ æ ¥ ∏.
+                                                                                                                             (trade_intent_payload)                                            
+  FSM-                         EVT:TRADE_INTENT_PROPOSED.                                       ,                                                                                        
+            .
 
-   * `payoff_ratio_r` ( °   ñ ≤ ≤ ñ ¥ Ω æ à µ Ω Ω è    ∏ ∑ ∏ ∫/     ∏ ± É Ç æ ∫):  ö ª é á æ ≤ ∏ π          º µ Ç    ¥ ª è    æ ∑     Ö É Ω ∫ É  Ü ñ ª å æ ≤ æ ó  π º æ ≤ ñ   Ω æ   Ç ñ  ≤ Ö æ ¥ É  ≤
-      É ≥ æ ¥ É.
-   * `tca_budget` ( ë é ¥ ∂ µ Ç  Ω    Ç     Ω ∑   ∫ Ü ñ π Ω ñ  ≤ ∏ Ç     Ç ∏):  í ∏ ∑ Ω   á   î,  Ω     ∫ ñ ª å ∫ ∏    ≥   µ   ∏ ≤ Ω æ  º æ ∂ µ  ¥ ñ è Ç ∏  ≤ ∏ ∫ æ Ω   ≤ á ∏ π  ¥ æ º µ Ω.  í ∫ ª é á   î
-      º   ∫   ∏ º   ª å Ω µ      æ ∫ æ ≤ ∑ É ≤   Ω Ω è (max_slippage_bps),  º   ∫   ∏ º   ª å Ω É  ∑   Ç   ∏ º ∫ É (max_latency_ms)  Ç æ â æ.
-   * `risk_budget` ( ë é ¥ ∂ µ Ç    ∏ ∑ ∏ ∫ É):  í   Ç   Ω æ ≤ ª é î  ª ñ º ñ Ç ∏    ∏ ∑ ∏ ∫ É  ∫ æ Ω ∫   µ Ç Ω æ  ¥ ª è  Ü ñ î ó  É ≥ æ ¥ ∏ ( Ω      ., trade_cvar95_max_bps).
-   * `notional_cap` ( õ ñ º ñ Ç    æ ∑ º ñ   É    æ ∑ ∏ Ü ñ ó):  í µ   Ö Ω è  º µ ∂    ¥ ª è    æ ∑ º ñ   É    æ ∑ ∏ Ü ñ ó,  è ∫    Ç É Ç  ± µ   µ Ç å   è  ∑          º µ Ç   ñ ≤    ∏ ∑ ∏ ∫ É.
+   * `payoff_ratio_r` (                                       /                ):                                                                                                                    
+               .
+   * `tca_budget` (                                                         ):                 ,                                                                                          .               
+                                                       (max_slippage_bps),                                         (max_latency_ms)         .
+   * `risk_budget` (                         ):                                                                                              (        ., trade_cvar95_max_bps).
+   * `notional_cap` (                                        ):                                                           ,                                                                    .
 
-  2.  í ∑   î º æ ¥ ñ è  ∑  ñ Ω à ∏ º ∏    ñ ¥   ∏   Ç µ º   º ∏
+  2.                                                            
 
-   ° ∏   Ç µ º          Ü é î  á µ   µ ∑      ∏ Ω Ö   æ Ω Ω ñ    æ ¥ ñ ó,     Ω µ      è º ñ  ñ º   æ   Ç ∏.  û   å  è ∫  Ü ñ          º µ Ç   ∏  ≤ ∑   î º æ ¥ ñ é Ç å:
+                                                                        ,                                  .                                                           :
 
-   1. `decision_making` ( ü   æ ¥ é   µ  ):  § æ   º É î trade_intent_payload  ∑  É   ñ º    Ü ∏ º ∏  ± é ¥ ∂ µ Ç   º ∏  Ç    ª ñ º ñ Ç   º ∏.
-   2. FSM Core ( ® ∏ Ω  ):  û Ç   ∏ º É î    æ ¥ ñ é EVT:TRADE_INTENT_PROPOSED  ñ  º     à   É Ç ∏ ∑ É î  ó ó  ¥ æ    ñ ¥   ∏   Ω ∏ ∫ ñ ≤.
-   3. `execution_position` ( °   æ ∂ ∏ ≤   á,  Ω       ∑ ñ  ≤ ñ ¥   É Ç Ω ñ π):  ¶ µ  ∫ ª é á æ ≤ ∏ π      æ ∂ ∏ ≤   á  Ü ñ î ó    æ ¥ ñ ó.  ¶ µ π  ¥ æ º µ Ω  º   ≤  ± ∏:
-       *  ü   æ á ∏ Ç   Ç ∏ tca_budget  ñ  Ω    π æ ≥ æ  æ   Ω æ ≤ ñ  æ ±     Ç ∏    Ç     Ç µ ≥ ñ é  ≤ ∏ ∫ æ Ω   Ω Ω è ( Ω       ∏ ∫ ª   ¥,        ∏ ≤ Ω ∏ π maker- æ   ¥ µ    á ∏    ≥   µ   ∏ ≤ Ω ∏ π
-         taker- æ   ¥ µ  ).
-       *  ü µ   µ ≤ ñ   ∏ Ç ∏    æ ∑ º ñ      æ ∑ ∏ Ü ñ ó (size)  Ω    ≤ ñ ¥   æ ≤ ñ ¥ Ω ñ   Ç å risk_budget.
-       *  °     æ ± É ≤   Ç ∏  ≤ ∏ ∫ æ Ω   Ç ∏  É ≥ æ ¥ É,  Ω µ    µ   µ ≤ ∏ â É é á ∏ max_slippage_bps.
-       *  Ø ∫ â æ  ≤ ∏ ∫ æ Ω   Ω Ω è  ∑   π º   î  ± ñ ª å à µ  á     É,  Ω ñ ∂ max_latency_ms,    ∫     É ≤   Ç ∏  æ   ¥ µ  .
+   1. `decision_making` (                ):              trade_intent_payload                                                                .
+   2. FSM Core (        ):                           EVT:TRADE_INTENT_PROPOSED                                                           .
+   3. `execution_position` (                ,                                ):                                                           .                              :
+       *                    tca_budget                                                                                  (                  ,                  maker-                                    
+         taker-          ).
+       *                                                  (size)                                 risk_budget.
+       *                                                 ,                             max_slippage_bps.
+       *                                                               ,        max_latency_ms,                              .
 
-   í ∏   Ω æ ≤ æ ∫    æ  ≤ ∑   î º æ ¥ ñ ó:  ¶ ñ          º µ Ç   ∏  î  ∫ µ   É é á ∏ º  ∫ æ Ω Ç     ∫ Ç æ º  º ñ ∂  ¥ æ º µ Ω æ º,  â æ      ∏ π º   î    ñ à µ Ω Ω è,  Ç    ¥ æ º µ Ω æ º,  â æ  π æ ≥ æ
-   ≤ ∏ ∫ æ Ω É î.  ñ æ     Ç ∫ æ  ∑   ∫ æ ¥ æ ≤   Ω ñ  ∑ Ω   á µ Ω Ω è  ∑    ∑   º æ ≤ á É ≤   Ω Ω è º  É decision_making  ª   º   é Ç å  Ü µ π  ∫ æ Ω Ç     ∫ Ç,  æ   ∫ ñ ª å ∫ ∏
-  execution_position  ± É ¥ µ  æ Ç   ∏ º É ≤   Ç ∏  Ω µ ∫ µ   æ ≤   Ω ñ,  Ω µ   µ   µ ¥ ±   á É ≤   Ω ñ  ª ñ º ñ Ç ∏.
+                                          :                                                                                       ,                                   ,                    ,              
+                .                                                                                         decision_making                                       ,                 
+  execution_position                                                   ,                                            .
 
-  3.  Ø ∫        ≤ ∏ ª å Ω æ  Ü µ  ≤ ∏       ≤ ∏ Ç ∏
+  3.                                                
 
-   ü   æ ± ª µ º      æ ª è ≥   î  É  ≤ ∏ ∫ æ   ∏   Ç   Ω Ω ñ  º µ Ç æ ¥ É .get(key, default_value),  ¥ µ default_value  î " º   ≥ ñ á Ω ∏ º  á ∏   ª æ º".  ó ≥ ñ ¥ Ω æ  ∑
-  Constitution_FSM,    ∏   Ç µ º    º   î  ± É Ç ∏  ∫ µ   æ ≤   Ω æ é  á µ   µ ∑  ∫ æ Ω Ñ ñ ≥ É     Ü ñ é  ñ  ¥ æ Ç   ∏ º É ≤   Ç ∏   å      ∏ Ω Ü ∏   É Fail-Fast ( à ≤ ∏ ¥ ∫ æ      ¥   Ç ∏,
-   è ∫ â æ  ∫ æ Ω Ñ ñ ≥ É     Ü ñ è  Ω µ   æ ≤ Ω  ).
+                                                                           .get(key, default_value),      default_value    "                             ".                
+  Constitution_FSM,                                                                                                                                      Fail-Fast (                         ,
+                                                  ).
 
-   ü     ≤ ∏ ª å Ω ∏ π    ñ ¥ Ö ñ ¥:
+                                   :
 
-   1.  ¶ µ Ω Ç     ª ñ ∑ É ≤   Ç ∏          º µ Ç   ∏:  £   ñ  Ü ñ  ∑ Ω   á µ Ω Ω è  º   é Ç å  ± É Ç ∏  ≤ ∏ Ω µ   µ Ω ñ  É  ≤ ñ ¥   æ ≤ ñ ¥ Ω ∏ π  ∫ æ Ω Ñ ñ ≥ É     Ü ñ π Ω ∏ π .yaml  Ñ   π ª.
-   2.  ó   ± µ ∑   µ á ∏ Ç ∏    Ç   æ ≥ ñ   Ç å:  ö æ ¥  Ω µ    æ ≤ ∏ Ω µ Ω  º   Ç ∏  ∑ Ω   á µ Ω å  ∑    ∑   º æ ≤ á É ≤   Ω Ω è º.  í ñ Ω  º   î  æ á ñ ∫ É ≤   Ç ∏,  â æ config_loader.py
-       ∑   ≤   Ω Ç   ∂ ∏ Ç å  É   ñ  Ω µ æ ± Ö ñ ¥ Ω ñ  ∫ ª é á ñ.  Ø ∫ â æ  ∫ ª é á  ≤ ñ ¥   É Ç Ω ñ π  É .yaml  Ñ   π ª ñ,    ∏   Ç µ º      æ ≤ ∏ Ω Ω    ∑   ≤ µ   à ∏ Ç ∏    æ ± æ Ç É  Ω      Ç     Ç ñ  ∑
-         æ º ∏ ª ∫ æ é KeyError,  â æ  Ω µ ≥   π Ω æ  ≤ ∫   ∂ µ  Ω        æ ± ª µ º É  ∑  ∫ æ Ω Ñ ñ ≥ É     Ü ñ î é.
+   1.                                                :                                                                                                                            .yaml         .
+   2.                                          :                                                                                   .                                 ,      config_loader.py
+                                                                 .                                         .yaml           ,                                                                                   
+                       KeyError,                                                                                   .
 
-   ö   æ ∫ 1:  í ∏ ∑ Ω   á µ Ω Ω è        ≤ ∏ ª å Ω æ ≥ æ YAML  Ñ   π ª É
+           1:                                             YAML           
 
-   ê Ω   ª ñ ∑  ∫ æ ¥ É    æ ∫   ∑ É î,  â æ config_loader.py  ∑   ≤   Ω Ç   ∂ É î  ¥ ≤    æ   Ω æ ≤ Ω ñ  Ñ   π ª ∏: trading.yaml  Ç   system.yaml.
-   * system.yaml      ∏ ∑ Ω   á µ Ω ∏ π  ¥ ª è    ∏   Ç µ º Ω ∏ Ö          º µ Ç   ñ ≤ ( Ω      .,  Ω   ª   à Ç É ≤   Ω Ω è  ª æ ≥ É ≤   Ω Ω è,    ∏ º ≤ æ ª ∏  ¥ ª è  º æ Ω ñ Ç æ   ∏ Ω ≥ É).
-   * trading.yaml      ∏ ∑ Ω   á µ Ω ∏ π  ¥ ª è          º µ Ç   ñ ≤,  â æ  ± µ ∑   æ   µ   µ ¥ Ω å æ    Ç æ   É é Ç å   è  ª æ ≥ ñ ∫ ∏  Ç æ   ≥ ñ ≤ ª ñ.
+                                      ,      config_loader.py                                                      : trading.yaml      system.yaml.
+   * system.yaml                                                                       (        .,                                            ,                                             ).
+   * trading.yaml                                                   ,                                                                                   .
 
-   í ∏   Ω æ ≤ æ ∫:  £   ñ  Ü ñ          º µ Ç   ∏ (payoff_ratio_r, tca_prefs, risk_budgets)  Ω   ª µ ∂   Ç å  ¥ æ  ª æ ≥ ñ ∫ ∏  Ç æ   ≥ ñ ≤ ª ñ,  Ç æ º É  ó Ö Ω î  º ñ   Ü µ ‚ î  É
+                  :                                (payoff_ratio_r, tca_prefs, risk_budgets)                                                    ,                                    
   `config/aurora/trading.yaml`.
 
-   ö   æ ∫ 2:  ú æ ¥ ∏ Ñ ñ ∫   Ü ñ è `config/aurora/trading.yaml`
+           2:                        `config/aurora/trading.yaml`
 
-   î æ ¥   π Ç µ  ¥ æ  Ü å æ ≥ æ  Ñ   π ª É  Ω     Ç É   Ω É    Ç   É ∫ Ç É   É,  è ∫ â æ  ≤ æ Ω    ≤ ñ ¥   É Ç Ω è:
+                                                                               ,                                   :
 
-    1 # ...  ñ   Ω É é á ñ          º µ Ç   ∏
+    1 # ...                                  
     2 
     3 decision:
     4   payoff_ratio_r: 2.0
@@ -88,7 +88,7 @@
     6     kelly_conservative_factor: 0.1
     7     min_position_size_usd: 10.0
     8     max_position_size_usd: 1000.0
-    9     #  î æ ¥   î º æ  ¥ µ Ñ æ ª Ç Ω ∏ π notional_cap    é ¥ ∏
+    9     #                                   notional_cap         
    10     default_notional_cap_usd: 1000.0
    11 
    12 tca_prefs:
@@ -100,24 +100,24 @@
    18   trade_cvar95_max_bps: 100.0
    19   session_cvar95_max_bps: 200.0
    20
-   21 # ...  ñ Ω à ñ          º µ Ç   ∏
+   21 # ...                            
 
-   ö   æ ∫ 3:  † µ Ñ   ∫ Ç æ   ∏ Ω ≥  ∫ æ ¥ É `decision_making.py`
+           3:                                 `decision_making.py`
 
-   ó   º ñ Ω ñ Ç å    æ Ç æ á Ω ∏ π  ± ª æ ∫  ∫ æ ¥ É  Ω    Ç   ∫ ∏ π,  â æ        Ü é î  ∑        ∏ Ω Ü ∏   æ º "Fail-Fast":
+                                                                     ,                                           "Fail-Fast":
 
     1 # === TRADE INTENT CONSTRUCTION PHASE ===
     2 
     3 try:
-    4     #  ó   ≤   Ω Ç   ∂ É î º æ    µ ∫ Ü ñ ó  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó.  Ø ∫ â æ  ó Ö  Ω µ º   î,  ± É ¥ µ KeyError -  Ü µ  æ á ñ ∫ É ≤   Ω      æ ≤ µ ¥ ñ Ω ∫  .
+    4     #                                                               .                         ,          KeyError -                                           .
     5     decision_config = self.config['decision']
     6     tca_prefs = self.config['tca_prefs']
     7     risk_budgets = self.config['risk_budgets']
     8 
-    9     #  û Ç   ∏ º É î º æ          º µ Ç   ∏.  Ø ∫ â æ  ó Ö  Ω µ º   î,  ± É ¥ µ KeyError.
+    9     #                                      .                         ,          KeyError.
    10     payoff_ratio_r = decimal.Decimal(str(decision_config['payoff_ratio_r']))
    11 
-   12     #  í ∏ ∫ æ   ∏   Ç æ ≤ É î º æ default_notional_cap_usd  ∑  ∫ æ Ω Ñ ñ ≥ É,  è ∫ â æ risk_params  Ω µ  º ñ   Ç ∏ Ç å cvar_limit_usd
+   12     #                              default_notional_cap_usd                  ,          risk_params                     cvar_limit_usd
    13     default_cap = decimal.Decimal(str(decision_config['position_sizing']['default_notional_cap_usd']))
    14     notional_cap = decimal.Decimal(str(risk_params.get("cvar_limit_usd", default_cap)))
    15 
@@ -140,7 +140,7 @@
    32             "kelly_fraction": float(kelly_fraction),
    33             "notional_cap_usd": float(position_size)
    34         },
-   35         "valid_for_ms": 30000, #  ¶ µ  ∑ Ω   á µ Ω Ω è  Ç   ∫ æ ∂  ≤     Ç æ  ≤ ∏ Ω µ   Ç ∏  ≤  ∫ æ Ω Ñ ñ ≥
+   35         "valid_for_ms": 30000, #                                                                           
    36         "why": [
    37             f"Decision based on signal_score={float(signal_score):.3f}",
    38             f"Features: obi={float(obi):.3f}, tfi={float(tfi):.3f}, absorption={float(absorption):.3f}",
@@ -157,694 +157,694 @@
    47     self.logger.critical(f"Configuration key missing: {e}. System cannot make decisions. Please check
       trading.yaml. Halting decision.")
    48     self.clear_internal_state()
-   49     return #  ó É   ∏ Ω è î º æ  ≤ ∏ ∫ æ Ω   Ω Ω è,  è ∫ â æ  ∫ æ Ω Ñ ñ ≥ É     Ü ñ è  Ω µ   æ ≤ Ω  
+   49     return #                                      ,                                                 
 
-   † µ ∑ É ª å Ç   Ç  Ü å æ ≥ æ  ≤ ∏       ≤ ª µ Ω Ω è:
+                                                      :
 
-   1. SSOT  ¥ æ Ç   ∏ º   Ω æ:  £   ñ          º µ Ç   ∏  ∑ Ω   Ö æ ¥ è Ç å   è  ≤ trading.yaml.
-   2. Fail-Fast:  Ø ∫ â æ  ≤ ∏  ≤ ∏     ¥ ∫ æ ≤ æ  ≤ ∏ ¥   ª ∏ Ç µ  ∫ ª é á  ∑ trading.yaml,    ∏   Ç µ º    Ω µ  ± É ¥ µ  ≤ ∏ ∫ æ   ∏   Ç æ ≤ É ≤   Ç ∏ " º   ≥ ñ á Ω µ  á ∏   ª æ",   
-       ≤ ∏ ¥     Ç å  ∫   ∏ Ç ∏ á Ω É    æ º ∏ ª ∫ É KeyError,  â æ  æ ¥     ∑ É  ≤ ∫   ∂ µ  Ω        æ ± ª µ º É.
-   3.  ü   æ ∑ æ   ñ   Ç å:  í   è  ª æ ≥ ñ ∫      Ç   î  ∫ µ   æ ≤   Ω æ é  ∑  æ ¥ Ω æ ≥ æ  º ñ   Ü è.
-   4.  ¢ µ   Ç æ ≤   Ω ñ   Ç å:  õ µ ≥ ∫ æ    ñ ¥ º ñ Ω ∏ Ç ∏  ∫ æ Ω Ñ ñ ≥ É     Ü ñ é  ≤  Ç µ   Ç   Ö  ¥ ª è    µ   µ ≤ ñ   ∫ ∏    ñ ∑ Ω ∏ Ö    Ü µ Ω     ñ ó ≤.
+   1. SSOT                   :                                                     trading.yaml.
+   2. Fail-Fast:                                                               trading.yaml,                                                             "                         ",   
+                                                     KeyError,                                                   .
+   3.                     :                                                                           .
+   4.                         :                                                                                                                                 .
 
->  ≤ Ω æ   å    ≤ æ ó      æ   æ ∑ ∏ Ü ñ ó    ≤ Ç æ º   Ç ∏ á Ω æ  Ç    æ ± æ ≤ è ∑ ∫ æ ≤ æ  ≤  ∫ ñ Ω Ü ñ      æ ∂ µ Ω ∏  ª ñ Ω Ç µ   ∏  Ç    Ω     ∏ à ∏  Ç µ   Ç ∏    ± æ  ∑ º ñ Ω ∏    ñ ¥  Ω æ ≤ ñ    è ¥ ∫ ∏  ∫ æ ¥ É 
-     æ á ∏ Ω   π    µ   ª ñ ∑   Ü ñ é  ≤ ∏ â µ  æ   ∏     Ω æ ó      æ ± ª µ º ∏  è ∫ É  º ∏  ∑ Ω   π à ª ∏  É decision_making.py
+>                                                                                                                                                                                                                          
+                                                                                                               decision_making.py
 
-‚ú¶  ó   æ ∑ É º ñ ≤.  ü æ á ∏ Ω   é    ≤ Ç æ º   Ç ∏ á Ω É    µ   ª ñ ∑   Ü ñ é  ∑       æ   æ Ω æ ≤   Ω ∏ Ö  ∑ º ñ Ω.
+                    .                                                                                                 .
 
-   ü ª   Ω  ¥ ñ π:
-   1.  ú æ ¥ ∏ Ñ ñ ∫ É é `config/aurora/trading.yaml`:  î æ ¥   º  ≤ ñ ¥   É Ç Ω ñ    µ ∫ Ü ñ ó decision, tca_prefs, risk_budgets,  â æ ±  Ü µ Ω Ç     ª ñ ∑ É ≤   Ç ∏
-       ∫ µ   É é á ñ          º µ Ç   ∏.
-   2.  † µ Ñ   ∫ Ç æ   ∏ Ω ≥ `decision_making.py`:  ó   º ñ Ω é  ± ª æ ∫  ∫ æ ¥ É  ∑ ñ  ∑ Ω   á µ Ω Ω è º ∏  ∑    ∑   º æ ≤ á É ≤   Ω Ω è º  Ω    Ω æ ≤ É "Fail-Fast"  ª æ ≥ ñ ∫ É,  è ∫  
-       ∑   ± µ ∑   µ á ∏ Ç å      ¥ ñ Ω Ω è    ∏   Ç µ º ∏      ∏  Ω µ   æ ≤ Ω ñ π  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó.
-   3.  í ∏       ≤ ª µ Ω Ω è  Ç    ¢ µ   Ç É ≤   Ω Ω è:  ü ñ   ª è  ≤ Ω µ   µ Ω Ω è  ∑ º ñ Ω,  è    µ   µ π ¥ É  ¥ æ  ≤ ∏       ≤ ª µ Ω Ω è  Ç µ   Ç ñ ≤,  â æ ±  ≤ æ Ω ∏  ≤ ñ ¥   æ ≤ ñ ¥   ª ∏  Ω æ ≤ ñ π,  ± ñ ª å à
-         Ç   æ ≥ ñ π  ª æ ≥ ñ Ü ñ,       æ Ç ñ º  ∑     É â É  ª ñ Ω Ç µ   ∏  ¥ ª è    µ   µ ≤ ñ   ∫ ∏  è ∫ æ   Ç ñ  ∫ æ ¥ É.
+                 :
+   1.                    `config/aurora/trading.yaml`:                                          decision, tca_prefs, risk_budgets,                                    
+                                       .
+   2.                        `decision_making.py`:                                                                                                        "Fail-Fast"             ,       
+                                                                                                           .
+   3.                                                 :                                     ,                                                           ,                                                  ,           
+                                 ,                                                                                          .
 
-   ü æ á ∏ Ω   é  ∑  º æ ¥ ∏ Ñ ñ ∫   Ü ñ ó  ∫ æ Ω Ñ ñ ≥ É     Ü ñ π Ω æ ≥ æ  Ñ   π ª É.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  ReadFile config\aurora\trading.yaml  ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  §   π ª trading.yaml  ≤ ∂ µ  º ñ   Ç ∏ Ç å  Ω µ æ ± Ö ñ ¥ Ω ñ    µ ∫ Ü ñ ó.  ú µ Ω ñ    æ Ç   ñ ± Ω æ  ª ∏ à µ  ¥ æ ¥   Ç ∏  æ ¥ ∏ Ω  ≤ ñ ¥   É Ç Ω ñ π  ∫ ª é á default_notional_cap_usd
-   ¥ ª è    æ ≤ Ω æ ó  ≤ ñ ¥   æ ≤ ñ ¥ Ω æ   Ç ñ.
+                                                                                      .
+                                                                                                                                  
+          ReadFile config\aurora\trading.yaml     
+                                                                                                                                  
+             trading.yaml                                                      .                                                                                      default_notional_cap_usd
+                                                .
 
-   ö   æ ∫ 1:  ú æ ¥ ∏ Ñ ñ ∫   Ü ñ è `config/aurora/trading.yaml`
+           1:                        `config/aurora/trading.yaml`
 
-   Ø  ¥ æ ¥   é  ∫ ª é á default_notional_cap_usd: 1000.0  ¥ æ    µ ∫ Ü ñ ó decision.position_sizing.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit config\aurora\trading.yaml: config_version: 1.0.0... => config_version: 1.0.0...                      ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    101       kelly_conservative_factor: 0.1  # Conservative Kelly fraction multiplier                         ‚îÇ
- ‚îÇ    102       min_position_size_usd: 10.0  # Minimum position size                                             ‚îÇ
- ‚îÇ    103       max_position_size_usd: 1000.0  # Maximum position size per trade                                 ‚îÇ
- ‚îÇ    104 +     default_notional_cap_usd: 1000.0 # Default notional cap if not provided by risk assessment       ‚îÇ
- ‚îÇ    105                                                                                                        ‚îÇ
- ‚îÇ    106   # Market data settings                                                                               ‚îÇ
- ‚îÇ    107   market_data:                                                                                         ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ö æ Ω Ñ ñ ≥ É     Ü ñ é  æ Ω æ ≤ ª µ Ω æ.
+                         default_notional_cap_usd: 1000.0                   decision.position_sizing.
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit config\aurora\trading.yaml: config_version: 1.0.0... => config_version: 1.0.0...                         
+                                                                                                                      
+        101       kelly_conservative_factor: 0.1  # Conservative Kelly fraction multiplier                            
+        102       min_position_size_usd: 10.0  # Minimum position size                                                
+        103       max_position_size_usd: 1000.0  # Maximum position size per trade                                    
+        104 +     default_notional_cap_usd: 1000.0 # Default notional cap if not provided by risk assessment          
+        105                                                                                                           
+        106   # Market data settings                                                                                  
+        107   market_data:                                                                                            
+                                                                                                                                                                                                                                                                                                                                                    
+                                             .
 
-   ö   æ ∫ 2:  † µ Ñ   ∫ Ç æ   ∏ Ω ≥ `apps/reference/domains/decision_making/decision_making.py`
+           2:                        `apps/reference/domains/decision_making/decision_making.py`
 
-   ¢ µ   µ    è  ∑   º ñ Ω é  ± ª æ ∫  ∫ æ ¥ É,  â æ  º ñ   Ç ∏ Ç å  ∂ æ     Ç ∫ æ  ∑   ∫ æ ¥ æ ≤   Ω ñ  ∑ Ω   á µ Ω Ω è  ∑    ∑   º æ ≤ á É ≤   Ω Ω è º,  Ω    Ω æ ≤ É,  Ω   ¥ ñ π Ω É  ª æ ≥ ñ ∫ É,  è ∫    á ∏ Ç   î
-   ≤   ñ          º µ Ç   ∏  ∑  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó  Ç    ≤ ∏ ∫ æ   ∏   Ç æ ≤ É î try...except  ¥ ª è    µ   µ Ö æ   ª µ Ω Ω è    æ º ∏ ª æ ∫,  è ∫  º ∏  π  æ ± ≥ æ ≤ æ   é ≤   ª ∏.  ¶ µ
-   ∑   ± µ ∑   µ á ∏ Ç å  ≤ ñ ¥   æ ≤ ñ ¥ Ω ñ   Ç å      Ö ñ Ç µ ∫ Ç É   ñ  Ç        ∏ Ω Ü ∏   É Fail-Fast.
+                                              ,                                                                                                         ,              ,                            ,                  
+                                                                                      try...except                                               ,                                      .     
+                                                                                                 Fail-Fast.
 
-   ó     Ç æ   æ ≤ É é  ∑ º ñ Ω ∏  ¥ æ  Ñ   π ª É.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit ...pps\decision_making\decision_making.py: """... => """...                                           ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ... first 7 lines hidden ...                                                                               ‚îÇ
- ‚îÇ    192 +     decision_config = self.config['decision']                                                        ‚îÇ
- ‚îÇ    193 +     sizing_config = decision_config['position_sizing']                                               ‚îÇ
- ‚îÇ    194 +     tca_prefs = self.config['tca_prefs']                                                             ‚îÇ
- ‚îÇ    195 +     risk_budgets = self.config['risk_budgets']                                                       ‚îÇ
- ‚îÇ    196                                                                                                        ‚îÇ
- ‚îÇ    191 -     # Load TCA preferences from config                                                               ‚îÇ
- ‚îÇ    192 -     tca_prefs = self.config.get('tca_prefs', {})                                                     ‚îÇ
- ‚îÇ    193 -     risk_budgets = self.config.get('risk_budgets', {})                                               ‚îÇ
- ‚îÇ    194 -     payoff_ratio_r = decimal.Decimal(str(self.config.get('decision', {}).get('payoff_ratio_r',       ‚îÇ
- ‚îÇ        '2.0')))                                                                                               ‚îÇ
- ‚îÇ    197 +     # Get sizing parameters from config                                                              ‚îÇ
- ‚îÇ    198 +     kelly_conservative_factor = decimal.Decimal(str(sizing_config['kelly_conservative_factor']))     ‚îÇ
- ‚îÇ    199 +     min_position_size = decimal.Decimal(str(sizing_config['min_position_size_usd']))                 ‚îÇ
- ‚îÇ    200 +     max_position_size = decimal.Decimal(str(sizing_config['max_position_size_usd']))                 ‚îÇ
- ‚îÇ    201 +     default_notional_cap = decimal.Decimal(str(sizing_config['default_notional_cap_usd']))           ‚îÇ
- ‚îÇ    202                                                                                                        ‚îÇ
- ‚îÇ    203 +     # Get other decision parameters                                                                  ‚îÇ
- ‚îÇ    204 +     payoff_ratio_r = decimal.Decimal(str(decision_config['payoff_ratio_r']))                         ‚îÇ
- ‚îÇ    205 +     valid_for_ms = self.config.get('system', {}).get('trade_intent_validity_ms', 30000)              ‚îÇ
- ‚îÇ    206 +                                                                                                      ‚îÇ
- ‚îÇ    207 +     # Determine notional cap from risk assessment or config fallback                                 ‚îÇ
- ‚îÇ    208 +     notional_cap = decimal.Decimal(str(risk_params.get("cvar_limit_usd", default_notional_cap)))     ‚îÇ
- ‚îÇ    209 +                                                                                                      ‚îÇ
- ‚îÇ    210 +     # Calculate position size                                                                        ‚îÇ
- ‚îÇ    211 +     kelly_based_size = equity * kelly_fraction * kelly_conservative_factor                           ‚îÇ
- ‚îÇ    212 +     position_size = min(max_position_size, max(min_position_size, kelly_based_size, notional_cap))   ‚îÇ
- ‚îÇ    213 +                                                                                                      ‚îÇ
- ‚îÇ    214 +     # Final validation before emitting                                                               ‚îÇ
- ‚îÇ    215 +     if position_size < min_position_size:                                                            ‚îÇ
- ‚îÇ    216 +         self.logger.warning(f"Calculated position size {position_size} is below minimum              ‚îÇ
- ‚îÇ        {min_position_size}. Rejecting.")                                                                      ‚îÇ
- ‚îÇ    217 +         self.clear_internal_state()                                                                  ‚îÇ
- ‚îÇ    218 +         return                                                                                       ‚îÇ
- ‚îÇ    219 +                                                                                                      ‚îÇ
- ‚îÇ    220 +     # Construct the trade intent payload                                                             ‚îÇ
- ‚îÇ    221       trade_intent_payload = {                                                                         ‚îÇ
- ‚îÇ    222           "instrument": symbol,                                                                        ‚îÇ
- ‚îÇ    223           "side": side,                                                                                ‚îÇ
- ‚îÇ    224           "p": float(p),                                                                               ‚îÇ
- ‚îÇ    225           "payoff_ratio_r": float(payoff_ratio_r),                                                     ‚îÇ
- ‚îÇ    226           "tca_budget": {                                                                              ‚îÇ
- ‚îÇ    202 -             "max_slippage_bps": tca_prefs.get('max_slippage_bps', 50.0),                             ‚îÇ
- ‚îÇ    203 -             "max_latency_ms": tca_prefs.get('max_latency_ms', 5000),                                 ‚îÇ
- ‚îÇ    204 -             "maker_preference": tca_prefs.get('maker_preference', "allow")                           ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    227 +             "max_slippage_bps": tca_prefs['max_slippage_bps'],                                       ‚îÇ
- ‚îÇ    228 +             "max_latency_ms": tca_prefs['max_latency_ms'],                                           ‚îÇ
- ‚îÇ    229 +             "maker_preference": tca_prefs['maker_preference']                                        ‚îÇ
- ‚îÇ    230           },                                                                                           ‚îÇ
- ‚îÇ    231           "risk_budget": {                                                                             ‚îÇ
- ‚îÇ    207 -             "trade_cvar95_max_bps": risk_budgets.get('trade_cvar95_max_bps', 100.0),                 ‚îÇ
- ‚îÇ    208 -             "session_cvar95_max_bps": risk_budgets.get('session_cvar95_max_bps', 200.0)              ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    232 +             "trade_cvar95_max_bps": risk_budgets['trade_cvar95_max_bps'],                            ‚îÇ
- ‚îÇ    233 +             "session_cvar95_max_bps": risk_budgets['session_cvar95_max_bps']                         ‚îÇ
- ‚îÇ    234           },                                                                                           ‚îÇ
- ‚îÇ    235           "size": {                                                                                    ‚îÇ
- ‚îÇ    236               "kelly_fraction": float(kelly_fraction),                                                 ‚îÇ
- ‚îÇ    237               "notional_cap_usd": float(position_size)                                                 ‚îÇ
- ‚îÇ    238           },                                                                                           ‚îÇ
- ‚îÇ    214 -         "valid_for_ms": 30000,                                                                       ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    239 +         "valid_for_ms": valid_for_ms,                                                                ‚îÇ
- ‚îÇ    240           "why": [                                                                                     ‚îÇ
- ‚îÇ    241               f"Decision based on signal_score={float(signal_score):.3f}",                             ‚îÇ
- ‚îÇ    242               f"Features: obi={float(obi):.3f}, tfi={float(tfi):.3f}, absorption={float(absorption):   ‚îÇ
- ‚îÇ          .3f}",                                                                                               ‚îÇ
- ‚îÇ    247           "schema_ref": "https://aurora.scalp/shared/dto/trade_intent.schema.json"                     ‚îÇ
- ‚îÇ    248       }                                                                                                ‚îÇ
- ‚îÇ    249                                                                                                        ‚îÇ
- ‚îÇ    225 -     # Final validation                                                                               ‚îÇ
- ‚îÇ    226 -     if not self._validate_trade_intent(trade_intent_payload):                                        ‚îÇ
- ‚îÇ    227 -         self.logger.error("Trade intent rejected: final validation failed")                          ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    250 + except KeyError as e:                                                                                ‚îÇ
- ‚îÇ    251 +     self.logger.critical(f"Configuration key missing: {e}. System cannot make decisions. Please      ‚îÇ
- ‚îÇ        check trading.yaml. Halting decision.")                                                                ‚îÇ
- ‚îÇ    252       self.clear_internal_state()                                                                      ‚îÇ
- ‚îÇ    229 -         return                                                                                       ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    253 +     return  # Stop execution if config is incomplete                                                 ‚îÇ
- ‚îÇ    254                                                                                                        ‚îÇ
- ‚îÇ    255   # Emit the trade intent                                                                              ‚îÇ
- ‚îÇ    232 -     self.logger.info(f"Trade intent approved: {symbol} {side} p={float(p):.3f} size=${float          ‚îÇ
- ‚îÇ        (position_size):.2f}")                                                                                 ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    256 + self.logger.info(f"Trade intent approved: {symbol} {side} p={p:.3f} size=${position_size:.2f}")      ‚îÇ
- ‚îÇ    257       self.fsm.emit(                                                                                   ‚îÇ
- ‚îÇ    258           "EVT:TRADE_INTENT_PROPOSED",                                                                 ‚îÇ
- ‚îÇ    259           payload=trade_intent_payload,                                                                ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  † µ Ñ   ∫ Ç æ   ∏ Ω ≥ decision_making.py  Ç    æ Ω æ ≤ ª µ Ω Ω è trading.yaml  ∑   ≤ µ   à µ Ω æ.  ö æ ¥  Ç µ   µ    ≤ ñ ¥   æ ≤ ñ ¥   î      ∏ Ω Ü ∏   É Fail-Fast  ñ
-   ∑   ≤   Ω Ç   ∂ É î  ≤   ñ          º µ Ç   ∏  ∑  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó,  É   É ≤   é á ∏ " º   ≥ ñ á Ω ñ  á ∏   ª  ".
+                                                 .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit ...pps\decision_making\decision_making.py: """... => """...                                              
+                                                                                                                      
+        ... first 7 lines hidden ...                                                                                  
+        192 +     decision_config = self.config['decision']                                                           
+        193 +     sizing_config = decision_config['position_sizing']                                                  
+        194 +     tca_prefs = self.config['tca_prefs']                                                                
+        195 +     risk_budgets = self.config['risk_budgets']                                                          
+        196                                                                                                           
+        191 -     # Load TCA preferences from config                                                                  
+        192 -     tca_prefs = self.config.get('tca_prefs', {})                                                        
+        193 -     risk_budgets = self.config.get('risk_budgets', {})                                                  
+        194 -     payoff_ratio_r = decimal.Decimal(str(self.config.get('decision', {}).get('payoff_ratio_r',          
+            '2.0')))                                                                                                  
+        197 +     # Get sizing parameters from config                                                                 
+        198 +     kelly_conservative_factor = decimal.Decimal(str(sizing_config['kelly_conservative_factor']))        
+        199 +     min_position_size = decimal.Decimal(str(sizing_config['min_position_size_usd']))                    
+        200 +     max_position_size = decimal.Decimal(str(sizing_config['max_position_size_usd']))                    
+        201 +     default_notional_cap = decimal.Decimal(str(sizing_config['default_notional_cap_usd']))              
+        202                                                                                                           
+        203 +     # Get other decision parameters                                                                     
+        204 +     payoff_ratio_r = decimal.Decimal(str(decision_config['payoff_ratio_r']))                            
+        205 +     valid_for_ms = self.config.get('system', {}).get('trade_intent_validity_ms', 30000)                 
+        206 +                                                                                                         
+        207 +     # Determine notional cap from risk assessment or config fallback                                    
+        208 +     notional_cap = decimal.Decimal(str(risk_params.get("cvar_limit_usd", default_notional_cap)))        
+        209 +                                                                                                         
+        210 +     # Calculate position size                                                                           
+        211 +     kelly_based_size = equity * kelly_fraction * kelly_conservative_factor                              
+        212 +     position_size = min(max_position_size, max(min_position_size, kelly_based_size, notional_cap))      
+        213 +                                                                                                         
+        214 +     # Final validation before emitting                                                                  
+        215 +     if position_size < min_position_size:                                                               
+        216 +         self.logger.warning(f"Calculated position size {position_size} is below minimum                 
+            {min_position_size}. Rejecting.")                                                                         
+        217 +         self.clear_internal_state()                                                                     
+        218 +         return                                                                                          
+        219 +                                                                                                         
+        220 +     # Construct the trade intent payload                                                                
+        221       trade_intent_payload = {                                                                            
+        222           "instrument": symbol,                                                                           
+        223           "side": side,                                                                                   
+        224           "p": float(p),                                                                                  
+        225           "payoff_ratio_r": float(payoff_ratio_r),                                                        
+        226           "tca_budget": {                                                                                 
+        202 -             "max_slippage_bps": tca_prefs.get('max_slippage_bps', 50.0),                                
+        203 -             "max_latency_ms": tca_prefs.get('max_latency_ms', 5000),                                    
+        204 -             "maker_preference": tca_prefs.get('maker_preference', "allow")                              
+                                                                                                                                                                                                                                                                                                                                        
+        227 +             "max_slippage_bps": tca_prefs['max_slippage_bps'],                                          
+        228 +             "max_latency_ms": tca_prefs['max_latency_ms'],                                              
+        229 +             "maker_preference": tca_prefs['maker_preference']                                           
+        230           },                                                                                              
+        231           "risk_budget": {                                                                                
+        207 -             "trade_cvar95_max_bps": risk_budgets.get('trade_cvar95_max_bps', 100.0),                    
+        208 -             "session_cvar95_max_bps": risk_budgets.get('session_cvar95_max_bps', 200.0)                 
+                                                                                                                                                                                                                                                                                                                                        
+        232 +             "trade_cvar95_max_bps": risk_budgets['trade_cvar95_max_bps'],                               
+        233 +             "session_cvar95_max_bps": risk_budgets['session_cvar95_max_bps']                            
+        234           },                                                                                              
+        235           "size": {                                                                                       
+        236               "kelly_fraction": float(kelly_fraction),                                                    
+        237               "notional_cap_usd": float(position_size)                                                    
+        238           },                                                                                              
+        214 -         "valid_for_ms": 30000,                                                                          
+                                                                                                                                                                                                                                                                                                                                        
+        239 +         "valid_for_ms": valid_for_ms,                                                                   
+        240           "why": [                                                                                        
+        241               f"Decision based on signal_score={float(signal_score):.3f}",                                
+        242               f"Features: obi={float(obi):.3f}, tfi={float(tfi):.3f}, absorption={float(absorption):      
+              .3f}",                                                                                                  
+        247           "schema_ref": "https://aurora.scalp/shared/dto/trade_intent.schema.json"                        
+        248       }                                                                                                   
+        249                                                                                                           
+        225 -     # Final validation                                                                                  
+        226 -     if not self._validate_trade_intent(trade_intent_payload):                                           
+        227 -         self.logger.error("Trade intent rejected: final validation failed")                             
+                                                                                                                                                                                                                                                                                                                                        
+        250 + except KeyError as e:                                                                                   
+        251 +     self.logger.critical(f"Configuration key missing: {e}. System cannot make decisions. Please         
+            check trading.yaml. Halting decision.")                                                                   
+        252       self.clear_internal_state()                                                                         
+        229 -         return                                                                                          
+                                                                                                                                                                                                                                                                                                                                        
+        253 +     return  # Stop execution if config is incomplete                                                    
+        254                                                                                                           
+        255   # Emit the trade intent                                                                                 
+        232 -     self.logger.info(f"Trade intent approved: {symbol} {side} p={float(p):.3f} size=${float             
+            (position_size):.2f}")                                                                                    
+                                                                                                                                                                                                                                                                                                                                        
+        256 + self.logger.info(f"Trade intent approved: {symbol} {side} p={p:.3f} size=${position_size:.2f}")         
+        257       self.fsm.emit(                                                                                      
+        258           "EVT:TRADE_INTENT_PROPOSED",                                                                    
+        259           payload=trade_intent_payload,                                                                   
+                                                                                                                                                                                                                                                                                                                                                    
+                           decision_making.py                         trading.yaml                   .                                                         Fail-Fast   
+                                                                            ,                  "                         ".
 
-   ù     Ç É   Ω ∏ π  ∫   æ ∫:  í ∏       ≤ ª µ Ω Ω è  Ç µ   Ç ñ ≤  Ç    ≤   ª ñ ¥   Ü ñ è
+                             :                                                            
 
-   Ø  Ω µ  º æ ∂ É  ∑     É   Ç ∏ Ç ∏  ª ñ Ω Ç µ   ∏    ± æ  Ç µ   Ç ∏  ¥ ª è  ≤   ª ñ ¥   Ü ñ ó  Ω æ ≤ ∏ Ö  ∑ º ñ Ω,  æ   ∫ ñ ª å ∫ ∏,  è ∫  º ∏  ≤ ∏ è ≤ ∏ ª ∏      Ω ñ à µ,  Ç µ   Ç æ ≤ ∏ π  Ω   ± ñ    Ω       ∑ ñ
-   ∑ ª   º   Ω ∏ π  á µ   µ ∑    æ º ∏ ª ∫ É ModuleNotFoundError.
+                                                                                                                    ,                 ,                                      ,                                         
+                                             ModuleNotFoundError.
 
-   ¢ æ º É,  è  Ω µ ≥   π Ω æ    µ   µ Ö æ ¥ ∂ É  ¥ æ  ≤ ∏       ≤ ª µ Ω Ω è  Ü ñ î ó  ∫   ∏ Ç ∏ á Ω æ ó      æ ± ª µ º ∏.  Ø  ≤ ∏       ≤ ª é  à ª è Ö ∏  ñ º   æ   Ç É  ≤  É   ñ Ö  Ç µ   Ç æ ≤ ∏ Ö  Ñ   π ª   Ö,  â æ
-   ∑   ∑ Ω   ª ∏  ∑ ± æ é,  â æ ±  ≤ æ Ω ∏  ≤ ∫   ∑ É ≤   ª ∏  Ω          ≤ ∏ ª å Ω µ    æ ∑ Ç   à É ≤   Ω Ω è  ¥ æ º µ Ω É execution_position.
+          ,                                                                                                              .                                                                                        ,     
+                         ,                                                                                                  execution_position.
 
-   ü æ á ∏ Ω   é  ∑    µ   à æ ≥ æ  Ñ   π ª É: tests/test_acl_message_contracts.py.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_acl_message_contracts.py: """Tests for execution_positio... => """Tests for execution_positio...  ‚îÇ
- ‚îÇ                                                                                                                      ‚îÇ
- ‚îÇ     7   # Add vfoundation to path                                                                                    ‚îÇ
- ‚îÇ     8   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                        ‚îÇ
- ‚îÇ     9                                                                                                                ‚îÇ
- ‚îÇ    10 - from apps.reference.domains.execution_position.contracts import (                                            ‚îÇ
- ‚îÇ    10 + from vfoundation.apps.reference.domains.execution_position.contracts import (                                ‚îÇ
- ‚îÇ    11       OrderPayload,                                                                                            ‚îÇ
- ‚îÇ    12       PositionPayload,                                                                                         ‚îÇ
- ‚îÇ    13       Side,                                                                                                    ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü µ   à ∏ π  Ñ   π ª  ≤ ∏       ≤ ª µ Ω æ.  ü   æ ¥ æ ≤ ∂ É é  ≤ ∏       ≤ ª è Ç ∏    µ à Ç É 9  Ñ   π ª ñ ≤  ∑    Ω   ª æ ≥ ñ á Ω æ é    æ º ∏ ª ∫ æ é ModuleNotFoundError          ª µ ª å Ω æ,  â æ ±
-       ∏   ∫ æ   ∏ Ç ∏      æ Ü µ  .
+                                             : tests/test_acl_message_contracts.py.
+                                                                                                                                                                                                                                                                                                                                                                         
+          Edit tests\test_acl_message_contracts.py: """Tests for execution_positio... => """Tests for execution_positio...     
+                                                                                                                             
+         7   # Add vfoundation to path                                                                                       
+         8   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                           
+         9                                                                                                                   
+        10 - from apps.reference.domains.execution_position.contracts import (                                               
+        10 + from vfoundation.apps.reference.domains.execution_position.contracts import (                                   
+        11       OrderPayload,                                                                                               
+        12       PositionPayload,                                                                                            
+        13       Side,                                                                                                       
+                                                                                                                                                                                                                                                                                                                                                                         
+                                              .                                                    9                                                         ModuleNotFoundError                     ,       
+                                   .
 
-   ü ñ   ª è  Ü å æ ≥ æ  è    µ   µ ≤ ñ   é    Ç   Ω test_ci_smoke.py,  è ∫ ∏ π  º   ≤  ñ Ω à É    æ º ∏ ª ∫ É  ñ º   æ   Ç É,  ñ  ∑     É â É    æ ≤ Ω É    µ   µ ≤ ñ   ∫ É  Ç µ   Ç ñ ≤.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit ...tests\\test_debug_drift_integration.py: """... => """...                                           ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    11   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                 ‚îÇ
- ‚îÇ    12                                                                                                         ‚îÇ
- ‚îÇ    13   from vfoundation.obs.debug_api import debug_rid, add_drift_report, _drift_reports, _drift_lock        ‚îÇ
- ‚îÇ    14 - from apps.reference.domains.execution_position.drift_monitor import (                                 ‚îÇ
- ‚îÇ    14 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                     ‚îÇ
- ‚îÇ    15       DriftReport, ConfusionMatrix, Mismatch                                                            ‚îÇ
- ‚îÇ    16   )                                                                                                     ‚îÇ
- ‚îÇ    17   from vfoundation.dr import wal                                                                        ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é  ≤ ∏       ≤ ª µ Ω Ω è.  ù     Ç É   Ω ñ 8  Ñ   π ª ñ ≤  ∑    æ º ∏ ª ∫   º ∏  ñ º   æ   Ç É execution_position  ± É ¥ É Ç å  ≤ ∏       ≤ ª µ Ω ñ    Ω   ª æ ≥ ñ á Ω ∏ º  á ∏ Ω æ º.  Ø
-   ≤ ∏ ∫ æ Ω   é  Ü ñ  æ   µ     Ü ñ ó          ª µ ª å Ω æ  ¥ ª è  µ Ñ µ ∫ Ç ∏ ≤ Ω æ   Ç ñ.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ -  Edit tests\test_drift_roundtrip.py: from apps.reference.domains.ex... => from vfoundation.apps.referenc...  ‚îÇ
- ‚îÇ                                                                                                                ‚îÇ
- ‚îÇ    11   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                  ‚îÇ
- ‚îÇ    12                                                                                                          ‚îÇ
- ‚îÇ    13   from vfoundation.core.protocol import Message                                                          ‚îÇ
- ‚îÇ    14 - from apps.reference.domains.execution_position.drift_monitor import compute_drift                      ‚îÇ
- ‚îÇ    14 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import compute_drift          ‚îÇ
- ‚îÇ    15   from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM                             ‚îÇ
- ‚îÇ    16   from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM                         ‚îÇ
- ‚îÇ    17   from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM                           ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
+                                                     test_ci_smoke.py,                                                       ,                                                           .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit ...tests\\test_debug_drift_integration.py: """... => """...                                              
+                                                                                                                      
+        11   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                    
+        12                                                                                                            
+        13   from vfoundation.obs.debug_api import debug_rid, add_drift_report, _drift_reports, _drift_lock           
+        14 - from apps.reference.domains.execution_position.drift_monitor import (                                    
+        14 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                        
+        15       DriftReport, ConfusionMatrix, Mismatch                                                               
+        16   )                                                                                                        
+        17   from vfoundation.dr import wal                                                                           
+                                                                                                                                                                                                                                                                                                                                                    
+                                             .                  8                                                   execution_position                                                                    .   
+                                                                                           .
+                                                                                                                                                                                                                                                                                                                                                       
+     -  Edit tests\test_drift_roundtrip.py: from apps.reference.domains.ex... => from vfoundation.apps.referenc...     
+                                                                                                                       
+        11   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                     
+        12                                                                                                             
+        13   from vfoundation.core.protocol import Message                                                             
+        14 - from apps.reference.domains.execution_position.drift_monitor import compute_drift                         
+        14 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import compute_drift             
+        15   from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM                                
+        16   from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM                            
+        17   from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM                              
+                                                                                                                                                                                                                                                                                                                                                       
 
->  ∑   á µ ∫   π    æ ≤ µ   Ω ∏   å  ¥ æ  Ñ   π ª É decision_making.py  Ç ∏  ∑   æ ± ∏ ≤  Ç   º    ∏ Ω Ç   ∫   ∏ á Ω ñ    æ º ∏ ª ∫ ∏       æ Ç ñ º      æ ¥ æ ≤ ∂ É π
+>                                                   decision_making.py                                                                                                
 
-‚ú¶  í ∏    ±   æ ª é Ç Ω æ        ≤ ñ.  ü µ   µ     æ à É é  ∑    ¥ æ   É â µ Ω É    ∏ Ω Ç   ∫   ∏ á Ω É    æ º ∏ ª ∫ É.  Ø    æ     ñ à ∏ ≤  ∑    µ Ñ   ∫ Ç æ   ∏ Ω ≥ æ º  ñ  Ω µ ≤ ñ   Ω æ    Ç   É ∫ Ç É   É ≤   ≤
-  try...except  ± ª æ ∫,  â æ      ∏ ∑ ≤ µ ª æ  ¥ æ  Ω µ ∫ æ   µ ∫ Ç Ω æ ≥ æ  ∫ æ ¥ É.
+                                      .                                                                                 .                                                                                             
+  try...except         ,                                                             .
 
-   î è ∫ É é,  â æ  ∑ ≤ µ   Ω É ª ∏  Ω    Ü µ  É ≤   ≥ É.  Ø  Ω µ ≥   π Ω æ  ≤ ∏       ≤ ª é decision_making.py,    µ   à  Ω ñ ∂      æ ¥ æ ≤ ∂ É ≤   Ç ∏  ± É ¥ å- è ∫ ñ  ñ Ω à ñ  ∑   ≤ ¥   Ω Ω è.
+            ,                                           .                                    decision_making.py,                                                  -                                .
 
-   ü ª   Ω  ≤ ∏       ≤ ª µ Ω Ω è:
-   1.  Ø      æ á ∏ Ç   é    æ Ç æ á Ω ∏ π,    æ º ∏ ª ∫ æ ≤ ∏ π    Ç   Ω  Ñ   π ª É decision_making.py.
-   2.  ° Ñ æ   º É é    æ ≤ Ω ñ   Ç é  ∫ æ   µ ∫ Ç Ω É  ≤ µ     ñ é  º µ Ç æ ¥ É _try_make_decision  ∑        ≤ ∏ ª å Ω æ é  ª æ ≥ ñ ∫ æ é  Ç    ≤ ñ ¥   Ç É     º ∏.
-   3.  ó   º ñ Ω é  ≤ µ   å  º µ Ç æ ¥  É  Ñ   π ª ñ  Ω    ≤ ∏       ≤ ª µ Ω É  ≤ µ     ñ é.
+                                 :
+   1.                                     ,                                          decision_making.py.
+   2.                                                                            _try_make_decision                                                                 .
+   3.                                                                                      .
 
-   ü æ á ∏ Ω   é  á ∏ Ç   Ω Ω è  Ñ   π ª É  ¥ ª è    ñ ¥ ≥ æ Ç æ ≤ ∫ ∏  ≤ ∏       ≤ ª µ Ω Ω è.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  ReadFile ...pps\decision_making\decision_making.py  ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  í ∏ ∑ Ω   é    æ º ∏ ª ∫ É.  ü æ   µ   µ ¥ Ω ñ π    µ Ñ   ∫ Ç æ   ∏ Ω ≥  ± É ≤  Ω µ ∫ æ   µ ∫ Ç Ω ∏ º  ñ    æ à ∫ æ ¥ ∏ ≤  ª æ ≥ ñ ∫ É  Ñ   π ª É.  Ø    æ ≤ Ω ñ   Ç é    µ   µ   ∏ à É  º µ Ç æ ¥
-  _try_make_decision,  â æ ±  ≤ ∏       ≤ ∏ Ç ∏    ∏ Ω Ç   ∫   ∏  ,  É   É Ω É Ç ∏  ¥ É ± ª é ≤   Ω Ω è  ∫ æ ¥ É  Ç      µ   ª ñ ∑ É ≤   Ç ∏  Ω   ¥ ñ π Ω É "Fail-Fast"    Ç     Ç µ ≥ ñ é,  è ∫
-   º ∏  æ ± ≥ æ ≤ æ   é ≤   ª ∏.
+                                                                                             .
+                                                                                                                                                                               
+          ReadFile ...pps\decision_making\decision_making.py     
+                                                                                                                                                                               
+                               .                                                                                                                      .                                                
+  _try_make_decision,                                             ,                                                                                         "Fail-Fast"                   ,     
+                               .
 
-   ü ª   Ω  ≤ ∏       ≤ ª µ Ω Ω è:
-   1.  ü ñ ¥ ≥ æ Ç æ ≤ ∫    ∫ æ   µ ∫ Ç Ω æ ≥ æ  ∫ æ ¥ É:  Ø  ≤ ∂ µ    ñ ¥ ≥ æ Ç É ≤   ≤    æ ≤ Ω É,  ≤ ∏       ≤ ª µ Ω É  ≤ µ     ñ é  º µ Ç æ ¥ É _try_make_decision,  è ∫    ≤ ∫ ª é á   î
-       ≤   ª ñ ¥   Ü ñ é  ¥   Ω ∏ Ö,    Ç   æ ≥ É    æ ± æ Ç É  ∑  ∫ æ Ω Ñ ñ ≥ É     Ü ñ î é  Ç    ∫ æ   µ ∫ Ç Ω É  æ ±   æ ± ∫ É    æ º ∏ ª æ ∫.
-   2.  ó   º ñ Ω    ≤   å æ ≥ æ    æ à ∫ æ ¥ ∂ µ Ω æ ≥ æ  º µ Ç æ ¥ É:  Ø  ∑   º ñ Ω é  ≤ µ   å    æ Ç æ á Ω ∏ π  ≤ º ñ   Ç  º µ Ç æ ¥ É _try_make_decision  Ω    Ω æ ≤ É,  ∫ æ   µ ∫ Ç Ω É
-         µ   ª ñ ∑   Ü ñ é.
+                                 :
+   1.                                                   :                                          ,                                                _try_make_decision,                      
+                                   ,                                                                                                            .
+   2.                                                                :                                                                   _try_make_decision              ,                 
+                          .
 
-   í ∏ ∫ æ Ω É é  ∑   º ñ Ω É.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit ...pps\decision_making\decision_making.py: """... => """...                                           ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ... first 258 lines hidden ...                                                                             ‚îÇ
- ‚îÇ    182 +             "valid_for_ms": int(valid_for_ms),                                                       ‚îÇ
- ‚îÇ    183               "why": [                                                                                 ‚îÇ
- ‚îÇ    184                   f"Decision based on signal_score={float(signal_score):.3f}",                         ‚îÇ
- ‚îÇ    185                   f"Features: obi={float(obi):.3f}, tfi={float(tfi):.3f}, absorption={float            ‚îÇ
- ‚îÇ          (absorption):.3f}",                                                                                  ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    243 -                 f"Risk approved: kelly={float(kelly_fraction):.3f}, trading_allowed=                 ‚îÇ
- ‚îÇ        {risk_params.get('is_trading_allowed')}",                                                              ‚îÇ
- ‚îÇ    186 +                 f"Risk approved: kelly={float(kelly_fraction):.3f}, trading_allowed=True",           ‚îÇ
- ‚îÇ    187                   f"Position sizing: equity=${float(equity):.2f}, kelly_based=${float                  ‚îÇ
- ‚îÇ          (kelly_based_size):.2f}, final=${float(position_size):.2f}"                                          ‚îÇ
- ‚îÇ    188               ],                                                                                       ‚îÇ
- ‚îÇ    189               "dto_version": "1.0.0",                                                                  ‚îÇ
- ‚îÇ    190               "schema_ref": "https://aurora.scalp/shared/dto/trade_intent.schema.json"                 ‚îÇ
- ‚îÇ    191           }                                                                                            ‚îÇ
- ‚îÇ    192                                                                                                        ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    250 -     except KeyError as e:                                                                            ‚îÇ
- ‚îÇ    251 -         self.logger.critical(f"Configuration key missing: {e}. System cannot make decisions. Please  ‚îÇ
- ‚îÇ        check trading.yaml. Halting decision.")                                                                ‚îÇ
- ‚îÇ    252 -         self.clear_internal_state()                                                                  ‚îÇ
- ‚îÇ    253 -         return  # Stop execution if config is incomplete                                             ‚îÇ
- ‚îÇ    254 -                                                                                                      ‚îÇ
- ‚îÇ    255 -     # Emit the trade intent                                                                          ‚îÇ
- ‚îÇ    193 +         # 6. === EMIT EVENT ===                                                                      ‚îÇ
- ‚îÇ    194           self.logger.info(f"Trade intent approved: {symbol} {side} p={p:.3f} size=${position_size:.2  ‚îÇ
- ‚îÇ          f}")                                                                                                 ‚îÇ
- ‚îÇ    195           self.fsm.emit(                                                                               ‚îÇ
- ‚îÇ    196               "EVT:TRADE_INTENT_PROPOSED",                                                             ‚îÇ
- ‚îÇ    198               why="Aggregated decision based on features, risk assessment, and portfolio state."       ‚îÇ
- ‚îÇ    199           )                                                                                            ‚îÇ
- ‚îÇ    200                                                                                                        ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    263 -         # Clear internal state to wait for new data cycle                                            ‚îÇ
- ‚îÇ    264 -         self.clear_internal_state()                                                                  ‚îÇ
- ‚îÇ    265 -                                                                                                      ‚îÇ
- ‚îÇ    201 +     except KeyError as e:                                                                            ‚îÇ
- ‚îÇ    202 +         self.logger.critical(f"Configuration key missing: {e}. System cannot make decisions. Please  ‚îÇ
- ‚îÇ        check trading.yaml. Halting decision.")                                                                ‚îÇ
- ‚îÇ    203       except Exception as e:                                                                           ‚îÇ
- ‚îÇ    204           self.logger.error(f"Unexpected error in decision making: {e}", exc_info=True)                ‚îÇ
- ‚îÇ    205 +     finally:                                                                                         ‚îÇ
- ‚îÇ    206 +         # Always clear state after a decision attempt (success or fail) to await a new full set of   ‚îÇ
- ‚îÇ        data                                                                                                   ‚îÇ
- ‚îÇ    207           self.clear_internal_state()                                                                  ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    269 -                                                                                                      ‚îÇ
- ‚îÇ    270 - def _validate_trade_intent(self, trade_intent: dict) -> bool:                                        ‚îÇ
- ‚îÇ    271 -     """                                                                                              ‚îÇ
- ‚îÇ    272 -     Final validation of trade intent before emission.                                                ‚îÇ
- ‚îÇ    273 -                                                                                                      ‚îÇ
- ‚îÇ    274 -     Args:                                                                                            ‚îÇ
- ‚îÇ    275 -         trade_intent: Trade intent payload to validate                                               ‚îÇ
- ‚îÇ    276 -                                                                                                      ‚îÇ
- ‚îÇ    277 -     Returns:                                                                                         ‚îÇ
- ‚îÇ    278 -         True if valid, False otherwise                                                               ‚îÇ
- ‚îÇ    279 -     """                                                                                              ‚îÇ
- ‚îÇ    280 -     try:                                                                                             ‚îÇ
- ‚îÇ    281 -         # Validate required fields                                                                   ‚îÇ
- ‚îÇ    282 -         required_fields = ["instrument", "side", "p", "payoff_ratio_r", "size", "tca_budget",        ‚îÇ
- ‚îÇ        "risk_budget"]                                                                                         ‚îÇ
- ‚îÇ    283 -         for field in required_fields:                                                                ‚îÇ
- ‚îÇ    284 -             if field not in trade_intent:                                                            ‚îÇ
- ‚îÇ    285 -                 self.logger.error(f"Missing required field: {field}")                                ‚îÇ
- ‚îÇ    286 -                 return False                                                                         ‚îÇ
- ‚îÇ    287 -                                                                                                      ‚îÇ
- ‚îÇ    288 -         # Validate probability                                                                       ‚îÇ
- ‚îÇ    289 -         p = trade_intent.get("p", 0)                                                                 ‚îÇ
- ‚îÇ    290 -         if not (0 < p <= 1):                                                                         ‚îÇ
- ‚îÇ    291 -             self.logger.error(f"Invalid probability: {p}")                                           ‚îÇ
- ‚îÇ    292 -             return False                                                                             ‚îÇ
- ‚îÇ    293 -                                                                                                      ‚îÇ
- ‚îÇ    294 -         # Validate position size                                                                     ‚îÇ
- ‚îÇ    295 -         size = trade_intent.get("size", {})                                                          ‚îÇ
- ‚îÇ    296 -         notional_cap = size.get("notional_cap_usd", 0)                                               ‚îÇ
- ‚îÇ    297 -         if notional_cap <= 0:                                                                        ‚îÇ
- ‚îÇ    298 -             self.logger.error(f"Invalid position size: {notional_cap}")                              ‚îÇ
- ‚îÇ    299 -             return False                                                                             ‚îÇ
- ‚îÇ    300 -                                                                                                      ‚îÇ
- ‚îÇ    301 -         return True                                                                                  ‚îÇ
- ‚îÇ    302 -                                                                                                      ‚îÇ
- ‚îÇ    303 -     except Exception as e:                                                                           ‚îÇ
- ‚îÇ    304 -         self.logger.error(f"Error validating trade intent: {e}")                                     ‚îÇ
- ‚îÇ    305 -         return False                                                                                 ‚îÇ
- ‚îÇ    306 -                                                                                                      ‚îÇ
- ‚îÇ    307 - def clear_internal_state(self) -> None:                                                              ‚îÇ
- ‚îÇ    308 -     """Clear internal data storage to prepare for next decision cycle."""                            ‚îÇ
- ‚îÇ    309 -     self.latest_features = None                                                                      ‚îÇ
- ‚îÇ    310 -     self.latest_risk = None                                                                          ‚îÇ
- ‚îÇ    311 -     self.latest_portfolio = None                                                                     ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  í ∏       ≤ ª µ Ω Ω è    ∏ Ω Ç   ∫   ∏   É  Ç    ª æ ≥ ñ ∫ ∏  É  Ñ   π ª ñ decision_making.py  ∑   ≤ µ   à µ Ω æ.
+                             .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit ...pps\decision_making\decision_making.py: """... => """...                                              
+                                                                                                                      
+        ... first 258 lines hidden ...                                                                                
+        182 +             "valid_for_ms": int(valid_for_ms),                                                          
+        183               "why": [                                                                                    
+        184                   f"Decision based on signal_score={float(signal_score):.3f}",                            
+        185                   f"Features: obi={float(obi):.3f}, tfi={float(tfi):.3f}, absorption={float               
+              (absorption):.3f}",                                                                                     
+                                                                                                                                                                                                                                                                                                                                        
+        243 -                 f"Risk approved: kelly={float(kelly_fraction):.3f}, trading_allowed=                    
+            {risk_params.get('is_trading_allowed')}",                                                                 
+        186 +                 f"Risk approved: kelly={float(kelly_fraction):.3f}, trading_allowed=True",              
+        187                   f"Position sizing: equity=${float(equity):.2f}, kelly_based=${float                     
+              (kelly_based_size):.2f}, final=${float(position_size):.2f}"                                             
+        188               ],                                                                                          
+        189               "dto_version": "1.0.0",                                                                     
+        190               "schema_ref": "https://aurora.scalp/shared/dto/trade_intent.schema.json"                    
+        191           }                                                                                               
+        192                                                                                                           
+                                                                                                                                                                                                                                                                                                                                        
+        250 -     except KeyError as e:                                                                               
+        251 -         self.logger.critical(f"Configuration key missing: {e}. System cannot make decisions. Please     
+            check trading.yaml. Halting decision.")                                                                   
+        252 -         self.clear_internal_state()                                                                     
+        253 -         return  # Stop execution if config is incomplete                                                
+        254 -                                                                                                         
+        255 -     # Emit the trade intent                                                                             
+        193 +         # 6. === EMIT EVENT ===                                                                         
+        194           self.logger.info(f"Trade intent approved: {symbol} {side} p={p:.3f} size=${position_size:.2     
+              f}")                                                                                                    
+        195           self.fsm.emit(                                                                                  
+        196               "EVT:TRADE_INTENT_PROPOSED",                                                                
+        198               why="Aggregated decision based on features, risk assessment, and portfolio state."          
+        199           )                                                                                               
+        200                                                                                                           
+                                                                                                                                                                                                                                                                                                                                        
+        263 -         # Clear internal state to wait for new data cycle                                               
+        264 -         self.clear_internal_state()                                                                     
+        265 -                                                                                                         
+        201 +     except KeyError as e:                                                                               
+        202 +         self.logger.critical(f"Configuration key missing: {e}. System cannot make decisions. Please     
+            check trading.yaml. Halting decision.")                                                                   
+        203       except Exception as e:                                                                              
+        204           self.logger.error(f"Unexpected error in decision making: {e}", exc_info=True)                   
+        205 +     finally:                                                                                            
+        206 +         # Always clear state after a decision attempt (success or fail) to await a new full set of      
+            data                                                                                                      
+        207           self.clear_internal_state()                                                                     
+                                                                                                                                                                                                                                                                                                                                        
+        269 -                                                                                                         
+        270 - def _validate_trade_intent(self, trade_intent: dict) -> bool:                                           
+        271 -     """                                                                                                 
+        272 -     Final validation of trade intent before emission.                                                   
+        273 -                                                                                                         
+        274 -     Args:                                                                                               
+        275 -         trade_intent: Trade intent payload to validate                                                  
+        276 -                                                                                                         
+        277 -     Returns:                                                                                            
+        278 -         True if valid, False otherwise                                                                  
+        279 -     """                                                                                                 
+        280 -     try:                                                                                                
+        281 -         # Validate required fields                                                                      
+        282 -         required_fields = ["instrument", "side", "p", "payoff_ratio_r", "size", "tca_budget",           
+            "risk_budget"]                                                                                            
+        283 -         for field in required_fields:                                                                   
+        284 -             if field not in trade_intent:                                                               
+        285 -                 self.logger.error(f"Missing required field: {field}")                                   
+        286 -                 return False                                                                            
+        287 -                                                                                                         
+        288 -         # Validate probability                                                                          
+        289 -         p = trade_intent.get("p", 0)                                                                    
+        290 -         if not (0 < p <= 1):                                                                            
+        291 -             self.logger.error(f"Invalid probability: {p}")                                              
+        292 -             return False                                                                                
+        293 -                                                                                                         
+        294 -         # Validate position size                                                                        
+        295 -         size = trade_intent.get("size", {})                                                             
+        296 -         notional_cap = size.get("notional_cap_usd", 0)                                                  
+        297 -         if notional_cap <= 0:                                                                           
+        298 -             self.logger.error(f"Invalid position size: {notional_cap}")                                 
+        299 -             return False                                                                                
+        300 -                                                                                                         
+        301 -         return True                                                                                     
+        302 -                                                                                                         
+        303 -     except Exception as e:                                                                              
+        304 -         self.logger.error(f"Error validating trade intent: {e}")                                        
+        305 -         return False                                                                                    
+        306 -                                                                                                         
+        307 - def clear_internal_state(self) -> None:                                                                 
+        308 -     """Clear internal data storage to prepare for next decision cycle."""                               
+        309 -     self.latest_features = None                                                                         
+        310 -     self.latest_risk = None                                                                             
+        311 -     self.latest_portfolio = None                                                                        
+                                                                                                                                                                                                                                                                                                                                                    
+                                                                                decision_making.py                   .
 
-   ¢ µ   µ    è    æ ≤ µ   Ç   é   è  ¥ æ  Ω   à æ ≥ æ  ≥ æ ª æ ≤ Ω æ ≥ æ  ± ª æ ∫ µ     ‚ î  ≤ ∏       ≤ ª µ Ω Ω è  Ω µ       Ü µ ∑ ¥   Ç Ω æ ≥ æ  Ω   ± æ   É  Ç µ   Ç ñ ≤.  Ø      æ ¥ æ ≤ ∂ É é  ≤ ∏       ≤ ª è Ç ∏
-     æ º ∏ ª ∫ ∏ ModuleNotFoundError  É  ≤   ñ Ö  ∑   ª µ ∂ Ω ∏ Ö  Ç µ   Ç æ ≤ ∏ Ö  Ñ   π ª   Ö,  â æ ±  º ∏  º æ ≥ ª ∏  ∑     É   Ç ∏ Ç ∏    æ ≤ Ω É    µ   µ ≤ ñ   ∫ É    ∏   Ç µ º ∏.
+                                                                                                                                                                            .                                           
+                 ModuleNotFoundError                                                           ,                                                                                       .
 
-   í ∏ ∫ æ Ω É é  ≤ ∏       ≤ ª µ Ω Ω è  ¥ ª è test_drift_roundtrip.py  Ç    ñ Ω à ∏ Ö 8  Ñ   π ª ñ ≤          ª µ ª å Ω æ.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_drift_roundtrip.py: """... => """...                                                       ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    11   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                 ‚îÇ
- ‚îÇ    12                                                                                                         ‚îÇ
- ‚îÇ    13   from vfoundation.core.protocol import Message                                                         ‚îÇ
- ‚îÇ    14 - from apps.reference.domains.execution_position.drift_monitor import compute_drift                     ‚îÇ
- ‚îÇ    14 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import compute_drift         ‚îÇ
- ‚îÇ    15   from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM                            ‚îÇ
- ‚îÇ    16   from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM                        ‚îÇ
- ‚îÇ    17   from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM                          ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é.  í ∏       ≤ ª è é    µ à Ç É  Ñ   π ª ñ ≤.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_drift_unit.py: """... => """...                                                            ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ     9   # Add vfoundation to path                                                                             ‚îÇ
- ‚îÇ    10   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                 ‚îÇ
- ‚îÇ    11                                                                                                         ‚îÇ
- ‚îÇ    12 - from apps.reference.domains.execution_position.drift_monitor import (                                 ‚îÇ
- ‚îÇ    12 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                     ‚îÇ
- ‚îÇ    13       compute_drift,                                                                                    ‚îÇ
- ‚îÇ    14       aggregate_drift_metrics,                                                                          ‚îÇ
- ‚îÇ    15       ConfusionMatrix,                                                                                  ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é.  í ∏       ≤ ª è é  Ω     Ç É   Ω É        Ç ñ é  Ç µ   Ç ñ ≤.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit \test_execpos_contracts_pydantic_v2.py: """... => """...                                              ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    11   # Add vfoundation to path                                                                             ‚îÇ
- ‚îÇ    12   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                 ‚îÇ
- ‚îÇ    13                                                                                                         ‚îÇ
- ‚îÇ    14 - from apps.reference.domains.execution_position.contracts import (                                     ‚îÇ
- ‚îÇ    14 + from vfoundation.apps.reference.domains.execution_position.contracts import (                         ‚îÇ
- ‚îÇ    15       OrderPayload,                                                                                     ‚îÇ
- ‚îÇ    16       PositionPayload,                                                                                  ‚îÇ
- ‚îÇ    17       Side,                                                                                             ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é.  í ∏       ≤ ª è é  Ω     Ç É   Ω É        Ç ñ é  Ç µ   Ç ñ ≤.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_fsm_close.py: """... => """...                                                             ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ     6   import time                                                                                           ‚îÇ
- ‚îÇ     7                                                                                                         ‚îÇ
- ‚îÇ     8   from vfoundation.core.protocol import Message                                                         ‚îÇ
- ‚îÇ     9 - from apps.reference.domains.execution_position.fsm_close import (                                     ‚îÇ
- ‚îÇ     9 + from vfoundation.apps.reference.domains.execution_position.fsm_close import (                         ‚îÇ
- ‚îÇ    10       CloseFlowFSM,                                                                                     ‚îÇ
- ‚îÇ    11 -     CloseState,                                                                                       ‚îÇ
- ‚îÇ    11 +     State,                                                                                            ‚îÇ
- ‚îÇ    12   )                                                                                                     ‚îÇ
- ‚îÇ    13                                                                                                         ‚îÇ
- ‚îÇ    14                                                                                                         ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é.  í ∏       ≤ ª è é  Ω     Ç É   Ω É        Ç ñ é  Ç µ   Ç ñ ≤.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_fsm_manage.py: """... => ...                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ     1 +                                                                                                       ‚îÇ
- ‚îÇ     2   """                                                                                                   ‚îÇ
- ‚îÇ     3   Unit tests for Manage Flow FSM (FSMP-P1-T02).                                                         ‚îÇ
- ‚îÇ     4                                                                                                         ‚îÇ
- ‚îÇ     4 - Coverage: PARTIAL_FILL/FILL ‚Üí TRACKING, UPD ‚Üí DEC:ADJUST (trail/BE/time).                             ‚îÇ
- ‚îÇ     5 + Coverage: trail_pct, EVT:FILL, UPD:PRICE, DEC:ADJUST.                                                 ‚îÇ
- ‚îÇ     6   """                                                                                                   ‚îÇ
- ‚îÇ     6 - import time                                                                                           ‚îÇ
- ‚îÇ     7 + import sys                                                                                            ‚îÇ
- ‚îÇ     8 + from pathlib import Path                                                                              ‚îÇ
- ‚îÇ     9                                                                                                         ‚îÇ
- ‚îÇ    10 + # Add vfoundation to path                                                                             ‚îÇ
- ‚îÇ    11 + sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                 ‚îÇ
- ‚îÇ    12 +                                                                                                       ‚îÇ
- ‚îÇ    13   from vfoundation.core.protocol import Message                                                         ‚îÇ
- ‚îÇ     9 - from apps.reference.domains.execution_position.fsm_manage import (                                    ‚îÇ
- ‚îÇ    14 + from vfoundation.apps.reference.domains.execution_position.fsm_manage import (                        ‚îÇ
- ‚îÇ    15       ManageFlowFSM,                                                                                    ‚îÇ
- ‚îÇ    11 -     ManageState,                                                                                      ‚îÇ
- ‚îÇ    16 +     State,                                                                                            ‚îÇ
- ‚îÇ    17   )                                                                                                     ‚îÇ
- ‚îÇ    18                                                                                                         ‚îÇ
- ‚îÇ    19                                                                                                         ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é.  í ∏       ≤ ª è é  Ω     Ç É   Ω É        Ç ñ é  Ç µ   Ç ñ ≤.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_fsm_open.py: """... => """...                                                              ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ     6   from decimal import Decimal                                                                           ‚îÇ
- ‚îÇ     7                                                                                                         ‚îÇ
- ‚îÇ     8   from vfoundation.core.protocol import Message                                                         ‚îÇ
- ‚îÇ     9 - from apps.reference.domains.execution_position.fsm_open import (                                      ‚îÇ
- ‚îÇ     9 + from vfoundation.apps.reference.domains.execution_position.fsm_open import (                          ‚îÇ
- ‚îÇ    10       OpenFlowFSM,                                                                                      ‚îÇ
- ‚îÇ    11 -     OpenState,                                                                                        ‚îÇ
- ‚îÇ    11 +     State,                                                                                            ‚îÇ
- ‚îÇ    12   )                                                                                                     ‚îÇ
- ‚îÇ    13                                                                                                         ‚îÇ
- ‚îÇ    14                                                                                                         ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é.  í ∏       ≤ ª è é  Ω     Ç É   Ω É        Ç ñ é  Ç µ   Ç ñ ≤.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_fsm_shadow_roundtrip.py: """... => """...                                                  ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ... first 259 lines hidden ...                                                                             ‚îÇ
- ‚îÇ    168 -         op="EVT",                                                                                    ‚îÇ
- ‚îÇ    169 -         verb="REJECTED",                                                                             ‚îÇ
- ‚îÇ    170 -         src="exchange_stub",                                                                         ‚îÇ
- ‚îÇ    171 -         dst="execution_position",                                                                    ‚îÇ
- ‚îÇ    172 -         rid="test-e2e-003",                                                                          ‚îÇ
- ‚îÇ    173 -         why="order rejected",                                                                        ‚îÇ
- ‚îÇ    174 -     )                                                                                                ‚îÇ
- ‚îÇ    111                                                                                                        ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    176 -     dec_close = exec_fsm.on_error_events(evt_reject)                                                 ‚îÇ
- ‚îÇ    112 + def test_replay_empty_wal(temp_wal_dir):                                                             ‚îÇ
- ‚îÇ    113 +     """Test replay on an empty WAL directory does not call handler."""                               ‚îÇ
- ‚îÇ    114 +     wal.set_wal_dir(temp_wal_dir)                                                                    ‚îÇ
- ‚îÇ    115                                                                                                        ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    178 -     assert dec_close is not None                                                                     ‚îÇ
- ‚îÇ    179 -     assert dec_close.op == "DEC"                                                                     ‚îÇ
- ‚îÇ    180 -     assert dec_close.verb == "CLOSE"                                                                 ‚îÇ
- ‚îÇ    181 -     assert dec_close.why == "CLOSE_EMERGENCY"                                                        ‚îÇ
- ‚îÇ    182 -     assert dec_close.pld["reduce_only"] is True                                                      ‚îÇ
- ‚îÇ    116 +     replay_handler = MagicMock()                                                                     ‚îÇ
- ‚îÇ    117                                                                                                        ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    184 -     # Verify WAL                                                                                     ‚îÇ
- ‚îÇ    185 -     wal_entries = wal.read_all()                                                                     ‚îÇ
- ‚îÇ    186 -     close_entry = next((e for e in wal_entries if e.get("op") == "DEC" and e.get("verb") == "CLOSE"  ‚îÇ
- ‚îÇ        ), None)                                                                                               ‚îÇ
- ‚îÇ    187 -     assert close_entry is not None                                                                   ‚îÇ
- ‚îÇ    118 +     replay.replay_from_wal(replay_handler)                                                           ‚îÇ
- ‚îÇ    119                                                                                                        ‚îÇ
- ‚îÇ    ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê  ‚îÇ
- ‚îÇ    189 -                                                                                                      ‚îÇ
- ‚îÇ    190 - def test_shadow_idempotency(setup_shadow_env):                                                       ‚îÇ
- ‚îÇ    191 -     """                                                                                              ‚îÇ
- ‚îÇ    192 -     Test idempotency: 50 parallel CMD:OPEN with same key ‚Üí 1 DEC.                                    ‚îÇ
- ‚îÇ    193 -     """                                                                                              ‚îÇ
- ‚îÇ    194 -     router, acl = setup_shadow_env                                                                   ‚îÇ
- ‚îÇ    195 -                                                                                                      ‚îÇ
- ‚îÇ    196 -     cmd = Message(                                                                                   ‚îÇ
- ‚îÇ    197 -         op="CMD",                                                                                    ‚îÇ
- ‚îÇ    198 -         verb="OPEN",                                                                                 ‚îÇ
- ‚îÇ    199 -         src="test",                                                                                  ‚îÇ
- ‚îÇ    200 -         dst="execution_position",                                                                    ‚îÇ
- ‚îÇ    201 -         rid="test-idem-001",                                                                         ‚îÇ
- ‚îÇ    202 -         why="idempotency test",                                                                      ‚îÇ
- ‚îÇ    203 -         idempotent_key="same-key-123",                                                               ‚îÇ
- ‚îÇ    204 -         pld={                                                                                        ‚îÇ
- ‚îÇ    205 -             "symbol": "ADAUSDT",                                                                     ‚îÇ
- ‚îÇ    206 -             "side": "BUY",                                                                           ‚îÇ
- ‚îÇ    207 -             "qty": "100.0",                                                                          ‚îÇ
- ‚îÇ    208 -         },                                                                                           ‚îÇ
- ‚îÇ    209 -     )                                                                                                ‚îÇ
- ‚îÇ    210 -                                                                                                      ‚îÇ
- ‚îÇ    211 -     results = []                                                                                     ‚îÇ
- ‚îÇ    212 -     for i in range(50):                                                                              ‚îÇ
- ‚îÇ    213 -         result = exec_fsm.on_cmd_open(cmd)                                                           ‚îÇ
- ‚îÇ    214 -         if result and result.op == "DEC":                                                            ‚îÇ
- ‚îÇ    215 -             results.append(result)                                                                   ‚îÇ
- ‚îÇ    216 -                                                                                                      ‚îÇ
- ‚îÇ    217 -     # Should have only 1 DEC (others dedup or inflight)                                              ‚îÇ
- ‚îÇ    218 -     assert len(results) <= 1  # Idempotency enforced                                                 ‚îÇ
- ‚îÇ    219 -                                                                                                      ‚îÇ
- ‚îÇ    220 -                                                                                                      ‚îÇ
- ‚îÇ    221 - def test_shadow_metrics_export(setup_shadow_env):                                                    ‚îÇ
- ‚îÇ    222 -     """                                                                                              ‚îÇ
- ‚îÇ    223 -     Test metrics export: fsm_decision_ms_p95, *_total counters.                                      ‚îÇ
- ‚îÇ    224 -     """                                                                                              ‚îÇ
- ‚îÇ    225 -     router, acl = setup_shadow_env                                                                   ‚îÇ
- ‚îÇ    226 -                                                                                                      ‚îÇ
- ‚îÇ    227 -     # Generate activity                                                                              ‚îÇ
- ‚îÇ    228 -     for i in range(10):                                                                              ‚îÇ
- ‚îÇ    229 -         cmd = Message(                                                                               ‚îÇ
- ‚îÇ    230 -             op="CMD", verb="OPEN", src="t", dst="ep", rid=f"r{i}", why="m",                          ‚îÇ
- ‚îÇ    231 -             idempotent_key=f"k{i}",                                                                  ‚îÇ
- ‚îÇ    232 -             pld={"symbol": "BTC", "side": "BUY", "qty": "1.0"}                                       ‚îÇ
- ‚îÇ    233 -         )                                                                                            ‚îÇ
- ‚îÇ    234 -         exec_fsm.on_cmd_open(cmd)                                                                    ‚îÇ
- ‚îÇ    235 -                                                                                                      ‚îÇ
- ‚îÇ    236 -     metrics = exec_fsm.get_metrics()                                                                 ‚îÇ
- ‚îÇ    237 -                                                                                                      ‚îÇ
- ‚îÇ    238 -     assert "fsm_decision_ms_p95" in metrics                                                          ‚îÇ
- ‚îÇ    239 -     assert "fsm_open_decisions_total" in metrics                                                     ‚îÇ
- ‚îÇ    240 -     assert "fsm_adjust_decisions_total" in metrics                                                   ‚îÇ
- ‚îÇ    241 -     assert "fsm_close_decisions_total" in metrics                                                    ‚îÇ
- ‚îÇ    242 -     assert "fsm_guard_rejects_total" in metrics                                                      ‚îÇ
- ‚îÇ    243 -     assert "fsm_errors_total" in metrics                                                             ‚îÇ
- ‚îÇ    244 -                                                                                                      ‚îÇ
- ‚îÇ    245 -     assert metrics["fsm_decision_ms_p95"] >= 0                                                       ‚îÇ
- ‚îÇ    246 -     assert metrics["fsm_open_decisions_total"] >= 1                                                  ‚îÇ
- ‚îÇ    120 +     replay_handler.assert_not_called()                                                               ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü   æ ¥ æ ≤ ∂ É é.  í ∏       ≤ ª è é  æ   Ç   Ω Ω ñ π  Ç µ   Ç,  â æ  ∑   ª µ ∂ ∏ Ç å  ≤ ñ ¥ execution_position.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit ...sts\\test_metrics_drift_integration.py: """... => """...                                           ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ     9   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                 ‚îÇ
- ‚îÇ    10                                                                                                         ‚îÇ
- ‚îÇ    11   from vfoundation.obs.debug_api import metrics, add_drift_report, _drift_reports, _drift_lock          ‚îÇ
- ‚îÇ    12 - from apps.reference.domains.execution_position.drift_monitor import (                                 ‚îÇ
- ‚îÇ    13 -     DriftReport, ConfusionMatrix                                                                      ‚îÇ
- ‚îÇ    12 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                     ‚îÇ
- ‚îÇ    13 +     compute_drift,                                                                                    ‚îÇ
- ‚îÇ    14 +     aggregate_drift_metrics,                                                                          ‚îÇ
- ‚îÇ    15   )                                                                                                     ‚îÇ
- ‚îÇ    16                                                                                                         ‚îÇ
- ‚îÇ    17                                                                                                         ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  Ø  ≤ ∏       ≤ ∏ ≤  É   ñ    æ º ∏ ª ∫ ∏,    æ ≤' è ∑   Ω ñ  ∑ execution_position.
+                                               test_drift_roundtrip.py                 8                                  .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit tests\test_drift_roundtrip.py: """... => """...                                                          
+                                                                                                                      
+        11   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                    
+        12                                                                                                            
+        13   from vfoundation.core.protocol import Message                                                            
+        14 - from apps.reference.domains.execution_position.drift_monitor import compute_drift                        
+        14 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import compute_drift            
+        15   from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM                               
+        16   from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM                           
+        17   from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM                             
+                                                                                                                                                                                                                                                                                                                                                    
+                      .                                           .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit tests\test_drift_unit.py: """... => """...                                                               
+                                                                                                                      
+         9   # Add vfoundation to path                                                                                
+        10   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                    
+        11                                                                                                            
+        12 - from apps.reference.domains.execution_position.drift_monitor import (                                    
+        12 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                        
+        13       compute_drift,                                                                                       
+        14       aggregate_drift_metrics,                                                                             
+        15       ConfusionMatrix,                                                                                     
+                                                                                                                                                                                                                                                                                                                                                    
+                      .                                                              .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit \test_execpos_contracts_pydantic_v2.py: """... => """...                                                 
+                                                                                                                      
+        11   # Add vfoundation to path                                                                                
+        12   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                    
+        13                                                                                                            
+        14 - from apps.reference.domains.execution_position.contracts import (                                        
+        14 + from vfoundation.apps.reference.domains.execution_position.contracts import (                            
+        15       OrderPayload,                                                                                        
+        16       PositionPayload,                                                                                     
+        17       Side,                                                                                                
+                                                                                                                                                                                                                                                                                                                                                    
+                      .                                                              .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit tests\test_fsm_close.py: """... => """...                                                                
+                                                                                                                      
+         6   import time                                                                                              
+         7                                                                                                            
+         8   from vfoundation.core.protocol import Message                                                            
+         9 - from apps.reference.domains.execution_position.fsm_close import (                                        
+         9 + from vfoundation.apps.reference.domains.execution_position.fsm_close import (                            
+        10       CloseFlowFSM,                                                                                        
+        11 -     CloseState,                                                                                          
+        11 +     State,                                                                                               
+        12   )                                                                                                        
+        13                                                                                                            
+        14                                                                                                            
+                                                                                                                                                                                                                                                                                                                                                    
+                      .                                                              .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit tests\test_fsm_manage.py: """... => ...                                                                  
+                                                                                                                      
+         1 +                                                                                                          
+         2   """                                                                                                      
+         3   Unit tests for Manage Flow FSM (FSMP-P1-T02).                                                            
+         4                                                                                                            
+         4 - Coverage: PARTIAL_FILL/FILL     TRACKING, UPD     DEC:ADJUST (trail/BE/time).                                
+         5 + Coverage: trail_pct, EVT:FILL, UPD:PRICE, DEC:ADJUST.                                                    
+         6   """                                                                                                      
+         6 - import time                                                                                              
+         7 + import sys                                                                                               
+         8 + from pathlib import Path                                                                                 
+         9                                                                                                            
+        10 + # Add vfoundation to path                                                                                
+        11 + sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                    
+        12 +                                                                                                          
+        13   from vfoundation.core.protocol import Message                                                            
+         9 - from apps.reference.domains.execution_position.fsm_manage import (                                       
+        14 + from vfoundation.apps.reference.domains.execution_position.fsm_manage import (                           
+        15       ManageFlowFSM,                                                                                       
+        11 -     ManageState,                                                                                         
+        16 +     State,                                                                                               
+        17   )                                                                                                        
+        18                                                                                                            
+        19                                                                                                            
+                                                                                                                                                                                                                                                                                                                                                    
+                      .                                                              .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit tests\test_fsm_open.py: """... => """...                                                                 
+                                                                                                                      
+         6   from decimal import Decimal                                                                              
+         7                                                                                                            
+         8   from vfoundation.core.protocol import Message                                                            
+         9 - from apps.reference.domains.execution_position.fsm_open import (                                         
+         9 + from vfoundation.apps.reference.domains.execution_position.fsm_open import (                             
+        10       OpenFlowFSM,                                                                                         
+        11 -     OpenState,                                                                                           
+        11 +     State,                                                                                               
+        12   )                                                                                                        
+        13                                                                                                            
+        14                                                                                                            
+                                                                                                                                                                                                                                                                                                                                                    
+                      .                                                              .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit tests\test_fsm_shadow_roundtrip.py: """... => """...                                                     
+                                                                                                                      
+        ... first 259 lines hidden ...                                                                                
+        168 -         op="EVT",                                                                                       
+        169 -         verb="REJECTED",                                                                                
+        170 -         src="exchange_stub",                                                                            
+        171 -         dst="execution_position",                                                                       
+        172 -         rid="test-e2e-003",                                                                             
+        173 -         why="order rejected",                                                                           
+        174 -     )                                                                                                   
+        111                                                                                                           
+                                                                                                                                                                                                                                                                                                                                        
+        176 -     dec_close = exec_fsm.on_error_events(evt_reject)                                                    
+        112 + def test_replay_empty_wal(temp_wal_dir):                                                                
+        113 +     """Test replay on an empty WAL directory does not call handler."""                                  
+        114 +     wal.set_wal_dir(temp_wal_dir)                                                                       
+        115                                                                                                           
+                                                                                                                                                                                                                                                                                                                                        
+        178 -     assert dec_close is not None                                                                        
+        179 -     assert dec_close.op == "DEC"                                                                        
+        180 -     assert dec_close.verb == "CLOSE"                                                                    
+        181 -     assert dec_close.why == "CLOSE_EMERGENCY"                                                           
+        182 -     assert dec_close.pld["reduce_only"] is True                                                         
+        116 +     replay_handler = MagicMock()                                                                        
+        117                                                                                                           
+                                                                                                                                                                                                                                                                                                                                        
+        184 -     # Verify WAL                                                                                        
+        185 -     wal_entries = wal.read_all()                                                                        
+        186 -     close_entry = next((e for e in wal_entries if e.get("op") == "DEC" and e.get("verb") == "CLOSE"     
+            ), None)                                                                                                  
+        187 -     assert close_entry is not None                                                                      
+        118 +     replay.replay_from_wal(replay_handler)                                                              
+        119                                                                                                           
+                                                                                                                                                                                                                                                                                                                                        
+        189 -                                                                                                         
+        190 - def test_shadow_idempotency(setup_shadow_env):                                                          
+        191 -     """                                                                                                 
+        192 -     Test idempotency: 50 parallel CMD:OPEN with same key     1 DEC.                                       
+        193 -     """                                                                                                 
+        194 -     router, acl = setup_shadow_env                                                                      
+        195 -                                                                                                         
+        196 -     cmd = Message(                                                                                      
+        197 -         op="CMD",                                                                                       
+        198 -         verb="OPEN",                                                                                    
+        199 -         src="test",                                                                                     
+        200 -         dst="execution_position",                                                                       
+        201 -         rid="test-idem-001",                                                                            
+        202 -         why="idempotency test",                                                                         
+        203 -         idempotent_key="same-key-123",                                                                  
+        204 -         pld={                                                                                           
+        205 -             "symbol": "ADAUSDT",                                                                        
+        206 -             "side": "BUY",                                                                              
+        207 -             "qty": "100.0",                                                                             
+        208 -         },                                                                                              
+        209 -     )                                                                                                   
+        210 -                                                                                                         
+        211 -     results = []                                                                                        
+        212 -     for i in range(50):                                                                                 
+        213 -         result = exec_fsm.on_cmd_open(cmd)                                                              
+        214 -         if result and result.op == "DEC":                                                               
+        215 -             results.append(result)                                                                      
+        216 -                                                                                                         
+        217 -     # Should have only 1 DEC (others dedup or inflight)                                                 
+        218 -     assert len(results) <= 1  # Idempotency enforced                                                    
+        219 -                                                                                                         
+        220 -                                                                                                         
+        221 - def test_shadow_metrics_export(setup_shadow_env):                                                       
+        222 -     """                                                                                                 
+        223 -     Test metrics export: fsm_decision_ms_p95, *_total counters.                                         
+        224 -     """                                                                                                 
+        225 -     router, acl = setup_shadow_env                                                                      
+        226 -                                                                                                         
+        227 -     # Generate activity                                                                                 
+        228 -     for i in range(10):                                                                                 
+        229 -         cmd = Message(                                                                                  
+        230 -             op="CMD", verb="OPEN", src="t", dst="ep", rid=f"r{i}", why="m",                             
+        231 -             idempotent_key=f"k{i}",                                                                     
+        232 -             pld={"symbol": "BTC", "side": "BUY", "qty": "1.0"}                                          
+        233 -         )                                                                                               
+        234 -         exec_fsm.on_cmd_open(cmd)                                                                       
+        235 -                                                                                                         
+        236 -     metrics = exec_fsm.get_metrics()                                                                    
+        237 -                                                                                                         
+        238 -     assert "fsm_decision_ms_p95" in metrics                                                             
+        239 -     assert "fsm_open_decisions_total" in metrics                                                        
+        240 -     assert "fsm_adjust_decisions_total" in metrics                                                      
+        241 -     assert "fsm_close_decisions_total" in metrics                                                       
+        242 -     assert "fsm_guard_rejects_total" in metrics                                                         
+        243 -     assert "fsm_errors_total" in metrics                                                                
+        244 -                                                                                                         
+        245 -     assert metrics["fsm_decision_ms_p95"] >= 0                                                          
+        246 -     assert metrics["fsm_open_decisions_total"] >= 1                                                     
+        120 +     replay_handler.assert_not_called()                                                                  
+                                                                                                                                                                                                                                                                                                                                                    
+                      .                                             ,                              execution_position.
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit ...sts\\test_metrics_drift_integration.py: """... => """...                                              
+                                                                                                                      
+         9   sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))                                    
+        10                                                                                                            
+        11   from vfoundation.obs.debug_api import metrics, add_drift_report, _drift_reports, _drift_lock             
+        12 - from apps.reference.domains.execution_position.drift_monitor import (                                    
+        13 -     DriftReport, ConfusionMatrix                                                                         
+        12 + from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                        
+        13 +     compute_drift,                                                                                       
+        14 +     aggregate_drift_metrics,                                                                             
+        15   )                                                                                                        
+        16                                                                                                            
+        17                                                                                                            
+                                                                                                                                                                                                                                                                                                                                                    
+                                             ,       '              execution_position.
 
-   ó   ª ∏ à ∏ ≤   è  æ   Ç   Ω Ω ñ π  Ñ   π ª, tests/test_ci_smoke.py,  ∑  ñ Ω à æ é    æ º ∏ ª ∫ æ é  ñ º   æ   Ç É.  Ø  ≤ ∏       ≤ ª é  π æ ≥ æ  ∑       ∑,    ñ   ª è  á æ ≥ æ  ≤   è
-   Ç µ   Ç æ ≤      ∏   Ç µ º    º   î    Ç   Ç ∏        Ü µ ∑ ¥   Ç Ω æ é.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Edit tests\test_ci_smoke.py: """... => """...                                                              ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    12   import sys                                                                                            ‚îÇ
- ‚îÇ    13   from pathlib import Path                                                                              ‚îÇ
- ‚îÇ    14   from fastapi.testclient import TestClient                                                             ‚îÇ
- ‚îÇ    15 - from apps.reference.api.main import app                                                               ‚îÇ
- ‚îÇ    15 + from vfoundation.apps.reference.api.main import app                                                   ‚îÇ
- ‚îÇ    16   from vfoundation.config import config                                                                 ‚îÇ
- ‚îÇ    17                                                                                                         ‚îÇ
- ‚îÇ    18   @pytest.fixture(autouse=True)                                                                         ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  £   ñ    æ º ∏ ª ∫ ∏  ñ º   æ   Ç É  ≤  Ç µ   Ç æ ≤ ∏ Ö  Ñ   π ª   Ö  ≤ ∏       ≤ ª µ Ω æ.
+                                              , tests/test_ci_smoke.py,                                              .                                        ,                           
+                                                                          .
+                                                                                                                                                                                                                                                                                                                                                    
+          Edit tests\test_ci_smoke.py: """... => """...                                                                 
+                                                                                                                      
+        12   import sys                                                                                               
+        13   from pathlib import Path                                                                                 
+        14   from fastapi.testclient import TestClient                                                                
+        15 - from apps.reference.api.main import app                                                                  
+        15 + from vfoundation.apps.reference.api.main import app                                                      
+        16   from vfoundation.config import config                                                                    
+        17                                                                                                            
+        18   @pytest.fixture(autouse=True)                                                                            
+                                                                                                                                                                                                                                                                                                                                                    
+                                                                                              .
 
-   ¢ µ   µ  ,  ∫ æ ª ∏  Ç µ   Ç æ ≤ ∏ π  Ω   ± ñ    î        Ü µ ∑ ¥   Ç Ω ∏ º,  è  ∑     É   ∫   é    æ ≤ Ω É    µ   µ ≤ ñ   ∫ É,  â æ ±  æ Ç   ∏ º   Ç ∏    ∫ Ç É   ª å Ω É  ∫     Ç ∏ Ω É    Ç   Ω É  Ç µ   Ç ñ ≤,
-   ≤ ∏ è ≤ ∏ Ç ∏  º æ ∂ ª ∏ ≤ ñ    æ º ∏ ª ∫ ∏  ≤  ª æ ≥ ñ Ü ñ  Ç    ≤ ∏ º ñ   è Ç ∏    µ   ª å Ω µ    æ ∫   ∏ Ç Ç è  ∫ æ ¥ É.  ¶ µ  Ç   ∫ æ ∂    µ   µ ≤ ñ   ∏ Ç å  ∫ æ   µ ∫ Ç Ω ñ   Ç å    µ Ñ   ∫ Ç æ   ∏ Ω ≥ É,
-   è ∫ ∏ π  è  ≤ ∏ ∫ æ Ω   ≤  É decision_making.py.
+            ,                                                                 ,                                                  ,                                                                                  ,
+                                                                                                                             .                                                                                     ,
+                                decision_making.py.
 
-   ó     É   ∫   é pytest.
- ‚ï≠‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïÆ
- ‚îÇ ‚úì  Shell pytest -q --cov=vfoundation --cov=apps                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ... first 281 lines hidden ...                                                                             ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    E                                                                      ^                                   ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    E   SyntaxError: unterminated triple-quoted string literal (detected at line 121)                          ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    __________________________ ERROR collecting tests/test_metrics_drift_integration.py                        ‚îÇ
- ‚îÇ    __________________________                                                                                 ‚îÇ
- ‚îÇ    ImportError while importing test module                                                                    ‚îÇ
- ‚îÇ    'C:\Users\job11\Music\Olimp_v1\tests\test_metrics_drift_integration.py'                                    ‚îÇ
- ‚îÇ    .                                                                                                          ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    Hint: make sure your test modules/packages have valid Python names.                                        ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    Traceback:                                                                                                 ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    C:\Program                                                                                                 ‚îÇ
- ‚îÇ    Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\importlib\       ‚îÇ
- ‚îÇ    __init__.py:126: in import_module                                                                          ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ        return _bootstrap._gcd_import(name[level:], package, level)                                            ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                                            ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    tests\test_metrics_drift_integration.py:12: in <module>                                                    ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ        from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                      ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    E   ModuleNotFoundError: No module named                                                                   ‚îÇ
- ‚îÇ    'vfoundation.apps.reference.domains.execution_position.drift_monitor'                                      ‚îÇ
- ‚îÇ    ============================================== warnings summary                                            ‚îÇ
- ‚îÇ    ==============================================                                                             ‚îÇ
- ‚îÇ    vfoundation\vfoundation\config.py:20                                                                       ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ      C:\Users\job11\Music\Olimp_v1\vfoundation\vfoundation\config.py:20: UserWarning: RBAC_ADMIN_TOKENS not   ‚îÇ
- ‚îÇ    set -                                                                                                      ‚îÇ
- ‚îÇ    using INSECURE dev default 'dev-admin-token'. Set RBAC_ADMIN_TOKENS env var in production!                 ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ        self.rbac_admin_tokens: List[str] = self._get_admin_tokens()                                           ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    vfoundation\vfoundation\config.py:21                                                                       ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ      C:\Users\job11\Music\Olimp_v1\vfoundation\vfoundation\config.py:21: UserWarning: SIGNING_KEY not set -   ‚îÇ
- ‚îÇ    using                                                                                                      ‚îÇ
- ‚îÇ    INSECURE dev default. Set SIGNING_KEY env var in production!                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ        self.signing_key: str = self._get_signing_key()                                                        ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    vfoundation\vfoundation\config.py:116                                                                      ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ      C:\Users\job11\Music\Olimp_v1\vfoundation\vfoundation\config.py:116: UserWarning: WORKER_ID not set -    ‚îÇ
- ‚îÇ    using g                                                                                                    ‚îÇ
- ‚îÇ    enerated ID: Password-baa77cf4. Set WORKER_ID env var for stable identification.                           ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ        self.worker_id: str = self._get_worker_id()                                                            ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html                                    ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ========================================== short test summary info                                         ‚îÇ
- ‚îÇ    ===========================================                                                                ‚îÇ
- ‚îÇ    ERROR tests/test_acl_message_contracts.py                                                                  ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_ci_smoke.py                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_debug_drift_integration.py                                                                ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_drift_roundtrip.py                                                                        ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_drift_unit.py                                                                             ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_execpos_contracts_pydantic_v2.py                                                          ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_fsm_close.py                                                                              ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_fsm_manage.py                                                                             ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_fsm_open.py                                                                               ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_fsm_shadow_roundtrip.py                                                                   ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    ERROR tests/test_metrics_drift_integration.py                                                              ‚îÇ
- ‚îÇ                                                                                                               ‚îÇ
- ‚îÇ    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Interrupted: 11 errors during collection                                ‚îÇ
- ‚îÇ    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!                                                                         ‚îÇ
- ‚îÇ    3 warnings, 11 errors in 23.56s                                                                            ‚îÇ
- ‚ï ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚î ‚ïØ
-‚ú¶  ü æ º ∏ ª ∫    ∑ Ω æ ≤ É  ≤ ∏ Ω ∏ ∫ ª  ,    ª µ  Ç µ   µ    ≤ æ Ω    ñ Ω à  .  ¶ µ  ∫   æ ∫  É   µ   µ ¥.
+                   pytest.
+                                                                                                                                                                                                                                                                                                                                                    
+          Shell pytest -q --cov=vfoundation --cov=apps                                                                  
+                                                                                                                      
+        ... first 281 lines hidden ...                                                                                
+                                                                                                                      
+        E                                                                      ^                                      
+                                                                                                                      
+        E   SyntaxError: unterminated triple-quoted string literal (detected at line 121)                             
+                                                                                                                      
+        __________________________ ERROR collecting tests/test_metrics_drift_integration.py                           
+        __________________________                                                                                    
+        ImportError while importing test module                                                                       
+        'C:\Users\job11\Music\Olimp_v1\tests\test_metrics_drift_integration.py'                                       
+        .                                                                                                             
+                                                                                                                      
+        Hint: make sure your test modules/packages have valid Python names.                                           
+                                                                                                                      
+        Traceback:                                                                                                    
+                                                                                                                      
+        C:\Program                                                                                                    
+        Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\importlib\          
+        __init__.py:126: in import_module                                                                             
+                                                                                                                      
+            return _bootstrap._gcd_import(name[level:], package, level)                                               
+                                                                                                                      
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                                               
+                                                                                                                      
+        tests\test_metrics_drift_integration.py:12: in <module>                                                       
+                                                                                                                      
+            from vfoundation.apps.reference.domains.execution_position.drift_monitor import (                         
+                                                                                                                      
+        E   ModuleNotFoundError: No module named                                                                      
+        'vfoundation.apps.reference.domains.execution_position.drift_monitor'                                         
+        ============================================== warnings summary                                               
+        ==============================================                                                                
+        vfoundation\vfoundation\config.py:20                                                                          
+                                                                                                                      
+          C:\Users\job11\Music\Olimp_v1\vfoundation\vfoundation\config.py:20: UserWarning: RBAC_ADMIN_TOKENS not      
+        set -                                                                                                         
+        using INSECURE dev default 'dev-admin-token'. Set RBAC_ADMIN_TOKENS env var in production!                    
+                                                                                                                      
+            self.rbac_admin_tokens: List[str] = self._get_admin_tokens()                                              
+                                                                                                                      
+                                                                                                                      
+                                                                                                                      
+        vfoundation\vfoundation\config.py:21                                                                          
+                                                                                                                      
+          C:\Users\job11\Music\Olimp_v1\vfoundation\vfoundation\config.py:21: UserWarning: SIGNING_KEY not set -      
+        using                                                                                                         
+        INSECURE dev default. Set SIGNING_KEY env var in production!                                                  
+                                                                                                                      
+            self.signing_key: str = self._get_signing_key()                                                           
+                                                                                                                      
+                                                                                                                      
+                                                                                                                      
+        vfoundation\vfoundation\config.py:116                                                                         
+                                                                                                                      
+          C:\Users\job11\Music\Olimp_v1\vfoundation\vfoundation\config.py:116: UserWarning: WORKER_ID not set -       
+        using g                                                                                                       
+        enerated ID: Password-baa77cf4. Set WORKER_ID env var for stable identification.                              
+                                                                                                                      
+            self.worker_id: str = self._get_worker_id()                                                               
+                                                                                                                      
+                                                                                                                      
+                                                                                                                      
+        -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html                                       
+                                                                                                                      
+        ========================================== short test summary info                                            
+        ===========================================                                                                   
+        ERROR tests/test_acl_message_contracts.py                                                                     
+                                                                                                                      
+        ERROR tests/test_ci_smoke.py                                                                                  
+                                                                                                                      
+        ERROR tests/test_debug_drift_integration.py                                                                   
+                                                                                                                      
+        ERROR tests/test_drift_roundtrip.py                                                                           
+                                                                                                                      
+        ERROR tests/test_drift_unit.py                                                                                
+                                                                                                                      
+        ERROR tests/test_execpos_contracts_pydantic_v2.py                                                             
+                                                                                                                      
+        ERROR tests/test_fsm_close.py                                                                                 
+                                                                                                                      
+        ERROR tests/test_fsm_manage.py                                                                                
+                                                                                                                      
+        ERROR tests/test_fsm_open.py                                                                                  
+                                                                                                                      
+        ERROR tests/test_fsm_shadow_roundtrip.py                                                                      
+                                                                                                                      
+        ERROR tests/test_metrics_drift_integration.py                                                                 
+                                                                                                                      
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Interrupted: 11 errors during collection                                   
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!                                                                            
+        3 warnings, 11 errors in 23.56s                                                                               
+                                                                                                                                                                                                                                                                                                                                                    
+                                            ,                                    .                           .
 
-   ê Ω   ª ñ ∑  Ω æ ≤ æ ó    æ º ∏ ª ∫ ∏:
+                                        :
 
-  pytest  ≤   µ  â µ  Ω µ  º æ ∂ µ  ∑ ñ ±     Ç ∏  Ç µ   Ç ∏,    ª µ      ∏ á ∏ Ω    ∑ º ñ Ω ∏ ª     è.
-   *  ° Ç          æ º ∏ ª ∫  : ModuleNotFoundError: No module named 'apps.reference.domains.execution_position'
-   *  ù æ ≤      æ º ∏ ª ∫  : ModuleNotFoundError: No module named 'vfoundation.apps.reference.domains.execution_position.contracts'
+  pytest                                                    ,                                         .
+   *                          : ModuleNotFoundError: No module named 'apps.reference.domains.execution_position'
+   *                        : ModuleNotFoundError: No module named 'vfoundation.apps.reference.domains.execution_position.contracts'
 
-   ¶ µ  æ ∑ Ω   á   î,  â æ  º æ î  ≤ ∏       ≤ ª µ Ω Ω è  à ª è Ö É  ñ º   æ   Ç É  ± É ª æ        ≤ ∏ ª å Ω ∏ º  Ω       è º ∫ æ º,    ª µ  Ω µ  æ   Ç   Ç æ á Ω ∏ º. Python  Ç µ   µ    à É ∫   î  º æ ¥ É ª å
-   ≤   µ   µ ¥ ∏ Ω ñ vfoundation,    ª µ  ≤   µ  â µ  Ω µ  º æ ∂ µ  π æ ≥ æ  ∑ Ω   π Ç ∏.
+                     ,                                                                                                              ,                                 . Python                                   
+                     vfoundation,                                                       .
 
-   ü   ∏ á ∏ Ω  :
+                :
 
-   ü   æ ± ª µ º      æ ª è ≥   î  ≤  Ç æ º É,  è ∫ Python  æ ±   æ ± ª è î      ∫ µ Ç ∏.  ù   è ≤ Ω ñ   Ç å __init__.py  Ñ   π ª ñ ≤  É  ∫ æ ∂ Ω ñ π  ¥ ∏   µ ∫ Ç æ   ñ ó    µ   µ Ç ≤ æ   é î  ó Ö  Ω  
-       ∫ µ Ç ∏.  ô º æ ≤ ñ   Ω æ,    Ç   É ∫ Ç É     vfoundation/apps/reference/domains  Ω µ  î        ≤ ∏ ª å Ω æ  µ ∫     æ   Ç æ ≤   Ω ∏ º Python-     ∫ µ Ç æ º,    ± æ
-  sys.path  Ω   ª   à Ç æ ≤   Ω ∏ π  Ç   ∫ ∏ º  á ∏ Ω æ º,  â æ  Ü µ π  à ª è Ö  Ω µ    æ ∑   ñ ∑ Ω   î Ç å   è.
+                                             ,      Python                              .                    __init__.py                                                                                 
+              .                 ,                    vfoundation/apps/reference/domains                                                       Python-              ,       
+  sys.path                                               ,                                                     .
 
-   ù   π     æ   Ç ñ à ∏ π  ñ  Ω   π Ω   ¥ ñ π Ω ñ à ∏ π      æ   ñ ±  Ü µ  ≤ ∏       ≤ ∏ Ç ∏ ‚ î  Ü µ  Ω µ  Ω   º   ≥   Ç ∏   è    æ ± ∏ Ç ∏    ∫ ª   ¥ Ω ñ  º   Ω ñ   É ª è Ü ñ ó  ∑ sys.path  É  ∫ æ ∂ Ω æ º É
-   Ç µ   Ç æ ≤ æ º É  Ñ   π ª ñ,         ∏ ≤ µ   Ç ∏    Ç   É ∫ Ç É   É      æ µ ∫ Ç É  ¥ æ  æ á ñ ∫ É ≤   Ω æ ó.
+                                                                                                                                                                                       sys.path                  
+                               ,                                                                                .
 
-   ù æ ≤ ∏ π    ª   Ω  ¥ ñ π:
+                            :
 
-   1.  ° Ç ≤ æ   ∏ Ç ∏  ≤ ñ ¥   É Ç Ω é  ¥ ∏   µ ∫ Ç æ   ñ é:  Ø    Ç ≤ æ   é  ¥ ∏   µ ∫ Ç æ   ñ é apps/reference/domains/execution_position.
-   2.  ° ∫ æ   ñ é ≤   Ç ∏    µ   ª ñ ∑   Ü ñ é:  Ø    ∫ æ   ñ é é  ≤ º ñ   Ç  ∑ vfoundation/apps/reference/domains/execution_position  ¥ æ  Ω æ ≤ æ   Ç ≤ æ   µ Ω æ ó
-       ¥ ∏   µ ∫ Ç æ   ñ ó apps/reference/domains/execution_position.  ¶ µ  ∑   æ ± ∏ Ç å    Ç   É ∫ Ç É   É      æ µ ∫ Ç É  ª æ ≥ ñ á Ω æ é  ñ  ≤ ñ ¥   æ ≤ ñ ¥ Ω æ é  ¥ æ
-       æ á ñ ∫ É ≤   Ω å  Ç µ   Ç ñ ≤.
-   3.  í ñ ¥ ∫ æ Ç ∏ Ç ∏  ∑ º ñ Ω ∏  ≤  Ç µ   Ç   Ö:  Ø    æ ≤ µ   Ω É    æ á   Ç ∫ æ ≤ ñ  à ª è Ö ∏  ñ º   æ   Ç É  ≤  É   ñ Ö  Ç µ   Ç æ ≤ ∏ Ö  Ñ   π ª   Ö,  è ∫ ñ  è  ∑ º ñ Ω é ≤   ≤,  â æ ±  ≤ æ Ω ∏  ∑ Ω æ ≤ É
-       ≤ ∫   ∑ É ≤   ª ∏  Ω   apps.reference.domains.execution_position.
-   4.  ü æ ≤ Ç æ   Ω æ  ∑     É   Ç ∏ Ç ∏  Ç µ   Ç ∏:  ü ñ   ª è  Ü å æ ≥ æ  è  ∑ Ω æ ≤ É  ∑     É â É pytest,  è ∫ ∏ π,  è  æ á ñ ∫ É é,  Ω     µ à Ç ñ  ∑ º æ ∂ µ  ∑ Ω   π Ç ∏  º æ ¥ É ª ñ  Ç    ≤ ∏ ∫ æ Ω   Ç ∏
-       Ç µ   Ç ∏.
+   1.                                                       :                                      apps/reference/domains/execution_position.
+   2.                                          :                                 vfoundation/apps/reference/domains/execution_position                                
+                           apps/reference/domains/execution_position.                                                                                                      
+                                     .
+   3.                                              :                                                                                                         ,                           ,                           
+                              apps.reference.domains.execution_position.
+   4.                                               :                                                  pytest,         ,                ,                                                                          
+                .
 
-   ¶ µ  ± ñ ª å à    Ç   ± ñ ª å Ω µ  Ç        Ö ñ Ç µ ∫ Ç É   Ω æ        ≤ ∏ ª å Ω µ    ñ à µ Ω Ω è.  ü æ á ∏ Ω   é  ∑ ñ    Ç ≤ æ   µ Ω Ω è  ¥ ∏   µ ∫ Ç æ   ñ ó.
+                                                                                                    .                                                            .

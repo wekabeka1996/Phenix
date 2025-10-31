@@ -224,8 +224,8 @@ class IdempotencyStore:
 - **PENDING Timeout**: `idem_pending_ttl_ms` (default: 2x `result_ttl_ms`)
 - **Result Timeout**: `result_ttl_ms` for completed requests
 - **Expiry Behavior**: 
-  - PENDING expiry → unpin + remove sentinel + allow retry
-  - Result expiry → unpin + allow LRU eviction
+  - PENDING expiry     unpin + remove sentinel + allow retry
+  - Result expiry     unpin + allow LRU eviction
 - **WAL Integration**: Timeout events should be logged as ERR with idempotent retry capability
 
 ### Multi-Process Safety

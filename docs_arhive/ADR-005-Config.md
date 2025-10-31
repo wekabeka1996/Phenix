@@ -27,29 +27,29 @@ Implement **minimal ENV-based config** with these constraints:
 ### 1. **Single Config Module** (`vfoundation/config.py`)
 - Load all ENV vars at import time (singleton pattern)
 - No framework dependencies (pure stdlib)
-- No YAML/JSON files â ” ENV vars only
+- No YAML/JSON files     ENV vars only
 - Validation with bounds checking, no crashes on invalid input
 
 ### 2. **Extracted Parameters (9 total)**
 
 **Security:**
-- `RBAC_ADMIN_TOKENS` â ” comma-separated list of admin bearer tokens
-- `SIGNING_KEY` â ” 64-char hex Ed25519 private key
+- `RBAC_ADMIN_TOKENS`     comma-separated list of admin bearer tokens
+- `SIGNING_KEY`     64-char hex Ed25519 private key
 
 **DR/WAL:**
-- `WAL_DIR` â ” write-ahead log directory path
-- `WAL_LOCK_TIMEOUT_SEC` â ” cross-platform file lock timeout
+- `WAL_DIR`     write-ahead log directory path
+- `WAL_LOCK_TIMEOUT_SEC`     cross-platform file lock timeout
 
 **Circuit Breaker:**
-- `CB_THRESHOLD` â ” failure count before opening circuit
-- `CB_COOLDOWN_SEC` â ” cooldown period after circuit opens
+- `CB_THRESHOLD`     failure count before opening circuit
+- `CB_COOLDOWN_SEC`     cooldown period after circuit opens
 
 **Idempotency:**
-- `IDEM_TTL_MS` â ” cache entry time-to-live
-- `IDEM_MAX_ENTRIES` â ” max cache size before eviction
+- `IDEM_TTL_MS`     cache entry time-to-live
+- `IDEM_MAX_ENTRIES`     max cache size before eviction
 
 **Drift Monitoring:**
-- `DRIFT_TIME_WINDOW_SEC` â ” time window for shadow-mode drift calculation
+- `DRIFT_TIME_WINDOW_SEC`     time window for shadow-mode drift calculation
 
 ### 3. **Dev-Obvious Defaults**
 All defaults trigger `UserWarning` to ensure visibility:
@@ -58,8 +58,8 @@ All defaults trigger `UserWarning` to ensure visibility:
 - Operational knobs: Documented reasonable defaults (5s WAL timeout, 5 failures CB threshold, etc.)
 
 ### 4. **Validation Strategy**
-- **Min/max bounds:** Invalid values clamped to minimum (e.g., `CB_THRESHOLD < 1` â†’ 1)
-- **Parse failures:** Fall back to default with warning (e.g., `CB_THRESHOLD="abc"` â†’ 5)
+- **Min/max bounds:** Invalid values clamped to minimum (e.g., `CB_THRESHOLD < 1`     1)
+- **Parse failures:** Fall back to default with warning (e.g., `CB_THRESHOLD="abc"`     5)
 - **No crashes:** Always return valid config, never raise exceptions
 
 ### 5. **Test Support**
@@ -76,13 +76,13 @@ def some_function(param: Optional[int] = None):
     actual_value = param if param is not None else config.some_setting
 ```
 
-Backward compatible â ” existing code with hardcoded values works unchanged.
+Backward compatible     existing code with hardcoded values works unchanged.
 
 ---
 
 ## Consequences
 
-### âœ… **Positive**
+###     **Positive**
 
 1. **Security:** Secrets externalized to ENV (KMS/Vault integration point)
 2. **Testability:** `reload_config()` enables ENV override tests, 20 new tests, +3% coverage
@@ -92,7 +92,7 @@ Backward compatible â ” existing code with hardcoded values works unchanged.
 6. **Minimal:** Zero framework dependencies, 80 SLOC total
 7. **Backward compatible:** Existing code unmodified, optional params with defaults
 
-### âŒ **Negative / Limitations**
+###     **Negative / Limitations**
 
 1. **No live-reload:** Changes require process restart (acceptable for stateless services)
 2. **No type safety:** ENV vars are strings, validation at load time only
@@ -100,7 +100,7 @@ Backward compatible â ” existing code with hardcoded values works unchanged.
 4. **Test isolation:** `reload_config()` is global, tests must use `monkeypatch.setenv()` + cleanup
 5. **Documentation burden:** ENV vars must be documented externally (deployment guides)
 
-### âš ï¸ **Risks**
+###        **Risks**
 
 1. **ENV var typos:** Misspelled vars silently use defaults (mitigated by warnings)
 2. **Validation gaps:** Complex validation (e.g., key format) minimal (only length check for signing key)
@@ -111,40 +111,40 @@ Backward compatible â ” existing code with hardcoded values works unchanged.
 ## Alternatives Considered
 
 ### A. **Pydantic Settings**
-- âŒ Heavy dependency (200+ modules)
-- âŒ Overkill for 9 settings
-- âœ… Type safety + validation
+-     Heavy dependency (200+ modules)
+-     Overkill for 9 settings
+-     Type safety + validation
 - **Decision:** Rejected due to complexity
 
 ### B. **YAML Config Files**
-- âŒ Requires file distribution (containers, deployment complexity)
-- âŒ Secrets in files (not ENV) harder to manage
-- âœ… Hierarchical structure
-- **Decision:** Rejected â ” ENV is cloud-native standard
+-     Requires file distribution (containers, deployment complexity)
+-     Secrets in files (not ENV) harder to manage
+-     Hierarchical structure
+- **Decision:** Rejected     ENV is cloud-native standard
 
 ### C. **Hardcoded Constants (Status Quo)**
-- âŒ Security risk (secrets in source)
-- âŒ No environment flexibility
-- âœ… Zero complexity
-- **Decision:** Rejected â ” unacceptable for production
+-     Security risk (secrets in source)
+-     No environment flexibility
+-     Zero complexity
+- **Decision:** Rejected     unacceptable for production
 
 ---
 
 ## Implementation Notes
 
 ### Modified Modules (5)
-1. `vfoundation/security/rbac_abac.py` â ” lazy import for test support
-2. `vfoundation/dr/wal.py` â ” WAL_DIR and lock timeout
-3. `vfoundation/core/retry_cb.py` â ” CB threshold/cooldown defaults
-4. `vfoundation/core/idempotency.py` â ” TTL and max_entries defaults
-5. `vfoundation/apps/reference/domains/execution_position/drift_monitor.py` â ” time_window_sec default
+1. `vfoundation/security/rbac_abac.py`     lazy import for test support
+2. `vfoundation/dr/wal.py`     WAL_DIR and lock timeout
+3. `vfoundation/core/retry_cb.py`     CB threshold/cooldown defaults
+4. `vfoundation/core/idempotency.py`     TTL and max_entries defaults
+5. `vfoundation/apps/reference/domains/execution_position/drift_monitor.py`     time_window_sec default
 
 ### Test Updates (2)
-1. `tests/test_rbac.py` â ” added `reload_config()` calls
-2. `tests/test_security_xai_tighten.py` â ” added `reload_config()` calls
+1. `tests/test_rbac.py`     added `reload_config()` calls
+2. `tests/test_security_xai_tighten.py`     added `reload_config()` calls
 
 ### New Test Suite
-- `tests/test_config_env_overrides.py` â ” 20 tests covering:
+- `tests/test_config_env_overrides.py`     20 tests covering:
   - Defaults (3 tests)
   - ENV overrides (7 tests)
   - Validation bounds (8 tests)
@@ -153,16 +153,16 @@ Backward compatible â ” existing code with hardcoded values works unchanged.
 ### Coverage Impact
 - **Before:** 89% total, config.py N/A (didn't exist)
 - **After:** 91% total, config.py = 92%
-- **Tests:** 280 â†’ 300 passed (+20)
+- **Tests:** 280     300 passed (+20)
 
 ---
 
 ## Related Documents
 
-- `docs/ROADMAP_DELTA_EMPTY_BRANCH.md` â ” Task FSMP-P1-T04 specification
-- `docs/docs_vfoundation/Security.md` â ” RBAC token usage
-- `docs/docs_vfoundation/Operations.md` â ” Deployment ENV vars
-- `tests/test_config_env_overrides.py` â ” Config test suite
+- `docs/ROADMAP_DELTA_EMPTY_BRANCH.md`     Task FSMP-P1-T04 specification
+- `docs/docs_vfoundation/Security.md`     RBAC token usage
+- `docs/docs_vfoundation/Operations.md`     Deployment ENV vars
+- `tests/test_config_env_overrides.py`     Config test suite
 
 ---
 

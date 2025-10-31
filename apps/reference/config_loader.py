@@ -49,7 +49,8 @@ class AuroraConfig:
             )
         # If domain_spec is AuroraConfig object
         return getattr(
-            domain_spec, "trading_mode", self._config.get("trading_mode", "live")
+            domain_spec, "trading_mode", self._config.get(
+                "trading_mode", "live")
         )
 
 
@@ -69,7 +70,7 @@ class ConfigLoader:
         config_path = self.config_dir / filename
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, "r", encoding="utf-8-sig", errors="replace") as f:
             data = yaml.safe_load(f)
         return data if isinstance(data, dict) else {}
 
@@ -117,21 +118,24 @@ class ConfigLoader:
         resolved_config = self._resolve_env_vars(merged_config)
 
         # --- NEW: Risk portfolio source resolution (FSMP-P3-T01) ---
-        ds = resolved_config.get("trading", {}).get("risk_management", {}).get("data_sources", {})
-        exec_mode = resolved_config.get("trading", {}).get("domain_configuration", {}).get("execution_position", {}).get("trading_mode", "testnet") # Default to testnet for safety
+        ds = resolved_config.get("trading", {}).get(
+            "risk_management", {}).get("data_sources", {})
+        exec_mode = resolved_config.get("trading", {}).get("domain_configuration", {}).get(
+            "execution_position", {}).get("trading_mode", "testnet")  # Default to testnet for safety
         portfolio_src = ds.get("portfolio_state", "follow_execution")
 
         if portfolio_src == "follow_execution":
             portfolio_src = "testnet" if exec_mode != "live" else "live"
 
-        if exec_mode == "testnet" and portfolio_src == "live": # Fail-closed: if execution is testnet, risk portfolio source must be testnet
+        # Fail-closed: if execution is testnet, risk portfolio source must be testnet
+        if exec_mode == "testnet" and portfolio_src == "live":
             LOG.warning(
                 f"Risk portfolio source '{portfolio_src}' overridden to 'testnet' "
                 f"under hybrid/testnet execution mode (fail-closed). "
                 f"Original config: trading.risk_management.data_sources.portfolio_state='{ds.get('portfolio_state')}'"
             )
             portfolio_src = "testnet"
-        
+
         # Ensure _resolved section exists
         if "_resolved" not in resolved_config:
             resolved_config["_resolved"] = {}

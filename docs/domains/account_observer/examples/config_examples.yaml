@@ -1,9 +1,9 @@
-#  ü   ∏ ∫ ª   ¥  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó  ¥ æ º µ Ω É Account Observer
+#                                                      Account Observer
 
-##  ü   æ ¥ É ∫ Ç ∏ ≤ Ω    ∫ æ Ω Ñ ñ ≥ É     Ü ñ è (production.yaml)
+##                                                 (production.yaml)
 
 ```yaml
-#  ü æ ≤ Ω    ∫ æ Ω Ñ ñ ≥ É     Ü ñ è    ∏   Ç µ º ∏  ∑ account_observer  ¥ æ º µ Ω æ º
+#                                                       account_observer               
 trading_mode: live
 
 binance_api:
@@ -12,11 +12,11 @@ binance_api:
     api_secret: "${BINANCE_LIVE_API_SECRET}"
 
 account_observer:
-  #  ü       º µ Ç   ∏  º æ Ω ñ Ç æ   ∏ Ω ≥ É
-  poll_interval: 5          #  û   ∏ Ç É ≤   Ω Ω è  ∫ æ ∂ Ω ñ 5    µ ∫ É Ω ¥
-  trade_limit: 50          #  û   Ç   Ω Ω ñ 50  Ç   µ π ¥ ñ ≤  ∑    ∑     ∏ Ç
+  #                                          
+  poll_interval: 5          #                                 5             
+  trade_limit: 50          #                50                               
 
-  #  °   ∏   æ ∫    ∏ º ≤ æ ª ñ ≤  ¥ ª è  º æ Ω ñ Ç æ   ∏ Ω ≥ É
+  #                                                            
   symbols:
     - BTCUSDT
     - ETHUSDT
@@ -28,7 +28,7 @@ account_observer:
     - LTCUSDT
 ```
 
-##  ¢ µ   Ç æ ≤    ∫ æ Ω Ñ ñ ≥ É     Ü ñ è (testnet.yaml)
+##                                         (testnet.yaml)
 
 ```yaml
 trading_mode: testnet
@@ -46,7 +46,7 @@ account_observer:
     - ETHUSDT
 ```
 
-##  ú ñ Ω ñ º   ª å Ω    ∫ æ Ω Ñ ñ ≥ É     Ü ñ è (minimal.yaml)
+##                                               (minimal.yaml)
 
 ```yaml
 trading_mode: live
@@ -60,7 +60,7 @@ account_observer:
   symbols: [BTCUSDT]
 ```
 
-##  ö æ Ω Ñ ñ ≥ É     Ü ñ è  ∑  Ñ ñ ª å Ç     º ∏ (filtered.yaml)
+##                                                (filtered.yaml)
 
 ```yaml
 trading_mode: live
@@ -74,7 +74,7 @@ account_observer:
   poll_interval: 3
   trade_limit: 100
 
-  #  † æ ∑ à ∏   µ Ω ∏ π      ∏   æ ∫    ∏ º ≤ æ ª ñ ≤
+  #                                                   
   symbols:
     - BTCUSDT
     - ETHUSDT
@@ -88,7 +88,7 @@ account_observer:
     - ALGOUSDT
 ```
 
-##  ö æ Ω Ñ ñ ≥ É     Ü ñ è  ¥ ª è  ≤ ∏   æ ∫ æ ó  á     Ç æ Ç ∏ (high_frequency.yaml)
+##                                                               (high_frequency.yaml)
 
 ```yaml
 trading_mode: live
@@ -99,16 +99,16 @@ binance_api:
     api_secret: "${BINANCE_LIVE_API_SECRET}"
 
 account_observer:
-  poll_interval: 1           #  ê ≥   µ   ∏ ≤ Ω µ  æ   ∏ Ç É ≤   Ω Ω è
-  trade_limit: 100          #  ë ñ ª å à µ  Ç   µ π ¥ ñ ≤  ∑        ∑
+  poll_interval: 1           #                                        
+  trade_limit: 100          #                                        
 
-  #  û ± º µ ∂ µ Ω ∏ π  Ω   ± ñ    ≤ ∏   æ ∫ æ ª ñ ∫ ≤ ñ ¥ Ω ∏ Ö    ∏ º ≤ æ ª ñ ≤
+  #                                                                              
   symbols:
     - BTCUSDT
     - ETHUSDT
 ```
 
-##  ö æ Ω Ñ ñ ≥ É     Ü ñ è  ¥ ª è debugging (debug.yaml)
+##                                 debugging (debug.yaml)
 
 ```yaml
 trading_mode: testnet
@@ -119,8 +119,8 @@ binance_api:
     api_secret: "${BINANCE_TESTNET_API_SECRET}"
 
 account_observer:
-  poll_interval: 30          #  ü æ ≤ ñ ª å Ω µ  æ   ∏ Ç É ≤   Ω Ω è  ¥ ª è    Ω   ª ñ ∑ É
-  trade_limit: 10           #  ú ñ Ω ñ º É º  Ç   µ π ¥ ñ ≤
+  poll_interval: 30          #                                                            
+  trade_limit: 10           #                              
 
   symbols:
     - BTCUSDT

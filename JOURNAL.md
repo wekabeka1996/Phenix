@@ -1,11 +1,11 @@
 # Aurora FSM Development Journal
 
-## 2025-11-02: ORDER_LIFECYCLE_CORRELATION_V1 - Order Lifecycle Correlation & Metrics Implementation ✅
+## 2025-11-02: ORDER_LIFECYCLE_CORRELATION_V1 - Order Lifecycle Correlation & Metrics Implementation    
 
 **RID**: ORDER_LIFECYCLE_CORRELATION_COMPLETED
 **Why**: Implement additive-only correlation enhancements for order lifecycle tracing (corr_id, oco_group_id, link_ack_id, link_fill_id) and minimal metrics without breaking existing APIs, based on LIFECYCLE_AUDIT.md
 **Duration**: ~4 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Implementation Overview
 
@@ -79,12 +79,12 @@
 - Alert generation logic testing
 
 ### Validation Results
-- ✅ **All Tests Passing**: 15/15 tests across 3 test files
-- ✅ **API Compatibility**: No breaking changes to existing interfaces
-- ✅ **Correlation Flow**: Complete traceability CMD:OPEN → DEC:OPEN → ACK → EVT:FILL
-- ✅ **Metrics Coverage**: All minimal metrics implemented and tested
-- ✅ **TTL Management**: Proper cleanup prevents memory leaks
-- ✅ **Thread Safety**: Concurrent access protected with locks
+-     **All Tests Passing**: 15/15 tests across 3 test files
+-     **API Compatibility**: No breaking changes to existing interfaces
+-     **Correlation Flow**: Complete traceability CMD:OPEN     DEC:OPEN     ACK     EVT:FILL
+-     **Metrics Coverage**: All minimal metrics implemented and tested
+-     **TTL Management**: Proper cleanup prevents memory leaks
+-     **Thread Safety**: Concurrent access protected with locks
 
 ### Technical Details
 
@@ -148,7 +148,7 @@ def calculate_derived_metrics(self):
 **RID**: ORDER_LOGGING_AUDIT_COMPLETED
 **Why**: Audit current order logging infrastructure and NRR codes, create normalization plan without making changes
 **Duration**: ~1 hour
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Audit Findings
 
@@ -193,29 +193,29 @@ def calculate_derived_metrics(self):
 - `vfoundation/adapters/binance_adapter.py` - Include adapter_resp
 - `vfoundation/core/exposure_guard.py` - Reservation logging
 
-**Result**: ✅ Audit completed, artifacts created, ready for review before implementation
+**Result**:     Audit completed, artifacts created, ready for review before implementation
 
 ---
 
-## 2025-10-31: DECISION_MAKING_TRIAJ_V1 - Decision Logic Triage & Instrumentation ✅
+## 2025-10-31: DECISION_MAKING_TRIAJ_V1 - Decision Logic Triage & Instrumentation    
 
 **RID**: DECISION_MAKING_TRIAJ_COMPLETED
 **Why**: Conduct triage of decision making and execution entry logic, add minimal XAI instrumentation and comprehensive tests
 **Duration**: ~4 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Code Points Identified
 
 #### 1. Features Ready Check
 **Location**: `apps/reference/domains/decision_making/decision_making.py::_features_ready()`
 **Logic**: `lag_ms <= ttl_ms` (default 30s TTL)
-**Defer Condition**: `features_ready(symbol) == False` → DEFER with `why="features_not_ready"`
+**Defer Condition**: `features_ready(symbol) == False`     DEFER with `why="features_not_ready"`
 
 #### 2. Trading Allowed Gates
 **Location**: `apps/reference/domains/risk_management/risk_management.py::_calculate_risk_parameters()`
 **Gates**:
-- `daily_drawdown > max_drawdown` → `is_trading_allowed = False`
-- `risk_score > max_risk_score` → `is_trading_allowed = False`
+- `daily_drawdown > max_drawdown`     `is_trading_allowed = False`
+- `risk_score > max_risk_score`     `is_trading_allowed = False`
 **Check Location**: `decision_making.py::_make_decision_for_symbol()`
 
 #### 3. QoS (NRR-012) Semantics
@@ -226,12 +226,12 @@ def calculate_derived_metrics(self):
 **NRR-012**: RATE_LIMIT_EXCEEDED for cooldown/rate limit violations
 
 #### 4. Exposure Reservations
-**Reserve**: `exposure_guard.reserve(key, notional_usd)` → stores in `reservations[key]`
+**Reserve**: `exposure_guard.reserve(key, notional_usd)`     stores in `reservations[key]`
 **TTL**: `pending_reservation_ttl_sec: 90` (default)
 **Cleanup**: `cleanup_expired_reservations()` removes stale reservations
 
 #### 5. Execution FSM OPEN Entry
-**Bridge**: `TRADE_INTENT_PROPOSED` → `CMD:OPEN` in `main.py::_dispatch_open()`
+**Bridge**: `TRADE_INTENT_PROPOSED`     `CMD:OPEN` in `main.py::_dispatch_open()`
 **Reservation**: Created during CMD:OPEN processing in execution FSM
 
 ### XAI Instrumentation Added
@@ -279,9 +279,9 @@ self.logger.info(
 ### Tests Created
 
 #### 1. Integration Test: `tests/integration/test_hotloop_defer_then_open.py`
-- **Features Stale Scenario**: TTL exceeded → DEFER (no TRADE_INTENT_PROPOSED)
-- **Risk Budget Block**: Daily drawdown breach → BLOCK (no intent)
-- **Green Path**: All gates pass → TRADE_INTENT_PROPOSED with valid payload
+- **Features Stale Scenario**: TTL exceeded     DEFER (no TRADE_INTENT_PROPOSED)
+- **Risk Budget Block**: Daily drawdown breach     BLOCK (no intent)
+- **Green Path**: All gates pass     TRADE_INTENT_PROPOSED with valid payload
 
 #### 2. Unit Test: `tests/unit/test_qos_nrr012.py`
 - **Rate Limit Semantics**: Proper retry timestamp calculation
@@ -312,12 +312,12 @@ self.logger.info(
 - `docs/decision_flow_diagram.md`: Flow documentation
 
 ### Validation
-- ✅ All code points identified and documented
-- ✅ Minimal XAI instrumentation added (no contract changes)
-- ✅ 3 comprehensive test suites created
-- ✅ NRR codes verified and documented
-- ✅ Flow diagram and analysis report created
-- ✅ Ready for PR with test artifacts
+-     All code points identified and documented
+-     Minimal XAI instrumentation added (no contract changes)
+-     3 comprehensive test suites created
+-     NRR codes verified and documented
+-     Flow diagram and analysis report created
+-     Ready for PR with test artifacts
 
 ### Why Chain
 1. **Problem**: Unclear decision bottlenecks and missing execution telemetry
@@ -330,10 +330,10 @@ self.logger.info(
 **RID**: PORTFOLIO_FRESHNESS_GATE_COMPLETED
 **Why**: Implement bridge-level portfolio freshness gate to prevent TRADE_INTENT_PROPOSED events from being lost due to stale portfolio data causing fail-closed exposure blocks
 **Duration**: ~2 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Problem Solved
-- **Race Condition**: TRADE_INTENT_PROPOSED events converted to CMD:OPEN immediately, but portfolio data stale → ExposureGuard fail-closed → lost trading opportunities
+- **Race Condition**: TRADE_INTENT_PROPOSED events converted to CMD:OPEN immediately, but portfolio data stale     ExposureGuard fail-closed     lost trading opportunities
 - **Impact**: Trading system losing valid trade signals due to timing issues between intent processing and portfolio updates
 - **Root Cause**: No coordination between intent processing and portfolio freshness state
 
@@ -361,7 +361,7 @@ self.logger.info(
   - Intent deferred until portfolio fresh, then processed
   - Intent processed immediately when portfolio already fresh
   - Deferred intent timeout and drop after max retries
-- **All Tests**: 3/3 PASSED ✅
+- **All Tests**: 3/3 PASSED    
 
 ### Technical Details
 
@@ -376,7 +376,7 @@ def _is_portfolio_fresh(self) -> bool:
 
 #### Deferral Flow
 ```python
-# Portfolio stale → defer
+# Portfolio stale     defer
 key = event.pld.get("idempotent_key") or event.rid or str(time.time())
 self._deferred[key] = event
 self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
@@ -404,12 +404,12 @@ async def _retry_once():
 ```
 
 ### Validation Results
-- ✅ **Race Condition Eliminated**: Intents no longer lost due to stale portfolio timing
-- ✅ **Event Monitoring**: Full traceability with INTENT_DEFERRED/INTENT_DROPPED events
-- ✅ **Configurable**: TTL, retry count, delay all configurable
-- ✅ **Fail-Safe**: Timeout prevents indefinite deferral
-- ✅ **Test Coverage**: All scenarios tested and passing
-- ✅ **Code Quality**: Ruff check/format clean, async patterns correct
+-     **Race Condition Eliminated**: Intents no longer lost due to stale portfolio timing
+-     **Event Monitoring**: Full traceability with INTENT_DEFERRED/INTENT_DROPPED events
+-     **Configurable**: TTL, retry count, delay all configurable
+-     **Fail-Safe**: Timeout prevents indefinite deferral
+-     **Test Coverage**: All scenarios tested and passing
+-     **Code Quality**: Ruff check/format clean, async patterns correct
 
 ### Files Modified
 - `apps/reference/main.py`: AuroraBridge class with freshness gate logic
@@ -429,7 +429,7 @@ async def _retry_once():
 **RID**: RELEASE_V0_1_0_COMPLETED
 **Why**: Freeze SSOT, collect artifacts, create release notes, and tag v0.1.0 for production deployment
 **Duration**: ~30 minutes
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Release Artifacts Created
 - **Frozen Config**: `configs/frozen/master_config_v1_20251030.yaml`
@@ -440,10 +440,10 @@ async def _retry_once():
 - **Release Notes**: `RELEASE_NOTES_v0.1.md`
 
 ### Quality Metrics
-- **Test Status**: 64/64 integration tests passing ✅
-- **Code Quality**: Ruff check + mypy --strict clean ✅
-- **Architecture**: FSM-based with proper state isolation ✅
-- **Coverage**: Full E2E pipeline tested ✅
+- **Test Status**: 64/64 integration tests passing    
+- **Code Quality**: Ruff check + mypy --strict clean    
+- **Architecture**: FSM-based with proper state isolation    
+- **Coverage**: Full E2E pipeline tested    
 
 ### Key Features Released
 - ExposureGuard (20% portfolio limit + post-fill hold)
@@ -457,7 +457,7 @@ async def _retry_once():
 
 ### Git Information
 - **Commit**: release(v0.1.0): freeze SSOT, notes, artifacts [REL-001]
-- **Tag**: v0.1.0 - "Aurora+Scalp v0.1.0 � � Exposure/Daily/OPS gates, AUR-004, telemetry, full E2E tests"
+- **Tag**: v0.1.0 - "Aurora+Scalp v0.1.0     Exposure/Daily/OPS gates, AUR-004, telemetry, full E2E tests"
 - **Branch**: Test_MyPC (ready for merge to main)
 
 ### Verification Commands
@@ -469,36 +469,36 @@ curl -s http://127.0.0.1:8000/statdump | jq .  # Real-time metrics
 
 ---
 
-## 2025-10-31: PROJECT_ATLAS_TOOL_ADDED - Atlas generation tooling (incomplete) ✅
+## 2025-10-31: PROJECT_ATLAS_TOOL_ADDED - Atlas generation tooling (incomplete)    
 
 **RID**: PROJECT_ATLAS_TOOL_ADDED
 **Why**: Add tooling to inventory configs, schemas and events and generate `reports/atlas/*.json` and `docs/PROJECT_ATLAS.md` per TASK.md
 **Files**: `tools/build_project_atlas.py`, `reports/atlas/extracted_configs.json` (generated), `reports/atlas/extracted_contracts.json` (generated), `reports/atlas/extracted_events.json` (generated), `docs/PROJECT_ATLAS.md` (generated)
-**Status**: ✅ Created (best-effort implementation; further refinements expected)
+**Status**:     Created (best-effort implementation; further refinements expected)
 
 Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Python AST to find literal event tags and emit(...) calls. Results live under `reports/atlas/` and basic mermaid diagrams under `docs/diagrams/`.
 
-## 2025-10-31: ATLAS_P1_DONE - Atlas enrichment and tests ✅
+## 2025-10-31: ATLAS_P1_DONE - Atlas enrichment and tests    
 
 **RID**: ATLAS_P1_DONE
 **Why**: Enrich atlas with instruments table and gates/policies, include why samples for events, add mermaid diagrams and tests.
 **Files**: `tools/build_project_atlas.py` (enhanced), `reports/atlas/instruments_table.json`, `reports/atlas/gates_policies.json`, `docs/PROJECT_ATLAS.md` (extended), `docs/diagrams/*` (updated), `tests/tooling/test_build_project_atlas.py` (updated)
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
-## 2025-10-31: AUR_HAPPY_OPEN_ADDED - Happy-path DEC:OPEN test ✅
+## 2025-10-31: AUR_HAPPY_OPEN_ADDED - Happy-path DEC:OPEN test    
 
 **RID**: AUR_HAPPY_OPEN_ADDED
 **Why**: Add deterministic integration test that verifies OpenFlowFSM emits `DEC:OPEN` under permissive/clean settings.
 **Files**: `tests/integration/test_happy_path_dec_open.py`
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 
-## 2025-10-31: BINANCE_ADAPTER_SESSION_FIX - Session Attribute & HTTPX Migration ✅
+## 2025-10-31: BINANCE_ADAPTER_SESSION_FIX - Session Attribute & HTTPX Migration    
 
 **RID**: BINANCE_ADAPTER_SESSION_FIX_COMPLETED
 **Why**: Fixed test_account_connector.py failures due to missing .session attribute in BinanceAdapter
 **Duration**: ~1 hour
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Problem Identified
 - **Test Failures**: 2/64 integration tests failing with AttributeError: 'BinanceAdapter' object has no attribute 'session'
@@ -519,16 +519,16 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 
 ### Code Quality Fixes
 - **Removed Unused Imports**: Cleaned up json and InvalidOperation imports
-- **Function Rename**: Fixed _safe_read_err_sync → _safe_read_err
+- **Function Rename**: Fixed _safe_read_err_sync     _safe_read_err
 - **Removed Unused Variable**: Eliminated min_notional_filter variable
 - **Linting**: All ruff checks passing
 - **Type Safety**: Mypy validation successful
 
 ### Validation
-- ✅ Unit test passes: Session attribute exposed and request routing works
-- ✅ Integration tests: All 64/64 tests passing (previously 62/64)
-- ✅ Code quality: Ruff and mypy checks clean
-- ✅ Backward compatibility: Existing domain services continue working
+-     Unit test passes: Session attribute exposed and request routing works
+-     Integration tests: All 64/64 tests passing (previously 62/64)
+-     Code quality: Ruff and mypy checks clean
+-     Backward compatibility: Existing domain services continue working
 
 ### Technical Details
 - **Session Injection**: `BinanceAdapter(session=httpx.AsyncClient())` for testing
@@ -538,12 +538,12 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 
 ---
 
-## 2025-10-30: DEBUG_API_MODULE_FIX - Fixed Missing Debug API Module ✅
+## 2025-10-30: DEBUG_API_MODULE_FIX - Fixed Missing Debug API Module    
 
 **RID**: DEBUG_API_MODULE_FIX_COMPLETED
 **Why**: Fixed ModuleNotFoundError for vfoundation.obs.debug_api in routing tests
 **Duration**: ~10 minutes
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Problem Identified
 - **Import Error**: `ModuleNotFoundError: No module named 'vfoundation.obs.debug_api'`
@@ -559,9 +559,9 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 - `vfoundation/vfoundation/obs/debug_api.py` (created)
 
 ### Validation
-- ✅ All 3 previously failing tests now pass
-- ✅ Features pipeline test still works
-- ✅ No breaking changes to existing functionality
+-     All 3 previously failing tests now pass
+-     Features pipeline test still works
+-     No breaking changes to existing functionality
 
 ### Technical Details
 - **record_router_timing(duration_ms)**: Logs router operation timing for performance monitoring
@@ -573,13 +573,13 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 **RID**: FEATURES_PIPELINE_AUDIT_COMPLETED
 **Why**: Comprehensive audit of features pipeline from live market data to trade decisions
 **Duration**: ~3 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Changes Made
 
 #### 1. Pipeline Analysis (`reports/features_pipeline_audit.md`)
-- **Complete Flow Mapping**: Live Bridge → MarketDataConnector → FeatureEngineering → RiskManagement → DecisionMaking
-- **Event Flow**: EVT:MARKET_TICK_RECEIVED → EVT:FEATURES_CALCULATED → EVT:RISK_ASSESSMENT_COMPLETED → EVT:TRADE_INTENT_PROPOSED
+- **Complete Flow Mapping**: Live Bridge     MarketDataConnector     FeatureEngineering     RiskManagement     DecisionMaking
+- **Event Flow**: EVT:MARKET_TICK_RECEIVED     EVT:FEATURES_CALCULATED     EVT:RISK_ASSESSMENT_COMPLETED     EVT:TRADE_INTENT_PROPOSED
 - **File Inventory**: Located all 5 domain components and their key methods
 - **Payload Analysis**: Documented all key fields (obi, tfi, delta_price, symbol, ts, etc.)
 - **Root Cause Analysis**: Identified 6 specific reasons for `features=False` in DecisionMaking
@@ -610,12 +610,12 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 - TTL logic not implemented (potential future enhancement)
 
 ### Validation
-- ✅ Complete pipeline mapped with exact file paths and methods
-- ✅ All 5 domain components located and analyzed
-- ✅ Event flow verified through code inspection
-- ✅ 6 specific root causes for `features=False` identified
-- ✅ Integration test created for pipeline verification
-- ✅ Mermaid diagram and detailed table created
+-     Complete pipeline mapped with exact file paths and methods
+-     All 5 domain components located and analyzed
+-     Event flow verified through code inspection
+-     6 specific root causes for `features=False` identified
+-     Integration test created for pipeline verification
+-     Mermaid diagram and detailed table created
 
 ### Key Insights
 - **Live Bridge**: MarketDataConnector + WebSocketAggregator provide real market data
@@ -633,7 +633,7 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 **RID**: PACK_L3_A4_COMPLETED
 **Why**: Implement metrics summary generator and /statdump API endpoint for Ops monitoring
 **Duration**: ~1.5 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Changes Made
 
@@ -654,11 +654,11 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 - Created necessary directories: configs/, tools/, reports/
 
 ### Validation
-- ✅ Metrics summary tool runs successfully and generates JSON output
-- ✅ /statdump endpoint returns proper JSON structure
-- ✅ Unit tests pass for metrics parsing
-- ✅ Integration test passes for API endpoint
-- ✅ Code passes ruff check and formatting
+-     Metrics summary tool runs successfully and generates JSON output
+-     /statdump endpoint returns proper JSON structure
+-     Unit tests pass for metrics parsing
+-     Integration test passes for API endpoint
+-     Code passes ruff check and formatting
 
 ### Next Steps
 - Consider adding Grafana dashboard JSON export
@@ -667,12 +667,12 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 
 ---
 
-## 2025-10-30: PACK_PROD2_COMPLETED - Ops Controls Implementation ✅
+## 2025-10-30: PACK_PROD2_COMPLETED - Ops Controls Implementation    
 
 **RID**: PACK_PROD2_COMPLETED
 **Why**: Complete PACK PROD-2 implementation with panic killswitch, quiet hours, and allowlist controls
 **Duration**: ~2 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Changes Made
 
@@ -700,12 +700,12 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 - Proper error responses with standardized reasons
 
 ### Validation
-- ✅ Panic killswitch blocks all CMD:OPEN when enabled
-- ✅ Quiet hours respect UTC timezone with midnight wraparound support
-- ✅ Allowlist supports case-insensitive symbol matching, empty list = no restrictions
-- ✅ Ops guards execute before exposure/daily guards as first line of defense
-- ✅ Proper ERR:OPEN responses with PANIC_ON/QUIET_HOURS/SYMBOL_NOT_ALLOWED reasons
-- ✅ All integration tests pass with exposure guard compatibility (sufficient equity setup)
+-     Panic killswitch blocks all CMD:OPEN when enabled
+-     Quiet hours respect UTC timezone with midnight wraparound support
+-     Allowlist supports case-insensitive symbol matching, empty list = no restrictions
+-     Ops guards execute before exposure/daily guards as first line of defense
+-     Proper ERR:OPEN responses with PANIC_ON/QUIET_HOURS/SYMBOL_NOT_ALLOWED reasons
+-     All integration tests pass with exposure guard compatibility (sufficient equity setup)
 
 ### Next Steps
 - PACK PROD-3: Additional operational controls
@@ -714,12 +714,12 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 
 ---
 
-## 2025-01-XX: PACK_EXP2_COMPLETED - Release Hooks & TTL Implementation ✅
+## 2025-01-XX: PACK_EXP2_COMPLETED - Release Hooks & TTL Implementation    
 
 **RID**: PACK_EXP2_COMPLETED
 **Why**: Complete PACK EXP-2 implementation with proper TTL cleanup and release hooks
 **Duration**: ~3 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Changes Made
 
@@ -731,7 +731,7 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 - Reduced default TTL from 300s to 90s for faster cleanup
 
 #### 2. Configuration Updates
-- `config/aurora/trading.yaml`: `pending_ttl_sec` → `pending_reservation_ttl_sec: 90`
+- `config/aurora/trading.yaml`: `pending_ttl_sec`     `pending_reservation_ttl_sec: 90`
 - `config/_schemas/aurora_trading.schema.json`: Updated field name and validation (10-600s range)
 
 #### 3. FSM Integration (`vfoundation/apps/reference/domains/execution_position/fsm.py`)
@@ -747,11 +747,11 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 - Updated config references to `pending_reservation_ttl_sec`
 
 ### Validation
-- ✅ All 21 tests passing (5 TTL + 10 unit + 6 integration)
-- ✅ TTL cleanup works correctly (90s default, configurable 10-600s)
-- ✅ Release hooks trigger on all terminal events
-- ✅ Metrics snapshot includes current exposure data
-- ✅ Event emission for expired reservations
+-     All 21 tests passing (5 TTL + 10 unit + 6 integration)
+-     TTL cleanup works correctly (90s default, configurable 10-600s)
+-     Release hooks trigger on all terminal events
+-     Metrics snapshot includes current exposure data
+-     Event emission for expired reservations
 
 ### Next Steps
 - PACK EXP-3: Telemetry & Metrics implementation
@@ -760,39 +760,39 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 
 ---
 
-## 2025-01-XX: PACK_EXP2_AUDIT - Quality Audit of PACK EXP-2 Implementation ✅
+## 2025-01-XX: PACK_EXP2_AUDIT - Quality Audit of PACK EXP-2 Implementation    
 
 **RID**: PACK_EXP2_AUDIT
 **Why**: Conduct thorough audit of PACK EXP-2 implementation against specification requirements
 **Duration**: ~30 minutes
-**Status**: ✅ COMPLETED - Minor deviations found and corrected
+**Status**:     COMPLETED - Minor deviations found and corrected
 
 ### Audit Results
 
-#### ✅ **100% Compliance Areas**
+####     **100% Compliance Areas**
 
 1. **ExposureGuard TTL Implementation**:
-   - ✅ ExposureState dataclass with `reservations: Dict[str, Decimal]` and `reservations_ts: Dict[str, float]`
-   - ✅ `ttl_sec` from `pending_reservation_ttl_sec` config (default 90s)
-   - ✅ `reserve()` stores notional and timestamp separately
-   - ✅ `release()` removes from both dicts and updates pending_open_usd
-   - ✅ `expire_stale()` returns `list[str]` of expired keys
+   -     ExposureState dataclass with `reservations: Dict[str, Decimal]` and `reservations_ts: Dict[str, float]`
+   -     `ttl_sec` from `pending_reservation_ttl_sec` config (default 90s)
+   -     `reserve()` stores notional and timestamp separately
+   -     `release()` removes from both dicts and updates pending_open_usd
+   -     `expire_stale()` returns `list[str]` of expired keys
 
 2. **Configuration**:
-   - ✅ `config/aurora/trading.yaml`: `pending_reservation_ttl_sec: 90`
-   - ✅ `config/_schemas/aurora_trading.schema.json`: integer type, min 10, max 600, default 90
+   -     `config/aurora/trading.yaml`: `pending_reservation_ttl_sec: 90`
+   -     `config/_schemas/aurora_trading.schema.json`: integer type, min 10, max 600, default 90
 
 3. **Release Hooks**:
-   - ✅ FSM releases on ERR:OPEN, EVT:ORDER_REJECTED/CANCELED/FILLED/POSITION_OPENED
-   - ✅ Uses `reserve_key = (msg.pld or {}).get("idempotent_key") or msg.rid`
-   - ✅ Proper cleanup prevents stale reservations
+   -     FSM releases on ERR:OPEN, EVT:ORDER_REJECTED/CANCELED/FILLED/POSITION_OPENED
+   -     Uses `reserve_key = (msg.pld or {}).get("idempotent_key") or msg.rid`
+   -     Proper cleanup prevents stale reservations
 
 4. **Tests**:
-   - ✅ Unit tests for TTL expiration with monkeypatch
-   - ✅ Integration tests for release hooks scenarios
-   - ✅ All 21 tests passing
+   -     Unit tests for TTL expiration with monkeypatch
+   -     Integration tests for release hooks scenarios
+   -     All 21 tests passing
 
-#### ⚠️ **Minor Deviations Found & Corrected**
+####        **Minor Deviations Found & Corrected**
 
 1. **FSM Call Order Issue**:
    - **Spec**: `expire_stale()` then `on_portfolio_update(msg.pld or {})`
@@ -802,17 +802,17 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 
 2. **Event Emission Logic**:
    - **Spec**: Emit `PENDING_EXPOSURE_EXPIRED` only if `expired` list is non-empty
-   - **Implemented**: ✅ Correctly implemented
+   - **Implemented**:     Correctly implemented
    - **Note**: Event includes `expired_keys` and `why: "ttl_expired"`
 
-#### 🔍 **Mapping clientOrderId → reserve_key**
+####      **Mapping clientOrderId     reserve_key**
 
 - **Spec Requirement**: Add in-memory mapping if canonical mapping doesn't exist
 - **Analysis**: Current implementation uses `reserve_key = idempotent_key | rid`
 - **Finding**: In DEC:OPEN flow, `reserve_key` becomes `clientOrderId` in adapter
-- **Status**: ✅ No additional mapping needed - reserve_key serves as clientOrderId
+- **Status**:     No additional mapping needed - reserve_key serves as clientOrderId
 
-#### 📊 **Quality Metrics**
+####      **Quality Metrics**
 
 - **Code Coverage**: 100% for new TTL functionality
 - **Test Coverage**: 21 tests covering all scenarios
@@ -822,22 +822,22 @@ Notes: Tool is best-effort: parses YAML (requires PyYAML), JSON schemas and Pyth
 
 ### Final Assessment
 
-**✅ PACK EXP-2 is 100% complete and compliant** with specification requirements. The implementation correctly prevents stale pending reservations through TTL cleanup and release hooks on all terminal events. Minor FSM order issue was corrected to ensure accurate equity data usage in TTL calculations.
+**    PACK EXP-2 is 100% complete and compliant** with specification requirements. The implementation correctly prevents stale pending reservations through TTL cleanup and release hooks on all terminal events. Minor FSM order issue was corrected to ensure accurate equity data usage in TTL calculations.
 
 **DoD Met**:
-- ✅ Pending reservations never "stick" (hooks + TTL)
-- ✅ Reservations released on FILL/CANCEL/REJECT/ERR
-- ✅ Events emitted for telemetry
-- ✅ Tests validate all scenarios
+-     Pending reservations never "stick" (hooks + TTL)
+-     Reservations released on FILL/CANCEL/REJECT/ERR
+-     Events emitted for telemetry
+-     Tests validate all scenarios
 
 ---
 
-## 2025-10-28: EXPOSURE_GATE_RELIABILITY_V1 - Portfolio Exposure Gate Reliability Enhancements ✅
+## 2025-10-28: EXPOSURE_GATE_RELIABILITY_V1 - Portfolio Exposure Gate Reliability Enhancements    
 
 **RID**: EXPOSURE_GATE_RELIABILITY_V1
 **Why**: Prevent reservation sticking and improve ops observability for exposure gate
 **Duration**: ~2 hours
-**Status**: ✅ COMPLETED
+**Status**:     COMPLETED
 
 ### Changes Made
 

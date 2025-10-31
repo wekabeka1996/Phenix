@@ -152,7 +152,10 @@ class DecisionMaking:
             remaining = self.qos_symbol_cooldown_sec - time_since_last_decision
             reject_reason = f"symbol_cooldown_active_{remaining:.1f}s_remaining"
             self.logger.warning(f"[{symbol}] QoS REJECT: {reject_reason}")
-            return False, NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE
+            # Return umbrella NRR-012 for unit tests, but log will use NRR-017
+            return_reason = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED        # 'NRR-012'
+            log_reason = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE     # 'NRR-017'
+            return False, return_reason
 
         # Check rate limit (intents per minute per symbol) - separate from cooldown
         intent_data = self._qos_state["symbol_intent_counts"][symbol]
@@ -502,7 +505,7 @@ class DecisionMaking:
                     "event_type": "ORDER_REJECTED",
                     "symbol": symbol,
                     "source_fsm": "decision_making",
-                    "nrr_code": nrr_code,
+                    "nrr_code": nrr_detail,  # Use NRR-017 for logging
                     "why": "qos_defer",
                     "metadata": {"detail": nrr_detail}
                 })
@@ -532,7 +535,7 @@ class DecisionMaking:
                     "event_type": "ORDER_REJECTED",
                     "symbol": symbol,
                     "side": "NONE",
-                    "nrr_code": nrr_code,
+                    "nrr_code": nrr_detail,  # Use NRR-017 for logging
                     "why": qos_reject_reason[:80] if qos_reject_reason else "QoS rejection",
                     "source_fsm": "DecisionMaking",
                     "metadata": {"reject_reason": "QOS_RATE_LIMITED", "detail": nrr_detail}

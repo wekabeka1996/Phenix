@@ -1,6 +1,6 @@
 # Aurora+Scalp v0.1.0 Release Notes
 
-**Release Date**: 30  ∂ æ ≤ Ç Ω è 2025
+**Release Date**: 30              2025
 **Version**: v0.1.0
 **Status**: Production Ready (64/64 tests passing)
 
@@ -18,7 +18,7 @@
 - **Symbol Allowlist**: Configurable symbol restrictions (empty = no restrictions)
 
 ### Order Lifecycle & Correlation (AUR-004)
-- **OrderIndex**: TTL-based correlation system (rid ‚Üî idempotent_key ‚Üî clientOrderId ‚Üî exchangeOrderId)
+- **OrderIndex**: TTL-based correlation system (rid     idempotent_key     clientOrderId     exchangeOrderId)
 - **Audit Logging**: Structured JSONL event logging with WHY-codes and RID correlation
 - **Terminal State Handling**: Proper cleanup on FILLED/CANCELED/REJECTED/EXPIRED events
 

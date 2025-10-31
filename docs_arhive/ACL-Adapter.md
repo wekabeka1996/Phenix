@@ -1,4 +1,4 @@
-# ACL Adapter � � Exchange Integration
+# ACL Adapter     Exchange Integration
 
 ## Overview
 
@@ -7,8 +7,8 @@
 ## Architecture
 
 ```
-Exchange (stub) ←→ ACL Adapter ←→ Router ←→ FSM Domains
-                      ↓
+Exchange (stub)        ACL Adapter        Router        FSM Domains
+                         
                    Metrics
                    Idempotency
                    Validation
@@ -23,12 +23,12 @@ Main adapter class with three key methods:
 #### `submit(cmd: Message) -> Message`
 Submit command to exchange (shadow stub).
 
-**Input:** `Message` with `op=CMD`, `verb ∈ {OPEN, CLOSE, ADJUST}`
+**Input:** `Message` with `op=CMD`, `verb     {OPEN, CLOSE, ADJUST}`
 
 **Output:** `Message` with `op=EVT`, `verb=ORDER_PLACED` or `REJECTED`
 
 **Validation:**
-- Contract compliance (`op`, `verb`, `why≤80`)
+- Contract compliance (`op`, `verb`, `why   80`)
 - Idempotency check (deterministic key)
 - Fail-closed: reject invalid contracts
 
@@ -42,7 +42,7 @@ Cancel existing order.
 #### `stream_events() -> Iterator[Message]`
 Stream exchange events (stub generator).
 
-**Yields:** `Message` with `op=EVT`, `verb ∈ {PARTIAL_FILL, FILL, CANCELLED, REJECTED, EXPIRED}`
+**Yields:** `Message` with `op=EVT`, `verb     {PARTIAL_FILL, FILL, CANCELLED, REJECTED, EXPIRED}`
 
 ## Message Contracts
 
@@ -54,7 +54,7 @@ Stream exchange events (stub generator).
     "src": "trader",
     "dst": "exchange",
     "rid": "unique-request-id",
-    "why": "reason ≤80 chars",
+    "why": "reason    80 chars",
     "idempotent_key": "auto-generated",
     "pld": {
         "symbol": "BTCUSDT",
@@ -154,10 +154,10 @@ for event in acl.stream_events():
 ## Error Handling
 
 ACL uses **fail-closed** pattern:
-- Invalid `op` → `ERR:INVALID_OP`
-- Invalid `verb` → `ERR:INVALID_VERB`
-- Duplicate request → `EVT:DEDUP` (no WAL write)
-- All errors respect `why≤80` discipline
+- Invalid `op`     `ERR:INVALID_OP`
+- Invalid `verb`     `ERR:INVALID_VERB`
+- Duplicate request     `EVT:DEDUP` (no WAL write)
+- All errors respect `why   80` discipline
 
 ## Testing
 
@@ -167,7 +167,7 @@ pytest tests/test_acl_stub_smoke.py -v
 pytest tests/test_acl_message_contracts.py -v
 ```
 
-Coverage target: ≥90% for ACL modules ✅
+Coverage target:    90% for ACL modules    
 
 ## Next Steps (P1-T02)
 
@@ -178,4 +178,4 @@ Coverage target: ≥90% for ACL modules ✅
 
 ---
 
-**Last updated:** 2025-01-12 | **Status:** ✅ T01 Complete
+**Last updated:** 2025-01-12 | **Status:**     T01 Complete

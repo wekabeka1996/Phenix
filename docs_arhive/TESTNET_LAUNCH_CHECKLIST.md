@@ -6,7 +6,7 @@
 
 ## Pre-Launch Verification
 
-### □ Code & Environment
+###     Code & Environment
 - [ ] **Git Status:** Code is on stable branch/tag (`git status` shows clean)
 - [ ] **Dependencies:** All packages installed (`pip install -r requirements.txt`)
 - [ ] **Python Version:** 3.11+ verified (`python --version`)
@@ -14,7 +14,7 @@
 - [ ] **Unit Tests:** All tests pass (`pytest tests/unit/ -v`)
 - [ ] **Integration Tests:** Scenario tests pass (`pytest tests/integration/ -v`)
 
-### □ Configuration Files
+###     Configuration Files
 - [ ] **trading.yaml:** Exists in `config/aurora/` and properly formatted
 - [ ] **system.yaml:** Exists in `config/aurora/` and properly formatted
 - [ ] **Environment File:** `.env` exists and configured (not committed to git)
@@ -22,7 +22,7 @@
 - [ ] **LOG_LEVEL:** Set appropriately (INFO for production testing, DEBUG for development)
 - [ ] **TRADING_ENV:** Set to `testnet` for identification
 
-### □ API Credentials
+###     API Credentials
 - [ ] **Testnet Account:** Binance Futures Testnet account created and verified
 - [ ] **API Keys Generated:** Keys created with Futures permissions enabled
 - [ ] **API Keys Configured:** `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET` set
@@ -30,14 +30,14 @@
 - [ ] **Key Permissions:** Futures trading enabled, withdrawals disabled
 - [ ] **Test USDT Available:** Sufficient test funds in futures wallet (minimum 100 USDT recommended)
 
-### □ System Configuration
+###     System Configuration
 - [ ] **Hardening Parameters:** TTL/retry/circuit breaker settings reasonable for testnet
-- [ ] **Risk Limits:** Conservative position sizes and leverage (leverage ≤ 10x recommended)
+- [ ] **Risk Limits:** Conservative position sizes and leverage (leverage     10x recommended)
 - [ ] **Market Data:** Lag detection enabled with appropriate thresholds
 - [ ] **Logging:** File rotation configured, log directory writable
 - [ ] **Trading Pairs:** Only BTCUSDT/ETHUSDT enabled initially
 
-### □ Network & Security
+###     Network & Security
 - [ ] **Internet Connection:** Stable connection verified
 - [ ] **Firewall:** No blocking of Binance API endpoints
 - [ ] **VPN/Proxy:** None active (can interfere with API calls)
@@ -59,7 +59,7 @@ python -c "
 from apps.reference.config_loader import ConfigLoader
 c = ConfigLoader()
 config = c.load_config()
-print('✅ Config loaded successfully')
+print('    Config loaded successfully')
 print(f'USE_TESTNET: {config.use_testnet}')
 print(f'API_KEY configured: {bool(config.binance_api_key)}')
 print(f'LOG_LEVEL: {config.log_level}')
@@ -77,13 +77,13 @@ import hmac
 BASE_URL = 'https://testnet.binancefuture.com'
 response = requests.get(f'{BASE_URL}/fapi/v1/time')
 if response.status_code == 200:
-    print('✅ Binance Testnet API reachable')
+    print('    Binance Testnet API reachable')
     server_time = response.json()['serverTime']
     local_time = int(time.time() * 1000)
     offset = server_time - local_time
-    print(f'�  Time offset: {offset}ms')
+    print(f'    Time offset: {offset}ms')
 else:
-    print('❌ Binance Testnet API unreachable')
+    print('    Binance Testnet API unreachable')
 "
 ```
 
@@ -114,9 +114,9 @@ else:
 **Date:** ________________________
 **Time:** ________________________
 
-**Pre-launch Checklist Completed:** □ Yes □ No
-**All Critical Items Verified:** □ Yes □ No
-**Ready for Launch:** □ Yes □ No
+**Pre-launch Checklist Completed:**     Yes     No
+**All Critical Items Verified:**     Yes     No
+**Ready for Launch:**     Yes     No
 
 ## Post-Launch Notes
 

@@ -2,27 +2,27 @@
 
 ## Current State
 
-- ❌ Features calculated from **CONSTANT** values (bid_size=1, ask_size=1, buy_vol=volume/2, sell_vol=volume/2)
-- ❌ OBI always ≈ 0, TFI always ≈ 0
-- ❌ System uses only REST API klines (updates every 5 seconds)
-- ✅ Config already defines needed WebSocket streams (bookTicker, trade)
+-     Features calculated from **CONSTANT** values (bid_size=1, ask_size=1, buy_vol=volume/2, sell_vol=volume/2)
+-     OBI always     0, TFI always     0
+-     System uses only REST API klines (updates every 5 seconds)
+-     Config already defines needed WebSocket streams (bookTicker, trade)
 
 ## Architecture
 
 ### Data Sources
 
-**bookTicker stream** → OBI (Order Book Imbalance)
+**bookTicker stream**     OBI (Order Book Imbalance)
 ```
 {
   "s": "BTCUSDT",
   "b": "113956.50",   // bid price
-  "B": "2.5",         // bid size (quantité) ✅ LIVE
+  "B": "2.5",         // bid size (quantit  )     LIVE
   "a": "113957.00",   // ask price  
-  "A": "3.2"          // ask size ✅ LIVE
+  "A": "3.2"          // ask size     LIVE
 }
 ```
 
-**trade stream** → TFI (Trade Flow Imbalance) + delta_price
+**trade stream**     TFI (Trade Flow Imbalance) + delta_price
 ```
 {
   "s": "BTCUSDT",
@@ -139,25 +139,25 @@ Add to `feature_engineering.py`:
 
 ```python
 self.logger.debug(f"Feature calc for {symbol}: "
-    f"bid={bid_size}, ask={ask_size} → OBI={obi:.4f} | "
-    f"buy_vol={buy_volume}, sell_vol={sell_volume} → TFI={tfi:.4f} | "
-    f"price={price}, prev={prev_price} → delta_price={delta_price:.6f}")
+    f"bid={bid_size}, ask={ask_size}     OBI={obi:.4f} | "
+    f"buy_vol={buy_volume}, sell_vol={sell_volume}     TFI={tfi:.4f} | "
+    f"price={price}, prev={prev_price}     delta_price={delta_price:.6f}")
 ```
 
 ## Expected Results
 
 ### Before (Current - Broken)
 ```
-bid_size=1, ask_size=1 → OBI=0.0000
-buy_vol=500, sell_vol=500 → TFI=0.0000
-Signal = 0.0000 × 0.6 + 0.0000 × 0.35 + delta × 0.05 ≈ 0.0000 ❌
+bid_size=1, ask_size=1     OBI=0.0000
+buy_vol=500, sell_vol=500     TFI=0.0000
+Signal = 0.0000    0.6 + 0.0000    0.35 + delta    0.05     0.0000    
 ```
 
 ### After (Fixed)
 ```
-bid_size=2.5, ask_size=3.2 → OBI=-0.1176 (sell pressure)
-buy_trades=32, sell_trades=28 → TFI=0.0667 (slight buy flow)
-Signal = -0.1176 × 0.6 + 0.0667 × 0.35 + delta × 0.05 ≈ 0.0 to ±0.3 ✅
+bid_size=2.5, ask_size=3.2     OBI=-0.1176 (sell pressure)
+buy_trades=32, sell_trades=28     TFI=0.0667 (slight buy flow)
+Signal = -0.1176    0.6 + 0.0667    0.35 + delta    0.05     0.0 to   0.3    
 ```
 
 Features VARY with market conditions!

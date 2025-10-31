@@ -1,36 +1,36 @@
-#  ° ª æ ≤ Ω ∏ ∫ ∏  ¥ æ º µ Ω É Account Observer
+#                               Account Observer
 
-#  ö æ Ω Ñ ñ ≥ É     Ü ñ π Ω ñ    ª æ ≤ Ω ∏ ∫ ∏
+#                                              
 config:
-  #  † µ ∂ ∏ º ∏    æ ± æ Ç ∏
+  #                          
   trading_modes:
     live: "live"
     testnet: "testnet"
     hybrid_live: "hybrid_live"
     hybrid_testnet: "hybrid_testnet"
 
-  #  Ü Ω Ç µ   ≤   ª ∏  æ   ∏ Ç É ≤   Ω Ω è (   µ ∫ É Ω ¥ ∏)
+  #                                         (              )
   poll_intervals:
     fast: 1
     normal: 5
     slow: 10
     very_slow: 30
 
-  #  õ ñ º ñ Ç  Ç   µ π ¥ ñ ≤  ¥ ª è  æ Ç   ∏ º   Ω Ω è  ∑        ∑
+  #                                                                
   trade_limits:
     minimal: 10
     standard: 50
     extended: 100
     maximum: 500
 
-  #  ú   ∫   ∏ º   ª å Ω    ∫ ñ ª å ∫ ñ   Ç å  ∫ µ à æ ≤   Ω ∏ Ö ID  Ç   µ π ¥ ñ ≤ (   ≤ Ç æ º   Ç ∏ á Ω µ  æ á ∏ â µ Ω Ω è      ∏    æ Ç   µ ± ñ)
+  #                                                              ID                (                                                             )
   max_cached_trade_ids:
     small: 1000
     medium: 5000
     large: 10000
     xlarge: 50000
 
-  #  ö æ Ω Ñ ñ ≥ É     Ü ñ è Binance API
+  #                          Binance API
   binance_api_structure:
     live:
       api_key: "BINANCE_LIVE_API_KEY"
@@ -39,46 +39,46 @@ config:
       api_key: "BINANCE_TESTNET_API_KEY"
       api_secret: "BINANCE_TESTNET_API_SECRET"
 
-  #  ° Ç   É ∫ Ç É      ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó account_observer
+  #                                             account_observer
   account_observer_structure:
     poll_interval: 5
     symbols: ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
     trade_limit: 50
 
-#  ° ª æ ≤ Ω ∏ ∫    æ ¥ ñ π FSM
+#                           FSM
 events:
-  #  í ∏ Ö ñ ¥ Ω ñ    æ ¥ ñ ó
+  #                          
   outgoing:
     trade_executed:
       name: "EVT:TRADE_EXECUTED"
-      description: " ü æ ¥ ñ è      æ  ≤ ∏ ∫ æ Ω   Ω Ω è  Ç æ   ≥ æ ≤ æ ó  æ   µ     Ü ñ ó"
+      description: "                                                                      "
       payload_schema: "trade_executed_payload"
       frequency: "high"
       priority: "normal"
 
-  #  í Ö ñ ¥ Ω ñ    æ ¥ ñ ó ( è ∫ â æ  ± É ¥ É Ç å)
+  #                         (                     )
   incoming: {}
 
-#  ° ª æ ≤ Ω ∏ ∫  Ç ∏   ñ ≤  ¥   Ω ∏ Ö
+#                                     
 data_types:
-  #  ¢ ∏   ∏    Ç æ   ñ Ω  Ç æ   ≥ ñ ≤ ª ñ
+  #                                       
   trade_sides:
     buy: "buy"
     sell: "sell"
 
-  #  ¢ ∏   ∏  ∫ æ º ñ   ñ π
+  #                        
   commission_types:
     maker: "maker"
     taker: "taker"
 
-  #  ¢ æ   ≥ æ ≤ ñ  º   π ¥   Ω á ∏ ∫ ∏
+  #                                    
   venues:
     binance: "binance"
     binance_testnet: "binance_testnet"
 
-#  ° ª æ ≤ Ω ∏ ∫    ∏ º ≤ æ ª ñ ≤  ¥ ª è  º æ Ω ñ Ç æ   ∏ Ω ≥ É
+#                                                              
 symbols:
-  #  û   Ω æ ≤ Ω ñ  ∫   ∏   Ç æ ≤   ª é Ç ∏
+  #                                        
   major_crypto:
     - BTCUSDT
     - ETHUSDT
@@ -89,7 +89,7 @@ symbols:
     - LINKUSDT
     - LTCUSDT
 
-  # Altcoins    µ   µ ¥ Ω å æ ó  ∫     ñ Ç   ª ñ ∑   Ü ñ ó
+  # Altcoins                                              
   mid_cap:
     - AVAXUSDT
     - MATICUSDT
@@ -106,7 +106,7 @@ symbols:
     - USDCUSDT
     - DAIUSDT
 
-#  ° ª æ ≤ Ω ∏ ∫  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó    æ º ∏ ª æ ∫
+#                                                       
 error_codes:
   api_connection_error: "AO001"
   api_rate_limit_error: "AO002"
@@ -117,17 +117,17 @@ error_codes:
   memory_limit_exceeded: "AO007"
 
 error_messages:
-  AO001: " ù µ  ≤ ¥   ª æ   è    ñ ¥ ∫ ª é á ∏ Ç ∏   è  ¥ æ Binance API"
-  AO002: " ü µ   µ ≤ ∏ â µ Ω æ  ª ñ º ñ Ç  ∑     ∏ Ç ñ ≤  ¥ æ API"
-  AO003: " ü æ º ∏ ª ∫      É Ç µ Ω Ç ∏ Ñ ñ ∫   Ü ñ ó API  ∫ ª é á ñ ≤"
-  AO004: " û Ç   ∏ º   Ω æ  Ω µ ≤   ª ñ ¥ Ω ñ  ¥   Ω ñ  Ç   µ π ¥ É"
-  AO005: " ü æ º ∏ ª ∫      ∏   Ç µ º ∏  ¥ µ ¥ É   ª ñ ∫   Ü ñ ó"
-  AO006: " ù µ ≤   ª ñ ¥ Ω    ∫ æ Ω Ñ ñ ≥ É     Ü ñ è  ¥ æ º µ Ω É"
-  AO007: " ü µ   µ ≤ ∏ â µ Ω æ  ª ñ º ñ Ç      º' è Ç ñ  ¥ ª è  ∫ µ à É"
+  AO001: "                                                  Binance API"
+  AO002: "                                                    API"
+  AO003: "                                            API             "
+  AO004: "                                                         "
+  AO005: "                                                      "
+  AO006: "                                                        "
+  AO007: "                                      '                      "
 
-#  ° ª æ ≤ Ω ∏ ∫  º µ Ç   ∏ ∫  º æ Ω ñ Ç æ   ∏ Ω ≥ É
+#                                                   
 metrics:
-  #  õ ñ á ∏ ª å Ω ∏ ∫ ∏
+  #                     
   counters:
     trades_processed: "account_observer_trades_processed_total"
     trades_skipped_duplicates: "account_observer_trades_skipped_duplicates_total"
@@ -135,21 +135,21 @@ metrics:
     api_errors_total: "account_observer_api_errors_total"
     poll_cycles_total: "account_observer_poll_cycles_total"
 
-  #  ì ñ   Ç æ ≥     º ∏
+  #                     
   histograms:
     api_call_duration: "account_observer_api_call_duration_seconds"
     trade_processing_duration: "account_observer_trade_processing_duration_seconds"
     poll_cycle_duration: "account_observer_poll_cycle_duration_seconds"
 
-  #  ì   É ≥ ∏
+  #           
   gauges:
     cached_trade_ids_count: "account_observer_cached_trade_ids_count"
     active_symbols_count: "account_observer_active_symbols_count"
     memory_usage_bytes: "account_observer_memory_usage_bytes"
 
-#  ° ª æ ≤ Ω ∏ ∫  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó  ª æ ≥ É ≤   Ω Ω è
+#                                                           
 logging:
-  #  † ñ ≤ Ω ñ  ª æ ≥ É ≤   Ω Ω è
+  #                              
   levels:
     debug: "DEBUG"
     info: "INFO"
@@ -157,7 +157,7 @@ logging:
     error: "ERROR"
     critical: "CRITICAL"
 
-  #  ö   Ç µ ≥ æ   ñ ó    æ ≤ ñ ¥ æ º ª µ Ω å
+  #                                          
   categories:
     api_calls: "api"
     trade_processing: "trade"
@@ -166,14 +166,14 @@ logging:
     errors: "error"
     performance: "perf"
 
-  #  § æ   º   Ç    æ ≤ ñ ¥ æ º ª µ Ω å
+  #                                    
   formats:
     standard: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     json: '{"timestamp": "%(asctime)s", "logger": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}'
 
-#  ° ª æ ≤ Ω ∏ ∫  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó  Ç µ   Ç É ≤   Ω Ω è
+#                                                             
 testing:
-  #  ¢ µ   Ç æ ≤ ñ  ¥   Ω ñ
+  #                        
   mock_trades:
     - symbol: "BTCUSDT"
       id: 12345
@@ -201,50 +201,50 @@ testing:
       isMaker: false
       isBestMatch: true
 
-  #  ¢ µ   Ç æ ≤ ñ    Ü µ Ω     ñ ó
+  #                                
   scenarios:
-    normal_operation: " ù æ   º   ª å Ω      æ ± æ Ç    ∑  Ω æ ≤ ∏ º ∏  Ç   µ π ¥   º ∏"
-    duplicate_trades: " û ±   æ ± ∫    ¥ É ± ª ñ ∫   Ç ñ ≤  Ç   µ π ¥ ñ ≤"
-    api_errors: " ° ∏ º É ª è Ü ñ è    æ º ∏ ª æ ∫ API"
-    high_volume: " í ∏   æ ∫ ∏ π  æ ±   è ≥  Ç   µ π ¥ ñ ≤"
-    memory_pressure: " ¢ µ   Ç É ≤   Ω Ω è  æ ± º µ ∂ µ Ω å      º' è Ç ñ"
+    normal_operation: "                                                                "
+    duplicate_trades: "                                                  "
+    api_errors: "                                  API"
+    high_volume: "                                        "
+    memory_pressure: "                                            '      "
 
-#  ° ª æ ≤ Ω ∏ ∫  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó  ± µ ∑   µ ∫ ∏
+#                                                       
 security:
-  #  ú ñ Ω ñ º   ª å Ω ñ  ¥ æ ∑ ≤ æ ª ∏ API  ∫ ª é á ñ ≤
+  #                                     API             
   required_permissions:
-    - "Read Info"        #  î ª è  á ∏ Ç   Ω Ω è  ±   ª   Ω   É
-    - "Enable Spot & Margin Trading"  #  î ª è  Ç æ   ≥ ñ ≤ ª ñ ( è ∫ â æ    æ Ç   ñ ± Ω æ)
-    - "Enable Futures"   #  î ª è  Ñ' é á µ     ñ ≤
-    - "Enable Reading"   #  î ª è  á ∏ Ç   Ω Ω è  Ç   µ π ¥ ñ ≤
+    - "Read Info"        #                                     
+    - "Enable Spot & Margin Trading"  #                         (                         )
+    - "Enable Futures"   #          '              
+    - "Enable Reading"   #                                     
 
-  #  ß      ∂ ∏ Ç Ç è  ∫ µ à É (   µ ∫ É Ω ¥ ∏)
+  #                            (              )
   cache_ttl:
-    trade_ids: 86400    # 24  ≥ æ ¥ ∏ Ω ∏
-    api_responses: 300  # 5  Ö ≤ ∏ ª ∏ Ω
+    trade_ids: 86400    # 24             
+    api_responses: 300  # 5             
 
-  #  õ ñ º ñ Ç  à ≤ ∏ ¥ ∫ æ   Ç ñ
+  #                              
   rate_limits:
     api_calls_per_minute: 1200
     api_calls_per_hour: 72000
 
-#  ° ª æ ≤ Ω ∏ ∫  ∫ æ Ω Ñ ñ ≥ É     Ü ñ ó      æ ¥ É ∫ Ç ∏ ≤ Ω æ   Ç ñ
+#                                                                     
 performance:
-  #  ¶ ñ ª å æ ≤ ñ  º µ Ç   ∏ ∫ ∏ SLA
+  #                               SLA
   targets:
     data_freshness_seconds: 35
     deduplication_accuracy: 1.0
     availability_percentage: 99.5
     api_response_time_median_seconds: 5
 
-  #  ü æ   æ ≥ ∏    æ   µ   µ ¥ ∂ µ Ω å
+  #                                    
   thresholds:
     high_api_latency_ms: 10000
     high_memory_usage_mb: 100
     high_error_rate_percentage: 5
     high_duplicate_rate_percentage: 1
 
-  #  û   Ç ∏ º ñ ∑   Ü ñ ó
+  #                       
   optimizations:
     batch_size: 50
     parallel_requests: 3

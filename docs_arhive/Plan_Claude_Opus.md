@@ -1,6 +1,6 @@
- ° ± æ      ≤ µ ¥ µ Ω ∏ π  æ      ± æ á µ π  æ ± ª     Ç ∏#  ü ª   Ω  ú ñ ≥     Ü ñ ó Aurora ‚Üí vFoundation FSM Federation
+                                                          #                           Aurora     vFoundation FSM Federation
 
-##  ì æ ª æ ≤ Ω ∏ π  ü ª   Ω: `docs/PLAN_AURORA_TO_VFOUNDATION.md`
+##                          : `docs/PLAN_AURORA_TO_VFOUNDATION.md`
 
 ```markdown
 # PLAN: Aurora Core Migration to vFoundation FSM Federation
@@ -37,7 +37,7 @@ Systematic migration of Aurora trading logic to vFoundation FSM architecture wit
 {
   "step": "A1",
   "actions": [
-    "parse: docs/*.md ‚Üí extract principles",
+    "parse: docs/*.md     extract principles",
     "categorize: {fsm_rules, aurora_logic, vfound_patterns}",
     "index: create searchable doctrine DB"
   ]
@@ -153,7 +153,7 @@ gates:
 ## PHASE D: Walking Skeleton
 
 ### D1. Minimal Flow Selection
-**Path:** market_tick ‚Üí risk_check ‚Üí mock_order ‚Üí log
+**Path:** market_tick     risk_check     mock_order     log
 **Components:** 
 - MarketDataDomain (existing)
 - RiskGateDomain (stub)
@@ -309,14 +309,14 @@ auroractl health-check
 ### H2. Chaos Engineering
 **Tests:**
 - Network: 10% packet loss, 100ms latency spikes
-- Clock: ¬±500ms drift simulation
+- Clock:   500ms drift simulation
 - Resources: CPU throttle to 50%
 
 ### H3. Fail-Closed Verification
 **Scenarios:**
-- Risk gate timeout ‚Üí reject trade
-- Idempotency violation ‚Üí halt and alert
-- WHY chain broken ‚Üí pause and diagnose
+- Risk gate timeout     reject trade
+- Idempotency violation     halt and alert
+- WHY chain broken     pause and diagnose
 
 ---
 
@@ -344,7 +344,7 @@ auroractl health-check
 
 ---
 
-##  ®   ± ª æ Ω ∏ Gate/Freeze
+##                Gate/Freeze
 
 ### `templates/GATE_REPORT_TEMPLATE.md`
 
@@ -446,7 +446,7 @@ Rollback point established.
 
 ---
 
-##  ° Ö µ º ∏  Ç    ú   Ω ñ Ñ µ   Ç ∏
+##                                   
 
 ### `schemas/gaps_schema.json`
 
@@ -483,7 +483,7 @@ Rollback point established.
 }
 ```
 
-### `ops/LLM_LOG.jsonl` (     ∏ ∫ ª   ¥  ∑     ∏   ñ ≤)
+### `ops/LLM_LOG.jsonl` (                             )
 
 ```jsonl
 {"step_id":"A1","title":"Doctrine Analysis","reason":"Map principles to code","input_refs":["docs/"],"outputs":["reports/doctrine_matrix.json"],"checks":["all_docs_parsed"],"next":"A2","timestamp":"2024-01-15T10:00:00Z"}
@@ -806,11 +806,11 @@ class FinalGateRunner:
         ]
         
         for category, data in report["categories"].items():
-            status = "‚úÖ" if data["passed"] == data["total"] else "‚ùå"
+            status = "   " if data["passed"] == data["total"] else "   "
             md_lines.append(f"### {status} {category.title()}: {data['passed']}/{data['total']}")
             
             for check in data["checks"]:
-                check_status = "‚úÖ" if check["passed"] else "‚ùå"
+                check_status = "   " if check["passed"] else "   "
                 md_lines.append(f"- {check_status} {check['name']}")
             md_lines.append("")
             
@@ -823,7 +823,7 @@ class FinalGateRunner:
             ])
         else:
             md_lines.extend([
-                "## Production Ready ‚úÖ",
+                "## Production Ready    ",
                 "All gates passed. System ready for production deployment.",
                 "",
                 "### Next Steps",
@@ -862,20 +862,20 @@ class FinalGateRunner:
 def main():
     runner = FinalGateRunner()
     
-    print("üö  Aurora-vFoundation Final Gate Runner")
+    print("     Aurora-vFoundation Final Gate Runner")
     print("=" * 50)
     
     # First verify artifacts
     if not runner.verify_artifacts():
-        print("‚ùå Missing required artifacts. Cannot proceed.")
+        print("    Missing required artifacts. Cannot proceed.")
         sys.exit(1)
         
     # Run all checks
     if runner.run_all():
-        print("\n‚úÖ ALL GATES PASSED - PRODUCTION READY")
+        print("\n    ALL GATES PASSED - PRODUCTION READY")
         sys.exit(0)
     else:
-        print("\n‚ùå SOME GATES FAILED - SEE REPORT")
+        print("\n    SOME GATES FAILED - SEE REPORT")
         sys.exit(1)
 
 if __name__ == "__main__":
@@ -896,15 +896,15 @@ if __name__ == "__main__":
 ## Phase Status
 | Phase | Status | Started | Completed | Gate | 
 |-------|--------|---------|-----------|------|
-| PH-AUDIT | ‚úÖ COMPLETE | 2024-01-15 | 2024-01-16 | PASS |
-| PH-SSOT | üîÑ IN_PROGRESS | 2024-01-17 | - | - |
-| PH-INFRA | ‚è∏Ô∏è PENDING | - | - | - |
-| PH-SKELETON | ‚è∏Ô∏è PENDING | - | - | - |
-| PH-LAYERS | ‚è∏Ô∏è PENDING | - | - | - |
-| PH-CONNECTORS | ‚è∏Ô∏è PENDING | - | - | - |
-| PH-ORCHESTRATION | ‚è∏Ô∏è PENDING | - | - | - |
-| PH-RESILIENCE | ‚è∏Ô∏è PENDING | - | - | - |
-| PH-PRODUCTION | ‚è∏Ô∏è PENDING | - | - | - |
+| PH-AUDIT |     COMPLETE | 2024-01-15 | 2024-01-16 | PASS |
+| PH-SSOT |      IN_PROGRESS | 2024-01-17 | - | - |
+| PH-INFRA |        PENDING | - | - | - |
+| PH-SKELETON |        PENDING | - | - | - |
+| PH-LAYERS |        PENDING | - | - | - |
+| PH-CONNECTORS |        PENDING | - | - | - |
+| PH-ORCHESTRATION |        PENDING | - | - | - |
+| PH-RESILIENCE |        PENDING | - | - | - |
+| PH-PRODUCTION |        PENDING | - | - | - |
 
 ## Metrics Summary
 - **Overall Progress:** 11% (1/9 phases)
@@ -976,94 +976,94 @@ if __name__ == "__main__":
 
 ---
 
- ¶ µ π  ∫ æ º   ª µ ∫   Ω ∏ π    ª   Ω  ∑   ± µ ∑   µ á É î:
-1. ** ú   à ∏ Ω æ á ∏ Ç   ± µ ª å Ω ñ   Ç å** -  ≤   ñ      Ç µ Ñ   ∫ Ç ∏  ≤ JSON/YAML  ∑    Ö µ º   º ∏
-2. ** í ñ ¥ Ç ≤ æ   é ≤   Ω ñ   Ç å** -  ± É ¥ å- è ∫   LLM  º æ ∂ µ      æ ¥ æ ≤ ∂ ∏ Ç ∏  ∑  ± É ¥ å- è ∫ æ ó  Ç æ á ∫ ∏
-3. ** ¢       æ ≤   Ω ñ   Ç å** -  ∫ æ ∂ µ Ω  ∫   æ ∫  ª æ ≥ É î Ç å   è  ≤ LLM_LOG.jsonl
-4. ** Ø ∫ ñ   Ç å** -  ∂ æ     Ç ∫ ñ  ≥ µ π Ç ∏  Ω    ∫ æ ∂ Ω ñ π  Ñ   ∑ ñ
-5. ** ë µ ∑   µ ∫ É** -  ≤ ± É ¥ æ ≤   Ω ñ    µ   µ ≤ ñ   ∫ ∏  Ω    ∫ æ ∂ Ω æ º É  µ Ç     ñ
+                                                           :
+1. **                                      ** -                              JSON/YAML                  
+2. **                              ** -         -       LLM                                          -                   
+3. **                        ** -                                           LLM_LOG.jsonl
+4. **            ** -                                                     
+5. **              ** -                                                                     
 
 
-## üîç  ö   ∏ Ç ∏ á Ω ñ      æ ≥   ª ∏ Ω ∏  ≤    ª   Ω ñ:
+##                                                       :
 
-### 1. ** í ñ ¥   É Ç Ω è    µ   µ ≤ ñ   ∫      µ   ª å Ω æ ó  ñ Ω Ç µ ≥     Ü ñ ó  ∑ Binance API** ‚ùå
--  ü ª   Ω  Ω µ  ≤ ∫ ª é á   î  Ç µ   Ç É ≤   Ω Ω è **   µ   ª å Ω æ ≥ æ    ñ ¥ ∫ ª é á µ Ω Ω è**  ¥ æ WebSocket  Ç   REST API
--  ù µ º   î  ∫   æ ∫ É  ¥ ª è    µ   µ ≤ ñ   ∫ ∏ **   ≤ Ç µ Ω Ç ∏ Ñ ñ ∫   Ü ñ ó**  Ç    æ Ç   ∏ º   Ω Ω è  ¥   Ω ∏ Ö  ∑  Ç µ   Ç Ω µ Ç É
--  ù µ  ≤     Ö æ ≤   Ω æ  º æ ∂ ª ∏ ≤ ñ **rate limits**  Ç    æ ±   æ ± ∫ É    æ º ∏ ª æ ∫ API
+### 1. **                                                                             Binance API**    
+-                                                   **                                         **      WebSocket      REST API
+-                                                 **                            **                                                       
+-                                        **rate limits**                                    API
 
-### 2. ** ù µ  ≤     Ö æ ≤   Ω    º ñ ≥     Ü ñ è execution_engine** ‚ùå  
--  £ `core/aurora/`  î  ∫   ∏ Ç ∏ á Ω ∏ π  ¥ æ º µ Ω `execution/`  ¥ ª è  ≤ ∏ ∫ æ Ω   Ω Ω è  æ   ¥ µ   ñ ≤
--  ë µ ∑  Ω å æ ≥ æ    ∏   Ç µ º    º æ ∂ µ  ª ∏ à µ      æ   Ç µ   ñ ≥   Ç ∏,    ª µ  Ω µ  Ç æ   ≥ É ≤   Ç ∏
--  ¶ µ  ± ª æ ∫ É î    µ   µ Ö ñ ¥  ≤ ñ ¥ "read-only"  ¥ æ    ∫ Ç ∏ ≤ Ω æ ó  Ç æ   ≥ ñ ≤ ª ñ
+### 2. **                                         execution_engine**      
+-    `core/aurora/`                                  `execution/`                                         
+-                                                                            ,                               
+-                                         "read-only"                                       
 
-### 3. ** ü   æ   É â µ Ω      ∏   Ç µ º   WHY-chain tracing** ‚ùå
--  ó ≥   ¥ É î Ç å   è  ≤  ¥ æ ∫ É º µ Ω Ç   Ö,    ª µ  Ω µ  º   î  ∫ æ Ω ∫   µ Ç Ω ∏ Ö  ∫   æ ∫ ñ ≤    µ   ª ñ ∑   Ü ñ ó
--  ö   ∏ Ç ∏ á Ω æ  ¥ ª è debugging  Ç      É ¥ ∏ Ç É    ñ à µ Ω å FSM
--  ü æ Ç   ñ ± µ Ω  æ ∫   µ º ∏ π  ¥ æ º µ Ω  ¥ ª è  ∑ ± æ   É  Ç    ≤ ñ ∑ É   ª ñ ∑   Ü ñ ó WHY  ª   Ω Ü é ∂ ∫ ñ ≤
+### 3. **                                  WHY-chain tracing**    
+-                                             ,                                                                          
+-                         debugging                                FSM
+-                                                                                            WHY                   
 
-### 4. ** í ñ ¥   É Ç Ω è    ∏   Ç µ º    ≤   ª ñ ¥   Ü ñ ó  Ç æ   ≥ æ ≤ ∏ Ö    ∏ ≥ Ω   ª ñ ≤** ‚ùå
--  ù µ º   î    µ   µ ≤ ñ   ∫ ∏    ∏ ≥ Ω   ª ñ ≤    µ   µ ¥  ≤ ∏ ∫ æ Ω   Ω Ω è º
--  ù µ    µ   ª ñ ∑ æ ≤   Ω ∏ π  º µ Ö   Ω ñ ∑ º "dry run"  ¥ ª è  Ç µ   Ç É ≤   Ω Ω è    Ç     Ç µ ≥ ñ π
--  í ñ ¥   É Ç Ω è    ∏ º É ª è Ü ñ è  Ç æ   ≥ ñ ≤  ¥ ª è  ± µ ∑   µ á Ω æ ≥ æ  Ç µ   Ç É ≤   Ω Ω è
+### 4. **                                                                                    **    
+-                                                                               
+-                                                "dry run"                                               
+-                                                                                                  
 
-### 5. ** ù µ  ≤     Ö æ ≤   Ω æ disaster recovery** ‚ùå
--  ü ª   Ω  Ω µ  ≤ ∫ ª é á   î  º µ Ö   Ω ñ ∑ º ∏  ≤ ñ ¥ Ω æ ≤ ª µ Ω Ω è    ñ   ª è  ∑ ± æ ó ≤
--  ù µ º   î checkpoint/restore  ¥ ª è    Ç   Ω É FSM
--  í ñ ¥   É Ç Ω è  æ ±   æ ± ∫      æ ∑   ∏ ≤ ñ ≤  ∑' î ¥ Ω   Ω Ω è  Ç    ≤ Ç     Ç ∏  ¥   Ω ∏ Ö
+### 5. **                        disaster recovery**    
+-                                                                                             
+-            checkpoint/restore                   FSM
+-                                                    '                                           
 
-### 6. ** ü   æ   É â µ Ω æ  º µ Ç   ∏ ∫ ∏  Ç    º æ Ω ñ Ç æ   ∏ Ω ≥** ‚ùå
--  ù µ º   î Prometheus/Grafana  ñ Ω Ç µ ≥     Ü ñ ó
--  í ñ ¥   É Ç Ω ñ performance  º µ Ç   ∏ ∫ ∏ (latency, throughput)
--  ù µ    µ   ª ñ ∑ æ ≤   Ω ∏ π health check endpoint
+### 6. **                                                           **    
+-            Prometheus/Grafana                     
+-                  performance                (latency, throughput)
+-                               health check endpoint
 
-### 7. ** ù µ  ≤ ∫ ª é á µ Ω æ backtesting framework** ‚ùå
--  í   ∂ ª ∏ ≤ æ  ¥ ª è  ≤   ª ñ ¥   Ü ñ ó    Ç     Ç µ ≥ ñ π  Ω    ñ   Ç æ   ∏ á Ω ∏ Ö  ¥   Ω ∏ Ö
--  í ñ ¥   É Ç Ω è  º æ ∂ ª ∏ ≤ ñ   Ç å replay  ñ   Ç æ   ∏ á Ω ∏ Ö    æ ¥ ñ π
--  ù µ º   î  º µ Ö   Ω ñ ∑ º É    æ   ñ ≤ Ω è Ω Ω è live vs backtest    µ ∑ É ª å Ç   Ç ñ ≤
+### 7. **                      backtesting framework**    
+-                                                                                                 
+-                                       replay                                
+-                                                    live vs backtest                       
 
-## üìã  û Ω æ ≤ ª µ Ω    ¥ æ   æ ∂ Ω è  ∫     Ç    ∑  ≤ ∏       ≤ ª µ Ω Ω è º ∏:
+##                                                                              :
 
-### ** ï Ç     0: API Validation & Connection Health** ( ù û í ò ô)
-* ¢   ∏ ≤   ª ñ   Ç å: 2-3  ¥ Ω ñ*
+### **         0: API Validation & Connection Health** (          )
+*                    : 2-3       *
 
-- **T01**:  ° Ç ≤ æ   ∏ Ç ∏ `ConnectionHealthCheck`  ¥ æ º µ Ω  ¥ ª è  º æ Ω ñ Ç æ   ∏ Ω ≥ É  è ∫ æ   Ç ñ  ∑' î ¥ Ω   Ω Ω è
-- **T02**:  † µ   ª ñ ∑ É ≤   Ç ∏    ≤ Ç æ º   Ç ∏ á Ω ∏ π reconnect  ∑ exponential backoff
-- **T03**:  î æ ¥   Ç ∏ rate limit monitoring  Ç   throttling
+- **T01**:                  `ConnectionHealthCheck`                                                         '              
+- **T02**:                                                 reconnect    exponential backoff
+- **T03**:              rate limit monitoring      throttling
 
-### ** ï Ç     1: Foundation Freeze** ( æ Ω æ ≤ ª µ Ω æ)
-* î æ ¥   Ç ∏  ¥ æ  ñ   Ω É é á æ ≥ æ    ª   Ω É:*
+### **         1: Foundation Freeze** (                )
+*                                               :*
 
-- **T05**:  † µ   ª ñ ∑ É ≤   Ç ∏ WHY-chain collector  ¥ ª è  Ç       É ≤   Ω Ω è    ñ à µ Ω å
-- **T06**:  ° Ç ≤ æ   ∏ Ç ∏ health check endpoints (`/health`, `/ready`)
-- **T07**:  î æ ¥   Ç ∏ Prometheus  º µ Ç   ∏ ∫ ∏  µ ∫     æ   Ç µ  
+- **T05**:                        WHY-chain collector                                         
+- **T06**:                  health check endpoints (`/health`, `/ready`)
+- **T07**:              Prometheus                                  
 
-### ** ï Ç     2: Total Awareness** ( æ Ω æ ≤ ª µ Ω æ)
-* î æ ¥   Ç ∏:*
+### **         2: Total Awareness** (                )
+*            :*
 
-- **T05**:  ú ñ ≥   É ≤   Ç ∏ `execution_engine`  ∑ core/aurora
-- **T06**:  † µ   ª ñ ∑ É ≤   Ç ∏ dry-run    µ ∂ ∏ º  ¥ ª è  ± µ ∑   µ á Ω æ ≥ æ  Ç µ   Ç É ≤   Ω Ω è
-- **T07**:  ° Ç ≤ æ   ∏ Ç ∏ backtesting framework  ∑ replay  º µ Ö   Ω ñ ∑ º æ º
+- **T05**:                    `execution_engine`    core/aurora
+- **T06**:                        dry-run                                                            
+- **T07**:                  backtesting framework    replay                     
 
-### ** ï Ç     3.5: Resilience & Recovery** ( ù û í ò ô)
-* ¢   ∏ ≤   ª ñ   Ç å: 1  Ç ∏ ∂ ¥ µ Ω å*
+### **         3.5: Resilience & Recovery** (          )
+*                    : 1               *
 
-- **T01**:  † µ   ª ñ ∑ É ≤   Ç ∏ checkpoint/restore  ¥ ª è FSM    Ç   Ω É
-- **T02**:  î æ ¥   Ç ∏ circuit breaker  ¥ ª è  ∑     æ ± ñ ≥   Ω Ω è  ∫     ∫   ¥ Ω ∏ Ö  ∑ ± æ ó ≤  
-- **T03**:  ° Ç ≤ æ   ∏ Ç ∏ disaster recovery playbook  ∑    ≤ Ç æ º   Ç ∏ ∑   Ü ñ î é
+- **T01**:                        checkpoint/restore        FSM           
+- **T02**:              circuit breaker                                                              
+- **T03**:                  disaster recovery playbook                                
 
-### ** ï Ç     4: Production Deployment** ( ù û í ò ô)
-* ¢   ∏ ≤   ª ñ   Ç å: 1  Ç ∏ ∂ ¥ µ Ω å*
+### **         4: Production Deployment** (          )
+*                    : 1               *
 
-- **T01**: Docker  ∫ æ Ω Ç µ π Ω µ   ∏ ∑   Ü ñ è  ∑ multi-stage build
-- **T02**: Kubernetes manifests  ¥ ª è orchestration
-- **T03**: CI/CD pipeline  ∑    ≤ Ç æ º   Ç ∏ á Ω ∏ º ∏  Ç µ   Ç   º ∏
-- **T04**: Blue-green deployment    Ç     Ç µ ≥ ñ è
+- **T01**: Docker                                   multi-stage build
+- **T02**: Kubernetes manifests        orchestration
+- **T03**: CI/CD pipeline                                             
+- **T04**: Blue-green deployment                   
 
-## üö®  ö   ∏ Ç ∏ á Ω ñ  ∑   ª µ ∂ Ω æ   Ç ñ,  è ∫ ñ    æ Ç   ñ ± Ω æ  ≤ ∏   ñ à ∏ Ç ∏  ó ê † ê ó:
+##                                           ,                                                    :
 
-1. ** ü µ   µ ≤ ñ   ∏ Ç ∏    æ ± æ Ç É Binance API  ∫ ª é á ñ ≤** -  ± µ ∑  Ü å æ ≥ æ  Ω ñ á æ ≥ æ  Ω µ        Ü é ≤   Ç ∏ º µ
-2. ** í ∏ ∑ Ω   á ∏ Ç ∏      ñ æ   ∏ Ç µ Ç**: observation-only  á ∏ full trading capability?
-3. ** í ∏ ±     Ç ∏  º µ Ç æ ¥ deployment**: local, cloud,  á ∏ hybrid?
+1. **                                  Binance API             ** -                                                           
+2. **                                     **: observation-only      full trading capability?
+3. **                          deployment**: local, cloud,      hybrid?
 
 ---
 ---
@@ -1074,7 +1074,7 @@ if __name__ == "__main__":
 **Objective:** Create a definitive, machine-readable catalog of all required metrics from Binance APIs.
 **Artifacts:** `docs/METRICS_CATALOG.md`, `schemas/metrics_catalog.json`, `samples/binance_api/`
 
-### J1.1. Market Data: Provided (Spot & USD‚ìà-M Futures)
+### J1.1. Market Data: Provided (Spot & USD   -M Futures)
 | metric_key | market | source | endpoint_or_stream | fields | units | intervals | history_window | rate_limits | auth_required |
 |---|---|---|---|---|---|---|---|---|---|
 | klines | spot, um | REST | `/api/v3/klines`, `/fapi/v1/klines` | `open,high,low,close,volume` | quote | 1m, 5m, 1h, 1d | 1000 candles | by IP/UID | No |
@@ -1128,7 +1128,7 @@ if __name__ == "__main__":
 5.  **Load/Chaos Tests:** Simulate high volume WebSocket messages and random disconnects to test connector resilience.
 
 **DoD (J3):**
-- [ ] Unit test coverage for compute functions ‚â• 95%.
+- [ ] Unit test coverage for compute functions     95%.
 - [ ] Integration test for klines ingestion flow passes.
 - [ ] E2E smoke test against testnet passes.
 
@@ -1157,8 +1157,8 @@ if __name__ == "__main__":
 **Objective:** Ensure the pipeline is efficient and secure.
 
 1.  **Performance Budgets:**
-    *   p95 REST API call (e.g., `/fapi/v1/klines`): ‚â§ 200ms.
-    *   p99 WS message processing latency: ‚â§ 10ms.
+    *   p95 REST API call (e.g., `/fapi/v1/klines`):     200ms.
+    *   p99 WS message processing latency:     10ms.
     *   CPU usage of ingestion service: < 50% of 1 core.
 2.  **Security:**
     *   Binance API keys are loaded exclusively from environment variables or a secret manager (e.g., HashiCorp Vault).

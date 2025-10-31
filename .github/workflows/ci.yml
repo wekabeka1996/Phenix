@@ -48,7 +48,7 @@ jobs:
         working-directory: ./vfoundation
 
   test:
-    name: Test + Coverage (≥90%)
+    name: Test + Coverage (   90%)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +139,7 @@ jobs:
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.smoke.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
-            echo "❌ Some gates failed!"
+            echo "    Some gates failed!"
             exit 1
           fi
-          echo "✅ All P1 gates passed!"
+          echo "    All P1 gates passed!"

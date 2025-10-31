@@ -8,8 +8,8 @@ This document outlines the complete structure of the Olimp_v1 project, focusing 
 - **Current Branch**: feat/vfoundation-aurora-integration
 - **Default Branch**: main
 - **Python Version**: 3.11.9
-- **Test Coverage Target**: ≥90% (FSM components)
-- **Hot Path SLO**: p95 ≤50ms, timeout_rate ≤1%, WHY-coverage ≥95%
+- **Test Coverage Target**:    90% (FSM components)
+- **Hot Path SLO**: p95    50ms, timeout_rate    1%, WHY-coverage    95%
 
 ## Key Directories and Files
 
@@ -129,7 +129,7 @@ Note: Documentation and project listings ignore temporary and generated 'junk' f
 - `DR_PLAYBOOK.md` - Disaster recovery playbook
 - `project_structure.md` - This file
 - `docs_vfoundation/` - vFoundation-specific documentation
-- ` �   � � �   � � �/` - Additional documentation
+- `                  /` - Additional documentation
 
 ### ops/
 - `reports/` - Operational reports
@@ -285,34 +285,34 @@ Note: Documentation and project listings ignore temporary and generated 'junk' f
 ## Domain Order & Implementation Status (v1)
 
 ### Implemented Domains (FSMP-OBSERVE-T01 completed):
-1. **account_balance** ✅ - Account balance monitoring (AccountObserver FSM)
-   - Status: ✅ Implemented, tested, integrated
+1. **account_balance**     - Account balance monitoring (AccountObserver FSM)
+   - Status:     Implemented, tested, integrated
    - Components: account_connector.py, account_observer.py
    - Tests: 10/10 passing, 88% coverage
 
-2. **decision_making** ✅ - Trading decision aggregation (DecisionMaking FSM)
-   - Status: ✅ Implemented, tested, integrated
+2. **decision_making**     - Trading decision aggregation (DecisionMaking FSM)
+   - Status:     Implemented, tested, integrated
    - Components: decision_making.py (aggregates features + risk + portfolio)
    - Tests: 4/4 passing (fixed critical state management bug)
 
-3. **feature_engineering** ✅ - Signal calculation (FeatureEngineering FSM)
-   - Status: ✅ Implemented, tested, integrated
+3. **feature_engineering**     - Signal calculation (FeatureEngineering FSM)
+   - Status:     Implemented, tested, integrated
    - Components: feature_engineering.py
    - Tests: 3/3 passing
 
-4. **position_tracking** ✅ - Portfolio state management (PositionTracking FSM)
-   - Status: ✅ Implemented, tested, integrated
+4. **position_tracking**     - Portfolio state management (PositionTracking FSM)
+   - Status:     Implemented, tested, integrated
    - Components: position_tracking.py
    - Tests: 9/9 passing
 
-5. **risk_management** ✅ - Risk assessment and sizing (RiskManagement FSM)
-   - Status: ✅ Implemented, tested, integrated
+5. **risk_management**     - Risk assessment and sizing (RiskManagement FSM)
+   - Status:     Implemented, tested, integrated
    - Components: risk_management.py
    - Tests: 1/1 passing
 
 ### Partially Implemented:
-6. **market_data** ⚠️ - Market data streaming
-   - Status: ⚠️ Connector implemented, tests failing (import issue)
+6. **market_data**        - Market data streaming
+   - Status:        Connector implemented, tests failing (import issue)
    - Components: market_data_connector.py (WebSocket integration)
    - Tests: 4 tests, 1 failing due to import path issues
 
@@ -333,7 +333,7 @@ Note: Documentation and project listings ignore temporary and generated 'junk' f
 - **Domain FSMs**: Federated domain-specific state machines
 
 ### Data Flow Architecture
-- **TRADE → FEATURES** → **RISK ASSESSMENT** → **PORTFOLIO STATE** → **DECISION** → **EXECUTION**
+- **TRADE     FEATURES**     **RISK ASSESSMENT**     **PORTFOLIO STATE**     **DECISION**     **EXECUTION**
 - Event-driven communication via Message protocol
 - WHY chain explanations for all decisions
 - Idempotency guarantees with distributed ledger
@@ -362,17 +362,17 @@ Note: Documentation and project listings ignore temporary and generated 'junk' f
 ## Quality Assurance Status
 
 ### Test Coverage (80+ test files analyzed)
-- **Domains**: 6/7 implemented domains fully tested ✅
-- **Core Components**: WAL, Idempotency, Circuit Breakers, Routing ✅
-- **Integration**: End-to-end Aurora flows tested ✅
-- **Adapters**: Binance SDK, Execution adapters tested ✅
-- **Configuration**: Environment overrides, validation tested ✅
+- **Domains**: 6/7 implemented domains fully tested    
+- **Core Components**: WAL, Idempotency, Circuit Breakers, Routing    
+- **Integration**: End-to-end Aurora flows tested    
+- **Adapters**: Binance SDK, Execution adapters tested    
+- **Configuration**: Environment overrides, validation tested    
 
 ### Code Quality
-- **Linting**: Ruff checks passing ✅
-- **Type Checking**: MyPy strict mode passing ✅
-- **Import Order**: E402 errors fixed ✅
-- **Test Execution**: 95%+ tests passing ✅
+- **Linting**: Ruff checks passing    
+- **Type Checking**: MyPy strict mode passing    
+- **Import Order**: E402 errors fixed    
+- **Test Execution**: 95%+ tests passing    
 
 ### Known Issues
 - **market_data import**: Path resolution issue in test environment
@@ -383,45 +383,45 @@ Note: Documentation and project listings ignore temporary and generated 'junk' f
 
 ### Commands
 - **Schema generation**: `vfound schema`
-- **Run tests**: `pytest -q` (target ≥90% coverage, FSM components)
+- **Run tests**: `pytest -q` (target    90% coverage, FSM components)
 - **Linting**: `ruff check` + `mypy --strict`
 - **Coverage**: `pytest --cov` with HTML reports
 
 ### Performance Targets
-- **Hot path SLO**: p95 ≤50ms overall, ≤100ms end-to-end
-- **Timeout rate**: ≤1% of operations
-- **WHY coverage**: ≥95% of decisions explained
-- **Test coverage**: ≥90% for FSM components
+- **Hot path SLO**: p95    50ms overall,    100ms end-to-end
+- **Timeout rate**:    1% of operations
+- **WHY coverage**:    95% of decisions explained
+- **Test coverage**:    90% for FSM components
 
 ### Development Workflow
-- **Contracts first**: Define schemas → Generate code → Implement FSMs
+- **Contracts first**: Define schemas     Generate code     Implement FSMs
 - **Task tracking**: `TODO.md` with GitHub task lists
 - **Journaling**: `JOURNAL.md` with RID and WHY for all actions
 - **Commits**: Conventional commits with FSMP prefixes
 
 ## Current Development Status
 
-### ✅ Completed Phases
+###     Completed Phases
 - **FSMP-OBSERVE-T01**: AccountObserver implementation and testing
   - Account balance monitoring via Binance API
   - Trade event processing and payload transformation
   - Comprehensive test suite (10/10 tests passing)
   - Integration with Aurora core FSM federation
 
-### 🔄 In Progress
+###      In Progress
 - **FSMP-DEEP-T01**: Regime detection and signal processing
   - Feature engineering for market signals
   - Risk assessment and position sizing
   - Decision making aggregation logic
   - Multi-domain integration testing
 
-### 📋 Next Phases (Planned)
+###      Next Phases (Planned)
 - **FSMP-EXECUTE-T01**: Position execution and management
 - **FSMP-LEARN-T01**: Reinforcement learning integration
 - **FSMP-DR-T01**: Disaster recovery and replay systems
 - **FSMP-OBSERVE-T02**: Enhanced observability and monitoring
 
-### 📊 Project Metrics
+###      Project Metrics
 - **Lines of Code**: ~15K+ across Python modules
 - **Test Files**: 80+ with comprehensive coverage
 - **Domains Implemented**: 6/13 core domains

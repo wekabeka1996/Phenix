@@ -51,7 +51,7 @@ flowchart TD
 
 1. **Features Freshness**: `lag_ms <= ttl_ms` (default 30s)
 2. **QoS Gates**: Rate limit (6/min), symbol cooldown (3s), exposure block (10s)
-3. **Risk Gates**: Daily drawdown ≤ 10%, risk_score ≤ threshold, trading_allowed = true
+3. **Risk Gates**: Daily drawdown     10%, risk_score     threshold, trading_allowed = true
 4. **Signal Gates**: Combined score > threshold, regime alignment
 5. **Sizing Gates**: Position size within min/max limits
 

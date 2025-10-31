@@ -15,7 +15,7 @@ vFoundation requires concurrent-safe Write-Ahead Log (WAL) operations and atomic
 1. **WAL Race Conditions:** Multiple threads/processes appending to WAL simultaneously can corrupt the hash chain
 2. **Thundering Herd:** Duplicate requests (same `idempotent_key`) should execute handler only once
 3. **Cross-Platform Support:** Solution must work on Windows (msvcrt) and Unix (fcntl)
-4. **Performance:** Must maintain p95 â‰¤ 50ms with minimal lock contention
+4. **Performance:** Must maintain p95     50ms with minimal lock contention
 5. **Fail-Closed:** System must degrade safely under lock timeouts
 
 ### Requirements
@@ -24,7 +24,7 @@ vFoundation requires concurrent-safe Write-Ahead Log (WAL) operations and atomic
 - **Idempotency:** Single-flight execution for concurrent requests with same key
 - **Observability:** Metrics for lock contention, wait times, timeouts
 - **Cross-Platform:** Windows and Unix support
-- **Performance:** Throughput â‰¥ 100 records/sec, lock timeouts â‰¤ 1%
+- **Performance:** Throughput     100 records/sec, lock timeouts     1%
 
 ---
 
@@ -34,25 +34,25 @@ vFoundation requires concurrent-safe Write-Ahead Log (WAL) operations and atomic
 
 **Architecture:**
 ```
-â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”
-â”‚  Thread 1       Thread 2       Thread 3             â”‚
-â”‚     â”‚              â”‚              â”‚                  â”‚
-â”‚     â–¼              â–¼              â–¼                  â”‚
-â”‚  â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”               â”‚
-â”‚  â”‚  _file_lock() Context Manager    â”‚               â”‚
-â”‚  â”‚  â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â”¬â” â” â” â” â” â” â” â” â” â” â” â” â” â”   â”‚               â”‚
-â”‚  â”‚  â”‚  Windows   â”‚   Unix      â”‚   â”‚               â”‚
-â”‚  â”‚  â”‚  (Global   â”‚  (fcntl     â”‚   â”‚               â”‚
-â”‚  â”‚  â”‚  Lock)     â”‚  per-file)  â”‚   â”‚               â”‚
-â”‚  â”‚  â””â” â” â” â” â” â” â” â” â” â” â” â” â”´â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜   â”‚               â”‚
-â”‚  â””â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜               â”‚
-â”‚           â”‚                                          â”‚
-â”‚           â–¼                                          â”‚
-â”‚  â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”                     â”‚
-â”‚  â”‚  WAL File (JSONL)          â”‚                     â”‚
-â”‚  â”‚  [prev_hash â†’ hash chain]  â”‚                     â”‚
-â”‚  â””â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜                     â”‚
-â””â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜
+                                                                                                                                                                     
+     Thread 1       Thread 2       Thread 3                
+                                                                  
+                                                                  
+                                                                                                                                   
+          _file_lock() Context Manager                         
+                                                                                                                      
+               Windows         Unix                                 
+               (Global        (fcntl                                
+               Lock)          per-file)                             
+                                                                                                                      
+                                                                                                                                   
+                                                              
+                                                              
+                                                                                                                       
+          WAL File (JSONL)                                     
+          [prev_hash     hash chain]                             
+                                                                                                                       
+                                                                                                                                                                     
 ```
 
 **Implementation:**
@@ -95,56 +95,56 @@ def append(record, lock_timeout_s=5.0) -> Optional[str]:
 
 **Architecture:**
 ```
-â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”
-â”‚  Request 1 (key="op-123")                           â”‚
-â”‚       â”‚                                              â”‚
-â”‚       â–¼                                              â”‚
-â”‚  â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”                       â”‚
-â”‚  â”‚ idem.begin(key)          â”‚                       â”‚
-â”‚  â”‚ â†’ {"acquired": True}     â”‚ â” â” â”                   â”‚
-â”‚  â””â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜   â”‚                   â”‚
-â”‚       â”‚                          â”‚                   â”‚
-â”‚       â–¼                          â”‚                   â”‚
-â”‚  [Execute Handler]               â”‚                   â”‚
-â”‚       â”‚                          â”‚                   â”‚
-â”‚       â–¼                          â”‚                   â”‚
-â”‚  idem.complete(key, result)      â”‚                   â”‚
-â”‚                                  â”‚                   â”‚
-â”‚  â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”‚                   â”‚
-â”‚  â”‚ Request 2 (key="op-123")   â”‚ â”‚                   â”‚
-â”‚  â”‚       â”‚                    â”‚ â”‚ (concurrent)      â”‚
-â”‚  â”‚       â–¼                    â”‚ â”‚                   â”‚
-â”‚  â”‚  idem.begin(key)           â”‚ â”‚                   â”‚
-â”‚  â”‚  â†’ {"inflight": True} â—„â” â” â” â” â”˜                     â”‚
-â”‚  â”‚       â”‚                    â”‚                     â”‚
-â”‚  â”‚       â–¼                    â”‚                     â”‚
-â”‚  â”‚  Return EVT/INFLIGHT       â”‚                     â”‚
-â”‚  â””â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜                     â”‚
-â”‚                                                      â”‚
-â”‚  â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”                     â”‚
-â”‚  â”‚ Request 3 (key="op-123")   â”‚                     â”‚
-â”‚  â”‚       â”‚                    â”‚ (after completion)  â”‚
-â”‚  â”‚       â–¼                    â”‚                     â”‚
-â”‚  â”‚  idem.begin(key)           â”‚                     â”‚
-â”‚  â”‚  â†’ {"dedup": True}         â”‚                     â”‚
-â”‚  â”‚       â”‚                    â”‚                     â”‚
-â”‚  â”‚       â–¼                    â”‚                     â”‚
-â”‚  â”‚  Return cached result +    â”‚                     â”‚
-â”‚  â”‚  pld.dedup=True            â”‚                     â”‚
-â”‚  â””â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜                     â”‚
-â””â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜
+                                                                                                                                                                     
+     Request 1 (key="op-123")                              
+                                                              
+                                                              
+                                                                                                                   
+         idem.begin(key)                                       
+             {"acquired": True}                                        
+                                                                                                                     
+                                                                
+                                                                
+     [Execute Handler]                                        
+                                                                
+                                                                
+     idem.complete(key, result)                               
+                                                              
+                                                                                                                         
+         Request 2 (key="op-123")                                
+                                              (concurrent)         
+                                                                   
+          idem.begin(key)                                        
+              {"inflight": True}                                           
+                                                                 
+                                                                 
+          Return EVT/INFLIGHT                                  
+                                                                                                                       
+                                                            
+                                                                                                                       
+         Request 3 (key="op-123")                              
+                                          (after completion)     
+                                                                 
+          idem.begin(key)                                      
+              {"dedup": True}                                    
+                                                                 
+                                                                 
+          Return cached result +                               
+          pld.dedup=True                                       
+                                                                                                                       
+                                                                                                                                                                     
 ```
 
 **State Machine:**
 ```
-â”Œâ” â” â” â” â” â” â” â” â” â” â” â” â” â”  begin()   â”Œâ” â” â” â” â” â” â” â” â” â” â”  complete()  â”Œâ” â” â” â” â” â” â” â” â” â” â”
-â”‚   INITIAL   â”‚ â” â” â” â” â” â” â” â” >  â”‚ PENDING  â”‚  â” â” â” â” â” â” â” â” â” >  â”‚   DONE   â”‚
-â”‚ (not exist) â”‚            â”‚(inflight)â”‚              â”‚ (cached) â”‚
-â””â” â” â” â” â” â” â” â” â” â” â” â” â” â”˜            â””â” â” â” â” â” â” â” â” â” â” â”˜              â””â” â” â” â” â” â” â” â” â” â” â”˜
-      â”‚                          â”‚                          â”‚
-      â”‚ begin()                  â”‚ begin()                  â”‚ begin()
-      â”‚ acquired=True            â”‚ inflight=True            â”‚ dedup=True
-      â–¼                          â–¼                          â–¼
+                                               begin()                                         complete()                                      
+      INITIAL                               >      PENDING                                  >        DONE      
+    (not exist)                   (inflight)                     (cached)    
+                                                                                                                                               
+                                                                   
+          begin()                      begin()                      begin()
+          acquired=True                inflight=True                dedup=True
+                                                                   
    Execute                    Wait/Retry              Return Cache
    Handler                    (EVT/INFLIGHT)          (pld.dedup=True)
 ```
@@ -237,9 +237,9 @@ GET /metrics
    - Single-flight execution verified (exactly 1 handler per key)
 
 2. **Performance Achieved**
-   - Throughput: **502 records/sec** (target: â‰¥100)
-   - Lock timeouts: **0%** (target: â‰¤1%)
-   - P95 router latency: maintained â‰¤50ms
+   - Throughput: **502 records/sec** (target:    100)
+   - Lock timeouts: **0%** (target:    1%)
+   - P95 router latency: maintained    50ms
 
 3. **Cross-Platform Support**
    - Windows: threading.Lock (works reliably)
@@ -360,7 +360,7 @@ GET /metrics
 1. **Unit Tests:** `test_idempotency.py`, `test_wal_replay.py`
 2. **Integration Tests:** `test_routing_idempotency.py`, `test_single_flight_routing.py`
 3. **Stress Tests:** `test_wal_stress.py`
-   - 100 threads Ã— 5 records = 500 concurrent appends
+   - 100 threads    5 records = 500 concurrent appends
    - CAS conflict resolution
    - Lock timeout behavior (Unix only)
    - High-throughput benchmark (1000 records)
@@ -389,10 +389,10 @@ Test: test_wal_high_throughput
 ### Monitoring and Alerting
 
 **Key Metrics to Monitor:**
-1. `lock_timeouts` > 0 â†’ investigate lock contention
-2. `lock_wait_ms` / `lock_contention` > 200ms â†’ consider sharding
-3. `idem_inflight` / `idem_acquired` > 0.5 â†’ high duplicate rate
-4. `router_p95_ms` > 50ms â†’ performance degradation
+1. `lock_timeouts` > 0     investigate lock contention
+2. `lock_wait_ms` / `lock_contention` > 200ms     consider sharding
+3. `idem_inflight` / `idem_acquired` > 0.5     high duplicate rate
+4. `router_p95_ms` > 50ms     performance degradation
 
 **Alerts:**
 ```yaml

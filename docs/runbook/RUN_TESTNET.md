@@ -26,10 +26,10 @@ python --version  # Should be 3.11+
 ```
 
 ### API Credentials
-- ✅ Binance Futures Testnet account created
-- ✅ API keys generated with Futures permissions
-- ✅ Test USDT available in futures wallet
-- ✅ `.env` file configured (see `docs/secrets.md`)
+-     Binance Futures Testnet account created
+-     API keys generated with Futures permissions
+-     Test USDT available in futures wallet
+-     `.env` file configured (see `docs/secrets.md`)
 
 ### Pre-launch Verification
 Run the pre-launch checklist from `docs/TESTNET_LAUNCH_CHECKLIST.md` before proceeding.
@@ -57,17 +57,17 @@ python -c "
 from apps.reference.config_loader import ConfigLoader
 loader = ConfigLoader()
 config = loader.load_config()
-print(f'✅ USE_TESTNET: {config.use_testnet}')
-print(f'✅ API_KEY: {\"***\" + config.binance_api_key[-4:] if config.binance_api_key else \"NOT SET\"}')
-print(f'✅ LOG_LEVEL: {config.log_level}')
+print(f'    USE_TESTNET: {config.use_testnet}')
+print(f'    API_KEY: {\"***\" + config.binance_api_key[-4:] if config.binance_api_key else \"NOT SET\"}')
+print(f'    LOG_LEVEL: {config.log_level}')
 "
 ```
 
 Expected output:
 ```
-✅ USE_TESTNET: True
-✅ API_KEY: ***abcd
-✅ LOG_LEVEL: INFO
+    USE_TESTNET: True
+    API_KEY: ***abcd
+    LOG_LEVEL: INFO
 ```
 
 ### Step 3: Start Aurora Daemon
@@ -261,7 +261,7 @@ kill -9 <PID>
 #### Manual Position Closure
 If Aurora fails but positions remain open:
 1. Go to Binance Testnet dashboard
-2. Navigate to Futures → Positions
+2. Navigate to Futures     Positions
 3. Manually close any open positions
 4. Cancel any pending orders
 

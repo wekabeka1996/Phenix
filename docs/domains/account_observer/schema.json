@@ -2,26 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aurora-trading/schemas/account_observer.json",
   "title": "Account Observer Domain Schema",
-  "description": "JSON Schema для домену моніторингу торгової активності Account Observer",
+  "description": "JSON Schema                                                                                  Account Observer",
   "type": "object",
   "properties": {
 
     "config": {
       "type": "object",
-      "title": "Конфігурація домену",
-      "description": "Основні налаштування домену Account Observer",
+      "title": "                                     ",
+      "description": "                                                     Account Observer",
       "properties": {
         "trading_mode": {
           "type": "string",
           "enum": ["live", "testnet", "hybrid_live", "hybrid_testnet"],
-          "description": "Режим роботи домену",
+          "description": "                                    ",
           "default": "live"
         },
         "poll_interval": {
           "type": "integer",
           "minimum": 1,
           "maximum": 300,
-          "description": "Інтервал опитування API в секундах",
+          "description": "                                      API                    ",
           "default": 5
         },
         "symbols": {
@@ -29,36 +29,36 @@
           "items": {
             "type": "string",
             "pattern": "^[A-Z]{3,10}USDT$",
-            "description": "Торгова пара у форматі BASEUSDT"
+            "description": "                                          BASEUSDT"
           },
           "minItems": 1,
           "maxItems": 100,
-          "description": "Список символів для моніторингу",
+          "description": "                                                           ",
           "uniqueItems": true
         },
         "trade_limit": {
           "type": "integer",
           "minimum": 1,
           "maximum": 1000,
-          "description": "Кількість трейдів для отримання за один запит",
+          "description": "                                                                                    ",
           "default": 50
         },
         "max_processed_trades": {
           "type": "integer",
           "minimum": 100,
           "maximum": 100000,
-          "description": "Максимальна кількість кешованих ID трейдів",
+          "description": "                                                             ID               ",
           "default": 10000
         },
         "enable_metrics": {
           "type": "boolean",
-          "description": "Включити збір метрик продуктивності",
+          "description": "                                                                   ",
           "default": true
         },
         "log_level": {
           "type": "string",
           "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
-          "description": "Рівень логування",
+          "description": "                               ",
           "default": "INFO"
         }
       },
@@ -68,14 +68,14 @@
 
     "events": {
       "type": "object",
-      "title": "Схеми подій FSM",
-      "description": "Визначення всіх подій що генерує та споживає домен",
+      "title": "                      FSM",
+      "description": "                                                                                             ",
 
       "properties": {
         "EVT:TRADE_EXECUTED": {
           "type": "object",
-          "title": "Подія виконання трейду",
-          "description": "Подія що емітується при виявленні нового виконаного трейду",
+          "title": "                                          ",
+          "description": "                                                                                                             ",
           "properties": {
             "header": {
               "$ref": "#/$defs/event_header"
@@ -93,38 +93,38 @@
 
     "metrics": {
       "type": "object",
-      "title": "Метрики моніторингу",
-      "description": "Визначення метрик для спостереження за продуктивністю",
+      "title": "                                     ",
+      "description": "                                                                                                     ",
 
       "properties": {
         "trades_processed_total": {
           "type": "integer",
-          "description": "Загальна кількість оброблених трейдів",
+          "description": "                                                                       ",
           "minimum": 0
         },
         "trades_skipped_duplicates_total": {
           "type": "integer",
-          "description": "Кількість пропущених дублікатів трейдів",
+          "description": "                                                                           ",
           "minimum": 0
         },
         "api_calls_total": {
           "type": "integer",
-          "description": "Загальна кількість викликів API",
+          "description": "                                                     API",
           "minimum": 0
         },
         "api_errors_total": {
           "type": "integer",
-          "description": "Кількість помилок API",
+          "description": "                                  API",
           "minimum": 0
         },
         "cached_trade_ids_count": {
           "type": "integer",
-          "description": "Поточна кількість кешованих ID трейдів",
+          "description": "                                                     ID               ",
           "minimum": 0
         },
         "memory_usage_bytes": {
           "type": "integer",
-          "description": "Використання пам'яті в байтах",
+          "description": "                               '                      ",
           "minimum": 0
         }
       },
@@ -139,28 +139,28 @@
 
     "event_header": {
       "type": "object",
-      "title": "Заголовок події FSM",
-      "description": "Стандартний заголовок для всіх подій FSM",
+      "title": "                              FSM",
+      "description": "                                                                     FSM",
       "properties": {
         "event_id": {
           "type": "string",
           "format": "uuid",
-          "description": "Унікальний ідентифікатор події"
+          "description": "                                                          "
         },
         "timestamp": {
           "type": "integer",
-          "description": "Час створення події в мілісекундах Unix timestamp",
+          "description": "                                                                 Unix timestamp",
           "minimum": 0
         },
         "source": {
           "type": "string",
           "const": "account_observer",
-          "description": "Джерело події"
+          "description": "                         "
         },
         "version": {
           "type": "string",
           "pattern": "^\\d+\\.\\d+\\.\\d+$",
-          "description": "Версія схеми події",
+          "description": "                                  ",
           "default": "1.0.0"
         }
       },
@@ -170,43 +170,43 @@
 
     "trade_executed_payload": {
       "type": "object",
-      "title": "Payload події виконання трейду",
-      "description": "Дані про виконану торгову операцію",
+      "title": "Payload                                           ",
+      "description": "                                                                ",
       "properties": {
         "symbol": {
           "type": "string",
           "pattern": "^[A-Z]{3,10}USDT$",
-          "description": "Торгова пара"
+          "description": "                       "
         },
         "side": {
           "type": "string",
           "enum": ["buy", "sell"],
-          "description": "Напрямок операції"
+          "description": "                                 "
         },
         "price": {
           "type": "string",
           "pattern": "^\\d+(\\.\\d{1,8})?$",
-          "description": "Ціна виконання як рядок для точності"
+          "description": "                                                                   "
         },
         "quantity": {
           "type": "string",
           "pattern": "^-?\\d+(\\.\\d{1,8})?$",
-          "description": "Кількість (від'ємна для продажу)"
+          "description": "                   (      '                              )"
         },
         "ts": {
           "type": "integer",
-          "description": "Час виконання в мілісекундах Unix timestamp",
+          "description": "                                                      Unix timestamp",
           "minimum": 0
         },
         "fees": {
           "type": "string",
           "pattern": "^\\d+(\\.\\d{1,8})?$",
-          "description": "Комісія як рядок для точності"
+          "description": "                                                      "
         },
         "venue": {
           "type": "string",
           "const": "binance",
-          "description": "Торговий майданчик"
+          "description": "                                   "
         }
       },
       "required": ["symbol", "side", "price", "quantity", "ts", "fees", "venue"],
@@ -215,59 +215,59 @@
 
     "binance_trade_response": {
       "type": "object",
-      "title": "Відповідь Binance API для трейду",
-      "description": "Структура даних що повертає Binance API для трейду",
+      "title": "                   Binance API                    ",
+      "description": "                                                    Binance API                    ",
       "properties": {
         "symbol": {
           "type": "string",
-          "description": "Торгова пара"
+          "description": "                       "
         },
         "id": {
           "type": "integer",
-          "description": "Унікальний ID трейду",
+          "description": "                     ID             ",
           "minimum": 1
         },
         "orderId": {
           "type": "integer",
-          "description": "ID ордера",
+          "description": "ID             ",
           "minimum": 1
         },
         "price": {
           "type": "string",
-          "description": "Ціна виконання"
+          "description": "                           "
         },
         "qty": {
           "type": "string",
-          "description": "Кількість"
+          "description": "                  "
         },
         "quoteQty": {
           "type": "string",
-          "description": "Загальна вартість в quote currency"
+          "description": "                                     quote currency"
         },
         "commission": {
           "type": "string",
-          "description": "Комісія"
+          "description": "              "
         },
         "commissionAsset": {
           "type": "string",
-          "description": "Актив комісії"
+          "description": "                         "
         },
         "time": {
           "type": "integer",
-          "description": "Час виконання в мілісекундах",
+          "description": "                                                     ",
           "minimum": 0
         },
         "isBuyer": {
           "type": "boolean",
-          "description": "true для купівлі, false для продажу"
+          "description": "true                      , false                      "
         },
         "isMaker": {
           "type": "boolean",
-          "description": "true для maker ордера"
+          "description": "true        maker             "
         },
         "isBestMatch": {
           "type": "boolean",
-          "description": "true для найкращого співпадання"
+          "description": "true                                                   "
         }
       },
       "required": ["symbol", "id", "orderId", "price", "qty", "quoteQty", "commission", "commissionAsset", "time", "isBuyer", "isMaker", "isBestMatch"],
@@ -276,26 +276,26 @@
 
     "error_response": {
       "type": "object",
-      "title": "Відповідь помилки",
-      "description": "Стандартна структура помилок домену",
+      "title": "                                 ",
+      "description": "                                                                   ",
       "properties": {
         "error_code": {
           "type": "string",
           "pattern": "^AO\\d{3}$",
-          "description": "Код помилки (AO001-AO999)"
+          "description": "                      (AO001-AO999)"
         },
         "message": {
           "type": "string",
-          "description": "Опис помилки"
+          "description": "                       "
         },
         "timestamp": {
           "type": "integer",
-          "description": "Час помилки в мілісекундах",
+          "description": "                                                 ",
           "minimum": 0
         },
         "context": {
           "type": "object",
-          "description": "Додатковий контекст помилки",
+          "description": "                                                    ",
           "additionalProperties": true
         }
       },
@@ -305,22 +305,22 @@
 
     "health_status": {
       "type": "object",
-      "title": "Статус здоров'я домену",
-      "description": "Інформація про поточний стан домену",
+      "title": "                         '               ",
+      "description": "                                                                  ",
       "properties": {
         "status": {
           "type": "string",
           "enum": ["healthy", "degraded", "unhealthy"],
-          "description": "Загальний статус"
+          "description": "                               "
         },
         "uptime_seconds": {
           "type": "integer",
-          "description": "Час роботи в секундах",
+          "description": "                                       ",
           "minimum": 0
         },
         "last_api_call": {
           "type": "integer",
-          "description": "Час останнього успішного виклику API",
+          "description": "                                                              API",
           "minimum": 0
         },
         "active_symbols": {
@@ -328,18 +328,18 @@
           "items": {
             "type": "string"
           },
-          "description": "Список активних символів"
+          "description": "                                              "
         },
         "cached_trades_count": {
           "type": "integer",
-          "description": "Кількість кешованих ID трейдів",
+          "description": "                                      ID               ",
           "minimum": 0
         },
         "error_rate_percent": {
           "type": "number",
           "minimum": 0,
           "maximum": 100,
-          "description": "Відсоток помилок за останній період"
+          "description": "                                                                  "
         }
       },
       "required": ["status", "uptime_seconds"],
