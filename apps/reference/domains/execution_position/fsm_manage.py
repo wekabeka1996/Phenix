@@ -375,9 +375,9 @@ class ManageFlowFSM:
             if elapsed > self.breakeven_after_sec:
                 return self._emit_adjust(msg, "ADJUST_BE", {"rule": "breakeven", "elapsed_sec": elapsed})
 
-            # Rule 3: Time stop (stub: close after 3600 sec)
+            # Rule 3: Time stop (close after 3600 sec)
             if elapsed > 3600:
-                return self._emit_adjust(msg, "ADJUST_TIME", {"rule": "time_stop", "elapsed_sec": elapsed})
+                return self._emit_close(msg, "TIME_STOP", {"rule": "time_stop", "elapsed_sec": elapsed})
 
         except Exception:
             self._metrics["fsm_errors_total"] += 1
@@ -504,9 +504,41 @@ class ManageFlowFSM:
         )
 
     def _emit_adjust(self, msg: Message, why: str, details: Dict[str, Any]) -> Message:
-        """Generate DEC:ADJUST with stub rules."""
+        """Generate DEC:ADJUST with necessary data for bracket modification."""
         self.state = ManageState.EMIT_DEC_ADJUST
         self._metrics["fsm_adjust_decisions_total"] += 1
+
+        # Add necessary data based on adjustment type
+        adjust_details = details.copy()
+        rule = details.get("rule", "")
+        
+        if rule == "trail":
+            # For trailing stop: move SL to new price
+            trigger_price = Decimal(details.get("trigger_price", "0"))
+            # Calculate new SL price (slightly below trigger for safety)
+            if self.position_side == "BUY":
+                new_sl = trigger_price * Decimal("0.999")  # 0.1% below trigger
+                sl_side = "SELL"
+            else:  # SELL position
+                new_sl = trigger_price * Decimal("1.001")  # 0.1% above trigger
+                sl_side = "BUY"
+            
+            adjust_details["new_sl_price"] = str(new_sl)
+            adjust_details["sl_side"] = sl_side
+            adjust_details["symbol"] = msg.pld.get("symbol", "") if msg.pld else ""
+            
+        elif rule == "breakeven":
+            # For breakeven: move SL to entry price +/- small buffer
+            if self.position_side == "BUY":
+                new_sl = self.position_entry_price * Decimal("1.001")  # 0.1% above entry
+                sl_side = "SELL"
+            else:  # SELL position
+                new_sl = self.position_entry_price * Decimal("0.999")  # 0.1% below entry
+                sl_side = "BUY"
+            
+            adjust_details["new_sl_price"] = str(new_sl)
+            adjust_details["sl_side"] = sl_side
+            adjust_details["symbol"] = msg.pld.get("symbol", "") if msg.pld else ""
 
         dec = Message(
             op="DEC",
@@ -516,7 +548,7 @@ class ManageFlowFSM:
             rid=msg.rid,
             why=why[:80],
             idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
-            pld=details,
+            pld=adjust_details,
         )
 
         # Return to TRACKING
@@ -528,6 +560,15 @@ class ManageFlowFSM:
         self.state = ManageState.EMIT_DEC_ADJUST  # Use existing state
         self._metrics["fsm_adjust_decisions_total"] += 1
 
+        # Add position data for closing
+        close_details = details.copy()
+        if self.position_side and self.position_qty:
+            # For closing, we need opposite side and current quantity
+            from .utils import opposite_side
+            close_details["side_to_close"] = opposite_side(self.position_side)
+            close_details["qty_to_close"] = str(self.position_qty)
+            close_details["symbol"] = msg.pld.get("symbol", "") if msg.pld else ""
+
         dec = Message(
             op="DEC",
             verb="CLOSE",
@@ -536,7 +577,7 @@ class ManageFlowFSM:
             rid=msg.rid,
             why=why[:80],
             idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
-            pld=details,
+            pld=close_details,
         )
         return dec
 

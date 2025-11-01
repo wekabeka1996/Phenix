@@ -35,7 +35,8 @@ class DecisionMaking:
             'features': None, 
             'risk': None, 
             'last_updated': time.time(),
-            'ttl_seconds': 30  # 30 seconds TTL for partial states
+            'ttl_seconds': 30,  # 30 seconds TTL for partial states
+            'last_signal_ts': 0  # Track last signal timestamp for cooldown
         })
         self.latest_portfolio: Optional[Dict[str, Any]] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
@@ -175,6 +176,25 @@ class DecisionMaking:
     def _make_decision_for_symbol(self, symbol: str, context: dict, rid: str) -> None:
         self.logger.info(f"[{symbol}] 🚀 _make_decision_for_symbol() START - RID: {rid}")
         why_chain = []
+        
+        # Check cooldown between signals
+        decision_config = self.config.get('trading', self.config).get('decision', {})
+        cooldown_sec = decision_config.get('cooldown_sec', 30)
+        last_signal_ts = self.symbol_states[symbol]['last_signal_ts']
+        current_ts = time.time()
+        
+        if current_ts - last_signal_ts < cooldown_sec:
+            self.logger.info(f"[{symbol}] ⏰ COOLDOWN: Signal blocked. Last signal {current_ts - last_signal_ts:.1f}s ago, need {cooldown_sec}s cooldown")
+            return
+        
+        # Check if we already have open positions for this symbol
+        portfolio = context['portfolio']
+        positions = portfolio.get('positions', [])
+        symbol_positions = [p for p in positions if p.get('symbol') == symbol and float(p.get('quantity', 0)) != 0]
+        
+        if symbol_positions:
+            self.logger.info(f"[{symbol}] 📊 POSITION EXISTS: Already have {len(symbol_positions)} open position(s), skipping new signal")
+            return
         features_data = context['features']["features"]
         risk_params = context['risk_params']["risk_parameters"]
         portfolio = context['portfolio']
@@ -251,6 +271,8 @@ class DecisionMaking:
             return
 
         self.logger.info(f"[{symbol}] ✅ PROPOSING TRADE INTENT: {side} {qty} @ {price_ref}")
+        # Update last signal timestamp
+        self.symbol_states[symbol]['last_signal_ts'] = time.time()
         self._propose_trade_intent(symbol, side, qty, price_ref, why_chain, rid)
 
     def _calculate_risk_based_position_size_usd(self, equity: decimal.Decimal) -> tuple[Optional[decimal.Decimal], str]:

@@ -327,6 +327,33 @@ class BinanceAdapter:
             params['newClientOrderId'] = new_client_order_id
         return await self.create_order(params)
 
+    async def place_market_exit(self, symbol: str, side: str, quantity: str, new_client_order_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Places a MARKET order to close or reduce a position.
+        """
+        # quantize qty according to exchange filters and validate min notional
+        qty = await self.quantize_quantity(symbol, quantity)
+
+        params = {
+            "symbol": symbol,
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": str(qty),
+            "reduceOnly": "true"  # <-- Ключовий параметр для безпечного закриття!
+        }
+        if new_client_order_id:
+            params["newClientOrderId"] = new_client_order_id
+        
+        return await self.create_order(params)
+
+    async def cancel_order(self, symbol: str, order_id: str) -> Dict[str, Any]:
+        """Cancels an active order by its ID."""
+        params = {
+            "symbol": symbol,
+            "orderId": order_id,
+        }
+        return await self._delete("order", params=params, signed=True)
+
     async def place_stop_market_close_position(self, symbol: str, side: str, stop_price: str, position_side: Optional[str] = None, new_client_order_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Place a stop market order to close position.

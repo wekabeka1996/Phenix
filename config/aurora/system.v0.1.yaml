@@ -7,30 +7,19 @@
 # - "live": Live data, live execution on mainnet.
 # - "testnet": Testnet data, testnet execution on Binance Futures Testnet.
 # - "hybrid_live_data_testnet_exec": Live data from mainnet, execution on testnet.
-system:
-  trading_mode: "hybrid_live_data_testnet_exec"
-  max_portfolio_exposure_pct: 1.0
-  margin_safety_buffer_pct: 0.10
+trading_mode: ${TRADING_MODE}
 
 # Domain-specific configurations allow overriding the global trading_mode for
 # individual components. This is useful for fine-grained control in hybrid setups.
 domain_configuration:
   market_data:
     trading_mode: "live"  # Always use live data for market analysis
-  feature_engineering:
-    trading_mode: "live"
-  decision_making:
-    trading_mode: "live"
-  risk_management:
-    trading_mode: "live"
   execution_position:
     trading_mode: "testnet" # Always use testnet for placing orders
   account_balance:
     trading_mode: "testnet" # Use testnet for balance checks
   account_observer:
     trading_mode: "testnet" # Observe testnet account for updates
-  audit_trail:
-    trading_mode: "live"
 
 # Binance API configuration is now loaded directly from .env variables
 # by the ConfigLoader. The structure is maintained here for clarity but
@@ -48,4 +37,5 @@ binance_api:
     rest_url: ""
 
 # Other system settings
-trade_intent_validity_ms: 30000
+system:
+  trade_intent_validity_ms: 30000

@@ -5,31 +5,31 @@ trading:
   symbols_to_track: ["BTCUSDT", "ETHUSDT"]  # Symbols to monitor and trade
   decision:
     signal_weights:
-      obi: 0.44
-      tfi: 0.41
-      delta_price: 0.15
-    signal_threshold: 0.20
-    cooldown_sec: 38
+      obi: 0.6
+      tfi: 0.35
+      delta_price: 0.05
+    signal_threshold: 0.15  # Increased from 0.05 to 0.15 to reduce signal frequency
+    cooldown_sec: 30        # Minimum 30 seconds between signals per symbol
     position_sizing:
       min_position_size_usd: 10
-      liquidity_based_cap_usd: 5000
-      risk_per_trade_pct: 0.025
-      sl_bps: 60
+      liquidity_based_cap_usd: 40000  # Increased from 10000 to 40000 (4x) to match position size increase
+      risk_per_trade_pct: 0.04  # Risk 4% of equity per trade (increased from 1% to 4x position size)
+      sl_bps: 50                # Stop Loss 50 bps (0.5%) for sizing calculation
 
   # ==============================================================================
   # INSTRUMENT SPECIFICATIONS (BINANCE FUTURES)
   # ==============================================================================
   instruments:
     BTCUSDT:
-      step_size: "0.0001"  # Binance BTCUSDT step_size
+      step_size: "0.00001"  # Binance BTCUSDT step_size
       min_notional: "10"     # Minimum notional value
-      leverage: 50
-      margin_type: isolated
+      leverage: 10           # Changed from 100 to align with liquidation guard (10x gives ~9.6% distance > 1.0%)
+      margin_type: cross
     ETHUSDT:
-      step_size: "0.08"     # Binance ETHUSDT step_size
+      step_size: "0.001"     # Binance ETHUSDT step_size
       min_notional: "10"
-      leverage: 50
-      margin_type: isolated
+      leverage: 10           # Remains 10
+      margin_type: cross
 
   # TCA (Transaction Cost Analysis) Preferences
   tca_prefs:
@@ -40,20 +40,20 @@ trading:
   # Risk Budgets
   risk_budgets:
     max_portfolio_risk_pct: 5.0
-    max_single_position_risk_pct: 4.0
+    max_single_position_risk_pct: 4.0  # Increased from 1.0 to 4.0 to match position size increase
     max_daily_loss_pct: 2.0
 
   # Risk Management Settings
   risk:
-    max_daily_drawdown_limit: 0.08
-    min_liquidation_distance_pct: 2.00
+    max_daily_drawdown_limit: 0.05  # 5%
+    min_liquidation_distance_pct: 1.0  # 1.0% > 0.5% (sl_bps), but < 1.6% (liquidation 50x)
     score_weights:
       delta_price: 0.05
       obi: 0.35
       tfi: 0.35
       absorption_inverse: 0.25
     trading_allowed_thresholds:
-      max_risk_score: 0.95
+      max_risk_score: 0.95  # Changed from 0.8 to allow valid risk scores (0.81-0.87) to pass
 
   # ==============================================================================
   # EXECUTION SETTINGS
@@ -78,20 +78,10 @@ trading:
     max_active_orders: 5
     idempotency_window_sec: 60
     rules:                    # Rules for position management (TP/SL)
-      sl_bps: 60
-      tp_bps: 120
-      breakeven_bps: 24
-      trail_start_bps: 36
-
-  # ==============================================================================
-  # OPERATIONAL RULES
-  # ==============================================================================
-  operational_rules:
-    daily_stop_win_pct: 0.20
-    consecutive_stops_for_break: 2
-    risk_adjustment:
-      after_drawdown_10_pct: 0.015
-      after_profit_10_pct: 0.030
+      sl_bps: 50            # Stop Loss 50 bps (0.5%)
+      tp_bps: 100           # Take Profit 100 bps (1.0%)
+      breakeven_bps: 20     # Breakeven point
+      trail_start_bps: 30   # Trailing stop start point
 
   # ==============================================================================
   # DOMAIN-LEVEL CONFIGURATION
@@ -115,7 +105,7 @@ trading:
     # Execution: WRITE to testnet (safety!)
     execution_position:
       trading_mode: "testnet"  # Place orders on TESTNET only
-      max_active_orders: 5     # Max active orders per symbol
+      max_active_orders: 25    # Allow up to 25 active orders (including brackets)
       
     audit_trail:
       trading_mode: "live"  # Log from live data

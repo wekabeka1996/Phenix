@@ -44,3 +44,37 @@ def test_open_flow_handle_valid():
     assert result is not None
     assert result.op == "DEC"
     assert result.verb == "OPEN"
+
+
+def test_exec_pos_fsm_self_healing():
+    """Test ExecPosFSM self-healing mechanism for stuck active_orders_count."""
+    config = MagicMock()
+    config.trading = {'execution': {'cooldown_ms': 1000, 'guard_enabled': True}}
+    mock_fsm = MagicMock()
+    fsm = ExecPosFSM(config=config, fsm=mock_fsm)
+    
+    # Simulate stuck counter (normally happens when TRADE_EXECUTED event is lost)
+    fsm.active_orders_count = 1  # Counter thinks there's an active order
+    
+    # Create mock account update event with no open positions
+    account_update_msg = Message(
+        op="EVT",
+        verb="ACCOUNT_UPDATE_RECEIVED",
+        src="account_connector",
+        dst="execution_position",
+        rid="test-456",
+        pld={
+            'positions': [],  # No open positions on exchange
+            'totalWalletBalance': '1000.0',
+            'updateTime': 1234567890
+        }
+    )
+    
+    # Call the self-healing method
+    fsm.on_account_update(account_update_msg)
+    
+    # Verify counter was reset
+    assert fsm.active_orders_count == 0, "Counter should be reset when no positions exist"
+    
+    # Verify FSM states were reset (mock objects don't have state attribute, so skip this check)
+    # This would normally reset ManageFlowFSM and CloseFlowFSM states to FLAT

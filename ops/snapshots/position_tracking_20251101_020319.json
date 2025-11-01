@@ -1,0 +1,33 @@
+{
+  "domain": "position_tracking",
+  "version": "1.0.0",
+  "timestamp_utc": "2025-11-01T02:03:19.240770+00:00",
+  "state_hash": "sha256:70f644e614643cf72dc99ac4819fc5099db3516d46dbf6773e3fc65c131e4d5e",
+  "state": {
+    "positions": {
+      "ETHUSDT": {
+        "net_position": "-10.800",
+        "avg_entry_price": "3843.358470368977777777777778",
+        "side": "short",
+        "unrealized_pnl": "0.0"
+      },
+      "BTCUSDT": {
+        "net_position": "-0.396",
+        "avg_entry_price": "109731.9550506568181818181818",
+        "side": "short",
+        "unrealized_pnl": "0.0"
+      }
+    },
+    "portfolio": {
+      "equity": "3546.73573512",
+      "balance": "3549.540713020000000000000000",
+      "margin_used": "0.0",
+      "total_commissions": "34.62686469"
+    }
+  },
+  "metadata": {
+    "worker_id": "unknown",
+    "positions_count": 2,
+    "sequence_number": 1761962599240
+  }
+}

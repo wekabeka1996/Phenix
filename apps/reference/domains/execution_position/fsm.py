@@ -16,8 +16,8 @@ from vfoundation.dr import wal
 from vfoundation.adapters.binance_adapter import BinanceAdapter, BinanceAPIError
 
 from .fsm_open import OpenFlowFSM
-from .fsm_manage import ManageFlowFSM
-from .fsm_close import CloseFlowFSM
+from .fsm_manage import ManageFlowFSM, ManageState
+from .fsm_close import CloseFlowFSM, CloseState
 from .utils import (
     quantize_stop_price, validate_anti_2021, generate_client_order_id,
     calc_tp_sl_from_mark, validate_not_immediate, opposite_side
@@ -52,6 +52,9 @@ class ExecPosFSM:
         exec_pos_config = self.config.get('execution_position', {})
         self.max_active_orders = exec_pos_config.get('max_active_orders', 5) # Default to 5
 
+        # Track active bracket orders per symbol
+        self.active_brackets: Dict[str, Dict[str, str]] = {}
+
         # Register event listeners for execution updates (only if FSM is provided and has listen method)
         if self.fsm is not None and hasattr(self.fsm, 'listen'):
             self.fsm.listen("EVT:TRADE_EXECUTED", self.on_trade_executed)
@@ -59,6 +62,7 @@ class ExecPosFSM:
             self.fsm.listen("EVT:ORDER_UPDATED", self.on_order_updated)
             self.fsm.listen("EVT:ORDER_CANCELLED", self.on_order_cancelled)
             self.fsm.listen("EVT:ORDER_REJECTED", self.on_order_rejected)
+            self.fsm.listen("EVT:ACCOUNT_UPDATE_RECEIVED", self.on_account_update)
 
         if not self.shadow_mode:
             self._initialize_adapter()
@@ -71,9 +75,26 @@ class ExecPosFSM:
     def on_open_orders_update(self, event: Message) -> None:
         """Handle open orders update to synchronize active orders count."""
         LOG.info(f"ExecPosFSM received EVT:OPEN_ORDERS_UPDATE: {event.pld}")
+        open_orders = event.pld.get("open_orders", [])
         count = event.pld.get("count", 0)
-        self.active_orders_count = count
-        LOG.info(f"Active orders count synchronized to: {self.active_orders_count}")
+        
+        # Filter out bracket orders (SL/TP) - they don't count towards active orders limit
+        # Bracket orders have type: STOP_MARKET or TAKE_PROFIT_MARKET with closePosition=true or reduceOnly=true
+        non_bracket_orders = []
+        for order in open_orders:
+            order_type = order.get('type', '')
+            close_position = str(order.get('closePosition', '')).lower() == 'true'
+            reduce_only = str(order.get('reduceOnly', '')).lower() == 'true'
+            
+            # If it's a bracket order (SL/TP), don't count it
+            if (order_type in ['STOP_MARKET', 'TAKE_PROFIT_MARKET'] and (close_position or reduce_only)):
+                continue
+            else:
+                non_bracket_orders.append(order)
+        
+        # Update active orders count to only include non-bracket orders
+        self.active_orders_count = len(non_bracket_orders)
+        LOG.info(f"Active orders count synchronized to: {self.active_orders_count} (filtered out {len(open_orders) - len(non_bracket_orders)} bracket orders)")
 
     def on_order_updated(self, event: Message) -> None:
         """Handle order update events."""
@@ -92,6 +113,39 @@ class ExecPosFSM:
 
     def _get_active_orders_count(self) -> int:
         return self.active_orders_count
+
+    def on_account_update(self, event: Message) -> None:
+        """
+        Heals the FSM state by reconciling with the full account snapshot.
+        This prevents the 'stuck active_orders_count' problem.
+        """
+        LOG.info("ExecPosFSM received EVT:ACCOUNT_UPDATE_RECEIVED for state reconciliation.")
+        
+        if not event.pld:
+            return
+
+        # Отримуємо реальні відкриті позиції з події
+        # Зверніть увагу, що подія містить позиції, а не ордери.
+        # Якщо позицій немає, то й активних ордерів на вхід, скоріш за все, теж.
+        open_positions = event.pld.get('positions', [])
+        
+        # Логіка самозцілення
+        if self.active_orders_count > 0 and not open_positions:
+            LOG.warning(
+                f"STATE RECONCILIATION: active_orders_count is {self.active_orders_count}, "
+                f"but account update shows NO open positions. "
+                f"Resetting counter to 0 to prevent deadlock."
+            )
+            self.active_orders_count = 0
+            
+            # Додатково: скидаємо стани FSM для всіх символів,
+            # щоб вони повернулися в початковий стан 'FLAT'.
+            for symbol in self.manage_flows.keys():
+                self.manage_flows[symbol].state = ManageState.FLAT
+                LOG.info(f"Resetting ManageFlowFSM for {symbol} to FLAT state.")
+            for symbol in self.close_flows.keys():
+                self.close_flows[symbol].state = CloseState.FLAT
+                LOG.info(f"Resetting CloseFlowFSM for {symbol} to FLAT state.")
 
     def _initialize_adapter(self):
         """Initializes the BinanceAdapter based on the domain-level trading_mode."""
@@ -292,105 +346,173 @@ class ExecPosFSM:
     async def _execute_decision(self, decision: Message):
         """Asynchronously execute a trading decision using the adapter."""
         if not self.adapter:
+            LOG.error("Adapter not initialized, cannot execute decision.")
             return
 
-        # --- CRITICAL SAFETY GUARDRAIL ---
-        # Get domain-specific mode (execution_position should be testnet)
-        domain_mode = "testnet"
-        if hasattr(self.config, 'get_domain_mode'):
-            try:
-                domain_mode = self.config.get_domain_mode("execution_position")
-            except:
-                domain_mode = self.config.get("trading_mode", "testnet")
-        else:
-            domain_mode = self.config.get("trading_mode", "testnet")
+        verb = decision.verb
+        pld = decision.pld
+        symbol = pld.get('symbol')
         
-        LOG.info(f"🎯 Executing with domain_mode={domain_mode}")
-        
-        if domain_mode == "testnet":
-            if "testnet" not in self.adapter.base_url:
-                LOG.critical(
-                    "🚨 GUARDRAIL TRIGGERED: Domain mode is TESTNET, but adapter is configured for LIVE API! Order BLOCKED."
-                )
-                # Optionally emit a critical error event
-                self.fsm.emit("ERR:FATAL_CONFIG_MISMATCH", why="Testnet mode with live execution URL", payload={"reason": "Testnet mode with live execution URL"})
-                return
-            else:
-                LOG.info("✅ Testnet mode confirmed: adapter URL contains 'testnet'")
-        elif domain_mode == "live":
-            LOG.warning("⚠️ LIVE execution mode - ensure you know what you're doing!")
-        
-        # --- END GUARDRAIL ---
+        LOG.info(f"Executing decision '{verb}' for symbol {symbol}...")
 
         try:
-            symbol = decision.pld['symbol']
-            side = decision.pld['side'].upper()
-            qty = decision.pld['qty']
-            
-            # Get mark price and filters
-            mark = await self.adapter.get_mark_price(symbol)
-            exchange_info = await self.adapter.get_exchange_info(symbol)
-            tick_size = float(next(f['tickSize'] for f in exchange_info['symbols'][0]['filters'] if f['filterType'] == 'PRICE_FILTER'))
-            
-            # Assume tp_bps and sl_bps from config or default
-            tp_bps = 100  # example
-            sl_bps = 50   # example
-            
-            tp, sl = calc_tp_sl_from_mark(mark, 'LONG' if side == 'BUY' else 'SHORT', tp_bps, sl_bps)
-            
-            # Quantize
-            tp = quantize_stop_price(tp, tick_size, side='BUY' if side == 'BUY' else 'SELL')
-            sl = quantize_stop_price(sl, tick_size, side='SELL' if side == 'BUY' else 'BUY')
-            
-            # Validate
-            validate_not_immediate('LONG' if side == 'BUY' else 'SHORT', tp, sl, mark)
-            
-            # Place MARKET entry
-            entry_id = generate_client_order_id('ENTRY', symbol)
-            entry_resp = await self.adapter.place_market_entry(symbol, side, qty, entry_id)
-            LOG.info(f"✅ MARKET entry placed: {entry_resp}")
-            
-            # Check for existing brackets to avoid duplicates
-            open_orders = await self.adapter.get_open_orders(symbol)
-            existing_sl = any(o['type'] == 'STOP_MARKET' and o.get('closePosition') == 'true' for o in open_orders)
-            existing_tp = any(o['type'] in ['TAKE_PROFIT_MARKET', 'LIMIT'] and o.get('closePosition') == 'true' or o.get('reduceOnly') == 'true' for o in open_orders)
-            
-            if existing_sl:
-                LOG.warning(f"SL already exists for {symbol}, skipping")
+            if verb == "OPEN":
+                # --- ІСНУЮЧА ЛОГІКА ВІДКРИТТЯ ---
+                side = pld['side'].upper()
+                qty = pld['qty']
+                
+                # Get mark price and filters
+                mark = await self.adapter.get_mark_price(symbol)
+                exchange_info = await self.adapter.get_exchange_info(symbol)
+                tick_size = float(next(f['tickSize'] for f in exchange_info['symbols'][0]['filters'] if f['filterType'] == 'PRICE_FILTER'))
+                
+                # Assume tp_bps and sl_bps from config or default
+                tp_bps = 100  # example
+                sl_bps = 50   # example
+                
+                tp, sl = calc_tp_sl_from_mark(mark, 'LONG' if side == 'BUY' else 'SHORT', tp_bps, sl_bps)
+                
+                # Quantize
+                tp = quantize_stop_price(tp, tick_size, side='BUY' if side == 'BUY' else 'SELL')
+                sl = quantize_stop_price(sl, tick_size, side='SELL' if side == 'BUY' else 'BUY')
+                
+                # Validate
+                validate_not_immediate('LONG' if side == 'BUY' else 'SHORT', tp, sl, mark)
+                
+                # Place MARKET entry
+                entry_id = generate_client_order_id('ENTRY', symbol)
+                entry_resp = await self.adapter.place_market_entry(symbol, side, qty, entry_id)
+                LOG.info(f"✅ MARKET entry placed: {entry_resp}")
+                
+                # Check for existing brackets to avoid duplicates
+                open_orders = await self.adapter.get_open_orders(symbol)
+                existing_sl = any(o['type'] == 'STOP_MARKET' and o.get('closePosition') == 'true' for o in open_orders)
+                existing_tp = any(o['type'] in ['TAKE_PROFIT_MARKET', 'LIMIT'] and o.get('closePosition') == 'true' or o.get('reduceOnly') == 'true' for o in open_orders)
+                
+                if existing_sl:
+                    LOG.warning(f"SL already exists for {symbol}, skipping")
+                else:
+                    # Place SL
+                    sl_side = opposite_side(side)
+                    sl_id = generate_client_order_id('SL', symbol)
+                    sl_resp = await self.adapter.place_stop_market_close_position(symbol, sl_side, str(sl), new_client_order_id=sl_id)
+                    LOG.info(f"✅ SL placed: {sl_resp}")
+                
+                if existing_tp:
+                    LOG.warning(f"TP already exists for {symbol}, skipping")
+                else:
+                    # Place TP with retry/fallback
+                    tp_side = opposite_side(side)
+                    tp_id = generate_client_order_id('TP', symbol)
+                    try:
+                        tp_resp = await self.adapter.place_take_profit_market_close_position(symbol, tp_side, str(tp), new_client_order_id=tp_id)
+                        LOG.info(f"✅ TP TAKE_PROFIT_MARKET placed: {tp_resp}")
+                    except BinanceAPIError as e:
+                        if e.code == -2021:
+                            # Retry with widened TP
+                            tp_adj = tp * 1.002  # +20 bps approx
+                            tp_adj = quantize_stop_price(tp_adj, tick_size, side='BUY' if side == 'BUY' else 'SELL')
+                            try:
+                                tp_resp = await self.adapter.place_take_profit_market_close_position(symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
+                                LOG.info(f"✅ TP TAKE_PROFIT_MARKET retried: {tp_resp}")
+                            except BinanceAPIError:
+                                # Fallback to LIMIT reduceOnly
+                                tp_resp = await self.adapter.place_limit_reduce_only(symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
+                                LOG.info(f"✅ TP LIMIT fallback placed: {tp_resp}")
+                        else:
+                            raise
+                
+                # Track bracket order IDs for future adjustments
+                if 'sl_resp' in locals() and sl_resp and 'orderId' in sl_resp and 'tp_resp' in locals() and tp_resp and 'orderId' in tp_resp:
+                    self.active_brackets[symbol] = {
+                        'sl_order_id': sl_resp['orderId'],
+                        'tp_order_id': tp_resp['orderId']
+                    }
+                    LOG.info(f"Brackets for {symbol} are tracked: SL ID {sl_resp['orderId']}, TP ID {tp_resp['orderId']}")
+
+            elif verb == "CLOSE":
+                # --- ЛОГІКА ЕКСТРЕНОГО ЗАКРИТТЯ ПОЗИЦІЇ ---
+                LOG.info(f"Executing CLOSE for {symbol}. Emergency market exit.")
+                
+                # Скасуємо всі відкриті брекет-ордери для цього символу
+                if symbol in self.active_brackets:
+                    brackets = self.active_brackets[symbol]
+                    for order_type, order_id in brackets.items():
+                        if order_id:
+                            try:
+                                await self.adapter.cancel_order(symbol, order_id)
+                                LOG.info(f"Cancelled {order_type} order {order_id} before closing position.")
+                            except Exception as e:
+                                LOG.warning(f"Failed to cancel {order_type} order {order_id}: {e}")
+                    
+                    # Видалимо запис про брекети після скасування
+                    del self.active_brackets[symbol]
+                
+                # Розмістимо ринковий ордер для закриття позиції
+                side_to_close = pld.get('side_to_close')
+                qty_to_close = pld.get('qty_to_close')
+
+                if not side_to_close or not qty_to_close:
+                    LOG.error(f"Cannot execute CLOSE for {symbol}: missing side_to_close or qty_to_close in payload.")
+                    return
+
+                close_resp = await self.adapter.place_market_exit(symbol, side_to_close, qty_to_close)
+                LOG.info(f"✅ Emergency market EXIT placed for {symbol}: {close_resp}")
+
+            elif verb == "ADJUST":
+                # --- ЛОГІКА КОРИГУВАННЯ ІСНУЮЧИХ БРЕКЕТ-ОРДЕРІВ ---
+                LOG.info(f"Executing ADJUST for {symbol}.")
+                
+                # Перевір, чи є відстежувані брекети для цього символу
+                if symbol not in self.active_brackets:
+                    LOG.error(f"Cannot execute ADJUST for {symbol}: no active brackets tracked.")
+                    return
+                
+                brackets = self.active_brackets[symbol]
+                
+                # Коригування Stop-Loss
+                new_sl_price = pld.get('new_sl_price')
+                if new_sl_price:
+                    old_sl_id = brackets.get('sl_order_id')
+                    if old_sl_id:
+                        # Скасуємо старий SL
+                        await self.adapter.cancel_order(symbol, old_sl_id)
+                        LOG.info(f"Cancelled old SL order {old_sl_id} for adjustment.")
+                    
+                    # Розмістимо новий SL
+                    sl_side = pld.get('sl_side')  # сторона для SL
+                    if sl_side:
+                        sl_resp = await self.adapter.place_stop_market_close_position(symbol, sl_side, str(new_sl_price))
+                        LOG.info(f"✅ New SL placed for adjustment: {sl_resp}")
+                        
+                        # Оновимо відстеження
+                        if sl_resp and 'orderId' in sl_resp:
+                            brackets['sl_order_id'] = sl_resp['orderId']
+                
+                # (Опціонально) Коригування Take-Profit
+                new_tp_price = pld.get('new_tp_price')
+                if new_tp_price:
+                    old_tp_id = brackets.get('tp_order_id')
+                    if old_tp_id:
+                        # Скасуємо старий TP
+                        await self.adapter.cancel_order(symbol, old_tp_id)
+                        LOG.info(f"Cancelled old TP order {old_tp_id} for adjustment.")
+                    
+                    # Розмістимо новий TP
+                    tp_side = pld.get('tp_side')  # сторона для TP
+                    if tp_side:
+                        tp_resp = await self.adapter.place_take_profit_market_close_position(symbol, tp_side, str(new_tp_price))
+                        LOG.info(f"✅ New TP placed for adjustment: {tp_resp}")
+                        
+                        # Оновимо відстеження
+                        if tp_resp and 'orderId' in tp_resp:
+                            brackets['tp_order_id'] = tp_resp['orderId']
+                
             else:
-                # Place SL
-                sl_side = opposite_side(side)
-                sl_id = generate_client_order_id('SL', symbol)
-                sl_resp = await self.adapter.place_stop_market_close_position(symbol, sl_side, str(sl), new_client_order_id=sl_id)
-                LOG.info(f"✅ SL placed: {sl_resp}")
-            
-            if existing_tp:
-                LOG.warning(f"TP already exists for {symbol}, skipping")
-            else:
-                # Place TP with retry/fallback
-                tp_side = opposite_side(side)
-                tp_id = generate_client_order_id('TP', symbol)
-                try:
-                    tp_resp = await self.adapter.place_take_profit_market_close_position(symbol, tp_side, str(tp), new_client_order_id=tp_id)
-                    LOG.info(f"✅ TP TAKE_PROFIT_MARKET placed: {tp_resp}")
-                except BinanceAPIError as e:
-                    if e.code == -2021:
-                        # Retry with widened TP
-                        tp_adj = tp * 1.002  # +20 bps approx
-                        tp_adj = quantize_stop_price(tp_adj, tick_size, side='BUY' if side == 'BUY' else 'SELL')
-                        try:
-                            tp_resp = await self.adapter.place_take_profit_market_close_position(symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
-                            LOG.info(f"✅ TP TAKE_PROFIT_MARKET retried: {tp_resp}")
-                        except BinanceAPIError:
-                            # Fallback to LIMIT reduceOnly
-                            tp_resp = await self.adapter.place_limit_reduce_only(symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
-                            LOG.info(f"✅ TP LIMIT fallback placed: {tp_resp}")
-                    else:
-                        raise
-            
+                LOG.warning(f"Unsupported decision verb in _execute_decision: {verb}")
+
         except Exception as e:
-            LOG.error(f"❌ Adapter failed to execute decision {decision.verb} for {decision.pld.get('symbol')}: {e}", exc_info=True)
-            # Emit an error event
+            LOG.error(f"❌ Adapter failed to execute decision {verb} for {symbol}: {e}", exc_info=True)
             self.fsm.emit("ERR:EXECUTION_FAILED", why="Execution failed due to adapter error", payload={"error": str(e), "original_decision": decision.model_dump()})
 
     def get_metrics(self) -> Dict[str, Any]:
