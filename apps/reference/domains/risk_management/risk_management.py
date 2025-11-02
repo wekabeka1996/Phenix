@@ -8,6 +8,8 @@ from features data and emits EVT:RISK_ASSESSMENT_COMPLETED events.
 import decimal
 import logging
 import uuid
+import time
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
@@ -42,15 +44,23 @@ class RiskManagement:
     def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
         self.fsm = fsm
         self.config = config
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
         # Portfolio state tracking for holistic risk management
         self.portfolio_state: Optional[Dict[str, Any]] = None
         self.peak_equity: Optional[decimal.Decimal] = None
         self.current_daily_drawdown = decimal.Decimal("0")
 
+        # AGENT-PATCH: Daily reset state
+        # Opening equity of the day
+        self._equity_open: Optional[decimal.Decimal] = None
+        # Last date when reset occurred (YYYY-MM-DD)
+        self._last_reset_day: Optional[str] = None
+
         # Subscribe to events
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features_calculated)
-        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self.on_portfolio_state_updated)
+        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
+                        self.on_portfolio_state_updated)
 
     def start(self) -> None:
         """Start the risk management component (subscription already done in __init__)."""
@@ -125,48 +135,73 @@ class RiskManagement:
     def on_portfolio_state_updated(self, event: Message) -> None:
         """
         Handle portfolio state updates to calculate portfolio-level risk metrics.
+
+        AGENT-PATCH: Implement daily reset at start of trading day.
         """
-        self.logger.info("Handling EVT:PORTFOLIO_STATE_UPDATED for risk assessment...")
+        self.logger.info(
+            "Handling EVT:PORTFOLIO_STATE_UPDATED for risk assessment...")
         self.portfolio_state = event.pld
-        current_equity = decimal.Decimal(str(self.portfolio_state.get("equity", "0")))
+        current_equity = decimal.Decimal(
+            str(self.portfolio_state.get("equity", "0")))
 
-        if self.peak_equity is None:
-            self.peak_equity = current_equity
-
-        if current_equity > self.peak_equity:
-            self.peak_equity = current_equity
-
-        if self.peak_equity > 0:
-            drawdown = (self.peak_equity - current_equity) / self.peak_equity
-            self.current_daily_drawdown = (
-                drawdown if drawdown > 0 else decimal.Decimal("0")
-            )
+        # AGENT-PATCH: Daily reset logic
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if self._last_reset_day != today_str or self._equity_open is None:
+            # New day or first update: reset opening equity
+            self._equity_open = current_equity
+            self._last_reset_day = today_str
             self.logger.info(
-                f"Portfolio risk update: Equity=${current_equity:.2f}, "
-                f"Peak Equity=${self.peak_equity:.2f}, Drawdown={self.current_daily_drawdown:.2%}"
+                f"Daily reset: opening_equity={float(current_equity):.2f}, day={today_str}")
+
+        # Calculate daily drawdown from opening equity
+        if self._equity_open and self._equity_open > 0:
+            drawdown_pct = max(
+                decimal.Decimal("0"),
+                (self._equity_open - current_equity) / self._equity_open * 100
             )
+            self.current_daily_drawdown = drawdown_pct
+        else:
+            self.current_daily_drawdown = decimal.Decimal("0")
+
+        self.logger.info(
+            f"Portfolio risk update: Equity=${current_equity:.2f}, "
+            f"Opening=${self._equity_open:.2f}, Drawdown={float(self.current_daily_drawdown):.2f}%"
+        )
 
     def _calculate_risk_parameters(self, features: Dict[str, float]) -> Dict[str, Any]:
         """
         Calculate risk parameters from features and portfolio state.
         This acts as a gatekeeper, checking both portfolio-level and instrument-level risk.
+
+        AGENT-PATCH: Daily drawdown check with correct threshold reading.
         """
         # 1. Portfolio-level risk check (Circuit Breaker)
+        # AGENT-PATCH: Safe reading of max_allowed from overrides/config/fallback
         risk_config = self.config.get("risk", {})
-        max_drawdown = decimal.Decimal(
-            str(risk_config.get("max_daily_drawdown_limit", "0.10"))
-        )  # 10% default
 
-        if self.current_daily_drawdown > max_drawdown:
+        # Try to read max_daily_drawdown_pct from different paths
+        max_drawdown_pct = (
+            risk_config.get("max_daily_drawdown_pct") or
+            self.config.get("system", {}).get("risk", {}).get("max_daily_drawdown_limit") or
+            10.0  # Default 10%
+        )
+
+        try:
+            max_drawdown_pct = float(max_drawdown_pct)
+        except (TypeError, ValueError):
+            max_drawdown_pct = 10.0
+
+        # Compare drawdown_pct directly (both in %)
+        if self.current_daily_drawdown > decimal.Decimal(str(max_drawdown_pct)):
             self.logger.critical(
-                f"PORTFOLIO RISK BREACH: Daily drawdown {self.current_daily_drawdown:.2%} > {max_drawdown:.2%}. "
+                f"PORTFOLIO RISK BREACH: Daily drawdown {float(self.current_daily_drawdown):.2f}% > {max_drawdown_pct:.2f}%. "
                 f"Disabling all trading."
             )
             # XAI instrumentation: daily_drawdown gate
             logger.warning(
                 format_why_with_details(
                     WhyCode.RISK_DRAWDOWN_LIMIT,
-                    f"gate=daily_drawdown value={float(self.current_daily_drawdown):.4f} threshold={float(max_drawdown):.4f}"
+                    f"gate=daily_drawdown value={float(self.current_daily_drawdown):.4f} threshold={max_drawdown_pct:.4f}"
                 )
             )
             return {"is_trading_allowed": False}
@@ -180,11 +215,12 @@ class RiskManagement:
 
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
-        score_weights = self.config.get("risk", {}).get("score_weights", {})
+        score_weights = self.config.get("score_weights", {})
         delta_price_weight = _to_dec(score_weights.get("delta_price", "0.1"))
         obi_weight = _to_dec(score_weights.get("obi", "0.3"))
         tfi_weight = _to_dec(score_weights.get("tfi", "0.3"))
-        absorption_inverse_weight = _to_dec(score_weights.get("absorption_inverse", "0.3"))
+        absorption_inverse_weight = _to_dec(
+            score_weights.get("absorption_inverse", "0.3"))
 
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
@@ -210,7 +246,7 @@ class RiskManagement:
             risk_score = decimal.Decimal("1")
 
         # Determine if trading is allowed based on risk thresholds
-        thresholds = self.config.get("risk", {}).get("trading_allowed_thresholds", {})
+        thresholds = self.config.get("trading_allowed_thresholds", {})
         max_risk_score = _to_dec(thresholds.get("max_risk_score", "0.8"))
         is_trading_allowed = risk_score <= max_risk_score
 

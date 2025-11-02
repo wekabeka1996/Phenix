@@ -66,9 +66,11 @@ def test_position_tracking_emits_equity_fields():
     )
     position_tracker.on_balance_update(event)
 
-    # Verify portfolio update was emitted
-    assert len(fsm.events) == 1
-    event_name, payload, why = fsm.events[0]
+    # Verify portfolio update was emitted (should be 2 events: initial + balance update)
+    assert len(fsm.events) == 2
+
+    # Check the balance update event (second one)
+    event_name, payload, why = fsm.events[1]
     assert event_name == "EVT:PORTFOLIO_STATE_UPDATED"
     assert "equity_free_usdt" in payload
     assert "equity_cross_usdt" in payload
@@ -122,7 +124,8 @@ def test_decision_making_caches_equity():
     assert decision_component._cached_equity_cross_usdt == "10500.0"
 
     # Second update with zero (should not overwrite)
-    portfolio_payload_2 = {"equity_free_usdt": "0.0", "equity_cross_usdt": "0.0"}
+    portfolio_payload_2 = {
+        "equity_free_usdt": "0.0", "equity_cross_usdt": "0.0"}
     msg2 = Message(
         op="EVT",
         verb="PORTFOLIO_STATE_UPDATED",

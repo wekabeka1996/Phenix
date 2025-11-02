@@ -17,6 +17,23 @@ Set LOG_LEVEL environment variable to control logging:
 - LOG_LEVEL=ERROR - Show only errors
 """
 
+from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMPORT
+from apps.reference.config_loader import ConfigLoader
+from apps.reference.domains.execution_position.fsm import ExecPosFSM
+# from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
+#     SnapshotScheduler,
+# )
+from apps.reference.domains.account_observer.account_observer import AccountObserver
+from apps.reference.domains.account_balance.account_connector import AccountConnector
+from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+from apps.reference.domains.risk_management.risk_management import RiskManagement
+from apps.reference.domains.feature_engineering.feature_engineering import (
+    FeatureEngineering,
+)
+from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
+from vfoundation.core.protocol import Message
+from vfoundation.core import FSMCore
 import json
 import logging
 import sys
@@ -30,30 +47,12 @@ from logging.handlers import RotatingFileHandler
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from vfoundation.core import FSMCore
-from vfoundation.core.protocol import Message
 
 # Import domain classes
-from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
-from apps.reference.domains.feature_engineering.feature_engineering import (
-    FeatureEngineering,
-)
-from apps.reference.domains.risk_management.risk_management import RiskManagement
-from apps.reference.domains.position_tracking.position_tracking import PositionTracking
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
-from apps.reference.domains.account_balance.account_connector import AccountConnector
-from apps.reference.domains.account_observer.account_observer import AccountObserver
-from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
-    SnapshotScheduler,
-)
-from apps.reference.domains.execution_position.fsm import ExecPosFSM
 
 # Import telemetry
-from vfoundation.apps.reference.telemetry.metrics import inc_bridge_deferred, inc_bridge_retry
 
 # Import config loader
-from apps.reference.config_loader import ConfigLoader
-from apps.reference.bootstrap.preflight import check_hybrid_coherence # NEW IMPORT
 
 
 class AuroraBridge:
@@ -80,14 +79,18 @@ class AuroraBridge:
 
         # Configuration
         position_tracking_config = config.get("position_tracking", {})
-        self._ttl_sec = int(position_tracking_config.get("positions_stale_ttl_sec", 5))
+        self._ttl_sec = int(position_tracking_config.get(
+            "positions_stale_ttl_sec", 5))
         self._retry_delay_sec = 0.5
         self._max_retries = 2
 
         # Register event listeners
-        self.fsm.listen("EVT:TRADE_INTENT_PROPOSED", self.on_trade_intent_proposed)
-        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self.on_portfolio_state_updated)
-        self.fsm.listen("EVT:INTENT_DEFERRED", self.on_intent_deferred)
+        # Note: We register global handlers that properly handle async calls
+        # instead of registering async methods directly (FSMCore calls listeners synchronously)
+        self.fsm.listen("EVT:TRADE_INTENT_PROPOSED", on_trade_intent_proposed)
+        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
+                        on_portfolio_state_updated)
+        self.fsm.listen("EVT:INTENT_DEFERRED", on_intent_deferred)
 
     def _is_portfolio_fresh(self) -> bool:
         """Check if portfolio data is fresh (within TTL)."""
@@ -122,16 +125,22 @@ class AuroraBridge:
         next_allowed_ts = event.pld.get("next_allowed_ts", 0)
 
         if not symbol:
-            self.logger.warning(f"BRIDGE: INTENT_DEFERRED missing symbol: {event.pld}")
+            self.logger.warning(
+                f"BRIDGE: INTENT_DEFERRED missing symbol: {event.pld}")
             return
 
         # Register QoS cooldown
         self._qos_next_allowed_ts_per_symbol[symbol] = next_allowed_ts
 
-        self.logger.info(f"BRIDGE: QoS defer registered for {symbol} until {next_allowed_ts} (reason: {reason})")
+        self.logger.info(
+            f"BRIDGE: QoS defer registered for {symbol} until {next_allowed_ts} (reason: {reason})")
 
-        # Increment metrics
-        inc_bridge_deferred(reason, symbol)
+        # Increment metrics (optional)
+        try:
+            from apps.reference.telemetry.metrics import inc_bridge_deferred
+            inc_bridge_deferred(reason, symbol)
+        except ImportError:
+            pass  # Metrics unavailable
 
         # Schedule retry when QoS allows
         import asyncio
@@ -145,7 +154,8 @@ class AuroraBridge:
 
             # Check if still blocked by QoS
             if not self._is_qos_allowed(symbol):
-                self.logger.info(f"BRIDGE: {symbol} still QoS blocked after defer wait")
+                self.logger.info(
+                    f"BRIDGE: {symbol} still QoS blocked after defer wait")
                 return
 
             # Re-emit the original signal to trigger new decision
@@ -163,9 +173,11 @@ class AuroraBridge:
                     why="qos_defer_retry"
                 )
                 self.fsm.emit(features_msg)
-                self.logger.info(f"BRIDGE: Re-triggered decision cycle for {symbol} after QoS defer")
+                self.logger.info(
+                    f"BRIDGE: Re-triggered decision cycle for {symbol} after QoS defer")
             else:
-                self.logger.warning(f"BRIDGE: No original context to retry {symbol} QoS defer")
+                self.logger.warning(
+                    f"BRIDGE: No original context to retry {symbol} QoS defer")
 
         asyncio.create_task(_retry_after_qos())
 
@@ -191,7 +203,8 @@ class AuroraBridge:
         # Check QoS first
         if not self._is_qos_allowed(symbol):
             # QoS blocked - defer the intent
-            key = event.pld.get("idempotent_key") or event.rid or str(time.time())
+            key = event.pld.get(
+                "idempotent_key") or event.rid or str(time.time())
             self._deferred[key] = event
             self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
 
@@ -305,7 +318,8 @@ class AuroraBridge:
         processed_count = 0
 
         for key, intent_msg in list(self._deferred.items()):
-            symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol")
+            symbol = intent_msg.pld.get(
+                "instrument") or intent_msg.pld.get("symbol")
 
             # Check QoS for this symbol
             if not self._is_qos_allowed(symbol):
@@ -341,8 +355,13 @@ class AuroraBridge:
 
             # Increment retry metric if this was retried
             if tries > 1:
-                symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol")
-                inc_bridge_retry(symbol)
+                symbol = intent_msg.pld.get(
+                    "instrument") or intent_msg.pld.get("symbol")
+                try:
+                    from apps.reference.telemetry.metrics import inc_bridge_retry
+                    inc_bridge_retry(symbol)
+                except ImportError:
+                    pass  # Metrics unavailable
 
         if dropped_count > 0 or processed_count > 0:
             self.logger.info(
@@ -359,10 +378,13 @@ class AuroraBridge:
         order_details = intent_msg.pld.get("order", {})
 
         command_payload = {
-            "rid": intent_msg.pld.get("rid"),  # Pass through request ID for tracing
-            "symbol": intent_msg.pld.get("instrument"),  # Map 'instrument' to 'symbol'
+            # Pass through request ID for tracing
+            "rid": intent_msg.pld.get("rid"),
+            # Map 'instrument' to 'symbol'
+            "symbol": intent_msg.pld.get("instrument"),
             "side": intent_msg.pld.get("side"),
-            "qty": order_details.get("qty"),  # Get qty from order.qty (as string)
+            # Get qty from order.qty (as string)
+            "qty": order_details.get("qty"),
             "price": order_details.get(
                 "price"
             ),  # Get price from order.price (as string)
@@ -386,7 +408,8 @@ class AuroraBridge:
             )
         )
 
-        self.logger.debug(f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
+        self.logger.debug(
+            f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
 
         # Preserve XAI chain: take first why from event payload, or fallback
         event_why_chain = intent_msg.pld.get("why", [])
@@ -411,16 +434,15 @@ class AuroraBridge:
             f"BRIDGE: Dispatched CMD:OPEN with rid={open_command.rid}, parent_span={intent_msg.span_id}"
         )
 
-        # Emit the command to the FSM for processing by execution_position
-        self.fsm.emit(open_command)
-
-        # Also handle the command directly with execution_position FSM if available
+        # Handle the command directly with execution_position FSM
         if execution_position is not None:
             result = execution_position.handle(open_command)
             if result:
                 self.logger.info(
                     f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}"
                 )
+                # Emit the result for downstream listeners
+                self.fsm.emit(result)
                 if result.op == "ERR":
                     self.logger.error(
                         f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}"
@@ -446,7 +468,42 @@ def on_trade_intent_proposed(event: Message) -> None:
             # No running loop, create new one
             asyncio.run(_bridge_instance.on_trade_intent_proposed(event))
     else:
-        LOG.error("BRIDGE: No bridge instance available for on_trade_intent_proposed")
+        LOG.error(
+            "BRIDGE: No bridge instance available for on_trade_intent_proposed")
+
+
+def on_portfolio_state_updated(event: Message) -> None:
+    """Global handler for PORTFOLIO_STATE_UPDATED events - delegates to bridge."""
+    global _bridge_instance
+    if _bridge_instance is not None:
+        # Run async method in sync context
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                _bridge_instance.on_portfolio_state_updated(event))
+        except RuntimeError:
+            # No running loop, create new one
+            asyncio.run(_bridge_instance.on_portfolio_state_updated(event))
+    else:
+        LOG.error(
+            "BRIDGE: No bridge instance available for on_portfolio_state_updated")
+
+
+def on_intent_deferred(event: Message) -> None:
+    """Global handler for INTENT_DEFERRED events - delegates to bridge."""
+    global _bridge_instance
+    if _bridge_instance is not None:
+        # Run async method in sync context
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_bridge_instance.on_intent_deferred(event))
+        except RuntimeError:
+            # No running loop, create new one
+            asyncio.run(_bridge_instance.on_intent_deferred(event))
+    else:
+        LOG.error("BRIDGE: No bridge instance available for on_intent_deferred")
 
 
 # Local FSMCore mock has been removed. The real FSMCore from vfoundation is now used.
@@ -549,7 +606,8 @@ fe_handler = RotatingFileHandler(
 fe_handler.setLevel(logging.DEBUG)
 fe_handler.setFormatter(file_formatter)
 fe_handler.addFilter(
-    lambda record: record.name.startswith("apps.reference.domains.feature_engineering")
+    lambda record: record.name.startswith(
+        "apps.reference.domains.feature_engineering")
 )
 domain_handlers["feature_engineering"] = fe_handler
 root_logger.addHandler(fe_handler)
@@ -562,7 +620,8 @@ rm_handler = RotatingFileHandler(
 rm_handler.setLevel(logging.DEBUG)
 rm_handler.setFormatter(file_formatter)
 rm_handler.addFilter(
-    lambda record: record.name.startswith("apps.reference.domains.risk_management")
+    lambda record: record.name.startswith(
+        "apps.reference.domains.risk_management")
 )
 domain_handlers["risk_management"] = rm_handler
 root_logger.addHandler(rm_handler)
@@ -575,7 +634,8 @@ dm_handler = RotatingFileHandler(
 dm_handler.setLevel(logging.DEBUG)
 dm_handler.setFormatter(file_formatter)
 dm_handler.addFilter(
-    lambda record: record.name.startswith("apps.reference.domains.decision_making")
+    lambda record: record.name.startswith(
+        "apps.reference.domains.decision_making")
 )
 domain_handlers["decision_making"] = dm_handler
 root_logger.addHandler(dm_handler)
@@ -588,7 +648,8 @@ em_handler = RotatingFileHandler(
 em_handler.setLevel(logging.DEBUG)
 em_handler.setFormatter(file_formatter)
 em_handler.addFilter(
-    lambda record: record.name.startswith("apps.reference.domains.execution_position")
+    lambda record: record.name.startswith(
+        "apps.reference.domains.execution_position")
 )
 domain_handlers["execution_management"] = em_handler
 root_logger.addHandler(em_handler)
@@ -637,7 +698,8 @@ def debug_event_listener(event: Any) -> None:
 
             # Log formatted trade info to formatted log file (exactly as shown in console)
             # Note: Structured logging handled by AuroraLogAdapter in execution_position/fsm.py
-            trade_formatted_logger = logging.getLogger("aurora.trade_formatted")
+            trade_formatted_logger = logging.getLogger(
+                "aurora.trade_formatted")
             trade_formatted_logger.info(trade_info)
 
 
@@ -659,13 +721,14 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     # 3. Initialize other domains
     # Note: This replay() function is legacy code, may need full config refactoring
     market_data = MarketDataConnector(fsm, config_dict)  # Pass full config
-    feature_engineering = FeatureEngineering(fsm, config_dict.get("trading", {}))
+    feature_engineering = FeatureEngineering(
+        fsm, config_dict.get("trading", {}))
     risk_management = RiskManagement(fsm, config_dict.get("system", {}))
     position_tracking = PositionTracking(fsm, config_dict.get("system", {}))
     decision_making = DecisionMaking(fsm, config_dict.get("trading", {}))
     account_balance = AccountConnector(fsm, config_dict)
     account_observer = AccountObserver(fsm, config_dict)
-    snapshot_scheduler = SnapshotScheduler(fsm, config_dict)
+    # snapshot_scheduler = SnapshotScheduler(fsm, config_dict)  # Moved to main()
 
     # 4. Register domains in the FSM core for inter-domain communication if needed
     fsm.register_domain("market_data", market_data)
@@ -675,7 +738,7 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     fsm.register_domain("decision_making", decision_making)
     fsm.register_domain("account_balance", account_balance)
     fsm.register_domain("account_observer", account_observer)
-    fsm.register_domain("snapshot_scheduler", snapshot_scheduler)
+    # fsm.register_domain("snapshot_scheduler", snapshot_scheduler)  # Moved to main()
     fsm.register_domain("execution_position", execution_position)
 
     LOG.info("All domains initialized and registered.")
@@ -736,8 +799,10 @@ def main() -> None:
 
     # Account Observer (observes trades and sends portfolio updates)
     # FSMP-P3-T01: Use resolved risk_portfolio_source for AccountObserver environment
-    risk_portfolio_source = config.get("_resolved", {}).get("risk_portfolio_source", "testnet") # Default to testnet for safety
-    account_observer = AccountObserver(fsm=fsm, config=config.to_dict(), environment=risk_portfolio_source)
+    risk_portfolio_source = config.get("_resolved", {}).get(
+        "risk_portfolio_source", "testnet")  # Default to testnet for safety
+    account_observer = AccountObserver(
+        fsm=fsm, config=config.to_dict(), environment=risk_portfolio_source)
 
     # Market Data Connector (source of market ticks)
     # Pass full config dict to access both system.yaml (trading section) and use_testnet
@@ -856,7 +921,9 @@ def main() -> None:
         "snapshot_dir": "ops/snapshots",
         "domains": ["position_tracking"],  # Start with position_tracking only
     }
-    snapshot_scheduler = SnapshotScheduler(fsm=fsm, config=snapshot_scheduler_config)
+    # snapshot_scheduler = SnapshotScheduler(
+    #     fsm=fsm, config=snapshot_scheduler_config)
+    snapshot_scheduler = None  # Temporarily disabled
     # fsm.register_domain('snapshot_scheduler', snapshot_scheduler)
 
     # Step 4: Start all components
@@ -882,7 +949,8 @@ def main() -> None:
     decision_making.start()
 
     LOG.info("Starting snapshot scheduler (DR)...")
-    snapshot_scheduler.start()
+    # snapshot_scheduler.start()
+    LOG.info("Snapshot scheduler temporarily disabled")
 
     # Step 5: Keep the application running
     LOG.info("Aurora Core is running... Press Ctrl+C to stop.")

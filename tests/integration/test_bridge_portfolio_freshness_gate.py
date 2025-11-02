@@ -8,7 +8,7 @@ until portfolio data is fresh, preventing fail-closed exposure blocks.
 import asyncio
 import time
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from vfoundation.core.protocol import Message
 
 
@@ -27,10 +27,23 @@ class MockFSM:
         pass
 
 
+class MockExecPosFSM:
+    """Mock ExecPosFSM for testing integration."""
+
+    def handle(self, msg):
+        """Mock handle method - just return the message as CMD."""
+        return msg
+
+
 @pytest.mark.asyncio
-async def test_intent_deferred_until_portfolio_fresh():
+async def test_intent_deferred_until_portfolio_fresh(monkeypatch):
     """Test that intents are deferred when portfolio is stale and processed when fresh."""
     from apps.reference.main import AuroraBridge
+    import apps.reference.main as main_module
+
+    # Mock the global execution_position
+    mock_exec_pos = MockExecPosFSM()
+    monkeypatch.setattr(main_module, "execution_position", mock_exec_pos)
 
     # Create mock FSM and bridge
     fsm = MockFSM()
@@ -62,7 +75,8 @@ async def test_intent_deferred_until_portfolio_fresh():
     assert "OPEN" not in emitted_verbs
 
     # Verify deferred intent details
-    defer_event = next(msg for msg in fsm.emitted if msg.verb == "INTENT_DEFERRED")
+    defer_event = next(
+        msg for msg in fsm.emitted if msg.verb == "INTENT_DEFERRED")
     assert defer_event.pld["reason"] == "PORTFOLIO_STALE"
     assert defer_event.pld["symbol"] == "BTCUSDT"
     assert defer_event.pld["idempotent_key"] == "test_key_123"
@@ -77,7 +91,8 @@ async def test_intent_deferred_until_portfolio_fresh():
         src="position_tracking",
         dst="*",
         pld={
-            "positions_last_ts_ms": int(time.time() * 1000),  # Current time = fresh
+            # Current time = fresh
+            "positions_last_ts_ms": int(time.time() * 1000),
             "equity_free_usdt": "10000",
             "open_positions_usd": "1000",
         },
@@ -99,9 +114,14 @@ async def test_intent_deferred_until_portfolio_fresh():
 
 
 @pytest.mark.asyncio
-async def test_intent_processed_immediately_when_portfolio_fresh():
+async def test_intent_processed_immediately_when_portfolio_fresh(monkeypatch):
     """Test that intents are processed immediately when portfolio is already fresh."""
     from apps.reference.main import AuroraBridge
+    import apps.reference.main as main_module
+
+    # Mock the global execution_position
+    mock_exec_pos = MockExecPosFSM()
+    monkeypatch.setattr(main_module, "execution_position", mock_exec_pos)
 
     # Create mock FSM and bridge
     fsm = MockFSM()
@@ -115,7 +135,8 @@ async def test_intent_processed_immediately_when_portfolio_fresh():
         src="position_tracking",
         dst="*",
         pld={
-            "positions_last_ts_ms": int(time.time() * 1000),  # Current time = fresh
+            # Current time = fresh
+            "positions_last_ts_ms": int(time.time() * 1000),
             "equity_free_usdt": "10000",
             "open_positions_usd": "1000",
         },
@@ -152,9 +173,14 @@ async def test_intent_processed_immediately_when_portfolio_fresh():
 
 
 @pytest.mark.asyncio
-async def test_deferred_intent_timeout():
+async def test_deferred_intent_timeout(monkeypatch):
     """Test that deferred intents are dropped after max retries."""
     from apps.reference.main import AuroraBridge
+    import apps.reference.main as main_module
+
+    # Mock the global execution_position
+    mock_exec_pos = MockExecPosFSM()
+    monkeypatch.setattr(main_module, "execution_position", mock_exec_pos)
 
     # Create mock FSM and bridge with short retry settings for testing
     fsm = MockFSM()
@@ -189,5 +215,6 @@ async def test_deferred_intent_timeout():
     assert "INTENT_DROPPED" in emitted_verbs
 
     # Verify drop event details
-    drop_event = next(msg for msg in fsm.emitted if msg.verb == "INTENT_DROPPED")
+    drop_event = next(
+        msg for msg in fsm.emitted if msg.verb == "INTENT_DROPPED")
     assert drop_event.pld["reason"] == "STALE_PORTFOLIO_TIMEOUT"

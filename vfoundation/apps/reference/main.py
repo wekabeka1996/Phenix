@@ -17,6 +17,18 @@ Set LOG_LEVEL environment variable to control logging:
 - LOG_LEVEL=ERROR - Show only errors
 """
 
+from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import SnapshotScheduler
+from apps.reference.domains.account_observer.account_observer import AccountObserver
+from apps.reference.domains.account_balance.account_connector import AccountConnector
+from apps.reference.domains.execution_position.fsm import ExecPosFSM
+from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+from apps.reference.domains.risk_management.risk_management import RiskManagement
+from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
+from apps.reference.config_loader import ConfigLoader
+from vfoundation.core.protocol import Message
+from vfoundation.core import FSMCore
 import logging
 import sys
 import time
@@ -29,18 +41,6 @@ from logging.handlers import RotatingFileHandler
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from vfoundation.core import FSMCore
-from vfoundation.core.protocol import Message
-from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
-from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
-from apps.reference.domains.risk_management.risk_management import RiskManagement
-from apps.reference.domains.position_tracking.position_tracking import PositionTracking
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
-from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.account_balance.account_connector import AccountConnector
-from apps.reference.domains.account_observer.account_observer import AccountObserver
-from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import SnapshotScheduler
 
 # Local FSMCore mock has been removed. The real FSMCore from vfoundation is now used.
 
@@ -64,7 +64,8 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(getattr(logging, log_level, logging.INFO))
 console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(message)s")
 console_handler.setFormatter(console_formatter)
-console_handler.stream.reconfigure(encoding="utf-8")  # Fix encoding for Windows
+console_handler.stream.reconfigure(
+    encoding="utf-8")  # Fix encoding for Windows
 root_logger.addHandler(console_handler)
 
 # File handler for detailed logs
@@ -73,7 +74,8 @@ file_handler = RotatingFileHandler(
     log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
 )
 file_handler.setLevel(logging.DEBUG)  # Log everything to the file
-file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+file_formatter = logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(file_formatter)
 root_logger.addHandler(file_handler)
 
@@ -103,7 +105,8 @@ def on_trade_intent_proposed(event: Any) -> None:
         "symbol": event.pld.get("instrument"),  # Map 'instrument' to 'symbol'
         "side": event.pld.get("side"),
         "qty": order_details.get("qty"),  # Get qty from order.qty (as string)
-        "price": order_details.get("price"),  # Get price from order.price (as string)
+        # Get price from order.price (as string)
+        "price": order_details.get("price"),
         "order_type": "LIMIT",  # Use LIMIT orders with specified price
         "tif": "GTC",  # Good-Till-Cancel
         "idempotent_key": event.pld.get(
@@ -115,7 +118,8 @@ def on_trade_intent_proposed(event: Any) -> None:
     }
 
     LOG.debug(f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
-    LOG.info(f"BRIDGE: Idempotent key passed through: {command_payload.get('idempotent_key')}")
+    LOG.info(
+        f"BRIDGE: Idempotent key passed through: {command_payload.get('idempotent_key')}")
 
     # Preserve XAI chain: take first why from event payload, or fallback
     event_why_chain = event.pld.get("why", [])
@@ -141,11 +145,14 @@ def on_trade_intent_proposed(event: Any) -> None:
     if execution_position is not None:
         result = execution_position.handle(open_command)
         if result:
-            LOG.info(f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}")
+            LOG.info(
+                f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}")
             if result.op == "ERR":
-                LOG.error(f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}")
+                LOG.error(
+                    f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}")
         else:
-            LOG.info("BRIDGE: Execution FSM processed CMD:OPEN, no decision emitted")
+            LOG.info(
+                "BRIDGE: Execution FSM processed CMD:OPEN, no decision emitted")
     else:
         LOG.error("BRIDGE: execution_position FSM not initialized")
 
@@ -159,7 +166,8 @@ def debug_event_listener(event: Any) -> None:
         # Only show key fields for market data to avoid spam
         if event.verb == "MARKET_TICK_RECEIVED":
             pld = event.pld
-            print(f"   📊 {pld.get('symbol')} bid={pld.get('bid')} ask={pld.get('ask')}")
+            print(
+                f"   📊 {pld.get('symbol')} bid={pld.get('bid')} ask={pld.get('ask')}")
         elif event.verb in [
             "FEATURES_CALCULATED",
             "RISK_ASSESSMENT_COMPLETED",
@@ -175,7 +183,8 @@ def debug_event_listener(event: Any) -> None:
 
             # Log formatted trade info to formatted log file (exactly as shown in console)
             # Note: Structured logging handled by AuroraLogAdapter in execution_position/fsm.py
-            trade_formatted_logger = logging.getLogger("aurora.trade_formatted")
+            trade_formatted_logger = logging.getLogger(
+                "aurora.trade_formatted")
             trade_formatted_logger.info(trade_info)
 
 
@@ -196,9 +205,11 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     # 3. Initialize other domains
     # Note: This replay() function is legacy code, may need full config refactoring
     market_data = MarketDataConnector(fsm, config)  # Pass full config
-    feature_engineering = FeatureEngineering(fsm, config.get("feature_engineering", {}))
+    feature_engineering = FeatureEngineering(
+        fsm, config.get("feature_engineering", {}))
     risk_management = RiskManagement(fsm, config.get("risk_management", {}))
-    position_tracking = PositionTracking(fsm, config.get("position_tracking", {}))
+    position_tracking = PositionTracking(
+        fsm, config.get("position_tracking", {}))
     decision_making = DecisionMaking(fsm, config["decision_making"])
     account_balance = AccountConnector(fsm, config["account_balance"])
     account_observer = AccountObserver(fsm)
@@ -268,7 +279,7 @@ def main() -> None:
     feature_engineering = FeatureEngineering(fsm=fsm, config=config.trading)
 
     # Risk Management (assesses position risk)
-    risk_management = RiskManagement(fsm=fsm, config=config.system)
+    risk_management = RiskManagement(fsm=fsm, config=config.trading.risk)
 
     # Position Tracking (tracks portfolio state)
     position_tracking = PositionTracking(fsm=fsm, config=config.system)
@@ -297,7 +308,8 @@ def main() -> None:
             # Restore state from snapshot
             if position_tracking.load_snapshot(snapshot_data):
                 LOG.info("✅ Successfully loaded state from snapshot")
-                LOG.info(f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}")
+                LOG.info(
+                    f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}")
                 LOG.info(
                     f"   Positions restored: {snapshot_data.get('metadata', {}).get('positions_count', 0)}"
                 )
@@ -306,16 +318,20 @@ def main() -> None:
                 snapshot_ts = snapshot_data.get("timestamp_utc")
                 if snapshot_ts:
                     LOG.info("Replaying WAL entries after snapshot...")
-                    replayed_count = replay_wal_after(wal_dir_path, snapshot_ts, position_tracking)
+                    replayed_count = replay_wal_after(
+                        wal_dir_path, snapshot_ts, position_tracking)
                     LOG.info(f"✅ Replayed {replayed_count} events from WAL")
                 else:
-                    LOG.warning("Snapshot missing timestamp_utc field, cannot replay WAL")
+                    LOG.warning(
+                        "Snapshot missing timestamp_utc field, cannot replay WAL")
             else:
-                LOG.warning(f"⚠️ Failed to restore state from snapshot: {latest_snapshot_path.name}")
+                LOG.warning(
+                    f"⚠️ Failed to restore state from snapshot: {latest_snapshot_path.name}")
                 LOG.info("Starting with empty state.")
 
         except Exception as e:
-            LOG.error(f"Error during disaster recovery: {e}. Starting with empty state.")
+            LOG.error(
+                f"Error during disaster recovery: {e}. Starting with empty state.")
             import traceback
 
             LOG.debug(traceback.format_exc())
@@ -350,7 +366,8 @@ def main() -> None:
         "snapshot_dir": "ops/snapshots",
         "domains": ["position_tracking"],  # Start with position_tracking only
     }
-    snapshot_scheduler = SnapshotScheduler(fsm=fsm, config=snapshot_scheduler_config)
+    snapshot_scheduler = SnapshotScheduler(
+        fsm=fsm, config=snapshot_scheduler_config)
     # fsm.register_domain('snapshot_scheduler', snapshot_scheduler)
 
     # Step 4: Start all components

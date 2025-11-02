@@ -8,6 +8,7 @@ trading:
       tfi: 0.35
       delta_price: 0.05
     signal_threshold: 0.05
+    cooldown_sec: 10           # Increase pause between decisions
     position_sizing:
       min_position_size_usd: 10
       liquidity_based_cap_usd: 10000
@@ -15,8 +16,8 @@ trading:
       mode: "defer"        # QoS mode: defer intents instead of blocking
       enforce: false       # Legacy: disable QoS enforcement
       exposure_block_cooldown_sec: 30
-      symbol_cooldown_sec: 5       # Conservative cooldown
-      max_intents_per_minute_per_symbol: 6  # Conservative rate limit
+      symbol_cooldown_sec: 0.5     # Reduce to 0.5 seconds
+      max_intents_per_minute_per_symbol: 60  # Increase limit to avoid hitting 2/min cap
 
   # ==============================================================================
   # INSTRUMENT SPECIFICATIONS (BINANCE FUTURES)
@@ -67,10 +68,14 @@ trading:
   execution:
     # Portfolio Exposure Gate (20% of equity_free_usdt)
     exposure:
-      max_portfolio_fraction: 0.20
+      max_equity_utilization_pct: 0.40  # EXP-LEVERAGE-001: Margin-based limit (40% of equity)
       count_pending_orders: true
       exclude_reduce_only: true
       pending_reservation_ttl_sec: 90
+      leverage_defaults:  # EXP-LEVERAGE-001: Leverage configuration
+        BTCUSDT: 50
+        ETHUSDT: 50
+        __default__: 20
 
     # Default order type for opening positions.
     # Valid types: LIMIT, MARKET, STOP, STOP_MARKET, TAKE_PROFIT, TAKE_PROFIT_MARKET

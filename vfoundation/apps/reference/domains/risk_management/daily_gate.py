@@ -12,14 +12,24 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional, Dict, Any, Tuple
 
 
-def _d(x: Any) -> Decimal:
+def _d(x: Any) -> float:
     """Safe decimal conversion with fallback to 0."""
     from decimal import Decimal as D
 
     try:
-        return D(str(x))
+        return float(D(str(x)))
     except (InvalidOperation, ValueError, TypeError):
-        return D("0")
+        return 0.0
+
+
+def _fmt_pct(val: float) -> str:
+    """Format percentage to 1 decimal place."""
+    return f"{val:.1f}"
+
+
+def _fmt_usd(val: float) -> str:
+    """Format USD value, removing .0 for whole numbers."""
+    return str(int(val)) if val == int(val) else str(val)
 
 
 def _now_utc() -> datetime:
@@ -31,8 +41,8 @@ def _now_utc() -> datetime:
 class DailyConfig:
     """Configuration for daily risk limits."""
 
-    max_realized_loss_usd: Decimal
-    max_drawdown_pct: Decimal
+    max_realized_loss_usd: float
+    max_drawdown_pct: float
     reset_h: int
     reset_m: int
 
@@ -51,12 +61,14 @@ class DailyRiskState:
         self.cfg = DailyConfig(
             max_realized_loss_usd=_d(rcfg.get("max_realized_loss_usd", 250)),
             max_drawdown_pct=_d(rcfg.get("max_drawdown_pct", 8)),
-            reset_h=int(str(rcfg.get("reset_time_utc", "00:00")).split(":")[0]),
-            reset_m=int(str(rcfg.get("reset_time_utc", "00:00")).split(":")[1]),
+            reset_h=int(
+                str(rcfg.get("reset_time_utc", "00:00")).split(":")[0]),
+            reset_m=int(
+                str(rcfg.get("reset_time_utc", "00:00")).split(":")[1]),
         )
-        self._equity_open = Decimal("0")
-        self._equity_now = Decimal("0")
-        self._realized_pnl = Decimal("0")
+        self._equity_open = 0.0
+        self._equity_now = 0.0
+        self._realized_pnl = 0.0
         self._last_reset_date = None  # YYYY-MM-DD
 
     def _maybe_reset(self, now: Optional[datetime] = None) -> None:
@@ -70,7 +82,7 @@ class DailyRiskState:
         ):
             # Open new trading day
             self._equity_open = self._equity_now  # Fix start equity
-            self._realized_pnl = Decimal("0")
+            self._realized_pnl = 0.0
             self._last_reset_date = reset_date
             if self.log:
                 self.log.info(
@@ -106,23 +118,23 @@ class DailyRiskState:
             return False, {
                 "reason": "DAILY_RISK_LIMIT",
                 "detail": "NO_EQUITY",
-                "equity_open_usd": str(self._equity_open),
-                "equity_now_usd": str(self._equity_now),
+                "equity_open_usd": _fmt_usd(self._equity_open),
+                "equity_now_usd": _fmt_usd(self._equity_now),
                 "why": "insufficient_equity_data",
             }
 
         # Calculate drawdown percentage
-        dd = Decimal("0")
+        dd = 0.0
         if self._equity_open > 0:
-            dd = (Decimal("1") - (self._equity_now / self._equity_open)) * Decimal("100")
+            dd = (1.0 - (self._equity_now / self._equity_open)) * 100.0
 
         # Check realized loss limit
         if (-self._realized_pnl) >= self.cfg.max_realized_loss_usd:
             return False, {
                 "reason": "DAILY_RISK_LIMIT",
                 "detail": "MAX_REALIZED_LOSS",
-                "realized_pnl_usd": str(self._realized_pnl),
-                "limit_usd": str(self.cfg.max_realized_loss_usd),
+                "realized_pnl_usd": _fmt_usd(self._realized_pnl),
+                "limit_usd": _fmt_usd(self.cfg.max_realized_loss_usd),
                 "why": "daily_loss_limit_exceeded",
             }
 
@@ -131,18 +143,18 @@ class DailyRiskState:
             return False, {
                 "reason": "DAILY_RISK_LIMIT",
                 "detail": "MAX_DRAWDOWN",
-                "drawdown_pct": str(dd),
-                "limit_pct": str(self.cfg.max_drawdown_pct),
-                "equity_open_usd": str(self._equity_open),
-                "equity_now_usd": str(self._equity_now),
+                "drawdown_pct": _fmt_pct(dd),
+                "limit_pct": _fmt_usd(self.cfg.max_drawdown_pct),
+                "equity_open_usd": _fmt_usd(self._equity_open),
+                "equity_now_usd": _fmt_usd(self._equity_now),
                 "why": "daily_drawdown_limit_exceeded",
             }
 
         # All checks passed
         return True, {
-            "equity_open_usd": str(self._equity_open),
-            "equity_now_usd": str(self._equity_now),
-            "realized_pnl_usd": str(self._realized_pnl),
-            "drawdown_pct": str(dd),
+            "equity_open_usd": _fmt_usd(self._equity_open),
+            "equity_now_usd": _fmt_usd(self._equity_now),
+            "realized_pnl_usd": _fmt_usd(self._realized_pnl),
+            "drawdown_pct": _fmt_pct(dd),
             "why": "daily_risk_checks_passed",
         }

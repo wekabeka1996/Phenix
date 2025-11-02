@@ -1,7 +1,7 @@
 [
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 88,
+    "lineno": 91,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -10,7 +10,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 89,
+    "lineno": 92,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -19,7 +19,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 90,
+    "lineno": 94,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -28,7 +28,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 165,
+    "lineno": 172,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -37,7 +37,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 212,
+    "lineno": 222,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -46,7 +46,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 258,
+    "lineno": 268,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -55,7 +55,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 286,
+    "lineno": 296,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -64,7 +64,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 330,
+    "lineno": 341,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -73,16 +73,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 415,
-    "type": null,
-    "verb": null,
-    "event": "<unknown>",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "apps\\reference\\main.py",
-    "lineno": 722,
+    "lineno": 776,
     "type": "EVT",
     "verb": "MARKET_TICK_RECEIVED",
     "event": "EVT:MARKET_TICK_RECEIVED",
@@ -91,7 +82,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 723,
+    "lineno": 777,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -100,7 +91,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 724,
+    "lineno": 778,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -109,7 +100,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 725,
+    "lineno": 779,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -118,7 +109,7 @@
   },
   {
     "source_file": "apps\\reference\\main.py",
-    "lineno": 726,
+    "lineno": 780,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -127,7 +118,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 183,
+    "lineno": 191,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -136,7 +127,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 184,
+    "lineno": 192,
     "type": "EVT",
     "verb": "BALANCE_UPDATE_RECEIVED",
     "event": "EVT:BALANCE_UPDATE_RECEIVED",
@@ -145,7 +136,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 264,
+    "lineno": 279,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -154,7 +145,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 265,
+    "lineno": 280,
     "type": "EVT",
     "verb": "ACCOUNT_UPDATE_RECEIVED",
     "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
@@ -181,7 +172,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 115,
+    "lineno": 121,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -190,7 +181,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 116,
+    "lineno": 122,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -199,7 +190,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 117,
+    "lineno": 123,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -208,7 +199,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 118,
+    "lineno": 124,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -217,25 +208,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 491,
-    "type": "EVT",
-    "verb": "INTENT_DEFERRED",
-    "event": "EVT:INTENT_DEFERRED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 491,
-    "type": "EVT",
-    "verb": "INTENT_DEFERRED",
-    "event": "EVT:INTENT_DEFERRED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 874,
+    "lineno": 932,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -244,7 +217,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 875,
+    "lineno": 933,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -298,7 +271,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\exposure_guard.py",
-    "lineno": 122,
+    "lineno": 139,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -307,7 +280,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\exposure_guard.py",
-    "lineno": 145,
+    "lineno": 164,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -316,7 +289,16 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 209,
+    "lineno": 68,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 128,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -325,7 +307,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 289,
+    "lineno": 316,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -334,7 +316,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 489,
+    "lineno": 531,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -343,7 +325,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 580,
+    "lineno": 612,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -352,7 +334,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 616,
+    "lineno": 694,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -361,7 +343,16 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 723,
+    "lineno": 730,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
+    "lineno": 843,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -370,7 +361,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\feature_engineering\\feature_engineering.py",
-    "lineno": 20,
+    "lineno": 21,
     "type": "EVT",
     "verb": "MARKET_TICK_RECEIVED",
     "event": "EVT:MARKET_TICK_RECEIVED",
@@ -379,7 +370,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\feature_engineering\\feature_engineering.py",
-    "lineno": 80,
+    "lineno": 95,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -388,7 +379,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\feature_engineering\\feature_engineering.py",
-    "lineno": 81,
+    "lineno": 96,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -397,7 +388,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\market_data\\market_data_connector.py",
-    "lineno": 253,
+    "lineno": 266,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -406,7 +397,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\market_data\\market_data_connector.py",
-    "lineno": 254,
+    "lineno": 267,
     "type": "EVT",
     "verb": "MARKET_TICK_RECEIVED",
     "event": "EVT:MARKET_TICK_RECEIVED",
@@ -415,7 +406,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 51,
+    "lineno": 52,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -424,7 +415,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 52,
+    "lineno": 53,
     "type": "EVT",
     "verb": "ACCOUNT_UPDATE_RECEIVED",
     "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
@@ -433,7 +424,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 53,
+    "lineno": 54,
     "type": "EVT",
     "verb": "BALANCE_UPDATE_RECEIVED",
     "event": "EVT:BALANCE_UPDATE_RECEIVED",
@@ -442,7 +433,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 155,
+    "lineno": 84,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -451,7 +442,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 156,
+    "lineno": 85,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -460,7 +451,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 293,
+    "lineno": 178,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -469,7 +460,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 294,
+    "lineno": 179,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -478,7 +469,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 355,
+    "lineno": 318,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -487,7 +478,25 @@
   },
   {
     "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
-    "lineno": 356,
+    "lineno": 319,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 383,
+    "type": "EVT",
+    "verb": "PORTFOLIO_STATE_UPDATED",
+    "event": "EVT:PORTFOLIO_STATE_UPDATED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\position_tracking\\position_tracking.py",
+    "lineno": 384,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -514,7 +523,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
-    "lineno": 52,
+    "lineno": 53,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -523,7 +532,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
-    "lineno": 53,
+    "lineno": 54,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -532,7 +541,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
-    "lineno": 79,
+    "lineno": 81,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -541,7 +550,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
-    "lineno": 103,
+    "lineno": 105,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -550,7 +559,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
-    "lineno": 104,
+    "lineno": 106,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -559,7 +568,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\risk_management\\risk_management.py",
-    "lineno": 114,
+    "lineno": 116,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -820,7 +829,7 @@
   },
   {
     "source_file": "tests\\domains\\test_portfolio_equity_flow.py",
-    "lineno": 72,
+    "lineno": 74,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -829,19 +838,10 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 61,
+    "lineno": 62,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 87,
-    "type": "EVT",
-    "verb": "TRADE_EXECUTED",
-    "event": "EVT:TRADE_EXECUTED",
     "payload_keys": [],
     "domain": null
   },
@@ -856,7 +856,16 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 149,
+    "lineno": 89,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\domains\\test_position_tracking.py",
+    "lineno": 151,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -865,7 +874,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 174,
+    "lineno": 176,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -874,7 +883,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 174,
+    "lineno": 176,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -883,7 +892,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 187,
+    "lineno": 190,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -892,7 +901,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 188,
+    "lineno": 191,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -901,7 +910,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 204,
+    "lineno": 207,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -910,7 +919,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 205,
+    "lineno": 208,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -919,7 +928,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 251,
+    "lineno": 255,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -928,7 +937,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 276,
+    "lineno": 280,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -937,7 +946,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 276,
+    "lineno": 280,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -946,7 +955,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 289,
+    "lineno": 293,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -955,7 +964,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 289,
+    "lineno": 293,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -964,7 +973,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 323,
+    "lineno": 327,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -973,7 +982,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 348,
+    "lineno": 352,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -982,7 +991,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 348,
+    "lineno": 352,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -991,7 +1000,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 377,
+    "lineno": 382,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -1000,7 +1009,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 402,
+    "lineno": 407,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1009,7 +1018,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 402,
+    "lineno": 407,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1018,7 +1027,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 415,
+    "lineno": 421,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1027,7 +1036,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 415,
+    "lineno": 421,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1036,7 +1045,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 453,
+    "lineno": 461,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -1045,7 +1054,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 479,
+    "lineno": 487,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1054,7 +1063,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 479,
+    "lineno": 487,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1063,7 +1072,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 496,
+    "lineno": 505,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -1072,7 +1081,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 521,
+    "lineno": 530,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1081,7 +1090,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 521,
+    "lineno": 530,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1090,7 +1099,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 534,
+    "lineno": 543,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1099,7 +1108,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 535,
+    "lineno": 544,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1108,7 +1117,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 581,
+    "lineno": 590,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -1117,7 +1126,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 606,
+    "lineno": 615,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1126,7 +1135,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 606,
+    "lineno": 615,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1135,7 +1144,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 619,
+    "lineno": 628,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1144,7 +1153,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 620,
+    "lineno": 629,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1153,7 +1162,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 665,
+    "lineno": 674,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -1162,7 +1171,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 690,
+    "lineno": 699,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1171,7 +1180,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 690,
+    "lineno": 699,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1180,7 +1189,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 703,
+    "lineno": 712,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1189,7 +1198,7 @@
   },
   {
     "source_file": "tests\\domains\\test_position_tracking.py",
-    "lineno": 703,
+    "lineno": 712,
     "type": "EVT",
     "verb": "TRADE_EXECUTED",
     "event": "EVT:TRADE_EXECUTED",
@@ -1875,7 +1884,7 @@
   },
   {
     "source_file": "vfoundation\\apps\\reference\\main.py",
-    "lineno": 241,
+    "lineno": 252,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -1884,7 +1893,7 @@
   },
   {
     "source_file": "vfoundation\\apps\\reference\\main.py",
-    "lineno": 245,
+    "lineno": 256,
     "type": "EVT",
     "verb": "MARKET_TICK_RECEIVED",
     "event": "EVT:MARKET_TICK_RECEIVED",
@@ -1893,7 +1902,7 @@
   },
   {
     "source_file": "vfoundation\\apps\\reference\\main.py",
-    "lineno": 246,
+    "lineno": 257,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -1902,7 +1911,7 @@
   },
   {
     "source_file": "vfoundation\\apps\\reference\\main.py",
-    "lineno": 247,
+    "lineno": 258,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -1911,7 +1920,7 @@
   },
   {
     "source_file": "vfoundation\\apps\\reference\\main.py",
-    "lineno": 248,
+    "lineno": 259,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -1920,7 +1929,7 @@
   },
   {
     "source_file": "vfoundation\\apps\\reference\\main.py",
-    "lineno": 249,
+    "lineno": 260,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",

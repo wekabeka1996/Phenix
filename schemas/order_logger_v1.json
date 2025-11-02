@@ -1,94 +1,85 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://phenix.trade/schemas/order-logger/v1",
-    "type": "object",
-    "properties": {
-        "rid": {
-            "type": "string"
-        },
-        "timestamp": {
-            "type": "integer"
-        },
-        "event_type": {
-            "enum": [
-                "ORDER_INTENT",
-                "ORDER_PLACED",
-                "ORDER_REJECTED",
-                "ORDER_STATE_CHANGED"
-            ]
-        },
-        "order_id": {
-            "type": [
-                "string",
-                "null"
-            ]
-        },
-        "client_order_id": {
-            "type": [
-                "string",
-                "null"
-            ]
-        },
-        "symbol": {
-            "type": "string"
-        },
-        "side": {
-            "enum": [
-                "BUY",
-                "SELL",
-                "NONE"
-            ]
-        },
-        "quantity": {
-            "type": [
-                "number",
-                "null"
-            ]
-        },
-        "price": {
-            "type": [
-                "number",
-                "null"
-            ]
-        },
-        "nrr_code": {
-            "type": [
-                "string",
-                "null"
-            ],
-            "pattern": "^NRR-\\d{3}$"
-        },
-        "why": {
-            "type": [
-                "string",
-                "null"
-            ],
-            "maxLength": 80
-        },
-        "source_fsm": {
-            "type": "string"
-        },
-        "reservation_id": {
-            "type": [
-                "string",
-                "null"
-            ]
-        },
-        "adapter_response": {
-            "type": [
-                "object",
-                "null"
-            ]
-        },
-        "metadata": {
-            "type": "object"
-        }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "order_logger_v1.json",
+  "title": "Order Logger V1 Schema",
+  "description": "JSON Schema for order logging entries",
+  "type": "object",
+  "properties": {
+    "rid": {
+      "type": "string",
+      "description": "Request ID for tracing"
     },
-    "required": [
-        "rid",
-        "timestamp",
-        "event_type",
-        "symbol",
-        "source_fsm"
-    ]
+    "timestamp": {
+      "type": "integer",
+      "description": "Timestamp in milliseconds",
+      "minimum": 0
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "ORDER_INTENT",
+        "ORDER_PLACED",
+        "ORDER_FILLED",
+        "ORDER_CANCELLED",
+        "ORDER_TIMEOUT",
+        "ORDER_REJECTED",
+        "ORDER_STATE_CHANGED"
+      ],
+      "description": "Type of order event"
+    },
+    "order_id": {
+      "type": "string",
+      "description": "Exchange order ID"
+    },
+    "client_order_id": {
+      "type": "string",
+      "description": "Client order ID"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["BUY", "SELL", "NONE"],
+      "description": "Order side"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Order quantity",
+      "minimum": 0
+    },
+    "price": {
+      "type": "number",
+      "description": "Order price",
+      "minimum": 0
+    },
+    "nrr_code": {
+      "type": "string",
+      "pattern": "^NRR-[0-9]{3}$",
+      "description": "NRR error code"
+    },
+    "why": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "Reason for the event"
+    },
+    "source_fsm": {
+      "type": "string",
+      "description": "FSM that generated the event"
+    },
+    "reservation_id": {
+      "type": "string",
+      "description": "Exposure reservation ID"
+    },
+    "adapter_response": {
+      "type": "object",
+      "description": "Raw adapter response"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata"
+    }
+  },
+  "required": ["rid", "event_type", "symbol", "source_fsm"]
 }

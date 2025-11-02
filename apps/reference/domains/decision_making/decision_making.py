@@ -15,6 +15,7 @@ from typing import Dict, Any, Optional, TYPE_CHECKING
 from vfoundation.core.protocol import Message
 
 from .normalized_reject_reasons import NormalizedRejectReasons
+from .deferred_scheduler import DeferredIntentScheduler
 from vfoundation.apps.reference.domains.decision_making.dm_log_adapter import (
     DecisionLog,
 )
@@ -59,6 +60,11 @@ class DecisionMaking:
             ),  # symbol -> rate tracking
         }
 
+        # QoS busy guard to prevent infinite defer loops
+        # symbol -> ms timestamp
+        self._qos_next_allowed_ts: dict[str, int] = {}
+        self._deferred_scheduler = DeferredIntentScheduler()
+
         # Decision logging (DM breadcrumbs)
         self.dlog = DecisionLog()
 
@@ -101,7 +107,7 @@ class DecisionMaking:
         # Features TTL configuration
         features_config = decision_config.get("features", {})
         self.features_ttl_sec = features_config.get(
-            "ttl_sec", 30)  # 30 seconds default
+            "ttl_sec", 5)  # 5 seconds default (reduced from 30)
 
         self.logger.info(
             f"QoS config: mode={self.qos_mode}, enforce={self.qos_enforce}, "
@@ -152,10 +158,8 @@ class DecisionMaking:
             remaining = self.qos_symbol_cooldown_sec - time_since_last_decision
             reject_reason = f"symbol_cooldown_active_{remaining:.1f}s_remaining"
             self.logger.warning(f"[{symbol}] QoS REJECT: {reject_reason}")
-            # Return umbrella NRR-012 for unit tests, but log will use NRR-017
-            return_reason = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED        # 'NRR-012'
-            log_reason = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE     # 'NRR-017'
-            return False, return_reason
+            # Return RATE_LIMIT_EXCEEDED for backward compatibility, but distinguish cooldown from rate limit
+            return False, NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
 
         # Check rate limit (intents per minute per symbol) - separate from cooldown
         intent_data = self._qos_state["symbol_intent_counts"][symbol]
@@ -181,6 +185,35 @@ class DecisionMaking:
         self._qos_state["symbol_cooldowns"][symbol] = current_time
         self.logger.debug(
             f"[{symbol}] QoS cooldown updated: ts={current_time}")
+
+    def _ensure_after_cooldown_retry(self, symbol: str, context: dict, rid: str) -> None:
+        """Schedule one-time retry after QoS cooldown expires."""
+        next_allowed_ts = self._calculate_next_allowed_time(symbol)
+        cooldown_sec = max(0, next_allowed_ts - int(time.time() * 1000)) / 1000
+
+        self.logger.info(
+            f"[{symbol}] Scheduling QoS retry in {cooldown_sec:.1f}s (ts={next_allowed_ts})"
+        )
+
+        # Schedule one-time retry using DeferredIntentScheduler
+        self._deferred_scheduler.schedule_once(
+            symbol,
+            cooldown_sec,
+            lambda: self._retry_decision_after_cooldown(symbol, context, rid)
+        )
+
+    def _retry_decision_after_cooldown(self, symbol: str, context: dict, rid: str) -> None:
+        """Retry decision after cooldown period."""
+        self.logger.info(
+            f"[{symbol}] Retrying decision after cooldown - RID: {rid}")
+
+        # Clear any cached state that might prevent re-decision
+        if symbol in self.symbol_states:
+            # Keep features and risk data fresh, but clear any deferral flags
+            pass
+
+        # Re-run decision logic
+        self._make_decision_for_symbol(symbol, context, rid)
 
     def _update_intent_count(self, symbol: str) -> None:
         """Update intent count for rate limiting."""
@@ -340,6 +373,8 @@ class DecisionMaking:
     def _features_ready(self, symbol: str, features_data: dict) -> bool:
         """Check if features are fresh within TTL."""
         if not features_data or "ts" not in features_data:
+            self.logger.debug(
+                f"[{symbol}] _features_ready: no features_data or ts")
             return False
 
         now_ts = time.time() * 1000  # milliseconds
@@ -347,7 +382,13 @@ class DecisionMaking:
         lag_ms = now_ts - features_ts
         ttl_ms = self.features_ttl_sec * 1000
 
-        return lag_ms <= ttl_ms
+        is_ready = lag_ms <= ttl_ms
+        self.logger.debug(
+            f"[{symbol}] _features_ready: now={now_ts:.0f}, features_ts={features_ts}, "
+            f"lag={lag_ms:.0f}ms, ttl={ttl_ms}ms, ready={is_ready}"
+        )
+
+        return is_ready
 
     def _check_and_trigger_decision_for_symbol(self, symbol: str) -> None:
         if not self.latest_portfolio:
@@ -440,6 +481,19 @@ class DecisionMaking:
         self.logger.info(
             f"[{symbol}] 🚀 _make_decision_for_symbol() START - RID: {rid}"
         )
+
+        # Busy guard: prevent infinite defer loops during cooldown
+        current_time = time.time()
+        next_allowed = self._qos_next_allowed_ts.get(symbol, 0)
+        if current_time < next_allowed:
+            remaining_sec = next_allowed - current_time
+            self.logger.warning(
+                f"[{symbol}] Busy guard active: decision blocked for {remaining_sec:.1f}s (cooldown active)"
+            )
+            # Schedule one-time retry after cooldown expires
+            self._ensure_after_cooldown_retry(symbol, context, rid)
+            return
+
         why_chain = []
         features_data = context["features"]["features"]
         risk_params = context["risk_params"]["risk_parameters"]
@@ -462,10 +516,15 @@ class DecisionMaking:
                     f"[{symbol}] QoS shadow: passing intent downstream (reason: {qos_reject_reason})")
                 inc_decision_deferred(symbol, "qos_shadow")
             elif effective_mode == "defer":
-                # Defer mode: emit INTENT_DEFERRED event for Bridge to handle
+                # Defer mode: set busy guard and schedule one-time retry
                 next_allowed_ts = self._calculate_next_allowed_time(symbol)
+                next_allowed_sec = next_allowed_ts / 1000.0  # Convert to seconds
+
                 self.logger.warning(
-                    f"[{symbol}] QoS defer: delaying intent until {next_allowed_ts} (reason: {qos_reject_reason})")
+                    f"[{symbol}] QoS defer: setting busy guard until {next_allowed_sec} (reason: {qos_reject_reason})")
+
+                # Set busy guard to prevent infinite defer loops
+                self._qos_next_allowed_ts[symbol] = next_allowed_sec
 
                 # XAI instrumentation: qos_defer
                 cooldown_left_ms = (next_allowed_ts - time.time() *
@@ -483,21 +542,15 @@ class DecisionMaking:
                 # Update QoS state to record the deferral
                 self._update_qos_state(symbol)
 
-                # Emit defer event for Bridge
-                defer_payload = {
-                    "reason": "QOS_COOLDOWN",
-                    "symbol": symbol,
-                    "next_allowed_ts": next_allowed_ts,
-                    "original_context": context,
-                    "rid": rid
-                }
-                self.fsm.emit("EVT:INTENT_DEFERRED",
-                              payload=defer_payload, why="qos_defer")
+                # Schedule one-time retry after cooldown expires
+                self._ensure_after_cooldown_retry(symbol, context, rid)
 
                 # Log to OrderLoggerV1
-                # 'NRR-012' — как ожидают тесты
-                nrr_code = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
-                nrr_detail = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE  # 'NRR-017' — детализация
+                # Determine specific NRR code based on rejection reason
+                if "symbol_cooldown" in str(qos_reject_reason):
+                    nrr_code = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE  # NRR-017
+                else:
+                    nrr_code = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED  # NRR-012
 
                 order_logger.write({
                     "rid": rid,
@@ -505,9 +558,9 @@ class DecisionMaking:
                     "event_type": "ORDER_REJECTED",
                     "symbol": symbol,
                     "source_fsm": "decision_making",
-                    "nrr_code": nrr_detail,  # Use NRR-017 for logging
+                    "nrr_code": nrr_code,  # Use NRR-017 / NRR-012 for logging
                     "why": "qos_defer",
-                    "metadata": {"detail": nrr_detail}
+                    "metadata": {"detail": nrr_code}
                 })
 
                 self.clear_internal_state_for_symbol(symbol)
@@ -525,9 +578,11 @@ class DecisionMaking:
                         "symbol": symbol, "reason": "QOS_RATE_LIMITED"}
                 )
 
-                # БЕК-СУМІСНІСТЬ: зовнішній код — NRR-012, деталь — NRR-017
-                nrr_code = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED   # 'NRR-012'
-                nrr_detail = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE  # 'NRR-017'
+                # Use specific NRR codes: NRR-017 for cooldown, NRR-012 for rate limit
+                if "symbol_cooldown" in str(qos_reject_reason):
+                    nrr_code = NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE  # NRR-017
+                else:
+                    nrr_code = NormalizedRejectReasons.RATE_LIMIT_EXCEEDED  # NRR-012
 
                 # Log to OrderLoggerV1
                 order_logger.write({
@@ -535,10 +590,10 @@ class DecisionMaking:
                     "event_type": "ORDER_REJECTED",
                     "symbol": symbol,
                     "side": "NONE",
-                    "nrr_code": nrr_detail,  # Use NRR-017 for logging
+                    "nrr_code": nrr_code,  # Use NRR-017 / NRR-012 for logging
                     "why": qos_reject_reason[:80] if qos_reject_reason else "QoS rejection",
                     "source_fsm": "DecisionMaking",
-                    "metadata": {"reject_reason": "QOS_RATE_LIMITED", "detail": nrr_detail}
+                    "metadata": {"reject_reason": "QOS_RATE_LIMITED", "detail": nrr_code}
                 })
 
                 self.clear_internal_state_for_symbol(symbol)

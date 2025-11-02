@@ -46,14 +46,16 @@ class PositionTracking:
     def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
         self.fsm = fsm
         self.config = config
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
         # Subscribe to events
         self.fsm.listen("EVT:TRADE_EXECUTED", self.on_trade_executed)
         self.fsm.listen("EVT:ACCOUNT_UPDATE_RECEIVED", self.on_account_update)
         self.fsm.listen("EVT:BALANCE_UPDATE_RECEIVED", self.on_balance_update)
 
         # State tracking
-        self._positions: Dict[str, Dict[str, Any]] = {}  # symbol -> position data
+        # symbol -> position data
+        self._positions: Dict[str, Dict[str, Any]] = {}
         self._realized_pnl: decimal.Decimal = decimal.Decimal("0")
         self._equity: decimal.Decimal = decimal.Decimal(
             "0"
@@ -63,8 +65,27 @@ class PositionTracking:
         )
 
     def start(self) -> None:
-        """Start the position tracking component (subscription already done in __init__)."""
-        pass
+        """Start the position tracking component and emit initial portfolio state."""
+        # Emit initial portfolio state with zero positions
+        positions_last_ts_ms = int(time.time() * 1000)
+
+        portfolio_payload = {
+            "ts": positions_last_ts_ms,
+            "equity": "0",  # No equity data yet
+            "realized_pnl": "0",
+            "unrealized_pnl": "0",
+            "available_balance": "0",
+            "positions": [],  # Empty positions list
+            "open_positions_usd": "0",
+            "positions_last_ts_ms": positions_last_ts_ms,
+        }
+
+        self.logger.info("Emitting initial EVT:PORTFOLIO_STATE_UPDATED...")
+        self.fsm.emit(
+            "EVT:PORTFOLIO_STATE_UPDATED",
+            payload=portfolio_payload,
+            why="Initial portfolio state with no positions.",
+        )
 
     def on_trade_executed(self, event: Message) -> None:
         """
@@ -131,12 +152,15 @@ class PositionTracking:
 
         # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
         open_positions_usd = self._calculate_open_positions_notional()
+        # EXP-LEVERAGE-001: Calculate margin used (backward compatible)
+        open_positions_margin_usd = self._calc_margin_used_usd([])
         positions_last_ts_ms = int(time.time() * 1000)
 
         # Emit portfolio state updated event
         portfolio_payload = {
             "ts": ts,
-            "equity": str(self._equity),  # Preserve Decimal precision as string
+            # Preserve Decimal precision as string
+            "equity": str(self._equity),
             "realized_pnl": str(
                 self._realized_pnl
             ),  # Preserve Decimal precision as string
@@ -147,7 +171,11 @@ class PositionTracking:
             "open_positions_usd": str(
                 open_positions_usd
             ),  # EXP-FIX: Notional for exposure gate
-            "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
+            "open_positions_margin_usd": str(
+                open_positions_margin_usd
+            ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-FIX: Timestamp for staleness check
+            "positions_last_ts_ms": positions_last_ts_ms,
         }
 
         # Emit portfolio state updated event
@@ -254,12 +282,17 @@ class PositionTracking:
 
         # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
         open_positions_usd = self._calculate_open_positions_notional()
+        # EXP-LEVERAGE-001: Calculate margin used with positionRisk data if available
+        open_positions_margin_usd = self._calc_margin_used_usd(
+            account_positions)
         positions_last_ts_ms = int(time.time() * 1000)
 
         # Emit portfolio state updated event with real account data
         portfolio_payload = {
             "ts": int(time.time() * 1000),
             "equity": str(self._equity),  # Legacy field for compatibility
+            # EXP-FIX: Always include equity_free_usdt
+            "equity_free_usdt": str(self._equity),
             "realized_pnl": str(
                 self._realized_pnl
             ),  # Preserve Decimal precision as string
@@ -273,17 +306,21 @@ class PositionTracking:
             "open_positions_usd": str(
                 open_positions_usd
             ),  # EXP-FIX: Notional for exposure gate
-            "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
+            "open_positions_margin_usd": str(
+                open_positions_margin_usd
+            ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-FIX: Timestamp for staleness check
+            "positions_last_ts_ms": positions_last_ts_ms,
         }
 
-        # Add equity fields if USDT present in balance data (from account update)
+        # Add additional equity fields if USDT present in balance data (from account update)
         # Note: account updates may not include full asset list, so equity computation might be limited
         if "assets" in payload:
-            equity_data = self._compute_equity_from_balance(payload["assets"], payload)
+            equity_data = self._compute_equity_from_balance(
+                payload["assets"], payload)
             if equity_data:
                 portfolio_payload.update(
                     {
-                        "equity_free_usdt": equity_data["equity_free_usdt"],
                         "equity_cross_usdt": equity_data["equity_cross_usdt"],
                         "equity_ts": equity_data["equity_ts"],
                     }
@@ -320,7 +357,8 @@ class PositionTracking:
         # Compute equity metrics for USDT-M futures
         equity_data = self._compute_equity_from_balance(assets)
         if not equity_data:
-            self.logger.warning("Skipping portfolio update: no USDT in balance data")
+            self.logger.warning(
+                "Skipping portfolio update: no USDT in balance data")
             return
 
         # Update internal equity state
@@ -328,12 +366,15 @@ class PositionTracking:
 
         # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
         open_positions_usd = self._calculate_open_positions_notional()
+        # EXP-LEVERAGE-001: Calculate margin used (fallback to config leverage)
+        open_positions_margin_usd = self._calc_margin_used_usd([])
         positions_last_ts_ms = int(time.time() * 1000)
 
         # Emit portfolio state updated event with equity fields for DecisionMaking
         portfolio_payload = {
             "ts": int(time.time() * 1000),
-            "equity": equity_data["equity_free_usdt"],  # Legacy field for compatibility
+            # Legacy field for compatibility
+            "equity": equity_data["equity_free_usdt"],
             "equity_free_usdt": equity_data["equity_free_usdt"],
             "equity_cross_usdt": equity_data["equity_cross_usdt"],
             "equity_ts": equity_data["equity_ts"],
@@ -346,7 +387,11 @@ class PositionTracking:
             "open_positions_usd": str(
                 open_positions_usd
             ),  # EXP-FIX: Notional for exposure gate
-            "positions_last_ts_ms": positions_last_ts_ms,  # EXP-FIX: Timestamp for staleness check
+            "open_positions_margin_usd": str(
+                open_positions_margin_usd
+            ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-FIX: Timestamp for staleness check
+            "positions_last_ts_ms": positions_last_ts_ms,
         }
 
         self.logger.info(
@@ -374,7 +419,8 @@ class PositionTracking:
             Dict with equity_free_usdt, equity_cross_usdt, equity_ts, why or None if USDT not present
         """
         # Find USDT asset
-        usdt_asset = next((a for a in assets if a.get("asset") == "USDT"), None)
+        usdt_asset = next(
+            (a for a in assets if a.get("asset") == "USDT"), None)
         if not usdt_asset:
             self.logger.warning(
                 "Skipping equity computation: USDT not present in balance data"
@@ -532,6 +578,69 @@ class PositionTracking:
         # Round to 2 decimal places for consistency
         return total_notional.quantize(decimal.Decimal("0.01"))
 
+    def _calc_margin_used_usd(self, positions: list[dict]) -> decimal.Decimal:
+        """
+        Calculate total margin used by open positions in USD.
+
+        EXP-LEVERAGE-001: Margin-based exposure calculation with leverage.
+        If positions list is provided (from positionRisk API), use it.
+        Otherwise, fallback to internal position data with leverage from config.
+        """
+        total_margin = decimal.Decimal("0")
+
+        if positions:
+            # Use positionRisk data if available
+            for p in positions:
+                # Extract notional: try positionRisk fields first, fallback to calculation
+                notional = _d(p.get("notional") or (
+                    _d(p.get("positionAmt", "0")) *
+                    _d(p.get("markPrice") or p.get("entryPrice") or "0")
+                ))
+
+                # Extract leverage: try positionRisk field, fallback to default
+                lev = _d(p.get("leverage") or "1")
+                if lev <= 0:
+                    lev = decimal.Decimal("1")
+
+                # Calculate margin for this position
+                margin = abs(notional) / lev
+                total_margin += margin
+
+                self.logger.debug(
+                    f"Position margin for {p.get('symbol', 'unknown')}: notional={notional}, lev={lev}, margin={margin}"
+                )
+        else:
+            # Fallback to internal position data with leverage from config
+            leverage_config = self.config.get("trading", {}).get(
+                "execution", {}).get("exposure", {}).get("leverage_defaults", {})
+            default_leverage = decimal.Decimal(
+                str(leverage_config.get("__default__", "20")))
+
+            for symbol, position in self._positions.items():
+                quantity = abs(position["quantity"])
+                entry_price = position["avg_price"]
+
+                if quantity > decimal.Decimal("1e-9") and entry_price > decimal.Decimal("0"):
+                    # Calculate notional
+                    position_notional = quantity * entry_price
+
+                    # Get leverage for this symbol
+                    symbol_leverage = decimal.Decimal(
+                        str(leverage_config.get(symbol, default_leverage)))
+                    if symbol_leverage <= 0:
+                        symbol_leverage = decimal.Decimal("1")
+
+                    # Calculate margin
+                    margin = position_notional / symbol_leverage
+                    total_margin += margin
+
+                    self.logger.debug(
+                        f"Position margin for {symbol}: notional={position_notional}, lev={symbol_leverage}, margin={margin}"
+                    )
+
+        # Round to 2 decimal places for consistency
+        return total_margin.quantize(decimal.Decimal("0.01"))
+
     def get_positions(self) -> Dict[str, Dict[str, Any]]:
         """Returns a copy of the internal positions dictionary."""
         return self._positions.copy()
@@ -586,12 +695,14 @@ class PositionTracking:
         # Build portfolio state with precision preservation
         portfolio_state = {
             "equity": str(self._equity),
-            "balance": str(self._equity - self._realized_pnl),  # Simplified calculation
+            # Simplified calculation
+            "balance": str(self._equity - self._realized_pnl),
             "margin_used": "0.0",  # Placeholder - would need real margin calculation
         }
 
         # Complete state object
-        state_data = {"positions": positions_state, "portfolio": portfolio_state}
+        state_data = {"positions": positions_state,
+                      "portfolio": portfolio_state}
 
         # Compute state hash for integrity verification
         state_str = json.dumps(state_data, sort_keys=True)
@@ -658,7 +769,8 @@ class PositionTracking:
                     qty = decimal.Decimal(str(pos.get("qty", "0")))
                     avg_price = decimal.Decimal(str(pos.get("avg_price", "0")))
                 except (ValueError, TypeError, decimal.InvalidOperation) as e:
-                    self.logger.error(f"Invalid numeric in snapshot for {symbol}: {e}")
+                    self.logger.error(
+                        f"Invalid numeric in snapshot for {symbol}: {e}")
                     return False
 
                 positions_loaded[symbol] = {
@@ -701,10 +813,12 @@ class PositionTracking:
             return True
 
         except KeyError as e:
-            self.logger.critical(f"Failed to load snapshot due to missing key: {e}")
+            self.logger.critical(
+                f"Failed to load snapshot due to missing key: {e}")
             return False
         except (TypeError, json.JSONDecodeError) as e:
-            self.logger.critical(f"Failed to load snapshot due to invalid format: {e}")
+            self.logger.critical(
+                f"Failed to load snapshot due to invalid format: {e}")
             return False
 
     def stop(self) -> None:

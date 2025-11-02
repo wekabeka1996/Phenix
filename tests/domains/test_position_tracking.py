@@ -39,7 +39,8 @@ class FSMCore:
                     callback(
                         Message(
                             op="EVT",
-                            verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
+                            # Extract verb from EVT:VERB
+                            verb=event_name.split(":")[1],
                             src="test",
                             dst="any",
                             pld=payload,
@@ -91,10 +92,11 @@ def test_position_tracking_consumes_trade_and_updates_portfolio(mock_config):
     )
 
     # Step 4: Verify result
-    mock_listener.assert_called_once()
+    # Should have 2 calls: initial state + trade update
+    assert mock_listener.call_count == 2
 
-    # Get the event that was passed to the listener
-    call_args = mock_listener.call_args
+    # Get the second call (trade update)
+    call_args = mock_listener.call_args_list[1]
     fsm_event = call_args[0][0]  # First positional argument
 
     # Verify the payload structure matches portfolio_state_v1.json schema
@@ -171,7 +173,8 @@ def test_position_tracking_multiple_trades(mock_config):
         "venue": "binance",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=trade1_payload, why="First trade: buy BTC.")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=trade1_payload,
+             why="First trade: buy BTC.")
 
     # Step 5: Second trade - buy more BTC (accumulation)
     trade2_payload = {
@@ -208,8 +211,8 @@ def test_position_tracking_multiple_trades(mock_config):
     )
 
     # Step 7: Verify final state
-    # Should have 3 calls to listener
-    assert portfolio_listener.call_count == 3
+    # Should have 4 calls to listener: initial + 3 trades
+    assert portfolio_listener.call_count == 4
 
     # Get the final call
     final_call = portfolio_listener.call_args
@@ -223,7 +226,8 @@ def test_position_tracking_multiple_trades(mock_config):
     btc_pos = positions[0]
     assert btc_pos["symbol"] == "BTCUSDT"
     # FIXED: After precision refactoring, position fields are strings
-    assert abs(float(btc_pos["net_position"]) - 0.07) < 1e-9  # 0.1 + 0.05 - 0.08 = 0.07
+    assert abs(float(btc_pos["net_position"]) -
+               0.07) < 1e-9  # 0.1 + 0.05 - 0.08 = 0.07
 
     # Average price should be weighted: (0.1*50000 + 0.05*51000) / 0.15 = 50333.33
     # After partial sell, remaining position keeps original average
@@ -289,7 +293,7 @@ def test_position_tracking_complete_position_close(mock_config):
     fsm.emit("EVT:TRADE_EXECUTED", payload=sell_payload, why="Sell all BTC.")
 
     # Step 6: Verify final state
-    assert portfolio_listener.call_count == 2
+    assert portfolio_listener.call_count == 3
 
     # Get the final call
     final_call = portfolio_listener.call_args
@@ -348,8 +352,9 @@ def test_position_tracking_short_position(mock_config):
     fsm.emit("EVT:TRADE_EXECUTED", payload=short_payload, why="Short sell BTC.")
 
     # Step 5: Verify position
-    portfolio_listener.assert_called_once()
-    call_args = portfolio_listener.call_args
+    # Should have 2 calls: initial state + trade update
+    assert portfolio_listener.call_count == 2
+    call_args = portfolio_listener.call_args_list[1]  # Get the second call
     event = call_args[0][0]
 
     positions = event.pld["positions"]
@@ -399,7 +404,8 @@ def test_position_tracking_multiple_venues(mock_config):
         "venue": "binance",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=trade1_payload, why="Buy BTC on binance.")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=trade1_payload,
+             why="Buy BTC on binance.")
 
     # Step 5: Trade on kraken
     trade2_payload = {
@@ -412,10 +418,11 @@ def test_position_tracking_multiple_venues(mock_config):
         "venue": "kraken",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=trade2_payload, why="Buy BTC on kraken.")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=trade2_payload,
+             why="Buy BTC on kraken.")
 
     # Step 6: Verify final state
-    assert portfolio_listener.call_count == 2
+    assert portfolio_listener.call_count == 3
 
     # Get the final call
     final_call = portfolio_listener.call_args
@@ -429,7 +436,8 @@ def test_position_tracking_multiple_venues(mock_config):
     btc_pos = positions[0]
     assert btc_pos["symbol"] == "BTCUSDT"
     # FIXED: After precision refactoring, position fields are strings
-    assert abs(float(btc_pos["net_position"]) - 0.15) < 1e-9  # 0.1 + 0.05 = 0.15
+    assert abs(float(btc_pos["net_position"]) -
+               0.15) < 1e-9  # 0.1 + 0.05 = 0.15
 
     # Average price should be weighted: (0.1*50000 + 0.05*50100) / 0.15 = 50033.33
     expected_avg = (0.1 * 50000 + 0.05 * 50100) / 0.15
@@ -476,10 +484,11 @@ def test_position_tracking_invalid_side(mock_config):
     }
 
     # Should handle error gracefully (no exception raised, error logged)
-    fsm.emit("EVT:TRADE_EXECUTED", payload=invalid_payload, why="Invalid side test.")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=invalid_payload,
+             why="Invalid side test.")
 
-    # No portfolio update should have been emitted due to error
-    portfolio_listener.assert_not_called()
+    # No portfolio update should have been emitted due to error (only initial state)
+    assert portfolio_listener.call_count == 1
 
     print("✅ Invalid side test passed! No portfolio update emitted.")
 
@@ -538,7 +547,7 @@ def test_position_tracking_position_flip(mock_config):
     )
 
     # Step 6: Verify final state
-    assert portfolio_listener.call_count == 2
+    assert portfolio_listener.call_count == 3
 
     # Get the final call
     final_call = portfolio_listener.call_args
@@ -623,7 +632,7 @@ def test_position_tracking_short_to_long_flip(mock_config):
     )
 
     # Step 6: Verify final state
-    assert portfolio_listener.call_count == 2
+    assert portfolio_listener.call_count == 3
 
     # Get the final call
     final_call = portfolio_listener.call_args
@@ -700,10 +709,11 @@ def test_position_tracking_partial_close(mock_config):
         "venue": "binance",
     }
 
-    fsm.emit("EVT:TRADE_EXECUTED", payload=sell_payload, why="Partial sell BTC.")
+    fsm.emit("EVT:TRADE_EXECUTED", payload=sell_payload,
+             why="Partial sell BTC.")
 
     # Step 6: Verify final state
-    assert portfolio_listener.call_count == 2
+    assert portfolio_listener.call_count == 3
 
     # Get the final call
     final_call = portfolio_listener.call_args

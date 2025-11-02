@@ -84,6 +84,8 @@ class NormalizedRejectReasons:
             r"exposure.*limit",
             r"risk.*limit.*exceeded",
             r"exposure.*exceeded",
+            r"trading.*not.*allowed.*risk.*manager",
+            r"risk.*score.*too.*high",
         ],
         RATE_LIMIT_EXCEEDED: [
             r"rate.*limit",

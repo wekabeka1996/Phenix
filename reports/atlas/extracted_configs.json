@@ -302,7 +302,7 @@
               "env": {
                 "GITHUB_TOKEN": "${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}",
                 "ISSUE_NUMBER": "${{ github.event.pull_request.number || github.event.issue.number }}",
-                "MESSAGE": "     Hi @${{ github.actor }}, I've received your request, and I'm working on it now! You can track my progress [in the logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.",
+                "MESSAGE": "Hi @${{ github.actor }}, I've received your request, and I'm working on it now! You can track my progress [in the logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.",
                 "REPOSITORY": "${{ github.repository }}"
               },
               "run": "gh issue comment \"${ISSUE_NUMBER}\" \\\n  --body \"${MESSAGE}\" \\\n  --repo \"${REPOSITORY}\""
@@ -387,7 +387,7 @@
               "env": {
                 "GITHUB_TOKEN": "${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}",
                 "ISSUE_NUMBER": "${{ github.event.pull_request.number || github.event.issue.number }}",
-                "MESSAGE": "     I'm sorry @${{ github.actor }}, but I was unable to process your request. Please [see the logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.",
+                "MESSAGE": "I'm sorry @${{ github.actor }}, but I was unable to process your request. Please [see the logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.",
                 "REPOSITORY": "${{ github.repository }}"
               },
               "run": "gh issue comment \"${ISSUE_NUMBER}\" \\\n  --body \"${MESSAGE}\" \\\n  --repo \"${REPOSITORY}\""
@@ -884,8 +884,142 @@
     }
   },
   "config\\aurora\\system.yaml": {
-    "keys": null,
-    "raw": null
+    "keys": [
+      "config_version",
+      "trading_mode",
+      "sequential_tests",
+      "risk_core",
+      "kelly",
+      "calibrator",
+      "hawkes",
+      "hotreload_whitelist",
+      "logging",
+      "hardening",
+      "account_observer",
+      "position_tracking",
+      "trading"
+    ],
+    "raw": {
+      "config_version": "1.0.1",
+      "trading_mode": "hybrid_live_data_testnet_exec",
+      "sequential_tests": {
+        "wald": {
+          "alpha": 0.05,
+          "beta": 0.2,
+          "mu0": 0.0,
+          "mu1": 0.5,
+          "sigma": 1.0
+        },
+        "glr": {
+          "alpha": 0.05,
+          "beta": 0.2,
+          "min_samples": 5
+        }
+      },
+      "risk_core": {
+        "cvar_threshold_bps": 120,
+        "stress_scenarios": [
+          "flash_crash",
+          "volatility_spike"
+        ],
+        "inventory_limits": {
+          "max_abs_position": 500,
+          "max_daily_notional": 10000000
+        }
+      },
+      "kelly": {
+        "fraction_cap": 0.85,
+        "decay_half_life_days": 5
+      },
+      "calibrator": {
+        "state_store": {
+          "backend": "sqlite",
+          "path": "data/calibrator/state.db",
+          "versioning": true,
+          "retention_days": 30
+        }
+      },
+      "hawkes": {
+        "enabled": true,
+        "kernel": {
+          "decay_beta_ms": 250.0
+        },
+        "eta_max": 1.0,
+        "update_interval_ms": 100,
+        "window_ms": 1000,
+        "bivariate": false
+      },
+      "hotreload_whitelist": [
+        "sequential_tests.wald.mu1",
+        "sequential_tests.glr.min_samples",
+        "kelly.fraction_cap",
+        "hawkes.update_interval_ms",
+        "hawkes.window_ms",
+        "hawkes.eta_max"
+      ],
+      "logging": {
+        "level": "DEBUG",
+        "file": "logs/aurora_core.log",
+        "format": "json",
+        "rotation": {
+          "max_bytes": 10485760,
+          "backup_count": 5
+        }
+      },
+      "hardening": {
+        "ttl_config": {
+          "entry_place_ttl_ms": 5000,
+          "bracket_place_ttl_ms": 3000,
+          "cancel_ttl_ms": 2000
+        },
+        "retry_config": {
+          "max_tries": 3,
+          "backoff_ms": 1000,
+          "jitter": true
+        },
+        "circuit_breaker": {
+          "fail_max": 5,
+          "reset_timeout_sec": 30,
+          "exclude": [
+            "binance.error.ClientError:.*-2010",
+            "binance.error.ClientError:.*-1021"
+          ],
+          "open_threshold_pct": 20,
+          "error_rate_window_sec": 60,
+          "half_open_attempts": 3
+        },
+        "market_data": {
+          "max_allowed_lag_ms": 1000,
+          "sequence_check_enabled": true
+        },
+        "wal": {
+          "integrity_check_enabled": true,
+          "hash_algorithm": "sha256"
+        }
+      },
+      "account_observer": {
+        "poll_interval": 5,
+        "symbols": [
+          "ETHUSDT"
+        ],
+        "trade_limit": 50
+      },
+      "position_tracking": {
+        "positions_stale_ttl_sec": 8
+      },
+      "trading": {
+        "symbols_to_track": [
+          "BTCUSDT",
+          "ETHUSDT"
+        ],
+        "market_data": {
+          "websocket_streams": [
+            "bookTicker",
+            "trade"
+          ]
+        }
+      }
+    }
   },
   "config\\aurora\\trading.staging.override.yaml": {
     "keys": [
@@ -906,8 +1040,141 @@
     }
   },
   "config\\aurora\\trading.yaml": {
-    "keys": null,
-    "raw": null
+    "keys": [
+      "trading",
+      "binance_api"
+    ],
+    "raw": {
+      "trading": {
+        "decision": {
+          "signal_weights": {
+            "obi": 0.6,
+            "tfi": 0.35,
+            "delta_price": 0.05
+          },
+          "signal_threshold": 0.05,
+          "cooldown_sec": 10,
+          "position_sizing": {
+            "min_position_size_usd": 10,
+            "liquidity_based_cap_usd": 10000
+          },
+          "qos": {
+            "mode": "defer",
+            "enforce": false,
+            "exposure_block_cooldown_sec": 30,
+            "symbol_cooldown_sec": 0.5,
+            "max_intents_per_minute_per_symbol": 60
+          }
+        },
+        "instruments": {
+          "BTCUSDT": {
+            "step_size": "0.00001",
+            "min_notional": "10"
+          },
+          "ETHUSDT": {
+            "step_size": "0.001",
+            "min_notional": "10"
+          }
+        },
+        "tca_prefs": {
+          "max_slippage_pct": 0.5,
+          "preferred_venue": "binance",
+          "execution_priority": "speed"
+        },
+        "risk_budgets": {
+          "max_portfolio_risk_pct": 5.0,
+          "max_single_position_risk_pct": 1.0,
+          "max_daily_loss_pct": 2.0
+        },
+        "risk": {
+          "max_daily_drawdown_limit": 0.05,
+          "score_weights": {
+            "delta_price": 0.05,
+            "obi": 0.35,
+            "tfi": 0.35,
+            "absorption_inverse": 0.25
+          },
+          "trading_allowed_thresholds": {
+            "max_risk_score": 0.9
+          },
+          "daily": {
+            "max_realized_loss_usd": 250.0,
+            "max_drawdown_pct": 8.0,
+            "reset_time_utc": "00:00"
+          }
+        },
+        "ops": {
+          "panic_killswitch": false,
+          "quiet_hours_utc": [
+            "22:00-06:00"
+          ],
+          "allowlist_symbols": []
+        },
+        "execution": {
+          "exposure": {
+            "max_portfolio_fraction": 0.2,
+            "count_pending_orders": true,
+            "exclude_reduce_only": true,
+            "pending_reservation_ttl_sec": 90
+          },
+          "open_order_type": "MARKET",
+          "order_params": {
+            "LIMIT": {
+              "timeInForce": "GTC"
+            },
+            "STOP_MARKET": {
+              "workingType": "MARK_PRICE"
+            },
+            "TAKE_PROFIT_MARKET": {
+              "workingType": "MARK_PRICE"
+            },
+            "TRAILING_STOP_MARKET": {
+              "callbackRate": "0.5"
+            }
+          }
+        },
+        "domain_configuration": {
+          "market_data": {
+            "trading_mode": "live"
+          },
+          "feature_engineering": {
+            "trading_mode": "live"
+          },
+          "decision_making": {
+            "trading_mode": "live"
+          },
+          "risk_management": {
+            "trading_mode": "live"
+          },
+          "execution_position": {
+            "trading_mode": "testnet"
+          },
+          "audit_trail": {
+            "trading_mode": "live"
+          }
+        },
+        "risk_management": {
+          "data_sources": {
+            "portfolio_state": "testnet",
+            "market_data": "live"
+          }
+        }
+      },
+      "binance_api": {
+        "live": {
+          "api_key": "${BINANCE_FUTURES_API_KEY_LIVE}",
+          "api_secret": "${BINANCE_FUTURES_API_SECRET_LIVE}",
+          "rest_url": "${BINANCE_FUTURES_BASE_URL_LIVE}",
+          "ws_url": "wss://fstream.binance.com"
+        },
+        "testnet": {
+          "api_key": "${BINANCE_TESTNET_API_KEY}",
+          "api_secret": "${BINANCE_TESTNET_API_SECRET}",
+          "rest_url": "https://testnet.binancefuture.com",
+          "ws_url": "wss://stream.testnet.binancefuture.com"
+        }
+      }
+    }
   },
   "configs\\master_config_v1.yaml": {
     "keys": [

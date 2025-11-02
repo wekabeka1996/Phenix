@@ -49,7 +49,8 @@ class AccountConnector:
         env_config = {}
         if mode == "live":
             env_config = api_config.get("live", {})
-            LOG.info("AccountConnector is configured for LIVE execution environment.")
+            LOG.info(
+                "AccountConnector is configured for LIVE execution environment.")
         else:  # 'testnet' or 'hybrid_live_data_testnet_exec'
             env_config = api_config.get("testnet", {})
             LOG.info(
@@ -116,7 +117,8 @@ class AccountConnector:
                     self._latest_balance_data = (
                         balance_data  # Store for use in positions update
                     )
-                    LOG.info(f"✅ Stored balance data: {len(balance_data)} assets")
+                    LOG.info(
+                        f"✅ Stored balance data: {len(balance_data)} assets")
                     # Log USDT balance specifically
                     usdt_asset = next(
                         (item for item in balance_data if item.get("asset") == "USDT"),
@@ -131,7 +133,8 @@ class AccountConnector:
                         for key, val in usdt_asset.items():
                             LOG.info(f"      {key}: {val}")
                     else:
-                        LOG.warning("   ⚠️  No USDT asset found in balance data")
+                        LOG.warning(
+                            "   ⚠️  No USDT asset found in balance data")
                     self._emit_balance_update(balance_data)
                 else:
                     LOG.error(
@@ -142,16 +145,21 @@ class AccountConnector:
 
         try:
             positions_data = await self.adapter.get_open_positions()
-            if positions_data:
+            LOG.info(
+                f"🔍 get_open_positions returned: {type(positions_data)}, length: {len(positions_data) if isinstance(positions_data, list) else 'N/A'}")
+            if positions_data is not None:
                 if isinstance(positions_data, list):
                     LOG.info(
                         f"✅ Fetched positions data: {len(positions_data)} positions"
                     )
+                    # Always emit positions update, even if empty
                     self._emit_positions_update(positions_data)
                 else:
                     LOG.error(
                         f"Error processing positions data: expected a list, got {type(positions_data)}"
                     )
+            else:
+                LOG.warning("⚠️ get_open_positions returned None")
         except Exception as e:
             LOG.error(f"Error fetching open positions: {e}", exc_info=True)
 
@@ -185,10 +193,14 @@ class AccountConnector:
             payload=payload,
             why="Balance data updated from Binance API.",
         )
-        LOG.info(f"Emitted balance update: {len(assets)} assets with balance > 0.")
+        LOG.info(
+            f"Emitted balance update: {len(assets)} assets with balance > 0.")
 
     def _emit_positions_update(self, positions_data: List[Dict[str, Any]]) -> None:
         """Emit account update event with open positions."""
+        LOG.info(
+            f"📊 Processing positions data: {len(positions_data)} raw positions")
+
         open_positions = [
             {
                 "symbol": pos["symbol"],
@@ -207,6 +219,8 @@ class AccountConnector:
             for pos in positions_data
             if decimal.Decimal(pos.get("positionAmt", "0")) != 0
         ]
+
+        LOG.info(f"📊 Filtered to {len(open_positions)} non-zero positions")
 
         # Use stored balance data from /fapi/v2/balance endpoint
         # that contains walletBalance, unrealizedProfit, etc.
@@ -234,7 +248,8 @@ class AccountConnector:
             )
             if usdt_asset:
                 # Use 'balance' field instead of 'walletBalance' (which doesn't exist in /fapi/v2/balance response)
-                wallet_balance = str(decimal.Decimal(usdt_asset.get("balance", "0")))
+                wallet_balance = str(decimal.Decimal(
+                    usdt_asset.get("balance", "0")))
                 unrealized_profit = str(
                     decimal.Decimal(usdt_asset.get("crossUnPnl", "0"))
                 )

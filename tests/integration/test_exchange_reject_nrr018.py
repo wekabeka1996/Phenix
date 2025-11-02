@@ -8,12 +8,14 @@ from vfoundation.adapters.binance_adapter import _make_binance_error
 class TestExchangeRejectNRR018:
     """Test exchange rejection returns NRR-018."""
 
-    def test_make_binance_error_logs_nrr_018_for_rejection_codes(self):
+    def test_make_binance_error_logs_nrr_018_for_rejection_codes(self, caplog):
         """Test that _make_binance_error logs NRR-018 for specific rejection codes."""
+        import logging
         error_codes = [-1013, -1021, -2010]  # Binance specific rejection codes
 
         for code in error_codes:
-            with patch('vfoundation.adapters.binance_adapter.log') as mock_log:
+            caplog.clear()
+            with caplog.at_level(logging.WARNING, logger='vfoundation.adapters.binance_adapter'):
                 resp_mock = Mock()
                 resp_mock.status_code = 400
                 err = {"code": code, "msg": f"Error {code}"}
@@ -21,12 +23,11 @@ class TestExchangeRejectNRR018:
                 # Call the function
                 result = _make_binance_error(resp_mock, err)
 
-                # Verify NRR-018 logging
-                mock_log.warning.assert_called_once()
-                call_args = mock_log.warning.call_args[0]
-                message = call_args[0] % call_args[1:]  # Format the message
-                assert "nrr_code=NRR-018" in message
-                assert str(code) in message
+                # Verify logging occurred
+                assert len(caplog.records) == 1
+                log_message = caplog.records[0].message
+                assert "nrr_code=NRR-018" in log_message
+                assert str(code) in log_message
 
                 # Verify error object
                 if isinstance(result, dict):

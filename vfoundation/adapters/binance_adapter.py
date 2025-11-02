@@ -7,6 +7,7 @@ This adapter is designed to be instantiated by domain services with a specific
 environment configuration, ensuring a clean separation of concerns.
 """
 
+import json as _json
 import asyncio
 import hashlib
 import hmac
@@ -21,6 +22,29 @@ import httpx
 LOG = logging.getLogger(__name__)
 # забезпечуємо саме таку змінну, яку патчить тест
 log = logging.getLogger(__name__)
+
+
+# +++ add near imports
+
+
+async def _coerce_json(obj):
+    """
+    Повертає dict із httpx.Response / str / bytes / dict.
+    Може await json() якщо це coroutine (для тестів).
+    """
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "json"):  # httpx.Response
+        json_result = obj.json()
+        # Handle both sync and async json() for tests
+        if hasattr(json_result, '__await__'):
+            return await json_result
+        return json_result
+    if isinstance(obj, (bytes, bytearray)):
+        return _json.loads(obj.decode("utf-8"))
+    if isinstance(obj, str):
+        return _json.loads(obj)
+    raise TypeError(f"Unsupported JSON payload type: {type(obj)!r}")
 
 
 class BinanceAPIError(Exception):
@@ -115,7 +139,7 @@ class BinanceAdapter:
         # Для USDM futures: /fapi/v1/time
         r = await self.session.get(f"{self.base_url}/fapi/v1/time")
         r.raise_for_status()
-        data = await r.json()
+        data = await _coerce_json(r)
         # serverTime у мілісекундах
         return int(data["serverTime"])
 
@@ -170,15 +194,13 @@ class BinanceAdapter:
                 if r.status_code >= 400:
                     err = await _safe_read_err(r)
                     raise _make_binance_error(r, err)
-                return await r.json()
+                return await _coerce_json(r)
             else:
                 r = await self.session.request(
                     method.upper(), url, params=self._norm_params(base_params)
                 )
                 r.raise_for_status()
-                return await r.json()
-
-        # 1-й запит
+                return await _coerce_json(r)        # 1-й запит
         try:
             return await _do(method, base_params)
         except Exception as e:

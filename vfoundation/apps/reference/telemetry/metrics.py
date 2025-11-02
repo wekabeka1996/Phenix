@@ -45,10 +45,20 @@ g_exposure_equity_usd = Gauge(
     "exposure_equity_usd", "Free equity (USDT-M) used for sizing")
 g_exposure_positions_usd = Gauge(
     "exposure_positions_usd", "Open positions notional in USD")
+g_exposure_positions_margin_usd = Gauge(
+    "exposure_positions_margin_usd", "Open positions margin in USD")  # EXP-LEVERAGE-001
 g_exposure_pending_usd = Gauge(
     "exposure_pending_usd", "Pending (reserved) notional in USD")
+g_exposure_pending_margin_usd = Gauge(
+    "exposure_pending_margin_usd", "Pending (reserved) margin in USD")  # EXP-LEVERAGE-001
 g_exposure_limit_usd = Gauge(
     "exposure_limit_usd", "Exposure limit in USD (equity * fraction)")
+g_exposure_margin_limit_usd = Gauge(
+    "exposure_margin_limit_usd", "Margin exposure limit in USD (equity * utilization_pct)")  # EXP-LEVERAGE-001
+
+# Gauges with labels
+g_reservation_margin_usd = Gauge(
+    "reservation_margin_usd", "Margin reserved for pending orders", ["symbol"])  # EXP-LEVERAGE-001
 
 # Counters (події)
 c_guard_rejects_total = Counter(
@@ -125,6 +135,22 @@ def update_exposure(equity_usd: Any, positions_usd: Any, pending_usd: Any, fract
     g_exposure_positions_usd.set(pos)
     g_exposure_pending_usd.set(pen)
     g_exposure_limit_usd.set(lim)
+
+
+def update_exposure_margin(equity_usd: Any, positions_margin_usd: Any, pending_margin_usd: Any, utilization_pct: float) -> None:
+    """EXP-LEVERAGE-001: Update margin-based exposure metrics."""
+    eq = _d(equity_usd)
+    pos_margin = _d(positions_margin_usd)
+    pen_margin = _d(pending_margin_usd)
+    margin_lim = eq * float(utilization_pct)
+    g_exposure_positions_margin_usd.set(pos_margin)
+    g_exposure_pending_margin_usd.set(pen_margin)
+    g_exposure_margin_limit_usd.set(margin_lim)
+
+
+def update_reservation_margin(symbol: str, margin_usd: Any) -> None:
+    """EXP-LEVERAGE-001: Update reservation margin for a symbol."""
+    g_reservation_margin_usd.labels(symbol=symbol).set(_d(margin_usd))
 
 
 def inc_exposure_guard_block() -> None:

@@ -57,10 +57,13 @@ class MetricsCollector:
             "postfill_hold_active": 0,
             "postfill_hold_expired_total": 0,
             "exposure_mismatch_total": defaultdict(int),
+            # Order timeout metrics
+            "order_timeout_total": 0,
         }
 
         # Rolling window data for time-based analysis
-        self._rolling_data: deque = deque(maxlen=10000)  # Store last 10k events
+        self._rolling_data: deque = deque(
+            maxlen=10000)  # Store last 10k events
 
         # Per-symbol metrics
         self._symbol_metrics: defaultdict = defaultdict(
@@ -191,6 +194,11 @@ class MetricsCollector:
         with self._lock:
             self._metrics["qos_cooldown_hits"] += 1
 
+    def record_order_timeout(self) -> None:
+        """Record order timeout event."""
+        with self._lock:
+            self._metrics["order_timeout_total"] += 1
+
     def get_summary_metrics(self) -> Dict[str, Any]:
         """Get summary metrics for the entire system."""
         with self._lock:
@@ -224,7 +232,8 @@ class MetricsCollector:
                 else 0.0
             )
             mean_time_to_open_ms = (
-                self._metrics["time_to_open_ms_sum"] / self._metrics["time_to_open_count"]
+                self._metrics["time_to_open_ms_sum"] /
+                self._metrics["time_to_open_count"]
                 if self._metrics["time_to_open_count"] > 0
                 else 0.0
             )
@@ -258,6 +267,8 @@ class MetricsCollector:
                     "postfill_hold_expired_total"
                 ],
                 "exposure_mismatch": dict(self._metrics["exposure_mismatch_total"]),
+                # Order timeout metrics
+                "order_timeout_total": self._metrics["order_timeout_total"],
             }
 
     def get_symbol_metrics(self, symbol: str) -> Dict[str, Any]:
@@ -267,8 +278,10 @@ class MetricsCollector:
             total_decisions = metrics["accepted"] + metrics["rejected"]
 
             if total_decisions > 0:
-                metrics["acceptance_rate"] = metrics["accepted"] / total_decisions
-                metrics["rejection_rate"] = metrics["rejected"] / total_decisions
+                metrics["acceptance_rate"] = metrics["accepted"] / \
+                    total_decisions
+                metrics["rejection_rate"] = metrics["rejected"] / \
+                    total_decisions
                 metrics["cooldown_rejection_rate"] = (
                     metrics["cooldown_rejects"] / total_decisions
                 )
@@ -313,7 +326,8 @@ class MetricsCollector:
             )
             if total_rejections > 0:
                 cooldown_ratio = (
-                    self._metrics["guard_rejections_cooldown"] / total_rejections
+                    self._metrics["guard_rejections_cooldown"] /
+                    total_rejections
                 )
                 patterns["cooldown_dominant"] = cooldown_ratio > 0.8
 
@@ -342,7 +356,8 @@ class MetricsCollector:
             if len(recent_60min) > 10:  # Minimum sample
                 rate_5min = len(recent_5min) / 5  # rejections per minute
                 rate_60min = len(recent_60min) / 60
-                patterns["recent_rejection_spike"] = rate_5min > (rate_60min * 2)
+                patterns["recent_rejection_spike"] = rate_5min > (
+                    rate_60min * 2)
 
             return patterns
 
@@ -373,6 +388,8 @@ class MetricsCollector:
                 "postfill_hold_active": 0,
                 "postfill_hold_expired_total": 0,
                 "exposure_mismatch_total": defaultdict(int),
+                # Order timeout metrics
+                "order_timeout_total": 0,
             }
             self._symbol_metrics.clear()
             self._rolling_data.clear()

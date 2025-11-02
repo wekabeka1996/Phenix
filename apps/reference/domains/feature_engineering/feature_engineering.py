@@ -15,15 +15,16 @@ class FeatureEngineering:
     def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
         self.fsm = fsm
         self.config = config
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
         self.last_tick_data: Dict[str, dict] = {}
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
 
     def on_market_tick(self, event: Message) -> None:
-        print(f"DEBUG: event.pld = {event.pld}")
-        print(f"DEBUG: event.pld type = {type(event.pld)}")
+        self.logger.debug(f"event.pld = {event.pld}")
+        self.logger.debug(f"event.pld type = {type(event.pld)}")
         symbol = event.pld.get("symbol")
-        print(f"DEBUG: symbol = {symbol}, type = {type(symbol)}")
+        self.logger.debug(f"symbol = {symbol}, type = {type(symbol)}")
         if not symbol:
             return
 
@@ -32,6 +33,8 @@ class FeatureEngineering:
         self.last_tick_data[symbol] = current_tick
 
         if not last_tick:
+            self.logger.debug(
+                f"No previous tick for {symbol}, skipping feature calculation")
             return
 
         self._calculate_and_emit_features(symbol, current_tick, last_tick)
@@ -40,19 +43,23 @@ class FeatureEngineering:
         self, symbol: str, current_tick: dict, last_tick: dict
     ) -> None:
         try:
-            print(f"DEBUG: _calculate_and_emit_features called with symbol={symbol}")
-            print(f"DEBUG: current_tick={current_tick}")
-            print(f"DEBUG: last_tick={last_tick}")
+            self.logger.debug(
+                f"_calculate_and_emit_features called with symbol={symbol}")
+            self.logger.debug(f"current_tick={current_tick}")
+            self.logger.debug(f"last_tick={last_tick}")
 
             bid_size = decimal.Decimal(str(current_tick.get("bid_size", 0)))
             ask_size = decimal.Decimal(str(current_tick.get("ask_size", 0)))
-            buy_volume = decimal.Decimal(str(current_tick.get("buy_volume", 0)))
-            sell_volume = decimal.Decimal(str(current_tick.get("sell_volume", 0)))
+            buy_volume = decimal.Decimal(
+                str(current_tick.get("buy_volume", 0)))
+            sell_volume = decimal.Decimal(
+                str(current_tick.get("sell_volume", 0)))
             price = decimal.Decimal(str(current_tick.get("price", 0)))
             prev_price = decimal.Decimal(str(last_tick.get("price", 0)))
 
             depth = bid_size + ask_size
-            obi = (bid_size - ask_size) / depth if depth > 0 else decimal.Decimal(0)
+            obi = (bid_size - ask_size) / \
+                depth if depth > 0 else decimal.Decimal(0)
 
             total_flow = buy_volume + sell_volume
             tfi = (
@@ -62,7 +69,11 @@ class FeatureEngineering:
             )
 
             time_diff = current_tick["ts"] - last_tick["ts"]
-            delta_price = price - prev_price if time_diff < 1000 else decimal.Decimal(0)
+            delta_price = price - \
+                prev_price if time_diff < 1000 else decimal.Decimal(0)
+
+            self.logger.info(
+                f"time_diff={time_diff}ms, price={price}, prev_price={prev_price}, delta_price={delta_price}")
 
             features = {
                 "obi": str(obi),
@@ -77,6 +88,10 @@ class FeatureEngineering:
                 "symbol": symbol,
                 "features": features,
             }
+
+            self.logger.info(
+                f"Calculated features for {symbol}: OBI={obi:.6f}, TFI={tfi:.6f}, delta_price={delta_price}")
+
             self.fsm.emit(
                 "EVT:FEATURES_CALCULATED",
                 payload=features_payload,
@@ -84,10 +99,10 @@ class FeatureEngineering:
             )
 
         except Exception as e:
-            print(f"DEBUG: Exception type: {type(e)}, value: {e}")
+            self.logger.debug(f"Exception type: {type(e)}, value: {e}")
             import traceback
 
-            traceback.print_exc()
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
             self.logger.error(f"Error calculating features for {symbol}: {e}")
 
     def start(self) -> None:

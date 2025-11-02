@@ -21,6 +21,7 @@ from .fsm_open import OpenFlowFSM
 from .fsm_manage import ManageFlowFSM
 from .fsm_close import CloseFlowFSM
 from .exposure_guard import ExposureGuard
+from .watchdog import OrderTimeoutWatchdog
 from .utils import (
     quantize_stop_price,
     validate_anti_2021,
@@ -34,6 +35,7 @@ from .metrics_collector import MetricsCollector
 from vfoundation.obs.order_logger import order_logger
 from .utils import quantize_stop_price, validate_anti_2021, generate_client_order_id
 from vfoundation.obs.correlation import CorrelationStore
+from .utils_event_bus import LocalBus
 
 LOG = logging.getLogger(__name__)
 
@@ -63,8 +65,152 @@ class ExecPosFSM:
 
         self.correlation_store = CorrelationStore()
 
+        # AGENT-PATCH: Safe event bus setup with LocalBus fallback
+        if self.fsm and hasattr(self.fsm, "listen") and hasattr(self.fsm, "emit"):
+            self.bus = self.fsm
+            LOG.debug("ExecPosFSM using FSMCore event bus")
+        else:
+            self.bus = LocalBus()
+            LOG.debug(
+                "ExecPosFSM using LocalBus fallback (FSMCore not available)")
+
+        # Register event listeners on the bus
+        self.bus.listen("EVT:PORTFOLIO_STATE_UPDATED",
+                        self._on_portfolio_state_updated)
+        self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
+        self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
+
+        # Initialize order timeout watchdog
+        watchdog_config = self.config.get("execution", {}).get("watchdog", {})
+        ack_ttl_ms = watchdog_config.get("ack_ttl_ms", 8000)
+        fill_ttl_ms = watchdog_config.get("fill_ttl_ms", 30000)
+        self.watchdog = OrderTimeoutWatchdog(
+            ack_ttl_ms=ack_ttl_ms,
+            fill_ttl_ms=fill_ttl_ms,
+            on_timeout_callback=self._handle_order_timeout
+        )
+
         if not self.shadow_mode:
             self._initialize_adapter()
+            self.watchdog.start()  # Start timeout watchdog
+
+    def _on_portfolio_state_updated(self, event: Message) -> None:
+        """
+        Handle EVT:PORTFOLIO_STATE_UPDATED events to update exposure guard state.
+
+        EXP-FIX: Store latest portfolio state for exposure checks.
+        EXP-LEVERAGE-001: Update exposure guard with portfolio data.
+        """
+        self._latest_portfolio_state = event.pld or {}
+
+        # EXP-LEVERAGE-001: Update exposure guard with latest portfolio state
+        self.exposure_guard.on_portfolio(self._latest_portfolio_state)
+
+        # Clean up stale reservations on portfolio updates
+        expired = self.exposure_guard.expire_stale()
+
+        # EXP-FIX: Release post-fill holds since portfolio is now updated
+        released_postfill = list(
+            self.exposure_guard.state.postfill_reservations.keys()
+        )
+        for key in released_postfill:
+            self.exposure_guard.state.postfill_reservations.pop(key, None)
+
+        if released_postfill:
+            LOG.debug(
+                f"RELEASED_POSTFILL_HOLDS: {len(released_postfill)} keys")
+
+        if expired:
+            # EXP-FIX: Record expired post-fill holds
+            if hasattr(self, "metrics_collector") and self.metrics_collector:
+                for _ in expired:
+                    if _ in self.exposure_guard.state.postfill_reservations:
+                        self.metrics_collector.record_postfill_expired()
+
+            # Emit event for expired reservations
+            expired_msg = Message(
+                op="EVT",
+                verb="PENDING_EXPOSURE_EXPIRED",
+                intent="OBSERVATION",
+                src="execution_position",
+                dst="monitoring",
+                rid="exposure_cleanup",
+                pld={"expired_keys": expired, "why": "ttl_expired"},
+                why="exposure_cleanup",
+            )
+            try:
+                asyncio.get_running_loop()  # Check for running loop
+                asyncio.create_task(
+                    emit_compat(self.fsm, expired_msg,
+                                logger=getattr(self, "logger", None))
+                )
+            except RuntimeError:
+                # No running loop, skip emission
+                pass
+
+    def _on_order_ack(self, event: Message) -> None:
+        """
+        Handle EVT:ORDER_ACK events from adapter.
+
+        AGENT-PATCH: Process ACK to update order state and release pre-fill holds.
+        """
+        payload = event.pld or {}
+        order_id = payload.get("orderId")
+        symbol = payload.get("symbol")
+        rid = payload.get("rid") or event.rid
+
+        if not order_id or not symbol:
+            LOG.warning(
+                f"[ACK] Missing orderId or symbol in ACK event: {payload}")
+            return
+
+        LOG.debug(
+            f"[ACK] Processing ACK for {symbol} order {order_id} (rid={rid})")
+
+        # Release pre-fill hold from exposure guard
+        if hasattr(self, "exposure_guard"):
+            pre_fill_key = f"prefill_{symbol}_{order_id}"
+            if self.exposure_guard.state.prefill_reservations.get(pre_fill_key):
+                self.exposure_guard.state.prefill_reservations.pop(
+                    pre_fill_key, None)
+                LOG.debug(f"[ACK] Released prefill hold for {pre_fill_key}")
+
+    def _on_order_fill(self, event: Message) -> None:
+        """
+        Handle EVT:ORDER_FILL events from adapter.
+
+        AGENT-PATCH: Process FILL to update order state and create post-fill holds.
+        """
+        payload = event.pld or {}
+        order_id = payload.get("orderId")
+        symbol = payload.get("symbol")
+        filled_qty = payload.get("quantity")
+        rid = payload.get("rid") or event.rid
+
+        if not order_id or not symbol or filled_qty is None:
+            LOG.warning(
+                f"[FILL] Missing orderId, symbol or quantity in FILL event: {payload}")
+            return
+
+        LOG.debug(
+            f"[FILL] Processing FILL for {symbol} order {order_id}, qty={filled_qty} (rid={rid})")
+
+        # Create post-fill hold in exposure guard
+        if hasattr(self, "exposure_guard"):
+            postfill_key = f"postfill_{symbol}_{order_id}"
+            self.exposure_guard.state.postfill_reservations[postfill_key] = {
+                "symbol": symbol,
+                "qty": filled_qty,
+                "ts_ms": int(__import__('time').time() * 1000),
+                "rid": rid,
+            }
+            LOG.debug(f"[FILL] Created postfill hold for {postfill_key}")
+
+    def shutdown(self):
+        """Shutdown the FSM and cleanup resources."""
+        if hasattr(self, 'watchdog') and self.watchdog:
+            self.watchdog.stop()
+        LOG.info("ExecPosFSM shutdown complete")
 
     def _initialize_adapter(self):
         """Initializes the BinanceAdapter based on the domain-level trading_mode."""
@@ -167,51 +313,6 @@ class ExecPosFSM:
     def handle(self, msg: Message) -> Optional[Message]:
         """Route message to the appropriate flow and handle execution decisions."""
         pld = msg.pld or {}
-
-        # EXP-FIX: Store latest portfolio state for exposure checks
-        if msg.op == "EVT" and msg.verb == "PORTFOLIO_STATE_UPDATED":
-            self._latest_portfolio_state = msg.pld or {}
-            # Clean up stale reservations on portfolio updates
-            expired = self.exposure_guard.expire_stale()
-            # EXP-FIX: Release post-fill holds since portfolio is now updated
-            released_postfill = list(
-                self.exposure_guard.state.postfill_reservations.keys()
-            )
-            for key in released_postfill:
-                self.exposure_guard.state.postfill_reservations.pop(key, None)
-            if released_postfill:
-                LOG.debug(
-                    f"RELEASED_POSTFILL_HOLDS: {len(released_postfill)} keys")
-                if hasattr(self, "metrics_collector") and self.metrics_collector:
-                    for _ in released_postfill:
-                        self.metrics_collector.record_postfill_released()
-            if expired:
-                # EXP-FIX: Record expired post-fill holds
-                if hasattr(self, "metrics_collector") and self.metrics_collector:
-                    for _ in expired:
-                        if _ in self.exposure_guard.state.postfill_reservations:
-                            self.metrics_collector.record_postfill_expired()
-
-                # Emit event for expired reservations
-                expired_msg = Message(
-                    op="EVT",
-                    verb="PENDING_EXPOSURE_EXPIRED",
-                    intent="OBSERVATION",
-                    src="execution_position",
-                    dst="monitoring",
-                    rid="exposure_cleanup",
-                    pld={"expired_keys": expired, "why": "ttl_expired"},
-                    why="exposure_cleanup",
-                )
-                try:
-                    asyncio.get_running_loop()  # Check for running loop
-                    asyncio.create_task(
-                        emit_compat(self.fsm, expired_msg, logger=self.logger)
-                    )
-                except RuntimeError:
-                    # No running loop, skip emission
-                    pass
-            return None  # Portfolio updates don't need further processing
 
         symbol = pld.get("symbol")
         if not symbol:
@@ -340,6 +441,17 @@ class ExecPosFSM:
             )
             LOG.info(f"✅ MARKET entry placed: {entry_resp}")
 
+            # Track order for timeout monitoring
+            self.watchdog.ensure_started()  # Safe late-start if needed
+            entry_order_id = str(entry_resp.get("orderId", ""))
+            self.watchdog.track_order_placed(
+                order_id=entry_order_id,
+                client_order_id=entry_id,
+                symbol=symbol,
+                corr_id=decision.corr_id,
+                rid=decision.rid
+            )
+
             # Log to OrderLoggerV1
             order_logger.write({
                 "rid": decision.rid,
@@ -372,6 +484,10 @@ class ExecPosFSM:
                 status="ACK",
                 corr_id=decision.corr_id
             )
+
+            # Notify watchdog of order ACK
+            self.watchdog.ensure_started()  # Safe late-start if needed
+            self.watchdog.on_order_ack(entry_order_id)
 
             # Check for existing brackets to avoid duplicates
             open_orders = await self.adapter.get_open_orders(symbol)
@@ -497,7 +613,79 @@ class ExecPosFSM:
             all_metrics[f"{symbol}_manage"] = manage_fsm.get_metrics()
         for symbol, close_fsm in self.close_flows.items():
             all_metrics[f"{symbol}_close"] = close_fsm.get_metrics()
+
+        # Include watchdog metrics
+        if hasattr(self, 'watchdog'):
+            all_metrics["order_timeout_watchdog"] = self.watchdog.get_metrics()
+
         return all_metrics
+
+    async def _handle_order_timeout(self, deadline):
+        """Handle a timed-out order with NRR-019 logging and idempotent cancellation."""
+        from vfoundation.obs.order_logger import order_logger
+
+        LOG.warning(
+            f"Order timeout: {deadline.order_id} ({deadline.symbol}) - {deadline.timeout_type.value}, "
+            f"nrr_code=NRR-019, corr_id={deadline.corr_id}, rid={deadline.rid}"
+        )
+
+        # Log to OrderLoggerV1
+        order_logger.write({
+            "rid": deadline.rid or f"timeout_{deadline.order_id}",
+            "event_type": "ORDER_TIMEOUT",
+            "symbol": deadline.symbol,
+            "client_order_id": deadline.client_order_id,
+            "order_id": deadline.order_id,
+            "nrr_code": "NRR-019",
+            "why": f"Order timeout: {deadline.timeout_type.value}",
+            "source_fsm": "ExecPosFSM",
+            "metadata": {
+                "timeout_type": deadline.timeout_type.value,
+                "corr_id": deadline.corr_id
+            }
+        })
+
+        # Attempt idempotent cancellation if adapter is available
+        if self.adapter and not self.shadow_mode:
+            try:
+                self.watchdog.cancel_attempt_count += 1
+                cancel_result = await self.adapter.cancel_order(
+                    deadline.symbol, deadline.order_id
+                )
+                self.watchdog.cancel_success_count += 1
+                LOG.info(
+                    f"✅ Cancelled timed-out order {deadline.order_id}: {cancel_result}")
+            except Exception as e:
+                LOG.warning(
+                    f"Failed to cancel timed-out order {deadline.order_id}: {e}")
+
+        # Record timeout metric
+        if self.metrics_collector:
+            self.metrics_collector.record_order_timeout()
+
+        # Emit event for monitoring
+        timeout_msg = Message(
+            op="EVT",
+            verb="ORDER_TIMEOUT",
+            intent="OBSERVATION",
+            src="execution_position",
+            dst="monitoring",
+            rid=deadline.rid or f"timeout_{deadline.order_id}",
+            pld={
+                "order_id": deadline.order_id,
+                "client_order_id": deadline.client_order_id,
+                "symbol": deadline.symbol,
+                "timeout_type": deadline.timeout_type.value,
+                "corr_id": deadline.corr_id,
+                "nrr_code": "NRR-019"
+            },
+            why="order_timeout_expired",
+        )
+
+        try:
+            await emit_compat(self.fsm, timeout_msg, logger=getattr(self, "logger", None))
+        except Exception as e:
+            LOG.error(f"Failed to emit timeout event: {e}")
 
     def open_flow(self, symbol: str) -> OpenFlowFSM:
         """Get or create OpenFlowFSM for the given symbol."""
@@ -543,6 +731,12 @@ class ExecPosFSM:
                 reason = exposure_check["reason"]
                 stale_sec = exposure_check.get("stale_sec", 0)
 
+                # EXP-FIX: Paranoid fail-closed: reserve exposure even when blocking
+                # This protects against edge cases where our stale detection is wrong
+                reserve_key = pld.get(
+                    "idempotent_key") or msg.rid or f"rid_{msg.rid}"
+                self.exposure_guard.reserve(reserve_key, notional_usd)
+
                 # Emit ERR:OPEN with fail-closed reason
                 error_msg = Message(
                     op="ERR",
@@ -563,11 +757,6 @@ class ExecPosFSM:
                 if hasattr(self, "metrics_collector") and self.metrics_collector:
                     self.metrics_collector.record_exposure_fail_closed(reason)
 
-                # Reserve exposure temporarily to prevent race conditions
-                reserve_key = pld.get(
-                    "idempotent_key") or msg.rid or f"rid_{msg.rid}"
-                self.exposure_guard.reserve(reserve_key, notional_usd)
-
                 # Emit error asynchronously
                 try:
                     asyncio.get_running_loop()  # Check for running loop
@@ -578,7 +767,7 @@ class ExecPosFSM:
                         asyncio.get_running_loop()
                         asyncio.create_task(
                             emit_compat(self.fsm, error_msg,
-                                        logger=self.logger)
+                                        logger=getattr(self, "logger", None))
                         )
                     except RuntimeError:
                         # Really no loop, skip emission
@@ -665,6 +854,12 @@ class ExecPosFSM:
                 f"FILL_HANDLED: key={reserve_key}, notional={notional_usd}")
         except Exception as e:
             LOG.error(f"FILL_HANDLE_ERROR: {e}", exc_info=True)
+
+        # Notify watchdog of order fill
+        order_id = pld.get("order_id")
+        if order_id:
+            self.watchdog.ensure_started()  # Safe late-start if needed
+            self.watchdog.on_order_fill(order_id)
 
     async def _check_shadow_notional(self) -> None:
         """

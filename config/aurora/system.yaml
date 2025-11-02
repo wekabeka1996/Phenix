@@ -23,8 +23,8 @@ risk_core:
     - flash_crash
     - volatility_spike
   inventory_limits:
-    max_abs_position: 500  #                               x50 pl      
-    max_daily_notional: 10000000  # $10M                                x50
+    max_abs_position: 500  # 500 BTC max position
+    max_daily_notional: 10000000  # $10M daily notional
 kelly:
   fraction_cap: 0.85  # Increased for full testnet operation
   decay_half_life_days: 5
@@ -91,14 +91,14 @@ position_tracking:
   positions_stale_ttl_sec: 8  # TTL for portfolio freshness check in bridge
 
 trading:
-  #                                                                                                                        
+  # Track these symbols for trading and monitoring
   symbols_to_track:
     - "BTCUSDT"
     - "ETHUSDT"
 
   market_data:
-    #             ,                                MarketDataConnector
+    # Market data streams for feature engineering
     websocket_streams:
-      - "bookTicker"  #        OBI (Order Book Imbalance)
-      - "trade"       #        TFI (Trade Flow Imbalance)      delta_price
+      - "bookTicker"  # For OBI (Order Book Imbalance)
+      - "trade"       # For TFI (Trade Flow Imbalance) and delta_price
 

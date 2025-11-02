@@ -1,5 +1,4 @@
 ﻿from typing import Any, List, Tuple
-from vfoundation.apps.reference.telemetry.metrics import AURORA_HYBRID_COHERENT, AURORA_HYBRID_INCOHERENT_REASONS_TOTAL
 import logging
 
 log = logging.getLogger(__name__)
@@ -35,7 +34,8 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
     mode_label = "hybrid_testnet"
 
     # 1) data must be live if будь-який з data-доменів live
-    dc = _nested_get(cfg, ["domain_configuration"], {}) or {}
+    dc = _nested_get(cfg, ["trading", "domain_configuration"], {}) or _nested_get(
+        cfg, ["domain_configuration"], {}) or {}
     md_mode_candidates = [
         _nested_get(dc, ["market_data", "trading_mode"]),
         _nested_get(dc, ["feature_engineering", "trading_mode"]),
@@ -57,11 +57,18 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
         reasons.append("Risk portfolio source is 'live', expected 'testnet'.")
 
     ok = (len(reasons) == 0)
-    AURORA_HYBRID_COHERENT.labels(mode=mode_label).set(1.0 if ok else 0.0)
+    # Optional: emit metrics if available
+    try:
+        from vfoundation.apps.reference.telemetry.metrics import AURORA_HYBRID_COHERENT, AURORA_HYBRID_INCOHERENT_REASONS_TOTAL
+        AURORA_HYBRID_COHERENT.labels(mode=mode_label).set(1.0 if ok else 0.0)
+        if not ok:
+            for r in reasons:
+                AURORA_HYBRID_INCOHERENT_REASONS_TOTAL.labels(
+                    reason=_slug(r)).inc()
+    except ImportError:
+        pass  # Metrics unavailable, continue
+
     if not ok:
-        for r in reasons:
-            AURORA_HYBRID_INCOHERENT_REASONS_TOTAL.labels(
-                reason=_slug(r)).inc()
         log.warning(
             "HYBRID_INCOHERENT: Hybrid mode pre-flight check failed. Reasons: %s", "; ".join(reasons))
     else:

@@ -172,11 +172,15 @@ class MarketDataConnector:
         This is the KEY FIX: Instead of using constant values,
         we now fetch REAL bid/ask sizes and REAL trade volumes.
         """
+        LOG.debug("🔄 Starting data fetch cycle")
         for symbol in self.symbols:
             try:
+                LOG.debug(f"📡 Fetching data for {symbol}")
+
                 # Fetch REAL bid/ask sizes from bookTicker
                 book_data = await self.adapter.get_book_ticker(symbol=symbol)
                 if book_data:
+                    LOG.debug(f"📗 BookTicker for {symbol}: {book_data}")
                     bid_price = book_data.get("bidPrice", "0")
                     bid_size = book_data.get("bidQty", "0")
                     ask_price = book_data.get("askPrice", "0")
@@ -187,12 +191,15 @@ class MarketDataConnector:
                     self.aggregator.on_book_ticker(
                         symbol, bid_price, bid_size, ask_price, ask_size, ts
                     )
+                else:
+                    LOG.warning(f"❌ No bookTicker data for {symbol}")
 
                 # Fetch REAL recent trades
                 trades_data = await self.adapter.get_recent_trades(
                     symbol=symbol, limit=50
                 )
                 if trades_data:
+                    LOG.debug(f"📈 Got {len(trades_data)} trades for {symbol}")
                     for trade in trades_data:
                         self.aggregator.on_trade(
                             symbol,
@@ -203,12 +210,15 @@ class MarketDataConnector:
                             ),  # m=True means buyer is maker (sell)
                             ts=trade.get("time", int(time.time() * 1000)),
                         )
+                else:
+                    LOG.warning(f"❌ No trades data for {symbol}")
 
                 # Fetch klines for delta_price calculation
                 klines = await self.adapter.get_klines(
                     symbol=symbol, interval="1m", limit=2
                 )
                 if klines and len(klines) >= 2:
+                    LOG.debug(f"📊 Got {len(klines)} klines for {symbol}")
                     # Update price history
                     for kline in klines:
                         price = kline[4]  # close price
@@ -220,16 +230,19 @@ class MarketDataConnector:
                             is_buyer_maker=False,
                             ts=ts,
                         )
+                else:
+                    LOG.warning(f"❌ No klines data for {symbol}")
 
                 # Get aggregated market tick with REAL features
                 tick = self.aggregator.get_market_tick(symbol)
                 if tick:
+                    LOG.debug(f"✅ Got tick for {symbol}: {tick}")
                     self._emit_market_tick(symbol, tick)
                 else:
-                    LOG.debug(f"Not enough data yet for {symbol}")
+                    LOG.debug(f"⏳ Not enough data yet for {symbol}")
 
             except Exception as e:
-                LOG.error(f"Failed to fetch data for {symbol}: {e}", exc_info=True)
+                LOG.error(f"❌ Failed to fetch data for {symbol}: {e}", exc_info=True)
 
     def _emit_market_tick(self, symbol: str, tick: dict[str, Any]) -> None:
         """Emit a market tick event with real feature data."""

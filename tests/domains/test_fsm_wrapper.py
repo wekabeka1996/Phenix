@@ -19,6 +19,7 @@ def test_execposfsm_routes_and_wal_append(monkeypatch):
     exec_fsm = ExecPosFSM(cfg, fsm=None, shadow_mode=True)
 
     # Set up mock portfolio state to avoid exposure fail-closed
+    # PORTFOLIO_STATE_UPDATED is an event, so call the listener directly
     portfolio_msg = Message(
         op="EVT",
         verb="PORTFOLIO_STATE_UPDATED",
@@ -31,7 +32,7 @@ def test_execposfsm_routes_and_wal_append(monkeypatch):
             "positions_last_ts_ms": int(time.time() * 1000),
         },
     )
-    exec_fsm.handle(portfolio_msg)
+    exec_fsm._on_portfolio_state_updated(portfolio_msg)
 
     # Send CMD OPEN routed to OpenFlowFSM via ExecPosFSM
     msg = Message(

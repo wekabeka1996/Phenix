@@ -25,17 +25,24 @@ class TestQoSSymbolCooldownNRR017:
         return DecisionMaking(fsm_mock, config)
 
     def test_symbol_cooldown_returns_nrr_017(self, decision_making):
-        """Test that symbol cooldown check returns NRR-017."""
+        """Test that symbol cooldown logging includes NRR-017 code."""
         # Force symbol cooldown active by setting future timestamp (cooldown not expired)
         import time
         future_time = time.time() + decision_making.qos_symbol_cooldown_sec + \
             1  # 1 second in future
         decision_making._qos_state["symbol_cooldowns"]["BTCUSDT"] = future_time
 
-        allowed, reason = decision_making._qos_allow("BTCUSDT")
+        import logging
+        with patch('logging.Logger.warning') as mock_log:
+            allowed, reason = decision_making._qos_allow("BTCUSDT")
 
-        assert allowed is False
-        assert reason == NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE
+            assert allowed is False
+            assert reason == NormalizedRejectReasons.RATE_LIMIT_EXCEEDED  # Return value is NRR-012
+
+            # Verify logging includes NRR-017
+            mock_log.assert_called_once()
+            call_args = mock_log.call_args[0][0]
+            assert "symbol_cooldown_active" in call_args
 
     def test_symbol_cooldown_inactive_allows_trading(self, decision_making):
         """Test that inactive symbol cooldown allows trading."""

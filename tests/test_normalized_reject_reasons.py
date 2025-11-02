@@ -54,6 +54,8 @@ class TestNormalizedRejectReasons:
             "exposure limit exceeded",
             "risk limit exceeded",
             "exposure exceeded maximum",
+            "Trading not allowed by risk manager",
+            "risk score too high",
         ]
 
         for raw_reason in test_cases:
@@ -74,7 +76,8 @@ class TestNormalizedRejectReasons:
 
     def test_normalize_unknown_error(self):
         """Test that unknown errors map to UNKNOWN_ERROR."""
-        test_cases = ["some random error", "", None, "completely unexpected message"]
+        test_cases = ["some random error", "",
+                      None, "completely unexpected message"]
 
         for raw_reason in test_cases:
             result = NormalizedRejectReasons.normalize(raw_reason)
