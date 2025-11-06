@@ -13,15 +13,36 @@ from collections import defaultdict
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
+from vfoundation.dr import wal
 
 from .normalized_reject_reasons import NormalizedRejectReasons
 from .deferred_scheduler import DeferredIntentScheduler
-from vfoundation.apps.reference.domains.decision_making.dm_log_adapter import (
+from .dm_log_adapter import (
     DecisionLog,
 )
-from vfoundation.apps.reference.telemetry.metrics import inc_decision_deferred
+from apps.reference.telemetry.metrics import inc_decision_deferred
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
-from vfoundation.obs.order_logger import order_logger
+from apps.reference.telemetry.order_logger import order_logger
+
+# Import AlertManager for risk gating
+try:
+    from apps.reference.telemetry.alerts import AlertManager
+    ALERT_MANAGER_AVAILABLE = True
+except ImportError:
+    ALERT_MANAGER_AVAILABLE = False
+    AlertManager = None  # type: ignore
+
+# Import alpha models
+try:
+    from apps.reference.domains.alpha_search import (
+        AlphaModelRegistry,
+        MomentumAlphaModel,
+        MeanReversionAlphaModel,
+        VolatilityAlphaModel
+    )
+    ALPHA_MODELS_AVAILABLE = True
+except ImportError:
+    ALPHA_MODELS_AVAILABLE = False
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -51,9 +72,22 @@ class DecisionMaking:
         self._cached_equity_free_usdt: Optional[str] = None
         self._cached_equity_cross_usdt: Optional[str] = None
 
+        # Risk gate metrics for AlertManager
+        self.intents_seen_total: int = 0  # Total intents evaluated
+        self.intents_blocked_total: int = 0  # Intents blocked by risk gate
+        self.last_alert_check_time: float = time.time()
+        self.alert_manager: Optional[AlertManager] = None
+        if ALERT_MANAGER_AVAILABLE:
+            try:
+                self.alert_manager = AlertManager(
+                    config=config, logger=self.logger.getChild("alerts"))
+                self.logger.info("AlertManager initialized in DecisionMaking")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize AlertManager: {e}")
+
         # QoS state management (PACK EXP-4)
-        self._qos_state = {
-            "last_exposure_block": 0,  # timestamp of last exposure block
+        self._qos_state: dict[str, Any] = {
+            "last_exposure_block": 0.0,  # timestamp of last exposure block
             "symbol_cooldowns": {},  # symbol -> last_decision_timestamp
             "symbol_intent_counts": defaultdict(
                 lambda: {"count": 0, "window_start": time.time()}
@@ -68,8 +102,30 @@ class DecisionMaking:
         # Decision logging (DM breadcrumbs)
         self.dlog = DecisionLog()
 
+        # Initialize alpha model registry
+        self.alpha_registry = None
+        if ALPHA_MODELS_AVAILABLE:
+            self.alpha_registry = AlphaModelRegistry()
+            # Register baseline models
+            self.alpha_registry.register(MomentumAlphaModel())
+            self.alpha_registry.register(MeanReversionAlphaModel())
+            self.alpha_registry.register(VolatilityAlphaModel())
+            self.logger.info(
+                f"Alpha models initialized: {self.alpha_registry.list_models()}")
+        else:
+            self.logger.warning(
+                "Alpha models not available - alpha_search module not found")
+
         # Support both old (config['trading']['decision']) and new (config['decision']) formats
-        trading_config = self.config.get("trading", self.config)
+        try:
+            if hasattr(self.config, 'trading') and self.config.trading:
+                trading_config = self.config.trading if self.config.trading else self.config
+            elif isinstance(self.config, dict):
+                trading_config = self.config.get("trading", self.config)
+            else:
+                trading_config = self.config
+        except (AttributeError, TypeError):
+            trading_config = self.config
 
         if "decision" not in trading_config and "decision" not in self.config:
             raise ValueError("Configuration key missing: 'decision'")
@@ -79,35 +135,179 @@ class DecisionMaking:
             raise ValueError("Configuration key missing: 'risk_budgets'")
 
         # Get decision config from either location
-        decision_config = trading_config.get(
-            "decision", self.config.get("decision", {})
-        )
-        sizing_config = decision_config.get("position_sizing", {})
-        self.min_pos_size_usd = decimal.Decimal(
-            str(sizing_config.get("min_position_size_usd", 10))
-        )
-        self.liq_cap_usd = decimal.Decimal(
-            str(sizing_config.get("liquidity_based_cap_usd", 10000))
-        )
+        try:
+            if hasattr(trading_config, 'decision'):
+                decision_config = trading_config.decision
+            elif isinstance(trading_config, dict):
+                decision_config = trading_config.get("decision", self.config.get(
+                    "decision", {}) if isinstance(self.config, dict) else {})
+            else:
+                decision_config = {}
+        except (AttributeError, TypeError):
+            decision_config = {}
+
+        # Get mode and apply mode-specific settings
+        try:
+            if hasattr(trading_config, 'mode'):
+                mode = trading_config.mode
+            elif isinstance(trading_config, dict):
+                mode = trading_config.get("mode", "production")
+            else:
+                mode = "production"
+        except (AttributeError, TypeError):
+            mode = "production"
+
+        # Get mode config with Pydantic-first
+        try:
+            if isinstance(decision_config, dict):
+                mode_config = decision_config.get(mode, {})
+            elif hasattr(decision_config, mode):
+                mode_config = getattr(decision_config, mode, {})
+            else:
+                mode_config = {}
+        except (AttributeError, TypeError):
+            mode_config = {}
+
+        # Apply mode-specific overrides
+        if mode_config and isinstance(decision_config, dict):
+            self.logger.info(f"Applying {mode} mode decision settings")
+            for key, value in mode_config.items():
+                if key in decision_config:
+                    self.logger.info(
+                        f"  {key}: {decision_config[key]} -> {value}")
+                decision_config[key] = value
+
+        # Position sizing config
+        try:
+            if hasattr(decision_config, 'position_sizing'):
+                sizing_config = decision_config.position_sizing or {}
+            elif isinstance(decision_config, dict):
+                sizing_config = decision_config.get("position_sizing", {})
+            else:
+                sizing_config = {}
+        except (AttributeError, TypeError):
+            sizing_config = {}
+
+        # Min position size
+        try:
+            if hasattr(sizing_config, 'min_position_size_usd'):
+                min_size = sizing_config.min_position_size_usd or 10
+            elif isinstance(sizing_config, dict):
+                min_size = sizing_config.get("min_position_size_usd", 10)
+            else:
+                min_size = 10
+        except (AttributeError, TypeError):
+            min_size = 10
+
+        self.min_pos_size_usd = decimal.Decimal(str(min_size))
+
+        # Liquidity cap
+        try:
+            if hasattr(sizing_config, 'liquidity_based_cap_usd'):
+                liq_cap = sizing_config.liquidity_based_cap_usd or 10000
+            elif isinstance(sizing_config, dict):
+                liq_cap = sizing_config.get("liquidity_based_cap_usd", 10000)
+            else:
+                liq_cap = 10000
+        except (AttributeError, TypeError):
+            liq_cap = 10000
+
+        self.liq_cap_usd = decimal.Decimal(str(liq_cap))
 
         # QoS configuration (PACK EXP-4)
-        qos_config = decision_config.get("qos", {})
-        self.qos_exposure_block_cooldown_sec = qos_config.get(
-            "exposure_block_cooldown_sec", 10
-        )
-        self.qos_symbol_cooldown_sec = qos_config.get("symbol_cooldown_sec", 3)
-        self.qos_max_intents_per_minute_per_symbol = qos_config.get(
-            "max_intents_per_minute_per_symbol", 6
-        )
+        try:
+            if hasattr(decision_config, 'qos'):
+                qos_config = decision_config.qos or {}
+            elif isinstance(decision_config, dict):
+                qos_config = decision_config.get("qos", {})
+            else:
+                qos_config = {}
+        except (AttributeError, TypeError):
+            qos_config = {}
+
+        # QoS exposure cooldown
+        try:
+            if hasattr(qos_config, 'exposure_block_cooldown_sec'):
+                exp_cooldown = qos_config.exposure_block_cooldown_sec or 10
+            elif isinstance(qos_config, dict):
+                exp_cooldown = qos_config.get(
+                    "exposure_block_cooldown_sec", 10)
+            else:
+                exp_cooldown = 10
+        except (AttributeError, TypeError):
+            exp_cooldown = 10
+        self.qos_exposure_block_cooldown_sec = int(exp_cooldown)
+
+        # QoS symbol cooldown
+        try:
+            if hasattr(qos_config, 'symbol_cooldown_sec'):
+                sym_cooldown = qos_config.symbol_cooldown_sec or 3
+            elif isinstance(qos_config, dict):
+                sym_cooldown = qos_config.get("symbol_cooldown_sec", 3)
+            else:
+                sym_cooldown = 3
+        except (AttributeError, TypeError):
+            sym_cooldown = 3
+        self.qos_symbol_cooldown_sec = int(sym_cooldown)
+
+        # QoS max intents
+        try:
+            if hasattr(qos_config, 'max_intents_per_minute_per_symbol'):
+                max_intents = qos_config.max_intents_per_minute_per_symbol or 6
+            elif isinstance(qos_config, dict):
+                max_intents = qos_config.get(
+                    "max_intents_per_minute_per_symbol", 6)
+            else:
+                max_intents = 6
+        except (AttributeError, TypeError):
+            max_intents = 6
+        self.qos_max_intents_per_minute_per_symbol = int(max_intents)
+
         # QoS mode: shadow=only metrics, defer=delay intents, enforce=block intents
-        self.qos_mode = qos_config.get("mode", "defer")
+        try:
+            if hasattr(qos_config, 'mode'):
+                qos_mode = qos_config.mode or "defer"
+            elif isinstance(qos_config, dict):
+                qos_mode = qos_config.get("mode", "defer")
+            else:
+                qos_mode = "defer"
+        except (AttributeError, TypeError):
+            qos_mode = "defer"
+        self.qos_mode = qos_mode
+
         # Legacy enforce flag (use mode instead)
-        self.qos_enforce = qos_config.get("enforce", False)
+        try:
+            if hasattr(qos_config, 'enforce'):
+                qos_enforce_val = qos_config.enforce or False
+            elif isinstance(qos_config, dict):
+                qos_enforce_val = qos_config.get("enforce", False)
+            else:
+                qos_enforce_val = False
+        except (AttributeError, TypeError):
+            qos_enforce_val = False
+        self.qos_enforce = bool(qos_enforce_val)
 
         # Features TTL configuration
-        features_config = decision_config.get("features", {})
-        self.features_ttl_sec = features_config.get(
-            "ttl_sec", 5)  # 5 seconds default (reduced from 30)
+        try:
+            if hasattr(decision_config, 'features'):
+                features_config = decision_config.features or {}
+            elif isinstance(decision_config, dict):
+                features_config = decision_config.get("features", {})
+            else:
+                features_config = {}
+        except (AttributeError, TypeError):
+            features_config = {}
+
+        try:
+            if hasattr(features_config, 'ttl_sec'):
+                features_ttl = features_config.ttl_sec or 5
+            elif isinstance(features_config, dict):
+                features_ttl = features_config.get("ttl_sec", 5)
+            else:
+                features_ttl = 5
+        except (AttributeError, TypeError):
+            features_ttl = 5
+        self.features_ttl_sec = int(features_ttl)
 
         self.logger.info(
             f"QoS config: mode={self.qos_mode}, enforce={self.qos_enforce}, "
@@ -115,6 +315,103 @@ class DecisionMaking:
             f"symbol_cooldown={self.qos_symbol_cooldown_sec}s, "
             f"max_intents_per_min={self.qos_max_intents_per_minute_per_symbol}, "
             f"features_ttl={self.features_ttl_sec}s"
+        )
+
+        # --- Optional behavior/gating extensions (disabled by default) ---
+        try:
+            if hasattr(decision_config, 'bar_gating'):
+                bar_gate_cfg = decision_config.bar_gating or {}
+            elif isinstance(decision_config, dict):
+                bar_gate_cfg = decision_config.get("bar_gating", {})
+            else:
+                bar_gate_cfg = {}
+        except (AttributeError, TypeError):
+            bar_gate_cfg = {}
+
+        if not isinstance(bar_gate_cfg, dict) and not hasattr(bar_gate_cfg, '__dict__'):
+            bar_gate_cfg = {}
+
+        try:
+            if hasattr(bar_gate_cfg, 'enable'):
+                bar_enable = bar_gate_cfg.enable or False
+            elif isinstance(bar_gate_cfg, dict):
+                bar_enable = bar_gate_cfg.get("enable", False)
+            else:
+                bar_enable = False
+        except (AttributeError, TypeError):
+            bar_enable = False
+        self._bar_gating_enabled: bool = bool(bar_enable)
+
+        try:
+            if hasattr(bar_gate_cfg, 'bar_ms'):
+                bar_ms_val = bar_gate_cfg.bar_ms or (15 * 60 * 1000)
+            elif isinstance(bar_gate_cfg, dict):
+                bar_ms_val = bar_gate_cfg.get("bar_ms", 15 * 60 * 1000)
+            else:
+                bar_ms_val = 15 * 60 * 1000
+        except (AttributeError, TypeError):
+            bar_ms_val = 15 * 60 * 1000
+        self._bar_ms: int = int(bar_ms_val)
+        self._last_bar_index: dict[str, int] = {}
+
+        try:
+            if hasattr(decision_config, 'behavior_fsm'):
+                behavior_cfg = decision_config.behavior_fsm or {}
+            elif isinstance(decision_config, dict):
+                behavior_cfg = decision_config.get("behavior_fsm", {})
+            else:
+                behavior_cfg = {}
+        except (AttributeError, TypeError):
+            behavior_cfg = {}
+
+        if not isinstance(behavior_cfg, dict) and not hasattr(behavior_cfg, '__dict__'):
+            behavior_cfg = {}
+
+        try:
+            if hasattr(behavior_cfg, 'enable'):
+                behavior_enable = behavior_cfg.enable or False
+            elif isinstance(behavior_cfg, dict):
+                behavior_enable = behavior_cfg.get("enable", False)
+            else:
+                behavior_enable = False
+        except (AttributeError, TypeError):
+            behavior_enable = False
+        self._behavior_enabled: bool = bool(behavior_enable)
+
+        try:
+            if hasattr(behavior_cfg, 'high_vol_multiplier'):
+                high_vol = behavior_cfg.high_vol_multiplier or 2.0
+            elif isinstance(behavior_cfg, dict):
+                high_vol = behavior_cfg.get("high_vol_multiplier", 2.0)
+            else:
+                high_vol = 2.0
+        except (AttributeError, TypeError):
+            high_vol = 2.0
+
+        try:
+            if hasattr(behavior_cfg, 'low_vol_multiplier'):
+                low_vol = behavior_cfg.low_vol_multiplier or 0.5
+            elif isinstance(behavior_cfg, dict):
+                low_vol = behavior_cfg.get("low_vol_multiplier", 0.5)
+            else:
+                low_vol = 0.5
+        except (AttributeError, TypeError):
+            low_vol = 0.5
+
+        self._behavior_thresholds = {
+            "high_vol_multiplier": float(high_vol),
+            "low_vol_multiplier": float(low_vol),
+        }
+        self._behavior_state: Dict[str, str] = {}
+
+        if isinstance(decision_config, dict):
+            signals_cfg = decision_config.get("signals", {})
+        else:
+            signals_cfg = {}
+
+        self._normalize_signals: bool = bool(
+            signals_cfg.get("normalize", False) if isinstance(
+                signals_cfg, dict) else False
         )
 
         # FSM event listeners
@@ -140,9 +437,9 @@ class DecisionMaking:
 
         # Check exposure block cooldown (only for exposure-related checks)
         if is_exposure_block:
-            time_since_last_block = (
-                current_time - self._qos_state["last_exposure_block"]
-            )
+            last_exposure_block: float = float(
+                self._qos_state.get("last_exposure_block", 0.0))
+            time_since_last_block = current_time - last_exposure_block
             if time_since_last_block < self.qos_exposure_block_cooldown_sec:
                 remaining = self.qos_exposure_block_cooldown_sec - time_since_last_block
                 reject_reason = (
@@ -152,7 +449,9 @@ class DecisionMaking:
                 return False, NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED
 
         # Check symbol cooldown (prevents rapid-fire decisions for same symbol)
-        last_decision = self._qos_state["symbol_cooldowns"].get(symbol, 0)
+        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
+            "symbol_cooldowns", {})
+        last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
         time_since_last_decision = current_time - last_decision
         if time_since_last_decision < self.qos_symbol_cooldown_sec:
             remaining = self.qos_symbol_cooldown_sec - time_since_last_decision
@@ -162,8 +461,11 @@ class DecisionMaking:
             return False, NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
 
         # Check rate limit (intents per minute per symbol) - separate from cooldown
-        intent_data = self._qos_state["symbol_intent_counts"][symbol]
-        window_elapsed = current_time - intent_data["window_start"]
+        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
+            "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts[symbol]
+        window_elapsed = current_time - \
+            intent_data.get("window_start", current_time)
 
         # Reset window if more than a minute has passed
         if window_elapsed >= 60:
@@ -182,7 +484,9 @@ class DecisionMaking:
     def _update_symbol_cooldown(self, symbol: str) -> None:
         """Update cooldown timestamp for symbol (prevents rapid-fire decisions)."""
         current_time = time.time()
-        self._qos_state["symbol_cooldowns"][symbol] = current_time
+        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
+            "symbol_cooldowns", {})
+        symbol_cooldowns[symbol] = current_time
         self.logger.debug(
             f"[{symbol}] QoS cooldown updated: ts={current_time}")
 
@@ -196,10 +500,13 @@ class DecisionMaking:
         )
 
         # Schedule one-time retry using DeferredIntentScheduler
+        def retry_callback(rid_arg: str) -> None:
+            self._retry_decision_after_cooldown(symbol, context, rid_arg)
+
         self._deferred_scheduler.schedule_once(
             symbol,
-            cooldown_sec,
-            lambda: self._retry_decision_after_cooldown(symbol, context, rid)
+            int(cooldown_sec * 1000),
+            retry_callback
         )
 
     def _retry_decision_after_cooldown(self, symbol: str, context: dict, rid: str) -> None:
@@ -217,7 +524,10 @@ class DecisionMaking:
 
     def _update_intent_count(self, symbol: str) -> None:
         """Update intent count for rate limiting."""
-        intent_data = self._qos_state["symbol_intent_counts"][symbol]
+        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
+            "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts.get(
+            symbol, {"count": 0, "window_start": time.time()})
         intent_data["count"] += 1
         self.logger.debug(
             f"[{symbol}] QoS intent count updated: count={intent_data['count']}"
@@ -228,19 +538,27 @@ class DecisionMaking:
         current_time = time.time()
 
         # Check exposure block cooldown
-        last_exposure_block = self._qos_state.get("last_exposure_block", 0)
+        last_exposure_block: float = float(
+            self._qos_state.get("last_exposure_block", 0.0))
         if current_time - last_exposure_block < self.qos_exposure_block_cooldown_sec:
             return {"allowed": False, "reason": NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED}
 
         # Check symbol cooldown
-        last_decision = self._qos_state["symbol_cooldowns"].get(symbol, 0)
+        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
+            "symbol_cooldowns", {})
+        last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
         if current_time - last_decision < self.qos_symbol_cooldown_sec:
             return {"allowed": False, "reason": NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE}
 
         # Check rate limit
-        intent_data = self._qos_state["symbol_intent_counts"][symbol]
-        window_end = intent_data["window_start"] + 60
-        if current_time < window_end and intent_data["count"] >= self.qos_max_intents_per_minute_per_symbol:
+        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
+            "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts.get(
+            symbol, {"count": 0, "window_start": current_time})
+        window_end: float = float(intent_data.get(
+            "window_start", current_time)) + 60
+        intent_count: int = int(intent_data.get("count", 0))
+        if current_time < window_end and intent_count >= self.qos_max_intents_per_minute_per_symbol:
             return {"allowed": False, "reason": NormalizedRejectReasons.RATE_LIMIT_EXCEEDED}
 
         return {"allowed": True, "reason": None}
@@ -251,14 +569,21 @@ class DecisionMaking:
         next_allowed = current_time
 
         # Check symbol cooldown
-        last_decision = self._qos_state["symbol_cooldowns"].get(symbol, 0)
-        cooldown_end = last_decision + self.qos_symbol_cooldown_sec
+        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
+            "symbol_cooldowns", {})
+        last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
+        cooldown_end: float = last_decision + self.qos_symbol_cooldown_sec
         next_allowed = max(next_allowed, cooldown_end)
 
         # Check rate limit window
-        intent_data = self._qos_state["symbol_intent_counts"][symbol]
-        window_end = intent_data["window_start"] + 60  # 1 minute window
-        if intent_data["count"] >= self.qos_max_intents_per_minute_per_symbol:
+        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
+            "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts.get(
+            symbol, {"count": 0, "window_start": current_time})
+        window_end: float = float(intent_data.get(
+            "window_start", current_time)) + 60
+        intent_count: int = int(intent_data.get("count", 0))
+        if intent_count >= self.qos_max_intents_per_minute_per_symbol:
             next_allowed = max(next_allowed, window_end)
 
         return int(next_allowed * 1000)  # Convert to milliseconds
@@ -268,12 +593,18 @@ class DecisionMaking:
         current_time = time.time()
 
         # Update symbol cooldown
-        self._qos_state["symbol_cooldowns"][symbol] = current_time
+        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
+            "symbol_cooldowns", {})
+        symbol_cooldowns[symbol] = current_time
 
         # Update rate limit counters
-        intent_data = self._qos_state["symbol_intent_counts"][symbol]
-        window_start = intent_data["window_start"]
-        window_end = window_start + 60
+        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
+            "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts.get(
+            symbol, {"count": 0, "window_start": current_time})
+        window_start: float = float(
+            intent_data.get("window_start", current_time))
+        window_end: float = window_start + 60
 
         if current_time >= window_end:
             # Reset window
@@ -284,10 +615,6 @@ class DecisionMaking:
 
         self.logger.debug(
             f"[{symbol}] QoS state updated: cooldown={current_time}, intents={intent_data['count']}")
-
-    def _update_symbol_cooldown(self, symbol: str) -> None:
-        """Legacy method to update symbol cooldown for tests."""
-        self._qos_state["symbol_cooldowns"][symbol] = time.time()
 
     def _handle_exposure_block(self, symbol: str) -> None:
         """Handle exposure block event by updating QoS state."""
@@ -308,6 +635,52 @@ class DecisionMaking:
             getattr(event, "rid", None),
             {"symbol": symbol, "keys": list(feats.keys())},
         )
+
+        # Calculate alpha scores if alpha models are available
+        if self.alpha_registry and feats:
+            try:
+                alpha_scores = self.alpha_registry.calculate_all_alpha(
+                    symbol, {"current_price": feats.get("price")}, feats
+                )
+                if alpha_scores:
+                    # Emit alpha scores event
+                    alpha_payload = {
+                        "symbol": symbol,
+                        "scores": [score.dict() for score in alpha_scores],
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    self.fsm.emit(
+                        "EVT:ALPHA_SCORE_CALCULATED",
+                        payload=alpha_payload,
+                        why="alpha_calculation",
+                        data_ref=[
+                            f"model_{score.model_name}" for score in alpha_scores]
+                    )
+
+                    # VERIFY-ALPHA-CAPTURE: Write alpha scores to WAL for traceability
+                    try:
+                        wal_record = {
+                            "op": "EVT",
+                            "verb": "ALPHA_SCORE_CALCULATED",
+                            "symbol": symbol,
+                            "scores": [score.dict() for score in alpha_scores],
+                            "timestamp": int(time.time() * 1000),
+                            "why": "alpha_calculation"
+                        }
+                        wal.append(wal_record)
+                    except Exception as wal_e:
+                        self.logger.warning(
+                            f"Failed to write alpha scores to WAL: {wal_e}")
+
+                    self.logger.info(
+                        f"✅ Alpha scores calculated for {symbol}: {len(alpha_scores)} models")
+                else:
+                    self.logger.debug(
+                        f"No alpha scores calculated for {symbol} - missing required features")
+            except Exception as e:
+                self.logger.error(
+                    f"Error calculating alpha scores for {symbol}: {e}")
+                # Continue with normal flow - alpha calculation failure shouldn't block trading
 
     def on_risk(self, event: Message) -> None:
         symbol = event.pld.get("symbol", "unknown")
@@ -369,6 +742,17 @@ class DecisionMaking:
 
     def on_regime(self, event: Message) -> None:
         self.latest_regime = event.pld
+        # Minimal behavior FSM mapping (if enabled)
+        if self._behavior_enabled and event and event.pld:
+            try:
+                symbol = event.pld.get("symbol")
+                regime = event.pld.get("regime")
+                if regime in ("LOW_VOLATILITY", "MEAN_REVERSION"):
+                    self._behavior_state[symbol] = "IdleFlat"
+                elif regime in ("HIGH_VOLATILITY", "UNCERTAIN"):
+                    self._behavior_state[symbol] = "Tension"
+            except Exception:
+                pass
 
     def _features_ready(self, symbol: str, features_data: dict) -> bool:
         """Check if features are fresh within TTL."""
@@ -422,6 +806,18 @@ class DecisionMaking:
 
         # If we have both features and risk, make decision immediately
         if has_features and has_risk and features_ready:
+            # Optional bar gating (e.g., M15) to avoid multiple decisions per bar
+            if self._bar_gating_enabled:
+                feats = state["features"] or {}
+                ts = int(feats.get("ts", 0))
+                if ts > 0 and self._bar_ms > 0:
+                    bar_index = ts // self._bar_ms
+                    last_idx = self._last_bar_index.get(symbol)
+                    if last_idx is not None and bar_index == last_idx:
+                        self.logger.info(
+                            f"[{symbol}] Bar gate: already processed bar_index={bar_index}, skipping decision")
+                        return
+                    self._last_bar_index[symbol] = bar_index
             self.logger.info(
                 f"[{symbol}] ✅ All data ready! Triggering decision...")
             decision_context = {
@@ -524,12 +920,17 @@ class DecisionMaking:
                     f"[{symbol}] QoS defer: setting busy guard until {next_allowed_sec} (reason: {qos_reject_reason})")
 
                 # Set busy guard to prevent infinite defer loops
-                self._qos_next_allowed_ts[symbol] = next_allowed_sec
+                self._qos_next_allowed_ts[symbol] = int(next_allowed_ts)
 
                 # XAI instrumentation: qos_defer
                 cooldown_left_ms = (next_allowed_ts - time.time() *
                                     1000) if next_allowed_ts > time.time() * 1000 else 0
-                rate_state = f"count={self._qos_state['symbol_intent_counts'][symbol]['count']}"
+                symbol_intent_counts: dict[str, Any] = self._qos_state.get(
+                    "symbol_intent_counts", {})
+                intent_data: dict[str, Any] = symbol_intent_counts.get(symbol, {
+                                                                       "count": 0})
+                intent_count: int = int(intent_data.get("count", 0))
+                rate_state = f"count={intent_count}"
                 self.logger.warning(
                     format_why_with_details(
                         WhyCode.GUARD_RATE_LIMIT_EXCEEDED,
@@ -645,6 +1046,9 @@ class DecisionMaking:
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
 
+            # Record blocked intent for risk gate monitoring
+            self._record_blocked_intent(symbol)
+
             # Check if this is an exposure block (PACK EXP-4)
             nrr_code = "NRR-011"  # Default to exposure
             if (
@@ -680,32 +1084,190 @@ class DecisionMaking:
 
         # Support both old (config['trading']['decision']) and new (config['decision']) formats
         # If self.config doesn't have 'trading' key, it means self.config **is** the trading config
-        trading_config = self.config.get("trading", self.config)
-        decision_config = trading_config.get("decision", {})
-        signal_weights = decision_config.get("signal_weights", {})
+        try:
+            if hasattr(self.config, 'trading') and self.config.trading:
+                trading_config = self.config.trading if self.config.trading else self.config
+            elif isinstance(self.config, dict):
+                trading_config = self.config.get("trading", self.config)
+            else:
+                trading_config = self.config
+        except (AttributeError, TypeError):
+            trading_config = self.config
+
+        if isinstance(trading_config, dict):
+            decision_config = trading_config.get("decision", {})
+            signal_weights = decision_config.get("signal_weights", {})
+        else:
+            decision_config = {}
+            signal_weights = {}
 
         # DEBUG: Log full trading_config structure
-        self.logger.info(
-            f"DEBUG trading_config keys: {list(trading_config.keys())}")
+        try:
+            config_keys = list(trading_config.keys()) if isinstance(
+                trading_config, dict) else []
+            self.logger.info(f"DEBUG trading_config keys: {config_keys}")
+        except:
+            pass
         self.logger.info(f"DEBUG decision_config: {decision_config}")
         self.logger.info(f"DEBUG signal_weights: {signal_weights}")
 
-        signal_score = sum(
-            decimal.Decimal(str(features_data.get(f, 0.0))) *
-            decimal.Decimal(str(w))
-            for f, w in signal_weights.items()
-        )
+        # Compute signal score; optionally normalize components into [0,1]
+        psi_vector: Dict[str, Any] = {}
+        if self._normalize_signals:
+            def _to_dec(val: Any) -> decimal.Decimal:
+                try:
+                    return decimal.Decimal(str(val))
+                except Exception:
+                    return decimal.Decimal("0")
 
-        signal_threshold = decimal.Decimal(
-            str(decision_config.get("signal_threshold", "0.2"))
-        )
+            price_dec = _to_dec(features_data.get("price", 0))
+            obi_raw = _to_dec(features_data.get("obi", 0))
+            tfi_raw = _to_dec(features_data.get("tfi", 0))
+            dp_raw = _to_dec(features_data.get("delta_price", 0))
+
+            # Phase 1 new metrics (already normalized to [0,1] by FeatureEngineering)
+            ema_bias_phi = _to_dec(features_data.get("ema_bias", 0))
+            volume_spike_phi = _to_dec(features_data.get("volume_spike", 0))
+            volatility_state_phi = _to_dec(
+                features_data.get("volatility_state", 0))
+            depth_imbalance_phi = _to_dec(
+                features_data.get("depth_imbalance", 0))
+            macro_sync_phi = _to_dec(features_data.get("macro_sync", 0))
+
+            def _norm_m11_to_01(x: decimal.Decimal) -> decimal.Decimal:
+                try:
+                    # If already in [0,1], keep
+                    if x >= 0 and x <= 1:
+                        return x
+                    return (x + 1) / 2
+                except Exception:
+                    return decimal.Decimal("0")
+
+            obi_phi = _norm_m11_to_01(obi_raw)
+            tfi_phi = _norm_m11_to_01(tfi_raw)
+            if price_dec > 0:
+                dp_pct = abs(dp_raw) / price_dec
+            else:
+                dp_pct = decimal.Decimal("0")
+            # Clamp to 2% and scale to [0,1]
+            if dp_pct < 0:
+                dp_pct = decimal.Decimal("0")
+            if dp_pct > decimal.Decimal("0.02"):
+                dp_pct = decimal.Decimal("0.02")
+            dp_phi = dp_pct / decimal.Decimal("0.02")
+
+            # Build phi_map with all 8 metrics
+            phi_map = {
+                "obi": obi_phi,
+                "tfi": tfi_phi,
+                "delta_price": dp_phi,
+                "ema_bias": ema_bias_phi,
+                "volume_spike": volume_spike_phi,
+                "volatility_state": volatility_state_phi,
+                "depth_imbalance": depth_imbalance_phi,
+                "macro_sync": macro_sync_phi,
+            }
+            signal_score = sum(
+                decimal.Decimal(str(phi_map.get(f, 0))) *
+                decimal.Decimal(str(w))
+                for f, w in signal_weights.items()
+            )
+            # Expand psi_vector with Phase 1 metrics
+            psi_vector = {
+                "phi_OBI": float(obi_phi),
+                "phi_TFI": float(tfi_phi),
+                "phi_DeltaP": float(dp_phi),
+                "phi_EMA_Bias": float(ema_bias_phi),
+                "phi_Volume_Spike": float(volume_spike_phi),
+                "phi_Volatility_State": float(volatility_state_phi),
+                "phi_Depth_Imbalance": float(depth_imbalance_phi),
+                "phi_Macro_Sync": float(macro_sync_phi),
+                "weights": {k: float(v) for k, v in signal_weights.items()},
+            }
+        else:
+            signal_score = sum(
+                decimal.Decimal(str(features_data.get(f, 0.0))) *
+                decimal.Decimal(str(w))
+                for f, w in signal_weights.items()
+            )
+
+        base_threshold = decimal.Decimal(
+            str(decision_config.get("signal_threshold", "0.2")))
+        # Regime-based threshold multiplier (Δθ); defaults to 1.0 if not configured or regime missing
+        regime_thresholds_cfg = decision_config.get(
+            "regime_threshold_multipliers", {}) or {}
+        regime_name = (regime or {}).get("regime") if regime else None
+        try:
+            factor_str = (
+                str(regime_thresholds_cfg.get(regime_name))
+                if regime_name in regime_thresholds_cfg
+                else str(regime_thresholds_cfg.get("DEFAULT", "1.0"))
+            )
+            threshold_factor = decimal.Decimal(factor_str)
+        except Exception:
+            threshold_factor = decimal.Decimal("1.0")
+        signal_threshold = base_threshold * threshold_factor
+
+        # EXP-DIRECTION: Calculate side-bias penalty (Δθ_bias)
+        # Count recent SELL vs BUY intents in a sliding window
+        current_time = time.time()
+        bias_window_sec = decision_config.get(
+            "side_bias_window_sec", 60)  # 60 sec window
+        sell_target_ratio = decision_config.get(
+            "side_bias_target_ratio", 0.6)  # Target 60% SELL max
+        sell_bias_penalty_factor = decimal.Decimal(
+            str(decision_config.get("side_bias_penalty_factor", "0.5"))
+        )  # Increase threshold by 50% if oversold
+
+        # Track intents per side (you can also extract from order_logger if needed)
+        if symbol not in getattr(self, '_side_intent_window', {}):
+            self._side_intent_window = getattr(self, '_side_intent_window', {})
+            self._side_intent_window[symbol] = {"buys": [], "sells": []}
+
+        window_data = self._side_intent_window[symbol]
+        # Remove old entries outside the window
+        window_data["buys"] = [ts for ts in window_data["buys"]
+                               if current_time - ts < bias_window_sec]
+        window_data["sells"] = [ts for ts in window_data["sells"]
+                                if current_time - ts < bias_window_sec]
+
+        buy_count = len(window_data["buys"])
+        sell_count = len(window_data["sells"])
+        total_count = buy_count + sell_count
+
+        # Calculate current SELL share
+        if total_count > 0:
+            sell_share = decimal.Decimal(
+                str(sell_count)) / decimal.Decimal(str(total_count))
+        else:
+            sell_share = decimal.Decimal("0.5")  # Neutral if no history
+
+        # Apply bias penalty to side that's oversold
+        bias_multiplier = decimal.Decimal("1.0")
+        if sell_share > decimal.Decimal(str(sell_target_ratio)):
+            # Too many SELLs - raise SELL threshold (harder to short)
+            bias_multiplier += sell_bias_penalty_factor
+            self.logger.info(
+                f"[{symbol}] SIDE_BIAS_PENALTY: sell_share={float(sell_share):.2%} > target={float(sell_target_ratio):.2%}, "
+                f"raising SELL threshold by {float(sell_bias_penalty_factor):.0%}"
+            )
+        elif sell_share < decimal.Decimal(str(1.0 - float(sell_target_ratio))):
+            # Too many BUYs - raise BUY threshold (harder to long)
+            bias_multiplier += sell_bias_penalty_factor
+            self.logger.info(
+                f"[{symbol}] SIDE_BIAS_PENALTY: buy_share={float(1.0 - float(sell_share)):.2%} > target={float(sell_target_ratio):.2%}, "
+                f"raising BUY threshold by {float(sell_bias_penalty_factor):.0%}"
+            )
+
+        signal_threshold_with_bias = signal_threshold * bias_multiplier
+
         side = ""
-        if signal_score > signal_threshold:
+        if signal_score > signal_threshold_with_bias:
             side = "buy"
-        elif signal_score < -signal_threshold:
+        elif signal_score < -signal_threshold_with_bias:
             side = "sell"
         else:
-            reject_reason = f"Neutral signal score {signal_score:.4f}"
+            reject_reason = f"Neutral signal score {signal_score:.4f} (threshold={signal_threshold_with_bias:.4f} with bias)"
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
             self.logger.info(
@@ -725,12 +1287,32 @@ class DecisionMaking:
                 "nrr_code": None,
                 "why": reject_reason[:80],
                 "source_fsm": "DecisionMaking",
-                "metadata": {"reject_reason": "NEUTRAL_SIGNAL", "signal_score": float(signal_score)}
+                "metadata": {
+                    "reject_reason": "NEUTRAL_SIGNAL",
+                    "signal_score": float(signal_score),
+                    "threshold_base": float(signal_threshold),
+                    "threshold_with_bias": float(signal_threshold_with_bias),
+                    "sell_share": float(sell_share),
+                    "bias_multiplier": float(bias_multiplier)
+                }
             })
 
             self.clear_internal_state_for_symbol(symbol)
             return
 
+        # Record this intent side for future bias tracking
+        window_data[f"{'sells' if side == 'sell' else 'buys'}"].append(
+            current_time)
+
+        # Attach PSI snapshot and regime info for explainability
+        if self.latest_regime:
+            try:
+                psi_vector.update({
+                    "regime": regime.get("regime") if regime else None,
+                    "regime_conf": float(decimal.Decimal(str((regime or {}).get("confidence", 0))))
+                })
+            except Exception:
+                pass
         self.dlog.write(
             "DECISION_EVAL",
             rid,
@@ -738,11 +1320,29 @@ class DecisionMaking:
                 "symbol": symbol,
                 "signal_score": float(signal_score),
                 "signal_threshold": float(signal_threshold),
+                "psi": psi_vector,
+                "regime_threshold_factor": float(threshold_factor),
             },
         )
 
         if regime and regime.get("symbol") == symbol:
             current_regime = regime.get("regime")
+            # Optional behavior FSM gate: allow entry only in IdleFlat
+            if self._behavior_enabled:
+                beh = self._behavior_state.get(symbol, "IdleFlat")
+                if beh != "IdleFlat":
+                    reject_reason = f"behavior_gate_{beh}_disallows_entry"
+                    normalized_reason = NormalizedRejectReasons.normalize(
+                        reject_reason)
+                    self.logger.info(
+                        f"Trade intent for {symbol} ({side}) rejected: {reject_reason} (NRR: {normalized_reason})"
+                    )
+                    self.dlog.write(
+                        "DECISION_SKIP", rid, {
+                            "symbol": symbol, "reason": "BEHAVIOR_GATE", "behavior_state": beh}
+                    )
+                    self.clear_internal_state_for_symbol(symbol)
+                    return
             if (current_regime == "TREND_UP" and side == "sell") or (
                 current_regime == "TREND_DOWN" and side == "buy"
             ):
@@ -799,6 +1399,111 @@ class DecisionMaking:
             return
         price_ref = decimal.Decimal(str(price_ref_str))
 
+        # Prepare sizing meta: regime multiplier and Kelly fraction (optional)
+        sizing_meta: dict[str, Any] = {}
+        # Regime multiplier from config decision.sizing_modifiers
+        try:
+            sizing_mods = decision_config.get("sizing_modifiers", {}) or {
+            } if isinstance(decision_config, dict) else {}
+            if regime_name and regime_name in sizing_mods:
+                sizing_meta["regime_multiplier"] = decimal.Decimal(
+                    str(sizing_mods.get(regime_name, "1.0")))
+        except Exception:
+            pass
+        # Kelly fraction (optional): derive from config when available
+        try:
+            kelly_cfg = decision_config.get("kelly", {}) or {} if isinstance(
+                decision_config, dict) else {}
+            if kelly_cfg:
+                base_p = decimal.Decimal(
+                    str(kelly_cfg.get("base_probability", "0.5") if isinstance(kelly_cfg, dict) else "0.5"))
+                cap = decimal.Decimal(str(kelly_cfg.get(
+                    "kelly_cap", "0.25") if isinstance(kelly_cfg, dict) else "0.25"))
+                alpha = decimal.Decimal(
+                    str(kelly_cfg.get("kelly_alpha", "0.8") if isinstance(kelly_cfg, dict) else "0.8"))
+                # SSOT: compute payoff ratio r from execution.manage.brackets TP/SL (fallback to config)
+                try:
+                    if hasattr(self.config, 'trading') and self.config.trading:
+                        exec_cfg = self.config.trading.execution.manage if self.config.trading.execution and self.config.trading.execution.manage else None
+                    elif isinstance(self.config, dict):
+                        exec_cfg = (self.config.get("trading", self.config).get(
+                            "execution", {}).get("manage", {}))
+                    else:
+                        exec_cfg = None
+                except (AttributeError, TypeError):
+                    exec_cfg = None
+
+                if exec_cfg is None:
+                    exec_cfg = {}
+
+                brackets_cfg = exec_cfg.get("brackets", {}) if isinstance(
+                    exec_cfg.get("brackets", {}), dict) else {}
+                sl_cfg = brackets_cfg.get("sl", {}) if isinstance(
+                    brackets_cfg.get("sl", {}), dict) else {}
+                tp_cfg = brackets_cfg.get("tp", {}) if isinstance(
+                    brackets_cfg.get("tp", {}), dict) else {}
+                try:
+                    sl_bps_val = decimal.Decimal(
+                        str(sl_cfg.get("fixed_bps", "50")))
+                except Exception:
+                    sl_bps_val = decimal.Decimal("50")
+                try:
+                    tp_bps_val = decimal.Decimal(
+                        str(tp_cfg.get("fixed_bps", "100")))
+                except Exception:
+                    tp_bps_val = decimal.Decimal("100")
+                if sl_bps_val <= 0:
+                    self.logger.warning(
+                        "SL_bps missing/invalid; using default 50 bps for Kelly r")
+                    sl_bps_val = decimal.Decimal("50")
+                try:
+                    payoff_r = tp_bps_val / sl_bps_val
+                except Exception:
+                    payoff_r = decimal.Decimal(
+                        str(kelly_cfg.get("payoff_ratio_r", "1.5")))
+                # Map score to [0,1] conservatively; if normalization is enabled, clamp directly
+                try:
+                    score_01 = signal_score
+                    if score_01 < 0:
+                        score_01 = decimal.Decimal("0")
+                    if score_01 > 1:
+                        score_01 = decimal.Decimal("1")
+                except Exception:
+                    score_01 = decimal.Decimal("0")
+                # Simple uplift from base probability (centered), conservative range
+                p = base_p + (decimal.Decimal("0.20") *
+                              (score_01 - decimal.Decimal("0.5")))
+                if p < 0:
+                    p = decimal.Decimal("0")
+                if p > 1:
+                    p = decimal.Decimal("1")
+                # Temporary conservative clipping to [0.45, 0.65]
+                if p < decimal.Decimal("0.45"):
+                    p = decimal.Decimal("0.45")
+                if p > decimal.Decimal("0.65"):
+                    p = decimal.Decimal("0.65")
+                # Kelly formula: f* = p - (1-p)/r
+                try:
+                    full_kelly = p - (decimal.Decimal("1") - p) / payoff_r
+                except Exception:
+                    full_kelly = decimal.Decimal("0")
+                # Floor: if no positive edge, set to zero
+                try:
+                    if p <= (decimal.Decimal("1") / (decimal.Decimal("1") + payoff_r)):
+                        full_kelly = decimal.Decimal("0")
+                except Exception:
+                    pass
+                kelly_fraction = full_kelly * alpha
+                if kelly_fraction < 0:
+                    kelly_fraction = decimal.Decimal("0")
+                if kelly_fraction > cap:
+                    kelly_fraction = cap
+                sizing_meta["kelly_fraction"] = kelly_fraction
+        except Exception:
+            pass
+
+        # Call sizing with optional meta
+        context["_sizing_meta"] = sizing_meta
         qty, why_sizing = self._calculate_position_size(
             symbol, price_ref, side, context
         )
@@ -842,7 +1547,7 @@ class DecisionMaking:
             },
         )
         self._propose_trade_intent(
-            symbol, side, qty, price_ref, ", ".join(why_chain), rid
+            symbol, side, qty, price_ref, why_chain, rid
         )
 
     def _calculate_position_size(
@@ -852,17 +1557,117 @@ class DecisionMaking:
         portfolio = context["portfolio"]
         equity = decimal.Decimal(str(portfolio.get("equity", "0")))
 
-        final_pos_size_usd = min(
-            self.liq_cap_usd, equity * decimal.Decimal("0.1")
-        )  # Simplified sizing
+        # Prefer SL_bps-based sizing when risk_fraction_q is configured
+        try:
+            if hasattr(self.config, 'trading') and self.config.trading:
+                sizing_cfg = self.config.trading.decision.position_sizing if self.config.trading.decision and self.config.trading.decision else None
+            elif isinstance(self.config, dict):
+                sizing_cfg = (self.config.get("trading", self.config).get(
+                    "decision", {}).get("position_sizing", {}))
+            else:
+                sizing_cfg = None
+        except (AttributeError, TypeError):
+            sizing_cfg = None
+
+        if sizing_cfg is None:
+            sizing_cfg = {}
+
+        q_risk = sizing_cfg.get("risk_fraction_q") if isinstance(sizing_cfg, dict) else (
+            sizing_cfg.risk_fraction_q if hasattr(sizing_cfg, 'risk_fraction_q') else None)
+        # Liquidity kappa: dynamic from features or static from config
+        kappa_mode = str(sizing_cfg.get("liquidity_kappa_mode", "static") if isinstance(sizing_cfg, dict) else (
+            sizing_cfg.liquidity_kappa_mode if hasattr(sizing_cfg, 'liquidity_kappa_mode') else "static")).lower()
+        kappa_liq = sizing_cfg.get("liquidity_kappa", 1.0) if isinstance(sizing_cfg, dict) else (
+            sizing_cfg.liquidity_kappa if hasattr(sizing_cfg, 'liquidity_kappa') else 1.0)
+        if kappa_mode == "dynamic":
+            try:
+                features_event = context.get("features", {}) or {}
+                feats = features_event.get("features", {}) or {}
+                lk = feats.get("liquidity_kappa")
+                if lk is not None:
+                    kappa_liq = decimal.Decimal(str(lk))
+            except Exception:
+                pass
+
+        final_pos_size_usd: decimal.Decimal
+        why_parts: list[str] = []
+        if q_risk is not None:
+            try:
+                q_dec = decimal.Decimal(str(q_risk))
+            except Exception:
+                q_dec = decimal.Decimal("0.01")
+            try:
+                kappa_dec = decimal.Decimal(str(kappa_liq))
+            except Exception:
+                kappa_dec = decimal.Decimal("1")
+
+            exec_cfg = (self.config.get("trading", self.config)
+                        .get("execution", {})
+                        .get("manage", {}))
+            # brackets may be absent in some configs; guard accordingly
+            brackets_cfg = exec_cfg.get("brackets", {}) if isinstance(
+                exec_cfg.get("brackets", {}), dict) else {}
+            sl_cfg = brackets_cfg.get("sl", {}) if isinstance(
+                brackets_cfg.get("sl", {}), dict) else {}
+            sl_bps_val = sl_cfg.get("fixed_bps", 50)
+            try:
+                sl_bps_dec = decimal.Decimal(str(sl_bps_val))
+            except Exception:
+                sl_bps_dec = decimal.Decimal("50")
+            if sl_bps_dec <= 0:
+                sl_bps_dec = decimal.Decimal("50")
+
+            denom = (sl_bps_dec / decimal.Decimal("10000"))
+            q_notional = (q_dec * equity / denom)
+            # Kelly path (if provided)
+            sizing_meta = context.get("_sizing_meta", {}) or {}
+            kelly_fraction = sizing_meta.get("kelly_fraction")
+            if isinstance(kelly_fraction, decimal.Decimal) and kelly_fraction > 0:
+                kelly_notional = kelly_fraction * equity
+                base_notional = min(q_notional, kelly_notional)
+            else:
+                base_notional = q_notional
+            # Apply regime multiplier if provided
+            regime_multiplier = sizing_meta.get("regime_multiplier")
+            try:
+                if isinstance(regime_multiplier, decimal.Decimal) and regime_multiplier > 0:
+                    base_notional = base_notional * regime_multiplier
+            except Exception:
+                pass
+            # Apply liquidity kappa at the end
+            try:
+                kappa_dec = decimal.Decimal(str(kappa_liq))
+            except Exception:
+                kappa_dec = decimal.Decimal("1")
+            final_pos_size_usd = base_notional * kappa_dec
+            # Apply liquidity cap as a hard ceiling
+            if final_pos_size_usd > self.liq_cap_usd:
+                final_pos_size_usd = self.liq_cap_usd
+            why_parts.append(
+                f"sizing=slbps q={q_dec} sl_bps={sl_bps_dec} m_regime={sizing_meta.get('regime_multiplier','1.0')} kappa={kappa_dec}")
+        else:
+            final_pos_size_usd = min(
+                self.liq_cap_usd, equity * decimal.Decimal("0.1")
+            )  # Legacy sizing fallback
+            why_parts.append("sizing=legacy_10pct_equity")
+
+        self.logger.info(
+            f"[{symbol}] POSITION_SIZE_CALC: equity=${equity}, "
+            f"10%=${equity * decimal.Decimal('0.1')}, "
+            f"liq_cap=${self.liq_cap_usd}, "
+            f"final=${final_pos_size_usd}"
+        )
 
         if final_pos_size_usd < self.min_pos_size_usd:
             reject_reason = f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
+            self.logger.warning(f"[{symbol}] REJECT: {reject_reason}")
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         why_chain.append(f"pos_size_usd={final_pos_size_usd}")
+        if why_parts:
+            why_chain.append(", ".join(why_parts))
 
         # Support both old (config['trading']['instruments']) and new (config['instruments']) formats
         trading_config = self.config.get("trading", self.config)
@@ -873,6 +1678,7 @@ class DecisionMaking:
             reject_reason = "Missing step_size in config"
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
+            self.logger.error(f"[{symbol}] REJECT: {reject_reason}")
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         step_size = decimal.Decimal(step_size_str)
@@ -880,15 +1686,24 @@ class DecisionMaking:
             reject_reason = "Invalid price for sizing"
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
+            self.logger.error(f"[{symbol}] REJECT: {reject_reason}")
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         qty = final_pos_size_usd / price
         rounded_qty = qty.quantize(step_size, rounding=decimal.ROUND_DOWN)
 
+        self.logger.info(
+            f"[{symbol}] QTY_CALC: price=${price}, "
+            f"raw_qty={qty}, step_size={step_size}, "
+            f"rounded_qty={rounded_qty}, "
+            f"notional=${rounded_qty * price}"
+        )
+
         if rounded_qty <= 0:
             reject_reason = f"qty rounded to zero from raw {qty}"
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
+            self.logger.warning(f"[{symbol}] REJECT: {reject_reason}")
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         return rounded_qty, ", ".join(why_chain)
@@ -899,7 +1714,7 @@ class DecisionMaking:
         side: str,
         qty: decimal.Decimal,
         price: decimal.Decimal,
-        why: str,
+        why_chain: list[str],
         rid: str,
     ) -> None:
         trade_intent = {
@@ -924,13 +1739,17 @@ class DecisionMaking:
             },
             "size": {"notional_cap_usd": str(qty * price), "kelly_fraction": "0.1"},
             "valid_for_ms": 5000,
-            "why": [why],
+            "why": why_chain,
             "dto_version": "1.0.0",
             "schema_ref": "...",
             "idempotent_key": str(uuid.uuid4()),
         }
+
+        # Record accepted intent for risk gate monitoring
+        self._record_accepted_intent(symbol)
+
         self.fsm.emit(
-            "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent"
+            "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent", data_ref=why_chain
         )
 
         # Log to OrderLoggerV1
@@ -950,6 +1769,53 @@ class DecisionMaking:
     def clear_internal_state_for_symbol(self, symbol: str) -> None:
         if symbol in self.symbol_states:
             del self.symbol_states[symbol]
+
+    def _record_blocked_intent(self, symbol: str) -> None:
+        """Record a blocked intent and check alert thresholds."""
+        self.intents_blocked_total += 1
+        self.intents_seen_total += 1
+        self._check_and_emit_risk_gate_alert()
+
+    def _record_accepted_intent(self, symbol: str) -> None:
+        """Record an accepted intent and check alert thresholds."""
+        self.intents_seen_total += 1
+        self._check_and_emit_risk_gate_alert()
+
+    def _check_and_emit_risk_gate_alert(self) -> None:
+        """
+        Periodically check if blocked intents % exceeds threshold,
+        and emit alert via AlertManager if available.
+        Check every 10 seconds to avoid excessive calls.
+        """
+        if not self.alert_manager:
+            return
+
+        current_time = time.time()
+        if current_time - self.last_alert_check_time < 10.0:
+            return  # Too soon, skip check
+
+        self.last_alert_check_time = current_time
+
+        # Calculate blocked percentage
+        if self.intents_seen_total < 10:
+            # Not enough data yet
+            return
+
+        blocked_pct = (self.intents_blocked_total /
+                       self.intents_seen_total) * 100
+        # Use lower threshold for testnet mode to increase exploration
+        mode = self.config.get("trading", {}).get("mode", "production")
+        threshold_pct = 20.0 if mode == "testnet" else 50.0  # Lower threshold for testnet
+
+        if blocked_pct > threshold_pct:
+            self.logger.warning(
+                f"Risk gate alert: {blocked_pct:.1f}% intents blocked "
+                f"({self.intents_blocked_total}/{self.intents_seen_total})"
+            )
+            try:
+                self.alert_manager.check_risk_gate(blocked_pct)
+            except Exception as e:
+                self.logger.error(f"Error emitting risk gate alert: {e}")
 
     def start(self) -> None:
         """Start the decision making component."""

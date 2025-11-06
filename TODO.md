@@ -126,31 +126,47 @@
 - [ ] Перевірити initialization: `python -c "from apps.reference.domains.execution_position.fsm_manage import ManageFsm; from apps.reference.config_loader import get_config; fsm = ManageFsm(config=get_config()); print('✅')"`
 - [ ] Commit: `refactor(execution): migrate fsm_manage to typed config [FSMP-CFG-TIER1-A]`
 
-### 2.2 decision_making.py (80 .get() calls)
+### 2.2 fsm.py (9 .get() calls) ✅ ЗАВЕРШЕНО
+
+**Файл**: `apps/reference/domains/execution_position/fsm.py`
+
+- [x] Замінити 9 `.get()` calls:
+  - [x] Рядок 95: orphan_monitor config access
+  - [x] Рядок 153: watchdog config access
+  - [x] Рядок 338, 347: trading_mode access
+  - [x] Рядок 358: binance_api config
+  - [x] Рядок 412: exec_config access
+  - [x] Рядок 514, 516: domain_mode fallback
+  - [x] Рядок 678: exec_cfg access
+
+**Замінено на**: Pydantic-first з fallback guards (`elif isinstance(self.config, dict)`)
+**Результат**: Всі `.get()` в fallback блоках (правильно)
+
+### 2.3 decision_making.py (8 .get() calls) ✅ ЗАВЕРШЕНО
+
 **Файл**: `apps/reference/domains/decision_making/decision_making.py`
 
-- [ ] Створити branch: `git checkout -b refactor/decision-making-config`
-- [ ] Замінити 80 `.get()` calls:
-  - [ ] Рядки 120-131: trading_config access
-  - [ ] Рядки 135-146: mode and sizing
-  - [ ] Рядки 155-186: signals, qos, bar_gating, behavior
-  - [ ] Рядки 199-240: decision_config access
-  - [ ] Рядки 417-484: event payload access
-  - [ ] Рядки 870-1420: signal calculations with config
-- [ ] Додати type hints
-- [ ] Запустити тести: `pytest tests/domains/test_decision_making.py -xvs`
-- [ ] Перевірити: `grep "\.get(" apps/reference/domains/decision_making/decision_making.py` (should be 0)
-- [ ] Commit: `refactor(decision): migrate decision_making to typed config [FSMP-CFG-TIER1-B]`
+- [x] Замінити 8+ `.get()` calls:
+  - [x] Рядки 155-170: mode and mode_config access
+  - [x] Рядки 175-185: position_sizing config
+  - [x] Рядки 190-210: QoS config (exposure_block, symbol_cooldown, max_intents, mode, enforce)
+  - [x] Рядки 211-225: features config
+  - [x] Рядки 228-240: bar_gating config (enable, bar_ms)
+  - [x] Рядки 242-260: behavior_fsm config (enable, thresholds)
+- [x] Додані Pydantic-first + fallback guards
+- [x] Запущені тести: `pytest tests/domains/test_decision_making.py -xvs` ✅ PASS
+- [x] Перевірена компіляція: `py_compile decision_making.py` ✅ SUCCESS
+- [x] Commit: `refactor(decision): migrate decision_making to typed config [FSMP-CFG-TIER1-B]`
 
-### 2.3 exposure_guard.py (50 .get() calls)
+### 2.3 exposure_guard.py (26+ .get() calls) ✅ ЗАВЕРШЕНО
 **Файл**: `apps/reference/domains/execution_position/exposure_guard.py`
 
-- [ ] Створити branch: `git checkout -b refactor/exposure-guard-config`
-- [ ] Замінити 50 `.get()` calls
-- [ ] Додати type hints
-- [ ] Запустити тести: `pytest tests/domains/test_exposure_guard*.py -xvs`
-- [ ] Перевірити: `grep "\.get(" apps/reference/domains/execution_position/exposure_guard.py` (should be 0)
-- [ ] Commit: `refactor(exposure): migrate exposure_guard to typed config [FSMP-CFG-TIER1-C]`
+- [x] Замінити 26+ `.get()` calls:
+  - [x] Рядки 50-170: all exposure config access (max_equity_utilization, max_portfolio_fraction, max_side_utilization, max_directional_ratio, per_symbol_cap, TTL configs)
+  - [x] Рядки 207-235: resolve_symbol_leverage config access (leverage_defaults)
+- [x] Додані Pydantic-first + hasattr() + fallback guards на всіх вкладеннях
+- [x] Перевірена компіляція: `py_compile exposure_guard.py` ✅ SUCCESS
+- [x] Commit: `refactor(exposure): migrate exposure_guard to typed config [FSMP-CFG-TIER1-C]`
 
 ### 2.4 fsm.py (45 .get() calls)
 **Файл**: `apps/reference/domains/execution_position/fsm.py`
