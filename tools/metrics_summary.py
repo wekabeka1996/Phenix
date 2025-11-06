@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-import os, re, json, sys, time
+import os
+import re
+import json
+import sys
+import time
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 import yaml
@@ -10,16 +14,48 @@ from datetime import datetime, timedelta
 
 def _get_cfg():
     # читання з YAML конфігу або env з дефолтами
-    config_path = os.environ.get("OPS_CONFIG_PATH", "configs/master_config_v1.yaml")
+    config_path = os.environ.get(
+        "OPS_CONFIG_PATH", "configs/master_config_v1.yaml")
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        ops_config = config.get("ops", {})
-        url = ops_config.get("metrics_url", "http://127.0.0.1:8000/metrics")
-        out_dir = ops_config.get("reports_dir", "reports")
+        
+        # Pydantic-first, fallback to dict
+        try:
+            if hasattr(config, 'ops'):
+                ops_config = config.ops
+            elif isinstance(config, dict):
+                ops_config = config.get("ops", {})
+            else:
+                ops_config = {}
+        except (AttributeError, TypeError):
+            ops_config = {}
+        
+        # Get metrics_url
+        try:
+            if hasattr(ops_config, 'metrics_url'):
+                url = ops_config.metrics_url
+            elif isinstance(ops_config, dict):
+                url = ops_config.get("metrics_url", "http://127.0.0.1:8000/metrics")
+            else:
+                url = "http://127.0.0.1:8000/metrics"
+        except (AttributeError, TypeError):
+            url = "http://127.0.0.1:8000/metrics"
+        
+        # Get reports_dir
+        try:
+            if hasattr(ops_config, 'reports_dir'):
+                out_dir = ops_config.reports_dir
+            elif isinstance(ops_config, dict):
+                out_dir = ops_config.get("reports_dir", "reports")
+            else:
+                out_dir = "reports"
+        except (AttributeError, TypeError):
+            out_dir = "reports"
     except (FileNotFoundError, yaml.YAMLError):
         # fallback до env
-        url = os.environ.get("OPS_METRICS_URL", "http://127.0.0.1:8000/metrics")
+        url = os.environ.get(
+            "OPS_METRICS_URL", "http://127.0.0.1:8000/metrics")
         out_dir = os.environ.get("OPS_REPORTS_DIR", "reports")
     return url, out_dir
 
@@ -84,22 +120,23 @@ def main():
     retry_count = _mget(txt, "retry_count")
     qos_cooldown_hits = _mget(txt, "qos_cooldown_hits")
     # Calculate derived metrics
-    open_success_rate = open_success_total / cmd_open_total if cmd_open_total > 0 else 0.0
-    mean_time_to_open_ms = time_to_open_ms_sum / time_to_open_count if time_to_open_count > 0 else 0.0
+    open_success_rate = open_success_total / \
+        cmd_open_total if cmd_open_total > 0 else 0.0
+    mean_time_to_open_ms = time_to_open_ms_sum / \
+        time_to_open_count if time_to_open_count > 0 else 0.0
 
     # Mock breakdown_by_symbol - in real implementation, collect from metrics with labels
-    breakdown_by_symbol = {
-        "BTCUSDT": {
+    # Get symbols from config - centralized configuration
+    from apps.reference.config_symbols import get_trading_symbols
+    symbols = get_trading_symbols()
+
+    breakdown_by_symbol = {}
+    for symbol in symbols:
+        breakdown_by_symbol[symbol] = {
             "open_success_rate": 0.95,
             "cmd_open_count": 80,
             "dec_open_count": 76
-        },
-        "ETHUSDT": {
-            "open_success_rate": 0.94,
-            "cmd_open_count": 80,
-            "dec_open_count": 75
         }
-    }
 
     summary = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -155,6 +192,19 @@ class MetricsSummary:
         Collect metrics from various sources.
         In real implementation, query Prometheus or parse logs/WAL.
         """
+        # Get symbols from config - centralized configuration
+        from apps.reference.config_symbols import get_trading_symbols
+        symbols = get_trading_symbols()
+
+        # Build breakdown_by_symbol dynamically
+        breakdown_by_symbol = {}
+        for symbol in symbols:
+            breakdown_by_symbol[symbol] = {
+                "open_success_rate": 0.95,
+                "cmd_open_count": 80,
+                "dec_open_count": 76
+            }
+
         # Mock data - replace with actual collection logic
         return {
             "open_success_total": 150,
@@ -165,18 +215,7 @@ class MetricsSummary:
             "block_rate": 0.0125,  # 1.25%
             "retry_count": 5,
             "qos_cooldown_hits": 2,
-            "breakdown_by_symbol": {
-                "BTCUSDT": {
-                    "open_success_rate": 0.95,
-                    "cmd_open_count": 80,
-                    "dec_open_count": 76
-                },
-                "ETHUSDT": {
-                    "open_success_rate": 0.94,
-                    "cmd_open_count": 80,
-                    "dec_open_count": 75
-                }
-            }
+            "breakdown_by_symbol": breakdown_by_symbol
         }
 
     def calculate_derived_metrics(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
