@@ -646,6 +646,8 @@ class PositionTracking:
 
         if positions:
             # Use positionRisk data if available
+            self.logger.info(
+                f"💚 _calc_margin_used_usd() USING API: {len(positions)} positions from /fapi/v2/positionRisk")
             for p in positions:
                 # Extract notional: try positionRisk fields first, fallback to calculation
                 notional = _d(p.get("notional") or (
@@ -667,6 +669,10 @@ class PositionTracking:
                 )
         else:
             # Fallback to internal position data with leverage from config
+            self.logger.warning(
+                f"🔴 _calc_margin_used_usd() FALLBACK MODE: API returned empty, using {len(self._positions)} internal positions from self._positions")
+            self.logger.warning(
+                f"   Internal positions: {list(self._positions.keys())}")
             try:
                 if hasattr(self.config, 'trading') and self.config.trading:
                     leverage_config = (
@@ -728,6 +734,8 @@ class PositionTracking:
                     )
 
         # Round to 2 decimal places for consistency
+        self.logger.info(
+            f"📊 _calc_margin_used_usd() TOTAL: {total_margin.quantize(decimal.Decimal('0.01'))} USD (API={len(positions) if positions else 'FALLBACK'})")
         return total_margin.quantize(decimal.Decimal("0.01"))
 
     def _calculate_margin_by_side(self, positions: list[dict]) -> dict:

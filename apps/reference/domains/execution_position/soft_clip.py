@@ -10,6 +10,19 @@ import logging
 
 
 @dataclass
+class RegimeAdaptationConfig:
+    """PHASE 3: Regime adaptation configuration for directional ratio."""
+    trend_up_delta: Optional[Decimal] = Decimal("0.30")
+    trend_down_delta: Optional[Decimal] = Decimal("0.30")
+    flat_delta: Optional[Decimal] = Decimal("-0.30")
+    bounds: Optional[List] = None  # [min_ratio, max_ratio]
+
+    def __post_init__(self):
+        if self.bounds is None:
+            self.bounds = [Decimal("2.0"), Decimal("4.0")]
+
+
+@dataclass
 class SoftLimitConfig:
     """Soft-limit clipping configuration."""
     mode: str = "clip"  # "clip" or "reject"
@@ -17,6 +30,7 @@ class SoftLimitConfig:
     directional_ratio_max: Decimal = Decimal("3.0")
     side_exposure_usdt: Decimal = Decimal("600")
     margin_exposure_usdt: Decimal = Decimal("1100")
+    regime_adaptation: Optional[RegimeAdaptationConfig] = None
 
 
 @dataclass
@@ -48,7 +62,9 @@ class SoftClipEngine:
         short_margin: Decimal,
         total_margin_exposure: Decimal,
         symbol_leverage: Decimal,
-        margin_limit: Decimal,
+        margin_limit: Optional[Decimal] = None,
+        side_limit: Optional[Decimal] = None,
+        directional_ratio_max: Optional[Decimal] = None,
     ) -> ClipResult:
         """
         Calculate clipped order size.
@@ -62,11 +78,18 @@ class SoftClipEngine:
             short_margin: Current short margin
             total_margin_exposure: Current total margin
             symbol_leverage: Symbol leverage
-            margin_limit: Margin limit (max exposure)
+            margin_limit: Margin limit (max exposure) - defaults to config
+            side_limit: Per-side limit - defaults to config
+            directional_ratio_max: Max directional ratio - defaults to config
 
         Returns:
             ClipResult with allowed=True/False, clipped_notional, clip_reasons
         """
+        # PHASE 3: Use passed params or fall back to config (for regime adaptation)
+        margin_limit = margin_limit or self.config.margin_exposure_usdt
+        side_limit = side_limit or self.config.side_exposure_usdt
+        directional_ratio_max = directional_ratio_max or self.config.directional_ratio_max
+
         clip_reasons: List[str] = []
         deltas: List[Decimal] = [notional_usd]
 
@@ -82,7 +105,6 @@ class SoftClipEngine:
             clip_reasons.append("MARGIN_LIMIT_REACHED")
 
         # ΔV_side: per-side exposure limit
-        side_limit = self.config.side_exposure_usdt
         current_side_margin = long_margin if order_side == "BUY" else short_margin
         if current_side_margin < side_limit:
             allowed_extra_side = side_limit - current_side_margin
@@ -105,7 +127,7 @@ class SoftClipEngine:
         min_margin = min(new_long_margin, new_short_margin)
         if min_margin > Decimal("0"):
             ratio = max(new_long_margin, new_short_margin) / min_margin
-            if ratio <= self.config.directional_ratio_max:
+            if ratio <= directional_ratio_max:
                 delta_dir_notional = notional_usd
                 clip_reasons.append("DIRECTIONAL_OK")
             else:

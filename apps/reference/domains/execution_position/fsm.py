@@ -227,6 +227,34 @@ class ExecPosFSM:
 
         ack_ttl_ms: int = int(get_watchdog_setting("ack_ttl_ms", 8000))
         fill_ttl_ms: int = int(get_watchdog_setting("fill_ttl_ms", 30000))
+
+        # Optional override from trading.orders.default_ttl_seconds (Balanced profile)
+        try:
+            orders_cfg = None
+            if hasattr(self.config, 'trading') and self.config.trading:
+                tr = self.config.trading if isinstance(
+                    self.config.trading, dict) else self.config.trading
+                orders_cfg = tr.get("orders") if isinstance(
+                    tr, dict) else getattr(tr, "orders", None)
+            elif isinstance(self.config, dict):
+                orders_cfg = self.config.get("orders") or self.config.get(
+                    "trading", {}).get("orders")
+
+            if orders_cfg:
+                default_ttl_seconds = None
+                if isinstance(orders_cfg, dict):
+                    default_ttl_seconds = orders_cfg.get("default_ttl_seconds")
+                else:
+                    default_ttl_seconds = getattr(
+                        orders_cfg, "default_ttl_seconds", None)
+
+                if default_ttl_seconds is not None:
+                    ttl_ms = int(default_ttl_seconds) * 1000
+                    fill_ttl_ms = ttl_ms
+                    LOG.info(
+                        f"ExecPosFSM: applying default_ttl_seconds override -> fill_ttl_ms={fill_ttl_ms}")
+        except Exception as e:
+            LOG.warning(f"ExecPosFSM: failed to read default_ttl_seconds: {e}")
         self.watchdog: OrderTimeoutWatchdog = OrderTimeoutWatchdog(
             ack_ttl_ms=ack_ttl_ms,
             fill_ttl_ms=fill_ttl_ms,
@@ -1629,6 +1657,9 @@ class ExecPosFSM:
             return
 
         try:
+            # 🧹 STARTUP: Clear stale pending_exposure from previous run
+            self.exposure_guard.cleanup_all_pending()
+
             LOG.info("🔄 Starting synchronization with Binance...")
 
             # 1. Get all open orders from Binance
@@ -1643,6 +1674,22 @@ class ExecPosFSM:
                     o.__dict__ if not isinstance(o, dict) else o)
                 for o in all_open_orders
             ]
+
+            # 🔍 Diagnostic: Log TP/SL and bracket orders separately
+            tp_sl_orders = [o for o in orders_list if o.get(
+                "type") in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]]
+            entry_orders = [o for o in orders_list if o.get("type") in [
+                "MARKET", "LIMIT"]]
+            if tp_sl_orders:
+                LOG.warning(
+                    f"⚠️  ORPHANED_TP_SL_CHECK: {len(tp_sl_orders)} TP/SL orders still open:")
+                for o in tp_sl_orders:
+                    LOG.warning(f"   📌 {o.get('symbol')} {o.get('clientOrderId')}: "
+                                f"{o.get('type')} @{o.get('stopPrice')} "
+                                f"(status={o.get('status')}, closePosition={o.get('closePosition')})")
+            if entry_orders:
+                LOG.info(f"📍 {len(entry_orders)} entry orders (MARKET/LIMIT)")
+
             for order in orders_list:
                 symbol = order.get("symbol")
                 if symbol not in orders_by_symbol:

@@ -15,6 +15,8 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.domains.execution_position.soft_clip import SoftClipEngine as SoftClipEngineImpl
+from apps.reference.domains.execution_position.metrics_aggregator import metrics_logger
 
 
 @dataclass
@@ -35,7 +37,7 @@ class ClipResult:
     clipped_notional: Optional[Decimal] = None
     original_notional: Optional[Decimal] = None
     clip_reasons: List[str] = None
-    
+
     def __post_init__(self):
         if self.clip_reasons is None:
             self.clip_reasons = []
@@ -227,6 +229,9 @@ class ExposureGuard:
 
         # PHASE 2: Soft-limit configuration (read from trading.risk.soft_limits)
         self.soft_limit_config = self._load_soft_limit_config()
+        self.soft_clip_engine = SoftClipEngineImpl(
+            self.soft_limit_config, logger=self.logger
+        )
 
         # State
         self.state = ExposureState(
@@ -234,6 +239,11 @@ class ExposureGuard:
             reservations_ts={},
             pending_exposure={},
             postfill_reservations={},
+        )
+
+        # 🧹 STARTUP: Log initial state (for debugging)
+        self.logger.info(
+            f"🆕 ExposureGuard initialized: pending_exposure=empty, postfill=empty"
         )
 
         # Metrics
@@ -411,6 +421,36 @@ class ExposureGuard:
         """
         now_ms = int(time.time() * 1000)
 
+        # 🧹 CLEANUP: Remove expired postfill_reservations
+        now_ts = time.time()
+        expired_keys = [
+            key for key, item in self.state.postfill_reservations.items()
+            if now_ts >= item.get("exp_ts", now_ts)
+        ]
+        if expired_keys:
+            self.logger.warning(
+                f"🧹 CLEANUP_POSTFILL: Removing {len(expired_keys)} expired reservations: {expired_keys}"
+            )
+            for key in expired_keys:
+                del self.state.postfill_reservations[key]
+
+        # 🧹 CLEANUP: Remove stale pending_exposure orders (>5s without fill/cancel)
+        # Most orders execute/cancel within 1-2s; 5s is generous timeout
+        pending_timeout_sec = 5
+        stale_pending = []
+        for key, item in self.state.pending_exposure.items():
+            age_sec = now_ts - item.get("ts", now_ts)
+            if age_sec > pending_timeout_sec:
+                stale_pending.append((key, age_sec))
+
+        if stale_pending:
+            self.logger.error(
+                f"🧹 CLEANUP_PENDING: Removing {len(stale_pending)} stale orders (>5s): "
+                f"{[(k, f'{a:.1f}s') for k, a in stale_pending]}"
+            )
+            for key, _ in stale_pending:
+                del self.state.pending_exposure[key]
+
         # DEBUG: Log portfolio state keys and values
         portfolio_keys = list(portfolio_state.keys())
         equity_raw = portfolio_state.get("equity_free_usdt", "MISSING")
@@ -539,6 +579,42 @@ class ExposureGuard:
         total_margin_exposure = open_positions_margin_usd + \
             current_pending_margin + current_postfill_margin
 
+        # 🔍 DIAGNOSTIC: Show pending/postfill breakdown
+        self.logger.info(
+            f"💧 MARGIN_BREAKDOWN for {symbol}: "
+            f"open_positions={open_positions_margin_usd:.2f} + "
+            f"pending={current_pending_margin:.2f} + "
+            f"postfill={current_postfill_margin:.2f} = "
+            f"total={total_margin_exposure:.2f}, "
+            f"new_reserve={reserve_margin:.2f}"
+        )
+
+        # 🔍 DIAGNOSTIC: Show pending_exposure details
+        if self.state.pending_exposure:
+            self.logger.warning(
+                f"⚠️ PENDING_EXPOSURE ({len(self.state.pending_exposure)} items):"
+            )
+            for key, item in self.state.pending_exposure.items():
+                self.logger.warning(
+                    f"   {key}: margin={item.get('margin', 0):.2f}, "
+                    f"side={item.get('side', '?')}, ts={item.get('ts', 0)}"
+                )
+
+        # 🔍 DIAGNOSTIC: Show postfill_reservations details
+        if self.state.postfill_reservations:
+            self.logger.warning(
+                f"⚠️ POSTFILL_RESERVATIONS ({len(self.state.postfill_reservations)} items):"
+            )
+            now = time.time()
+            for key, item in self.state.postfill_reservations.items():
+                exp_ts = item.get("exp_ts", 0)
+                age_sec = now - exp_ts
+                self.logger.warning(
+                    f"   {key}: margin={item.get('margin', 0):.2f}, "
+                    f"side={item.get('side', '?')}, "
+                    f"exp_in={age_sec:.1f}s"
+                )
+
         # Calculate margin limit
         margin_limit = equity_free_usdt * self.max_equity_utilization_pct
         new_total_margin_exposure = total_margin_exposure + reserve_margin
@@ -618,7 +694,7 @@ class ExposureGuard:
             f"why=margin_check"
         )
 
-        # EXP-DIRECTION: Check 1 - Total margin cap
+        # EXP-DIRECTION: Check 1 - Total margin cap (PHASE 3: with soft-clip)
         if new_total_margin_exposure > margin_limit:
             allowed_extra = margin_limit - total_margin_exposure
 
@@ -635,10 +711,67 @@ class ExposureGuard:
                     "shrink_notional": shrink_notional
                 }
             else:
+                # PHASE 3: Try soft-clip before rejecting
+                if self.soft_limit_config.mode == "clip":
+                    clip_result = self.soft_clip_engine.calculate_clipped_size(
+                        notional_usd=notional_usd,
+                        symbol=symbol,
+                        order_side=order_side,
+                        long_margin=new_long_margin,
+                        short_margin=new_short_margin,
+                        total_margin_exposure=total_margin_exposure,
+                        symbol_leverage=symbol_leverage,
+                        margin_limit=margin_limit,
+                    )
+                    if clip_result.allowed:
+                        self.logger.info(
+                            f"CLIPPED_MARGIN: {symbol} {order_side} "
+                            f"{notional_usd:.2f} → {clip_result.clipped_notional:.2f} "
+                            f"reasons={clip_result.clip_reasons}"
+                        )
+                        # Phase 5: Metrics aggregation
+                        metrics_logger.log_clip_event(
+                            symbol=symbol,
+                            original_notional=notional_usd,
+                            clipped_notional=clip_result.clipped_notional,
+                            clip_reason=clip_result.clip_reasons[0] if clip_result.clip_reasons else "unknown",
+                            rid=f"clip_margin_{symbol}_{now_ms}",
+                        )
+                        self.metrics["clip_total"] = self.metrics.get(
+                            "clip_total", 0) + 1
+                        self.metrics["clip_notional_total"] = self.metrics.get(
+                            "clip_notional_total", Decimal("0")) + (notional_usd - clip_result.clipped_notional)
+                        order_logger.write({
+                            "rid": f"clip_margin_{symbol}_{now_ms}",
+                            "event_type": "ORDER_CLIPPED",
+                            "symbol": symbol,
+                            "side": order_side,
+                            "original_notional": float(notional_usd),
+                            "clipped_notional": float(clip_result.clipped_notional),
+                            "reason": "MARGIN_LIMIT",
+                            "clip_reasons": clip_result.clip_reasons,
+                        })
+                        return {
+                            "allowed": True,
+                            "reason": "CLIPPED_MARGIN",
+                            "shrink_notional": clip_result.clipped_notional,
+                        }
+
                 reason = "EXPOSURE_LIMIT_EXCEEDED"
                 self.logger.warning(
                     f"EXPOSURE_REJECT: {reason} - would exceed {margin_limit:.2f} USD margin limit"
                 )
+                # Metrics: rejection event (NRR-011)
+                try:
+                    metrics_logger.log_reject_event(
+                        symbol=symbol,
+                        reason="NRR-011",
+                        notional=notional_usd,
+                        side=order_side,
+                        rid=f"exposure_check_{symbol}_{now_ms}",
+                    )
+                except Exception:
+                    pass
                 order_logger.write({
                     "rid": f"exposure_check_{symbol}_{now_ms}",
                     "event_type": "ORDER_REJECTED",
@@ -658,7 +791,7 @@ class ExposureGuard:
                 })
                 return {"allowed": False, "reason": reason}
 
-        # EXP-DIRECTION: Check 2 - Per-side cap
+        # EXP-DIRECTION: Check 2 - Per-side cap (PHASE 3: with soft-clip)
         side_limit = equity_free_usdt * (
             self.max_long_utilization_pct if order_side == "BUY"
             else self.max_short_utilization_pct
@@ -682,10 +815,59 @@ class ExposureGuard:
                     "shrink_notional": shrink_notional
                 }
             else:
+                # PHASE 3: Try soft-clip before rejecting
+                if self.soft_limit_config.mode == "clip":
+                    clip_result = self.soft_clip_engine.calculate_clipped_size(
+                        notional_usd=notional_usd,
+                        symbol=symbol,
+                        order_side=order_side,
+                        long_margin=new_long_margin,
+                        short_margin=new_short_margin,
+                        total_margin_exposure=total_margin_exposure,
+                        symbol_leverage=symbol_leverage,
+                        side_limit=side_limit,
+                    )
+                    if clip_result.allowed:
+                        self.logger.info(
+                            f"CLIPPED_SIDE: {symbol} {order_side} "
+                            f"{notional_usd:.2f} → {clip_result.clipped_notional:.2f} "
+                            f"reasons={clip_result.clip_reasons}"
+                        )
+                        self.metrics["clip_total"] = self.metrics.get(
+                            "clip_total", 0) + 1
+                        self.metrics["clip_notional_total"] = self.metrics.get(
+                            "clip_notional_total", Decimal("0")) + (notional_usd - clip_result.clipped_notional)
+                        order_logger.write({
+                            "rid": f"clip_side_{symbol}_{now_ms}",
+                            "event_type": "ORDER_CLIPPED",
+                            "symbol": symbol,
+                            "side": order_side,
+                            "original_notional": float(notional_usd),
+                            "clipped_notional": float(clip_result.clipped_notional),
+                            "reason": "SIDE_LIMIT",
+                            "clip_reasons": clip_result.clip_reasons,
+                        })
+                        return {
+                            "allowed": True,
+                            "reason": "CLIPPED_SIDE",
+                            "shrink_notional": clip_result.clipped_notional,
+                        }
+
                 reason = "SIDE_EXPOSURE_EXCEEDED"
                 self.logger.warning(
                     f"EXPOSURE_REJECT: {reason} - {order_side} would exceed {side_limit:.2f} USD limit"
                 )
+                # Metrics: rejection event (NRR-012)
+                try:
+                    metrics_logger.log_reject_event(
+                        symbol=symbol,
+                        reason="NRR-012",
+                        notional=notional_usd,
+                        side=order_side,
+                        rid=f"exposure_check_{symbol}_{now_ms}",
+                    )
+                except Exception:
+                    pass
                 order_logger.write({
                     "rid": f"exposure_check_{symbol}_{now_ms}",
                     "event_type": "ORDER_REJECTED",
@@ -702,12 +884,61 @@ class ExposureGuard:
                 })
                 return {"allowed": False, "reason": reason}
 
-        # EXP-DIRECTION: Check 3 - Directional ratio cap
+        # EXP-DIRECTION: Check 3 - Directional ratio cap (PHASE 3: with soft-clip)
         if directional_ratio > self.max_directional_ratio and min(new_long_margin, new_short_margin) > 0:
+            # PHASE 3: Try soft-clip before rejecting
+            if self.soft_limit_config.mode == "clip":
+                clip_result = self.soft_clip_engine.calculate_clipped_size(
+                    notional_usd=notional_usd,
+                    symbol=symbol,
+                    order_side=order_side,
+                    long_margin=new_long_margin,
+                    short_margin=new_short_margin,
+                    total_margin_exposure=total_margin_exposure,
+                    symbol_leverage=symbol_leverage,
+                    directional_ratio_max=self.max_directional_ratio,
+                )
+                if clip_result.allowed:
+                    self.logger.info(
+                        f"CLIPPED_DIRECTIONAL: {symbol} {order_side} "
+                        f"{notional_usd:.2f} → {clip_result.clipped_notional:.2f} "
+                        f"reasons={clip_result.clip_reasons}"
+                    )
+                    self.metrics["clip_total"] = self.metrics.get(
+                        "clip_total", 0) + 1
+                    self.metrics["clip_notional_total"] = self.metrics.get(
+                        "clip_notional_total", Decimal("0")) + (notional_usd - clip_result.clipped_notional)
+                    order_logger.write({
+                        "rid": f"clip_directional_{symbol}_{now_ms}",
+                        "event_type": "ORDER_CLIPPED",
+                        "symbol": symbol,
+                        "side": order_side,
+                        "original_notional": float(notional_usd),
+                        "clipped_notional": float(clip_result.clipped_notional),
+                        "reason": "DIRECTIONAL_RATIO",
+                        "clip_reasons": clip_result.clip_reasons,
+                    })
+                    return {
+                        "allowed": True,
+                        "reason": "CLIPPED_DIRECTIONAL",
+                        "shrink_notional": clip_result.clipped_notional,
+                    }
+
             reason = "DIRECTIONAL_RATIO_EXCEEDED"
             self.logger.warning(
                 f"EXPOSURE_REJECT: {reason} - ratio {directional_ratio:.2f} > {self.max_directional_ratio}"
             )
+            # Metrics: rejection event (NRR-013)
+            try:
+                metrics_logger.log_reject_event(
+                    symbol=symbol,
+                    reason="NRR-013",
+                    notional=notional_usd,
+                    side=order_side,
+                    rid=f"exposure_check_{symbol}_{now_ms}",
+                )
+            except Exception:
+                pass
             order_logger.write({
                 "rid": f"exposure_check_{symbol}_{now_ms}",
                 "event_type": "ORDER_REJECTED",
@@ -801,6 +1032,30 @@ class ExposureGuard:
             self.state.pending_exposure.pop(key, None)
             self.logger.debug(
                 f"EXPOSURE_RELEASE: key={key}, usd={released_usd}")
+
+    def cleanup_all_pending(self) -> None:
+        """
+        🧹 EMERGENCY CLEANUP: Clear ALL pending_exposure reservations.
+
+        This should be called during startup/sync to clear stale orders
+        that were not properly released (e.g., after restart).
+        """
+        if self.state.pending_exposure:
+            count = len(self.state.pending_exposure)
+            total_margin = sum(
+                item.get("margin", 0) for item in self.state.pending_exposure.values()
+            )
+            self.logger.critical(
+                f"🧹 CLEANUP_ALL_PENDING: Clearing {count} stale orders, "
+                f"total_margin={total_margin:.2f} USD"
+            )
+            self.state.pending_exposure.clear()
+            self.state.reservations.clear()
+            self.state.reservations_ts.clear()
+        else:
+            self.logger.info(
+                f"✅ CLEANUP_ALL_PENDING: No pending orders to clear"
+            )
 
     def on_fill(self, key: str, notional_usd: Decimal, symbol: str = "", side: str = "SELL") -> None:
         """
@@ -904,6 +1159,49 @@ class ExposureGuard:
             "pending_ttl_sec": self.pending_ttl_sec,
             "postfill_hold_ttl_sec": self.post_fill_hold_ttl_sec,
         }
+
+    def on_regime_changed(self, regime_type: str) -> None:
+        """
+        PHASE 3: Regime adaptation - update directional ratio based on market regime.
+
+        regime_type: "TREND_UP", "TREND_DOWN", "FLAT", "UNCERTAIN"
+        """
+        if not self.soft_limit_config:
+            return
+
+        regime_adaptation = getattr(
+            self.soft_limit_config, "regime_adaptation", None)
+        if not regime_adaptation:
+            return
+
+        base_ratio = self.soft_limit_config.directional_ratio_max
+        bounds = regime_adaptation.bounds if regime_adaptation.bounds else [
+            2.0, 4.0]
+
+        delta = Decimal("0")
+        if regime_type == "TREND_UP":
+            delta = Decimal(str(regime_adaptation.trend_up_delta)
+                            ) if regime_adaptation.trend_up_delta else Decimal("0")
+        elif regime_type == "TREND_DOWN":
+            delta = Decimal(str(regime_adaptation.trend_down_delta)
+                            ) if regime_adaptation.trend_down_delta else Decimal("0")
+        elif regime_type in ["FLAT", "UNCERTAIN"]:
+            delta = Decimal(str(regime_adaptation.flat_delta)
+                            ) if regime_adaptation.flat_delta else Decimal("0")
+
+        new_ratio = max(
+            Decimal(str(bounds[0])),
+            min(
+                Decimal(str(bounds[1])),
+                base_ratio + delta
+            )
+        )
+
+        self.max_directional_ratio = new_ratio
+        self.logger.info(
+            f"REGIME_ADAPTED: {regime_type} → directional_ratio_max={float(new_ratio):.2f} "
+            f"(base={float(base_ratio):.2f}, delta={float(delta):.2f})"
+        )
 
     def _increment_metric(self, metric_name: str, label: str) -> None:
         """Increment a labeled metric counter."""

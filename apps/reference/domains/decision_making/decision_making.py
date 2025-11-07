@@ -1513,8 +1513,15 @@ class DecisionMaking:
                 if exec_cfg is None:
                     exec_cfg = {}
 
+                # Try primary path first (trading.execution.brackets)
                 brackets_cfg = self._safe_config_get(
                     "trading", "execution", "brackets", default={}) or {}
+
+                # If empty, fallback to manage.brackets (new standard path)
+                if not brackets_cfg:
+                    brackets_cfg = self._safe_config_get(
+                        "trading", "execution", "manage", "brackets", default={}) or {}
+
                 sl_cfg = (brackets_cfg.get("sl") if isinstance(
                     brackets_cfg, dict) else None) or {}
                 tp_cfg = (brackets_cfg.get("tp") if isinstance(

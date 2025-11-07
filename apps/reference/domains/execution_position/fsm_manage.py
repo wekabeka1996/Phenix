@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Dict, Any, Optional
 
 from vfoundation.core.protocol import Message
+from apps.reference.domains.execution_position.contracts import TPSLValidationRules
 
 
 try:
@@ -227,14 +228,46 @@ class ManageFlowFSM:
             "FILL",
             "TRADE_EXECUTED",
         ):
-            self._on_fill(msg)
-            self.state = (
-                ManageState.BRACKETS_PENDING
-            )  # Place brackets after position opens
-            print(
-                f"[ManageFlowFSM] Position opened, placing brackets on {msg.verb}")
-            # Place bracket orders immediately
-            return self._place_brackets(msg)
+            # 🔍 CRITICAL FIX: Distinguish between ENTRY and EXIT fills
+            # If this is an EXIT order (TP/SL), position is CLOSING, not opening!
+            pld = msg.pld or {}
+            order_type = pld.get("order_type") or pld.get("type", "")
+            close_position = str(pld.get("closePosition", "")).lower() == "true" or \
+                str(pld.get("cp", "")).lower() == "true"
+            is_reduce_only = str(pld.get("reduceOnly", "")).lower() == "true"
+
+            # 🔍 DIAGNOSTIC: Log all FILL events in FLAT state
+            print(f"[ManageFlowFSM] 📋 FILL event in FLAT: verb={msg.verb}, "
+                  f"type={order_type}, closePos={close_position}, reduceOnly={is_reduce_only}, "
+                  f"pld_keys={list(pld.keys())}")
+
+            # EXIT orders: TAKE_PROFIT_MARKET, STOP_MARKET, or LIMIT with closePosition=true
+            is_exit_order = (order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]) or \
+                (close_position or is_reduce_only)
+
+            if is_exit_order:
+                # ⚠️ Position is CLOSING via TP/SL - do NOT create new TP/SL!
+                print(
+                    f"[ManageFlowFSM] ⚠️ EXIT fill detected ({order_type}), position closing, NOT placing brackets")
+                self.position_qty = None
+                self.position_entry_price = None
+                self.position_side = None
+                self.sl_price = None
+                self.tp_price = None
+                # Stay in FLAT, return without placing new brackets
+                return None
+            else:
+                # ENTRY fill - position is opening
+                print(
+                    f"[ManageFlowFSM] 📈 ENTRY fill - creating position from {msg.verb}")
+                self._on_fill(msg)
+                self.state = (
+                    ManageState.BRACKETS_PENDING
+                )  # Place brackets after position opens
+                print(
+                    f"[ManageFlowFSM] Position opened, placing brackets on {msg.verb}")
+                # Place bracket orders immediately
+                return self._place_brackets(msg)
 
         # Handle bracket order confirmations
         if self.state == ManageState.BRACKETS_PENDING and msg.verb == "ORDER_UPDATED":
@@ -292,11 +325,87 @@ class ManageFlowFSM:
             self.sl_price = sl_price
             self.tp_price = tp_price
 
+            # === VALIDATION PHASE: Check SL/TP prices before submission ===
+            # Get current mark price (use entry price as proxy if not available)
+            current_mark = self.position_entry_price
+            if current_mark is None:
+                self.state = ManageState.TRACKING
+                return None
+
+            # Validate SL price
+            is_sl_valid, sl_reason = TPSLValidationRules.validate_stop_price_for_side(
+                position_side=self.position_side or "LONG",
+                current_mark=current_mark,
+                stop_price=sl_price,
+                is_take_profit=False,
+            )
+            if not is_sl_valid:
+                self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
+                    "fsm_bracket_validation_failed", 0) + 1
+                self.state = ManageState.TRACKING
+                return None
+
+            # Validate TP price
+            is_tp_valid, tp_reason = TPSLValidationRules.validate_stop_price_for_side(
+                position_side=self.position_side or "LONG",
+                current_mark=current_mark,
+                stop_price=tp_price,
+                is_take_profit=True,
+            )
+            if not is_tp_valid:
+                self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
+                    "fsm_bracket_validation_failed", 0) + 1
+                self.state = ManageState.TRACKING
+                return None
+
+            # === SAFETY OFFSET PHASE: Apply offset to avoid -2021 errors ===
+            # Read offset_bps from config (default 5)
+            offset_bps = 5
+            try:
+                if hasattr(self.config, 'trading') and self.config.trading:
+                    offset_bps = self.config.trading.execution.manage.brackets.offset_bps if hasattr(
+                        self.config.trading.execution.manage.brackets, 'offset_bps') else 5
+                elif isinstance(self.config, dict):
+                    offset_bps = self.config.get("offset_bps", 5)
+            except (AttributeError, TypeError):
+                offset_bps = 5
+
+            # Get tick_size from somewhere (use 0.01 as default for now)
+            # TODO: fetch from /exchangeInfo or cache
+            tick_size = Decimal("0.01")
+
+            # Apply offset to SL (move it AWAY from entry to be safer)
+            sl_offset = TPSLValidationRules.add_safety_offset(
+                sl_price, tick_size, offset_bps)
+            if self.position_side == "BUY":
+                # SL is below entry, move it further down (subtract offset)
+                sl_price = sl_price - sl_offset
+            else:
+                # SL is above entry, move it further up (add offset)
+                sl_price = sl_price + sl_offset
+
+            # Apply offset to TP (move it AWAY from entry to be safer)
+            tp_offset = TPSLValidationRules.add_safety_offset(
+                tp_price, tick_size, offset_bps)
+            if self.position_side == "BUY":
+                # TP is above entry, move it further up (add offset)
+                tp_price = tp_price + tp_offset
+            else:
+                # TP is below entry, move it further down (subtract offset)
+                tp_price = tp_price - tp_offset
+
+            # Update stored prices
+            self.sl_price = sl_price
+            self.tp_price = tp_price
+            self._metrics["fsm_bracket_offset_applied"] = self._metrics.get(
+                "fsm_bracket_offset_applied", 0) + 1
+
             # Generate unique client order IDs
             position_id = f"{msg.rid}_{int(self.position_open_ts)}"
             sl_client_id = f"{position_id}_sl"
             tp_client_id = f"{position_id}_tp"
 
+            # === EMISSION PHASE: Place validated bracket orders ===
             # Emit SL order
             sl_order = self._emit_place_order(
                 msg,
@@ -347,7 +456,16 @@ class ManageFlowFSM:
             return False
 
     def _calculate_bracket_prices(self) -> tuple[Optional[Decimal], Optional[Decimal]]:
-        """Calculate SL and TP prices based on config and position."""
+        """Calculate SL and TP prices based on config and position.
+
+        Supports both NEW and LEGACY config keys:
+        - NEW: execution.manage.brackets.sl.fixed_bps, execution.manage.brackets.tp.fixed_bps
+        - LEGACY: execution.manage.brackets.stop_loss_bps, take_profit_low_ratio, take_profit_high_ratio
+
+        Fallback chain:
+        1. Try new keys (sl.fixed_bps, tp.fixed_bps)
+        2. If not found, fallback to legacy keys for backward compatibility
+        """
         if self.position_entry_price is None or self.position_side is None:
             return None, None
 
@@ -357,39 +475,90 @@ class ManageFlowFSM:
                 brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
                 sl_config = brackets.sl if brackets else None
                 tp_config = brackets.tp if brackets else None
+                brackets_dict = brackets if brackets else {}
             elif isinstance(self.config, dict):
                 brackets_config = self.config.get("brackets", {})
                 sl_config = brackets_config.get("sl", {}) if isinstance(
                     brackets_config, dict) else None
                 tp_config = brackets_config.get("tp", {}) if isinstance(
                     brackets_config, dict) else None
+                brackets_dict = brackets_config if isinstance(
+                    brackets_config, dict) else {}
             else:
                 sl_config = None
                 tp_config = None
+                brackets_dict = {}
 
             # For now, use fixed BPS mode (ATR mode would need ATR data)
             entry_price = self.position_entry_price
 
-            # Calculate SL price
-            sl_bps = 50
+            # ========== Calculate SL price ==========
+            sl_bps = 50  # Default fallback
+
+            # Try NEW key first (sl.fixed_bps)
             if sl_config:
                 if hasattr(sl_config, 'fixed_bps'):
                     sl_bps = sl_config.fixed_bps
                 else:
-                    sl_bps = getattr(sl_config, "fixed_bps", 50)
+                    sl_bps = getattr(sl_config, "fixed_bps", None)
+                    if sl_bps is None:
+                        sl_bps = 50
+
+            # If NEW key not found, fallback to LEGACY key (stop_loss_bps)
+            if sl_bps == 50 and (not sl_config or not hasattr(sl_config, 'fixed_bps')):
+                if isinstance(brackets_dict, dict):
+                    legacy_sl = brackets_dict.get("stop_loss_bps", None)
+                    if legacy_sl is not None:
+                        sl_bps = legacy_sl
+                elif hasattr(brackets_dict, 'stop_loss_bps'):
+                    legacy_sl = getattr(brackets_dict, 'stop_loss_bps', None)
+                    if legacy_sl is not None:
+                        sl_bps = legacy_sl
 
             if self.position_side == "BUY":
                 sl_price = entry_price * (1 - Decimal(str(sl_bps)) / 10000)
             else:  # SELL
                 sl_price = entry_price * (1 + Decimal(str(sl_bps)) / 10000)
 
-            # Calculate TP price
-            tp_bps = 100
+            # ========== Calculate TP price ==========
+            tp_bps = 100  # Default fallback
+
+            # Try NEW key first (tp.fixed_bps)
             if tp_config:
                 if hasattr(tp_config, 'fixed_bps'):
                     tp_bps = tp_config.fixed_bps
                 else:
-                    tp_bps = getattr(tp_config, "fixed_bps", 100)
+                    tp_bps = getattr(tp_config, "fixed_bps", None)
+                    if tp_bps is None:
+                        tp_bps = 100
+
+            # If NEW key not found, fallback to LEGACY keys (take_profit_low_ratio, take_profit_high_ratio)
+            if tp_bps == 100 and (not tp_config or not hasattr(tp_config, 'fixed_bps')):
+                if isinstance(brackets_dict, dict):
+                    tp_high_ratio = brackets_dict.get(
+                        "take_profit_high_ratio", None)
+                    tp_low_ratio = brackets_dict.get(
+                        "take_profit_low_ratio", None)
+                    # Use take_profit_high_ratio if available (more aggressive), else low_ratio, else default
+                    if tp_high_ratio is not None:
+                        tp_bps = int(round(sl_bps * tp_high_ratio))
+                    elif tp_low_ratio is not None:
+                        tp_bps = int(round(sl_bps * tp_low_ratio))
+                    else:
+                        tp_bps = 100
+                elif hasattr(brackets_dict, 'take_profit_high_ratio') or hasattr(brackets_dict, 'take_profit_low_ratio'):
+                    tp_high_ratio = getattr(
+                        brackets_dict, 'take_profit_high_ratio', None)
+                    tp_low_ratio = getattr(
+                        brackets_dict, 'take_profit_low_ratio', None)
+                    if tp_high_ratio is not None:
+                        tp_bps = int(round(sl_bps * tp_high_ratio))
+                    elif tp_low_ratio is not None:
+                        tp_bps = int(round(sl_bps * tp_low_ratio))
+                    else:
+                        tp_bps = 100
+                else:
+                    tp_bps = 100
 
             if self.position_side == "BUY":
                 tp_price = entry_price * (1 + Decimal(str(tp_bps)) / 10000)

@@ -25,7 +25,9 @@ import httpx
 from vfoundation.core.protocol import Message
 
 from .execution_adapter import AbstractExecutionAdapter
+from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult, ClientOrderIdConfig
 from apps.reference.telemetry.audit_logger import audit_logger
+from .metrics_aggregator import metrics_logger
 
 
 try:
@@ -166,6 +168,37 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 "[BinanceAdapter] API credentials not found in environment/config, falling back to shadow mode"
             )
             self.shadow_mode = True
+
+        # PHASE 4: Initialize idempotent cancel helper
+        self.cancel_helper = IdempotentCancelHelper(
+            config=ClientOrderIdConfig(prefix="AUR"),
+            logger_inst=logger
+        )
+
+        # Initialize metrics dict for tracking
+        self.metrics = {
+            "cancel_idempotent_ok": 0,
+            "cancel_-2011_absorbed": 0,
+        }
+
+        # Optional: read slippage cap from config (trading.orders.market.slippage_cap_bps)
+        self.slippage_cap_bps: Optional[int] = None
+        try:
+            orders_cfg = None
+            if hasattr(config, 'trading') and config.trading:
+                tr = config.trading if isinstance(config.trading, dict) else config.trading
+                orders_cfg = tr.get("orders") if isinstance(tr, dict) else getattr(tr, "orders", None)
+            elif isinstance(config, dict):
+                orders_cfg = config.get("orders") or config.get("trading", {}).get("orders")
+            if orders_cfg:
+                market_cfg = orders_cfg.get("market") if isinstance(orders_cfg, dict) else getattr(orders_cfg, "market", None)
+                if market_cfg:
+                    val = market_cfg.get("slippage_cap_bps") if isinstance(market_cfg, dict) else getattr(market_cfg, "slippage_cap_bps", None)
+                    if val is not None:
+                        self.slippage_cap_bps = int(val)
+                        logger.info(f"[BinanceAdapter] slippage_cap_bps set to {self.slippage_cap_bps}")
+        except Exception as e:
+            logger.warning(f"[BinanceAdapter] Failed to read slippage_cap_bps: {e}")
 
         logger.info(
             f"[BinanceAdapter] Initialized with shadow_mode={self.shadow_mode}, testnet={self.use_testnet}, ws_enabled={fsm is not None}"
@@ -586,6 +619,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         price = payload.get("price")
         stop_price = payload.get("stopPrice")
         reduce_only = payload.get("reduceOnly", False)
+        tif = payload.get("tif", "GTC")
         # Use newClientOrderId as idempotent key
         idempotent_key = payload.get("newClientOrderId")
 
@@ -617,6 +651,26 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 "why_codes": ["reduce_only_bracket"],
             }
 
+        # Apply slippage cap for MARKET orders if anchor price provided
+        if self.slippage_cap_bps is not None and order_type == "MARKET":
+            try:
+                from decimal import Decimal
+                anchor_price = payload.get("anchor_price") or payload.get("ref_price") or payload.get("expected_price")
+                if anchor_price is not None:
+                    anchor = Decimal(str(anchor_price))
+                    cap = Decimal(self.slippage_cap_bps) / Decimal("10000")
+                    if side == "BUY":
+                        limit_price = anchor * (Decimal("1") + cap)
+                    else:
+                        limit_price = anchor * (Decimal("1") - cap)
+                    price = str(limit_price.quantize(Decimal("0.00000001")))
+                    order_type = "LIMIT"
+                    tif = "IOC"
+                    logger.info(
+                        f"[BinanceAdapter] Slippage cap applied: MARKET -> LIMIT {tif} at {price} (cap {self.slippage_cap_bps}bps)")
+            except Exception as e:
+                logger.warning(f"[BinanceAdapter] Slippage cap skipped: {e}")
+
         # Execute order
         try:
             if self.shadow_mode:
@@ -641,6 +695,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     stop_price,
                     reduce_only,
                     idempotent_key,
+                    tif,
                 )
 
                 inc_order_placed()  # Increment order placed counter
@@ -659,51 +714,165 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
     async def cancel_order(self, dec_msg: Message) -> Dict[str, object]:
         """
-        Cancel existing order using Binance API.
+        Cancel existing order using Binance API with idempotent semantics.
+
+        PHASE 4: Enhanced with:
+        - Pre-cancel getOrder check (to avoid unnecessary cancellations)
+        - -2011 absorption (treat "Unknown order" as success)
+        - Detailed audit logging for compliance
 
         Args:
-            dec_msg: DEC:CANCEL_ORDER message with orderId
+            dec_msg: DEC:CANCEL_ORDER message with orderId and symbol
 
         Returns:
-            Cancellation result dict
+            Cancellation result dict with success/failure details
         """
         try:
             pld = dec_msg.pld or {}
             order_id = pld.get("orderId")
+            # Default to BTCUSDT if not provided
+            symbol = pld.get("symbol", "BTCUSDT")
 
             if not order_id:
                 return self._create_error_feedback("unknown", "Missing orderId in cancel request")
 
             if self.shadow_mode:
                 logger.info(
-                    f"[BinanceAdapter] Shadow mode: would cancel order {order_id}")
+                    f"[BinanceAdapter] Shadow mode: would cancel order {order_id} on {symbol}")
                 return self._create_success_feedback(
-                    "cancelled", order_id, "unknown", "shadow_mode"
+                    "cancelled", order_id, "unknown", "shadow_mode_cancel"
                 )
 
-            # Cancel order via API
-            result = await self._cancel_binance_order_async(order_id)
+            # PHASE 4: Use idempotent cancel helper
+            cancel_result = await self.cancel_helper.cancel_order_idempotent(
+                symbol=symbol,
+                order_id=order_id,
+                cancel_func=self._cancel_binance_order_async,
+                get_order_func=self.get_order,
+                max_retries=2
+            )
 
-            if result.get("status") == "CANCELED":
-                return self._create_success_feedback("cancelled", order_id, "unknown", "api_cancel")
+            # Log result for audit trail
+            self.cancel_helper.log_cancel_result(cancel_result, order_id)
+
+            # Phase 5: Metrics aggregation
+            if cancel_result.success:
+                metrics_logger.log_cancel_event(
+                    symbol=symbol,
+                    order_id=order_id,
+                    success=True,
+                    error_code=cancel_result.error_code,
+                    is_idempotent_success=cancel_result.is_idempotent_success,
+                    rid=f"cancel_{symbol}_{order_id}",
+                )
             else:
-                return self._create_error_feedback(
-                    "unknown", f"Cancel failed: {result.get('msg', 'unknown error')}"
+                metrics_logger.log_cancel_event(
+                    symbol=symbol,
+                    order_id=order_id,
+                    success=False,
+                    error_code=cancel_result.error_code,
+                    is_idempotent_success=False,
+                    rid=f"cancel_{symbol}_{order_id}",
                 )
+
+            # Emit metrics
+            if cancel_result.success:
+                self.metrics["cancel_idempotent_ok"] = self.metrics.get(
+                    "cancel_idempotent_ok", 0) + 1
+                if cancel_result.error_code == -2011:
+                    self.metrics["cancel_-2011_absorbed"] = self.metrics.get(
+                        "cancel_-2011_absorbed", 0) + 1
+
+            # Return result in standard format
+            if cancel_result.success:
+                return {
+                    "allowed": True,
+                    "reason": "CANCEL_SUCCESS",
+                    "details": {
+                        "orderId": order_id,
+                        "symbol": symbol,
+                        "cancel_reason": cancel_result.reason,
+                        "idempotent_success": cancel_result.is_idempotent_success,
+                        "error_code": cancel_result.error_code,
+                    }
+                }
+            else:
+                return {
+                    "allowed": False,
+                    "reason": f"CANCEL_FAILED: {cancel_result.reason}",
+                    "details": {
+                        "orderId": order_id,
+                        "symbol": symbol,
+                        "cancel_reason": cancel_result.reason,
+                        "error_code": cancel_result.error_code,
+                    }
+                }
 
         except Exception as e:
             logger.error(f"[BinanceAdapter] Cancel order error: {e}")
             return self._create_error_feedback("unknown", str(e))
 
-    async def _cancel_binance_order_async(self, order_id: str) -> Dict[str, Any]:
+    async def get_order(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
+        """
+        PHASE 4: Get order details from Binance API for pre-cancel check.
+
+        Used by idempotent cancel to verify order status before attempting cancellation.
+
+        Args:
+            symbol: Trading symbol (e.g., BTCUSDT)
+            order_id: Binance orderId to query
+
+        Returns:
+            Order dict with status field, or None if not found
+        """
+        try:
+            api_key = self.api_key
+            api_secret = self.api_secret
+
+            if not api_key or not api_secret:
+                logger.warning("Missing Binance API credentials for getOrder")
+                return None
+
+            self._sync_time_with_server()
+
+            base_url = BASE_URL
+            endpoint = "/fapi/v1/order"
+
+            params = {
+                "symbol": symbol,
+                "orderId": order_id,
+                "timestamp": int(time.time() * 1000),
+                "recvWindow": 1500,
+            }
+
+            signed_params = self._get_signed_params(params)
+            headers = {"X-MBX-APIKEY": api_key}
+
+            url = f"{base_url}{endpoint}"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=signed_params, headers=headers)
+
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    logger.warning(
+                        f"getOrder failed: HTTP {response.status_code}: {response.text}")
+                    return None
+
+        except Exception as e:
+            logger.warning(f"getOrder exception: {e}")
+            return None
+
+    async def _cancel_binance_order_async(self, symbol: str, order_id: str) -> Dict[str, Any]:
         """
         Cancel order on Binance Futures asynchronously.
 
         Args:
+            symbol: Trading symbol (e.g., BTCUSDT)
             order_id: Binance order ID to cancel
 
         Returns:
-            API response dict
+            API response dict with status and optional error fields
         """
         try:
             # Get API credentials
@@ -721,7 +890,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             endpoint = "/fapi/v1/order"
 
             params = {
-                "symbol": "BTCUSDT",  # TODO: get from context
+                "symbol": symbol,  # PHASE 4: Use provided symbol parameter
                 "orderId": order_id,
                 "timestamp": int(time.time() * 1000),
                 "recvWindow": 1500,
@@ -740,7 +909,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     error_msg = f"HTTP {response.status_code}: {response.text}"
                     logger.error(
                         f"[BinanceAdapter] Cancel order failed: {error_msg}")
-                    return {"status": "error", "msg": error_msg}
+                    return {"status": "error", "msg": error_msg, "code": response.status_code}
 
         except Exception as e:
             logger.error(f"[BinanceAdapter] Cancel order exception: {e}")
@@ -830,6 +999,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         stop_price: Optional[str] = None,
         reduce_only: bool = False,
         idempotent_key: Optional[str] = None,
+        time_in_force: str = "GTC",
     ) -> Mapping[str, object]:
         """
         Place order via Binance Futures API asynchronously.
@@ -858,7 +1028,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         # Add order-specific parameters
         if order_type == "LIMIT" and price:
             params["price"] = price
-            params["timeInForce"] = "GTC"  # Good Till Cancel
+            params["timeInForce"] = time_in_force  # GTC/IOC/FOK
 
         if "STOP" in order_type and stop_price:
             params["stopPrice"] = stop_price

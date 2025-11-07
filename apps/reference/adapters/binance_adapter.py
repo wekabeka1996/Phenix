@@ -104,6 +104,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
         self.base_url = base_url.rstrip("/")
         self.config = config or {}
         self._timeout = timeout
+        # 🔴 ADD: logger for diagnostics
+        self.logger = logging.getLogger(__name__)
 
         # NEW: time sync state
         self._time_offset_ms = 0
@@ -451,12 +453,32 @@ class BinanceAdapter(AbstractExchangeAdapter):
         # signed GET /fapi/v2/positionRisk
         raw = await self._request("GET", "/fapi/v2/positionRisk", params)
 
+        # 🔴 DIAGNOSTIC: Log raw API response
+        self.logger.debug(
+            f"🌐 BinanceAdapter.get_open_positions() raw response type: {type(raw)}, len: {len(raw) if isinstance(raw, list) else 'N/A'}")
+        if not isinstance(raw, list) or len(raw) == 0:
+            self.logger.warning(
+                f"⚠️ API /fapi/v2/positionRisk returned empty or non-list: {raw}")
+        else:
+            self.logger.info(
+                f"✅ API /fapi/v2/positionRisk returned {len(raw)} total records")
+
         positions: List[ExchangePosition] = []
         for p in raw:
             # Binance віддає числа як строки — зберігаємо precision, конвертуємо тільки коли потрібно
             amt_str = p.get("positionAmt", "0")
             amt = float(amt_str)
+            symbol = p.get('symbol', 'UNKNOWN')
+
+            # 🔴 DIAGNOSTIC: Log ALL positions from API
+            if abs(amt) > 0.0001:
+                self.logger.info(
+                    f"  ✅ API Position: {symbol} {p.get('positionSide', 'BOTH')} {amt} @ entry={p.get('entryPrice', 'N/A')}, mark={p.get('markPrice', 'N/A')}, unPnL={p.get('unRealizedProfit', 'N/A')}")
+
             if abs(amt) <= 0.0:
+                # 🔴 DIAGNOSTIC: Log filtered positions
+                self.logger.debug(
+                    f"  ❌ Skipping zero position for {symbol}: positionAmt={amt_str}")
                 continue  # пропускаємо нульові
 
             entry_str = p.get("entryPrice", "0") or "0"
@@ -472,7 +494,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
             side = "LONG" if (amt > 0 and pos_side in (
                 "BOTH", "LONG")) else "SHORT"
 
-            positions.append(ExchangePosition(
+            pos_obj = ExchangePosition(
                 symbol=p.get("symbol", ""),
                 position_side=pos_side,  # BOTH/LONG/SHORT
                 side=side,  # LONG/SHORT (зручно для бізнес-логіки)
@@ -484,8 +506,15 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 margin_type=p.get("marginType", "cross").upper(),
                 isolated_margin=float(p.get("isolatedMargin", "0") or 0),
                 update_time_ms=int(p.get("updateTime", 0) or 0),
-            ))
+            )
+            positions.append(pos_obj)
+            # 🔴 DIAGNOSTIC: Log accepted position
+            self.logger.info(
+                f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}")
 
+        # 🔴 DIAGNOSTIC: Final summary
+        self.logger.info(
+            f"🎯 get_open_positions() returning {len(positions)} non-zero positions")
         return positions
 
     async def get_mark_price(self, symbol: str, ttl_ms: int = 250) -> float:

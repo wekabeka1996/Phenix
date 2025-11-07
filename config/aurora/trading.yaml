@@ -198,10 +198,31 @@ trading:
       brackets:
         enable: true  # Enable bracket order management with atomic close and cancellation
         oco_emulation: true  # Enable OCO emulation: when SL or TP fills, cancel the counterpart
+
+        # === LEGACY KEYS (for backward compatibility, used by Kelly/decision_making) ===
         stop_loss_bps: 50      # Stop-loss in basis points (default 50 bps = 0.5%)
         take_profit_low_ratio: 0.5   # k₁: TP_low = k₁ × SL_bps
         take_profit_high_ratio: 1.0  # k₂: TP_high = k₂ × SL_bps
         # Note: TP_bps computed at runtime from these ratios (SSOT for Kelly payoff_r)
+
+        # === NEW KEYS (for FSM _calculate_bracket_prices / validation) ===
+        # Structure: sl/tp nodes with fixed_bps for direct SL/TP calculation
+        sl:
+          fixed_bps: 50        # SL offset (basis points) — used by fsm_manage._calculate_bracket_prices()
+        tp:
+          fixed_bps: 100       # TP offset (basis points) — used by fsm_manage._calculate_bracket_prices()
+
+        # === VALIDATION & SAFETY PARAMETERS ===
+        offset_bps: 5          # Safety offset to apply before placing SL/TP (avoids -2021 errors)
+        working_type_default: "MARK_PRICE"  # Default workingType for SL/TP orders (MARK_PRICE or CONTRACT_PRICE)
+        price_protect: false   # Set priceProtect=true for SL/TP to prevent slippage
+
+        # === RETRY & TIMEOUT CONFIG ===
+        retry:
+          max_attempts: 3                    # Max retry attempts for -2021/-4116/-4137 errors
+          backoff_ms: [120, 250, 400]        # Exponential backoff (ms): 1st=120, 2nd=250, 3rd=400
+          fallback_to_limit: true            # After max retries on -2021, fallback to LIMIT order
+        timeout_sec: 5                       # Timeout for pending order cleanup (seconds)
 
         # CRITICAL FIX (Phase 1): Atomic bracket cleanup on position close
         # When enabled: DEC:CLOSE cancels SL/TP BEFORE closing position

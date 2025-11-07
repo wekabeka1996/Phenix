@@ -56,7 +56,8 @@ class TestSoftClipBasic:
         # Current margin: 1050/1100, can only add 50 more = 2500 notional
         # But short side already at limit (450/600 still OK, but will be checked)
         result = engine.calculate_clipped_size(
-            notional_usd=Decimal("200"),  # Request 200, but will be clipped by side
+            # Request 200, but will be clipped by side
+            notional_usd=Decimal("200"),
             symbol="ETHUSDT",
             order_side="BUY",
             long_margin=Decimal("100"),  # Low long margin (not at limit)
@@ -68,7 +69,8 @@ class TestSoftClipBasic:
 
         # Should clip to fit within remaining 50 USD margin = 2500 notional
         # But if side constraint is tighter, it limits further
-        assert result.reason in ["CLIPPED", "OK"]  # Either clip or OK depending on side logic
+        # Either clip or OK depending on side logic
+        assert result.reason in ["CLIPPED", "OK"]
 
     def test_reject_below_clip_min(self, engine):
         """Order should be rejected if clipped below minimum."""

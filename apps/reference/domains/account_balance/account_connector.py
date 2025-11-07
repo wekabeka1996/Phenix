@@ -172,8 +172,10 @@ class AccountConnector:
 
         try:
             positions_data = await self.adapter.get_open_positions()
+            api_position_count = len(positions_data) if isinstance(
+                positions_data, list) else 0
             LOG.info(
-                f"🔍 get_open_positions returned: {len(positions_data) if isinstance(positions_data, list) else 0} positions")
+                f"🔍 get_open_positions returned: {api_position_count} positions from API")
             if positions_data is not None:
                 if isinstance(positions_data, list):
                     # Convert objects to dict if needed
@@ -182,18 +184,28 @@ class AccountConnector:
                             p.__dict__ if not isinstance(p, dict) else p)
                         for p in positions_data
                     ]
-                    # Count non-zero positions
+                    # Count non-zero positions (using position_amount field from ExchangePosition)
                     non_zero = sum(1 for p in positions_list if abs(
-                        float(p.get("positionAmt", 0))) > 0.0001)
+                        float(p.get("position_amount", p.get("positionAmt", 0)))) > 0.0001)
                     LOG.info(
-                        f"✅ Fetched positions: {non_zero} non-zero out of {len(positions_list)} total"
-                    )
+                        f"✅ Fetched positions: {non_zero} non-zero out of {len(positions_list)} total")
                     # Log each non-zero position
                     for pos in positions_list:
-                        amt = float(pos.get("positionAmt", 0))
+                        amt = float(pos.get("position_amount",
+                                    pos.get("positionAmt", 0)))
                         if abs(amt) > 0.0001:
                             LOG.info(
-                                f"   📊 {pos.get('symbol')}: {amt} @ {pos.get('entryPrice', 'N/A')}")
+                                f"   📊 {pos.get('symbol')}: {amt} @ {pos.get('entry_price', pos.get('entryPrice', 'N/A'))}")
+
+                    # 🔴 DIAGNOSTIC: Check for divergence (API empty but internal has data)
+                    if api_position_count == 0:
+                        LOG.warning(
+                            f"🚨 CRITICAL: API returned EMPTY positions! Will trigger FALLBACK in margin calculation")
+                        LOG.warning(
+                            f"   → This means system will use internal self._positions (if any)")
+                        LOG.warning(
+                            f"   → Check: Are orders filled on Binance? Is API key valid?")
+
                     # Always emit positions update, even if empty
                     self._emit_positions_update(positions_list)
                 else:
@@ -246,20 +258,22 @@ class AccountConnector:
         open_positions = [
             {
                 "symbol": pos["symbol"],
-                "positionAmt": str(decimal.Decimal(pos.get("positionAmt", "0"))),
-                "entryPrice": str(decimal.Decimal(pos.get("entryPrice", "0"))),
+                "positionAmt": str(decimal.Decimal(pos.get("position_amount", pos.get("positionAmt", "0")))),
+                "entryPrice": str(decimal.Decimal(pos.get("entry_price", pos.get("entryPrice", "0")))),
                 "unRealizedProfit": str(
-                    decimal.Decimal(pos.get("unRealizedProfit", "0"))
+                    decimal.Decimal(
+                        pos.get("unrealized_pnl", pos.get("unRealizedProfit", "0")))
                 ),
                 "leverage": int(pos.get("leverage", 1)),
                 "marginType": pos.get("marginType", "cross"),
-                "markPrice": str(decimal.Decimal(pos.get("markPrice", "0"))),
+                "markPrice": str(decimal.Decimal(pos.get("mark_price", pos.get("markPrice", "0")))),
                 "liquidationPrice": str(
-                    decimal.Decimal(pos.get("liquidationPrice", "0"))
+                    decimal.Decimal(pos.get("liquidation_price",
+                                    pos.get("liquidationPrice", "0")))
                 ),
             }
             for pos in positions_data
-            if decimal.Decimal(pos.get("positionAmt", "0")) != 0
+            if decimal.Decimal(pos.get("position_amount", pos.get("positionAmt", "0"))) != 0
         ]
 
         LOG.info(f"📊 Filtered to {len(open_positions)} non-zero positions")
