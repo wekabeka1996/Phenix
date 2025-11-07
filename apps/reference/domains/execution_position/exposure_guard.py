@@ -3,6 +3,7 @@ EXP-FIX: Exposure Guard with Portfolio Notional Hard Gate.
 
 Implements fail-closed behavior when portfolio positions are stale/unknown,
 and post-fill hold mechanism to prevent race conditions.
+PHASE 2: Soft-limit clipping (clip instead of reject, min notional check).
 """
 
 from __future__ import annotations
@@ -10,10 +11,34 @@ from __future__ import annotations
 import time
 import logging
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
 from apps.reference.telemetry.order_logger import order_logger
+
+
+@dataclass
+class SoftLimitConfig:
+    """Soft-limit clipping configuration (PHASE 2)."""
+    mode: str = "clip"                      # "clip" or "reject"
+    clip_min_notional_usdt: Decimal = Decimal("10")
+    directional_ratio_max: Decimal = Decimal("3.0")
+    side_exposure_usdt: Decimal = Decimal("600")
+    margin_exposure_usdt: Decimal = Decimal("1100")
+
+
+@dataclass
+class ClipResult:
+    """Result of soft-limit clipping logic (PHASE 2)."""
+    allowed: bool
+    reason: str
+    clipped_notional: Optional[Decimal] = None
+    original_notional: Optional[Decimal] = None
+    clip_reasons: List[str] = None
+    
+    def __post_init__(self):
+        if self.clip_reasons is None:
+            self.clip_reasons = []
 
 
 @dataclass
@@ -200,6 +225,9 @@ class ExposureGuard:
             exclude_ro = True
         self.exclude_reduce_only = exclude_ro
 
+        # PHASE 2: Soft-limit configuration (read from trading.risk.soft_limits)
+        self.soft_limit_config = self._load_soft_limit_config()
+
         # State
         self.state = ExposureState(
             reservations={},
@@ -214,7 +242,51 @@ class ExposureGuard:
             "postfill_hold_active": 0,
             "postfill_hold_expired_total": 0,
             "exposure_mismatch_total": 0,
+            "clip_total": 0,  # PHASE 2
+            "clip_notional_total": Decimal("0"),  # PHASE 2
         }
+
+    def _load_soft_limit_config(self) -> SoftLimitConfig:
+        """
+        Load soft-limit clipping configuration (PHASE 2).
+        Reads from trading.risk.soft_limits with fallbacks.
+        """
+        try:
+            if hasattr(self.config, 'trading') and hasattr(self.config.trading, 'risk') and hasattr(self.config.trading.risk, 'soft_limits'):
+                soft_limits_dict = self.config.trading.risk.soft_limits or {}
+            elif isinstance(self.config, dict):
+                soft_limits_dict = self.config.get("trading", {}).get(
+                    "risk", {}).get("soft_limits", {})
+            else:
+                soft_limits_dict = {}
+        except (AttributeError, TypeError):
+            soft_limits_dict = {}
+
+        # Parse values with defaults
+        mode = soft_limits_dict.get("mode", "clip") if isinstance(
+            soft_limits_dict, dict) else getattr(soft_limits_dict, "mode", "clip")
+        clip_min = Decimal(str(soft_limits_dict.get("clip_min_notional_usdt", "10") if isinstance(
+            soft_limits_dict, dict) else getattr(soft_limits_dict, "clip_min_notional_usdt", "10")))
+        dir_ratio = Decimal(str(soft_limits_dict.get("directional_ratio_max", "3.0") if isinstance(
+            soft_limits_dict, dict) else getattr(soft_limits_dict, "directional_ratio_max", "3.0")))
+        side_exp = Decimal(str(soft_limits_dict.get("side_exposure_usdt", "600") if isinstance(
+            soft_limits_dict, dict) else getattr(soft_limits_dict, "side_exposure_usdt", "600")))
+        margin_exp = Decimal(str(soft_limits_dict.get("margin_exposure_usdt", "1100") if isinstance(
+            soft_limits_dict, dict) else getattr(soft_limits_dict, "margin_exposure_usdt", "1100")))
+
+        config = SoftLimitConfig(
+            mode=mode,
+            clip_min_notional_usdt=clip_min,
+            directional_ratio_max=dir_ratio,
+            side_exposure_usdt=side_exp,
+            margin_exposure_usdt=margin_exp,
+        )
+        self.logger.info(
+            f"SOFT_LIMIT_CONFIG loaded: mode={mode}, "
+            f"clip_min={clip_min}, dir_ratio_max={dir_ratio}, "
+            f"side_exp={side_exp}, margin_exp={margin_exp}"
+        )
+        return config
 
     def resolve_symbol_leverage(self, symbol: str) -> Decimal:
         """

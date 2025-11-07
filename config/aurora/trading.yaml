@@ -12,6 +12,8 @@ trading:
   mode: "testnet"
   decision:
     signal_threshold: 0.10
+    # Signal thresholds (Balanced profile)
+    neutral_threshold: 0.18              # Below this → treat as neutral (reduced clip attempts)
   instruments:
     ETHUSDT:
       symbol: "ETHUSDT"
@@ -124,6 +126,32 @@ trading:
       max_drawdown_pct: 8.0            # Stop-day by intra-day DD (% from equity_open)
       reset_time_utc: "00:00"          # Daily reset time
 
+    # ===========================================================================
+    # BALANCED PROFILE: Soft-limit clip, directional ratio, mode adaptation
+    # ===========================================================================
+    # Active profile: "balanced" (conservative/balanced/accelerated available)
+    profile: "balanced"
+
+    # Soft-limit clipping (instead of rejection, reduce order size)
+    soft_limits:
+      mode: "clip"                         # "reject" (legacy) or "clip" (new)
+      clip_min_notional_usdt: 10           # Minimum notional after clipping; below this → reject
+      directional_ratio_max: 3.0           # Max ratio between long/short margin (base)
+      side_exposure_usdt: 600              # Max per-side exposure (adapts with regime)
+      margin_exposure_usdt: 1100           # Max margin used (adapts with regime)
+
+    # Regime-adaptive multipliers for directional_ratio_max
+    regime_adaptation:
+      trend_up_delta: 0.30                 # Add +0.30 to directional_ratio in uptrend
+      trend_down_delta: 0.30               # Add +0.30 to directional_ratio in downtrend
+      flat_delta: -0.30                    # Subtract -0.30 in flat regime
+      bounds: [2.0, 4.0]                   # Clamp ratio to [min, max]
+
+    # Feature flags for advanced features
+    feature_flags:
+      dynamic_ratio: true                  # Enable regime-based ratio adaptation
+      clipping_enabled: true               # Enable soft-limit clipping
+
   # ==============================================================================
   # FEATURE ENGINEERING SETTINGS (Phase 1)
   # ==============================================================================
@@ -190,15 +218,15 @@ trading:
         batch_cancel_limit: 50       # Max cancels per single loop run to avoid bursts
         rate_limit_per_min: 120      # Global per-minute cancel cap across symbols (0 disables)
 
-    # Portfolio Exposure Gate (20% of equity_free_usdt)
+    # Portfolio Exposure Gate (for testnet - no real risk)
     exposure:
-      max_equity_utilization_pct: 0.20  # EXP-LEVERAGE-001: Margin-based limit (20% of equity) - CRITICAL SAFETY LIMIT
-      max_portfolio_fraction: 0.20     # Notional-based fallback: max 20% of equity_free_usdt as notional
+      max_equity_utilization_pct: 2.00  # Testnet: allow high utilization (200% for testing)
+      max_portfolio_fraction: 2.00     # Notional-based fallback: max 200% for testnet
 
       # Per-side utilization limits (prevent unidirectional accumulation)
       max_side_utilization_pct:
-        long: 0.12                     # Max 12% of equity for long positions
-        short: 0.12                    # Max 12% of equity for short positions
+        long: 1.50                     # Testnet: allow 150% for testing
+        short: 1.50                    # Testnet: allow 150% for testing
 
       # Directional imbalance control
       max_directional_ratio: 2.0       # Max ratio between long and short margin (2:1)
@@ -209,10 +237,10 @@ trading:
       count_pending_orders: true
       exclude_reduce_only: true
       pending_reservation_ttl_sec: 45  # Reduced from 90 for faster cleanup on testnet
-      leverage_defaults:  # Leverage per symbol - reduced to ~20 to maintain 20% notional limit
-        SOLUSDT: 50
-        ETHUSDT: 50
-        __default__: 15
+      leverage_defaults:  # Leverage per symbol - testnet high leverage
+        SOLUSDT: 125
+        ETHUSDT: 125
+        __default__: 125
 
     # Default order type for opening positions.
     # Valid types: LIMIT, MARKET, STOP, STOP_MARKET, TAKE_PROFIT, TAKE_PROFIT_MARKET
@@ -233,6 +261,17 @@ trading:
     watchdog:
       ack_ttl_ms: 8000    # 8 seconds for ACK timeout (unchanged)
       fill_ttl_ms: 60000  # 60 seconds for FILL timeout (increased from 30s for testnet)
+
+    # ===========================================================================
+    # ORDER EXECUTION & CANCELLATION (Balanced profile)
+    # ===========================================================================
+    orders:
+      default_ttl_seconds: 15                 # Default order time-to-live (seconds)
+      market:
+        slippage_cap_bps: 10                  # Max acceptable slippage for market orders (basis points)
+      cancel:
+        idempotent: true                      # Enable idempotent cancellation (safe retry on -2011)
+        use_cancel_replace: true              # Use cancelReplace where supported (Binance Futures)
 
 
 
