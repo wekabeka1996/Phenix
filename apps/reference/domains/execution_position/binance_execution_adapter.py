@@ -25,6 +25,7 @@ import httpx
 from vfoundation.core.protocol import Message
 
 from .execution_adapter import AbstractExecutionAdapter
+from apps.reference.telemetry.audit_logger import audit_logger
 
 
 try:
@@ -75,7 +76,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
     Handles DEC:OPEN messages and executes market orders with guards.
     """
 
-    def __init__(self, fsm, config, shadow_mode: bool = False):
+    def __init__(self, fsm=None, config=None, shadow_mode: bool = False, **kwargs):
         """
         Initialize Binance adapter.
 
@@ -83,10 +84,13 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             fsm: FSM instance for event emission
             config: Configuration dict
             shadow_mode: If True, no live API calls (for testing)
+            **kwargs: Additional arguments (e.g., fsm_core for testing)
         """
         super().__init__(fsm, config)
         self.shadow_mode = shadow_mode
-        self.fsm_core = fsm  # For emitting EVT:* events
+        # Support both fsm and fsm_core parameter names (for testing)
+        # For emitting EVT:* events
+        self.fsm_core = kwargs.get('fsm_core', fsm)
         self._last_status_check = 0.0
         self._status_cache = "unknown"
 
@@ -106,14 +110,15 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         try:
             # Pydantic-first
             if hasattr(config, 'trading') and config.trading:
-                trading_env = config.trading.get("trading_env") if isinstance(config.trading, dict) else getattr(config.trading, "trading_env", None)
+                trading_env = config.trading.get("trading_env") if isinstance(
+                    config.trading, dict) else getattr(config.trading, "trading_env", None)
             elif isinstance(config, dict):
                 trading_env = config.get("trading_env")
             else:
                 trading_env = None
         except (AttributeError, TypeError):
             trading_env = None
-        
+
         self.use_testnet = (
             trading_env == "test" or
             os.environ.get("USE_TESTNET", "1") == "1" or
@@ -131,7 +136,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 binance_ro_api_key = None
         except (AttributeError, TypeError):
             binance_ro_api_key = None
-        
+
         try:
             # Pydantic-first for binance_ro_api_secret
             if hasattr(config, 'binance_ro_api_secret'):
@@ -142,7 +147,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 binance_ro_api_secret = None
         except (AttributeError, TypeError):
             binance_ro_api_secret = None
-        
+
         if self.use_testnet:
             self.api_key = binance_ro_api_key or os.environ.get(
                 "BINANCE_TESTNET_API_KEY", "")
@@ -376,12 +381,20 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             # AUR-004: Correlate order using OrderIndex
             order_ref = None
             if hasattr(self.fsm_core, "order_index") and self.fsm_core.order_index:
+                logger.debug(
+                    f"[BinanceAdapter] Attempting correlation with order_index")
                 # Try to find by clientOrderId first, then by exchangeOrderId
                 order_ref = self.fsm_core.order_index.get(
                     clientOrderId=client_order_id)
+                logger.debug(
+                    f"[BinanceAdapter] get(clientOrderId={client_order_id}) returned: {order_ref}")
                 if not order_ref and exchange_order_id:
                     order_ref = self.fsm_core.order_index.get(
                         exchangeOrderId=exchange_order_id)
+                    logger.debug(
+                        f"[BinanceAdapter] get(exchangeOrderId={exchange_order_id}) returned: {order_ref}")
+            else:
+                logger.debug(f"[BinanceAdapter] No order_index available")
 
             if not order_ref:
                 logger.warning(
@@ -409,6 +422,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 "idempotent_key": order_ref.idempotent_key,
                 "clientOrderId": client_order_id,
                 "exchangeOrderId": exchange_order_id,
+                "orderId": exchange_order_id,  # Alias for test compatibility
                 "side": side,
                 "order_type": order_type,
                 "qty": filled_qty,
@@ -934,6 +948,27 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"[BinanceAdapter] Order placed successfully: orderId={order_id} status={status}"
             )
 
+            # ✅ Log to aurora_events.jsonl (even without WebSocket)
+            client_order_id = data.get(
+                "clientOrderId", idempotent_key or "unknown")
+            try:
+                audit_logger.log_order_state_changed(
+                    rid="",  # RID would come from FSM context if available
+                    idempotent_key=idempotent_key,
+                    clientOrderId=client_order_id,
+                    exchangeOrderId=str(order_id),
+                    symbol=symbol,
+                    status=status,
+                    qty=quantity,
+                    filled_qty="0",  # Not filled yet, just placed
+                    avg_fill_price="0",
+                    why="direct_placement",
+                    ts_ms=int(time.time() * 1000),
+                )
+            except Exception as e:
+                logger.error(
+                    f"[BinanceAdapter] Failed to log order state: {e}")
+
             return data
 
     def _create_success_feedback(
@@ -1056,3 +1091,88 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             query_string.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
+
+    def _normalize_order_event(self, raw_event: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize Binance ORDER_TRADE_UPDATE WebSocket payload to flat structure.
+
+        Converts nested {"o": {...}} structure to flat dict with top-level fields
+        for easy FSM consumption.
+
+        Args:
+            raw_event: Raw Binance WebSocket event
+
+        Returns:
+            Flat normalized event dict
+        """
+        try:
+            # If no nested "o", assume already flat (backward compatibility)
+            if "o" not in raw_event or not isinstance(raw_event.get("o"), dict):
+                return raw_event
+
+            # Extract nested order object
+            order_data = raw_event.get("o", {})
+
+            # Map Binance field names to normalized names
+            normalized = {
+                # IDs
+                "orderId": str(order_data.get("i", "")),  # Integer -> string
+                "clientOrderId": order_data.get("c", ""),
+                "symbol": order_data.get("s", ""),
+
+                # Status and type
+                "status": order_data.get("X", "").upper(),  # e.g., "FILLED"
+                # e.g., "TRADE"
+                "executionType": order_data.get("x", "").upper(),
+
+                # Side and order type (normalized to lowercase)
+                "side": (order_data.get("S", "").lower() if order_data.get("S") else ""),
+                "type": (order_data.get("o", "").lower().replace("_", "_") if order_data.get("o") else ""),
+
+                # Quantities and prices
+                "originalQty": order_data.get("q", ""),
+                "executedQty": order_data.get("z", ""),
+                # Average price * qty
+                "cumulativeQuoteAssetTransactedQty": order_data.get("ap", ""),
+                "avgPrice": order_data.get("ap", ""),  # Average price
+
+                # Last trade details
+                "lastExecutedQty": order_data.get("l", ""),
+                "lastExecutedPrice": order_data.get("L", ""),
+
+                # Timestamp
+                "timestamp": raw_event.get("T", raw_event.get("E", 0)),
+
+                # Bracket flags
+                "reduceOnly": order_data.get("R", False),
+                "closePosition": order_data.get("cp", False),
+
+                # Commission
+                "commission": order_data.get("n", "0"),
+                "commissionAsset": order_data.get("N", ""),
+
+                # Order details
+                "timeInForce": order_data.get("f", ""),
+                "stopPrice": order_data.get("sp", ""),
+                "activationPrice": order_data.get("ap", ""),
+
+                # Trade ID
+                "tradeId": order_data.get("t"),
+
+                # Event metadata
+                "eventTime": raw_event.get("E"),
+                "isMarker": order_data.get("m", False),
+
+                # Preserve raw event for debugging
+                "_raw_binance_event": raw_event
+            }
+
+            return normalized
+
+        except Exception as e:
+            logger.error(f"Error normalizing order event: {e}", exc_info=True)
+            return {
+                "orderId": "unknown",
+                "error": str(e),
+                "_raw_binance_event": raw_event
+            }

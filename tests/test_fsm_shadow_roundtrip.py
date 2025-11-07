@@ -24,9 +24,33 @@ def exec_pos_fsm():
 
     fsm_path = Path(apps.reference.domains.execution_position.fsm.__file__)
     mock_fsm = MagicMock()
-    mock_config = MagicMock()
-    mock_config.get.return_value.get.return_value = {}
-    fsm_instance = ExecPosFSM(config=mock_config, fsm=mock_fsm, shadow_mode=True)
+
+    # Create a proper mock config with safe defaults
+    mock_config = {
+        "trading": {
+            "execution": {
+                "exposure": {
+                    "max_equity_utilization_pct": "0.20",
+                    "max_portfolio_fraction": "0.20",
+                    "max_side_utilization_pct": {
+                        "long": "0.12",
+                        "short": "0.12"
+                    },
+                    "max_directional_ratio": "2.0"
+                },
+                "manage": {
+                    "orphan_monitor": {
+                        "enabled": True,
+                        "run_on_startup": True,
+                        "periodic_interval_sec": 300
+                    }
+                }
+            }
+        }
+    }
+
+    fsm_instance = ExecPosFSM(
+        config=mock_config, fsm=mock_fsm, shadow_mode=True)
 
     # Verify that the FSM has the 'handle' method for vFoundation compatibility
     if not hasattr(fsm_instance, "handle"):
@@ -58,7 +82,8 @@ def test_shadow_fsm_roundtrip(exec_pos_fsm):
         verb="OPEN",
         src="test",
         dst="exec_pos",
-        pld={"symbol": "BTCUSDT", "side": "buy", "qty": "0.1", "price": "10000"},
+        pld={"symbol": "BTCUSDT", "side": "buy",
+             "qty": "0.1", "price": "10000"},
     )
     open_dec = shadow_fsm.handle(open_cmd)
 
@@ -72,7 +97,8 @@ def test_replay_filters_by_timestamp(temp_wal_dir):
     wal.set_wal_dir(temp_wal_dir)
 
     # Message 1 (timestamp will be around now)
-    msg1 = Message(op="DEC", verb="OPEN", src="test", dst="test", rid="r1", pld={})
+    msg1 = Message(op="DEC", verb="OPEN", src="test",
+                   dst="test", rid="r1", pld={})
     wal.append(msg1.model_dump())
 
     time_after_msg1 = msg1.ts + 1  # 1 ms after
@@ -83,7 +109,8 @@ def test_replay_filters_by_timestamp(temp_wal_dir):
     time.sleep(0.001)
 
     # Message 2 (timestamp will be later)
-    msg2 = Message(op="DEC", verb="CLOSE", src="test", dst="test", rid="r2", pld={})
+    msg2 = Message(op="DEC", verb="CLOSE", src="test",
+                   dst="test", rid="r2", pld={})
     wal.append(msg2.model_dump())
 
     replay_handler = MagicMock()

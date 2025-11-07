@@ -93,14 +93,20 @@ def setup_logging(config: Any) -> None:
                 logging_config = {}
         except (AttributeError, TypeError):
             logging_config = {}
-        
-        log_level = logging_config.get("level", "INFO").upper() if isinstance(logging_config, dict) else "INFO"
-        log_file = logging_config.get("file", "logs/aurora_core.log") if isinstance(logging_config, dict) else "logs/aurora_core.log"
-        log_format = logging_config.get("format", "json") if isinstance(logging_config, dict) else "json"
-        
-        rotation_config = logging_config.get("rotation", {}) if isinstance(logging_config, dict) else {}
-        max_bytes = rotation_config.get("max_bytes", 10 * 1024 * 1024) if isinstance(rotation_config, dict) else 10 * 1024 * 1024  # 10 MB
-        backup_count = rotation_config.get("backup_count", 5) if isinstance(rotation_config, dict) else 5
+
+        log_level = logging_config.get("level", "INFO").upper(
+        ) if isinstance(logging_config, dict) else "INFO"
+        log_file = logging_config.get("file", "logs/aurora_core.log") if isinstance(
+            logging_config, dict) else "logs/aurora_core.log"
+        log_format = logging_config.get("format", "json") if isinstance(
+            logging_config, dict) else "json"
+
+        rotation_config = logging_config.get(
+            "rotation", {}) if isinstance(logging_config, dict) else {}
+        max_bytes = rotation_config.get("max_bytes", 10 * 1024 * 1024) if isinstance(
+            rotation_config, dict) else 10 * 1024 * 1024  # 10 MB
+        backup_count = rotation_config.get(
+            "backup_count", 5) if isinstance(rotation_config, dict) else 5
 
     # Create logs directory if it doesn't exist
     log_path = Path(log_file)

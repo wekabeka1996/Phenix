@@ -32,13 +32,20 @@ from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
 )
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
-from vfoundation.core.protocol import Message
+from apps.reference.data.feature_store import FeatureStore
+from vfoundation.dr import wal
+from vfoundation.core.protocol import truncate_why
+from vfoundation.dr.wal_gc import WALGarbageCollector
+from apps.reference.telemetry.alerts import AlertManager
+from vfoundation.core.fsm_emit_compat import emit_compat
 from vfoundation.core import FSMCore
+from vfoundation.core.protocol import Message
 import json
 import logging
 import sys
 import time
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from logging.handlers import RotatingFileHandler
@@ -67,7 +74,7 @@ class AuroraBridge:
         self.logger = logger or logging.getLogger("AuroraBridge")
 
         # Portfolio freshness state
-        self._last_portfolio = {}
+        self._last_portfolio: dict[str, Any] = {}
         self._last_portfolio_ts = 0
 
         # Deferred intents queue (key: idempotent_key or rid, value: intent Message)
@@ -172,7 +179,7 @@ class AuroraBridge:
                     pld=original_context.get("features", {}),
                     why="qos_defer_retry"
                 )
-                self.fsm.emit(features_msg)
+                await emit_compat(self.fsm, features_msg, logger=self.logger)
                 self.logger.info(
                     f"BRIDGE: Re-triggered decision cycle for {symbol} after QoS defer")
             else:
@@ -190,7 +197,7 @@ class AuroraBridge:
         If portfolio stale → defer intent
         If both OK → convert immediately to CMD:OPEN
         """
-        symbol = event.pld.get("instrument") or event.pld.get("symbol")
+        symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
 
         # Check for forbidden LIMIT entry
         order_details = event.pld.get("order", {})
@@ -222,7 +229,7 @@ class AuroraBridge:
                 },
                 why="bridge_qoS_blocked",
             )
-            self.fsm.emit(defer_evt)
+            await emit_compat(self.fsm, defer_evt, logger=self.logger)
 
             self.logger.info(
                 f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
@@ -268,7 +275,7 @@ class AuroraBridge:
             },
             why="bridge_waits_fresh_portfolio",
         )
-        self.fsm.emit(defer_evt)
+        await emit_compat(self.fsm, defer_evt, logger=self.logger)
 
         self.logger.info(
             f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
@@ -296,7 +303,7 @@ class AuroraBridge:
                     },
                     why="bridge_drop_after_retries",
                 )
-                self.fsm.emit(drop_evt)
+                await emit_compat(self.fsm, drop_evt, logger=self.logger)
                 self._deferred.pop(key, None)
                 self._deferred_tries.pop(key, None)
                 self.logger.info(
@@ -319,7 +326,7 @@ class AuroraBridge:
 
         for key, intent_msg in list(self._deferred.items()):
             symbol = intent_msg.pld.get(
-                "instrument") or intent_msg.pld.get("symbol")
+                "instrument") or intent_msg.pld.get("symbol") or ""
 
             # Check QoS for this symbol
             if not self._is_qos_allowed(symbol):
@@ -341,7 +348,7 @@ class AuroraBridge:
                     },
                     why="bridge_drop_after_retries",
                 )
-                self.fsm.emit(drop_evt)
+                await emit_compat(self.fsm, drop_evt, logger=self.logger)
                 self._deferred.pop(key, None)
                 self._deferred_tries.pop(key, None)
                 dropped_count += 1
@@ -411,13 +418,14 @@ class AuroraBridge:
         self.logger.debug(
             f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
 
-        # Preserve XAI chain: take first why from event payload, or fallback
+        # Preserve XAI chain: pass full WHY chain in data_ref
         event_why_chain = intent_msg.pld.get("why", [])
-        bridge_why = (
-            event_why_chain[0]
-            if event_why_chain
-            else "Execute trade intent from decision"
-        )
+        # Pick a safe short WHY (<=80 chars). Prefer a known short code, else truncate.
+        default_why = "exec_open_enter"
+        bridge_why = default_why
+        if isinstance(event_why_chain, list) and event_why_chain:
+            candidate = str(event_why_chain[0])
+            bridge_why = truncate_why(candidate) or default_why
 
         # Create Message for CMD:OPEN
         open_command = Message(
@@ -426,8 +434,9 @@ class AuroraBridge:
             src="decision_making",  # Source is decision_making
             dst="execution_position",
             parent_span_id=intent_msg.span_id,  # Link to parent event for tracing
-            why=bridge_why,  # Preserve XAI chain from decision
+            why=bridge_why,  # Preserve first WHY for backward compatibility
             pld=command_payload,
+            data_ref=event_why_chain or [],  # Full WHY chain
         )
 
         self.logger.info(
@@ -442,7 +451,9 @@ class AuroraBridge:
                     f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}"
                 )
                 # Emit the result for downstream listeners
-                self.fsm.emit(result)
+                import asyncio
+                asyncio.create_task(emit_compat(
+                    self.fsm, result, logger=self.logger))
                 if result.op == "ERR":
                     self.logger.error(
                         f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}"
@@ -562,6 +573,32 @@ class JSONFormatter(logging.Formatter):
 
 # Configure logging
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+
+def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: dict) -> None:
+    """Perform periodic system health checks and raise alerts if needed."""
+    # Check WAL size
+    try:
+        wal_files = list(wal_dir.glob("*.wal"))
+        total_wal_size_mb = sum(
+            f.stat().st_size for f in wal_files) / (1024 * 1024)
+        alert_manager.check_wal_size(total_wal_size_mb)
+    except Exception as e:
+        LOG.error(f"Error checking WAL size: {e}")
+
+    # Check circuit breaker status (placeholder - would need actual CB state)
+    # For now, just check if we have any active alerts as proxy
+    alert_stats = alert_manager.get_alert_stats()
+    if alert_stats["active_alerts"] > 5:
+        # Assume CB active if many alerts
+        alert_manager.check_circuit_breaker(True, 300)
+
+    # Check risk gate (placeholder - would need actual risk metrics)
+    # This would typically come from risk_management domain
+    # alert_manager.check_risk_gate(current_risk_percent)
+
+    LOG.debug(f"Alert checks completed: {alert_stats}")
+
 
 # Global FSM instance
 fsm: FSMCore | None = None
@@ -756,6 +793,75 @@ def main() -> None:
     config = config_loader.load_config()
     LOG.info("Configuration loaded successfully")
 
+    # Initialize WAL Garbage Collector
+    wal_dir = project_root / "ops" / "wal"
+    wal_gc = WALGarbageCollector(
+        wal_dir=wal_dir,
+        retention_days=7,
+        max_file_size_mb=100,
+        logger=LOG
+    )
+    wal_gc_thread = wal_gc.start_background_gc(
+        interval_sec=3600)  # Run every hour
+    LOG.info("✅ WAL Garbage Collector initialized")
+
+    # Initialize Multi-TF Feature Aggregation Scheduler
+    from threading import Thread
+    import time as time_module
+
+    def _multi_tf_rollup_worker(feature_store: FeatureStore, symbols: list[str], interval_sec: int) -> None:
+        """Background worker for multi-timeframe feature aggregation.
+
+        Args:
+            feature_store: FeatureStore instance
+            symbols: list of symbols to roll up (from config)
+            interval_sec: sleep interval between rollups
+        """
+        while not hasattr(_multi_tf_rollup_worker, '_stop') or not _multi_tf_rollup_worker._stop:
+            try:
+                # Get symbols that have recent features (last 24h)
+                end_time = datetime.now()
+                start_time = end_time - timedelta(hours=24)
+
+                # Aggregate configured symbols
+                symbols_to_rollup = symbols or []
+
+                for symbol in symbols_to_rollup:
+                    try:
+                        # Rollup to higher timeframes
+                        feature_store.aggregate_all_timeframes(
+                            symbol=symbol,
+                            start_time=start_time,
+                            end_time=end_time
+                        )
+                        LOG.debug(f"Completed multi-TF rollup for {symbol}")
+                    except Exception as e:
+                        LOG.warning(
+                            f"Error in multi-TF rollup for {symbol}: {e}")
+
+            except Exception as e:
+                LOG.error(f"Error in multi-TF rollup worker: {e}")
+
+            time_module.sleep(interval_sec)
+
+    # Start multi-TF rollup thread (every 15 minutes)
+    def start_multi_tf_rollup(feature_store: FeatureStore, symbols: list[str]) -> Thread:
+        thread = Thread(
+            target=_multi_tf_rollup_worker,
+            args=(feature_store, symbols, 900),  # 15 minutes
+            daemon=True,
+            name="Multi-TF-Rollup"
+        )
+        thread.start()
+        return thread
+
+    # multi_tf_thread will be initialized later after feature_store is created
+    multi_tf_thread = None
+
+    # Initialize Alert Manager
+    alert_manager = AlertManager(config=config.to_dict(), logger=LOG)
+    LOG.info("✅ Alert Manager initialized")
+
     # FSMP-P3-T01: Pre-flight check for hybrid coherence
     is_coherent, reasons = check_hybrid_coherence(config.to_dict())
     if not is_coherent:
@@ -808,11 +914,52 @@ def main() -> None:
     # Pass full config dict to access both system.yaml (trading section) and use_testnet
     market_data = MarketDataConnector(fsm=fsm, config=config.to_dict())
 
+    # Feature Store (stores historical features for backtesting)
+    feature_store = FeatureStore(
+        db_path=str(project_root / "data" / "features.db"),
+        retention_days=90
+    )
+    LOG.info("✅ Feature Store initialized")
+
+    # Initialize Multi-TF aggregator now that feature_store exists
+    try:
+        symbols_cfg = config.to_dict().get("trading", {}).get("symbols_to_track", [])
+        if not symbols_cfg or not isinstance(symbols_cfg, list):
+            symbols_cfg = ["BTCUSDT", "ETHUSDT"]
+    except Exception:
+        symbols_cfg = ["BTCUSDT", "ETHUSDT"]
+
+    multi_tf_thread = start_multi_tf_rollup(feature_store, symbols_cfg)
+    LOG.info("✅ Multi-TF Feature Aggregation Scheduler initialized")
+
     # Feature Engineering (calculates trading features)
-    feature_engineering = FeatureEngineering(fsm=fsm, config=config.to_dict())
+    feature_engineering = FeatureEngineering(
+        fsm=fsm, config=config.to_dict(), feature_store=feature_store)
 
     # Risk Management (assesses position risk)
-    risk_management = RiskManagement(fsm=fsm, config=config.to_dict())
+    # Extract domain-specific config with correct mode overrides
+    risk_domain_mode = config.to_dict().get("trading", {}).get(
+        "domain_configuration", {}).get("risk_management", {}).get("trading_mode", "live")
+    risk_config = config.to_dict()
+
+    # Always apply mode-specific overrides for risk domain (even if same as global mode)
+    from copy import deepcopy
+    risk_config = deepcopy(risk_config)
+    trading = risk_config.get("trading", {})
+    risk = trading.get("risk", {})
+    if isinstance(risk, dict):
+        risk_mode_overrides = risk.get(risk_domain_mode, {})
+        if isinstance(risk_mode_overrides, dict) and risk_mode_overrides:
+            if "trading_allowed_thresholds" not in risk:
+                risk["trading_allowed_thresholds"] = {}
+            thresholds = risk["trading_allowed_thresholds"]
+            for key, value in risk_mode_overrides.items():
+                old_val = thresholds.get(key)
+                thresholds[key] = value
+                LOG.info(
+                    f"[domain-config] Risk override for mode '{risk_domain_mode}': {key} {old_val} → {value}")
+
+    risk_management = RiskManagement(fsm=fsm, config=risk_config)
 
     # Position Tracking (tracks portfolio state)
     position_tracking = PositionTracking(fsm=fsm, config=config.to_dict())
@@ -900,6 +1047,25 @@ def main() -> None:
 
     LOG.info("--- Disaster Recovery Check Finished ---")
 
+    # ==========================================
+    # SYNC OPEN ORDERS AND POSITIONS WITH BINANCE
+    # ==========================================
+    LOG.info("--- Starting Order/Position Synchronization ---")
+    try:
+        # Run async sync in event loop
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(
+            execution_position.sync_open_orders_and_positions())
+        loop.close()
+        LOG.info("✅ Order/Position synchronization complete")
+    except Exception as e:
+        LOG.error(f"❌ Error during order/position sync: {e}")
+        import traceback
+        LOG.debug(traceback.format_exc())
+    LOG.info("--- Order/Position Synchronization Finished ---")
+
     # Decision Making (generates trade intents) - execution_position already initialized in initialize_domains()
     decision_making = DecisionMaking(fsm=fsm, config=config.to_dict())
 
@@ -960,8 +1126,26 @@ def main() -> None:
     print("Press Ctrl+C to stop the application.")
     print("=" * 60 + "\n")
 
+    # Alert monitoring state
+    last_alert_check = time.time()
+    alert_check_interval = 60  # Check every 60 seconds
+
     try:
         while True:
+            current_time = time.time()
+
+            # Periodic alert checks
+            if current_time - last_alert_check >= alert_check_interval:
+                try:
+                    from typing import cast
+                    config_dict_arg = cast(dict[Any, Any], config.to_dict(
+                    ) if hasattr(config, 'to_dict') else config)
+                    _perform_alert_checks(
+                        alert_manager, wal_dir, config_dict_arg)
+                except Exception as e:
+                    LOG.error(f"Error during alert checks: {e}")
+                last_alert_check = current_time
+
             time.sleep(1)
     except KeyboardInterrupt:
         LOG.info("Shutting down Aurora Core...")
@@ -988,6 +1172,22 @@ def main() -> None:
                     LOG.info(f"{name} stopped.")
             except Exception as e:
                 LOG.error(f"Error stopping {name}: {e}")
+
+        # Stop WAL GC
+        try:
+            wal_gc.stop()
+            wal_gc_thread.join(timeout=5)
+            LOG.info("WAL GC stopped.")
+        except Exception as e:
+            LOG.error(f"Error stopping WAL GC: {e}")
+
+        # Optimize Feature Store before shutdown
+        try:
+            if 'feature_store' in locals():
+                feature_store.optimize()
+                LOG.info("Feature Store optimized.")
+        except Exception as e:
+            LOG.error(f"Error optimizing Feature Store: {e}")
 
         LOG.info("All components stopped or shutdown attempted. Exiting.")
         print("Aurora Core shutdown complete.")

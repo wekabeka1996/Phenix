@@ -39,9 +39,9 @@ class SnapshotScheduler:
         """
         self.fsm = fsm
         self.config = config
-        self.interval_sec = config.get("interval_sec", 300)  # 5 minutes default
-        self.snapshot_dir = Path(config.get("snapshot_dir", "ops/snapshots"))
-        self.target_domains = config.get("domains", ["position_tracking"])
+        self.interval_sec = self.config.ops.snapshots.interval_sec  # 5 minutes default
+        self.snapshot_dir = Path(self.config.ops.snapshots.snapshot_dir)
+        self.target_domains = self.config.ops.snapshots.domains
         self._thread: threading.Thread | None = None
         self._running = False
         self._stop_event = threading.Event()

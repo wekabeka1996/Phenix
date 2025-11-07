@@ -1,7 +1,7 @@
 [
   {
-    "symbol": "BTCUSDT",
-    "step_size": "0.00001",
+    "symbol": "SOLUSDT",
+    "step_size": "0.01",
     "min_notional": "10",
     "source_config": "config\\aurora\\trading.yaml"
   },
@@ -10,5 +10,22 @@
     "step_size": "0.001",
     "min_notional": "10",
     "source_config": "config\\aurora\\trading.yaml"
+  },
+  {
+    "symbol": "SOLUSDT",
+    "step_size": "0.01",
+    "min_notional": "10",
+    "source_config": "config\\aurora\\trading_v0.2.yaml"
+  },
+  {
+    "symbol": "ETHUSDT",
+    "step_size": "0.001",
+    "min_notional": "10",
+    "source_config": "config\\aurora\\trading_v0.2.yaml"
+  },
+  {
+    "symbol": "ETHUSDT",
+    "step_size": "0.001",
+    "source_config": "tests\\config\\aurora\\trading.yaml"
   }
 ]

@@ -21,7 +21,7 @@ Categories:
 """
 
 from enum import Enum
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class WhyCode(Enum):
@@ -211,7 +211,7 @@ def get_why_description(code: WhyCode) -> str:
     return descriptions.get(code, f"Unknown WHY code: {code.value}")
 
 
-def format_why_with_details(code: WhyCode, details: str = None) -> str:
+def format_why_with_details(code: WhyCode, details: Optional[str] = None) -> str:
     """Format WHY code with optional details for logging."""
     base = f"{code.value}"
     if details:
@@ -219,9 +219,9 @@ def format_why_with_details(code: WhyCode, details: str = None) -> str:
     return base
 
 
-def create_why_payload(code: WhyCode, details: Dict[str, Any] = None) -> Dict[str, Any]:
+def create_why_payload(code: WhyCode, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Create standardized WHY payload for events."""
-    payload = {
+    payload: Dict[str, Any] = {
         "why_code": code.value,
         "why_description": get_why_description(code),
     }

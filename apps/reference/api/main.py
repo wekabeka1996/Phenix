@@ -2,6 +2,10 @@
 from __future__ import annotations
 import os
 from fastapi import FastAPI
+import asyncio
+import json
+from datetime import datetime
+from typing import Dict, Any
 
 # FSMP-REFACTOR-T03-B: Separate debug and production APIs
 # Debug endpoints only available when TRADING_ENV != 'production'
@@ -21,6 +25,99 @@ else:
         description="Production API for Aurora Core FSM Federation",
         version="1.0.0",
     )
+
+    # WebSocket for live dashboard updates
+    from fastapi import WebSocket, WebSocketDisconnect
+
+    connected_clients = set()
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        """WebSocket endpoint for live dashboard updates."""
+        await websocket.accept()
+        connected_clients.add(websocket)
+
+        try:
+            # Send initial connection message
+            await websocket.send_json({
+                "type": "connected",
+                "timestamp": datetime.now().isoformat(),
+                "message": "Connected to Aurora Core dashboard"
+            })
+
+            # Keep connection alive and send periodic updates
+            while True:
+                try:
+                    # Get current metrics
+                    from prometheus_client import generate_latest
+                    from apps.reference.api.metrics import update_hybrid_coherence_metrics
+                    update_hybrid_coherence_metrics()
+
+                    txt = generate_latest().decode("utf-8", "replace")
+
+                    # Parse key metrics
+                    equity = _mget(txt, "exposure_equity_usd")
+                    pos_usd = _mget(txt, "exposure_positions_usd")
+                    pend_usd = _mget(txt, "exposure_pending_usd")
+                    limit_usd = _mget(txt, "exposure_limit_usd")
+                    placed = _mget(txt, "orders_placed_total")
+                    filled = _mget(txt, "orders_filled_total")
+                    exp_rej = _mget(
+                        txt, "fsm_guard_rejects_total", 'guard="exposure"')
+
+                    # Get alert stats
+                    alert_stats = {"active_alerts": 0, "last_alerts": []}
+                    try:
+                        # Try to get alert manager stats if available
+                        from apps.reference.main import alert_manager
+                        if 'alert_manager' in globals() or hasattr(alert_manager, 'get_alert_stats'):
+                            alert_stats = alert_manager.get_alert_stats()
+                    except:
+                        pass
+
+                    # Send dashboard data
+                    dashboard_data = {
+                        "type": "metrics_update",
+                        "timestamp": datetime.now().isoformat(),
+                        "exposure": {
+                            "equity_usd": equity,
+                            "positions_usd": pos_usd,
+                            "pending_usd": pend_usd,
+                            "limit_usd": limit_usd,
+                            "utilization_pct": ((pos_usd + pend_usd) / limit_usd * 100.0) if limit_usd > 0 else 0.0,
+                        },
+                        "orders": {
+                            "placed_total": placed,
+                            "filled_total": filled,
+                            "success_rate": (filled / placed * 100.0) if placed > 0 else 0.0
+                        },
+                        "alerts": {
+                            "active_count": alert_stats.get("active_alerts", 0),
+                            "recent_count": len(alert_stats.get("recent_alert_keys", []))
+                        },
+                        "guards": {
+                            "exposure_rejects": exp_rej
+                        }
+                    }
+
+                    await websocket.send_json(dashboard_data)
+
+                    # Wait 5 seconds before next update
+                    await asyncio.sleep(5)
+
+                except Exception as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "timestamp": datetime.now().isoformat(),
+                        "message": f"Error getting metrics: {str(e)}"
+                    })
+                    await asyncio.sleep(5)
+
+        except WebSocketDisconnect:
+            connected_clients.discard(websocket)
+        except Exception as e:
+            print(f"WebSocket error: {e}")
+            connected_clients.discard(websocket)
 
     @app.get("/health")
     async def health_check():
@@ -60,7 +157,7 @@ else:
     @app.get("/statdump")
     def statdump():
         # читаємо те саме, що віддає /metrics, з внутрішнього реєстру
-        from vfoundation.apps.reference.telemetry.metrics import generate_latest
+        from apps.reference.telemetry.metrics import generate_latest
         from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
 
         txt = generate_latest().decode("utf-8", "replace")

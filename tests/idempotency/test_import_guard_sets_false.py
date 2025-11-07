@@ -8,8 +8,9 @@ import importlib.util
 import os
 import sys
 from importlib.abc import MetaPathFinder
+from importlib.machinery import ModuleSpec
 from types import ModuleType
-from typing import Optional
+from typing import Optional, Sequence
 
 import pytest
 
@@ -20,12 +21,13 @@ class BlockRedisImportFinder(MetaPathFinder):
     def find_spec(
         self,
         fullname: str,
-        path: Optional[list[str]],
+        path: Sequence[str] | None,
         target: Optional[ModuleType] = None,
-    ) -> None:
+    ) -> Optional[ModuleSpec]:
         """Block redis import by returning None and raising ImportError."""
         if fullname == "redis" or fullname.startswith("redis."):
-            raise ImportError(f"redis import blocked by test (fullname={fullname})")
+            raise ImportError(
+                f"redis import blocked by test (fullname={fullname})")
         return None
 
 
@@ -80,7 +82,8 @@ def test_import_guard_sets_false(monkeypatch: pytest.MonkeyPatch) -> None:
             pass
 
         # Step 6: Verify REDIS_AVAILABLE=False
-        assert hasattr(module, "REDIS_AVAILABLE"), "Module should have REDIS_AVAILABLE"
+        assert hasattr(
+            module, "REDIS_AVAILABLE"), "Module should have REDIS_AVAILABLE"
         assert module.REDIS_AVAILABLE is False, (
             "REDIS_AVAILABLE should be False when redis import blocked"
         )

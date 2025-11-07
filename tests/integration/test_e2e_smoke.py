@@ -16,7 +16,7 @@ import pytest
 
 from vfoundation.core import FSMCore
 from vfoundation.core.protocol import Message
-from vfoundation.obs.order_logger import OrderLoggerV1
+from apps.reference.telemetry.order_logger import OrderLoggerV1
 from apps.reference.main import on_trade_intent_proposed
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from apps.reference.domains.execution_position.fsm import ExecPosFSM

@@ -8,15 +8,14 @@ Tests verify:
 4. Feature calculation formulas are correct
 """
 
+import json
+import pytest
 import sys
 from pathlib import Path
 
 # Add workspace root to path
 root_path = str(Path(__file__).parent.parent)
 sys.path.insert(0, root_path)
-
-import pytest
-import json
 
 
 class TestSignalWeightsConfig:
@@ -25,32 +24,38 @@ class TestSignalWeightsConfig:
     def test_config_file_exists(self):
         """Verify trading.yaml exists and is readable."""
         trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
-        assert trading_yaml.exists(), f"trading.yaml not found at {trading_yaml}"
+        assert trading_yaml.exists(
+        ), f"trading.yaml not found at {trading_yaml}"
         print(f"✅ trading.yaml found at {trading_yaml}")
 
     def test_signal_weights_in_config(self):
-        """Verify signal_weights are in trading.yaml."""
+        """Verify signal_weights are in trading.yaml (Phase 1 with 8 metrics)."""
         trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
 
-        with open(trading_yaml, "r") as f:
+        with open(trading_yaml, "r", encoding="utf-8") as f:
             content = f.read()
             assert "signal_weights:" in content, (
                 "signal_weights not found in trading.yaml"
             )
-            assert "obi: 0.6" in content, "obi weight not found"
-            assert "tfi: 0.35" in content, "tfi weight not found"
-            assert "delta_price: 0.05" in content, "delta_price weight not found"
+            # Check for new metrics weights (Phase 1)
+            assert "obi:" in content, "obi weight not found"
+            assert "tfi:" in content, "tfi weight not found"
+            assert "delta_price:" in content, "delta_price weight not found"
+            assert "ema_bias:" in content, "ema_bias weight not found (Phase 1 metrics)"
+            assert "volume_spike:" in content, "volume_spike weight not found (Phase 1 metrics)"
+            assert "volatility_state:" in content, "volatility_state weight not found (Phase 1 metrics)"
+            assert "depth_imbalance:" in content, "depth_imbalance weight not found (Phase 1 metrics)"
+            assert "macro_sync:" in content, "macro_sync weight not found (Phase 1 metrics)"
 
-        print("✅ All signal_weights found in trading.yaml:")
-        print("   - obi: 0.6")
-        print("   - tfi: 0.35")
-        print("   - delta_price: 0.05")
+        print("✅ All signal_weights found in trading.yaml (8 metrics, Phase 1):")
+        print("   Legacy: obi, tfi, delta_price")
+        print("   Phase 1: ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync")
 
     def test_signal_weights_under_trading_key(self):
         """Verify signal_weights are nested under 'trading:' key."""
         trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
 
-        with open(trading_yaml, "r") as f:
+        with open(trading_yaml, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
         trading_key_found = False
@@ -157,7 +162,8 @@ class TestFeaturesConsistency:
             variance = sum((x - avg_val) ** 2 for x in values) / len(values)
 
             print(f"\n  {feature_key.upper()}:")
-            print(f"    Min: {min_val:.4f}, Max: {max_val:.4f}, Avg: {avg_val:.4f}")
+            print(
+                f"    Min: {min_val:.4f}, Max: {max_val:.4f}, Avg: {avg_val:.4f}")
             print(f"    Range: {range_val:.4f}, Variance: {variance:.6f}")
 
             # Features must NOT be constant
@@ -178,7 +184,8 @@ class TestFeaturesConsistency:
         ]
 
         signal_scores = [
-            sum(f[k] * self.signal_weights[k] for k in self.signal_weights.keys())
+            sum(f[k] * self.signal_weights[k]
+                for k in self.signal_weights.keys())
             for f in simulated_features
         ]
 
@@ -203,7 +210,8 @@ class TestFeatureFormulas:
         print(f"\n📐 OBI Formula: (bid_vol - ask_vol) / (bid_vol + ask_vol)")
 
         test_cases = [
-            {"bid_vol": 100, "ask_vol": 100, "expected": 0.0, "desc": "Balanced book"},
+            {"bid_vol": 100, "ask_vol": 100,
+                "expected": 0.0, "desc": "Balanced book"},
             {
                 "bid_vol": 150,
                 "ask_vol": 50,
@@ -219,7 +227,8 @@ class TestFeatureFormulas:
         ]
 
         for tc in test_cases:
-            obi = (tc["bid_vol"] - tc["ask_vol"]) / (tc["bid_vol"] + tc["ask_vol"])
+            obi = (tc["bid_vol"] - tc["ask_vol"]) / \
+                (tc["bid_vol"] + tc["ask_vol"])
             assert abs(obi - tc["expected"]) < 0.0001, (
                 f"OBI mismatch: {obi} != {tc['expected']}"
             )
@@ -286,7 +295,8 @@ class TestWeightSumValidation:
             print(f"  {key:12}: {weight:.2f} ({pct:5.1f}%)")
         print(f"  {'Total':12}: {weight_sum:.2f} (100.0%)")
 
-        assert abs(weight_sum - 1.0) < 0.0001, f"Weights don't sum to 1.0: {weight_sum}"
+        assert abs(
+            weight_sum - 1.0) < 0.0001, f"Weights don't sum to 1.0: {weight_sum}"
 
         print(f"\n✅ Weights sum correctly to 1.0")
 
@@ -313,7 +323,8 @@ class TestFeatureEventPropagation:
         # Verify structure
         assert "symbol" in example_event, "Missing 'symbol' in event"
         assert "features" in example_event, "Missing 'features' in event"
-        assert isinstance(example_event["features"], dict), "Features should be dict"
+        assert isinstance(
+            example_event["features"], dict), "Features should be dict"
 
         features = example_event["features"]
         required_features = ["obi", "tfi", "delta_price"]

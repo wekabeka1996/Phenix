@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Any, Optional, TYPE_CHECKING
 
-from vfoundation.adapters.binance_adapter import BinanceAdapter
+from apps.reference.adapters.binance_adapter import BinanceAdapter
 from .websocket_aggregator import WebSocketAggregator
 
 if TYPE_CHECKING:
@@ -55,19 +55,61 @@ class MarketDataConnector:
         self.thread: Optional[threading.Thread] = None
         self.running = False
         self.data_source_tag = "testnet"
+        # Will be set after init
+        self.feature_engineering: Optional[Any] = None
 
-        system_config = config.get("system", {})
-        trading_section = system_config.get("trading", {})
-        self.symbols = trading_section.get("symbols_to_track", ["BTCUSDT", "ETHUSDT"])
+        # 🆕 FIX: Read trading config directly (not from system.trading)
+        # Config structure: merged_config = {trading: {...}, system: {...}}
+        if hasattr(self.config, "trading"):
+            trading_section = self.config.trading
+        elif isinstance(self.config, dict):
+            trading_section = self.config.get("trading", {})
+        else:
+            trading_section = {}
 
-        # Configure polling interval - now faster for WebSocket-like responsiveness
-        market_data_config = trading_section.get("market_data", {})
-        self.poll_interval_sec = market_data_config.get(
-            "poll_interval_sec", 2.0
-        )  # 2s instead of 5s
-        self.websocket_streams = market_data_config.get(
-            "websocket_streams", ["bookTicker", "trade"]
-        )
+        # Get symbols from config.instruments (SOLUSDT, ETHUSDT), NOT hardcoded defaults
+        try:
+            if hasattr(trading_section, "instruments"):
+                instruments = trading_section.instruments or {}
+            elif isinstance(trading_section, dict):
+                instruments = trading_section.get("instruments", {})
+            else:
+                instruments = {}
+        except Exception:
+            instruments = {}
+        self.symbols = list(instruments.keys()) if instruments else ["SOLUSDT", "ETHUSDT"]
+
+        # Get anchor symbols from config.market_data.macro_sync.anchors
+        macro_sync_config = trading_section.get(
+            "market_data", {}).get("macro_sync", {})
+        try:
+            self.anchors = self.config.trading.market_data.macro_sync.anchors
+        except Exception:
+            # Fallback to dict-based anchors resolution
+            try:
+                self.anchors = list((trading_section.get("market_data", {})
+                                     .get("macro_sync", {})
+                                     .get("anchors", [])) or [])
+            except Exception:
+                self.anchors = []
+        LOG.info(f"✅ Macro sync anchors: {self.anchors}")
+
+        # Configure polling interval and streams (Pydantic-first with dict fallback)
+        poll_interval_sec = 2.0
+        websocket_streams = ["bookTicker", "trade"]
+        try:
+            if hasattr(trading_section, "market_data") and getattr(trading_section, "market_data"):
+                md = trading_section.market_data
+                poll_interval_sec = float(getattr(md, "poll_interval_sec", poll_interval_sec))
+                websocket_streams = list(getattr(md, "websocket_streams", websocket_streams))
+            elif isinstance(trading_section, dict):
+                md = trading_section.get("market_data", {})
+                poll_interval_sec = float(md.get("poll_interval_sec", poll_interval_sec))
+                websocket_streams = list(md.get("websocket_streams", websocket_streams))
+        except Exception:
+            pass
+        self.poll_interval_sec = poll_interval_sec
+        self.websocket_streams = websocket_streams
 
         # Initialize the BinanceAdapter based on the domain-level trading_mode
         mode = "live"  # Default for market_data domain
@@ -76,45 +118,83 @@ class MarketDataConnector:
         if hasattr(config, "get_domain_mode"):
             try:
                 mode = config.get_domain_mode("market_data")
-                LOG.info(f"MarketDataConnector using domain-specific mode: {mode}")
+                LOG.info(
+                    f"MarketDataConnector using domain-specific mode: {mode}")
             except Exception as e:
                 LOG.warning(f"Could not get domain mode, using fallback: {e}")
-                mode = config.get("trading_mode", "live")
+                mode = getattr(self.config, "trading_mode", "testnet") if not isinstance(self.config, dict) else self.config.get("trading_mode", "testnet")
         else:
             # Fallback to global mode
-            mode = config.get("trading_mode", "live")
+            if hasattr(self.config, "trading_mode"):
+                mode = self.config.trading_mode
+            elif isinstance(self.config, dict):
+                mode = self.config.get("trading_mode", "testnet")
+            else:
+                mode = "testnet"
             LOG.info(f"MarketDataConnector using global trading_mode: {mode}")
 
-        api_config = config.get("binance_api", {})
+        # Resolve API env config (Pydantic-first with dict fallback)
+        api_key = api_secret = rest_url = None
+        if hasattr(self.config, "binance_api"):
+            bapi = self.config.binance_api
+            if mode in ["live", "hybrid_live_data_testnet_exec"]:
+                env = getattr(bapi, "live", None)
+                self.data_source_tag = "live"
+                LOG.info("MarketDataConnector is configured to use LIVE data source.")
+            else:
+                env = getattr(bapi, "testnet", None)
+                self.data_source_tag = "testnet"
+                LOG.info("MarketDataConnector is configured to use TESTNET data source.")
 
-        env_config = {}
-        if mode in ["live", "hybrid_live_data_testnet_exec"]:
-            env_config = api_config.get("live", {})
-            self.data_source_tag = "live"
-            LOG.info("MarketDataConnector is configured to use LIVE data source.")
-        else:
-            env_config = api_config.get("testnet", {})
-            self.data_source_tag = "testnet"
-            LOG.info("MarketDataConnector is configured to use TESTNET data source.")
+            if env is not None:
+                api_key = getattr(env, "api_key", None)
+                api_secret = getattr(env, "api_secret", None)
+                rest_url = getattr(env, "rest_url", None)
+        elif isinstance(self.config, dict):
+            bapi = self.config.get("binance_api", {})
+            env_dict = bapi.get("live", {}) if mode in ["live", "hybrid_live_data_testnet_exec"] else bapi.get("testnet", {})
+            self.data_source_tag = "live" if mode in ["live", "hybrid_live_data_testnet_exec"] else "testnet"
+            api_key = env_dict.get("api_key")
+            api_secret = env_dict.get("api_secret")
+            rest_url = env_dict.get("rest_url")
 
-        if not all(
-            [
-                env_config.get("api_key"),
-                env_config.get("api_secret"),
-                env_config.get("rest_url"),
-            ]
-        ):
+        if not all([api_key, api_secret, rest_url]):
             raise ValueError(f"API configuration for '{mode}' mode is incomplete.")
 
         self.adapter = BinanceAdapter(
-            api_key=env_config["api_key"],
-            api_secret=env_config["api_secret"],
-            rest_url=env_config["rest_url"],
+            api_key=str(api_key),
+            api_secret=str(api_secret),
+            rest_url=str(rest_url),
         )
 
         # Initialize WebSocket aggregator for real-time data collection
-        self.aggregator = WebSocketAggregator(self.symbols, window_seconds=60)
-        LOG.info(f"✅ WebSocket Aggregator initialized for {self.symbols}")
+        self.aggregator = WebSocketAggregator(
+            self.symbols, window_seconds=60, anchors=self.anchors)
+        LOG.info(
+            f"✅ WebSocket Aggregator initialized for {self.symbols} with anchors: {self.anchors}")
+
+    def set_feature_engineering(self, fe: Any) -> None:
+        """
+        Set the FeatureEngineering component to receive anchor updates.
+
+        Args:
+            fe: FeatureEngineering instance
+        """
+        self.feature_engineering = fe
+        # Set callback for anchor price updates
+        self.aggregator.set_anchor_update_callback(self._on_anchor_update)
+        LOG.info("✅ FeatureEngineering linked for anchor updates")
+
+    async def _on_anchor_update(self, anchor: str, price: str) -> None:
+        """
+        Callback when an anchor price is updated.
+
+        Args:
+            anchor: Anchor symbol (e.g., 'BTCUSDT')
+            price: Updated price
+        """
+        if self.feature_engineering:
+            self.feature_engineering.update_anchor_price(anchor, price)
 
     def start(self) -> None:
         """Start the data polling in a background thread."""
@@ -242,7 +322,41 @@ class MarketDataConnector:
                     LOG.debug(f"⏳ Not enough data yet for {symbol}")
 
             except Exception as e:
-                LOG.error(f"❌ Failed to fetch data for {symbol}: {e}", exc_info=True)
+                LOG.error(
+                    f"❌ Failed to fetch data for {symbol}: {e}", exc_info=True)
+
+        # 🆕 FIX #1: Fetch anchor prices (non-blocking, parallel with main symbols)
+        if self.anchors:
+            LOG.debug(f"📌 Fetching anchor prices: {self.anchors}")
+            for anchor in self.anchors:
+                try:
+                    LOG.debug(f"📡 Fetching anchor {anchor}")
+                    book_data = await self.adapter.get_book_ticker(symbol=anchor)
+                    if book_data:
+                        bid_price = float(book_data.get("bidPrice", "0"))
+                        ask_price = float(book_data.get("askPrice", "0"))
+                        mid_price = (bid_price + ask_price) / 2.0
+                        ts = int(time.time() * 1000)
+
+                        # Feed anchor data to aggregator
+                        self.aggregator.on_book_ticker(
+                            anchor,
+                            bid_price=str(bid_price),
+                            bid_size=book_data.get("bidQty", "0"),
+                            ask_price=str(ask_price),
+                            ask_size=book_data.get("askQty", "0"),
+                            ts=ts
+                        )
+
+                        # Trigger callback to FeatureEngineering
+                        await self._on_anchor_update(anchor, str(mid_price))
+                        LOG.debug(
+                            f"✅ Anchor {anchor} price updated: {mid_price}")
+                    else:
+                        LOG.warning(
+                            f"❌ No bookTicker data for anchor {anchor}")
+                except Exception as e:
+                    LOG.warning(f"❌ Failed to fetch anchor {anchor}: {e}")
 
     def _emit_market_tick(self, symbol: str, tick: dict[str, Any]) -> None:
         """Emit a market tick event with real feature data."""
@@ -277,4 +391,5 @@ class MarketDataConnector:
             )
 
         except Exception as e:
-            LOG.error(f"Error emitting market tick for {symbol}: {e}", exc_info=True)
+            LOG.error(
+                f"Error emitting market tick for {symbol}: {e}", exc_info=True)

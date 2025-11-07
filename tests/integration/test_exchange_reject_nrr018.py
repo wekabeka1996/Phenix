@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch
-from vfoundation.adapters.binance_adapter import _make_binance_error
+from apps.reference.adapters.binance_adapter import _make_binance_error
 
 
 class TestExchangeRejectNRR018:

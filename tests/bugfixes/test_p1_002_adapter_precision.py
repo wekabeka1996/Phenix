@@ -7,7 +7,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch, MagicMock
 import aiohttp
 
-from vfoundation.adapters.binance_adapter import BinanceAdapter
+from apps.reference.adapters.binance_adapter import BinanceAdapter
 
 # Mock API response with high-precision numbers as strings
 MOCK_API_RESPONSE = [
@@ -60,10 +60,13 @@ async def test_decimal_precision_is_preserved_on_response():
         assert len(positions) == 1
         position = positions[0]
 
-        # The adapter should return the precise string from the JSON
-        assert position["positionAmt"] == "0.123456789012345678"
-        assert position["entryPrice"] == "50000.123456789012345678"
+        # The adapter should return the precise string from the JSON (as ExchangePosition object)
+        # Note: ExchangePosition uses snake_case attributes
+        assert position.position_amount == "0.123456789012345678"
+        assert position.entry_price == "50000.123456789012345678"
 
         # Verify that converting it to Decimal in the test works as expected
-        assert Decimal(position["positionAmt"]) == Decimal("0.123456789012345678")
-        assert Decimal(position["entryPrice"]) == Decimal("50000.123456789012345678")
+        assert Decimal(position.position_amount) == Decimal(
+            "0.123456789012345678")
+        assert Decimal(position.entry_price) == Decimal(
+            "50000.123456789012345678")

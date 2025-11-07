@@ -84,7 +84,7 @@ hardening:
     hash_algorithm: "sha256"     # Hash algorithm for integrity checks
 account_observer:
   poll_interval: 5  # seconds between trade polls
-  symbols: [ETHUSDT]  # symbols to monitor
+  symbols: [SOLUSDT, ETHUSDT]  # symbols to monitor
   trade_limit: 50  # max trades to fetch per symbol
 
 position_tracking:
@@ -93,7 +93,7 @@ position_tracking:
 trading:
   # Track these symbols for trading and monitoring
   symbols_to_track:
-    - "BTCUSDT"
+    - "SOLUSDT"
     - "ETHUSDT"
 
   market_data:

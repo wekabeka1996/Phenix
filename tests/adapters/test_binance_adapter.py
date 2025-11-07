@@ -1,14 +1,15 @@
 import pytest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch, call
-from vfoundation.adapters.binance_adapter import BinanceAdapter
+from apps.reference.adapters.binance_adapter import BinanceAdapter
 
 
 class TestBinanceAdapterQuantizeQuantity:
     @pytest.fixture
     async def adapter(self):
         # Mock adapter without real session
-        adapter = BinanceAdapter("key", "secret", "https://testnet.binancefuture.com")
+        adapter = BinanceAdapter(
+            "key", "secret", "https://testnet.binancefuture.com")
         adapter._get_session = AsyncMock()
         adapter.get_exchange_info = AsyncMock()
         adapter.get_mark_price = AsyncMock()
@@ -166,10 +167,11 @@ class TestBinanceAdapterRequest:
 
         response = MagicMock()
         response.status_code = 400
-        response.json = AsyncMock(return_value={"code": -1013, "msg": "Invalid quantity"})
+        response.json = AsyncMock(
+            return_value={"code": -1013, "msg": "Invalid quantity"})
         adapter.session.request.return_value = response
 
-        from vfoundation.adapters.binance_adapter import BinanceAPIError
+        from apps.reference.adapters.binance_adapter import BinanceAPIError
 
         with pytest.raises(BinanceAPIError) as exc_info:
             await adapter._request("POST", "/order")
@@ -225,10 +227,11 @@ class TestBinanceAdapterRequest:
         # Error -1013, should not retry
         response = MagicMock()
         response.status_code = 400
-        response.json = AsyncMock(return_value={"code": -1013, "msg": "Invalid quantity"})
+        response.json = AsyncMock(
+            return_value={"code": -1013, "msg": "Invalid quantity"})
         adapter.session.request.return_value = response
 
-        from vfoundation.adapters.binance_adapter import BinanceAPIError
+        from apps.reference.adapters.binance_adapter import BinanceAPIError
 
         with pytest.raises(BinanceAPIError) as exc_info:
             await adapter._request("GET", "/test", signed=True)

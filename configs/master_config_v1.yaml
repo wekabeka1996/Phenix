@@ -1,7 +1,41 @@
 ops:
-  metrics_url: "http://127.0.0.1:8000/metrics"   #                 API                                                       
+  metrics_url: "http://127.0.0.1:8000/metrics"   #                 API
   reports_dir: "reports"
 
 execution:
   manage:
     auto: true
+
+# Bracket orders configuration for position management
+brackets:
+  enable: true
+  oco_emulation: true  # CRITICAL: Enables OCO (One-Cancels-Other) emulation - when one bracket fills, cancel the other
+  sl:
+    fixed_bps: 50  # Stop loss in basis points (0.5%)
+  tp:
+    fixed_bps: 100  # Take profit in basis points (1%)
+
+##############################
+# New structured config (additive-only)
+# Preferred path for execution domain config consumed by ExecPosFSM
+##############################
+trading:
+  execution:
+    manage:
+      # Bracket orders configuration (mirrors legacy top-level `brackets` for backward compatibility)
+      brackets:
+        enable: true                 # Enable bracket management (SL/TP)
+        oco_emulation: true          # Enable OCO emulation: when SL or TP fills, the counterpart is cancelled
+        sl:
+          fixed_bps: 50              # Stop Loss distance in basis points (0.5%)
+        tp:
+          fixed_bps: 100             # Take Profit distance in basis points (1.0%)
+
+      # Orphaned bracket monitor (periodic/self-cleaning of reduceOnly/closePosition orders when no position exists)
+      orphan_monitor:
+        enabled: true                # Master switch for the monitor (background loop and startup sync)
+        run_on_startup: true         # Run a one-time sync on startup to cancel orphans immediately
+        periodic_interval_sec: 300   # Interval for periodic cleanup loop in seconds (default 300s)
+        min_order_age_sec: 0         # Skip cancelling orders newer than this age (0 disables the filter)
+        batch_cancel_limit: 50       # Max cancels per single loop run to avoid bursts
+        rate_limit_per_min: 120      # Global per-minute cancel cap across symbols (0 disables)

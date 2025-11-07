@@ -1,7 +1,10 @@
 from __future__ import annotations
 from typing import Tuple
 from nacl.signing import SigningKey, VerifyKey
-from nacl.exceptions import BadSignatureError
+try:
+    from nacl.exceptions import BadSignatureError  # type: ignore
+except Exception:  # local shim fallback
+    from nacl import BadSignatureError  # type: ignore
 import hashlib
 import os
 

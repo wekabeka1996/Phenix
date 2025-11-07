@@ -12,7 +12,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from vfoundation.adapters.binance_adapter import BinanceAdapter
+from apps.reference.adapters.binance_adapter import BinanceAdapter
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -39,39 +39,67 @@ class AccountConnector:
         self.running = False
 
         # Extract account_observer config for polling interval
-        account_observer_config = config.get("account_observer", {})
-        self.update_interval = account_observer_config.get("poll_interval", 30)
+        # Handle both dict and Pydantic object access patterns
+        account_observer_config = (
+            self.config.get("account_observer", {})
+            if isinstance(self.config, dict)
+            else self.config.account_observer
+        )
+        poll_interval = (
+            account_observer_config.get("poll_interval", 30)
+            if isinstance(account_observer_config, dict)
+            else account_observer_config.poll_interval
+        )
+        self.update_interval = poll_interval
 
         # Initialize the BinanceAdapter based on the trading_mode
-        mode = config.get("trading_mode", "testnet")
-        api_config = config.get("binance_api", {})
+        mode = (
+            self.config.get("trading_mode", "testnet")
+            if isinstance(self.config, dict)
+            else self.config.trading_mode
+        )
+        api_config = (
+            self.config.get("binance_api", {})
+            if isinstance(self.config, dict)
+            else self.config.binance_api
+        )
 
         env_config = {}
         if mode == "live":
-            env_config = api_config.get("live", {})
+            if isinstance(api_config, dict):
+                env_config = api_config.get("live", {})
+            else:
+                env_config = api_config.live
             LOG.info(
                 "AccountConnector is configured for LIVE execution environment.")
         else:  # 'testnet' or 'hybrid_live_data_testnet_exec'
-            env_config = api_config.get("testnet", {})
+            if isinstance(api_config, dict):
+                env_config = api_config.get("testnet", {})
+            else:
+                env_config = api_config.testnet
             LOG.info(
                 f"AccountConnector is configured for TESTNET execution environment (mode: {mode})."
             )
 
-        if not all(
-            [
-                env_config.get("api_key"),
-                env_config.get("api_secret"),
-                env_config.get("rest_url"),
-            ]
-        ):
+        # Extract API credentials from env_config
+        if isinstance(env_config, dict):
+            api_key = env_config.get("api_key", "")
+            api_secret = env_config.get("api_secret", "")
+            rest_url = env_config.get("rest_url", "")
+        else:
+            api_key = env_config.api_key
+            api_secret = env_config.api_secret
+            rest_url = env_config.rest_url
+
+        if not all([api_key, api_secret, rest_url]):
             raise ValueError(
                 f"API configuration for account connection in '{mode}' mode is incomplete."
             )
 
         self.adapter = BinanceAdapter(
-            api_key=env_config["api_key"],
-            api_secret=env_config["api_secret"],
-            rest_url=env_config["rest_url"],
+            api_key=api_key,
+            api_secret=api_secret,
+            rest_url=rest_url,
         )
 
         # Store latest balance data from /fapi/v2/balance endpoint
@@ -125,13 +153,12 @@ class AccountConnector:
                         None,
                     )
                     if usdt_asset:
-                        LOG.info(f"   USDT asset keys: {usdt_asset.keys()}")
                         LOG.info(
-                            f"   USDT walletBalance: {usdt_asset.get('walletBalance', 'N/A')}"
-                        )
-                        # Also log all values
-                        for key, val in usdt_asset.items():
-                            LOG.info(f"      {key}: {val}")
+                            f"   💰 USDT balance: {usdt_asset.get('balance', 'N/A')}")
+                        LOG.info(
+                            f"   📊 USDT crossWalletBalance: {usdt_asset.get('crossWalletBalance', 'N/A')}")
+                        LOG.info(
+                            f"   📈 USDT crossUnPnl: {usdt_asset.get('crossUnPnl', 'N/A')}")
                     else:
                         LOG.warning(
                             "   ⚠️  No USDT asset found in balance data")
@@ -146,14 +173,29 @@ class AccountConnector:
         try:
             positions_data = await self.adapter.get_open_positions()
             LOG.info(
-                f"🔍 get_open_positions returned: {type(positions_data)}, length: {len(positions_data) if isinstance(positions_data, list) else 'N/A'}")
+                f"🔍 get_open_positions returned: {len(positions_data) if isinstance(positions_data, list) else 0} positions")
             if positions_data is not None:
                 if isinstance(positions_data, list):
+                    # Convert objects to dict if needed
+                    positions_list = [
+                        p.to_dict() if hasattr(p, 'to_dict') else (
+                            p.__dict__ if not isinstance(p, dict) else p)
+                        for p in positions_data
+                    ]
+                    # Count non-zero positions
+                    non_zero = sum(1 for p in positions_list if abs(
+                        float(p.get("positionAmt", 0))) > 0.0001)
                     LOG.info(
-                        f"✅ Fetched positions data: {len(positions_data)} positions"
+                        f"✅ Fetched positions: {non_zero} non-zero out of {len(positions_list)} total"
                     )
+                    # Log each non-zero position
+                    for pos in positions_list:
+                        amt = float(pos.get("positionAmt", 0))
+                        if abs(amt) > 0.0001:
+                            LOG.info(
+                                f"   📊 {pos.get('symbol')}: {amt} @ {pos.get('entryPrice', 'N/A')}")
                     # Always emit positions update, even if empty
-                    self._emit_positions_update(positions_data)
+                    self._emit_positions_update(positions_list)
                 else:
                     LOG.error(
                         f"Error processing positions data: expected a list, got {type(positions_data)}"

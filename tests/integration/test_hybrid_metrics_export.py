@@ -7,13 +7,13 @@ from prometheus_client import REGISTRY
 @pytest.fixture
 def metrics():
     # Import the existing metrics instead of creating new ones
-    from vfoundation.apps.reference.telemetry.metrics import AURORA_HYBRID_COHERENT, AURORA_HYBRID_INCOHERENT_REASONS_TOTAL
+    from apps.reference.telemetry.metrics import AURORA_HYBRID_COHERENT, AURORA_HYBRID_INCOHERENT_REASONS_TOTAL
     return AURORA_HYBRID_COHERENT, AURORA_HYBRID_INCOHERENT_REASONS_TOTAL
 
 
 def test_hybrid_incoherent_metrics_export(metrics):
     from apps.reference.bootstrap.preflight import check_hybrid_coherence, get_hybrid_coherence_state
-    from vfoundation.apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
+    from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
 
     # Simulate an incoherent configuration
     mock_config = {
@@ -32,7 +32,7 @@ def test_hybrid_incoherent_metrics_export(metrics):
     # Update metrics based on the state
     from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
     state = get_hybrid_coherence_state()
-    from vfoundation.apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
+    from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
     update_hybrid_coherence_metrics(state)
 
     # Assertions for incoherent state
@@ -50,7 +50,7 @@ def test_hybrid_incoherent_metrics_export(metrics):
 
 def test_hybrid_coherent_metrics_export(metrics):
     from apps.reference.bootstrap.preflight import check_hybrid_coherence, get_hybrid_coherence_state
-    from vfoundation.apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
+    from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
 
     # Simulate a coherent configuration
     mock_config = {
@@ -69,7 +69,7 @@ def test_hybrid_coherent_metrics_export(metrics):
     # Update metrics based on the state
     from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
     state = get_hybrid_coherence_state()
-    from vfoundation.apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
+    from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
     update_hybrid_coherence_metrics(state)
 
     # Assertions for coherent state

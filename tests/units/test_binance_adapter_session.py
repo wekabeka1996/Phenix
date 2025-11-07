@@ -2,7 +2,7 @@ import asyncio
 import pytest
 import httpx
 
-from vfoundation.adapters.binance_adapter import BinanceAdapter
+from apps.reference.adapters.binance_adapter import BinanceAdapter
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,8 @@ async def test_adapter_exposes_session_and_uses_request(monkeypatch):
 
         def raise_for_status(self):
             if self.status_code >= 400:
-                raise httpx.HTTPStatusError("Error", request=None, response=self)
+                raise httpx.HTTPStatusError(
+                    "Error", request=None, response=self)
 
     class DummyClient(httpx.AsyncClient):
         async def request(self, method, url, **kw):

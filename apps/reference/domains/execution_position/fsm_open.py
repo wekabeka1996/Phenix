@@ -66,12 +66,33 @@ class OpenFlowFSM:
             "fsm_errors_total": 0,
         }
         self.idempotency_store: Dict[str, float] = {}
-        self.idempotency_window_sec = self.config.get("idempotency_window_sec", 60)
+        try:
+            if hasattr(self.config, 'idempotency_window_sec'):
+                self.idempotency_window_sec = self.config.idempotency_window_sec
+            elif isinstance(self.config, dict):
+                self.idempotency_window_sec = self.config.get(
+                    "idempotency_window_sec", 60)
+            else:
+                self.idempotency_window_sec = 60
+        except (AttributeError, TypeError):
+            self.idempotency_window_sec = 60
 
     def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
         """Get instrument specifications from config."""
-        instruments = self.config.get("trading", {}).get("instruments", {})
-        specs = instruments.get(symbol, {})
+        try:
+            if hasattr(self.config, 'trading') and self.config.trading:
+                instruments = self.config.trading.instruments if hasattr(
+                    self.config.trading, 'instruments') else {}
+            elif isinstance(self.config, dict):
+                instruments = self.config.get(
+                    "trading", {}).get("instruments", {})
+            else:
+                instruments = {}
+        except (AttributeError, TypeError):
+            instruments = {}
+
+        specs = instruments.get(symbol, {}) if isinstance(
+            instruments, dict) else {}
 
         # Convert values to Decimal with proper error handling
         def to_decimal(value, default):
@@ -83,10 +104,10 @@ class OpenFlowFSM:
                 return default
 
         return {
-            "min_qty": to_decimal(specs.get("min_qty"), MIN_ORDER_QTY),
-            "step_size": to_decimal(specs.get("step_size"), QTY_STEP),
-            "tick_size": to_decimal(specs.get("tick_size"), PRICE_STEP),
-            "min_notional": to_decimal(specs.get("min_notional"), MIN_NOTIONAL),
+            "min_qty": to_decimal(specs.get("min_qty") if isinstance(specs, dict) else specs, MIN_ORDER_QTY),
+            "step_size": to_decimal(specs.get("step_size") if isinstance(specs, dict) else specs, QTY_STEP),
+            "tick_size": to_decimal(specs.get("tick_size") if isinstance(specs, dict) else specs, PRICE_STEP),
+            "min_notional": to_decimal(specs.get("min_notional") if isinstance(specs, dict) else specs, MIN_NOTIONAL),
         }
 
     def _cleanup_idempotency_store(self):
@@ -275,6 +296,7 @@ class OpenFlowFSM:
                     pld=dec_pld,
                     corr_id=str(uuid.uuid4()),
                     oco_group_id=str(uuid.uuid4()),
+                    data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
                 )
 
                 # Record metrics
@@ -345,6 +367,7 @@ class OpenFlowFSM:
                 pld=dec_pld,
                 corr_id=str(uuid.uuid4()),
                 oco_group_id=str(uuid.uuid4()),
+                data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
             )
 
             # Update state and metrics

@@ -1,5 +1,8 @@
-import os, json, tempfile, shutil
-from vfoundation.apps.reference.domains.decision_making.dm_log_adapter import (
+import os
+import json
+import tempfile
+import shutil
+from apps.reference.domains.decision_making.dm_log_adapter import (
     DecisionLog,
 )
 
@@ -10,7 +13,8 @@ def test_dm_log_writes_line():
     try:
         lg = DecisionLog()
         lg.write(
-            "DECISION_SKIP", "rid-1", {"symbol": "ETHUSDT", "reason": "RISK_DISALLOWED"}
+            "DECISION_SKIP", "rid-1", {"symbol": "ETHUSDT",
+                                       "reason": "RISK_DISALLOWED"}
         )
         p = os.path.join(d, "domain_decision_making.log")
         assert os.path.exists(p)

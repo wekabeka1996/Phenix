@@ -26,7 +26,8 @@ class TestFailClosedPricePattern:
         emitted_events = []
 
         def capture_emit(verb, payload, why):
-            emitted_events.append({"verb": verb, "payload": payload, "why": why})
+            emitted_events.append(
+                {"verb": verb, "payload": payload, "why": why})
 
         mock_fsm.emit = capture_emit
 
@@ -99,9 +100,12 @@ class TestFailClosedPricePattern:
         }
 
         # Feed data to trigger decision logic
-        dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED", src="test", dst="test", pld=features_payload))
-        dm.on_risk(Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED", src="test", dst="test", pld=risk_payload))
-        dm.on_portfolio(Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="test", dst="test", pld=portfolio_payload))
+        dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED",
+                       src="test", dst="test", pld=features_payload))
+        dm.on_risk(Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED",
+                   src="test", dst="test", pld=risk_payload))
+        dm.on_portfolio(Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED",
+                        src="test", dst="test", pld=portfolio_payload))
 
         # Assert: NO event should be emitted (fail-closed)
         assert len(emitted_events) == 0, (
@@ -119,7 +123,8 @@ class TestFailClosedPricePattern:
         mock_fsm_core = MagicMock()
         emitted_events = []
         mock_fsm_core.emit.side_effect = (
-            lambda name, payload, why: emitted_events.append(name)
+            lambda name, payload=None, why=None, data_ref=None: emitted_events.append(
+                name)
         )
 
         config = {

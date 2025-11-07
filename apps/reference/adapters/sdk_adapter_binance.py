@@ -174,7 +174,7 @@ class SdkAdapterBinance(ExecutionAdapter):
         try:
             # Get trading symbols from config
             from vfoundation.config import config
-            
+
             # Pydantic-first with fallback
             try:
                 if hasattr(config, 'trading') and config.trading:
@@ -185,12 +185,13 @@ class SdkAdapterBinance(ExecutionAdapter):
                     else:
                         instruments = {}
                 elif isinstance(config, dict):
-                    instruments = config.get("trading", {}).get("instruments", {})
+                    instruments = config.get(
+                        "trading", {}).get("instruments", {})
                 else:
                     instruments = {}
             except (AttributeError, TypeError):
                 instruments = {}
-            
+
             # Use first available symbol (SOLUSDT or ETHUSDT)
             symbol = next(iter(instruments.keys())
                           ) if instruments else "SOLUSDT"

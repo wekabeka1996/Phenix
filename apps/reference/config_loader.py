@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
 from dotenv import load_dotenv
+from pydantic import ValidationError
+
+from .config_models import AuroraConfig as PydanticAuroraConfig
 
 LOG = logging.getLogger(__name__)
 
@@ -21,47 +24,46 @@ def deep_merge(source, destination):
     return destination
 
 
-class AuroraConfig:
-    def __init__(self, config_dict: Dict[str, Any]):
-        self._config = config_dict
+# Legacy wrapper for backwards compatibility
+class AuroraConfig(PydanticAuroraConfig):
+    """
+    AuroraConfig wrapper that provides both Pydantic V2 validation and legacy .get() interface.
 
-    def __getattr__(self, name: str) -> Any:
-        value = self._config.get(name)
-        if isinstance(value, dict):
-            return AuroraConfig(value)
-        return value
+    This class allows gradual migration of code from dict-based .get() calls to typed attributes.
+    Eventually all code should use typed attributes directly.
+    """
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self._config.get(key, default)
+        """Legacy dict-like .get() interface for backwards compatibility."""
+        try:
+            # Try to get as Pydantic field
+            return getattr(self, key, default)
+        except AttributeError:
+            return default
 
     def to_dict(self) -> Dict[str, Any]:
-        return self._config
+        """Convert to dict for debugging/serialization."""
+        return self.model_dump()
 
     def get_domain_mode(self, domain_name: str) -> str:
         """Get trading_mode for a specific domain from domain_configuration."""
-        domain_config = self._config.get("domain_configuration", {})
-        if isinstance(domain_config, AuroraConfig):
-            domain_config = domain_config.to_dict()
-        domain_spec = domain_config.get(domain_name, {})
-        if isinstance(domain_spec, dict):
-            return domain_spec.get(
-                "trading_mode", self._config.get("trading_mode", "live")
-            )
-        # If domain_spec is AuroraConfig object
-        return getattr(
-            domain_spec, "trading_mode", self._config.get(
-                "trading_mode", "live")
-        )
+        # This is for advanced domain-specific modes (if needed in future)
+        return self.trading_mode
 
 
 class ConfigLoader:
     _ENV_VAR_PATTERN = re.compile(r"\$\{\s*(\w+)\s*\}")
 
     def __init__(self, config_dir: Optional[Path] = None):
-        self.config_dir = (
-            config_dir
-            or Path(__file__).resolve().parent.parent.parent / "config" / "aurora"
-        )
+        # Prefer explicit arg
+        if config_dir is not None:
+            self.config_dir = config_dir
+        else:
+            # Detect test override directory if present
+            project_root = Path(__file__).resolve().parents[3]
+            tests_dir = project_root / "tests" / "config" / "aurora"
+            default_dir = Path(__file__).resolve().parent.parent.parent / "config" / "aurora"
+            self.config_dir = tests_dir if tests_dir.exists() else default_dir
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
             load_dotenv(env_path)
@@ -84,6 +86,60 @@ class ConfigLoader:
                 lambda m: os.environ.get(m.group(1), m.group(0)), config_part
             )
         return config_part
+
+    def _resolve_mode_overrides(self, config: Dict[str, Any]) -> None:
+        """Apply mode-specific decision overrides from decision[mode] → decision.
+
+        This resolver activates profile-based configs:
+        - decision.testnet.* → decision.* (when trading_mode=testnet)
+        - decision.production.* → decision.* (when trading_mode=production)
+
+        ALSO applies risk[mode] → risk.trading_allowed_thresholds for risk gates.
+
+        Preserves original decision.{testnet,production} blocks for documentation.
+        """
+        mode = config.get("trading_mode", "production")
+        trading = config.get("trading", {})
+        decision = trading.get("decision", {})
+        risk = trading.get("risk", {})
+
+        if not isinstance(decision, dict):
+            return
+
+        mode_overrides = decision.get(mode, {})
+        if not isinstance(mode_overrides, dict):
+            return
+
+        if mode_overrides:
+            LOG.info(
+                f"[mode-resolver] Applying '{mode}' mode decision overrides")
+            for key, value in mode_overrides.items():
+                old_val = decision.get(key)
+                decision[key] = value
+                if old_val is not None:
+                    LOG.debug(f"  {key}: {old_val} → {value}")
+                else:
+                    LOG.debug(f"  {key}: (new) → {value}")
+
+        # Apply risk overrides
+        if isinstance(risk, dict):
+            risk_mode_overrides = risk.get(mode, {})
+            if isinstance(risk_mode_overrides, dict) and risk_mode_overrides:
+                LOG.info(
+                    f"[mode-resolver] Applying '{mode}' mode risk overrides")
+                # Ensure trading_allowed_thresholds exists
+                if "trading_allowed_thresholds" not in risk:
+                    risk["trading_allowed_thresholds"] = {}
+                thresholds = risk["trading_allowed_thresholds"]
+
+                for key, value in risk_mode_overrides.items():
+                    old_val = thresholds.get(key)
+                    thresholds[key] = value
+                    if old_val is not None:
+                        LOG.debug(
+                            f"  risk.thresholds.{key}: {old_val} → {value}")
+                    else:
+                        LOG.debug(f"  risk.thresholds.{key}: (new) → {value}")
 
     def _validate_config(self, config: Dict[str, Any]):
         if "trading_mode" not in config:
@@ -108,45 +164,58 @@ class ConfigLoader:
                 )
 
     def load_config(self) -> AuroraConfig:
-        system_config = self._load_yaml("system.yaml")
-        trading_config = self._load_yaml("trading.yaml")
+        """Load and validate configuration using Pydantic.
+
+        This method:
+        1. Loads YAML files
+        2. Resolves environment variables
+        3. Applies mode-specific overrides
+        4. Validates through Pydantic (fails fast if invalid)
+
+        Raises:
+            ValidationError: If config doesn't match Pydantic schema
+            FileNotFoundError: If config files missing
+        """
+        try:
+            system_config = self._load_yaml("system.yaml")
+            trading_config = self._load_yaml("trading.yaml")
+        except FileNotFoundError as e:
+            LOG.error(f"Config file error: {e}")
+            raise
+
         # Merge: trading_config (source) → system_config (destination)
-        # This ensures system_config gets updated with trading parameters
-        merged_config = {}
+        merged_config: Dict[str, Any] = {}
         deep_merge(system_config, merged_config)  # Copy system first
         deep_merge(trading_config, merged_config)  # Overlay trading
+
+        # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)
 
-        # --- NEW: Risk portfolio source resolution (FSMP-P3-T01) ---
-        ds = resolved_config.get("trading", {}).get(
-            "risk_management", {}).get("data_sources", {})
-        exec_mode = resolved_config.get("trading", {}).get("domain_configuration", {}).get(
-            "execution_position", {}).get("trading_mode", "testnet")  # Default to testnet for safety
-        portfolio_src = ds.get("portfolio_state", "follow_execution")
+        # Apply mode-specific decision overrides
+        self._resolve_mode_overrides(resolved_config)
 
-        if portfolio_src == "follow_execution":
-            portfolio_src = "testnet" if exec_mode != "live" else "live"
-
-        # Fail-closed: if execution is testnet, risk portfolio source must be testnet
-        if exec_mode == "testnet" and portfolio_src == "live":
-            LOG.warning(
-                f"Risk portfolio source '{portfolio_src}' overridden to 'testnet' "
-                f"under hybrid/testnet execution mode (fail-closed). "
-                f"Original config: trading.risk_management.data_sources.portfolio_state='{ds.get('portfolio_state')}'"
+        # --- NEW: Validate through Pydantic (startup validation) ---
+        try:
+            pydantic_config = PydanticAuroraConfig(**resolved_config)
+            LOG.info(
+                f"✅ Configuration validated for trading_mode: '{pydantic_config.trading_mode}'"
             )
-            portfolio_src = "testnet"
-
-        # Ensure _resolved section exists
-        if "_resolved" not in resolved_config:
-            resolved_config["_resolved"] = {}
-        resolved_config["_resolved"]["risk_portfolio_source"] = portfolio_src
-        # --- END NEW ---
-
-        self._validate_config(resolved_config)
-        LOG.info(
-            f"Configuration loaded for trading_mode: '{resolved_config['trading_mode']}'"
-        )
-        return AuroraConfig(resolved_config)
+            # Back-compat mapping: expose trading.execution at root 'execution' if missing
+            try:
+                if 'execution' not in resolved_config:
+                    tr = resolved_config.get('trading', {}) or {}
+                    if isinstance(tr, dict) and tr.get('execution') is not None:
+                        resolved_config['execution'] = tr.get('execution')
+            except Exception:
+                pass
+            # Convert back to our legacy-compatible wrapper
+            return AuroraConfig(**resolved_config)
+        except ValidationError as e:
+            LOG.error("❌ Configuration validation failed:")
+            for error in e.errors():
+                loc = ".".join(str(x) for x in error["loc"])
+                LOG.error(f"  {loc}: {error['msg']}")
+            raise
 
 
 _config_instance: Optional[AuroraConfig] = None

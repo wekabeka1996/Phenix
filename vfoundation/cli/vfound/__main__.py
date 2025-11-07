@@ -8,7 +8,8 @@ from typing import Any, Dict
 import typer
 
 # Add vfoundation to path for imports
-_cli_root = pathlib.Path(__file__).parent.parent.parent.resolve()  # → vfoundation/ (absolute)
+# → vfoundation/ (absolute)
+_cli_root = pathlib.Path(__file__).parent.parent.parent.resolve()
 _vfoundation_pkg = _cli_root / "vfoundation"  # → vfoundation/vfoundation/
 if str(_cli_root) not in sys.path:
     sys.path.insert(0, str(_cli_root))  # for apps.reference.*
@@ -42,8 +43,11 @@ def dict_lint(
 ) -> None:
     ok = True
     if global_:
-        p = pathlib.Path("vfoundation/dictionaries/global_v2_2.yaml")
-        ok = ok and p.exists()
+        # Check both framework and app dictionaries
+        framework_dict = pathlib.Path(
+            "vfoundation/dictionaries/global_v2_2_framework.yaml")
+        app_dict = pathlib.Path("apps/reference/dictionaries/global_v2_2.yaml")
+        ok = ok and framework_dict.exists() and app_dict.exists()
     if domain:
         ok = ok and pathlib.Path("vfoundation/dictionaries/domain").exists()
     typer.echo("dictionary: OK" if ok else "dictionary: FAIL")
@@ -57,7 +61,8 @@ def rfc_new(name: str) -> None:
         typer.echo("Exists")
         raise typer.Exit(code=1)
     template = pathlib.Path("docs/ADR-Template.md").read_text(encoding="utf-8")
-    path.write_text(template.replace("ADR-XXXX", f"RFC-{name}"), encoding="utf-8")
+    path.write_text(template.replace(
+        "ADR-XXXX", f"RFC-{name}"), encoding="utf-8")
     typer.echo(f"Created {path}")
 
 
@@ -86,8 +91,10 @@ def simulate_flow(file: pathlib.Path) -> None:
 @app.command("replay")
 def replay_rid(
     rid: str,
-    shadow: bool = typer.Option(False, "--shadow", help="Shadow mode (offline replay)"),
-    output: pathlib.Path = typer.Option(None, "--output", "-o", help="Output JSON path"),
+    shadow: bool = typer.Option(
+        False, "--shadow", help="Shadow mode (offline replay)"),
+    output: pathlib.Path = typer.Option(
+        None, "--output", "-o", help="Output JSON path"),
 ) -> None:
     """
     Replay events for specific RID from WAL.
@@ -140,16 +147,20 @@ def replay_rid(
     # Save report
     output_path = output or (REPORTS_DIR / f"rid_{rid}.json")
     output_path.parent.mkdir(exist_ok=True, parents=True)
-    output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(
+        report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     typer.echo(f"✅ Replay complete: {len(events)} events")
     typer.echo(f"📄 Report saved: {output_path}")
 
     if shadow:
-        why_chain: list[Any] = report.get("why_chain", [])  # type: ignore[assignment]
-        integrity: Dict[str, Any] = report.get("integrity", {})  # type: ignore[assignment]
+        why_chain: list[Any] = report.get(
+            "why_chain", [])  # type: ignore[assignment]
+        integrity: Dict[str, Any] = report.get(
+            "integrity", {})  # type: ignore[assignment]
         typer.echo(f"🔍 WHY chain length: {len(why_chain)}")
-        typer.echo(f"🔐 Integrity: {'✅' if integrity.get('hash_chain_valid') else '❌'}")
+        typer.echo(
+            f"🔐 Integrity: {'✅' if integrity.get('hash_chain_valid') else '❌'}")
 
 
 @app.command("drift")
@@ -158,7 +169,8 @@ def drift_batch(
     window_sec: float = typer.Option(
         1.0, "--window-sec", help="Time window for matching (seconds)"
     ),
-    output: pathlib.Path = typer.Option(None, "--output", "-o", help="Output JSON path"),
+    output: pathlib.Path = typer.Option(
+        None, "--output", "-o", help="Output JSON path"),
 ) -> None:
     """
     Compute drift metrics in batch mode from WAL.
@@ -172,14 +184,16 @@ def drift_batch(
     from importlib.machinery import ModuleSpec
 
     drift_monitor_path = (
-        _cli_root / "apps" / "reference" / "domains" / "execution_position" / "drift_monitor.py"
+        _cli_root / "apps" / "reference" / "domains" /
+        "execution_position" / "drift_monitor.py"
     )
     spec: ModuleSpec | None = importlib.util.spec_from_file_location(
         "drift_monitor", drift_monitor_path
     )
 
     if spec is None or spec.loader is None:
-        typer.echo(f"❌ Failed to load drift_monitor from {drift_monitor_path}", err=True)
+        typer.echo(
+            f"❌ Failed to load drift_monitor from {drift_monitor_path}", err=True)
         raise typer.Exit(code=1)
 
     drift_monitor: types.ModuleType = importlib.util.module_from_spec(spec)
@@ -235,7 +249,8 @@ def drift_batch(
 
     # Compute drift
     typer.echo(f"🔬 Computing drift (window: {window_sec}s)...")
-    drift_report = compute_drift(decisions, events_list, time_window_sec=window_sec)
+    drift_report = compute_drift(
+        decisions, events_list, time_window_sec=window_sec)
 
     # Build JSON report
     report = {
@@ -255,21 +270,25 @@ def drift_batch(
             "accuracy": round(drift_report.confusion.accuracy, 2),
         },
         "mismatches_count": len(drift_report.mismatches),
-        "mismatches": [m.to_dict() for m in drift_report.mismatches[:10]],  # First 10 mismatches
+        # First 10 mismatches
+        "mismatches": [m.to_dict() for m in drift_report.mismatches[:10]],
     }
 
     # Save report
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     output_path = output or (REPORTS_DIR / f"drift_{timestamp}.json")
     output_path.parent.mkdir(exist_ok=True, parents=True)
-    output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(
+        report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     typer.echo("\n✅ Drift analysis complete")
     typer.echo(f"📄 Report saved: {output_path}")
     typer.echo("\n📊 Results:")
 
-    confusion: Dict[str, Any] = report.get("confusion_matrix", {})  # type: ignore[assignment]
-    metrics_data: Dict[str, Any] = report.get("metrics", {})  # type: ignore[assignment]
+    confusion: Dict[str, Any] = report.get(
+        "confusion_matrix", {})  # type: ignore[assignment]
+    metrics_data: Dict[str, Any] = report.get(
+        "metrics", {})  # type: ignore[assignment]
 
     typer.echo(f"  TP (True Positive):  {confusion.get('tp', 0)}")
     typer.echo(f"  FP (False Positive): {confusion.get('fp', 0)}")
@@ -294,7 +313,8 @@ def trace_get(rid: str) -> None:
                 continue
             if obj.get("rid") == rid:
                 evs.append(obj)
-    typer.echo(json.dumps({"rid": rid, "events": evs}, ensure_ascii=False, indent=2))
+    typer.echo(json.dumps({"rid": rid, "events": evs},
+               ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

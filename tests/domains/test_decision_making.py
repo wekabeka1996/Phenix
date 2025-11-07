@@ -88,7 +88,7 @@ class FSMCore:
             self.listeners[event_name] = []
         self.listeners[event_name].append(callback)
 
-    def emit(self, event_name: str, payload: dict, why: str) -> None:
+    def emit(self, event_name: str, payload: dict, why: str, data_ref=None) -> None:
         """Emit event to listeners."""
         if event_name in self.listeners:
             for callback in self.listeners[event_name]:
@@ -96,11 +96,13 @@ class FSMCore:
                     callback(
                         Message(
                             op="EVT",
-                            verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
+                            # Extract verb from EVT:VERB
+                            verb=event_name.split(":")[1],
                             src="test",
                             dst="any",
                             pld=payload,
                             why=why,
+                            data_ref=data_ref or [],
                         )
                     )
                 except Exception as e:
@@ -116,7 +118,8 @@ def test_decision_making_aggregates_events_and_proposes_intent(
     """
     # Create mock listener for the domain's FSM
     mock_listener = mock.Mock()
-    decision_making_domain.fsm.listen("EVT:TRADE_INTENT_PROPOSED", mock_listener)
+    decision_making_domain.fsm.listen(
+        "EVT:TRADE_INTENT_PROPOSED", mock_listener)
 
     # Create input messages
     portfolio_msg = Message(

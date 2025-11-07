@@ -129,8 +129,8 @@ class ExchangeACL:
         In real implementation: websocket/REST poll.
         """
         # Stub: generate fake events for testing
-        yield self._stub_event("PARTIAL_FILL", "BTCUSDT", "BUY", 0.5)
-        yield self._stub_event("FILL", "BTCUSDT", "BUY", 1.0)
+        yield self._stub_event("PARTIAL_FILL", "SOLUSDT", "BUY", 0.5)
+        yield self._stub_event("FILL", "SOLUSDT", "BUY", 1.0)
 
     def _stub_submit(self, cmd: Message) -> Message:
         """Stub exchange submission"""
@@ -218,7 +218,8 @@ class ExchangeACL:
         self._latencies.append(latency_ms)
         if len(self._latencies) > 100:
             self._latencies = sorted(self._latencies)[-100:]
-            _acl_metrics["latency_p95_ms"] = self._latencies[94]  # p95 of last 100
+            # p95 of last 100
+            _acl_metrics["latency_p95_ms"] = self._latencies[94]
 
 
 def get_acl_metrics() -> Dict[str, Any]:

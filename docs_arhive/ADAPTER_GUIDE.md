@@ -1,6 +1,6 @@
 # Execution Adapter Guide (FSMP-P2-T01)
 
-**Status**:     Implemented  
+**Status**:     Implemented
 **Version**: v1.0 (dry_run + paper modes)
 
 ---
@@ -344,7 +344,7 @@ print(f"Order cancelled: {cancel_event['status']}")
 ```python
 import os
 from decimal import Decimal
-from vfoundation.core.adapters.sdk_adapter_binance import SdkAdapterBinance
+from apps.reference.adapters.sdk_adapter_binance import SdkAdapterBinance
 from vfoundation.core.adapters.execution_adapter import OrderDTO, ExecutionMode
 
 # Set testnet ENV variables
@@ -411,10 +411,10 @@ import asyncio
 
 async def process_events():
     adapter = MockExecutionAdapter(mode=ExecutionMode.PAPER)
-    
+
     async for event in adapter.stream():
         event_type = event["event_type"]
-        
+
         if event_type == "PARTIAL_FILL":
             print(f"Partial: {event['filled_qty']}/{event['qty']}")
         elif event_type == "FILL":
@@ -526,7 +526,7 @@ if entry:
 
 ## Distributed Idempotency (FSMP-P2-T02)
 
-**Status**:     Implemented  
+**Status**:     Implemented
 **Version**: v1.0 (Redis backend)
 
 ### Overview
@@ -634,25 +634,25 @@ try:
         ttl_ms=self.config.idemp_ttl_ms,
         owner=self.config.worker_id
     )
-    
+
     if result.status == ReserveStatus.NEW:
         # Call SDK (first time)
         sdk_response = self.sdk.submit(order)
-        
+
         # Confirm after success
         self.store.confirm(
             key=client_order_id,
             final_status="ORDER_PLACED",
             meta=sdk_response
         )
-        
+
         return build_event(sdk_response)
-    
+
     elif result.status == ReserveStatus.DUPLICATE_SAME:
         # Idempotent no-op: return cached result
         status = self.store.get_status(client_order_id)
         return build_event_from_cache(status.meta)
-    
+
     elif result.status == ReserveStatus.DUPLICATE_CONFLICT:
         # Should not reach here (reserve raises ConflictError)
         pass
@@ -707,7 +707,7 @@ pytest tests/idempotency/ --cov=vfoundation.core.idempotency --cov-report=term-m
 
 ---
 
-**Last Updated**: 2025-10-14  
-**Author**: vFoundation Team  
+**Last Updated**: 2025-10-14
+**Author**: vFoundation Team
 **RID**: FSMP-P2-T02
 

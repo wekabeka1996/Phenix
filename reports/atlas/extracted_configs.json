@@ -849,6 +849,80 @@
       }
     }
   },
+  "apps\\reference\\dictionaries\\global_v2_2.yaml": {
+    "keys": [
+      "version",
+      "ops",
+      "stdlib_verbs",
+      "routing_modes",
+      "ttl_profiles",
+      "policies",
+      "limits",
+      "security"
+    ],
+    "raw": {
+      "version": 2.2,
+      "ops": [
+        "ASK",
+        "DEC",
+        "CMD",
+        "EVT",
+        "UPD",
+        "ERR"
+      ],
+      "stdlib_verbs": [
+        "EVAL",
+        "OPEN",
+        "CLOSE",
+        "SCALE",
+        "ADJUST",
+        "AUTH",
+        "READ",
+        "WRITE",
+        "PING",
+        "HEALTH",
+        "WHY",
+        "ALERT",
+        "RECONCILE"
+      ],
+      "routing_modes": {
+        "hot": [
+          "ASK:EVAL",
+          "DEC:EVAL",
+          "ASK:OPEN",
+          "ASK:CLOSE"
+        ],
+        "warm": [
+          "EVT:*",
+          "UPD:*"
+        ],
+        "cold": [
+          "ALERT:*",
+          "RECONCILE:*"
+        ]
+      },
+      "ttl_profiles": {
+        "critical": 50,
+        "fast": 200,
+        "normal": 2000,
+        "ml_slow": 10000,
+        "background": 30000
+      },
+      "policies": {
+        "safety_timeout_behavior": "DENY"
+      },
+      "limits": {
+        "max_verbs_per_domain": 12,
+        "max_states_per_domain": 20
+      },
+      "security": {
+        "sign_required_ops": [
+          "CMD",
+          "DEC"
+        ]
+      }
+    }
+  },
   "config\\aurora\\regime.yaml": {
     "keys": [
       "config_version",
@@ -1000,6 +1074,7 @@
       "account_observer": {
         "poll_interval": 5,
         "symbols": [
+          "SOLUSDT",
           "ETHUSDT"
         ],
         "trade_limit": 50
@@ -1009,7 +1084,7 @@
       },
       "trading": {
         "symbols_to_track": [
-          "BTCUSDT",
+          "SOLUSDT",
           "ETHUSDT"
         ],
         "market_data": {
@@ -1041,37 +1116,42 @@
   },
   "config\\aurora\\trading.yaml": {
     "keys": [
-      "trading",
-      "binance_api"
+      "binance_api",
+      "trading"
     ],
     "raw": {
-      "trading": {
-        "decision": {
-          "signal_weights": {
-            "obi": 0.6,
-            "tfi": 0.35,
-            "delta_price": 0.05
-          },
-          "signal_threshold": 0.05,
-          "cooldown_sec": 10,
-          "position_sizing": {
-            "min_position_size_usd": 10,
-            "liquidity_based_cap_usd": 10000
-          },
-          "qos": {
-            "mode": "defer",
-            "enforce": false,
-            "exposure_block_cooldown_sec": 30,
-            "symbol_cooldown_sec": 0.5,
-            "max_intents_per_minute_per_symbol": 60
+      "binance_api": {
+        "live": {
+          "api_key": "${BINANCE_FUTURES_API_KEY_LIVE}",
+          "api_secret": "${BINANCE_FUTURES_API_SECRET_LIVE}",
+          "rest_url": "${BINANCE_FUTURES_BASE_URL_LIVE}",
+          "ws_url": "wss://fstream.binance.com"
+        },
+        "testnet": {
+          "api_key": "${BINANCE_TESTNET_API_KEY}",
+          "api_secret": "${BINANCE_TESTNET_API_SECRET}",
+          "rest_url": "https://testnet.binancefuture.com",
+          "ws_url": "wss://stream.testnet.binancefuture.com"
+        },
+        "feature_engineering": {
+          "liquidity": {
+            "depth_half": 1000
           }
+        }
+      },
+      "trading": {
+        "mode": "testnet",
+        "decision": {
+          "signal_threshold": 0.1
         },
         "instruments": {
-          "BTCUSDT": {
-            "step_size": "0.00001",
+          "SOLUSDT": {
+            "symbol": "SOLUSDT",
+            "step_size": "0.01",
             "min_notional": "10"
           },
           "ETHUSDT": {
+            "symbol": "ETHUSDT",
             "step_size": "0.001",
             "min_notional": "10"
           }
@@ -1094,6 +1174,280 @@
             "tfi": 0.35,
             "absorption_inverse": 0.25
           },
+          "testnet": {
+            "max_risk_score": 0.9
+          },
+          "production": {
+            "max_risk_score": 0.8
+          },
+          "trading_allowed_thresholds": {
+            "max_risk_score": 0.9
+          },
+          "daily": {
+            "max_realized_loss_usd": 250.0,
+            "max_drawdown_pct": 8.0,
+            "reset_time_utc": "00:00"
+          }
+        },
+        "feature_engineering": {
+          "ema": {
+            "period_short": 3,
+            "period_long": 7
+          },
+          "volume": {
+            "window_sec": 60,
+            "sma_length": 5
+          },
+          "volatility": {
+            "window_sec": 60,
+            "sma_length": 10
+          },
+          "liquidity": {
+            "depth_half": 1000
+          },
+          "enable_new_metrics": true,
+          "compute_all": true
+        },
+        "market_data": {
+          "macro_sync": {
+            "enabled": true,
+            "anchors": [
+              "BTCUSDT",
+              "ETHUSDT"
+            ],
+            "window": 60,
+            "emit_abs": false
+          }
+        },
+        "ops": {
+          "panic_killswitch": true,
+          "quiet_hours_utc": [
+            "22:00-06:00"
+          ],
+          "allowlist_symbols": []
+        },
+        "execution": {
+          "manage": {
+            "auto": true,
+            "brackets": {
+              "enable": true,
+              "oco_emulation": true,
+              "stop_loss_bps": 50,
+              "take_profit_low_ratio": 0.5,
+              "take_profit_high_ratio": 1.0,
+              "atomic_close": true,
+              "bracket_tracking": true
+            },
+            "orphan_monitor": {
+              "enabled": true,
+              "run_on_startup": true,
+              "periodic_interval_sec": 300,
+              "min_order_age_sec": 0,
+              "batch_cancel_limit": 50,
+              "rate_limit_per_min": 120
+            }
+          },
+          "exposure": {
+            "max_equity_utilization_pct": 0.2,
+            "max_portfolio_fraction": 0.2,
+            "max_side_utilization_pct": {
+              "long": 0.12,
+              "short": 0.12
+            },
+            "max_directional_ratio": 2.0,
+            "per_symbol_cap_pct": 0.08,
+            "count_pending_orders": true,
+            "exclude_reduce_only": true,
+            "pending_reservation_ttl_sec": 45,
+            "leverage_defaults": {
+              "SOLUSDT": 50,
+              "ETHUSDT": 50,
+              "__default__": 15
+            }
+          },
+          "open_order_type": "MARKET",
+          "order_params": {
+            "LIMIT": {
+              "timeInForce": "GTC"
+            },
+            "STOP_MARKET": {
+              "workingType": "MARK_PRICE"
+            },
+            "TAKE_PROFIT_MARKET": {
+              "workingType": "MARK_PRICE"
+            },
+            "TRAILING_STOP_MARKET": {
+              "callbackRate": "0.5"
+            }
+          },
+          "watchdog": {
+            "ack_ttl_ms": 8000,
+            "fill_ttl_ms": 60000
+          }
+        },
+        "domain_configuration": {
+          "market_data": {
+            "trading_mode": "live"
+          },
+          "feature_engineering": {
+            "trading_mode": "live"
+          },
+          "decision_making": {
+            "trading_mode": "live"
+          },
+          "risk_management": {
+            "trading_mode": "testnet"
+          },
+          "execution_position": {
+            "trading_mode": "testnet"
+          },
+          "audit_trail": {
+            "trading_mode": "live"
+          }
+        },
+        "models": {
+          "volatility": {
+            "enabled": true,
+            "atr_period": 14,
+            "threshold_multiplier": 2.0,
+            "low_vol_multiplier": 0.5
+          },
+          "mean_reversion": {
+            "threshold": 0.005
+          }
+        },
+        "risk_management": {
+          "data_sources": {
+            "portfolio_state": "testnet",
+            "market_data": "live"
+          }
+        }
+      }
+    }
+  },
+  "config\\aurora\\trading_v0.2.yaml": {
+    "keys": [
+      "trading",
+      "binance_api"
+    ],
+    "raw": {
+      "trading": {
+        "mode": "testnet",
+        "decision": {
+          "testnet": {
+            "signal_threshold": 0.15,
+            "max_risk_score": 0.9,
+            "kelly_boost": 1.2,
+            "regime_ceilings": {
+              "trend": 0.2,
+              "mean_reversion": 0.1,
+              "high_volatility": 0.15
+            }
+          },
+          "production": {
+            "signal_threshold": 0.25,
+            "max_risk_score": 0.8,
+            "kelly_boost": 1.0,
+            "regime_ceilings": {
+              "trend": 0.15,
+              "mean_reversion": 0.08,
+              "high_volatility": 0.1
+            }
+          },
+          "signal_weights": {
+            "obi": 0.6,
+            "tfi": 0.35,
+            "delta_price": 0.05
+          },
+          "signal_threshold": 0.05,
+          "signals": {
+            "normalize": false
+          },
+          "bar_gating": {
+            "enable": false,
+            "bar_ms": 900000
+          },
+          "behavior_fsm": {
+            "enable": false,
+            "high_vol_multiplier": 2.0,
+            "low_vol_multiplier": 0.5
+          },
+          "regime_threshold_multipliers": {
+            "HIGH_VOLATILITY": 1.2,
+            "LOW_VOLATILITY": 0.9,
+            "MEAN_REVERSION": 1.05,
+            "TREND_UP": 1.0,
+            "TREND_DOWN": 1.0,
+            "UNCERTAIN": 1.15,
+            "DEFAULT": 1.0
+          },
+          "side_bias_window_sec": 60,
+          "side_bias_target_ratio": 0.6,
+          "side_bias_penalty_factor": 0.5,
+          "cooldown_sec": 10,
+          "position_sizing": {
+            "min_position_size_usd": 10,
+            "liquidity_based_cap_usd": 10000,
+            "risk_fraction_q": 0.01,
+            "liquidity_kappa": 1.0,
+            "liquidity_kappa_mode": "dynamic"
+          },
+          "sizing_modifiers": {
+            "HIGH_VOLATILITY": "0.60",
+            "LOW_VOLATILITY": "1.20",
+            "MEAN_REVERSION": "0.50",
+            "UNCERTAIN": "0.50"
+          },
+          "kelly": {
+            "base_probability": 0.5,
+            "kelly_cap": 0.25,
+            "kelly_alpha": 0.8,
+            "payoff_ratio_r": 1.5
+          },
+          "qos": {
+            "mode": "defer",
+            "enforce": false,
+            "exposure_block_cooldown_sec": 30,
+            "symbol_cooldown_sec": 1,
+            "max_intents_per_minute_per_symbol": 60
+          }
+        },
+        "instruments": {
+          "SOLUSDT": {
+            "symbol": "SOLUSDT",
+            "step_size": "0.01",
+            "min_notional": "10"
+          },
+          "ETHUSDT": {
+            "symbol": "ETHUSDT",
+            "step_size": "0.001",
+            "min_notional": "10"
+          }
+        },
+        "tca_prefs": {
+          "max_slippage_pct": 0.5,
+          "preferred_venue": "binance",
+          "execution_priority": "speed"
+        },
+        "risk_budgets": {
+          "max_portfolio_risk_pct": 5.0,
+          "max_single_position_risk_pct": 1.0,
+          "max_daily_loss_pct": 2.0
+        },
+        "risk": {
+          "max_daily_drawdown_limit": 0.05,
+          "score_weights": {
+            "delta_price": 0.05,
+            "obi": 0.35,
+            "tfi": 0.35,
+            "absorption_inverse": 0.25
+          },
+          "testnet": {
+            "max_risk_score": 0.9
+          },
+          "production": {
+            "max_risk_score": 0.8
+          },
           "trading_allowed_thresholds": {
             "max_risk_score": 0.9
           },
@@ -1104,18 +1458,41 @@
           }
         },
         "ops": {
-          "panic_killswitch": false,
+          "panic_killswitch": true,
           "quiet_hours_utc": [
             "22:00-06:00"
           ],
           "allowlist_symbols": []
         },
         "execution": {
+          "manage": {
+            "auto": true,
+            "brackets": {
+              "enable": true,
+              "stop_loss_bps": 50,
+              "take_profit_low_ratio": 0.5,
+              "take_profit_high_ratio": 1.0,
+              "atomic_close": true,
+              "bracket_tracking": true
+            }
+          },
           "exposure": {
+            "max_equity_utilization_pct": 0.2,
             "max_portfolio_fraction": 0.2,
+            "max_side_utilization_pct": {
+              "long": 0.12,
+              "short": 0.12
+            },
+            "max_directional_ratio": 2.0,
+            "per_symbol_cap_pct": 0.08,
             "count_pending_orders": true,
             "exclude_reduce_only": true,
-            "pending_reservation_ttl_sec": 90
+            "pending_reservation_ttl_sec": 45,
+            "leverage_defaults": {
+              "SOLUSDT": 50,
+              "ETHUSDT": 50,
+              "__default__": 15
+            }
           },
           "open_order_type": "MARKET",
           "order_params": {
@@ -1144,13 +1521,24 @@
             "trading_mode": "live"
           },
           "risk_management": {
-            "trading_mode": "live"
+            "trading_mode": "testnet"
           },
           "execution_position": {
             "trading_mode": "testnet"
           },
           "audit_trail": {
             "trading_mode": "live"
+          }
+        },
+        "models": {
+          "volatility": {
+            "enabled": true,
+            "atr_period": 14,
+            "threshold_multiplier": 2.0,
+            "low_vol_multiplier": 0.5
+          },
+          "mean_reversion": {
+            "threshold": 0.005
           }
         },
         "risk_management": {
@@ -1172,6 +1560,11 @@
           "api_secret": "${BINANCE_TESTNET_API_SECRET}",
           "rest_url": "https://testnet.binancefuture.com",
           "ws_url": "wss://stream.testnet.binancefuture.com"
+        },
+        "feature_engineering": {
+          "liquidity": {
+            "depth_half": 1000
+          }
         }
       }
     }
@@ -1179,7 +1572,9 @@
   "configs\\master_config_v1.yaml": {
     "keys": [
       "ops",
-      "execution"
+      "execution",
+      "brackets",
+      "trading"
     ],
     "raw": {
       "ops": {
@@ -1189,6 +1584,40 @@
       "execution": {
         "manage": {
           "auto": true
+        }
+      },
+      "brackets": {
+        "enable": true,
+        "oco_emulation": true,
+        "sl": {
+          "fixed_bps": 50
+        },
+        "tp": {
+          "fixed_bps": 100
+        }
+      },
+      "trading": {
+        "execution": {
+          "manage": {
+            "brackets": {
+              "enable": true,
+              "oco_emulation": true,
+              "sl": {
+                "fixed_bps": 50
+              },
+              "tp": {
+                "fixed_bps": 100
+              }
+            },
+            "orphan_monitor": {
+              "enabled": true,
+              "run_on_startup": true,
+              "periodic_interval_sec": 300,
+              "min_order_age_sec": 0,
+              "batch_cancel_limit": 50,
+              "rate_limit_per_min": 120
+            }
+          }
         }
       }
     }
@@ -1225,6 +1654,57 @@
   "docs\\domains\\account_observer\\examples\\config_examples.yaml": {
     "keys": null,
     "raw": null
+  },
+  "docs_arhive\\Метрики\\CONFIG_SNIPPETS.yaml": {
+    "keys": null,
+    "raw": null
+  },
+  "tests\\config\\aurora\\system.yaml": {
+    "keys": [
+      "trading_mode",
+      "logging"
+    ],
+    "raw": {
+      "trading_mode": "testnet",
+      "logging": {
+        "level": "INFO"
+      }
+    }
+  },
+  "tests\\config\\aurora\\trading.yaml": {
+    "keys": [
+      "trading"
+    ],
+    "raw": {
+      "trading": {
+        "mode": "testnet",
+        "decision": {
+          "signal_threshold": 0.1,
+          "position_sizing": {
+            "min_position_size_usd": 10
+          },
+          "signal_weights": {
+            "obi": 0.15,
+            "tfi": 0.15,
+            "delta_price": 0.1,
+            "ema_bias": 0.15,
+            "volume_spike": 0.1,
+            "volatility_state": 0.1,
+            "depth_imbalance": 0.15,
+            "macro_sync": 0.1
+          }
+        },
+        "execution": {
+          "manage": {}
+        },
+        "instruments": {
+          "ETHUSDT": {
+            "symbol": "ETHUSDT",
+            "step_size": "0.001"
+          }
+        }
+      }
+    }
   },
   "vfoundation\\configs\\adapter.yaml": {
     "keys": [
@@ -1394,65 +1874,9 @@
       }
     }
   },
-  "vfoundation\\dictionaries\\domain\\audit_xai.yaml": {
-    "keys": [
-      "domain",
-      "key",
-      "ttl_profile",
-      "verbs",
-      "routing"
-    ],
-    "raw": {
-      "domain": "audit_xai",
-      "key": "audit/*",
-      "ttl_profile": "background",
-      "verbs": [
-        "UPD:WHY_APPEND",
-        "EVT:AUDIT_LOGGED"
-      ],
-      "routing": "cold"
-    }
-  },
-  "vfoundation\\dictionaries\\domain\\execution_position.yaml": {
-    "keys": [
-      "domain",
-      "key",
-      "ttl_profile",
-      "verbs",
-      "routing"
-    ],
-    "raw": {
-      "domain": "execution_position",
-      "key": "position/*",
-      "ttl_profile": "critical",
-      "verbs": [
-        "CMD:OPEN",
-        "CMD:CLOSE",
-        "EVT:POSITION_OPENED",
-        "EVT:POSITION_CLOSED"
-      ],
-      "routing": "hot"
-    }
-  },
-  "vfoundation\\dictionaries\\domain\\risk_strategy.yaml": {
-    "keys": [
-      "domain",
-      "key",
-      "ttl_profile",
-      "verbs",
-      "routing"
-    ],
-    "raw": {
-      "domain": "risk_strategy",
-      "key": "position/*",
-      "ttl_profile": "critical",
-      "verbs": [
-        "ASK:EVAL",
-        "DEC:EVAL",
-        "EVT:ENTROPY_SPIKE"
-      ],
-      "routing": "hot"
-    }
+  "vfoundation\\dictionaries\\global_v2_2_framework.yaml": {
+    "keys": null,
+    "raw": null
   },
   "vfoundation\\examples\\flow.yaml": {
     "keys": [

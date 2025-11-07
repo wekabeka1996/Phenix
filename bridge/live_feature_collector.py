@@ -1,6 +1,6 @@
 """
 Live feature collector for Binance live market data.
-Collects obi, tfi, delta_price features from ETHUSDT and BTCUSDT.
+Collects obi, tfi, delta_price features from ETHUSDT and SOLUSDT.
 """
 
 import decimal
@@ -61,7 +61,8 @@ class LiveFeatureCollector:
         """Process incoming stream data and calculate features."""
         try:
             if not isinstance(stream_data, dict) or "data" not in stream_data:
-                logger.debug(f"Skipping invalid stream_data: {type(stream_data)}")
+                logger.debug(
+                    f"Skipping invalid stream_data: {type(stream_data)}")
                 return
             data = stream_data.get("data", {})
             symbol = data.get("s", "").upper()
@@ -106,7 +107,8 @@ class LiveFeatureCollector:
         prev_price = decimal.Decimal(str(last_tick.get("price", 0)))
 
         depth = bid_size + ask_size
-        obi = (bid_size - ask_size) / depth if depth > 0 else decimal.Decimal(0)
+        obi = (bid_size - ask_size) / \
+            depth if depth > 0 else decimal.Decimal(0)
 
         total_flow = buy_volume + sell_volume
         tfi = (
@@ -116,7 +118,8 @@ class LiveFeatureCollector:
         )
 
         time_diff = current_tick["ts"] - last_tick["ts"]
-        delta_price = price - prev_price if time_diff < 1000 else decimal.Decimal(0)
+        delta_price = price - \
+            prev_price if time_diff < 1000 else decimal.Decimal(0)
 
         return {
             "obi": float(obi),
@@ -157,7 +160,11 @@ class LiveFeatureCollector:
 
 
 def main():
-    symbols = ["ETHUSDT", "BTCUSDT"]
+    # Get symbols from config - centralized configuration
+    from vfoundation.config_symbols import get_trading_symbols
+    symbols = get_trading_symbols()
+
+    print(f"Using symbols: {symbols}")
     collector = LiveFeatureCollector(symbols)
     collector.collect_features(30)
     summary = collector.get_summary()

@@ -7,6 +7,18 @@ import uuid
 Op = Literal["ASK", "DEC", "CMD", "EVT", "UPD", "ERR"]
 
 
+def truncate_why(why_text: Optional[str], max_len: int = 80) -> Optional[str]:
+    """Truncate why field to max_len to comply with Message validation.
+
+    Usage in bridge: why = truncate_why(long_why_string)
+    """
+    if why_text is None:
+        return None
+    if len(why_text) <= max_len:
+        return why_text
+    return why_text[:max_len]
+
+
 class Message(BaseModel):
     v: int = 1
     op: Op
@@ -26,10 +38,12 @@ class Message(BaseModel):
     data_ref: List[str] = Field(default_factory=list)
     sig: Optional[str] = None
     mode: str = "live"  # Domain-level trading mode: live, backtest, paper
-    mode_contract: Optional[str] = None  # Mode-specific validation rule identifier
+    # Mode-specific validation rule identifier
+    mode_contract: Optional[str] = None
     corr_id: Optional[str] = None  # Correlation ID for order lifecycle tracing
     oco_group_id: Optional[str] = None  # OCO group ID for entry + SL/TP orders
-    parent_client_order_id: Optional[str] = None  # Parent client order ID for SL/TP orders
+    # Parent client order ID for SL/TP orders
+    parent_client_order_id: Optional[str] = None
     link_ack_id: Optional[str] = None  # Link to exchange ACK order_id
     link_fill_id: Optional[str] = None  # Link to fill order_id for correlation
 

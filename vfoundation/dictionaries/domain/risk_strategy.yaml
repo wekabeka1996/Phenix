@@ -1,8 +1,0 @@
-domain: risk_strategy
-key: position/*
-ttl_profile: critical
-verbs:
-  - ASK:EVAL
-  - DEC:EVAL
-  - EVT:ENTROPY_SPIKE
-routing: hot

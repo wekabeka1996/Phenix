@@ -12,6 +12,7 @@ class DummyMsg:
         self.pld = pld or {}
         self.dst = "exec"
         self.rid = "rid"
+        self.data_ref = []  # Add data_ref for compatibility
 
 
 def test_fill_transitions_to_opened_state():

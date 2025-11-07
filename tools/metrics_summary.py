@@ -19,7 +19,7 @@ def _get_cfg():
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        
+
         # Pydantic-first, fallback to dict
         try:
             if hasattr(config, 'ops'):
@@ -30,18 +30,19 @@ def _get_cfg():
                 ops_config = {}
         except (AttributeError, TypeError):
             ops_config = {}
-        
+
         # Get metrics_url
         try:
             if hasattr(ops_config, 'metrics_url'):
                 url = ops_config.metrics_url
             elif isinstance(ops_config, dict):
-                url = ops_config.get("metrics_url", "http://127.0.0.1:8000/metrics")
+                url = ops_config.get(
+                    "metrics_url", "http://127.0.0.1:8000/metrics")
             else:
                 url = "http://127.0.0.1:8000/metrics"
         except (AttributeError, TypeError):
             url = "http://127.0.0.1:8000/metrics"
-        
+
         # Get reports_dir
         try:
             if hasattr(ops_config, 'reports_dir'):

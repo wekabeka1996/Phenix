@@ -41,21 +41,12 @@ class OrderTimeoutWatchdog:
     On timeout: logs NRR-019, marks order as EXPIRED, attempts idempotent cancel.
     """
 
-
-class OrderTimeoutWatchdog:
-    """
-    Monitors order execution timeouts and handles expired orders.
-
-    Tracks orders with deadlines and periodically checks for expirations.
-    On timeout: logs NRR-019, marks order as EXPIRED, attempts idempotent cancel.
-    """
-
     def __init__(
         self,
         ack_ttl_ms: int = 8000,  # 8 seconds for order acknowledgment
         fill_ttl_ms: int = 30000,  # 30 seconds for order fill
         check_interval_ms: int = 1000,  # Check every 1 second
-        on_timeout_callback: Optional[Callable[[OrderDeadline], None]] = None
+        on_timeout_callback: Optional[Callable[[OrderDeadline], Any]] = None
     ):
         self.ack_ttl_ms = ack_ttl_ms
         self.fill_ttl_ms = fill_ttl_ms
@@ -226,7 +217,10 @@ class OrderTimeoutWatchdog:
         # Call callback if provided
         if self.on_timeout_callback:
             try:
-                await self.on_timeout_callback(deadline)
+                result = self.on_timeout_callback(deadline)
+                # Handle both sync and async callbacks
+                if asyncio.iscoroutine(result):
+                    await result
             except Exception as e:
                 LOG.error(
                     f"Timeout callback error for order {deadline.order_id}: {e}", exc_info=True)

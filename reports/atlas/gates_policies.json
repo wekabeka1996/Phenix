@@ -6,10 +6,21 @@
     ".github\\workflows\\gemini-review.yml": {},
     ".github\\workflows\\gemini-scheduled-triage.yml": {},
     ".github\\workflows\\gemini-triage.yml": {},
+    "apps\\reference\\dictionaries\\global_v2_2.yaml": {
+      "ops": [
+        "ASK",
+        "DEC",
+        "CMD",
+        "EVT",
+        "UPD",
+        "ERR"
+      ]
+    },
     "config\\aurora\\regime.yaml": {},
     "config\\aurora\\system.yaml": {},
     "config\\aurora\\trading.staging.override.yaml": {},
     "config\\aurora\\trading.yaml": {},
+    "config\\aurora\\trading_v0.2.yaml": {},
     "configs\\master_config_v1.yaml": {
       "execution": {
         "manage": {
@@ -32,6 +43,8 @@
         "reports_dir": "reports"
       }
     },
+    "tests\\config\\aurora\\system.yaml": {},
+    "tests\\config\\aurora\\trading.yaml": {},
     "vfoundation\\configs\\adapter.yaml": {},
     "vfoundation\\configs\\idempotency.yaml": {},
     "vfoundation\\dictionaries\\global_v2_2.yaml": {
@@ -44,9 +57,6 @@
         "ERR"
       ]
     },
-    "vfoundation\\dictionaries\\domain\\audit_xai.yaml": {},
-    "vfoundation\\dictionaries\\domain\\execution_position.yaml": {},
-    "vfoundation\\dictionaries\\domain\\risk_strategy.yaml": {},
     "vfoundation\\examples\\flow.yaml": {}
   },
   "merged_master": {

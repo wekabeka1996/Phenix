@@ -59,7 +59,7 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
     ok = (len(reasons) == 0)
     # Optional: emit metrics if available
     try:
-        from vfoundation.apps.reference.telemetry.metrics import AURORA_HYBRID_COHERENT, AURORA_HYBRID_INCOHERENT_REASONS_TOTAL
+        from apps.reference.telemetry.metrics import AURORA_HYBRID_COHERENT, AURORA_HYBRID_INCOHERENT_REASONS_TOTAL
         AURORA_HYBRID_COHERENT.labels(mode=mode_label).set(1.0 if ok else 0.0)
         if not ok:
             for r in reasons:

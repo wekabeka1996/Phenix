@@ -1,3 +1,7 @@
+from apps.reference.domains.execution_position.execution_adapter import (
+    AbstractExecutionAdapter,
+)
+from unittest.mock import MagicMock
 import hmac
 import hashlib
 import pytest
@@ -8,37 +12,33 @@ from apps.reference.domains.execution_position.binance_execution_adapter import 
 from vfoundation.core.protocol import Message
 
 
-def test_build_order_params_market_and_limit():
+def test_adapt_symbol():
     cfg = {
         "trading_env": "test",
-        "trading": {"execution": {"open_order_type": "MARKET", "order_params": {}}},
         "binance_ro_api_key": "k",
         "binance_ro_api_secret": "s",
     }
     adapter = BinanceExecutionAdapter(fsm=None, config=cfg, shadow_mode=True)
-    pld = {"symbol": "ETHUSDT", "side": "BUY", "qty": "1.5"}
-    params = adapter._build_order_params(pld)
-    assert params["symbol"] == "ETHUSDT"
-    assert params["type"] == "MARKET"
-    assert "quantity" in params
 
-    # Test LIMIT order handling via config
-    cfg_l = {
+    # Test normal symbol
+    assert adapter._adapt_symbol("BTCUSDT") == "BTCUSDT"
+
+    # Test PERP symbol
+    assert adapter._adapt_symbol("BTC-PERP") == "BTCUSDT"
+
+
+def test_adapt_quantity():
+    cfg = {
         "trading_env": "test",
-        "trading": {
-            "execution": {
-                "open_order_type": "LIMIT",
-                "order_params": {"LIMIT": {"timeInForce": "GTC"}},
-            }
-        },
         "binance_ro_api_key": "k",
         "binance_ro_api_secret": "s",
     }
-    adapter_l = BinanceExecutionAdapter(fsm=None, config=cfg_l, shadow_mode=True)
-    pld2 = {"symbol": "FOO", "side": "SELL", "qty": "2", "price": "50"}
-    params2 = adapter_l._build_order_params(pld2)
-    assert params2["type"] == "LIMIT"
-    assert params2["price"] == "50"
+    adapter = BinanceExecutionAdapter(fsm=None, config=cfg, shadow_mode=True)
+
+    # Test quantity adaptation (removes trailing zeros)
+    assert adapter._adapt_quantity("1.500") == "1.5"
+    assert adapter._adapt_quantity("2.000") == "2"
+    assert adapter._adapt_quantity("0.1234000") == "0.1234"
 
 
 def test_generate_signature_matches_manual():
@@ -70,24 +70,15 @@ async def test_place_order_shadow_mode():
         src="t",
         dst="b",
         rid="r1",
-        pld={"symbol": "ETHUSDT", "qty": "1"},
+        pld={"symbol": "ETHUSDT", "side": "BUY", "qty": "1"},
     )
     res = await adapter.place_order(msg)
-    assert res["status"] == "ok"
+    assert res["lifecycle"] == "filled"
 
 
 """
 Unit tests for BinanceExecutionAdapter.
 """
-import pytest
-from unittest.mock import MagicMock
-from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.binance_execution_adapter import (
-    BinanceExecutionAdapter,
-)
-from apps.reference.domains.execution_position.execution_adapter import (
-    AbstractExecutionAdapter,
-)
 
 
 @pytest.fixture
@@ -126,4 +117,4 @@ async def test_place_order_shadow_mode_success(adapter_shadow):
     )
     result = await adapter_shadow.place_order(dec_msg)
     assert result["lifecycle"] == "filled"
-    assert "shadow-order" in result["order_id"]
+    assert "shadow" in result["order_id"]

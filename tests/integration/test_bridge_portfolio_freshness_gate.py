@@ -101,6 +101,9 @@ async def test_intent_deferred_until_portfolio_fresh(monkeypatch):
 
     await bridge.on_portfolio_state_updated(portfolio_update)
 
+    # Wait for async tasks to complete
+    await asyncio.sleep(0.01)
+
     # Should now emit CMD:OPEN for the deferred intent
     emitted_verbs = [msg.verb for msg in fsm.emitted]
     assert "OPEN" in emitted_verbs
@@ -165,6 +168,9 @@ async def test_intent_processed_immediately_when_portfolio_fresh(monkeypatch):
     )
 
     await bridge.on_trade_intent_proposed(intent)
+
+    # Wait for async tasks to complete
+    await asyncio.sleep(0.01)
 
     # Should emit CMD:OPEN immediately, no INTENT_DEFERRED
     emitted_verbs = [msg.verb for msg in fsm.emitted]

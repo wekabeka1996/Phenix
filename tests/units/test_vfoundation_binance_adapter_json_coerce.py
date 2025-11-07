@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from types import SimpleNamespace
-from vfoundation.adapters import binance_adapter as ba
+from apps.reference.adapters import binance_adapter as ba
 
 
 class DummyResp:

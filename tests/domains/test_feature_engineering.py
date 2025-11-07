@@ -1,5 +1,8 @@
 """Unit tests for FeatureEngineering domain."""
 
+from apps.reference.domains.feature_engineering.feature_engineering import (
+    FeatureEngineering,
+)
 import decimal
 import time
 from unittest import mock
@@ -64,7 +67,8 @@ def test_no_symbol_no_emit(fsm, config):
     fe = FeatureEngineering(fsm=fsm, config=config)
 
     # Create a message without symbol
-    msg = Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="fe", pld={})
+    msg = Message(op="EVT", verb="MARKET_TICK_RECEIVED",
+                  src="test", dst="fe", pld={})
     # Should not raise and should not emit
     fe.on_market_tick(msg)
     assert len(fsm.emitted) == 0
@@ -78,7 +82,8 @@ def test_first_tick_only_stored(fsm, config):
     fe = FeatureEngineering(fsm=fsm, config=config)
 
     tick = make_tick()
-    msg = Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="fe", pld=tick)
+    msg = Message(op="EVT", verb="MARKET_TICK_RECEIVED",
+                  src="test", dst="fe", pld=tick)
     fe.on_market_tick(msg)
 
     # No emission on first tick
@@ -140,7 +145,8 @@ def test_delta_price_suppressed_when_time_diff_large(fsm, config):
 
     ts0 = int(time.time() * 1000)
     last = make_tick(ts=ts0, price="50000.00")
-    current = make_tick(ts=ts0 + 2000, price="50050.00")
+    # Changed: 2000 → 5100 to exceed the 5000ms threshold (code now uses 5s, not 1s)
+    current = make_tick(ts=ts0 + 5100, price="50050.00")
 
     fe.last_tick_data["BTCUSDT"] = last
     msg = Message(
@@ -157,13 +163,6 @@ def test_delta_price_suppressed_when_time_diff_large(fsm, config):
 """
 Integration test for feature_engineering domain.
 """
-from unittest import mock
-import pytest
-import time
-from vfoundation.core.protocol import Message
-from apps.reference.domains.feature_engineering.feature_engineering import (
-    FeatureEngineering,
-)
 
 
 @pytest.fixture

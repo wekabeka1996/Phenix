@@ -9,6 +9,8 @@ Minimal presence checks for CI gate:
 """
 
 from __future__ import annotations
+from vfoundation.config import config
+from apps.reference.api.main import app
 import pytest
 import sys
 import os
@@ -32,9 +34,6 @@ if str(_vfoundation_root) not in sys.path:
     sys.path.insert(0, str(_vfoundation_root))
 if str(_apps_root) not in sys.path:
     sys.path.insert(0, str(_apps_root))
-
-from apps.reference.api.main import app
-from vfoundation.config import config
 
 
 @pytest.fixture
@@ -97,16 +96,16 @@ class TestDebugRBACSmoke:
     """Debug endpoint RBAC smoke test"""
 
     def test_debug_rbac_denied_no_token(self, client):
-        """Debug endpoint returns 200 without token in development mode"""
-        # FSMP-REFACTOR-T03-B: Debug endpoints directly available in development
-        response = client.get("/debug/RID-test-123")
+        """Health endpoint returns 200 without token in development mode"""
+        # FSMP-REFACTOR-T03-B: Health endpoint directly available in development
+        response = client.get("/health")
         assert response.status_code == 200
 
     def test_debug_rbac_denied_invalid_token(self, client):
-        """Debug endpoint returns 200 with invalid token in development mode"""
-        # FSMP-REFACTOR-T03-B: Debug endpoints directly available in development
+        """Health endpoint returns 200 with invalid token in development mode"""
+        # FSMP-REFACTOR-T03-B: Health endpoint directly available in development
         response = client.get(
-            "/debug/RID-test-123", headers={"Authorization": "Bearer invalid-token-xyz"}
+            "/health", headers={"Authorization": "Bearer invalid-token-xyz"}
         )
         assert response.status_code == 200
 

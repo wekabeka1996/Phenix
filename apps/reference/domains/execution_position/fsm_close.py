@@ -54,7 +54,8 @@ class CloseFlowFSM:
             # If a position exists, the FSM should be active.
             self.state = CloseState.OPENED
             self.position_active = True
-            self.position_open_ts = float(position_data.get("open_ts", time.time()))
+            self.position_open_ts = float(
+                position_data.get("open_ts", time.time()))
 
             print(
                 f"[CloseFlowFSM] Hydrated state for position: open_ts={self.position_open_ts}"
@@ -63,7 +64,8 @@ class CloseFlowFSM:
         except Exception as e:
             self.state = CloseState.ERROR
             self._metrics["fsm_errors_total"] += 1
-            print(f"[CloseFlowFSM] HYDRATION_ERROR: Failed to hydrate state: {e}")
+            print(
+                f"[CloseFlowFSM] HYDRATION_ERROR: Failed to hydrate state: {e}")
 
     def handle(self, msg: Message) -> Optional[Message]:
         """
@@ -119,7 +121,8 @@ class CloseFlowFSM:
             elapsed = now - self.position_open_ts
             if elapsed > self.max_hold_sec:
                 return self._emit_close(
-                    msg, "CLOSE_RULE", {"rule": "max_hold_time", "elapsed_sec": elapsed}
+                    msg, "CLOSE_RULE", {
+                        "rule": "max_hold_time", "elapsed_sec": elapsed}
                 )
 
             # Rule 2: Emergency close on REJECTED/EXPIRED
@@ -141,10 +144,12 @@ class CloseFlowFSM:
         return None
 
     def _emit_close(self, msg: Message, why: str, details: Dict[str, Any]) -> Message:
-        """Generate DEC:CLOSE with reduce_only=true."""
+        """Generate DEC:CLOSE with reduce_only=true and include symbol when available."""
         self.state = CloseState.CLOSE_COND
         self.state = CloseState.EMIT_DEC_CLOSE
         self._metrics["fsm_close_decisions_total"] += 1
+
+        symbol = (msg.pld or {}).get("symbol")
 
         dec = Message(
             op="DEC",
@@ -156,8 +161,10 @@ class CloseFlowFSM:
             idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
             pld={
                 "reduce_only": True,
+                **({"symbol": symbol} if symbol else {}),
                 **details,
             },
+            data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
         )
 
         # Update state

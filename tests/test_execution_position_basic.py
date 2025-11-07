@@ -20,7 +20,7 @@ def test_exec_pos_fsm_basic():
         }
     }
     from apps.reference.config_loader import AuroraConfig
-    config = AuroraConfig(config)
+    config = AuroraConfig.model_validate(config)
     fsm = ExecPosFSM(config=config, fsm=MagicMock())
     assert fsm.open_flow is not None
     assert fsm.manage_flow is not None

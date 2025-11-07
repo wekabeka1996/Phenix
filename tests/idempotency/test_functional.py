@@ -24,13 +24,26 @@ from vfoundation.core.idempotency.backends.simple_redis_store import (
 )
 
 
-# Use fakeredis for local testing (no external Redis needed)
+# Check if fakeredis is available and compatible
+REDIS_AVAILABLE = False
 try:
-    import fakeredis
-
-    REDIS_AVAILABLE = True
-except ImportError:
+    import redis as redis_module
+    if hasattr(redis_module, 'ResponseError'):
+        # Only try to import fakeredis if redis is compatible
+        try:
+            import fakeredis
+            REDIS_AVAILABLE = True
+        except ImportError:
+            REDIS_AVAILABLE = False
+except (ImportError, AttributeError):
     REDIS_AVAILABLE = False
+
+
+# Skip all tests in this module if Redis is not available
+pytestmark = pytest.mark.skipif(
+    not REDIS_AVAILABLE,
+    reason="fakeredis not available or incompatible with redis version"
+)
 
 
 @pytest.fixture

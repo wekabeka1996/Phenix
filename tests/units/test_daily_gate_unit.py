@@ -4,7 +4,7 @@ Unit tests for DailyGate risk management.
 
 import pytest
 from datetime import datetime, timezone
-from vfoundation.apps.reference.domains.risk_management.daily_gate import (
+from apps.reference.domains.risk_management.daily_gate import (
     DailyRiskState,
     _d,
 )

@@ -18,16 +18,21 @@ LOG = logging.getLogger(__name__)
 class WebSocketAggregator:
     """Aggregates WebSocket data streams into market tick events."""
 
-    def __init__(self, symbols: list[str], window_seconds: int = 60):
+    def __init__(self, symbols: list[str], window_seconds: int = 60, anchors: list[str] = None):
         """
         Initialize the aggregator.
 
         Args:
             symbols: List of trading symbols (e.g., ['BTCUSDT', 'ETHUSDT'])
             window_seconds: Time window for trade aggregation (default 60s)
+            anchors: List of anchor symbols for macro_sync (e.g., ['BTCUSDT', 'ETHUSDT'])
         """
         self.symbols = symbols
         self.window_seconds = window_seconds
+        self.anchors = anchors or []
+
+        # All symbols we track (trading + anchors)
+        all_tracked = set(symbols + self.anchors)
 
         # Per-symbol state
         self.state: Dict[str, Dict[str, Any]] = {
@@ -47,10 +52,11 @@ class WebSocketAggregator:
                 "prices": deque(maxlen=10),
                 "latest_price": decimal.Decimal(0),
             }
-            for symbol in symbols
+            for symbol in all_tracked
         }
 
         self.on_tick_callback: Optional[Callable] = None
+        self.on_anchor_update_callback: Optional[Callable] = None
 
     def set_tick_callback(self, callback: Callable) -> None:
         """
@@ -60,6 +66,15 @@ class WebSocketAggregator:
             callback: Async function(symbol, tick_data)
         """
         self.on_tick_callback = callback
+
+    def set_anchor_update_callback(self, callback: Callable) -> None:
+        """
+        Set callback to be called when an anchor price is updated.
+
+        Args:
+            callback: Async function(anchor_symbol, price)
+        """
+        self.on_anchor_update_callback = callback
 
     def on_book_ticker(
         self,
@@ -139,6 +154,14 @@ class WebSocketAggregator:
         state["latest_price"] = decimal.Decimal(price)
         state["prices"].append(decimal.Decimal(price))
 
+        # Trigger anchor update callback if this is an anchor
+        if symbol in self.anchors and self.on_anchor_update_callback:
+            try:
+                # We'll call it asynchronously later (from async context)
+                pass  # Async callback will be handled in periodic_emit
+            except Exception as e:
+                LOG.error(f"Error in anchor callback for {symbol}: {e}")
+
         LOG.debug(
             f"Trade {symbol}: price={price}, qty={quantity}, "
             f"is_seller_maker={is_buyer_maker}, "
@@ -172,12 +195,14 @@ class WebSocketAggregator:
 
         # OBI: Order Book Imbalance
         depth = bid_size + ask_size
-        obi = (bid_size - ask_size) / depth if depth > 0 else decimal.Decimal(0)
+        obi = (bid_size - ask_size) / \
+            depth if depth > 0 else decimal.Decimal(0)
 
         # TFI: Trade Flow Imbalance
         total_trades = buy_trades + sell_trades
         tfi = (
-            decimal.Decimal(buy_trades - sell_trades) / decimal.Decimal(total_trades)
+            decimal.Decimal(buy_trades - sell_trades) /
+            decimal.Decimal(total_trades)
             if total_trades > 0
             else decimal.Decimal(0)
         )
@@ -224,10 +249,18 @@ class WebSocketAggregator:
         """
         while True:
             try:
+                # Emit trading symbols
                 for symbol in self.symbols:
                     tick = self.get_market_tick(symbol)
                     if tick and self.on_tick_callback:
                         await self.on_tick_callback(symbol, tick)
+
+                # Emit anchor price updates
+                for anchor in self.anchors:
+                    if anchor in self.state:
+                        price = self.state[anchor]["latest_price"]
+                        if price and self.on_anchor_update_callback:
+                            await self.on_anchor_update_callback(anchor, str(price))
 
                 await asyncio.sleep(interval_seconds)
             except Exception as e:

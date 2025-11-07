@@ -1,0 +1,28 @@
+```yaml
+# Рекомендовані зміни конфігурації для інтеграції нових метрик
+# Ці фрагменти слід внести до config/aurora/trading.yaml (джерело істини)
+
+trading:
+  decision:
+    signals:
+      normalize: true  # Рекомендація для узгодження масштабів нових метрик
+    signal_weights:
+      obi: 0.30
+      tfi: 0.25
+      delta_price: 0.05
+      ema_bias: 0.15
+      volume_spike: 0.10
+      volatility_state: 0.05
+      depth_imbalance: 0.05
+      macro_sync: 0.05
+
+  feature_engineering:
+    liquidity:
+      depth_half: 1000  # перенесено з binance_api.feature_engineering.liquidity
+
+# MarketData anchors для macro_sync (читання без торгівлі)
+market_data:
+  macro_sync:
+    anchors: ["BTCUSDT", "ETHUSDT"]
+    window_sec: 60
+    emit_abs: false

@@ -4,7 +4,7 @@ FSM Core - Event Bus for FSM Applications
 Provides a simple event-driven communication system for FSM components.
 """
 
-from typing import Dict, List, Callable, Any
+from typing import Dict, List, Callable, Any, Optional
 import logging
 from .protocol import Message
 
@@ -35,7 +35,7 @@ class FSMCore:
             self.listeners[event_name] = []
         self.listeners[event_name].append(callback)
 
-    def emit(self, event_name: str, payload: Dict[str, Any], why: str) -> None:
+    def emit(self, event_name: str, payload: Dict[str, Any], why: str, data_ref: Optional[List[str]] = None) -> None:
         """
         Emit an event to all registered listeners.
 
@@ -43,6 +43,7 @@ class FSMCore:
             event_name: Name of the event to emit
             payload: Event payload data
             why: Reason for emitting the event
+            data_ref: Optional WHY chain data reference
         """
         if event_name in self.listeners:
             # Create Message object
@@ -53,6 +54,7 @@ class FSMCore:
                 dst="any",
                 pld=payload,
                 why=why,
+                data_ref=data_ref or [],
             )
 
             # Call all listeners

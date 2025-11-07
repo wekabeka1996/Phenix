@@ -79,14 +79,28 @@ class ManageFlowFSM:
         # Emergency/WaitMode configuration
         # Using typed attribute access for Pydantic models
         try:
-            bar_gate_cfg = self.config.trading.decision.bar_gating if self.config.trading else None
-            self._bar_ms = int(bar_gate_cfg.bar_ms) if bar_gate_cfg and hasattr(bar_gate_cfg, 'bar_ms') else 15 * 60 * 1000
+            if isinstance(self.config, dict):
+                bar_gate_cfg = self.config.get("trading", {}).get(
+                    "decision", {}).get("bar_gating", {})
+                self._bar_ms = int(bar_gate_cfg.get(
+                    "bar_ms", 15 * 60 * 1000)) if isinstance(bar_gate_cfg, dict) else 15 * 60 * 1000
+            else:
+                bar_gate_cfg = self.config.trading.decision.bar_gating if self.config.trading else None
+                self._bar_ms = int(bar_gate_cfg.bar_ms) if bar_gate_cfg and hasattr(
+                    bar_gate_cfg, 'bar_ms') else 15 * 60 * 1000
         except (AttributeError, TypeError, ValueError):
             self._bar_ms = 15 * 60 * 1000
-        
+
         try:
-            em_cfg = self.config.execution.manage.emergency if self.config.execution else None
-            self._wait_mode_bars = int(em_cfg.get("wait_mode_bars", 2)) if isinstance(em_cfg, dict) else 2
+            if isinstance(self.config, dict):
+                em_cfg = self.config.get("execution", {}).get(
+                    "manage", {}).get("emergency", {})
+                self._wait_mode_bars = int(em_cfg.get(
+                    "wait_mode_bars", 2)) if isinstance(em_cfg, dict) else 2
+            else:
+                em_cfg = self.config.execution.manage.emergency if self.config.execution else None
+                self._wait_mode_bars = int(
+                    getattr(em_cfg, "wait_mode_bars", 2)) if em_cfg else 2
         except (AttributeError, TypeError, ValueError):
             self._wait_mode_bars = 2
         self._wait_mode_until_ts: int = 0
@@ -94,15 +108,27 @@ class ManageFlowFSM:
         # Read auto-manage flag from config
         # Try both paths: trading.execution.manage and execution.manage
         try:
-            if hasattr(self.config, 'trading') and self.config.trading:
+            if isinstance(self.config, dict):
+                # Dict config: check both execution.manage and trading.execution.manage
+                manage_cfg = (
+                    self.config.get("execution", {}).get("manage", {}) or
+                    self.config.get("trading", {}).get(
+                        "execution", {}).get("manage", {})
+                )
+                self._auto_manage_enabled = bool(manage_cfg.get(
+                    "auto", False)) if isinstance(manage_cfg, dict) else False
+            elif hasattr(self.config, 'trading') and self.config.trading:
                 cfg_exec = self.config.trading.execution
+                manage_cfg = cfg_exec.manage if cfg_exec else None
+                self._auto_manage_enabled = bool(
+                    manage_cfg.auto if manage_cfg and hasattr(manage_cfg, 'auto') else False)
             elif hasattr(self.config, 'execution') and self.config.execution:
                 cfg_exec = self.config.execution
+                manage_cfg = cfg_exec.manage if cfg_exec else None
+                self._auto_manage_enabled = bool(
+                    manage_cfg.auto if manage_cfg and hasattr(manage_cfg, 'auto') else False)
             else:
-                cfg_exec = None
-            
-            manage_cfg = cfg_exec.manage if cfg_exec else None
-            self._auto_manage_enabled = bool(manage_cfg.auto if manage_cfg and hasattr(manage_cfg, 'auto') else False)
+                self._auto_manage_enabled = False
         except (AttributeError, TypeError):
             self._auto_manage_enabled = False
 
@@ -151,7 +177,8 @@ class ManageFlowFSM:
         if not self._auto_manage_enabled:
             inc_manage_skipped()
             # Emit MANAGE_SKIPPED event for observability
-            pld_symbol = msg.pld.get("symbol") if isinstance(msg.pld, dict) else None
+            pld_symbol = msg.pld.get("symbol") if isinstance(
+                msg.pld, dict) else None
             return Message(
                 op="EVT",
                 verb="MANAGE_SKIPPED",
@@ -176,10 +203,11 @@ class ManageFlowFSM:
             now_ts = int(ts_value) if ts_value else int(time.time() * 1000)
         except Exception:
             now_ts = int(time.time() * 1000)
-        
+
         if self.state == ManageState.WAIT_MODE:
             if now_ts < self._wait_mode_until_ts:
-                pld_symbol = msg.pld.get("symbol") if isinstance(msg.pld, dict) else None
+                pld_symbol = msg.pld.get("symbol") if isinstance(
+                    msg.pld, dict) else None
                 return Message(
                     op="EVT",
                     verb="MANAGE_SKIPPED",
@@ -309,7 +337,7 @@ class ManageFlowFSM:
                 brackets_config = self.config.get("brackets", {})
             else:
                 brackets_config = None
-            
+
             if brackets_config and hasattr(brackets_config, 'enable'):
                 return bool(brackets_config.enable)
             elif isinstance(brackets_config, dict):
@@ -331,8 +359,10 @@ class ManageFlowFSM:
                 tp_config = brackets.tp if brackets else None
             elif isinstance(self.config, dict):
                 brackets_config = self.config.get("brackets", {})
-                sl_config = brackets_config.get("sl", {}) if isinstance(brackets_config, dict) else None
-                tp_config = brackets_config.get("tp", {}) if isinstance(brackets_config, dict) else None
+                sl_config = brackets_config.get("sl", {}) if isinstance(
+                    brackets_config, dict) else None
+                tp_config = brackets_config.get("tp", {}) if isinstance(
+                    brackets_config, dict) else None
             else:
                 sl_config = None
                 tp_config = None
@@ -345,9 +375,9 @@ class ManageFlowFSM:
             if sl_config:
                 if hasattr(sl_config, 'fixed_bps'):
                     sl_bps = sl_config.fixed_bps
-                elif isinstance(sl_config, dict):
-                    sl_bps = sl_config.get("fixed_bps", 50)
-            
+                else:
+                    sl_bps = getattr(sl_config, "fixed_bps", 50)
+
             if self.position_side == "BUY":
                 sl_price = entry_price * (1 - Decimal(str(sl_bps)) / 10000)
             else:  # SELL
@@ -358,9 +388,9 @@ class ManageFlowFSM:
             if tp_config:
                 if hasattr(tp_config, 'fixed_bps'):
                     tp_bps = tp_config.fixed_bps
-                elif isinstance(tp_config, dict):
-                    tp_bps = tp_config.get("fixed_bps", 100)
-            
+                else:
+                    tp_bps = getattr(tp_config, "fixed_bps", 100)
+
             if self.position_side == "BUY":
                 tp_price = entry_price * (1 + Decimal(str(tp_bps)) / 10000)
             else:  # SELL
@@ -448,20 +478,22 @@ class ManageFlowFSM:
                     emergency_cfg = None
             except (AttributeError, TypeError):
                 emergency_cfg = None
-            
+
             emergency_enabled = False
             emergency_sl_bps = 100
             if emergency_cfg:
                 if hasattr(emergency_cfg, 'enable'):
                     emergency_enabled = bool(emergency_cfg.enable)
                 elif isinstance(emergency_cfg, dict):
-                    emergency_enabled = bool(emergency_cfg.get("enable", False))
-                
+                    emergency_enabled = bool(
+                        self.config.trading.execution.manage.emergency.enable)
+
                 if hasattr(emergency_cfg, 'emergency_sl_bps'):
                     emergency_sl_bps = emergency_cfg.emergency_sl_bps
-                elif isinstance(emergency_cfg, dict):
-                    emergency_sl_bps = emergency_cfg.get("emergency_sl_bps", 100)
-            
+                else:
+                    emergency_sl_bps = getattr(
+                        emergency_cfg, "emergency_sl_bps", 100)
+
             if emergency_enabled and msg.op == "UPD" and msg.verb == "MARKET_DATA":
                 pld = msg.pld or {}
                 cur = pld.get("price")
@@ -565,10 +597,11 @@ class ManageFlowFSM:
                     if brackets and hasattr(brackets, 'oco_emulation'):
                         oco_enabled = bool(brackets.oco_emulation)
                 elif isinstance(self.config, dict):
-                    oco_enabled = bool(self.config.get("brackets", {}).get("oco_emulation", False))
+                    oco_enabled = bool(self.config.get(
+                        "brackets", {}).get("oco_emulation", False))
             except (AttributeError, TypeError):
                 oco_enabled = False
-            
+
             if self.tp_order_id and oco_enabled:
                 print(
                     f"[ManageFlowFSM] SL filled, cancelling TP: {self.tp_order_id}")
@@ -589,10 +622,11 @@ class ManageFlowFSM:
                     if brackets and hasattr(brackets, 'oco_emulation'):
                         oco_enabled = bool(brackets.oco_emulation)
                 elif isinstance(self.config, dict):
-                    oco_enabled = bool(self.config.get("brackets", {}).get("oco_emulation", False))
+                    oco_enabled = bool(self.config.get(
+                        "brackets", {}).get("oco_emulation", False))
             except (AttributeError, TypeError):
                 oco_enabled = False
-            
+
             if self.sl_order_id and oco_enabled:
                 print(
                     f"[ManageFlowFSM] TP filled, cancelling SL: {self.sl_order_id}")
@@ -617,14 +651,14 @@ class ManageFlowFSM:
                 trailing = None
         except (AttributeError, TypeError):
             trailing = None
-        
+
         trailing_enabled = False
         if trailing:
             if hasattr(trailing, 'enable'):
                 trailing_enabled = bool(trailing.enable)
             elif isinstance(trailing, dict):
                 trailing_enabled = bool(trailing.get("enable", False))
-        
+
         if not trailing_enabled or not self.sl_order_id:
             return None
 
@@ -645,8 +679,9 @@ class ManageFlowFSM:
                     if hasattr(trailing, 'activation_profit_atr_k'):
                         activation_k = float(trailing.activation_profit_atr_k)
                     elif isinstance(trailing, dict):
-                        activation_k = float(trailing.get("activation_profit_atr_k", 1.0))
-                
+                        activation_k = float(trailing.get(
+                            "activation_profit_atr_k", 1.0))
+
                 activation_threshold = self.position_entry_price * (
                     1
                     + Decimal(str(activation_k))
@@ -670,11 +705,11 @@ class ManageFlowFSM:
                     return None
 
             # Check cooldown
-            if now - self.last_trailing_ts < trailing_config.get("cooldown_sec", 30):
+            if now - self.last_trailing_ts < self.config.trading.execution.manage.trailing.cooldown_sec:
                 return None
 
             # Calculate new SL price
-            step_bps = trailing_config.get("step_bps", 10)
+            step_bps = self.config.trading.execution.manage.trailing.step_bps
             if self.position_side == "BUY" and self.sl_price:
                 # For long position, trail up
                 new_sl_price = max(

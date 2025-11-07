@@ -2,12 +2,11 @@
 Unit tests for quiet hours functionality.
 """
 
+from apps.reference.domains.execution_position.fsm import _in_quiet
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-
-from vfoundation.apps.reference.domains.execution_position.fsm import _in_quiet
 
 
 def test_in_quiet_simple():
@@ -21,14 +20,17 @@ def test_in_quiet_simple():
 def test_in_quiet_normal_range():
     """Test quiet hours within normal time range."""
     # Test various time ranges that don't wrap around midnight
-    assert _in_quiet(["09:00-17:00"]) in (True, False)  # Depends on current time
-    assert _in_quiet(["22:00-06:00"]) in (True, False)  # Depends on current time
+    # Depends on current time
+    assert _in_quiet(["09:00-17:00"]) in (True, False)
+    # Depends on current time
+    assert _in_quiet(["22:00-06:00"]) in (True, False)
 
 
 def test_in_quiet_midnight_wrap():
     """Test quiet hours that wrap around midnight."""
     # This range wraps around midnight, so should be true during late night/early morning
-    assert _in_quiet(["22:00-06:00"]) in (True, False)  # Depends on current time
+    # Depends on current time
+    assert _in_quiet(["22:00-06:00"]) in (True, False)
 
 
 def test_in_quiet_multiple_ranges():

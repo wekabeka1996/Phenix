@@ -33,7 +33,7 @@ class MetricsCollector:
 
         # Thread-safe storage for metrics
         self._lock = threading.RLock()
-        self._metrics = {
+        self._metrics: Dict[str, Any] = {
             "trade_intents_total": 0,
             "trade_decisions_accepted": 0,
             "trade_decisions_rejected": 0,
@@ -79,8 +79,12 @@ class MetricsCollector:
     def record_trade_intent(self, symbol: str, side: str, **extra_data) -> None:
         """Record a trade intent."""
         with self._lock:
-            self._metrics["trade_intents_total"] += 1
-            self._symbol_metrics[symbol]["intents"] += 1
+            trade_intents: int = int(
+                self._metrics.get("trade_intents_total", 0))
+            self._metrics["trade_intents_total"] = trade_intents + 1
+            symbol_intents: int = int(
+                self._symbol_metrics[symbol].get("intents", 0))
+            self._symbol_metrics[symbol]["intents"] = symbol_intents + 1
 
             event = {
                 "type": "intent",
@@ -102,19 +106,33 @@ class MetricsCollector:
         """Record a trade decision (accepted/rejected)."""
         with self._lock:
             if decision.upper() == "ACCEPTED":
-                self._metrics["trade_decisions_accepted"] += 1
-                self._symbol_metrics[symbol]["accepted"] += 1
+                trade_accepted: int = int(
+                    self._metrics.get("trade_decisions_accepted", 0))
+                self._metrics["trade_decisions_accepted"] = trade_accepted + 1
+                symbol_accepted: int = int(
+                    self._symbol_metrics[symbol].get("accepted", 0))
+                self._symbol_metrics[symbol]["accepted"] = symbol_accepted + 1
                 self._symbol_metrics[symbol]["last_trade_time"] = time.time()
             else:
-                self._metrics["trade_decisions_rejected"] += 1
-                self._symbol_metrics[symbol]["rejected"] += 1
+                trade_rejected: int = int(
+                    self._metrics.get("trade_decisions_rejected", 0))
+                self._metrics["trade_decisions_rejected"] = trade_rejected + 1
+                symbol_rejected: int = int(
+                    self._symbol_metrics[symbol].get("rejected", 0))
+                self._symbol_metrics[symbol]["rejected"] = symbol_rejected + 1
 
                 # Track rejection reasons
                 if reason and "cooldown" in reason.lower():
-                    self._metrics["guard_rejections_cooldown"] += 1
-                    self._symbol_metrics[symbol]["cooldown_rejects"] += 1
+                    cooldown_rejects: int = int(
+                        self._metrics.get("guard_rejections_cooldown", 0))
+                    self._metrics["guard_rejections_cooldown"] = cooldown_rejects + 1
+                    symbol_cooldown: int = int(
+                        self._symbol_metrics[symbol].get("cooldown_rejects", 0))
+                    self._symbol_metrics[symbol]["cooldown_rejects"] = symbol_cooldown + 1
                 else:
-                    self._metrics["guard_rejections_other"] += 1
+                    guard_other: int = int(
+                        self._metrics.get("guard_rejections_other", 0))
+                    self._metrics["guard_rejections_other"] = guard_other + 1
 
             event = {
                 "type": "decision",
@@ -134,7 +152,8 @@ class MetricsCollector:
         with self._lock:
             status_key = f"executions_{status.lower()}"
             if status_key in self._metrics:
-                self._metrics[status_key] += 1
+                exec_count: int = int(self._metrics.get(status_key, 0))
+                self._metrics[status_key] = exec_count + 1
 
             event = {
                 "type": "execution",
@@ -149,7 +168,11 @@ class MetricsCollector:
     def record_exposure_fail_closed(self, reason: str) -> None:
         """EXP-FIX: Record exposure fail-closed event."""
         with self._lock:
-            self._metrics["exposure_fail_closed_total"][reason] += 1
+            fail_closed_dict: Dict[str, int] = self._metrics.get(
+                "exposure_fail_closed_total", {})
+            if isinstance(fail_closed_dict, dict):
+                current_count: int = int(fail_closed_dict.get(reason, 0))
+                fail_closed_dict[reason] = current_count + 1
 
     def record_postfill_hold(self, active_count: int) -> None:
         """EXP-FIX: Record post-fill hold status."""
@@ -159,116 +182,132 @@ class MetricsCollector:
     def record_postfill_expired(self) -> None:
         """EXP-FIX: Record expired post-fill hold."""
         with self._lock:
-            self._metrics["postfill_hold_expired_total"] += 1
+            expired_total: int = int(self._metrics.get(
+                "postfill_hold_expired_total", 0))
+            self._metrics["postfill_hold_expired_total"] = expired_total + 1
 
     def record_postfill_released(self) -> None:
         """EXP-FIX: Record released post-fill hold."""
         with self._lock:
-            self._metrics["postfill_hold_released_total"] = (
-                self._metrics.get("postfill_hold_released_total", 0) + 1
-            )
+            released_total: int = int(self._metrics.get(
+                "postfill_hold_released_total", 0))
+            self._metrics["postfill_hold_released_total"] = released_total + 1
 
     def record_cmd_open(self) -> None:
         """Record CMD:OPEN received."""
         with self._lock:
-            self._metrics["cmd_open_total"] += 1
+            cmd_open: int = int(self._metrics.get("cmd_open_total", 0))
+            self._metrics["cmd_open_total"] = cmd_open + 1
 
     def record_open_success(self) -> None:
         """Record successful DEC:OPEN."""
         with self._lock:
-            self._metrics["open_success_total"] += 1
+            open_success: int = int(self._metrics.get("open_success_total", 0))
+            self._metrics["open_success_total"] = open_success + 1
 
     def record_time_to_open(self, ms: float) -> None:
         """Record time from CMD:OPEN to DEC:OPEN in ms."""
         with self._lock:
-            self._metrics["time_to_open_ms_sum"] += ms
-            self._metrics["time_to_open_count"] += 1
+            time_sum: float = float(
+                self._metrics.get("time_to_open_ms_sum", 0.0))
+            self._metrics["time_to_open_ms_sum"] = time_sum + ms
+            time_count: int = int(self._metrics.get("time_to_open_count", 0))
+            self._metrics["time_to_open_count"] = time_count + 1
 
     def record_retry(self, reason: str) -> None:
         """Record retry event."""
         with self._lock:
-            self._metrics["retry_count"] += 1
+            retry: int = int(self._metrics.get("retry_count", 0))
+            self._metrics["retry_count"] = retry + 1
 
     def record_qos_cooldown_hit(self) -> None:
         """Record QoS cooldown hit."""
         with self._lock:
-            self._metrics["qos_cooldown_hits"] += 1
+            qos_hits: int = int(self._metrics.get("qos_cooldown_hits", 0))
+            self._metrics["qos_cooldown_hits"] = qos_hits + 1
 
     def record_order_timeout(self) -> None:
         """Record order timeout event."""
         with self._lock:
-            self._metrics["order_timeout_total"] += 1
+            timeout_total: int = int(
+                self._metrics.get("order_timeout_total", 0))
+            self._metrics["order_timeout_total"] = timeout_total + 1
 
     def get_summary_metrics(self) -> Dict[str, Any]:
         """Get summary metrics for the entire system."""
         with self._lock:
-            total_decisions = (
-                self._metrics["trade_decisions_accepted"]
-                + self._metrics["trade_decisions_rejected"]
-            )
+            trade_decisions_accepted: int = int(
+                self._metrics.get("trade_decisions_accepted", 0))
+            trade_decisions_rejected: int = int(
+                self._metrics.get("trade_decisions_rejected", 0))
+            total_decisions = trade_decisions_accepted + trade_decisions_rejected
 
             acceptance_rate = (
-                self._metrics["trade_decisions_accepted"] / total_decisions
+                float(trade_decisions_accepted) / float(total_decisions)
                 if total_decisions > 0
                 else 0.0
             )
 
             rejection_rate = (
-                self._metrics["trade_decisions_rejected"] / total_decisions
+                float(trade_decisions_rejected) / float(total_decisions)
                 if total_decisions > 0
                 else 0.0
             )
 
             # New metrics calculations
-            cmd_open_total = self._metrics["cmd_open_total"]
+            cmd_open_total: int = int(self._metrics.get("cmd_open_total", 0))
+            guard_rejections_other: int = int(
+                self._metrics.get("guard_rejections_other", 0))
             defer_rate = (
-                self._metrics["guard_rejections_other"] / cmd_open_total
+                float(guard_rejections_other) / float(cmd_open_total)
                 if cmd_open_total > 0
                 else 0.0
             )
+            qos_cooldown_hits: int = int(
+                self._metrics.get("qos_cooldown_hits", 0))
             block_rate = (
-                self._metrics["qos_cooldown_hits"] / cmd_open_total
+                float(qos_cooldown_hits) / float(cmd_open_total)
                 if cmd_open_total > 0
                 else 0.0
             )
             mean_time_to_open_ms = (
-                self._metrics["time_to_open_ms_sum"] /
-                self._metrics["time_to_open_count"]
-                if self._metrics["time_to_open_count"] > 0
+                float(self._metrics.get("time_to_open_ms_sum", 0.0)) /
+                float(self._metrics.get("time_to_open_count", 1))
+                if int(self._metrics.get("time_to_open_count", 0)) > 0
                 else 0.0
             )
 
             return {
-                "total_intents": self._metrics["trade_intents_total"],
-                "total_accepted": self._metrics["trade_decisions_accepted"],
-                "total_rejected": self._metrics["trade_decisions_rejected"],
+                "total_intents": int(self._metrics.get("trade_intents_total", 0)),
+                "total_accepted": int(self._metrics.get("trade_decisions_accepted", 0)),
+                "total_rejected": int(self._metrics.get("trade_decisions_rejected", 0)),
                 "acceptance_rate": acceptance_rate,
                 "rejection_rate": rejection_rate,
-                "cooldown_rejections": self._metrics["guard_rejections_cooldown"],
-                "other_rejections": self._metrics["guard_rejections_other"],
-                "executions_placed": self._metrics["executions_placed"],
-                "executions_filled": self._metrics["executions_filled"],
-                "executions_cancelled": self._metrics["executions_cancelled"],
-                "executions_rejected": self._metrics["executions_rejected"],
+                "cooldown_rejections": int(self._metrics.get("guard_rejections_cooldown", 0)),
+                "other_rejections": int(self._metrics.get("guard_rejections_other", 0)),
+                "executions_placed": int(self._metrics.get("executions_placed", 0)),
+                "executions_filled": int(self._metrics.get("executions_filled", 0)),
+                "executions_cancelled": int(self._metrics.get("executions_cancelled", 0)),
+                "executions_rejected": int(self._metrics.get("executions_rejected", 0)),
                 # New correlation metrics
-                "open_success_total": self._metrics["open_success_total"],
-                "cmd_open_total": self._metrics["cmd_open_total"],
+                "open_success_total": int(self._metrics.get("open_success_total", 0)),
+                "cmd_open_total": int(self._metrics.get("cmd_open_total", 0)),
                 "mean_time_to_open_ms": mean_time_to_open_ms,
                 "defer_rate": defer_rate,
                 "block_rate": block_rate,
-                "retry_count": self._metrics["retry_count"],
-                "qos_cooldown_hits": self._metrics["qos_cooldown_hits"],
+                "retry_count": int(self._metrics.get("retry_count", 0)),
+                "qos_cooldown_hits": int(self._metrics.get("qos_cooldown_hits", 0)),
                 # EXP-FIX: Exposure gate metrics
                 "exposure_fail_closed": dict(
-                    self._metrics["exposure_fail_closed_total"]
+                    self._metrics.get("exposure_fail_closed_total", {})
                 ),
-                "postfill_hold_active": self._metrics["postfill_hold_active"],
-                "postfill_hold_expired_total": self._metrics[
-                    "postfill_hold_expired_total"
-                ],
-                "exposure_mismatch": dict(self._metrics["exposure_mismatch_total"]),
+                "postfill_hold_active": int(self._metrics.get("postfill_hold_active", 0)),
+                "postfill_hold_expired_total": int(self._metrics.get(
+                    "postfill_hold_expired_total", 0
+                )),
+                "exposure_mismatch": dict(self._metrics.get("exposure_mismatch_total", {})),
                 # Order timeout metrics
-                "order_timeout_total": self._metrics["order_timeout_total"],
+                "order_timeout_total": int(self._metrics.get("order_timeout_total", 0)),
             }
 
     def get_symbol_metrics(self, symbol: str) -> Dict[str, Any]:
@@ -320,14 +359,15 @@ class MetricsCollector:
             }
 
             # Check if cooldown is the dominant rejection reason
-            total_rejections = (
-                self._metrics["guard_rejections_cooldown"]
-                + self._metrics["guard_rejections_other"]
-            )
+            guard_cooldown: int = int(
+                self._metrics.get("guard_rejections_cooldown", 0))
+            guard_other: int = int(
+                self._metrics.get("guard_rejections_other", 0))
+            total_rejections = guard_cooldown + guard_other
             if total_rejections > 0:
                 cooldown_ratio = (
-                    self._metrics["guard_rejections_cooldown"] /
-                    total_rejections
+                    float(guard_cooldown) /
+                    float(total_rejections)
                 )
                 patterns["cooldown_dominant"] = cooldown_ratio > 0.8
 

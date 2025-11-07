@@ -4,7 +4,7 @@ Unit tests for OrderIndex functionality.
 
 import time
 import pytest
-from vfoundation.apps.reference.domains.execution_position.order_index import (
+from apps.reference.domains.execution_position.order_index import (
     OrderIndex,
     OrderRef,
 )
@@ -129,7 +129,8 @@ class TestOrderIndex:
             side="BUY",
             order_type="MARKET",
         )
-        order_index.attach_exchange_id(clientOrderId="cid1", exchangeOrderId="ex1")
+        order_index.attach_exchange_id(
+            clientOrderId="cid1", exchangeOrderId="ex1")
 
         found = order_index.get(exchangeOrderId="ex1")
         assert found is not None
@@ -221,7 +222,8 @@ class TestOrderIndex:
             side="BUY",
             order_type="MARKET",
         )
-        order_index.attach_exchange_id(clientOrderId="cid1", exchangeOrderId="ex1")
+        order_index.attach_exchange_id(
+            clientOrderId="cid1", exchangeOrderId="ex1")
 
         by_rid = order_index.get(rid="r1")
         by_client = order_index.get(clientOrderId="cid1")

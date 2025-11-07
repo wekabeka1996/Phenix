@@ -2,7 +2,12 @@
 # Drop-in: LIVE features → obi, tfi (via aggTrade), delta_price (via mid-price), price
 # Requirements: pip install python-dotenv websockets ujson unicorn-binance-websocket-api
 
-import asyncio, json, os, time, decimal, collections
+import asyncio
+import json
+import os
+import time
+import decimal
+import collections
 from typing import Dict, Optional
 from dotenv import load_dotenv
 from unicorn_binance_websocket_api import BinanceWebSocketApiManager
@@ -11,8 +16,10 @@ from unicorn_binance_websocket_api import BinanceWebSocketApiManager
 LIVE_EXCHANGE = "binance.com"
 BOOK_BUFFER = "book_buffer"
 TRADE_BUFFER = "trade_buffer"
-DP_MS_MAX_GAP = int(os.getenv("DP_MS_MAX_GAP", "2000"))  # max gap for delta_price, ms
-TFI_WINDOW_SEC = float(os.getenv("TFI_WINDOW_SEC", "3.0"))  # rolling window for tfi
+DP_MS_MAX_GAP = int(os.getenv("DP_MS_MAX_GAP", "2000")
+                    )  # max gap for delta_price, ms
+TFI_WINDOW_SEC = float(os.getenv("TFI_WINDOW_SEC", "3.0")
+                       )  # rolling window for tfi
 
 
 # ---------- Helper ----------
@@ -151,8 +158,16 @@ class LiveBridgeCollector:
 
 
 def main():
-    syms = os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT").split(",")
-    LiveBridgeCollector([s.strip() for s in syms if s.strip()]).run(seconds=5)
+    # Get symbols from config - centralized configuration
+    from vfoundation.config_symbols import get_trading_symbols
+    syms = os.getenv("SYMBOLS", "").split(",")
+    syms = [s.strip() for s in syms if s.strip()]
+
+    # If no env var, use configured symbols
+    if not syms:
+        syms = get_trading_symbols()
+
+    LiveBridgeCollector(syms).run(seconds=5)
 
 
 if __name__ == "__main__":

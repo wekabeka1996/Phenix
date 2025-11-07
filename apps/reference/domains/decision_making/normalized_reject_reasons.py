@@ -26,9 +26,13 @@ class NormalizedRejectReasons:
     REDUCE_ONLY_VIOLATION = "NRR-009"
     POSITION_SIZE_EXCEEDED = "NRR-010"
     EXPOSURE_LIMIT_EXCEEDED = "NRR-011"
-    RATE_LIMIT_EXCEEDED = "NRR-012"
-    NETWORK_ERROR = "NRR-013"
-    TIMEOUT_ERROR = "NRR-014"
+    # Per-side limit exceeded (EXP-DIRECTION)
+    SIDE_EXPOSURE_EXCEEDED = "NRR-012"
+    # Directional imbalance limit exceeded (EXP-DIRECTION)
+    DIRECTIONAL_RATIO_EXCEEDED = "NRR-013"
+    RATE_LIMIT_EXCEEDED = "NRR-014"
+    NETWORK_ERROR = "NRR-015"
+    TIMEOUT_ERROR = "NRR-016"
     SYMBOL_COOLDOWN_ACTIVE = "NRR-017"
     EXCHANGE_REJECTED_ORDER = "NRR-018"
     ORDER_TIMEOUT_EXPIRED = "NRR-019"
@@ -87,6 +91,16 @@ class NormalizedRejectReasons:
             r"trading.*not.*allowed.*risk.*manager",
             r"risk.*score.*too.*high",
         ],
+        SIDE_EXPOSURE_EXCEEDED: [
+            r"side.*exposure.*exceeded",
+            r"long.*limit.*exceeded",
+            r"short.*limit.*exceeded",
+        ],
+        DIRECTIONAL_RATIO_EXCEEDED: [
+            r"directional.*ratio.*exceeded",
+            r"ratio.*limit.*exceeded",
+            r"imbalance.*limit",
+        ],
         RATE_LIMIT_EXCEEDED: [
             r"rate.*limit",
             r"too.*many.*requests",
@@ -144,7 +158,9 @@ class NormalizedRejectReasons:
             cls.ORDER_WOULD_TRIGGER_LIQ: "Order would trigger account liquidation",
             cls.REDUCE_ONLY_VIOLATION: "Order violates reduce-only position rules",
             cls.POSITION_SIZE_EXCEEDED: "Position size would exceed limits",
-            cls.EXPOSURE_LIMIT_EXCEEDED: "Operation would exceed exposure limits",
+            cls.EXPOSURE_LIMIT_EXCEEDED: "Operation would exceed total exposure limits",
+            cls.SIDE_EXPOSURE_EXCEEDED: "Operation would exceed per-side exposure limits",
+            cls.DIRECTIONAL_RATIO_EXCEEDED: "Operation would exceed directional imbalance limits",
             cls.RATE_LIMIT_EXCEEDED: "Request rate limit has been exceeded",
             cls.NETWORK_ERROR: "Network connectivity or communication error",
             cls.TIMEOUT_ERROR: "Operation timed out",

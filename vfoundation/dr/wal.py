@@ -101,8 +101,76 @@ def read_all() -> list[Dict[str, Any]]:
     return entries
 
 
+def read_by_rid(rid: str) -> tuple[list[Dict[str, Any]], list[str], bool]:
+    """
+    Read all WAL entries for a specific RID across all WAL files.
+
+    Returns:
+        (events, why_chain, integrity_ok)
+    """
+    import glob
+
+    events = []
+    why_chain = []
+    all_hashes = []
+
+    # Get all WAL files (current and historical)
+    wal_pattern = str(WAL_DIR / "*.jsonl")
+    wal_files = sorted(glob.glob(wal_pattern), reverse=True)  # Newest first
+
+    for wal_file in wal_files:
+        try:
+            with open(wal_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    try:
+                        record = json.loads(line)
+                        record_rid = record.get("rid") or record.get(
+                            "pld", {}).get("rid")
+
+                        if record_rid == rid:
+                            events.append(record)
+                            all_hashes.append(record.get("_hash", ""))
+
+                            # Collect WHY information
+                            why = record.get("why") or record.get(
+                                "pld", {}).get("why")
+                            if why:
+                                if isinstance(why, list):
+                                    why_chain.extend(why)
+                                else:
+                                    why_chain.append(why)
+
+                            # Also check data_ref for WHY chain
+                            data_ref = record.get("pld", {}).get("data_ref")
+                            if data_ref and isinstance(data_ref, list):
+                                why_chain.extend(data_ref)
+
+                    except Exception:
+                        continue  # Skip malformed lines
+        except Exception:
+            continue  # Skip files that can't be read
+
+    # Verify integrity of the chain
+    integrity_ok = verify_chain(events) if events else True
+
+    # Remove duplicates from why_chain while preserving order
+    seen = set()
+    unique_why_chain = []
+    for item in why_chain:
+        if item not in seen:
+            seen.add(item)
+            unique_why_chain.append(item)
+
+    return events, unique_why_chain, integrity_ok
+
+
 # Metrics for lock contention
-_lock_metrics = {"lock_contention_count": 0, "lock_wait_total_ms": 0.0, "lock_timeout_count": 0}
+_lock_metrics = {"lock_contention_count": 0,
+                 "lock_wait_total_ms": 0.0, "lock_timeout_count": 0}
 _lock_metrics_lock = threading.Lock()
 
 
@@ -154,7 +222,8 @@ def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
 
         if not locked:
             _record_lock_timeout()
-            raise TimeoutError("Could not acquire WAL global lock within timeout")
+            raise TimeoutError(
+                "Could not acquire WAL global lock within timeout")
 
         try:
             wait_ms = (time.time() - start_time) * 1000
@@ -166,6 +235,11 @@ def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
         return
 
     # Unix: fcntl.flock with LOCK_EX | LOCK_NB
+    if not fcntl:
+        # fcntl not available, just proceed without locking
+        yield
+        return
+
     start_time = time.time()
     locked = False
 
@@ -173,7 +247,8 @@ def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
         end_time = start_time + timeout_s
         while time.time() < end_time:
             try:
-                fcntl.flock(file_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore
+                fcntl.flock(file_handle.fileno(), fcntl.LOCK_EX |
+                            fcntl.LOCK_NB)  # type: ignore
                 locked = True
                 break
             except (IOError, OSError):
@@ -181,7 +256,8 @@ def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
 
         if not locked:
             _record_lock_timeout()
-            raise TimeoutError("Could not acquire WAL file lock within timeout")
+            raise TimeoutError(
+                "Could not acquire WAL file lock within timeout")
 
         # Record lock wait time
         wait_ms = (time.time() - start_time) * 1000
@@ -193,7 +269,8 @@ def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
     finally:
         if locked:
             try:
-                fcntl.flock(file_handle.fileno(), fcntl.LOCK_UN)  # type: ignore
+                fcntl.flock(file_handle.fileno(),
+                            fcntl.LOCK_UN)  # type: ignore
             except Exception:
                 pass  # Best effort unlock
 
@@ -394,7 +471,8 @@ def calculate_merkle_root(hashes: list[str]) -> str:
         next_level = []
         for i in range(0, len(current_level), 2):
             left = current_level[i]
-            right = current_level[i + 1] if i + 1 < len(current_level) else left
+            right = current_level[i + 1] if i + \
+                1 < len(current_level) else left
             combined = hashlib.sha256((left + right).encode()).hexdigest()
             next_level.append(combined)
         current_level = next_level

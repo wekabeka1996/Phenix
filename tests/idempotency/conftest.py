@@ -18,8 +18,13 @@ try:
     import fakeredis
     import redis as redis_module
 
+    # Check if redis has ResponseError (compatibility check)
+    if not hasattr(redis_module, 'ResponseError'):
+        raise ImportError(
+            "redis module missing ResponseError - version mismatch")
+
     REDIS_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError) as e:
     REDIS_AVAILABLE = False
     fakeredis = None  # type: ignore
     redis_module = None  # type: ignore
@@ -100,11 +105,14 @@ def _setup_global_lua_patch() -> None:
 
         # Route to executor by script type
         if script_type == "reserve":
-            return executor._execute_reserve(numkeys, *keys_and_args)  # type: ignore
+            # type: ignore
+            return executor._execute_reserve(numkeys, *keys_and_args)
         elif script_type == "confirm":
-            return executor._execute_confirm(numkeys, *keys_and_args)  # type: ignore
+            # type: ignore
+            return executor._execute_confirm(numkeys, *keys_and_args)
         elif script_type == "release":
-            return executor._execute_release(numkeys, *keys_and_args)  # type: ignore
+            # type: ignore
+            return executor._execute_release(numkeys, *keys_and_args)
         else:
             raise ValueError(f"Unknown script type: {script_type}")
 
@@ -121,7 +129,8 @@ def _setup_global_lua_patch() -> None:
         store_self: redis_store.RedisIdempotencyStore = self  # type: ignore
 
         def patched_evalsha(sha: str, numkeys: int, *keys_and_args: str) -> object:
-            return executor.evalsha(sha, numkeys, *keys_and_args)  # type: ignore
+            # type: ignore
+            return executor.evalsha(sha, numkeys, *keys_and_args)
 
         store_self.client.evalsha = patched_evalsha  # type: ignore
 

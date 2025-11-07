@@ -61,11 +61,9 @@ class ExposureGuard:
         try:
             if hasattr(exposure_config, 'max_equity_utilization_pct'):
                 max_eq_util = exposure_config.max_equity_utilization_pct or "0.20"
-            elif isinstance(exposure_config, dict):
-                max_eq_util = exposure_config.get(
-                    "max_equity_utilization_pct", "0.20")
             else:
-                max_eq_util = "0.20"
+                max_eq_util = getattr(
+                    exposure_config, "max_equity_utilization_pct", "0.20")
         except (AttributeError, TypeError):
             max_eq_util = "0.20"
         self.max_equity_utilization_pct = Decimal(str(max_eq_util))
@@ -76,7 +74,7 @@ class ExposureGuard:
                 max_port_frac = exposure_config.max_portfolio_fraction or "0.20"
             elif isinstance(exposure_config, dict):
                 max_port_frac = exposure_config.get(
-                    "max_portfolio_fraction", "0.20")
+                    'max_portfolio_fraction', "0.20")
             else:
                 max_port_frac = "0.20"
         except (AttributeError, TypeError):
@@ -89,7 +87,7 @@ class ExposureGuard:
                 side_config = exposure_config.max_side_utilization_pct or {}
             elif isinstance(exposure_config, dict):
                 side_config = exposure_config.get(
-                    "max_side_utilization_pct", {})
+                    'max_side_utilization_pct', {})
             else:
                 side_config = {}
         except (AttributeError, TypeError):
@@ -97,7 +95,7 @@ class ExposureGuard:
 
         try:
             if isinstance(side_config, dict):
-                long_pct = side_config.get("long", "0.12")
+                long_pct = side_config.get('long', "0.12")
             elif hasattr(side_config, 'long'):
                 long_pct = side_config.long or "0.12"
             else:
@@ -108,7 +106,7 @@ class ExposureGuard:
 
         try:
             if isinstance(side_config, dict):
-                short_pct = side_config.get("short", "0.12")
+                short_pct = side_config.get('short', "0.12")
             elif hasattr(side_config, 'short'):
                 short_pct = side_config.short or "0.12"
             else:
@@ -123,7 +121,7 @@ class ExposureGuard:
                 max_dir_ratio = exposure_config.max_directional_ratio or "2.0"
             elif isinstance(exposure_config, dict):
                 max_dir_ratio = exposure_config.get(
-                    "max_directional_ratio", "2.0")
+                    'max_directional_ratio', "2.0")
             else:
                 max_dir_ratio = "2.0"
         except (AttributeError, TypeError):
@@ -135,7 +133,7 @@ class ExposureGuard:
             if hasattr(exposure_config, 'per_symbol_cap_pct'):
                 per_sym_cap = exposure_config.per_symbol_cap_pct or "0.08"
             elif isinstance(exposure_config, dict):
-                per_sym_cap = exposure_config.get("per_symbol_cap_pct", "0.08")
+                per_sym_cap = self.config.trading.exposure.per_symbol_cap_pct
             else:
                 per_sym_cap = "0.08"
         except (AttributeError, TypeError):
@@ -147,7 +145,7 @@ class ExposureGuard:
             if hasattr(exposure_config, 'pending_ttl_sec'):
                 pending_ttl = exposure_config.pending_ttl_sec or 90
             elif isinstance(exposure_config, dict):
-                pending_ttl = exposure_config.get("pending_ttl_sec", 90)
+                pending_ttl = self.config.trading.exposure.pending_ttl_sec
             else:
                 pending_ttl = 90
         except (AttributeError, TypeError):
@@ -159,7 +157,7 @@ class ExposureGuard:
                 post_fill_ttl = exposure_config.post_fill_hold_ttl_sec or 5
             elif isinstance(exposure_config, dict):
                 post_fill_ttl = exposure_config.get(
-                    "post_fill_hold_ttl_sec", 5)
+                    'post_fill_hold_ttl_sec', 5)
             else:
                 post_fill_ttl = 5
         except (AttributeError, TypeError):
@@ -170,12 +168,37 @@ class ExposureGuard:
             if hasattr(exposure_config, 'positions_stale_ttl_sec'):
                 stale_ttl = exposure_config.positions_stale_ttl_sec or 5
             elif isinstance(exposure_config, dict):
-                stale_ttl = exposure_config.get("positions_stale_ttl_sec", 5)
+                stale_ttl = self.config.trading.exposure.positions_stale_ttl_sec
             else:
                 stale_ttl = 5
         except (AttributeError, TypeError):
             stale_ttl = 5
         self.positions_stale_ttl_sec = stale_ttl
+
+        # count_pending_orders flag
+        try:
+            if hasattr(exposure_config, 'count_pending_orders'):
+                count_pending = exposure_config.count_pending_orders
+            elif isinstance(exposure_config, dict):
+                count_pending = exposure_config.get(
+                    'count_pending_orders', True)
+            else:
+                count_pending = True
+        except (AttributeError, TypeError):
+            count_pending = True
+        self.count_pending_orders = count_pending
+
+        # exclude_reduce_only flag
+        try:
+            if hasattr(exposure_config, 'exclude_reduce_only'):
+                exclude_ro = exposure_config.exclude_reduce_only
+            elif isinstance(exposure_config, dict):
+                exclude_ro = exposure_config.get('exclude_reduce_only', True)
+            else:
+                exclude_ro = True
+        except (AttributeError, TypeError):
+            exclude_ro = True
+        self.exclude_reduce_only = exclude_ro
 
         # State
         self.state = ExposureState(
@@ -210,7 +233,7 @@ class ExposureGuard:
                 exposure_config = self.config.trading.execution.exposure if self.config.trading.execution and self.config.trading.execution else None
             elif isinstance(self.config, dict):
                 exposure_config = (
-                    self.config.get("trading", {}).get(
+                    self.self.config.trading.get(
                         "execution", {}).get("exposure", {})
                 )
             else:
@@ -226,8 +249,8 @@ class ExposureGuard:
             if hasattr(exposure_config, 'leverage_defaults'):
                 leverage_defaults = exposure_config.leverage_defaults or {}
             elif isinstance(exposure_config, dict):
-                leverage_defaults = exposure_config.get(
-                    "leverage_defaults", {})
+                leverage_defaults = getattr(
+                    self.config.trading.execution.exposure, 'leverage_defaults', {})
             else:
                 leverage_defaults = {}
         except (AttributeError, TypeError):

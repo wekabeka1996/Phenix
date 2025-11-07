@@ -24,7 +24,7 @@ class CorrelationStore:
     """
 
     def __init__(self, ttl_hours: float = 24.0):
-        self.ttl_seconds = ttl_hours * 3600
+        self.ttl_seconds: int = int(ttl_hours * 3600)
         self.store: Dict[str, Dict[str, Any]] = {}
         self.lock = Lock()
 

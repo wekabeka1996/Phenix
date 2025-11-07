@@ -1,5 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
+import gc
+import time
 
 
 # This test ensures the main startup doesn't raise TypeError due to config loader signature.
@@ -9,6 +11,10 @@ def test_main_startup_no_config_error():
     without raising a TypeError related to config loading.
     """
     try:
+        # Force garbage collection to close any open database connections from previous tests
+        gc.collect()
+        time.sleep(0.1)  # Allow DB to fully release lock
+
         # Mock the infinite loop by making time.sleep raise KeyboardInterrupt
         with patch("time.sleep", side_effect=KeyboardInterrupt):
             # Dynamic import by file path to ensure module resolution in test env
@@ -57,3 +63,7 @@ def test_main_startup_no_config_error():
         pass
     except Exception as e:
         pytest.fail(f"An unexpected error occurred during startup: {e}")
+    finally:
+        # Cleanup: force garbage collection to ensure all DB connections are closed
+        gc.collect()
+        time.sleep(0.1)

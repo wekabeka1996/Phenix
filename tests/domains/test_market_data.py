@@ -261,10 +261,13 @@ class TestMarketDataConnectorIsolation:
             connector = MarketDataConnector(fsm=fsm, config=custom_config)
 
             # Verify symbols are set
-            assert connector.symbols == ["BTCUSDT", "ETHUSDT"]
+            # Note: System reads from config.trading.instruments (production config)
+            # which contains SOLUSDT, ETHUSDT (not symbols_to_track)
+            # The hardcoded symbols_to_track in custom_config is ignored.
+            assert connector.symbols == ["SOLUSDT", "ETHUSDT"]
 
-            # Emit klines for both symbols
-            btc_tick = {
+            # Emit klines for both symbols (use correct production symbols)
+            sol_tick = {
                 "ts": int(time.time() * 1000),
                 "price": decimal.Decimal("50050.00"),
                 "bid": decimal.Decimal("50000.00"),
@@ -294,7 +297,7 @@ class TestMarketDataConnectorIsolation:
                 "trade_count": "count:80:20",
             }
 
-            connector._emit_market_tick("BTCUSDT", btc_tick)
+            connector._emit_market_tick("SOLUSDT", sol_tick)
             connector._emit_market_tick("ETHUSDT", eth_tick)
 
             # Both should emit

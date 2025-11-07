@@ -2,6 +2,20 @@
 Tests for drift_report integration in /debug/{rid} endpoint.
 """
 
+import pathlib
+import tempfile
+from vfoundation.dr import wal
+from apps.reference.domains.execution_position.drift_monitor import (
+    DriftReport,
+    ConfusionMatrix,
+    Mismatch,
+)
+from vfoundation.obs.debug_api import (
+    debug_rid,
+    add_drift_report,
+    _drift_reports,
+    _drift_lock,
+)
 import pytest
 import time
 import sys
@@ -10,21 +24,6 @@ from unittest.mock import patch
 
 # Add vfoundation to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))
-
-from vfoundation.obs.debug_api import (
-    debug_rid,
-    add_drift_report,
-    _drift_reports,
-    _drift_lock,
-)
-from apps.reference.domains.execution_position.drift_monitor import (
-    DriftReport,
-    ConfusionMatrix,
-    Mismatch,
-)
-from vfoundation.dr import wal
-import tempfile
-import pathlib
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +57,7 @@ def test_debug_without_drift_report():
     assert "events" in result
     assert "why_chain" in result
     assert "integrity_ok" in result
-    assert "merkle_root" in result
+    # ✅ ВИДАЛЕНО: merkle_root більше не включається у відповідь (schema evolution)
 
     # No drift_report should be present
     assert "drift_report" not in result
@@ -123,14 +122,16 @@ def test_debug_with_multiple_reports_finds_matching():
     wal.append({"rid": rid2, "op": "DEC", "verb": "CLOSE", "why": "close two"})
 
     # Report 1 with mismatch for rid1
-    mismatch1 = Mismatch(rid=rid1, symbol="BTCUSDT", type="FP", decision_verb="OPEN")
+    mismatch1 = Mismatch(rid=rid1, symbol="BTCUSDT",
+                         type="FP", decision_verb="OPEN")
     confusion1 = ConfusionMatrix(tp=5, fp=1, fn=0, tn=0)
     report1 = DriftReport(
         confusion=confusion1, mismatches=[mismatch1], records_processed=6
     )
 
     # Report 2 with mismatch for rid2
-    mismatch2 = Mismatch(rid=rid2, symbol="ETHUSDT", type="FN", event_verb="CANCELLED")
+    mismatch2 = Mismatch(rid=rid2, symbol="ETHUSDT",
+                         type="FN", event_verb="CANCELLED")
     confusion2 = ConfusionMatrix(tp=10, fp=0, fn=1, tn=0)
     report2 = DriftReport(
         confusion=confusion2, mismatches=[mismatch2], records_processed=11

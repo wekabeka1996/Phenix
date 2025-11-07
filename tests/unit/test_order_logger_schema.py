@@ -5,7 +5,7 @@ import os
 import pytest
 from pathlib import Path
 
-from vfoundation.obs.order_logger import OrderLoggerV1
+from apps.reference.telemetry.order_logger import OrderLoggerV1
 
 
 class TestOrderLoggerSchema:

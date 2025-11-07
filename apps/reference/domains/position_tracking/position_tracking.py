@@ -77,6 +77,12 @@ class PositionTracking:
             "available_balance": "0",
             "positions": [],  # Empty positions list
             "open_positions_usd": "0",
+            "open_positions_margin_usd": "0",
+            # EXP-DIRECTION: Initial zero margin by side
+            "positions_by_side": {
+                "long_margin": "0",
+                "short_margin": "0"
+            },
             "positions_last_ts_ms": positions_last_ts_ms,
         }
 
@@ -154,6 +160,8 @@ class PositionTracking:
         open_positions_usd = self._calculate_open_positions_notional()
         # EXP-LEVERAGE-001: Calculate margin used (backward compatible)
         open_positions_margin_usd = self._calc_margin_used_usd([])
+        # EXP-DIRECTION: Calculate margin by side
+        margin_by_side = self._calculate_margin_by_side([])
         positions_last_ts_ms = int(time.time() * 1000)
 
         # Emit portfolio state updated event
@@ -174,6 +182,11 @@ class PositionTracking:
             "open_positions_margin_usd": str(
                 open_positions_margin_usd
             ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-DIRECTION: Per-side margin for directional checks
+            "positions_by_side": {
+                "long_margin": str(margin_by_side["long_margin"]),
+                "short_margin": str(margin_by_side["short_margin"])
+            },
             # EXP-FIX: Timestamp for staleness check
             "positions_last_ts_ms": positions_last_ts_ms,
         }
@@ -267,17 +280,46 @@ class PositionTracking:
 
         # Update positions from account data
         account_positions = payload.get("positions", [])
+
+        self.logger.info(
+            f"📊 SYNC: Received {len(account_positions)} positions from Binance")
+
+        # Track which symbols are in Binance vs our internal state
+        binance_symbols = set()
+
         for pos in account_positions:
             symbol = pos["symbol"]
             quantity = _d(pos.get("positionAmt", 0))
+            binance_symbols.add(symbol)
+
             if abs(quantity) > decimal.Decimal("1e-9"):  # Only track non-zero positions
+                old_qty = self._positions.get(symbol, {}).get(
+                    "quantity", decimal.Decimal("0"))
                 self._positions[symbol] = {
                     "quantity": quantity,
                     "avg_price": _d(pos.get("entryPrice", 0)),
                     "venues": ["binance"],  # Assume Binance venue
                 }
+                if old_qty != quantity:
+                    self.logger.info(
+                        f"📈 SYNC: {symbol} position updated: {old_qty} → {quantity}")
             else:
                 # Remove flat positions
+                if symbol in self._positions:
+                    self.logger.info(
+                        f"📉 SYNC: {symbol} position closed (removed from tracking)")
+                self._positions.pop(symbol, None)
+
+        # Check for positions in our state that are NOT in Binance (manual close)
+        our_symbols = set(self._positions.keys())
+        manually_closed = our_symbols - binance_symbols
+
+        if manually_closed:
+            self.logger.warning(
+                f"⚠️  SYNC: Detected manually closed positions: {manually_closed}")
+            for symbol in manually_closed:
+                self.logger.info(
+                    f"🧹 SYNC: Removing {symbol} from internal state (closed manually)")
                 self._positions.pop(symbol, None)
 
         # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
@@ -285,6 +327,8 @@ class PositionTracking:
         # EXP-LEVERAGE-001: Calculate margin used with positionRisk data if available
         open_positions_margin_usd = self._calc_margin_used_usd(
             account_positions)
+        # EXP-DIRECTION: Calculate margin by side for directional ratio checks
+        margin_by_side = self._calculate_margin_by_side(account_positions)
         positions_last_ts_ms = int(time.time() * 1000)
 
         # Emit portfolio state updated event with real account data
@@ -309,6 +353,11 @@ class PositionTracking:
             "open_positions_margin_usd": str(
                 open_positions_margin_usd
             ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-DIRECTION: Per-side margin for directional checks
+            "positions_by_side": {
+                "long_margin": str(margin_by_side["long_margin"]),
+                "short_margin": str(margin_by_side["short_margin"])
+            },
             # EXP-FIX: Timestamp for staleness check
             "positions_last_ts_ms": positions_last_ts_ms,
         }
@@ -368,6 +417,8 @@ class PositionTracking:
         open_positions_usd = self._calculate_open_positions_notional()
         # EXP-LEVERAGE-001: Calculate margin used (fallback to config leverage)
         open_positions_margin_usd = self._calc_margin_used_usd([])
+        # EXP-DIRECTION: Calculate margin by side
+        margin_by_side = self._calculate_margin_by_side([])
         positions_last_ts_ms = int(time.time() * 1000)
 
         # Emit portfolio state updated event with equity fields for DecisionMaking
@@ -390,6 +441,11 @@ class PositionTracking:
             "open_positions_margin_usd": str(
                 open_positions_margin_usd
             ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-DIRECTION: Per-side margin for directional checks
+            "positions_by_side": {
+                "long_margin": str(margin_by_side["long_margin"]),
+                "short_margin": str(margin_by_side["short_margin"])
+            },
             # EXP-FIX: Timestamp for staleness check
             "positions_last_ts_ms": positions_last_ts_ms,
         }
@@ -611,10 +667,37 @@ class PositionTracking:
                 )
         else:
             # Fallback to internal position data with leverage from config
-            leverage_config = self.config.get("trading", {}).get(
-                "execution", {}).get("exposure", {}).get("leverage_defaults", {})
-            default_leverage = decimal.Decimal(
-                str(leverage_config.get("__default__", "20")))
+            try:
+                if hasattr(self.config, 'trading') and self.config.trading:
+                    leverage_config = (
+                        self.config.trading.execution.exposure.leverage_defaults
+                        if self.config.trading.execution and self.config.trading.execution.exposure
+                        else {}
+                    )
+                elif isinstance(self.config, dict):
+                    leverage_config = (
+                        self.config.get("trading", {})
+                        .get("execution", {})
+                        .get("exposure", {})
+                        .get("leverage_defaults", {})
+                    )
+                else:
+                    leverage_config = {}
+            except (AttributeError, TypeError):
+                leverage_config = {}
+
+            # Safe extraction of default leverage
+            if isinstance(leverage_config, dict):
+                default_leverage_val = leverage_config.get(
+                    "default", "20") or "20"
+            elif hasattr(leverage_config, 'default'):
+                default_leverage_val = leverage_config.default or "20"
+            elif hasattr(leverage_config, '__default__'):
+                default_leverage_val = leverage_config.__default__ or "20"
+            else:
+                default_leverage_val = "20"
+
+            default_leverage = decimal.Decimal(str(default_leverage_val))
 
             for symbol, position in self._positions.items():
                 quantity = abs(position["quantity"])
@@ -624,9 +707,15 @@ class PositionTracking:
                     # Calculate notional
                     position_notional = quantity * entry_price
 
-                    # Get leverage for this symbol
-                    symbol_leverage = decimal.Decimal(
-                        str(leverage_config.get(symbol, default_leverage)))
+                    # Get leverage for this symbol (safe extraction)
+                    if isinstance(leverage_config, dict):
+                        symbol_leverage_val = leverage_config.get(
+                            symbol) or default_leverage
+                    else:
+                        symbol_leverage_val = getattr(
+                            leverage_config, symbol, default_leverage)
+
+                    symbol_leverage = decimal.Decimal(str(symbol_leverage_val))
                     if symbol_leverage <= 0:
                         symbol_leverage = decimal.Decimal("1")
 
@@ -640,6 +729,101 @@ class PositionTracking:
 
         # Round to 2 decimal places for consistency
         return total_margin.quantize(decimal.Decimal("0.01"))
+
+    def _calculate_margin_by_side(self, positions: list[dict]) -> dict:
+        """
+        Calculate margin used by long and short positions separately.
+
+        EXP-DIRECTION: Per-side margin calculation for directional ratio checks.
+
+        Returns:
+            Dict with 'long_margin' and 'short_margin' keys (as Decimal).
+        """
+        long_margin = decimal.Decimal("0")
+        short_margin = decimal.Decimal("0")
+
+        if positions:
+            # Use positionRisk data if available
+            for p in positions:
+                # Extract notional
+                notional = _d(p.get("notional") or (
+                    _d(p.get("positionAmt", "0")) *
+                    _d(p.get("markPrice") or p.get("entryPrice") or "0")
+                ))
+
+                # Extract leverage
+                lev = _d(p.get("leverage") or "1")
+                if lev <= 0:
+                    lev = decimal.Decimal("1")
+
+                # Calculate margin for this position
+                margin = abs(notional) / lev
+
+                # Determine side from positionAmt sign
+                amount = _d(p.get("positionAmt", "0"))
+                if amount > 0:
+                    long_margin += margin
+                elif amount < 0:
+                    short_margin += margin
+        else:
+            # Fallback to internal position data
+            try:
+                if hasattr(self.config, 'trading') and self.config.trading:
+                    leverage_config = self.config.trading.execution.exposure.leverage_defaults if self.config.trading.execution and self.config.trading.execution.exposure else {}
+                elif isinstance(self.config, dict):
+                    leverage_config = self.config.get("trading", {}).get(
+                        "execution", {}).get("exposure", {}).get("leverage_defaults", {})
+                else:
+                    leverage_config = {}
+            except (AttributeError, TypeError):
+                leverage_config = {}
+
+            # Safe extraction of default leverage
+            if isinstance(leverage_config, dict):
+                default_leverage_val = leverage_config.get(
+                    "default", "20") or "20"
+            elif hasattr(leverage_config, 'default'):
+                default_leverage_val = leverage_config.default or "20"
+            elif hasattr(leverage_config, '__default__'):
+                default_leverage_val = leverage_config.__default__ or "20"
+            else:
+                default_leverage_val = "20"
+
+            default_leverage = decimal.Decimal(str(default_leverage_val))
+
+            for symbol, position in self._positions.items():
+                quantity = position["quantity"]
+                entry_price = position["avg_price"]
+
+                if abs(quantity) > decimal.Decimal("1e-9") and entry_price > decimal.Decimal("0"):
+                    # Calculate notional
+                    position_notional = abs(quantity) * entry_price
+
+                    # Get leverage for this symbol (safe extraction)
+                    if isinstance(leverage_config, dict):
+                        symbol_leverage_val = leverage_config.get(
+                            symbol) or default_leverage
+                    else:
+                        symbol_leverage_val = getattr(
+                            leverage_config, symbol, default_leverage)
+
+                    symbol_leverage = decimal.Decimal(str(symbol_leverage_val))
+                    if symbol_leverage <= 0:
+                        symbol_leverage = decimal.Decimal("1")
+
+                    # Calculate margin
+                    margin = position_notional / symbol_leverage
+
+                    # Determine side
+                    if quantity > 0:
+                        long_margin += margin
+                    else:
+                        short_margin += margin
+
+        return {
+            "long_margin": long_margin.quantize(decimal.Decimal("0.01")),
+            "short_margin": short_margin.quantize(decimal.Decimal("0.01"))
+        }
 
     def get_positions(self) -> Dict[str, Dict[str, Any]]:
         """Returns a copy of the internal positions dictionary."""
@@ -703,12 +887,23 @@ class PositionTracking:
         # Complete state object
         state_data = {"positions": positions_state,
                       "portfolio": portfolio_state}
-
         # Compute state hash for integrity verification
         state_str = json.dumps(state_data, sort_keys=True)
         state_hash = hashlib.sha256(state_str.encode("utf-8")).hexdigest()
 
         # Build snapshot with metadata
+        try:
+            if hasattr(self.config, 'system') and self.config.system:
+                worker_id = self.config.system.worker_id if hasattr(
+                    self.config.system, 'worker_id') else "unknown"
+            elif isinstance(self.config, dict):
+                worker_id = self.config.get(
+                    "system", {}).get("worker_id", "unknown")
+            else:
+                worker_id = "unknown"
+        except (AttributeError, TypeError):
+            worker_id = "unknown"
+
         snapshot = {
             "domain": "position_tracking",
             "version": "1.0.0",
@@ -716,7 +911,7 @@ class PositionTracking:
             "state_hash": f"sha256:{state_hash}",
             "state": state_data,
             "metadata": {
-                "worker_id": self.config.get("system", {}).get("worker_id", "unknown"),
+                "worker_id": worker_id,
                 "positions_count": len(positions_state),
                 "sequence_number": int(
                     time.time() * 1000

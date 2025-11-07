@@ -131,8 +131,10 @@ class TestDecimalPrecisionPreservation:
 
         # Check precision-sensitive fields
         order_details = emitted_payload.get("order", {})
-        assert isinstance(order_details.get("qty"), str), "qty should be a string"
-        assert isinstance(order_details.get("price"), str), "price should be a string"
+        assert isinstance(order_details.get("qty"),
+                          str), "qty should be a string"
+        assert isinstance(order_details.get("price"),
+                          str), "price should be a string"
 
         # Verify the string representation preserves precision
         # Note: The exact qty depends on the sizing logic which is complex.
@@ -143,7 +145,8 @@ class TestDecimalPrecisionPreservation:
         # Also check other Decimal fields in the payload
         assert isinstance(emitted_payload.get("p"), str)
         assert isinstance(emitted_payload.get("payoff_ratio_r"), str)
-        assert isinstance(emitted_payload.get("size", {}).get("notional_cap_usd"), str)
+        assert isinstance(emitted_payload.get(
+            "size", {}).get("notional_cap_usd"), str)
 
     def test_high_precision_decimal_not_rounded_prematurely(self):
         """
@@ -174,7 +177,8 @@ class TestDecimalPrecisionPreservation:
         print(f"   Original Decimal:  {high_precision_qty}")
         print(f"   Via str() (GOOD):  {qty_as_string}")
         print(f"   Via float() (BAD): {qty_as_float_then_string}")
-        print(f"   Digits lost: {len(qty_as_string) - len(qty_as_float_then_string)}")
+        print(
+            f"   Digits lost: {len(qty_as_string) - len(qty_as_float_then_string)}")
 
 
 if __name__ == "__main__":
