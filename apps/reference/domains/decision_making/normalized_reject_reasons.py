@@ -6,7 +6,7 @@ error handling across the trading system.
 """
 
 import re
-from typing import Dict, Optional
+from typing import Optional
 
 
 class NormalizedRejectReasons:

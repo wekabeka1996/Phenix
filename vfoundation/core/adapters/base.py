@@ -48,6 +48,21 @@ class ExchangeOrderResponse:
     timestamp_ms: int
     reason: Optional[str] = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for compatibility."""
+        return {
+            "orderId": self.order_id,
+            "clientOrderId": self.client_order_id,
+            "symbol": self.symbol,
+            "side": self.side,
+            "origQty": self.quantity,
+            "executedQty": self.filled_qty,
+            "price": self.price,
+            "status": self.status,
+            "time": self.timestamp_ms,
+            "reason": self.reason,
+        }
+
 
 @dataclass
 class ExchangePosition:
@@ -63,6 +78,23 @@ class ExchangePosition:
     margin_type: str  # CROSS or ISOLATED
     isolated_margin: float
     update_time_ms: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for compatibility."""
+        return {
+            "symbol": self.symbol,
+            "positionSide": self.position_side,
+            "side": self.side,
+            "positionAmt": self.position_amount,
+            "position_amount": self.position_amount,  # Alternative key
+            "entryPrice": self.entry_price,
+            "markPrice": self.mark_price,
+            "unRealizedProfit": self.unrealized_profit,
+            "leverage": self.leverage,
+            "marginType": self.margin_type,
+            "isolatedMargin": self.isolated_margin,
+            "updateTime": self.update_time_ms,
+        }
 
 
 class AbstractExchangeAdapter(ABC):

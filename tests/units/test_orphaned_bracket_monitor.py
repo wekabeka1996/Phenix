@@ -57,8 +57,35 @@ async def test_cleanup_orphans_when_no_position_cancels_reduce_only_orders():
             "reduceOnly": "false"},  # should be ignored
     ])
     fsm.adapter = adapter
+    # Initialize OrderGuardian for the test
+    from apps.reference.services.order_guardian import OrderGuardian
+    fsm.order_guardian = OrderGuardian(adapter)
 
-    await fsm.cleanup_orphaned_bracket_orders()
+    # Register the bracket orders in OrderGuardian so they are recognized as "ours"
+    fsm.order_guardian.store.put("order:1", {
+        "symbol": "BTCUSDT",
+        "type": "STOP_MARKET",
+        "reduce_only": True,
+        "close_position": True,
+        "parent_entry_id": None
+    })
+    fsm.order_guardian.store.put("order:2", {
+        "symbol": "BTCUSDT",
+        "type": "TAKE_PROFIT_MARKET",
+        "reduce_only": True,
+        "close_position": False,
+        "parent_entry_id": None
+    })
+    fsm.order_guardian.store.put("order:3", {
+        "symbol": "ETHUSDT",
+        "type": "LIMIT",
+        "reduce_only": True,
+        "close_position": False,
+        "parent_entry_id": None
+    })
+    # Order 4 is not registered, so it should be ignored
+
+    await fsm.order_guardian.cleanup_orphans()
 
     # We expect orders 1,2,3 to be canceled; 4 ignored
     assert ("BTCUSDT", "1") in adapter.cancel_calls
@@ -81,8 +108,27 @@ async def test_cleanup_skips_when_position_exists():
             "type": "TAKE_PROFIT_MARKET", "reduceOnly": "true"},
     ])
     fsm.adapter = adapter
+    # Initialize OrderGuardian for the test
+    from apps.reference.services.order_guardian import OrderGuardian
+    fsm.order_guardian = OrderGuardian(adapter)
 
-    await fsm.cleanup_orphaned_bracket_orders()
+    # Register the orders in OrderGuardian
+    fsm.order_guardian.store.put("order:1", {
+        "symbol": "BTCUSDT",
+        "type": "STOP_MARKET",
+        "reduce_only": False,
+        "close_position": True,
+        "parent_entry_id": None
+    })
+    fsm.order_guardian.store.put("order:2", {
+        "symbol": "BTCUSDT",
+        "type": "TAKE_PROFIT_MARKET",
+        "reduce_only": True,
+        "close_position": False,
+        "parent_entry_id": None
+    })
+
+    await fsm.order_guardian.cleanup_orphans()
 
     # Since position exists, no orphan cleanup for BTCUSDT
     assert adapter.cancel_calls == []
@@ -100,8 +146,27 @@ async def test_cleanup_only_target_symbol():
             "type": "TAKE_PROFIT_MARKET", "reduceOnly": "true"},
     ])
     fsm.adapter = adapter
+    # Initialize OrderGuardian for the test
+    from apps.reference.services.order_guardian import OrderGuardian
+    fsm.order_guardian = OrderGuardian(adapter)
 
-    await fsm.cleanup_orphaned_bracket_orders(symbol="BTCUSDT")
+    # Register the orders in OrderGuardian
+    fsm.order_guardian.store.put("order:1", {
+        "symbol": "BTCUSDT",
+        "type": "STOP_MARKET",
+        "reduce_only": False,
+        "close_position": True,
+        "parent_entry_id": None
+    })
+    fsm.order_guardian.store.put("order:2", {
+        "symbol": "ETHUSDT",
+        "type": "TAKE_PROFIT_MARKET",
+        "reduce_only": True,
+        "close_position": False,
+        "parent_entry_id": None
+    })
+
+    await fsm.order_guardian.cleanup_orphans(symbol="BTCUSDT")
 
     # Only BTCUSDT should be canceled in targeted cleanup
     assert adapter.cancel_calls == [("BTCUSDT", "1")]
@@ -109,14 +174,12 @@ async def test_cleanup_only_target_symbol():
 
 @pytest.mark.asyncio
 async def test_sync_open_orders_and_positions_cancels_orphans_on_startup():
-    """Test that startup sync calls cleanup_orphaned_bracket_orders (new behavior)."""
+    """Test that startup sync calls order_guardian.cleanup_orphans (new behavior)."""
     fsm = ExecPosFSM(config={}, fsm=None, shadow_mode=True)
     adapter = FakeAdapter()
-    # Positions list with active positions (non-zero amounts)
-    adapter.set_positions([
-        {"symbol": "ETHUSDT", "positionAmt": "0.5"},  # Active position
-    ])
-    # Orders for symbols WITHOUT positions (orphans)
+    # No positions at all - so orphan cleanup should run
+    adapter.set_positions([])
+    # Orders that should be considered orphans
     adapter.set_open_orders([
         {"symbol": "BTCUSDT", "orderId": "1",
             "type": "STOP_MARKET", "closePosition": "true"},
@@ -124,11 +187,30 @@ async def test_sync_open_orders_and_positions_cancels_orphans_on_startup():
             "type": "LIMIT", "reduceOnly": "true"},
     ])
     fsm.adapter = adapter
+    # Initialize OrderGuardian for the test
+    from apps.reference.services.order_guardian import OrderGuardian
+    fsm.order_guardian = OrderGuardian(adapter)
+
+    # Register the orders in OrderGuardian so they are recognized as "ours"
+    fsm.order_guardian.store.put("order:1", {
+        "symbol": "BTCUSDT",
+        "type": "STOP_MARKET",
+        "reduce_only": False,
+        "close_position": True,
+        "parent_entry_id": None
+    })
+    fsm.order_guardian.store.put("order:2", {
+        "symbol": "SOLUSDT",
+        "type": "LIMIT",
+        "reduce_only": True,
+        "close_position": False,
+        "parent_entry_id": None
+    })
 
     await fsm.sync_open_orders_and_positions()
 
-    # cleanup_orphaned_bracket_orders() should have canceled orphaned orders
-    # BTCUSDT and SOLUSDT have no positions -> should be canceled
+    # order_guardian.cleanup_orphans() should have canceled orphaned orders
+    # No positions exist, so all our bracket orders should be canceled
     assert ("BTCUSDT", "1") in adapter.cancel_calls
     assert ("SOLUSDT", "2") in adapter.cancel_calls
 
@@ -146,9 +228,28 @@ async def test_cleanup_resilient_on_cancel_error():
     ])
     adapter.set_cancel_side_effect(RuntimeError("cancel failed"))
     fsm.adapter = adapter
+    # Initialize OrderGuardian for the test
+    from apps.reference.services.order_guardian import OrderGuardian
+    fsm.order_guardian = OrderGuardian(adapter)
+
+    # Register the orders in OrderGuardian
+    fsm.order_guardian.store.put("order:1", {
+        "symbol": "BTCUSDT",
+        "type": "STOP_MARKET",
+        "reduce_only": False,
+        "close_position": True,
+        "parent_entry_id": None
+    })
+    fsm.order_guardian.store.put("order:2", {
+        "symbol": "BTCUSDT",
+        "type": "TAKE_PROFIT_MARKET",
+        "reduce_only": True,
+        "close_position": False,
+        "parent_entry_id": None
+    })
 
     # Even if cancel raises, method should swallow and continue scanning next orders
-    await fsm.cleanup_orphaned_bracket_orders()
+    await fsm.order_guardian.cleanup_orphans()
 
     # Both attempts were made
     assert ("BTCUSDT", "1") in adapter.cancel_calls

@@ -135,8 +135,17 @@
     "domain": null
   },
   {
-    "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 233,
+    "source_file": "apps\\reference\\adapters\\binance_adapter.py",
+    "lineno": 333,
+    "type": "EVT",
+    "verb": "",
+    "event": "EVT:",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\adapters\\binance_adapter.py",
+    "lineno": 334,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -145,7 +154,16 @@
   },
   {
     "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 234,
+    "lineno": 245,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
+    "lineno": 246,
     "type": "EVT",
     "verb": "BALANCE_UPDATE_RECEIVED",
     "event": "EVT:BALANCE_UPDATE_RECEIVED",
@@ -154,7 +172,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 321,
+    "lineno": 335,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -163,7 +181,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\account_balance\\account_connector.py",
-    "lineno": 322,
+    "lineno": 336,
     "type": "EVT",
     "verb": "ACCOUNT_UPDATE_RECEIVED",
     "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
@@ -244,7 +262,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 1827,
+    "lineno": 1834,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -253,7 +271,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\decision_making\\decision_making.py",
-    "lineno": 1828,
+    "lineno": 1835,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -307,7 +325,16 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
-    "lineno": 458,
+    "lineno": 502,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
+    "lineno": 507,
     "type": "EVT",
     "verb": "ORDER_STATE_CHANGED",
     "event": "EVT:ORDER_STATE_CHANGED",
@@ -316,16 +343,16 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
-    "lineno": 459,
-    "type": "EVT",
-    "verb": "ORDER_STATE_CHANGED",
-    "event": "EVT:ORDER_STATE_CHANGED",
+    "lineno": 512,
+    "type": null,
+    "verb": null,
+    "event": "<unknown>",
     "payload_keys": [],
     "domain": null
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
-    "lineno": 496,
+    "lineno": 547,
     "type": "EVT",
     "verb": "ACCOUNT_UPDATE_RECEIVED",
     "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
@@ -334,7 +361,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\binance_execution_adapter.py",
-    "lineno": 496,
+    "lineno": 547,
     "type": "EVT",
     "verb": "ACCOUNT_UPDATE_RECEIVED",
     "event": "EVT:ACCOUNT_UPDATE_RECEIVED",
@@ -343,7 +370,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\exposure_guard.py",
-    "lineno": 398,
+    "lineno": 510,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -352,7 +379,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\exposure_guard.py",
-    "lineno": 423,
+    "lineno": 535,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -361,7 +388,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\exposure_guard.py",
-    "lineno": 448,
+    "lineno": 560,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -370,7 +397,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 198,
+    "lineno": 203,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -379,7 +406,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 200,
+    "lineno": 205,
     "type": "EVT",
     "verb": "ORDER_ACK",
     "event": "EVT:ORDER_ACK",
@@ -388,7 +415,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 201,
+    "lineno": 206,
     "type": "EVT",
     "verb": "ORDER_FILL",
     "event": "EVT:ORDER_FILL",
@@ -397,7 +424,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 311,
+    "lineno": 344,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -406,7 +433,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 626,
+    "lineno": 679,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -415,7 +442,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 657,
+    "lineno": 710,
     "type": "DEC",
     "verb": "CLOSE missing symbol; cannot execute",
     "event": "DEC:CLOSE missing symbol; cannot execute",
@@ -424,7 +451,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 1077,
+    "lineno": 1293,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -433,7 +460,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 1235,
+    "lineno": 1451,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -442,7 +469,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 1318,
+    "lineno": 1534,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -451,7 +478,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 1351,
+    "lineno": 1567,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -460,7 +487,7 @@
   },
   {
     "source_file": "apps\\reference\\domains\\execution_position\\fsm.py",
-    "lineno": 1461,
+    "lineno": 1677,
     "type": null,
     "verb": null,
     "event": "<unknown>",
@@ -2340,7 +2367,16 @@
   },
   {
     "source_file": "tests\\unit\\test_websocket_payload_normalization.py",
-    "lineno": 259,
+    "lineno": 260,
+    "type": "EVT",
+    "verb": "TRADE_EXECUTED",
+    "event": "EVT:TRADE_EXECUTED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests\\unit\\test_websocket_payload_normalization.py",
+    "lineno": 260,
     "type": "EVT",
     "verb": "ORDER_STATE_CHANGED",
     "event": "EVT:ORDER_STATE_CHANGED",

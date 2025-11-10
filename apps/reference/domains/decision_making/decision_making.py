@@ -774,7 +774,7 @@ class DecisionMaking:
 
     def on_portfolio(self, event: Message) -> None:
         self.logger.info(
-            f"✅ on_portfolio() called - portfolio state received!")
+            "✅ on_portfolio() called - portfolio state received!")
         portfolio_data = event.pld
 
         # Cache equity_free_usdt if present, but don't overwrite with zero/null
@@ -882,7 +882,8 @@ class DecisionMaking:
                 self.logger.warning(
                     format_why_with_details(
                         WhyCode.GUARD_RATE_LIMIT_EXCEEDED,  # closest match for stale data
-                        f"features_stale symbol={symbol} rid=? now_ts={now_ts} last_features_ts={features_ts} lag_ms={lag_ms} ttl_ms={ttl_ms}"
+                        f"features_stale symbol={symbol} rid=? now_ts={now_ts} "
+                        f"last_features_ts={features_ts} lag_ms={lag_ms} ttl_ms={ttl_ms}"
                     )
                 )
                 inc_decision_deferred(symbol, "features_stale")
@@ -925,7 +926,8 @@ class DecisionMaking:
                 cached_risk = getattr(state, '_cached_risk', None)
                 if cached_risk:
                     self.logger.info(
-                        f"[{symbol}] ✅ Using cached risk assessment from {current_time - risk_assessment_time:.1f}s ago")
+                        f"[{symbol}] ✅ Using cached risk assessment from "
+                        f"{current_time - risk_assessment_time:.1f}s ago")
                     state["risk"] = cached_risk
                     decision_context = {
                         "features": state["features"],
@@ -942,7 +944,8 @@ class DecisionMaking:
 
         # Defer decision if we don't have required data
         self.logger.warning(
-            f"[{symbol}] ⚠️ Decision deferred: features={has_features}, risk={has_risk}, features_ready={features_ready}"
+            f"[{symbol}] ⚠️ Decision deferred: features={has_features}, "
+            f"risk={has_risk}, features_ready={features_ready}"
         )
         # Track decision deferrals for observability
         if not has_features and not has_risk:
@@ -1184,7 +1187,7 @@ class DecisionMaking:
             config_keys = list(trading_config.keys()) if isinstance(
                 trading_config, dict) else []
             self.logger.info(f"DEBUG trading_config keys: {config_keys}")
-        except:
+        except (AttributeError, TypeError):
             pass
         self.logger.info(f"DEBUG decision_config: {decision_config}")
         self.logger.info(f"DEBUG signal_weights: {signal_weights}")
@@ -1330,15 +1333,17 @@ class DecisionMaking:
             # Too many SELLs - raise SELL threshold (harder to short)
             bias_multiplier += sell_bias_penalty_factor
             self.logger.info(
-                f"[{symbol}] SIDE_BIAS_PENALTY: sell_share={float(sell_share):.2%} > target={float(sell_target_ratio):.2%}, "
-                f"raising SELL threshold by {float(sell_bias_penalty_factor):.0%}"
+                f"[{symbol}] SIDE_BIAS_PENALTY: sell_share={float(sell_share):.2%} > "
+                f"target={float(sell_target_ratio):.2%}, raising SELL threshold by "
+                f"{float(sell_bias_penalty_factor):.0%}"
             )
         elif sell_share < decimal.Decimal(str(1.0 - float(sell_target_ratio))):
             # Too many BUYs - raise BUY threshold (harder to long)
             bias_multiplier += sell_bias_penalty_factor
             self.logger.info(
-                f"[{symbol}] SIDE_BIAS_PENALTY: buy_share={float(1.0 - float(sell_share)):.2%} > target={float(sell_target_ratio):.2%}, "
-                f"raising BUY threshold by {float(sell_bias_penalty_factor):.0%}"
+                f"[{symbol}] SIDE_BIAS_PENALTY: buy_share={float(1.0 - float(sell_share)):.2%} > "
+                f"target={float(sell_target_ratio):.2%}, raising BUY threshold by "
+                f"{float(sell_bias_penalty_factor):.0%}"
             )
 
         signal_threshold_with_bias = signal_threshold * bias_multiplier
@@ -1352,9 +1357,9 @@ class DecisionMaking:
             reject_reason = f"Neutral signal score {signal_score:.4f} (threshold={signal_threshold_with_bias:.4f} with bias)"
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
-            self.logger.info(
-                f"Trade intent for {symbol} rejected: {reject_reason} (NRR: {normalized_reason})"
-            )
+            msg = ("Trade intent for {} rejected: {} "
+                   "(NRR: {})".format(symbol, reject_reason, normalized_reason))  # noqa: E501
+            self.logger.info(msg)
             self.dlog.write(
                 "DECISION_SKIP", rid, {
                     "symbol": symbol, "reason": "NEUTRAL_SIGNAL"}
@@ -1680,8 +1685,6 @@ class DecisionMaking:
             except Exception:
                 kappa_dec = decimal.Decimal("1")
 
-            exec_cfg = self._safe_config_get(
-                "trading", "execution", "manage", default={}) or {}
             # brackets may be absent in some configs; guard accordingly
             sl_bps_val = self._safe_config_get(
                 "trading", "execution", "brackets", "sl", "fixed_bps", default=50)
@@ -1727,12 +1730,12 @@ class DecisionMaking:
             )  # Legacy sizing fallback
             why_parts.append("sizing=legacy_10pct_equity")
 
-        self.logger.info(
-            f"[{symbol}] POSITION_SIZE_CALC: equity=${equity}, "
-            f"10%=${equity * decimal.Decimal('0.1')}, "
-            f"liq_cap=${self.liq_cap_usd}, "
+        msg = (
+            f"[{symbol}] POSITION_SIZE_CALC: equity=${equity}, " +
+            f"10%=${equity * decimal.Decimal('0.1')}, liq_cap=${self.liq_cap_usd}, " +
             f"final=${final_pos_size_usd}"
-        )
+        )  # noqa: E501
+        self.logger.info(msg)
 
         if final_pos_size_usd < self.min_pos_size_usd:
             reject_reason = f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"

@@ -47,12 +47,20 @@ import time
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from logging.handlers import RotatingFileHandler
+import asyncio
+import threading
 
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+
+def _run_async_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Run the shared asyncio loop in a dedicated thread."""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
 
 
 # Import domain classes
@@ -1050,20 +1058,54 @@ def main() -> None:
     # ==========================================
     # SYNC OPEN ORDERS AND POSITIONS WITH BINANCE
     # ==========================================
+    guardian_loop: Optional[asyncio.AbstractEventLoop] = None
+    guardian_loop_thread: Optional[threading.Thread] = None
+
     LOG.info("--- Starting Order/Position Synchronization ---")
+    guardian_loop = asyncio.new_event_loop()
+    guardian_loop_thread = threading.Thread(
+        target=_run_async_loop,
+        args=(guardian_loop,),
+        name="AuroraAsyncLoop",
+        daemon=True,
+    )
+    execution_position.set_async_loop(guardian_loop)
+    guardian_loop_thread.start()
+
     try:
-        # Run async sync in event loop
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(
-            execution_position.sync_open_orders_and_positions())
-        loop.close()
+        sync_fn = getattr(
+            execution_position,
+            "sync_open_orders_and_positions",
+            None,
+        )
+        if callable(sync_fn):
+            sync_future = asyncio.run_coroutine_threadsafe(
+                sync_fn(),
+                guardian_loop,
+            )
+            sync_future.result()
+        else:
+            LOG.info(
+                "ExecutionPosition has no sync_open_orders_and_positions(); skipping initial sync"
+            )
+
+        LOG.info("Starting OrderGuardian...")
+        guardian_start_future = asyncio.run_coroutine_threadsafe(
+            execution_position.start_order_guardian(),
+            guardian_loop,
+        )
+        guardian_start_future.result()
+
         LOG.info("✅ Order/Position synchronization complete")
+        LOG.info("✅ OrderGuardian started")
     except Exception as e:
-        LOG.error(f"❌ Error during order/position sync: {e}")
+        LOG.error(
+            f"❌ Error during order/position sync or OrderGuardian startup: {e}")
         import traceback
         LOG.debug(traceback.format_exc())
+    else:
+        LOG.debug("OrderGuardian background loop thread running")
+    LOG.info("--- Order/Position Synchronization Finished ---")
     LOG.info("--- Order/Position Synchronization Finished ---")
 
     # Decision Making (generates trade intents) - execution_position already initialized in initialize_domains()
@@ -1152,6 +1194,20 @@ def main() -> None:
         print("\nShutting down Aurora Core...")
 
         LOG.info("Shutdown signal received. Stopping all components...")
+
+        if guardian_loop is not None:
+            try:
+                if guardian_loop.is_running():
+                    guardian_loop.call_soon_threadsafe(guardian_loop.stop)
+                if guardian_loop_thread is not None:
+                    guardian_loop_thread.join(timeout=5)
+            except Exception as loop_exc:
+                LOG.error(f"Error stopping guardian asyncio loop: {loop_exc}")
+            finally:
+                try:
+                    guardian_loop.close()
+                except Exception:
+                    pass
 
         # Helper to stop components safely if they exist
         for name in [

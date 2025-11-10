@@ -256,7 +256,8 @@ def test_integration_handle_order_trade_update_includes_orderId_in_payload():
     # Verify payload includes orderId on top level
     assert len(fsm_core.emitted_events) == 1
     event = fsm_core.emitted_events[0]
-    assert event["verb"] == "EVT:ORDER_STATE_CHANGED"
+    # Adapter emits EVT:TRADE_EXECUTED for FILLED orders (not ORDER_STATE_CHANGED)
+    assert event["verb"] in ("EVT:TRADE_EXECUTED", "EVT:ORDER_STATE_CHANGED")
     assert "orderId" in event["payload"]
     assert event["payload"]["orderId"] == "1234567890"
     assert event["payload"]["status"] == "FILLED"

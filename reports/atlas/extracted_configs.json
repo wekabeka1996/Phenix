@@ -1142,17 +1142,32 @@
       "trading": {
         "mode": "testnet",
         "decision": {
-          "signal_threshold": 0.1
+          "signal_threshold": 0.1,
+          "neutral_threshold": 0.18
         },
         "instruments": {
           "SOLUSDT": {
             "symbol": "SOLUSDT",
             "step_size": "0.01",
+            "tick_size": "0.01",
             "min_notional": "10"
           },
           "ETHUSDT": {
             "symbol": "ETHUSDT",
             "step_size": "0.001",
+            "tick_size": "0.01",
+            "min_notional": "10"
+          },
+          "BTCUSDT": {
+            "symbol": "BTCUSDT",
+            "step_size": "0.001",
+            "tick_size": "0.10",
+            "min_notional": "10"
+          },
+          "BNBUSDT": {
+            "symbol": "BNBUSDT",
+            "step_size": "0.01",
+            "tick_size": "0.01",
             "min_notional": "10"
           }
         },
@@ -1187,6 +1202,27 @@
             "max_realized_loss_usd": 250.0,
             "max_drawdown_pct": 8.0,
             "reset_time_utc": "00:00"
+          },
+          "profile": "balanced",
+          "soft_limits": {
+            "mode": "clip",
+            "clip_min_notional_usdt": 10,
+            "directional_ratio_max": 3.0,
+            "side_exposure_usdt": 600,
+            "margin_exposure_usdt": 1100
+          },
+          "regime_adaptation": {
+            "trend_up_delta": 0.3,
+            "trend_down_delta": 0.3,
+            "flat_delta": -0.3,
+            "bounds": [
+              2.0,
+              4.0
+            ]
+          },
+          "feature_flags": {
+            "dynamic_ratio": true,
+            "clipping_enabled": true
           }
         },
         "feature_engineering": {
@@ -1235,24 +1271,44 @@
               "stop_loss_bps": 50,
               "take_profit_low_ratio": 0.5,
               "take_profit_high_ratio": 1.0,
+              "sl": {
+                "fixed_bps": 50
+              },
+              "tp": {
+                "fixed_bps": 100
+              },
+              "offset_bps": 5,
+              "working_type_default": "MARK_PRICE",
+              "price_protect": false,
+              "retry": {
+                "max_attempts": 3,
+                "backoff_ms": [
+                  120,
+                  250,
+                  400
+                ],
+                "fallback_to_limit": true
+              },
+              "timeout_sec": 5,
               "atomic_close": true,
               "bracket_tracking": true
             },
             "orphan_monitor": {
               "enabled": true,
               "run_on_startup": true,
-              "periodic_interval_sec": 300,
+              "periodic_interval_sec": 90,
               "min_order_age_sec": 0,
               "batch_cancel_limit": 50,
-              "rate_limit_per_min": 120
+              "rate_limit_per_min": 120,
+              "offset_bps": 30
             }
           },
           "exposure": {
-            "max_equity_utilization_pct": 0.2,
-            "max_portfolio_fraction": 0.2,
+            "max_equity_utilization_pct": 2.0,
+            "max_portfolio_fraction": 2.0,
             "max_side_utilization_pct": {
-              "long": 0.12,
-              "short": 0.12
+              "long": 1.5,
+              "short": 1.5
             },
             "max_directional_ratio": 2.0,
             "per_symbol_cap_pct": 0.08,
@@ -1260,9 +1316,9 @@
             "exclude_reduce_only": true,
             "pending_reservation_ttl_sec": 45,
             "leverage_defaults": {
-              "SOLUSDT": 50,
-              "ETHUSDT": 50,
-              "__default__": 15
+              "SOLUSDT": 125,
+              "ETHUSDT": 125,
+              "__default__": 125
             }
           },
           "open_order_type": "MARKET",
@@ -1283,6 +1339,16 @@
           "watchdog": {
             "ack_ttl_ms": 8000,
             "fill_ttl_ms": 60000
+          },
+          "orders": {
+            "default_ttl_seconds": 15,
+            "market": {
+              "slippage_cap_bps": 10
+            },
+            "cancel": {
+              "idempotent": true,
+              "use_cancel_replace": true
+            }
           }
         },
         "domain_configuration": {

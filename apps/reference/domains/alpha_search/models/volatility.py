@@ -60,7 +60,6 @@ class VolatilityAlphaModel(AlphaModel):
         """
 
         # Extract features
-        atr_14 = Decimal(str(features.get('atr_14', 0)))
         atr_ratio = Decimal(str(features.get('atr_ratio', 1)))
         bb_width = Decimal(str(features.get('bb_width', 0.05)))
         bb_width_change = Decimal(str(features.get('bb_width_change', 0)))

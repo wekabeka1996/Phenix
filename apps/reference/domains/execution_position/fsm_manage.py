@@ -75,6 +75,10 @@ class ManageFlowFSM:
         self.trailing_activated: bool = False
         self.last_trailing_ts: float = 0.0
 
+        # PHASE A2: Anti-race flag - prevents bracket placement during CLOSE
+        self._closing_position: bool = False
+        self._closing_position_ts: float = 0.0
+
         # Configuration
         self.config = config or {}
         # Emergency/WaitMode configuration
@@ -105,6 +109,23 @@ class ManageFlowFSM:
         except (AttributeError, TypeError, ValueError):
             self._wait_mode_bars = 2
         self._wait_mode_until_ts: int = 0
+
+        # Anti-race window (ms) configurable via config; default 800ms
+        try:
+            if hasattr(self.config, 'execution') and self.config.execution:
+                self._anti_race_close_ms = int(getattr(self.config.execution, 'anti_race_close_ms', 800))
+            elif hasattr(self.config, 'trading') and self.config.trading:
+                exec_cfg = getattr(self.config.trading, 'execution', None)
+                self._anti_race_close_ms = int(getattr(exec_cfg, 'anti_race_close_ms', 800)) if exec_cfg else 800
+            elif isinstance(self.config, dict):
+                self._anti_race_close_ms = int(
+                    self.config.get('execution', {}).get('anti_race_close_ms')
+                    or self.config.get('trading', {}).get('execution', {}).get('anti_race_close_ms', 800)
+                )
+            else:
+                self._anti_race_close_ms = 800
+        except Exception:
+            self._anti_race_close_ms = 800
 
         # Read auto-manage flag from config
         # Try both paths: trading.execution.manage and execution.manage
@@ -258,6 +279,13 @@ class ManageFlowFSM:
                 return None
             else:
                 # ENTRY fill - position is opening
+                # HOTFIX: Auto-clear closing flag on ENTRY (we're opening, not closing)
+                if self._closing_position:
+                    self._closing_position = False
+                    import logging
+                    LOG = logging.getLogger(__name__)
+                    LOG.info("[BRK] ENTRY detected → closing_flag=False")
+
                 print(
                     f"[ManageFlowFSM] 📈 ENTRY fill - creating position from {msg.verb}")
                 self._on_fill(msg)
@@ -311,6 +339,41 @@ class ManageFlowFSM:
 
     def _place_brackets(self, msg: Message) -> Optional[Message]:
         """Place SL and TP bracket orders after position opens."""
+
+        # PHASE A2: Anti-race check - skip if position is closing
+        if self._closing_position:
+            elapsed_s = time.time() - self._closing_position_ts
+            if elapsed_s < (self._anti_race_close_ms / 1000.0):  # configurable anti-race window
+                # Position close still in progress, skip bracket placement
+                import logging
+                LOG = logging.getLogger(__name__)
+                LOG.info(
+                    f"[BRK] skip:closing_flag elapsed={elapsed_s:.3f}s (<{self._anti_race_close_ms/1000.0:.1f}s)")
+                self.state = ManageState.TRACKING
+                return None
+            else:
+                # Timeout: assume close finished, clear flag
+                self._closing_position = False
+                import logging
+                LOG = logging.getLogger(__name__)
+                LOG.info(
+                    f"[BRK] clearing closing_flag after {elapsed_s:.3f}s")
+
+        # HOTFIX: PHASE A1 - Dedup check + clear phantom IDs
+        # Note: Full REST dedup (openOrders check) should be done at async level (fsm.py)
+        # Here we do local dedup: if IDs are set but we're in FLAT->ENTRY transition,
+        # clear them (they're phantoms from previous trade)
+        # DO THIS BEFORE _should_place_brackets() check so IDs are always cleared
+        import logging
+        LOG = logging.getLogger(__name__)
+
+        if self.sl_order_id or self.tp_order_id:
+            # Local IDs present - likely phantoms if we're placing new brackets
+            LOG.info(
+                f"[BRK] local bracket IDs present (SL={self.sl_order_id}, TP={self.tp_order_id}) → clearing phantoms")
+            self.sl_order_id = None
+            self.tp_order_id = None
+
         if not self._should_place_brackets():
             self.state = ManageState.TRACKING
             return None
@@ -332,9 +395,12 @@ class ManageFlowFSM:
                 self.state = ManageState.TRACKING
                 return None
 
+            # Convert BUY/SELL to LONG/SHORT for validation
+            validation_side = "LONG" if self.position_side == "BUY" else "SHORT" if self.position_side == "SELL" else self.position_side or "LONG"
+
             # Validate SL price
             is_sl_valid, sl_reason = TPSLValidationRules.validate_stop_price_for_side(
-                position_side=self.position_side or "LONG",
+                position_side=validation_side,
                 current_mark=current_mark,
                 stop_price=sl_price,
                 is_take_profit=False,
@@ -347,7 +413,7 @@ class ManageFlowFSM:
 
             # Validate TP price
             is_tp_valid, tp_reason = TPSLValidationRules.validate_stop_price_for_side(
-                position_side=self.position_side or "LONG",
+                position_side=validation_side,
                 current_mark=current_mark,
                 stop_price=tp_price,
                 is_take_profit=True,
@@ -443,7 +509,13 @@ class ManageFlowFSM:
             if hasattr(self.config, 'trading') and self.config.trading:
                 brackets_config = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
             elif isinstance(self.config, dict):
-                brackets_config = self.config.get("brackets", {})
+                # Dict config: navigate full path trading.execution.manage.brackets
+                brackets_config = (
+                    self.config.get("trading", {})
+                    .get("execution", {})
+                    .get("manage", {})
+                    .get("brackets", {})
+                )
             else:
                 brackets_config = None
 
@@ -477,7 +549,13 @@ class ManageFlowFSM:
                 tp_config = brackets.tp if brackets else None
                 brackets_dict = brackets if brackets else {}
             elif isinstance(self.config, dict):
-                brackets_config = self.config.get("brackets", {})
+                # Dict config: navigate full path trading.execution.manage.brackets
+                brackets_config = (
+                    self.config.get("trading", {})
+                    .get("execution", {})
+                    .get("manage", {})
+                    .get("brackets", {})
+                )
                 sl_config = brackets_config.get("sl", {}) if isinstance(
                     brackets_config, dict) else None
                 tp_config = brackets_config.get("tp", {}) if isinstance(
@@ -565,6 +643,44 @@ class ManageFlowFSM:
             else:  # SELL
                 tp_price = entry_price * (1 - Decimal(str(tp_bps)) / 10000)
 
+            # ========== Quantize prices to tick_size ==========
+            # Read tick_size from config if available
+            tick_size = None
+            try:
+                symbol = getattr(self, 'symbol', None)
+                if symbol and hasattr(self.config, 'trading') and self.config.trading:
+                    instruments = self.config.trading.instruments if hasattr(
+                        self.config.trading, 'instruments') else None
+                    if instruments and isinstance(instruments, dict):
+                        sym_config = instruments.get(symbol, {})
+                        if isinstance(sym_config, dict):
+                            tick_size = sym_config.get("tick_size", None)
+                        elif hasattr(sym_config, 'tick_size'):
+                            tick_size = sym_config.tick_size
+                elif isinstance(self.config, dict):
+                    instruments = self.config.get("instruments", {})
+                    if isinstance(instruments, dict):
+                        symbol = getattr(self, 'symbol', None)
+                        if symbol:
+                            sym_config = instruments.get(symbol, {})
+                            if isinstance(sym_config, dict):
+                                tick_size = sym_config.get("tick_size", None)
+            except (AttributeError, TypeError, KeyError):
+                tick_size = None
+
+            # Apply tick_size quantization if available
+            if tick_size:
+                try:
+                    tick_size_dec = Decimal(str(tick_size))
+                    # Round down to nearest tick (conservative for SL/TP)
+                    sl_price = (
+                        sl_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
+                    tp_price = (
+                        tp_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
+                except (ValueError, TypeError, ArithmeticError):
+                    # If quantization fails, use original prices
+                    pass
+
             return sl_price, tp_price
         except (AttributeError, TypeError, ValueError):
             return None, None
@@ -584,6 +700,47 @@ class ManageFlowFSM:
         why: str,
     ) -> Message:
         """Emit DEC:PLACE_ORDER for bracket."""
+
+        # Get workingType and priceProtect from config
+        working_type = "MARK_PRICE"  # Default
+        price_protect = False  # Default
+
+        try:
+            if hasattr(self.config, 'trading') and self.config.trading:
+                brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
+                if brackets:
+                    if hasattr(brackets, 'working_type_default'):
+                        working_type = brackets.working_type_default
+                    if hasattr(brackets, 'price_protect'):
+                        price_protect = brackets.price_protect
+            elif isinstance(self.config, dict):
+                brackets_config = self.config.get("brackets", {})
+                if isinstance(brackets_config, dict):
+                    working_type = brackets_config.get(
+                        "working_type_default", "MARK_PRICE")
+                    price_protect = brackets_config.get("price_protect", False)
+        except (AttributeError, TypeError):
+            pass
+
+        # Build payload
+        payload = {
+            "symbol": msg.pld.get("symbol", ""),
+            "side": side,
+            "qty": qty,
+            "order_type": order_type,
+            "price": price if order_type == "LIMIT" else None,
+            "stopPrice": price if "STOP" in order_type else None,
+            "reduceOnly": True,
+            "newClientOrderId": client_id,
+            "workingType": working_type,
+            "priceProtect": price_protect,
+        }
+
+        # For STOP_MARKET/TAKE_PROFIT_MARKET with closePosition=true, don't send qty
+        if "STOP" in order_type and order_type != "STOP_LOSS" and getattr(self, 'closePosition', False):
+            # Remove qty for close-position orders (Binance manages qty automatically)
+            payload.pop("qty", None)
+
         return Message(
             op="DEC",
             verb="PLACE_ORDER",
@@ -592,16 +749,7 @@ class ManageFlowFSM:
             rid=msg.rid,
             why=why[:80],
             idempotent_key=client_id,
-            pld={
-                "symbol": msg.pld.get("symbol", ""),
-                "side": side,
-                "qty": qty,
-                "order_type": order_type,
-                "price": price if order_type == "LIMIT" else None,
-                "stopPrice": price if "STOP" in order_type else None,
-                "reduceOnly": True,
-                "newClientOrderId": client_id,
-            },
+            pld=payload,
             data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
         )
 

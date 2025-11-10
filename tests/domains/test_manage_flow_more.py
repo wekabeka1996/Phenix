@@ -33,12 +33,18 @@ def test_on_fill_average_down():
 
 def test_place_brackets_and_on_bracket_placed():
     cfg = {
-        "brackets": {"enable": True, "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}
+        "trading": {
+            "execution": {
+                "manage": {
+                    "brackets": {"enable": True, "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}
+                }
+            }
+        }
     }
     fsm = ManageFlowFSM(config=cfg)
     fsm.position_qty = Decimal("1")
     fsm.position_entry_price = Decimal("100")
-    fsm.position_side = "BUY"
+    fsm.position_side = "BUY"  # Binance uses BUY/SELL, not LONG/SHORT
     fsm.position_open_ts = time.time()
 
     msg = make_fill_msg(rid="b1")
@@ -85,7 +91,7 @@ def test_trailing_activation_and_adjust():
     fsm = ManageFlowFSM(config=cfg_full)
     fsm.position_qty = Decimal("1")
     fsm.position_entry_price = Decimal("100")
-    fsm.position_side = "BUY"
+    fsm.position_side = "BUY"  # Binance uses BUY/SELL
     fsm.sl_price = Decimal("95")
     fsm.sl_order_id = "s1"
     fsm.position_open_ts = time.time() - 1000

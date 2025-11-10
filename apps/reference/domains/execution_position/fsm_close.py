@@ -72,29 +72,35 @@ class CloseFlowFSM:
         Process incoming events and emit DEC:CLOSE if rules trigger.
 
         Args:
-            msg: EVT:FILL|REJECTED|EXPIRED|UPD:* (including UPD:TICK for timer)
+            msg: EVT:FILL|REJECTED|EXPIRED|UPD:* (including UPD:TICK for timer) or CMD:CLOSE
 
         Returns:
             DEC:CLOSE if rules trigger, None otherwise.
         """
+        # Handle manual close commands
+        if msg.op == "CMD" and msg.verb == "CLOSE":
+            if self.state == CloseState.OPENED and self.position_active:
+                return self._emit_close(msg, "MANUAL_CLOSE", {"trigger": "CMD:CLOSE"})
+            return None
+
         if msg.op not in ("EVT", "UPD"):
             return None
 
         # State transition: FLAT → OPENED on FILL or PARTIAL_FILL
-        if self.state == CloseState.FLAT and msg.verb in ("FILL", "PARTIAL_FILL"):
-            # Check if this actually opened a position (filled_qty > 0)
+        if self.state == CloseState.FLAT and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL"):
+            # Check if this actually opened a position (qty > 0)
             pld = msg.pld or {}
-            filled_qty = float(pld.get("filled_qty", 0))
-            if filled_qty > 0:
+            qty = float(pld.get("qty", 0))
+            if qty > 0:
                 self.position_active = True
                 self.position_open_ts = time.time()
                 self.state = CloseState.OPENED
                 # Log the transition reason
                 transition_reason = (
-                    "PARTIAL_FILL" if msg.verb == "PARTIAL_FILL" else "FILL"
+                    "PARTIAL_FILL" if msg.verb == "PARTIAL_FILL" else "TRADE_EXECUTED"
                 )
                 print(
-                    f"[CloseFlowFSM] Transitioned to OPENED on {transition_reason}, filled_qty={filled_qty}"
+                    f"[CloseFlowFSM] Transitioned to OPENED on {transition_reason}, qty={qty}"
                 )
                 # Immediately check close conditions on the fill event itself
                 return self._check_close_conditions(msg)

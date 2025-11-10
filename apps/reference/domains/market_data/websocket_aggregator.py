@@ -18,7 +18,7 @@ LOG = logging.getLogger(__name__)
 class WebSocketAggregator:
     """Aggregates WebSocket data streams into market tick events."""
 
-    def __init__(self, symbols: list[str], window_seconds: int = 60, anchors: list[str] = None):
+    def __init__(self, symbols: list[str], window_seconds: int = 60, anchors: Optional[list[str]] = None):
         """
         Initialize the aggregator.
 

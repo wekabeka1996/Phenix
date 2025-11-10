@@ -56,8 +56,9 @@ class FeatureEngineering:
             if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'ema'):
                 self.ema_config = self.config.trading.feature_engineering.ema
             elif isinstance(self.config, dict):
-                self.ema_config = ((self.config.get("trading", {})).get(
-                    "feature_engineering", {})).get("ema", {})
+                trading_config = self.config.get("trading", {})
+                fe_config = trading_config.get("feature_engineering", {})
+                self.ema_config = fe_config.get("ema", {})
             else:
                 self.ema_config = {}
         except (AttributeError, TypeError):
@@ -67,8 +68,9 @@ class FeatureEngineering:
             if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'volume'):
                 self.volume_config = self.config.trading.feature_engineering.volume
             elif isinstance(self.config, dict):
-                self.volume_config = ((self.config.get("trading", {})).get(
-                    "feature_engineering", {})).get("volume", {})
+                trading_config = self.config.get("trading", {})
+                fe_config = trading_config.get("feature_engineering", {})
+                self.volume_config = fe_config.get("volume", {})
             else:
                 self.volume_config = {}
         except (AttributeError, TypeError):
@@ -78,8 +80,9 @@ class FeatureEngineering:
             if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'volatility'):
                 self.volatility_config = self.config.trading.feature_engineering.volatility
             elif isinstance(self.config, dict):
-                self.volatility_config = ((self.config.get("trading", {})).get(
-                    "feature_engineering", {})).get("volatility", {})
+                trading_config = self.config.get("trading", {})
+                fe_config = trading_config.get("feature_engineering", {})
+                self.volatility_config = fe_config.get("volatility", {})
             else:
                 self.volatility_config = {}
         except (AttributeError, TypeError):
@@ -89,8 +92,9 @@ class FeatureEngineering:
             if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'liquidity'):
                 self.liquidity_config = self.config.trading.feature_engineering.liquidity
             elif isinstance(self.config, dict):
-                self.liquidity_config = ((self.config.get("trading", {})).get(
-                    "feature_engineering", {})).get("liquidity", {})
+                trading_config = self.config.get("trading", {})
+                fe_config = trading_config.get("feature_engineering", {})
+                self.liquidity_config = fe_config.get("liquidity", {})
             else:
                 self.liquidity_config = {}
         except (AttributeError, TypeError):
@@ -166,14 +170,6 @@ class FeatureEngineering:
             ema_long = 7
 
         try:
-            if hasattr(self.volume_config, 'window_sec'):
-                vol_window_sec = self.volume_config.window_sec
-            else:
-                vol_window_sec = 60
-        except (AttributeError, TypeError):
-            vol_window_sec = 60
-
-        try:
             if hasattr(self.volume_config, 'sma_length'):
                 vol_sma_len = self.volume_config.sma_length
             else:
@@ -188,27 +184,6 @@ class FeatureEngineering:
                 vol_range_sma_len = 10
         except (AttributeError, TypeError):
             vol_range_sma_len = 10
-
-        self.symbol_state[symbol] = {
-            # EMA state
-            "ema3": None,
-            "ema7": None,
-            "ema3_alpha": 2 / (ema_short + 1),
-            "ema7_alpha": 2 / (ema_long + 1),
-            # Volume spike state
-            "vol_window_start_ts": None,
-            "vol_current_ts": None,
-            "vol_window_trades": 0,  # Count of trades in current window
-            "vol_hist": deque(maxlen=vol_sma_len),  # Trade volumes per window
-            # Volatility state
-            "range_window_start_ts": None,
-            "range_min": None,
-            "range_max": None,
-            "range_hist": deque(maxlen=vol_range_sma_len),  # Ranges per window
-            # Returns for macro_sync
-            "returns_buffer": deque(maxlen=self.macro_window),
-            "prev_price": None,
-        }
 
         self.symbol_state[symbol] = {
             # EMA state

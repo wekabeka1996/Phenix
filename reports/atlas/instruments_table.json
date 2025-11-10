@@ -2,12 +2,28 @@
   {
     "symbol": "SOLUSDT",
     "step_size": "0.01",
+    "tick_size": "0.01",
     "min_notional": "10",
     "source_config": "config\\aurora\\trading.yaml"
   },
   {
     "symbol": "ETHUSDT",
     "step_size": "0.001",
+    "tick_size": "0.01",
+    "min_notional": "10",
+    "source_config": "config\\aurora\\trading.yaml"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "step_size": "0.001",
+    "tick_size": "0.10",
+    "min_notional": "10",
+    "source_config": "config\\aurora\\trading.yaml"
+  },
+  {
+    "symbol": "BNBUSDT",
+    "step_size": "0.01",
+    "tick_size": "0.01",
     "min_notional": "10",
     "source_config": "config\\aurora\\trading.yaml"
   },

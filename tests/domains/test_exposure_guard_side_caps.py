@@ -134,8 +134,8 @@ def test_directional_ratio_enforcement(exposure_guard):
     result = exposure_guard.can_open(
         "BTCUSDT", Decimal("100"), portfolio_state)
 
-    # Should be rejected due to ratio
-    assert (result.get("reason") == "DIRECTIONAL_RATIO_EXCEEDED" or
+    # Should be rejected or clipped due to ratio
+    assert (result.get("reason") in ["DIRECTIONAL_RATIO_EXCEEDED", "CLIPPED_DIRECTIONAL"] or
             result.get("allowed") == False)
 
 

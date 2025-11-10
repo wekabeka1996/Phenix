@@ -48,8 +48,6 @@ class FeatureEngineering:
         self.liquidity_config = self.self.config.trading.feature_engineering.liquidity
 
         # Macro sync config
-        market_data_config = (self.config.trading
-                              or {}).get("market_data", {})
         self.macro_sync_config = self.config.trading.market_data.macro_sync
         self.macro_sync_enabled = self.config.trading.market_data.macro_sync.enabled
         try:
@@ -77,7 +75,6 @@ class FeatureEngineering:
                 ema_long = 7
         except (AttributeError, TypeError):
             ema_long = 7
-        vol_window_sec = self.config.trading.feature_engineering.volume.window_sec
         try:
             if hasattr(self.volume_config, 'sma_length'):
                 vol_sma_len = self.volume_config.sma_length

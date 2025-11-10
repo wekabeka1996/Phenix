@@ -253,7 +253,11 @@ class AccountObserver:
             # Log with correlation
             corr_id_log = payload.get("corr_id", "unknown")
             self.logger.info(
-                f"ORDER_STATE_CHANGED: FILL for order_id={order_id}, corr_id={corr_id_log}, symbol={payload['symbol']}, side={payload['side']}, qty={payload['quantity']}, price={payload['price']}")
+                f"ORDER_STATE_CHANGED: FILL for order_id={order_id}, "
+                f"corr_id={corr_id_log}, symbol={payload['symbol']}, "
+                f"side={payload['side']}, qty={payload['quantity']}, "
+                f"price={payload['price']}"
+            )
 
             self.logger.info(
                 f"Emitted EVT:FILL for trade {trade_id}: {payload}")

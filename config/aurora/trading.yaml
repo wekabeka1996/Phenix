@@ -4,8 +4,8 @@ binance_api:
     api_secret: "${BINANCE_FUTURES_API_SECRET_LIVE}"
     rest_url: "${BINANCE_FUTURES_BASE_URL_LIVE}"
   testnet:
-    api_key: "TESTNET_KEY"
-    api_secret: "TESTNET_SECRET"
+    api_key: "${BINANCE_TESTNET_API_KEY}"
+    api_secret: "${BINANCE_TESTNET_API_SECRET}"
     rest_url: "https://testnet.binancefuture.com"
 
 trading:
@@ -86,10 +86,22 @@ trading:
     SOLUSDT:
       symbol: "SOLUSDT"    # Required by Pydantic
       step_size: "0.01"    # Binance SOLUSDT step_size
+      tick_size: "0.01"    # Price tick size (for TP/SL quantization)
       min_notional: "10"   # Minimum notional value
     ETHUSDT:
       symbol: "ETHUSDT"    # Required by Pydantic
       step_size: "0.001"   # Binance ETHUSDT step_size
+      tick_size: "0.01"    # Price tick size (for TP/SL quantization)
+      min_notional: "10"
+    BTCUSDT:
+      symbol: "BTCUSDT"    # Bitcoin
+      step_size: "0.001"   # Binance BTCUSDT step_size
+      tick_size: "0.10"    # Price tick size (for TP/SL quantization)
+      min_notional: "10"
+    BNBUSDT:
+      symbol: "BNBUSDT"    # Binance Coin
+      step_size: "0.01"    # Binance BNBUSDT step_size
+      tick_size: "0.01"    # Price tick size (for TP/SL quantization)
       min_notional: "10"
 
   # TCA (Transaction Cost Analysis) Preferences
@@ -233,11 +245,13 @@ trading:
       # Orphaned bracket monitor (periodic cleanup of reduceOnly/closePosition orders when no position exists)
       orphan_monitor:
         enabled: true                # Master switch for background monitor
-        run_on_startup: true         # One-time sync on startup to cancel orphans immediately
-        periodic_interval_sec: 300   # Interval for periodic cleanup loop (seconds)
+        run_on_startup: true         # PHASE B2: One-time sync on startup to cancel orphans immediately
+        periodic_interval_sec: 90    # PHASE B2: Reduced from 300 to 90 seconds for faster cleanup
         min_order_age_sec: 0         # Skip cancelling orders newer than this age (0 disables)
         batch_cancel_limit: 50       # Max cancels per single loop run to avoid bursts
         rate_limit_per_min: 120      # Global per-minute cancel cap across symbols (0 disables)
+        # PHASE B2: Pre-flight & backoff settings for TP/SL placement
+        offset_bps: 30               # Safety offset to apply before TP/SL (in basis points)
 
     # Portfolio Exposure Gate (for testnet - no real risk)
     exposure:
@@ -360,3 +374,20 @@ binance_api:
   feature_engineering:
     liquidity:
       depth_half: 1000   # Half-depth for liquidity kappa (tune per venue)
+
+execution:
+  allow_trade_with_guardian_tidy_only: true
+  fsm_periodic_cleanup_enabled: false
+  preflight_backoff_ms: [120, 250, 400, 800, 1200, 1800]
+  anti_race_close_ms: 800
+  min_post_interval_per_symbol_ms: 300
+  order_guardian:
+    poll_interval_ms: 5000
+
+guardian:
+  unified: true
+  emit_tidy_event: true
+  cleanup_ttl_ms: 6000
+  symbol_cooldown_ms: 4000
+  poll_interval_ms: 5000
+  ledger_db_path: "data/order_ledger.db"

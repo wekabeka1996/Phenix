@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import logging
+import asyncio
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -507,7 +508,7 @@ class ExposureGuard:
                     pld={"reason": reason},
                     why="exposure_fail_closed",
                 )
-                asyncio.create_task(emit_compat(
+                self._safe_create_task(emit_compat(
                     self.fsm, msg, logger=self.logger))
             return {"allowed": False, "reason": reason}
 
@@ -532,7 +533,7 @@ class ExposureGuard:
                     pld={"reason": reason},
                     why="exposure_fail_closed",
                 )
-                asyncio.create_task(emit_compat(
+                self._safe_create_task(emit_compat(
                     self.fsm, msg, logger=self.logger))
             return {"allowed": False, "reason": reason}
 
@@ -557,7 +558,7 @@ class ExposureGuard:
                     pld={"reason": reason, "stale_sec": stale_sec},
                     why="exposure_fail_closed",
                 )
-                asyncio.create_task(emit_compat(
+                self._safe_create_task(emit_compat(
                     self.fsm, msg, logger=self.logger))
             return {"allowed": False, "reason": reason, "stale_sec": stale_sec}
 
@@ -751,6 +752,30 @@ class ExposureGuard:
                             "reason": "MARGIN_LIMIT",
                             "clip_reasons": clip_result.clip_reasons,
                         })
+                        # Emit EVT:ORDER_CLIPPED event for margin clipping
+                        if self.fsm:
+                            from vfoundation.core.protocol import Message
+                            from vfoundation.core.fsm_emit_compat import emit_compat
+                            import asyncio
+
+                            msg = Message(
+                                op="EVT",
+                                verb="ORDER_CLIPPED",
+                                src="execution_position",
+                                dst="*",
+                                pld={
+                                    "symbol": symbol,
+                                    "side": order_side,
+                                    "original_notional": float(notional_usd),
+                                    "clipped_notional": float(clip_result.clipped_notional),
+                                    "reason": "MARGIN_LIMIT",
+                                    "clip_reasons": clip_result.clip_reasons,
+                                    "reduction_amount": float(notional_usd - clip_result.clipped_notional)
+                                },
+                                why="order_clipped_margin_limit",
+                            )
+                            self._safe_create_task(emit_compat(
+                                self.fsm, msg, logger=self.logger))
                         return {
                             "allowed": True,
                             "reason": "CLIPPED_MARGIN",
@@ -789,6 +814,33 @@ class ExposureGuard:
                         "leverage": float(symbol_leverage)
                     }
                 })
+                # Emit EVT:ORDER_REJECTED event for exposure limit
+                if self.fsm:
+                    from vfoundation.core.protocol import Message
+                    from vfoundation.core.fsm_emit_compat import emit_compat
+                    import asyncio
+
+                    msg = Message(
+                        op="EVT",
+                        verb="ORDER_REJECTED",
+                        src="execution_position",
+                        dst="*",
+                        pld={
+                            "symbol": symbol,
+                            "side": "NONE",
+                            "quantity": float(notional_usd),
+                            "nrr_code": "NRR-011",
+                            "reason": reason,
+                            "why": f"Margin exposure limit exceeded: {new_total_margin_exposure:.2f} > {margin_limit:.2f}",
+                            "margin_limit": float(margin_limit),
+                            "new_total_margin": float(new_total_margin_exposure),
+                            "reserve_margin": float(reserve_margin),
+                            "leverage": float(symbol_leverage)
+                        },
+                        why="exposure_limit_exceeded",
+                    )
+                    self._safe_create_task(emit_compat(
+                        self.fsm, msg, logger=self.logger))
                 return {"allowed": False, "reason": reason}
 
         # EXP-DIRECTION: Check 2 - Per-side cap (PHASE 3: with soft-clip)
@@ -847,6 +899,30 @@ class ExposureGuard:
                             "reason": "SIDE_LIMIT",
                             "clip_reasons": clip_result.clip_reasons,
                         })
+                        # Emit EVT:ORDER_CLIPPED event for side clipping
+                        if self.fsm:
+                            from vfoundation.core.protocol import Message
+                            from vfoundation.core.fsm_emit_compat import emit_compat
+                            import asyncio
+
+                            msg = Message(
+                                op="EVT",
+                                verb="ORDER_CLIPPED",
+                                src="execution_position",
+                                dst="*",
+                                pld={
+                                    "symbol": symbol,
+                                    "side": order_side,
+                                    "original_notional": float(notional_usd),
+                                    "clipped_notional": float(clip_result.clipped_notional),
+                                    "reason": "SIDE_LIMIT",
+                                    "clip_reasons": clip_result.clip_reasons,
+                                    "reduction_amount": float(notional_usd - clip_result.clipped_notional)
+                                },
+                                why="order_clipped_side_limit",
+                            )
+                            self._safe_create_task(emit_compat(
+                                self.fsm, msg, logger=self.logger))
                         return {
                             "allowed": True,
                             "reason": "CLIPPED_SIDE",
@@ -882,6 +958,31 @@ class ExposureGuard:
                         "current_side_margin": float(current_side_margin)
                     }
                 })
+                # Emit EVT:ORDER_REJECTED event for side exposure limit
+                if self.fsm:
+                    from vfoundation.core.protocol import Message
+                    from vfoundation.core.fsm_emit_compat import emit_compat
+                    import asyncio
+
+                    msg = Message(
+                        op="EVT",
+                        verb="ORDER_REJECTED",
+                        src="execution_position",
+                        dst="*",
+                        pld={
+                            "symbol": symbol,
+                            "side": order_side,
+                            "quantity": float(notional_usd),
+                            "nrr_code": "NRR-012",
+                            "reason": reason,
+                            "why": f"Side exposure limit exceeded: {current_side_margin:.2f} > {side_limit:.2f}",
+                            "side_limit": float(side_limit),
+                            "current_side_margin": float(current_side_margin)
+                        },
+                        why="side_exposure_limit_exceeded",
+                    )
+                    self._safe_create_task(emit_compat(
+                        self.fsm, msg, logger=self.logger))
                 return {"allowed": False, "reason": reason}
 
         # EXP-DIRECTION: Check 3 - Directional ratio cap (PHASE 3: with soft-clip)
@@ -918,6 +1019,30 @@ class ExposureGuard:
                         "reason": "DIRECTIONAL_RATIO",
                         "clip_reasons": clip_result.clip_reasons,
                     })
+                    # Emit EVT:ORDER_CLIPPED event for directional clipping
+                    if self.fsm:
+                        from vfoundation.core.protocol import Message
+                        from vfoundation.core.fsm_emit_compat import emit_compat
+                        import asyncio
+
+                        msg = Message(
+                            op="EVT",
+                            verb="ORDER_CLIPPED",
+                            src="execution_position",
+                            dst="*",
+                            pld={
+                                "symbol": symbol,
+                                "side": order_side,
+                                "original_notional": float(notional_usd),
+                                "clipped_notional": float(clip_result.clipped_notional),
+                                "reason": "DIRECTIONAL_RATIO",
+                                "clip_reasons": clip_result.clip_reasons,
+                                "reduction_amount": float(notional_usd - clip_result.clipped_notional)
+                            },
+                            why="order_clipped_directional_ratio",
+                        )
+                        self._safe_create_task(emit_compat(
+                            self.fsm, msg, logger=self.logger))
                     return {
                         "allowed": True,
                         "reason": "CLIPPED_DIRECTIONAL",
@@ -955,6 +1080,33 @@ class ExposureGuard:
                     "short_margin": float(new_short_margin)
                 }
             })
+            # Emit EVT:ORDER_REJECTED event for directional ratio limit
+            if self.fsm:
+                from vfoundation.core.protocol import Message
+                from vfoundation.core.fsm_emit_compat import emit_compat
+                import asyncio
+
+                msg = Message(
+                    op="EVT",
+                    verb="ORDER_REJECTED",
+                    src="execution_position",
+                    dst="*",
+                    pld={
+                        "symbol": symbol,
+                        "side": order_side,
+                        "quantity": float(notional_usd),
+                        "nrr_code": "NRR-013",
+                        "reason": reason,
+                        "why": f"Directional ratio limit exceeded: {directional_ratio:.2f} > {self.max_directional_ratio}",
+                        "directional_ratio": float(directional_ratio),
+                        "max_ratio": float(self.max_directional_ratio),
+                        "long_margin": float(new_long_margin),
+                        "short_margin": float(new_short_margin)
+                    },
+                    why="directional_ratio_limit_exceeded",
+                )
+                self._safe_create_task(emit_compat(
+                    self.fsm, msg, logger=self.logger))
             return {"allowed": False, "reason": reason}
 
         return {"allowed": True}
@@ -1203,12 +1355,49 @@ class ExposureGuard:
             f"(base={float(base_ratio):.2f}, delta={float(delta):.2f})"
         )
 
-    def _increment_metric(self, metric_name: str, label: str) -> None:
-        """Increment a labeled metric counter."""
+    def _safe_create_task(self, coro) -> None:
+        """
+        Safely create an asyncio task, checking for running event loop.
+
+        This prevents RuntimeError when called from synchronous test contexts.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coro)
+        except RuntimeError:
+            # No running event loop, try to get existing loop
+            try:
+                loop = asyncio.get_event_loop()
+                if not loop.is_closed():
+                    loop.create_task(coro)
+                else:
+                    # Loop is closed, skip emission
+                    pass
+            except RuntimeError:
+                # No event loop available, skip emission
+                pass
+
+    def _increment_metric(self, metric_name: str, reason: str) -> None:
+        """
+        Increment a metric counter by reason.
+
+        Args:
+            metric_name: Name of the metric (e.g., "exposure_fail_closed_total")
+            reason: Reason for the increment (e.g., "EQUITY_UNKNOWN")
+        """
         if metric_name not in self.metrics:
             self.metrics[metric_name] = {}
-        metric_dict = self.metrics[metric_name]
-        if isinstance(metric_dict, dict) and label not in metric_dict:
-            metric_dict[label] = 0
-        if isinstance(metric_dict, dict):
-            metric_dict[label] = int(metric_dict.get(label, 0)) + 1
+
+        current_value = self.metrics[metric_name]
+
+        if not isinstance(current_value, dict):
+            legacy_total = current_value
+            self.metrics[metric_name] = {}
+            if isinstance(legacy_total, (int, float, Decimal)) and legacy_total:
+                # Preserve any pre-existing aggregate count under a legacy bucket.
+                self.metrics[metric_name]["__legacy_total"] = legacy_total
+
+        if reason not in self.metrics[metric_name]:
+            self.metrics[metric_name][reason] = 0
+
+        self.metrics[metric_name][reason] += 1

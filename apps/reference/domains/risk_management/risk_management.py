@@ -8,7 +8,6 @@ from features data and emits EVT:RISK_ASSESSMENT_COMPLETED events.
 import decimal
 import logging
 import uuid
-import time
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
@@ -220,14 +219,15 @@ class RiskManagement:
         # Compare drawdown_pct directly (both in %)
         if self.current_daily_drawdown > decimal.Decimal(str(max_drawdown_pct)):
             self.logger.critical(
-                f"PORTFOLIO RISK BREACH: Daily drawdown {float(self.current_daily_drawdown):.2f}% > {max_drawdown_pct:.2f}%. "
-                f"Disabling all trading."
+                f"PORTFOLIO RISK BREACH: Daily drawdown "
+                f"{float(self.current_daily_drawdown):.2f}% > "
+                f"{max_drawdown_pct:.2f}%. Disabling all trading."
             )
-            # XAI instrumentation: daily_drawdown gate
             logger.warning(
                 format_why_with_details(
                     WhyCode.RISK_DRAWDOWN_LIMIT,
-                    f"gate=daily_drawdown value={float(self.current_daily_drawdown):.4f} threshold={max_drawdown_pct:.4f}"
+                    f"gate=daily_drawdown value={float(self.current_daily_drawdown):.4f} "
+                    f"threshold={max_drawdown_pct:.4f}"
                 )
             )
             return {"is_trading_allowed": False}
@@ -252,13 +252,17 @@ class RiskManagement:
             score_weights = {}
 
         delta_price_weight = _to_dec(
-            score_weights.get("delta_price_pct", "0.1") if isinstance(score_weights, dict) else (getattr(score_weights, 'delta_price_pct', "0.1") if hasattr(score_weights, 'delta_price_pct') else "0.1"))
+            score_weights.get("delta_price_pct", "0.1") if isinstance(score_weights, dict)
+            else (getattr(score_weights, 'delta_price_pct', "0.1")
+                  if hasattr(score_weights, 'delta_price_pct') else "0.1"))
         obi_weight = _to_dec(score_weights.get("obi", "0.3") if isinstance(score_weights, dict) else (
             getattr(score_weights, 'obi', "0.3") if hasattr(score_weights, 'obi') else "0.3"))
         tfi_weight = _to_dec(score_weights.get("tfi", "0.3") if isinstance(score_weights, dict) else (
             getattr(score_weights, 'tfi', "0.3") if hasattr(score_weights, 'tfi') else "0.3"))
         absorption_inverse_weight = _to_dec(
-            score_weights.get("absorption_inverse", "0.3") if isinstance(score_weights, dict) else (getattr(score_weights, 'absorption_inverse', "0.3") if hasattr(score_weights, 'absorption_inverse') else "0.3"))
+            score_weights.get("absorption_inverse", "0.3") if isinstance(score_weights, dict)
+            else (getattr(score_weights, 'absorption_inverse', "0.3")
+                  if hasattr(score_weights, 'absorption_inverse') else "0.3"))
 
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
@@ -283,11 +287,13 @@ class RiskManagement:
         if risk_score > 1:
             risk_score = decimal.Decimal("1")
 
-        # Determine if trading is allowed based on risk thresholds
-        # Risk config is at config['trading']['risk']['trading_allowed_thresholds']
         try:
             if hasattr(self.config, 'trading') and self.config.trading:
-                thresholds = self.config.trading.risk.trading_allowed_thresholds if self.config.trading.risk and self.config.trading.risk else {}
+                thresholds = (
+                    self.config.trading.risk.trading_allowed_thresholds
+                    if self.config.trading.risk and self.config.trading.risk
+                    else {}
+                )
             elif isinstance(self.config, dict):
                 thresholds = self.config.get("trading", {}).get(
                     "risk", {}).get("trading_allowed_thresholds", {})
@@ -296,8 +302,10 @@ class RiskManagement:
         except (AttributeError, TypeError):
             thresholds = {}
 
-        max_risk_score = _to_dec(thresholds.get("max_risk_score", "0.8") if isinstance(thresholds, dict) else (
-            getattr(thresholds, 'max_risk_score', "0.8") if hasattr(thresholds, 'max_risk_score') else "0.8"))
+        max_risk_score = _to_dec(
+            thresholds.get("max_risk_score", "0.8") if isinstance(thresholds, dict)
+            else (getattr(thresholds, 'max_risk_score', "0.8")
+                  if hasattr(thresholds, 'max_risk_score') else "0.8"))
         is_trading_allowed = risk_score <= max_risk_score
 
         if not is_trading_allowed:
@@ -328,10 +336,13 @@ class RiskManagement:
         issues = []
         warnings = []
 
-        # Check required thresholds exist
         try:
             if hasattr(self.config, 'trading') and self.config.trading:
-                thresholds = self.config.trading.risk.trading_allowed_thresholds if self.config.trading.risk and self.config.trading.risk else {}
+                thresholds = (
+                    self.config.trading.risk.trading_allowed_thresholds
+                    if self.config.trading.risk and self.config.trading.risk
+                    else {}
+                )
             elif isinstance(self.config, dict):
                 thresholds = self.config.get("trading", {}).get(
                     "risk", {}).get("trading_allowed_thresholds", {})

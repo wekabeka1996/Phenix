@@ -111,15 +111,16 @@ class PositionTracking:
                 "pld": event.pld,
                 "src": event.src,
                 "dst": event.dst,
-                "rid": event.rid,
+                # Convert RID to string for JSON serialization
+                "rid": str(event.rid),
                 "timestamp": time.time(),
             }
             wal_hash = wal.append(event_dict)
             if wal_hash is None:
                 # WAL write failed due to lock timeout
                 self.logger.critical(
-                    f"CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL (lock timeout). "
-                    f"Halting processing for safety. RID={event.rid}"
+                    "CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL "
+                    f"(lock timeout). Halting processing for safety. RID={event.rid}"
                 )
                 return
             self.logger.debug(
@@ -128,7 +129,7 @@ class PositionTracking:
         except Exception as e:
             # Any WAL write failure is critical - we cannot process without durability guarantee
             self.logger.critical(
-                f"CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL. "
+                "CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL. "
                 f"Halting processing for safety. RID={event.rid}, Error: {e}"
             )
             return
@@ -219,15 +220,16 @@ class PositionTracking:
                 "pld": event.pld,
                 "src": event.src,
                 "dst": event.dst,
-                "rid": event.rid,
+                # Convert RID to string for JSON serialization
+                "rid": str(event.rid),
                 "timestamp": time.time(),
             }
             wal_hash = wal.append(event_dict)
             if wal_hash is None:
                 # WAL write failed due to lock timeout
                 self.logger.critical(
-                    f"CRITICAL: Failed to write EVT:ACCOUNT_UPDATE_RECEIVED to WAL (lock timeout). "
-                    f"Halting processing for safety. RID={event.rid}"
+                    "CRITICAL: Failed to write EVT:ACCOUNT_UPDATE_RECEIVED to WAL "
+                    "(lock timeout). Halting processing for safety. RID={event.rid}"
                 )
                 return
             self.logger.debug(
@@ -236,7 +238,7 @@ class PositionTracking:
         except Exception as e:
             # Any WAL write failure is critical - we cannot process without durability guarantee
             self.logger.critical(
-                f"CRITICAL: Failed to write EVT:ACCOUNT_UPDATE_RECEIVED to WAL. "
+                "CRITICAL: Failed to write EVT:ACCOUNT_UPDATE_RECEIVED to WAL. "
                 f"Halting processing for safety. RID={event.rid}, Error: {e}"
             )
             return
@@ -273,7 +275,7 @@ class PositionTracking:
 
             if old_realized_pnl != self._realized_pnl:
                 self.logger.debug(
-                    f"[STATE_SYNC] Realized PnL recalculated: "
+                    "[STATE_SYNC] Realized PnL recalculated: "
                     f"${old_realized_pnl} → ${self._realized_pnl} "
                     f"(cross_balance=${total_cross_wallet_balance}, initial=${self._initial_balance})"
                 )
@@ -677,7 +679,8 @@ class PositionTracking:
                 if hasattr(self.config, 'trading') and self.config.trading:
                     leverage_config = (
                         self.config.trading.execution.exposure.leverage_defaults
-                        if self.config.trading.execution and self.config.trading.execution.exposure
+                        if self.config.trading.execution and
+                        self.config.trading.execution.exposure
                         else {}
                     )
                 elif isinstance(self.config, dict):

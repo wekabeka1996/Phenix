@@ -11,7 +11,7 @@ Contracts:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from pydantic import BaseModel, Field
 from datetime import datetime

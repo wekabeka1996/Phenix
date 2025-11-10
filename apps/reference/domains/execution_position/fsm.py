@@ -14,7 +14,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Set, Coroutine
 
 from vfoundation.core.fsm_emit_compat import Message, emit_compat
 from vfoundation.dr import wal
@@ -39,6 +39,9 @@ from apps.reference.telemetry.order_logger import order_logger
 from .utils import quantize_stop_price, validate_anti_2021, generate_client_order_id
 from vfoundation.obs.correlation import CorrelationStore
 from .utils_event_bus import LocalBus
+
+# Import OrderGuardian for TP/SL cleanup
+from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 
 # Import AlertManager for circuit breaker alerts
 try:
@@ -129,6 +132,16 @@ class ExecPosFSM:
         self._symbol_brackets: Dict[str, Dict[str, str]] = {}
         # Background task started flag
         self._bg_started: bool = False
+        self._guardian_start_scheduled: bool = False
+        self._fsm_cleanup_logged: bool = False
+
+        # GATE: Track last tidy timestamps and last gate-block per symbol
+        self._symbol_last_tidy_ts: Dict[str, float] = {}
+        self._last_entry_block_ts: Dict[str, float] = {}
+        self._gate_metrics: Dict[str, int] = {
+            "gate_entry_blocked_tidy": 0,
+            "gate_entry_allowed_tidy": 0,
+        }
 
         # Orphan-monitor configuration (additive, safe defaults)
         try:
@@ -178,12 +191,29 @@ class ExecPosFSM:
         self._orphan_metrics: Dict[str, int] = {
             "loops": 0,
             "cancels": 0,
+            "reconcile_cancelled": 0,
             "skipped_age": 0,
             "skipped_rate_limit": 0,
             "errors": 0,
+            "tp_sl_skipped_no_position": 0,
+            "tp_sl_placed_success": 0,
+            "tp_sl_retry_backoff": 0,
+            "clientorderid_reuse_success": 0,
         }
         self._orphan_rate_window_start: float = 0.0
         self._orphan_rate_count: int = 0
+
+        self._guardian_cfg: Dict[str, Any] = self._resolve_guardian_config()
+        self._guardian_unified: bool = bool(
+            self._guardian_cfg.get("unified", True))
+        self._guardian_emit_tidy_event: bool = bool(
+            self._guardian_cfg.get("emit_tidy_event", True))
+        self._guardian_poll_interval_ms: int = int(
+            self._guardian_cfg.get("poll_interval_ms", 500))
+        self._fsm_cleanup_enabled: bool = bool(
+            self._get_config_value(
+                ["execution", "fsm_periodic_cleanup_enabled"], default=True)
+        )
 
         # AGENT-PATCH: Safe event bus setup with LocalBus fallback
         if self.fsm and hasattr(self.fsm, "listen") and hasattr(self.fsm, "emit"):
@@ -199,6 +229,9 @@ class ExecPosFSM:
                         self._on_portfolio_state_updated)
         self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
+
+        # Async loop used for guardian and adapter operations (set later)
+        self._async_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Initialize order timeout watchdog
         try:
@@ -274,21 +307,281 @@ class ExecPosFSM:
 
         if not self.shadow_mode:
             self._initialize_adapter()
-            self.watchdog.start()  # Start timeout watchdog
-            # Start orphaned-order cleanup loop (best-effort)
+            # Initialize OrderGuardian for TP/SL cleanup with strict ownership tracking
+            # Get poll_interval_ms from config
+            poll_interval_ms = self._guardian_poll_interval_ms or 500
             try:
-                loop = asyncio.get_event_loop()
-                if loop and not self._bg_started:
-                    # Schedule startup sync if configured
-                    if self._orphan_cfg.get("enabled") and self._orphan_cfg.get("run_on_startup"):
-                        loop.create_task(self.sync_open_orders_and_positions())
-                    # Periodic loop
-                    if self._orphan_cfg.get("enabled"):
-                        loop.create_task(self._cleanup_loop())
-                    self._bg_started = True
-            except RuntimeError:
-                # No running loop yet
-                pass
+                # Try reading from execution.order_guardian.poll_interval_ms first
+                if hasattr(self.config, 'execution') and self.config.execution:
+                    exec_cfg = self.config.execution
+                    if hasattr(exec_cfg, 'order_guardian') and isinstance(exec_cfg.order_guardian, dict):
+                        poll_interval_ms = exec_cfg.order_guardian.get(
+                            'poll_interval_ms', 500)
+                    elif isinstance(exec_cfg, dict) and 'order_guardian' in exec_cfg:
+                        poll_interval_ms = exec_cfg['order_guardian'].get(
+                            'poll_interval_ms', 500)
+                elif isinstance(self.config, dict):
+                    poll_interval_ms = self.config.get('execution', {}).get(
+                        'order_guardian', {}).get('poll_interval_ms', 500)
+
+                # If still default, try trading.execution.order_guardian.poll_interval_ms
+                if poll_interval_ms == 500:
+                    if hasattr(self.config, 'trading') and self.config.trading:
+                        exec_cfg = self.config.trading.execution if self.config.trading.execution else {}
+                        if isinstance(exec_cfg, dict) and 'order_guardian' in exec_cfg:
+                            poll_interval_ms = exec_cfg['order_guardian'].get(
+                                'poll_interval_ms', 500)
+                    elif isinstance(self.config, dict):
+                        poll_interval_ms = self.config.get('trading', {}).get(
+                            'execution', {}).get('order_guardian', {}).get('poll_interval_ms', 500)
+
+                LOG.info(
+                    f"OrderGuardian poll_interval_ms from config: {poll_interval_ms}")
+
+                self.order_guardian = OrderGuardian(
+                    self.adapter, config=self.config, poll_interval_ms=poll_interval_ms, bus=self.bus)
+                LOG.info("✅ OrderGuardian initialized for ExecPosFSM")
+
+                # ✅ FIX: Defer OrderGuardian startup until after FSM initialization
+                # Will be started via start_order_guardian() method when event loop is available
+                LOG.info("✅ OrderGuardian ready for startup")
+
+                # ✅ FIX: Add startup re-linking to detect existing orphaned orders
+                # Will be called via start_order_guardian() method when event loop is available
+                guardian_symbols = self._collect_guardian_symbols()
+                if guardian_symbols:
+                    try:
+                        self.order_guardian.update_known_symbols(
+                            guardian_symbols)
+                    except AttributeError:
+                        pass
+
+                self._schedule_guardian_start()
+                self._schedule_fsm_cleanup_loop()
+            except Exception as e:
+                LOG.error(f"Failed to initialize OrderGuardian: {e}")
+                self.order_guardian = None
+                self.watchdog.start()  # Start timeout watchdog
+                self._schedule_fsm_cleanup_loop()
+        else:
+            # Initialize OrderGuardian even in shadow mode for cleanup operations
+            # Default to 500ms polling even in shadow mode
+            poll_interval_ms = self._guardian_poll_interval_ms or 500
+            try:
+                # Try reading from execution.order_guardian.poll_interval_ms first
+                if hasattr(self.config, 'execution') and self.config.execution:
+                    exec_cfg = self.config.execution
+                    if hasattr(exec_cfg, 'order_guardian') and isinstance(exec_cfg.order_guardian, dict):
+                        poll_interval_ms = exec_cfg.order_guardian.get(
+                            'poll_interval_ms', 500)
+                    elif isinstance(exec_cfg, dict) and 'order_guardian' in exec_cfg:
+                        poll_interval_ms = exec_cfg['order_guardian'].get(
+                            'poll_interval_ms', 500)
+                elif isinstance(self.config, dict):
+                    poll_interval_ms = self.config.get('execution', {}).get(
+                        'order_guardian', {}).get('poll_interval_ms', 500)
+
+                # If still default, try trading.execution.order_guardian.poll_interval_ms
+                if poll_interval_ms == 500:
+                    if hasattr(self.config, 'trading') and self.config.trading:
+                        exec_cfg = self.config.trading.execution if self.config.trading.execution else {}
+                        if isinstance(exec_cfg, dict) and 'order_guardian' in exec_cfg:
+                            poll_interval_ms = exec_cfg['order_guardian'].get(
+                                'poll_interval_ms', 500)
+                    elif isinstance(self.config, dict):
+                        poll_interval_ms = self.config.get('trading', {}).get(
+                            'execution', {}).get('order_guardian', {}).get('poll_interval_ms', 500)
+            except Exception:
+                poll_interval_ms = 500
+
+            self.order_guardian = OrderGuardian(
+                None,  # No adapter in shadow mode
+                config=self.config,
+                poll_interval_ms=poll_interval_ms,
+                bus=self.bus,
+            )
+            LOG.info("✅ OrderGuardian initialized for ExecPosFSM (shadow mode)")
+            guardian_symbols = self._collect_guardian_symbols()
+            if guardian_symbols:
+                try:
+                    self.order_guardian.update_known_symbols(guardian_symbols)
+                except AttributeError:
+                    pass
+            self._schedule_guardian_start()
+            self._schedule_fsm_cleanup_loop()
+
+        # Subscribe to Guardian TIDY events to update gate state
+        try:
+            if hasattr(self, 'bus') and self.bus:
+                self.bus.listen("EVT:SYMBOL_TIDY", self._on_symbol_tidy_event)
+        except Exception:
+            pass
+
+    def _get_config_value(self, path: list[str], default: Any = None) -> Any:
+        """Safely traverse mixed dict/object configurations."""
+        node: Any = self.config
+        for key in path:
+            if node is None:
+                return default
+            try:
+                if isinstance(node, dict):
+                    node = node.get(key)
+                else:
+                    node = getattr(node, key, None)
+            except Exception:
+                return default
+        return node if node is not None else default
+
+    def _resolve_guardian_config(self) -> Dict[str, Any]:
+        """Aggregate guardian config from active runtime sources."""
+        resolved: Dict[str, Any] = {
+            "unified": True,
+            "emit_tidy_event": True,
+            "poll_interval_ms": 500,
+            "cleanup_ttl_ms": 6000,
+            "symbol_cooldown_ms": 4000,
+        }
+
+        def _update_from(source: Any) -> None:
+            if not source:
+                return
+            keys = ("unified", "emit_tidy_event", "poll_interval_ms",
+                    "cleanup_ttl_ms", "symbol_cooldown_ms")
+            if isinstance(source, dict):
+                for key in keys:
+                    if key in source and source[key] is not None:
+                        resolved[key] = source[key]
+            else:
+                for key in keys:
+                    try:
+                        value = getattr(source, key, None)
+                    except Exception:
+                        value = None
+                    if value is not None:
+                        resolved[key] = value
+
+        _update_from(self._get_config_value(["guardian"], default={}))
+        _update_from(self._get_config_value(
+            ["execution", "order_guardian"], default={}))
+        _update_from(self._get_config_value(
+            ["trading", "execution", "order_guardian"], default={}))
+
+        try:
+            resolved["poll_interval_ms"] = int(
+                resolved.get("poll_interval_ms", 500))
+        except Exception:
+            resolved["poll_interval_ms"] = 500
+
+        return resolved
+
+    def _collect_guardian_symbols(self) -> Set[str]:
+        """Gather configured trading symbols for guardian ownership tracking."""
+        symbols: Set[str] = set()
+        instruments = self._get_config_value(
+            ["trading", "instruments"], default={})
+        if isinstance(instruments, dict):
+            for sym in instruments.keys():
+                if sym:
+                    symbols.add(str(sym).upper())
+        return symbols
+
+    def set_async_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Register the shared asyncio loop for guardian/adapter tasks."""
+        self._async_loop = loop
+
+    def _get_async_loop(self) -> Optional[asyncio.AbstractEventLoop]:
+        """Resolve the active asyncio loop for scheduling background work."""
+        loop = self._async_loop
+        if loop and not loop.is_closed():
+            return loop
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+
+    def _submit_async(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+    ) -> None:
+        """Schedule coroutine on a target loop, thread-safe."""
+        target_loop = loop or self._get_async_loop()
+        if not target_loop:
+            LOG.debug("No asyncio loop available to schedule %r", coro)
+            return
+
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop is target_loop:
+            target_loop.create_task(coro)
+        else:
+            asyncio.run_coroutine_threadsafe(coro, target_loop)
+
+    def _schedule_guardian_start(self) -> None:
+        """Ensure guardian poller and startup reconcile are scheduled once."""
+        if self._guardian_start_scheduled:
+            return
+        guardian = getattr(self, "order_guardian", None)
+        if not guardian:
+            return
+
+        loop = self._get_async_loop()
+        if not loop:
+            LOG.debug("OrderGuardian start deferred: no event loop active")
+            return
+
+        self._submit_async(guardian.start(), loop)
+        self._submit_async(self._startup_order_guardian_reconcile(), loop)
+        LOG.info("✅ OrderGuardian background tasks scheduled")
+        self._guardian_start_scheduled = True
+
+    def _schedule_fsm_cleanup_loop(self) -> None:
+        """Start FSM-side cleanup loop respecting unified guardian config."""
+        if self._bg_started:
+            return
+        if not self._orphan_cfg.get("enabled"):
+            return
+        if not getattr(self, "order_guardian", None):
+            return
+        if self._guardian_unified and not self._fsm_cleanup_enabled:
+            if not self._fsm_cleanup_logged:
+                LOG.info("[FSM-CLEANUP] disabled_by_config (unified=true)")
+                self._fsm_cleanup_logged = True
+            return
+
+        loop = self._get_async_loop()
+        if not loop:
+            LOG.debug("FSM cleanup start deferred: no event loop active")
+            return
+
+        self._submit_async(self._cleanup_loop(), loop)
+        self._bg_started = True
+
+    @staticmethod
+    def _is_cancel_success_response(result: Any) -> bool:
+        """Treat standard cancel success and -2011 idempotent paths uniformly."""
+        if isinstance(result, dict):
+            status = str(result.get("status", "")).upper()
+            if status == "CANCELED":
+                return True
+            code = result.get("code")
+            if code == -2011:
+                return True
+            msg = str(result.get("msg", "")).lower()
+            if "unknown order" in msg:
+                return True
+        return False
+
+    @staticmethod
+    def _is_unknown_order_error(error: Exception) -> bool:
+        """Detect -2011 or equivalent unknown order errors from adapter."""
+        if isinstance(error, BinanceAPIError) and getattr(error, "code", None) == -2011:
+            return True
+        message = str(error).lower()
+        return "unknown order" in message
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """
@@ -301,6 +594,39 @@ class ExecPosFSM:
 
         # EXP-LEVERAGE-001: Update exposure guard with latest portfolio state
         self.exposure_guard.on_portfolio(self._latest_portfolio_state)
+
+        # ✅ FIX: Check for position closures and trigger orphan cleanup
+        # When position becomes 0, TP/SL orders become orphaned and need cleanup
+        try:
+            positions = self._latest_portfolio_state.get("positions", [])
+            for pos in positions:
+                symbol = pos.get("symbol")
+                position_amt = float(pos.get("positionAmt", 0))
+
+                # Check if this position was previously non-zero but is now zero
+                prev_amt = getattr(
+                    self, '_prev_position_amts', {}).get(symbol, 0.0)
+                if abs(prev_amt) >= 1e-10 and abs(position_amt) < 1e-10:
+                    LOG.info(
+                        f"🔄 [POSITION_CLOSED] {symbol}: position closed (was {prev_amt}, now {position_amt}) - triggering orphan cleanup")
+                    # Position closed - trigger immediate orphan cleanup for this symbol
+                    if hasattr(self, 'order_guardian') and self.order_guardian:
+                        loop = self._get_async_loop()
+                        if loop:
+                            self._submit_async(
+                                self.order_guardian.reconcile_symbol(
+                                    symbol, "portfolio_update"
+                                ),
+                                loop,
+                            )
+
+                # Update previous amounts for next comparison
+                if not hasattr(self, '_prev_position_amts'):
+                    self._prev_position_amts = {}
+                self._prev_position_amts[symbol] = position_amt
+
+        except Exception as e:
+            LOG.debug(f"Error checking position closures: {e}")
 
         # Clean up stale reservations on portfolio updates
         expired = self.exposure_guard.expire_stale()
@@ -333,15 +659,16 @@ class ExecPosFSM:
                 pld={"expired_keys": expired, "why": "ttl_expired"},
                 why="exposure_cleanup",
             )
-            try:
-                asyncio.get_running_loop()  # Check for running loop
-                asyncio.create_task(
-                    emit_compat(self.fsm, expired_msg,
-                                logger=getattr(self, "logger", None))
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(
+                    emit_compat(
+                        self.fsm,
+                        expired_msg,
+                        logger=getattr(self, "logger", None),
+                    ),
+                    loop,
                 )
-            except RuntimeError:
-                # No running loop, skip emission
-                pass
 
     def _on_order_ack(self, event: Message) -> None:
         """
@@ -400,18 +727,30 @@ class ExecPosFSM:
             LOG.debug(f"[FILL] Created postfill hold for {postfill_key}")
 
         # Best-effort cleanup of orphaned brackets in case this fill closed the position
-        try:
-            loop = asyncio.get_event_loop()
-            if loop:
-                loop.create_task(self.cleanup_orphaned_bracket_orders(symbol))
-        except RuntimeError:
-            pass
+        loop = self._get_async_loop()
+        if loop:
+            self._submit_async(self.order_guardian.cleanup_orphans(), loop)
 
     def shutdown(self):
         """Shutdown the FSM and cleanup resources."""
         if hasattr(self, 'watchdog') and self.watchdog:
             self.watchdog.stop()
+        if hasattr(self, 'order_guardian') and self.order_guardian:
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(self.order_guardian.stop(), loop)
         LOG.info("ExecPosFSM shutdown complete")
+
+    async def start_order_guardian(self):
+        """Start OrderGuardian polling and reconciliation after FSM initialization."""
+        if not self.order_guardian:
+            return
+
+        try:
+            self._schedule_guardian_start()
+            self._schedule_fsm_cleanup_loop()
+        except Exception as e:
+            LOG.error(f"Failed to start OrderGuardian: {e}")
 
     def _initialize_adapter(self):
         """Initializes the BinanceAdapter based on the domain-level trading_mode."""
@@ -499,9 +838,17 @@ class ExecPosFSM:
             api_secret=api_secret,
             rest_url=rest_url,
         )
+        # PHASE B1: Pass metrics reference to adapter for -4116 tracking
+        self.adapter._orphan_metrics_ref = self._orphan_metrics
         LOG.info(
             f"✅ BinanceAdapter initialized for ExecPosFSM with base URL: {self.adapter.base_url}"
         )
+
+        # 🔧 POLLING FIX: Connect adapter to THIS ExecPosFSM instance (not FSMCore event bus)
+        # Adapter needs direct access to ExecPosFSM.handle() to deliver TRADE_EXECUTED events
+        self.adapter.exec_fsm = self  # Direct reference to ExecPosFSM for handle() calls
+        # Keep for backwards compatibility (event bus)
+        self.adapter.fsm_core = self.fsm
 
     def _get_or_create_flows(
         self, symbol: str
@@ -575,7 +922,7 @@ class ExecPosFSM:
         symbol = pld.get("symbol")
         if not symbol:
             LOG.warning(
-                f"ExecPosFSM received message without symbol: {msg.verb}")
+                f"ExecPosFSM received message without symbol: {msg.verb}, pld_keys={list(pld.keys()) if pld else 'EMPTY'}, msg_type={type(msg)}, pld_type={type(pld)}")
             return None
 
         open_flow, manage_flow, close_flow = self._get_or_create_flows(symbol)
@@ -597,6 +944,15 @@ class ExecPosFSM:
                 self._handle_fill_event(msg)
 
         elif msg.verb == "CLOSE":
+            # ✅ FIX: Set closing flag immediately on CMD:CLOSE to prevent bracket race
+            symbol = msg.pld.get("symbol") if msg.pld else None
+            if symbol:
+                manage = self.manage_flows.get(symbol)
+                if manage:
+                    manage._closing_position = True
+                    manage._closing_position_ts = time.time()
+                    print(
+                        f"🔒 [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
             result = close_flow.handle(msg)
         else:
             result = manage_flow.handle(msg)
@@ -604,10 +960,12 @@ class ExecPosFSM:
         # If a decision was made, log it and execute if not in shadow mode
         if result and result.op == "DEC":
             wal.append(result.model_dump())
-            if not self.shadow_mode and self.adapter:
+            # ✅ FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
+            if (not self.shadow_mode and self.adapter) or (result.verb == "CLOSE" and self.adapter):
                 # Asynchronously execute the trade decision
-                loop = asyncio.get_event_loop()
-                loop.create_task(self._execute_decision(result))
+                loop = self._get_async_loop()
+                if loop:
+                    self._submit_async(self._execute_decision(result), loop)
 
         return result
 
@@ -670,11 +1028,20 @@ class ExecPosFSM:
                 symbol = pld.get("symbol")
                 if order_id and symbol:
                     try:
-                        await self.adapter.cancel_order(symbol, order_id)
-                        LOG.info(f"Cancelled order {order_id} for {symbol}")
+                        cancel_result = await self.adapter.cancel_order(symbol, order_id)
+                        if self._is_cancel_success_response(cancel_result):
+                            LOG.info(
+                                f"Cancelled order {order_id} for {symbol} (idempotent_ok)")
+                        else:
+                            LOG.warning(
+                                f"Cancel response for {order_id} returned unexpected payload: {cancel_result}")
                     except Exception as e:
-                        LOG.warning(
-                            f"Failed to cancel order {order_id} for {symbol}: {e}")
+                        if self._is_unknown_order_error(e):
+                            LOG.info(
+                                f"Cancel request for {order_id} treated as success (-2011 Unknown order)")
+                        else:
+                            LOG.warning(
+                                f"Failed to cancel order {order_id} for {symbol}: {e}")
                 return
 
             # Execute close intent: cancel brackets then place reduce-only MARKET
@@ -684,6 +1051,15 @@ class ExecPosFSM:
                 if not symbol:
                     LOG.error("DEC:CLOSE missing symbol; cannot execute")
                     return
+
+                # PHASE A2: Set closing flag to prevent bracket placement race condition
+                manage = self.manage_flows.get(symbol)
+                if manage:
+                    manage._closing_position = True
+                    manage._closing_position_ts = time.time()
+                    LOG.info(
+                        f"🔒 [PHASE A2] Set closing flag for {symbol} to prevent bracket race")
+
                 # Cancel tracked brackets
                 br = self._symbol_brackets.get(symbol, {})
                 tasks = []
@@ -703,21 +1079,33 @@ class ExecPosFSM:
 
                     for (bracket_type, order_id), result in zip(bracket_order_ids, results):
                         if isinstance(result, Exception):
-                            LOG.warning(
-                                f"❌ Failed to cancel {bracket_type} bracket {order_id} for {symbol}: {result}")
-                            order_logger.write({
-                                "rid": decision.rid or "manual-close",
-                                "event_type": "ORDER_CANCELLATION_FAILED",
-                                "symbol": symbol,
-                                "order_id": order_id,
-                                "bracket_type": bracket_type,
-                                "reason": "close_cancel_exception",
-                                "error": str(result),
-                                "timestamp": int(time.time() * 1000)
-                            })
+                            if self._is_unknown_order_error(result):
+                                LOG.info(
+                                    f"ℹ️ {bracket_type} bracket {order_id} already absent (-2011) for {symbol}")
+                                order_logger.write({
+                                    "rid": decision.rid or "manual-close",
+                                    "event_type": "ORDER_CANCELLED",
+                                    "symbol": symbol,
+                                    "order_id": order_id,
+                                    "bracket_type": bracket_type,
+                                    "reason": "close_cancel_idempotent",
+                                    "timestamp": int(time.time() * 1000)
+                                })
+                            else:
+                                LOG.warning(
+                                    f"❌ Failed to cancel {bracket_type} bracket {order_id} for {symbol}: {result}")
+                                order_logger.write({
+                                    "rid": decision.rid or "manual-close",
+                                    "event_type": "ORDER_CANCELLATION_FAILED",
+                                    "symbol": symbol,
+                                    "order_id": order_id,
+                                    "bracket_type": bracket_type,
+                                    "reason": "close_cancel_exception",
+                                    "error": str(result),
+                                    "timestamp": int(time.time() * 1000)
+                                })
                         else:
-                            cancel_status = result.get("status", "").upper()
-                            if cancel_status == "CANCELED":
+                            if self._is_cancel_success_response(result):
                                 LOG.info(
                                     f"✅ Cancelled {bracket_type} bracket {order_id} for {symbol}")
                                 order_logger.write({
@@ -731,6 +1119,8 @@ class ExecPosFSM:
                                     "timestamp": int(time.time() * 1000)
                                 })
                             else:
+                                cancel_status = str(
+                                    result.get("status", "")).upper()
                                 LOG.warning(
                                     f"❌ Cancel rejected for {bracket_type} bracket {order_id}: status={cancel_status}")
                                 order_logger.write({
@@ -775,12 +1165,103 @@ class ExecPosFSM:
                     f"Close executed for {symbol}: side={close_side} qty={close_qty}")
                 self._symbol_brackets.pop(symbol, None)
 
-                # ✅ NEW: Ensure cleanup after manual CLOSE
+                # ✅ PHASE A1: Ensure cleanup after manual CLOSE
                 # Wait for position to settle, then cleanup any orphaned brackets
                 await asyncio.sleep(2.0)
-                await self.cleanup_orphaned_bracket_orders(symbol)
+
+                # 🔄 Synchronous reconcile: fetch open orders ONLY for this symbol
+                # and cancel any STOP/TP with reduceOnly=true or closePosition=true
+                LOG.info(
+                    f"🔄 [DEC:CLOSE RECONCILE] Starting sync cleanup for {symbol}")
+                try:
+                    open_orders = await self.adapter.get_open_orders(symbol)
+                    # Convert orders to dict if they're objects
+                    open_orders_list = [
+                        o.to_dict() if hasattr(o, 'to_dict') else (
+                            o.__dict__ if not isinstance(o, dict) else o)
+                        for o in open_orders
+                    ]
+
+                    cancel_tasks = []
+                    for o in open_orders_list:
+                        otype = (o.get("type") or "").upper()
+                        reduce_only = str(
+                            o.get("reduceOnly", "")).lower() == "true"
+                        close_pos = str(
+                            o.get("closePosition", "")).lower() == "true"
+
+                        # Cancel STOP/TP/LIMIT with reduceOnly or closePosition
+                        if otype in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "LIMIT") and (reduce_only or close_pos):
+                            oid = o.get("orderId")
+                            cancel_tasks.append(
+                                (otype, oid, self.adapter.cancel_order(symbol, oid)))
+
+                    # Execute all cancellations
+                    if cancel_tasks:
+                        results = await asyncio.gather(*[task[2] for task in cancel_tasks], return_exceptions=True)
+                        for (otype, oid, _), result in zip(cancel_tasks, results):
+                            if isinstance(result, Exception):
+                                if self._is_unknown_order_error(result):
+                                    LOG.info(
+                                        f"ℹ️ [DEC:CLOSE RECONCILE] {otype} {oid} already gone for {symbol} (-2011)")
+                                else:
+                                    LOG.warning(
+                                        f"❌ [DEC:CLOSE RECONCILE] Failed to cancel {otype} {oid} for {symbol}: {result}")
+                                    self._orphan_metrics["errors"] += 1
+                            else:
+                                if self._is_cancel_success_response(result):
+                                    LOG.info(
+                                        f"✅ [DEC:CLOSE RECONCILE] Cancelled {otype} {oid} for {symbol}")
+                                    self._orphan_metrics["reconcile_cancelled"] = self._orphan_metrics.get(
+                                        "reconcile_cancelled", 0) + 1
+                                else:
+                                    status = str(result.get(
+                                        "status", "")).upper()
+                                    LOG.warning(
+                                        f"❌ [DEC:CLOSE RECONCILE] Cancel response unexpected for {otype} {oid} (status={status})")
+                                    self._orphan_metrics["errors"] += 1
+
+                        LOG.info(
+                            f"✅ [DEC:CLOSE RECONCILE] Completed for {symbol}: cancelled {len(cancel_tasks)} orders")
+
+                        # PHASE C: Emit observability event for reconcile completion
+                        self._emit_observability_event("RECONCILE_CANCELLED", {
+                            "symbol": symbol,
+                            "order_count": len(cancel_tasks),
+                            "metric": self._orphan_metrics["reconcile_cancelled"]
+                        })
+                    else:
+                        LOG.info(
+                            f"✅ [DEC:CLOSE RECONCILE] No orphaned brackets found for {symbol}")
+
+                except Exception as e:
+                    LOG.warning(
+                        f"⚠️ [DEC:CLOSE RECONCILE] Error during cleanup for {symbol}: {e}")
+                    self._orphan_metrics["errors"] += 1
+
+                # Also run full cleanup to catch any cross-symbol orphans
+                await self.order_guardian.cleanup_orphans()
                 LOG.info(
                     f"✅ Cleanup after manual CLOSE for {symbol} completed")
+
+                # [GUARD] Reconcile orphaned brackets for closed position
+                await self.order_guardian.reconcile_symbol(symbol, decision.rid)
+
+                # PHASE A2: Clear closing flag - position close complete
+                manage = self.manage_flows.get(symbol)
+                if manage:
+                    manage._closing_position = False
+                    LOG.info(
+                        f"🔓 [PHASE A2] Cleared closing flag for {symbol} - CLOSE complete")
+
+                # PHASE C: Emit observability event for DEC:CLOSE completion
+                close_elapsed_ms = int((datetime.utcnow(
+                ) - decision.timestamp_utc).total_seconds() * 1000) if decision.timestamp_utc else 0
+                self._emit_observability_event("DEC_CLOSE_COMPLETED", {
+                    "symbol": symbol,
+                    "elapsed_ms": close_elapsed_ms,
+                    "orphans_cancelled": self._orphan_metrics.get("reconcile_cancelled", 0)
+                })
 
                 return
 
@@ -845,12 +1326,36 @@ class ExecPosFSM:
             validate_not_immediate(
                 "LONG" if side == "BUY" else "SHORT", tp, sl, mark)
 
+            # GATE: Check SYMBOL_TIDY before placing MARKET entry (if enabled)
+            if decision.verb == "OPEN":
+                sym_for_gate = decision.pld.get(
+                    "symbol") if decision.pld else None
+                if sym_for_gate and not self._entry_tidy_gate_allow(sym_for_gate):
+                    return
+
             # Place MARKET entry
             entry_id = generate_client_order_id("ENTRY", symbol)
             entry_resp = await self.adapter.place_market_entry(
                 symbol, side, qty, entry_id
             )
             LOG.info(f"✅ MARKET entry placed: {entry_resp}")
+
+            # [GUARD] Register entry order for ownership tracking
+            self.order_guardian.register_entry(
+                symbol=symbol,
+                order_id=str(entry_resp.get("orderId", "")),
+                client_order_id=entry_id,
+                side=side,
+                qty=qty,
+                corr_id=decision.corr_id,
+                rid=decision.rid
+            )
+
+            # POLLING FIX: Track entry order for fill detection (WebSocket substitute)
+            if hasattr(self.adapter, 'track_order'):
+                self.adapter.track_order(entry_resp)
+                LOG.info(
+                    f"[POLLING] Tracking entry order {entry_resp.get('orderId')} for fill detection")
 
             # Track order for timeout monitoring
             self.watchdog.ensure_started()  # Safe late-start if needed
@@ -900,54 +1405,35 @@ class ExecPosFSM:
             self.watchdog.ensure_started()  # Safe late-start if needed
             self.watchdog.on_order_ack(entry_order_id)
 
-            # Check for existing brackets to avoid duplicates
-            open_orders = await self.adapter.get_open_orders(symbol)
-            # Convert objects to dict if needed
-            open_orders_list = [
-                o.to_dict() if hasattr(o, 'to_dict') else (
-                    o.__dict__ if not isinstance(o, dict) else o)
-                for o in open_orders
-            ]
-            existing_sl = any(
-                o.get("type") == "STOP_MARKET" and o.get(
-                    "closePosition") == "true"
-                for o in open_orders_list
-            )
-            existing_tp = any(
-                (o.get("type") in ["TAKE_PROFIT_MARKET", "LIMIT"]
-                 and o.get("closePosition") == "true")
-                or o.get("reduceOnly") == "true"
-                for o in open_orders_list
-            )
+            # ✅ PHASE A3: Pre-flight check before placing TP/SL (with retry for REST lag)
+            if not await self._preflight_position_check(symbol):
+                LOG.warning(
+                    f"🚫 [PHASE A3] Skipping TP/SL placement - position check failed for {symbol}")
+                return None
 
-            if existing_sl:
-                LOG.warning(f"SL already exists for {symbol}, skipping")
-            else:
-                # Place SL
-                sl_side = opposite_side(side)
-                sl_id = generate_client_order_id("SL", symbol)
+            # ✅ Check with OrderGuardian if brackets should be placed
+            entry_order_id = str(entry_resp.get("orderId", ""))
+            if not await self.order_guardian.should_place_brackets(symbol, entry_order_id):
+                LOG.warning(
+                    f"🚫 OrderGuardian blocked bracket placement for {symbol}")
+                return None
 
-            if existing_tp:
-                LOG.warning(f"TP already exists for {symbol}, skipping")
-            else:
-                # Place TP with retry/fallback
-                tp_side = opposite_side(side)
-                tp_id = generate_client_order_id("TP", symbol)
+            # Generate bracket IDs
+            sl_side = opposite_side(side)
+            sl_id = generate_client_order_id("SL", symbol)
+            tp_side = opposite_side(side)
+            tp_id = generate_client_order_id("TP", symbol)
 
             # ✅ Place SL and TP in parallel (not sequentially)
             sl_resp = None
             tp_resp = None
             try:
                 async def place_sl_async():
-                    if existing_sl:
-                        return None
                     return await self.adapter.place_stop_market_close_position(
                         symbol, sl_side, str(sl), new_client_order_id=sl_id
                     )
 
                 async def place_tp_async():
-                    if existing_tp:
-                        return None
                     try:
                         return (
                             await self.adapter.place_take_profit_market_close_position(
@@ -956,6 +1442,12 @@ class ExecPosFSM:
                         )
                     except BinanceAPIError as e:
                         if e.code == -2021:
+                            # PHASE A3: Exponential backoff for -2021 (price too close to mark)
+                            LOG.warning(
+                                f"⚠️ [PHASE A3] TP -2021 error, attempting backoff for {symbol}")
+                            self._orphan_metrics["tp_sl_retry_backoff"] = self._orphan_metrics.get(
+                                "tp_sl_retry_backoff", 0) + 1
+
                             # Retry with widened TP
                             tp_adj = tp * 1.002  # +20 bps approx
                             tp_adj = quantize_stop_price(
@@ -963,21 +1455,55 @@ class ExecPosFSM:
                             )
                             self.metrics_collector.record_retry(
                                 "tp_adjust") if self.metrics_collector else None
+
+                            # Exponential backoff: 200ms first retry
+                            await asyncio.sleep(0.2)
+
                             try:
                                 return await self.adapter.place_take_profit_market_close_position(
                                     symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
                                 )
-                            except BinanceAPIError:
-                                # Fallback to LIMIT reduceOnly
-                                self.metrics_collector.record_retry(
-                                    "tp_fallback") if self.metrics_collector else None
-                                return await self.adapter.place_limit_reduce_only(
-                                    symbol,
-                                    tp_side,
-                                    str(tp_adj),
-                                    qty,
-                                    new_client_order_id=tp_id,
-                                )
+                            except BinanceAPIError as e2:
+                                if e2.code == -2021:
+                                    # Second retry: 400ms backoff
+                                    LOG.warning(
+                                        f"⚠️ [PHASE A3] TP -2021 retry 2, backoff 400ms for {symbol}")
+                                    await asyncio.sleep(0.4)
+
+                                    tp_adj2 = tp * 1.005  # +50 bps
+                                    tp_adj2 = quantize_stop_price(
+                                        tp_adj2, tick_size, side="BUY" if side == "BUY" else "SELL"
+                                    )
+
+                                    try:
+                                        return await self.adapter.place_take_profit_market_close_position(
+                                            symbol, tp_side, str(tp_adj2), new_client_order_id=tp_id
+                                        )
+                                    except BinanceAPIError:
+                                        # Fallback to LIMIT reduceOnly
+                                        LOG.warning(
+                                            f"⚠️ [PHASE A3] TP -2021 fallback to LIMIT for {symbol}")
+                                        self.metrics_collector.record_retry(
+                                            "tp_fallback") if self.metrics_collector else None
+                                        return await self.adapter.place_limit_reduce_only(
+                                            symbol,
+                                            tp_side,
+                                            str(tp_adj2),
+                                            qty,
+                                            new_client_order_id=tp_id,
+                                        )
+                                else:
+                                    raise
+                            # Fallback to LIMIT reduceOnly
+                            self.metrics_collector.record_retry(
+                                "tp_fallback") if self.metrics_collector else None
+                            return await self.adapter.place_limit_reduce_only(
+                                symbol,
+                                tp_side,
+                                str(tp_adj),
+                                qty,
+                                new_client_order_id=tp_id,
+                            )
                         else:
                             raise
 
@@ -990,39 +1516,42 @@ class ExecPosFSM:
             except Exception as e:
                 LOG.error(f"Error placing brackets in parallel: {e}")
                 # Fallback: place them sequentially
-                if not existing_sl:
-                    sl_resp = await self.adapter.place_stop_market_close_position(
-                        symbol, sl_side, str(sl), new_client_order_id=sl_id
+                sl_resp = await self.adapter.place_stop_market_close_position(
+                    symbol, sl_side, str(sl), new_client_order_id=sl_id
+                )
+                try:
+                    tp_resp = await self.adapter.place_take_profit_market_close_position(
+                        symbol, tp_side, str(tp), new_client_order_id=tp_id
                     )
-                if not existing_tp:
-                    try:
-                        tp_resp = await self.adapter.place_take_profit_market_close_position(
-                            symbol, tp_side, str(tp), new_client_order_id=tp_id
+                except BinanceAPIError as e:
+                    if e.code == -2021:
+                        tp_adj = tp * 1.002
+                        tp_adj = quantize_stop_price(
+                            tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
                         )
-                    except BinanceAPIError as e:
-                        if e.code == -2021:
-                            tp_adj = tp * 1.002
-                            tp_adj = quantize_stop_price(
-                                tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+                        try:
+                            tp_resp = await self.adapter.place_take_profit_market_close_position(
+                                symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
                             )
-                            try:
-                                tp_resp = await self.adapter.place_take_profit_market_close_position(
-                                    symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
-                                )
-                            except BinanceAPIError:
-                                tp_resp = await self.adapter.place_limit_reduce_only(
-                                    symbol,
-                                    tp_side,
-                                    str(tp_adj),
-                                    qty,
-                                    new_client_order_id=tp_id,
-                                )
-                        else:
-                            raise
+                        except BinanceAPIError:
+                            tp_resp = await self.adapter.place_limit_reduce_only(
+                                symbol,
+                                tp_side,
+                                str(tp_adj),
+                                qty,
+                                new_client_order_id=tp_id,
+                            )
+                    else:
+                        raise
 
             # Log the results
+            sl_order_id = None
+            tp_order_id = None
+
             if sl_resp:
                 LOG.info(f"✅ SL placed: {sl_resp}")
+                self._orphan_metrics["tp_sl_placed_success"] = self._orphan_metrics.get(
+                    "tp_sl_placed_success", 0) + 1
                 # Correlation: store SL ACK
                 sl_order_id = str(sl_resp["orderId"])
                 self.correlation_store.put_sl_tp_ack(
@@ -1033,6 +1562,8 @@ class ExecPosFSM:
 
             if tp_resp:
                 LOG.info(f"✅ TP placed: {tp_resp}")
+                self._orphan_metrics["tp_sl_placed_success"] = self._orphan_metrics.get(
+                    "tp_sl_placed_success", 0) + 1
                 # Correlation: store TP ACK
                 tp_order_id = str(tp_resp["orderId"])
                 self.correlation_store.put_sl_tp_ack(
@@ -1040,6 +1571,19 @@ class ExecPosFSM:
                 # Track TP bracket per symbol
                 self._symbol_brackets.setdefault(
                     symbol, {})["tp_order_id"] = tp_order_id
+
+            # [GUARD] Register brackets for ownership tracking (if any were placed)
+            if sl_order_id or tp_order_id:
+                self.order_guardian.register_brackets(
+                    symbol=symbol,
+                    entry_order_id=str(entry_resp.get("orderId", "")),
+                    sl_order_id=sl_order_id,
+                    tp_order_id=tp_order_id,
+                    sl_client_id=sl_id if sl_resp else None,
+                    tp_client_id=tp_id if tp_resp else None,
+                    corr_id=decision.corr_id,
+                    rid=decision.rid
+                )
 
             # ✅ NEW: Sync bracket IDs with ManageFlowFSM for OCO emulation
             # Ensures ManageFlowFSM has accurate tracking even if WebSocket events are delayed
@@ -1123,15 +1667,108 @@ class ExecPosFSM:
         all_metrics["orphan_monitor"] = {
             **self._orphan_metrics,
             "cfg": {
-                "enabled": self._self.config.trading.execution.manage.orphan_monitor.enabled,
-                "periodic_interval_sec": self._self.config.trading.execution.manage.orphan_monitor.periodic_interval_sec,
-                "min_order_age_sec": self._self.config.trading.execution.manage.orphan_monitor.min_order_age_sec,
-                "batch_cancel_limit": self._self.config.trading.execution.manage.orphan_monitor.batch_cancel_limit,
-                "rate_limit_per_min": self._self.config.trading.execution.manage.orphan_monitor.rate_limit_per_min,
+                "enabled": self._orphan_cfg.get("enabled", True),
+                "periodic_interval_sec": self._orphan_cfg.get("periodic_interval_sec", 300),
+                "min_order_age_sec": self._orphan_cfg.get("min_order_age_sec", 0),
+                "batch_cancel_limit": self._orphan_cfg.get("batch_cancel_limit", 50),
+                "rate_limit_per_min": self._orphan_cfg.get("rate_limit_per_min", 120),
             },
         }
 
+        # Include gate metrics (SYMBOL_TIDY entry gate)
+        try:
+            gate_blocked = int(self._gate_metrics.get(
+                "gate_entry_blocked_tidy", 0))
+            gate_allowed = int(self._gate_metrics.get(
+                "gate_entry_allowed_tidy", 0))
+            all_metrics["gate"] = {
+                "entry_blocked_tidy": gate_blocked,
+                "entry_allowed_tidy": gate_allowed,
+            }
+            # Flat fields for quick access in /metrics JSON
+            all_metrics["gate_entry_blocked_tidy"] = gate_blocked
+            all_metrics["gate_entry_allowed_tidy"] = gate_allowed
+            # Per-symbol stamps
+            all_metrics["symbol_last_tidy_ts"] = dict(
+                self._symbol_last_tidy_ts)
+            all_metrics["last_entry_block_ts"] = dict(
+                self._last_entry_block_ts)
+        except Exception:
+            # Be robust if attributes missing
+            all_metrics["gate"] = {
+                "entry_blocked_tidy": 0,
+                "entry_allowed_tidy": 0,
+            }
+            all_metrics["gate_entry_blocked_tidy"] = 0
+            all_metrics["gate_entry_allowed_tidy"] = 0
+            all_metrics["symbol_last_tidy_ts"] = {}
+            all_metrics["last_entry_block_ts"] = {}
+
+        try:
+            guardian = getattr(self, "order_guardian", None)
+            if guardian:
+                guardian_metrics = guardian.get_metrics()
+                all_metrics["order_guardian"] = guardian_metrics
+                all_metrics["guardian_unified"] = self._guardian_unified
+                all_metrics["guardian_emit_tidy_event"] = self._guardian_emit_tidy_event
+        except Exception:
+            pass
+
         return all_metrics
+
+    # ---- GATE: SYMBOL_TIDY entry gating ----
+    def _on_symbol_tidy_event(self, payload: Dict[str, Any]) -> None:
+        try:
+            symbol = payload.get("symbol") if isinstance(
+                payload, dict) else None
+            if symbol:
+                self._symbol_last_tidy_ts[symbol] = time.time()
+                LOG.info(f"[GATE] tidy_event: symbol={symbol}")
+        except Exception:
+            pass
+
+    def _entry_tidy_gate_allow(self, symbol: str) -> bool:
+        """Return True if new ENTRY is allowed under SYMBOL_TIDY gate."""
+        # Read flag
+        try:
+            allow_gate = False
+            if hasattr(self.config, 'execution') and self.config.execution:
+                allow_gate = bool(
+                    getattr(self.config.execution, 'allow_trade_with_guardian_tidy_only', False))
+            elif isinstance(self.config, dict):
+                allow_gate = bool(self.config.get('execution', {}).get(
+                    'allow_trade_with_guardian_tidy_only', False))
+        except Exception:
+            allow_gate = False
+
+        if not allow_gate:
+            return True
+
+        # TTL and cooldown
+        ttl_ms = int(self._guardian_cfg.get("cleanup_ttl_ms", 6000))
+        cooldown_ms = int(self._guardian_cfg.get("symbol_cooldown_ms", 4000))
+
+        now = time.time()
+        last_tidy = self._symbol_last_tidy_ts.get(symbol, 0.0)
+        fresh = (now - last_tidy) * 1000.0 <= ttl_ms
+        last_block = self._last_entry_block_ts.get(symbol, 0.0)
+        cooldown_ok = (now - last_block) * 1000.0 >= cooldown_ms
+
+        if fresh or (last_block > 0 and cooldown_ok):
+            self._gate_metrics["gate_entry_allowed_tidy"] = self._gate_metrics.get(
+                "gate_entry_allowed_tidy", 0) + 1
+            LOG.info(
+                f"[GATE] entry_allowed: tidy_recent={fresh} cooldown_ok={cooldown_ok} last_block={last_block} symbol={symbol}")
+            return True
+
+        # Block
+        self._last_entry_block_ts[symbol] = now
+        self._gate_metrics["gate_entry_blocked_tidy"] = self._gate_metrics.get(
+            "gate_entry_blocked_tidy", 0) + 1
+        age_ms = int((now - last_tidy) * 1000.0)
+        LOG.info(
+            f"[GATE] entry_blocked: no_tidy_recent symbol={symbol} age_ms={age_ms} ttl_ms={ttl_ms} cooldown_ms={cooldown_ms}")
+        return False
 
     async def _handle_order_timeout(self, deadline):
         """Handle a timed-out order with NRR-019 logging and idempotent cancellation."""
@@ -1167,8 +1804,7 @@ class ExecPosFSM:
                 )
 
                 # ✅ NEW: Verify cancel status from exchange response
-                status = cancel_result.get("status", "").upper()
-                if status == "CANCELED":
+                if self._is_cancel_success_response(cancel_result):
                     self.watchdog.cancel_success_count += 1
                     LOG.info(
                         f"✅ Cancelled timed-out order {deadline.order_id}: {cancel_result}")
@@ -1185,6 +1821,7 @@ class ExecPosFSM:
                         "timestamp": int(time.time() * 1000)
                     })
                 else:
+                    status = str(cancel_result.get("status", "")).upper()
                     # Cancel rejected or order in non-cancelable state (e.g., already FILLED)
                     LOG.error(
                         f"❌ Cancel rejected for timed-out order {deadline.order_id}: "
@@ -1202,20 +1839,34 @@ class ExecPosFSM:
                     })
 
             except Exception as e:
-                LOG.warning(
-                    f"Failed to cancel timed-out order {deadline.order_id}: {e}")
+                if self._is_unknown_order_error(e):
+                    self.watchdog.cancel_success_count += 1
+                    LOG.info(
+                        f"✅ Timed-out order {deadline.order_id} already absent (-2011)")
+                    order_logger.write({
+                        "rid": deadline.rid,
+                        "event_type": "ORDER_CANCELLED",
+                        "symbol": deadline.symbol,
+                        "order_id": deadline.order_id,
+                        "reason": "timeout_cancel_idempotent",
+                        "timeout_type": deadline.timeout_type.value,
+                        "timestamp": int(time.time() * 1000)
+                    })
+                else:
+                    LOG.warning(
+                        f"Failed to cancel timed-out order {deadline.order_id}: {e}")
 
-                # Log exception-based cancellation failure (use global order_logger)
-                order_logger.write({
-                    "rid": deadline.rid,
-                    "event_type": "ORDER_CANCELLATION_FAILED",
-                    "symbol": deadline.symbol,
-                    "order_id": deadline.order_id,
-                    "reason": "timeout_cancel_exception",
-                    "timeout_type": deadline.timeout_type.value,
-                    "error": str(e),
-                    "timestamp": int(time.time() * 1000)
-                })
+                    # Log exception-based cancellation failure (use global order_logger)
+                    order_logger.write({
+                        "rid": deadline.rid,
+                        "event_type": "ORDER_CANCELLATION_FAILED",
+                        "symbol": deadline.symbol,
+                        "order_id": deadline.order_id,
+                        "reason": "timeout_cancel_exception",
+                        "timeout_type": deadline.timeout_type.value,
+                        "error": str(e),
+                        "timestamp": int(time.time() * 1000)
+                    })
 
         # Record timeout metric
         if self.metrics_collector:
@@ -1335,32 +1986,18 @@ class ExecPosFSM:
                     self.metrics_collector.record_exposure_fail_closed(reason)
 
                 # Emit error asynchronously
-                try:
-                    asyncio.get_running_loop()  # Check for running loop
-                    asyncio.create_task(self._emit_error_async(error_msg))
-                except RuntimeError:
-                    # No running loop, emit synchronously if possible
-                    try:
-                        asyncio.get_running_loop()
-                        asyncio.create_task(
-                            emit_compat(self.fsm, error_msg,
-                                        logger=getattr(self, "logger", None))
-                        )
-                    except RuntimeError:
-                        # Really no loop, skip emission
-                        pass
+                loop = self._get_async_loop()
+                if loop:
+                    self._submit_async(self._emit_error_async(error_msg), loop)
                 return True
 
             # EXP-FIX: Periodic shadow notional check (every 10 requests approx)
             self._shadow_check_counter += 1
 
             if self._shadow_check_counter % 10 == 0 and self.adapter:
-                try:
-                    asyncio.get_running_loop()  # Check for running loop
-                    asyncio.create_task(self._check_shadow_notional())
-                except RuntimeError:
-                    # No running loop, skip async check
-                    pass
+                loop = self._get_async_loop()
+                if loop:
+                    self._submit_async(self._check_shadow_notional(), loop)
 
             # Reserve exposure for successful check
             reserve_key = pld.get(
@@ -1495,139 +2132,156 @@ class ExecPosFSM:
         except Exception as e:
             LOG.error(f"SHADOW_CHECK_ERROR: {e}", exc_info=True)
 
-    async def cleanup_orphaned_bracket_orders(self, symbol: Optional[str] = None) -> None:
-        """Cancel reduceOnly/closePosition bracket orders when no position exists (manual closes).
-
-        Enhanced with optional min-age filter, batch limit, and simple rate limiting
-        controlled via config manage.orphan_monitor.
+    def _emit_observability_event(self, event_type: str, data: dict) -> None:
         """
-        if not self.adapter:
-            return
+        PHASE C: Emit structured observability events.
 
-        cancels_this_run = 0
+        Events are logged as JSON for dashboards and alerting.
+
+        Args:
+            event_type: Event identifier (e.g., 'TP_SL_RETRY_ATTEMPT', 'RECONCILE_CANCELLED')
+            data: Event data dict (symbol, count, reason, etc.)
+        """
+        event = {
+            "timestamp_utc": datetime.utcnow().isoformat(),
+            "event_type": event_type,
+            "rid": self.current_decision.rid if hasattr(self, 'current_decision') and self.current_decision else "N/A",
+            **data
+        }
+        LOG.info(f"📊 [EVENT] {event_type}: {event}", extra={"event": event})
+
+    async def _preflight_position_check(self, symbol: str) -> bool:
+        """
+        PHASE A3: Pre-flight check before placing TP/SL orders.
+
+        Checks if position exists (positionAmt != 0) via /fapi/v2/positionRisk.
+        Uses wait-until loop with exponential backoff to handle REST lag after MARKET entry fill.
+        For polling mode (no WebSocket), REST lag can be 500-1500ms.
+
+        Args:
+            symbol: Trading pair
+
+        Returns:
+            True if position exists and valid, False if position is 0 or missing
+        """
+        # POLLING-FIX: Exponential backoff for REST-only mode
+        # Read from config when available; fallback to safe defaults
         try:
-            positions = await self.adapter.get_open_positions()
-            # Convert positions to dict if they're objects
+            if hasattr(self.config, 'execution') and self.config.execution:
+                backoff_ms = list(
+                    getattr(self.config.execution, 'preflight_backoff_ms', [150, 300, 500]))
+            elif hasattr(self.config, 'trading') and self.config.trading:
+                backoff_ms = list(getattr(self.config.trading, 'execution', {}).get(
+                    'preflight_backoff_ms', [150, 300, 500]))  # type: ignore
+            elif isinstance(self.config, dict):
+                backoff_ms = (
+                    self.config.get('execution', {}).get(
+                        'preflight_backoff_ms')
+                    or self.config.get('trading', {}).get('execution', {}).get('preflight_backoff_ms')
+                    or [150, 300, 500]
+                )
+            else:
+                backoff_ms = [150, 300, 500]
+        except Exception:
+            backoff_ms = [150, 300, 500]
+        tries = 0
+        start = time.time()
+
+        while True:
+            tries += 1
+            try:
+                positions = await self.adapter.get_open_positions(symbol)
+                # Convert to dict if needed
+                positions_list = [
+                    p.to_dict() if hasattr(p, 'to_dict') else (
+                        p.__dict__ if not isinstance(p, dict) else p)
+                    for p in positions
+                ]
+
+                pos = next(
+                    (p for p in positions_list if p.get("symbol") == symbol), None)
+
+                if pos is None:
+                    position_amt = 0.0
+                    LOG.warning(
+                        f"[BRK] preflight: position NOT FOUND for {symbol}, available: {[p.get('symbol') for p in positions_list]}")
+                else:
+                    # Support both 'positionAmt' (old) and 'position_amount' (new ExchangePosition)
+                    position_amt = float(
+                        pos.get("position_amount") or pos.get("positionAmt") or 0)
+                    LOG.info(
+                        f"[BRK] preflight: found position for {symbol}, position_amount={position_amt}")
+
+                elapsed_ms = int((time.time() - start) * 1000)
+                LOG.info(
+                    f"[BRK] preflight positionRisk posAmt={position_amt} try={tries} elapsed={elapsed_ms}ms")
+
+                # Position found!
+                if abs(position_amt) >= 1e-10:
+                    LOG.info(f"[BRK] preflight DECISION=allow (pos!=0)")
+                    return True
+
+                # Exhausted retries
+                if tries > len(backoff_ms):
+                    LOG.warning(
+                        f"🚫 [PHASE A3] PRE-FLIGHT SKIPPED: Position is 0 for {symbol} after {tries} tries (TP_SL_SKIPPED_NO_POSITION)")
+                    self._orphan_metrics["tp_sl_skipped_no_position"] = self._orphan_metrics.get(
+                        "tp_sl_skipped_no_position", 0) + 1
+                    return False
+
+                # Wait before next retry
+                await asyncio.sleep(backoff_ms[tries - 1] / 1000.0)
+
+            except Exception as e:
+                LOG.warning(
+                    f"⚠️ [PHASE A3] PRE-FLIGHT ERROR for {symbol} (try {tries}): {e}")
+                if tries > len(backoff_ms):
+                    return False
+                await asyncio.sleep(backoff_ms[tries - 1] / 1000.0)
+
+    async def _preflight_position_check_nonzero(self, symbol: str) -> bool:
+        """Alternative pre-flight: allow any non-zero positionAmt (BOTH/LONG/SHORT)."""
+        try:
+            positions = await self.adapter.get_open_positions(symbol)
             positions_list = [
                 p.to_dict() if hasattr(p, 'to_dict') else (
                     p.__dict__ if not isinstance(p, dict) else p)
                 for p in positions
             ]
-            active = {p.get("symbol")
-                      for p in positions_list if p.get("symbol")}
 
-            if symbol:
-                symbols = [symbol]
-                LOG.info(
-                    f"🔄 [ORPHAN_CLEANUP] Starting cleanup for specific symbol: {symbol}")
-            else:
+            sym_positions = [
+                p for p in positions_list if p.get("symbol") == symbol]
+            if not sym_positions:
+                LOG.warning(
+                    f"dYs� [PHASE A3] PRE-FLIGHT FAILED: No position data for {symbol}")
+                return False
+
+            pos_nonzero = None
+            for _p in sym_positions:
                 try:
-                    all_orders = await self.adapter.get_open_orders()
-                    # Convert orders to dict if they're objects
-                    all_orders_list = [
-                        o.to_dict() if hasattr(o, 'to_dict') else (
-                            o.__dict__ if not isinstance(o, dict) else o)
-                        for o in all_orders
-                    ]
-                    symbols = sorted({o.get("symbol")
-                                     for o in all_orders_list if o.get("symbol")})
-                    LOG.info(
-                        f"🔄 [ORPHAN_CLEANUP] Starting cleanup scan for {len(symbols)} symbols, {len(active)} have active positions")
+                    _amt = float(_p.get("positionAmt", 0))
+                    if abs(_amt) >= 1e-8:
+                        pos_nonzero = _p
+                        break
                 except Exception:
-                    symbols = []
-
-            # Controls (from self._orphan_cfg which was initialized safely)
-            min_age_sec = max(
-                0, int(self._orphan_cfg.get("min_order_age_sec", 0)))
-            batch_limit = max(
-                0, int(self._orphan_cfg.get("batch_cancel_limit", 50)))
-            rate_limit_per_min = max(
-                0, int(self._orphan_cfg.get("rate_limit_per_min", 120)))
-            now_ms = int(time.time() * 1000)
-
-            def rate_limited(now_ts_ms: int) -> bool:
-                # Reset window if older than 60s
-                if now_ts_ms - int(self._orphan_rate_window_start * 1000) >= 60_000:
-                    self._orphan_rate_window_start = now_ts_ms / 1000.0
-                    self._orphan_rate_count = 0
-                if rate_limit_per_min <= 0:
-                    return False
-                return self._orphan_rate_count >= rate_limit_per_min
-
-            for sym in symbols:
-                if not sym or sym in active:
                     continue
-                try:
-                    open_orders = await self.adapter.get_open_orders(sym)
-                    # Convert orders to dict if they're objects
-                    open_orders_list = [
-                        o.to_dict() if hasattr(o, 'to_dict') else (
-                            o.__dict__ if not isinstance(o, dict) else o)
-                        for o in open_orders
-                    ]
-                except Exception as e:
-                    LOG.warning(
-                        f"cleanup: failed to fetch open orders for {sym}: {e}")
-                    continue
-                for o in open_orders_list:
-                    otype = (o.get("type") or "").upper()
-                    reduce_only = str(o.get("reduceOnly", "")
-                                      ).lower() == "true"
-                    close_pos = str(o.get("closePosition", "")
-                                    ).lower() == "true"
-                    if otype in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "LIMIT") and (reduce_only or close_pos):
-                        # Age filter (if timestamp available)
-                        if min_age_sec > 0:
-                            ts = (
-                                o.get("updateTime")
-                                or o.get("time")
-                                or o.get("transactTime")
-                                or o.get("origTime")
-                                or o.get("createTime")
-                            )
-                            try:
-                                ts_ms = int(ts)
-                            except Exception:
-                                ts_ms = None  # unknown age -> don't skip by age
-                            if ts_ms is not None and (now_ms - ts_ms) < (min_age_sec * 1000):
-                                self._orphan_metrics["skipped_age"] += 1
-                                continue
 
-                        # Batch limit
-                        if batch_limit and cancels_this_run >= batch_limit:
-                            break
+            if pos_nonzero is None:
+                LOG.warning(
+                    f"dYs� [PHASE A3] PRE-FLIGHT SKIPPED: Position is 0 for {symbol} (TP_SL_SKIPPED_NO_POSITION)")
+                self._orphan_metrics["tp_sl_skipped_no_position"] = self._orphan_metrics.get(
+                    "tp_sl_skipped_no_position", 0) + 1
+                return False
 
-                        # Rate limit per minute (shared across symbols)
-                        if rate_limited(now_ms):
-                            self._orphan_metrics["skipped_rate_limit"] += 1
-                            continue
+            position_amt = float(pos_nonzero.get("positionAmt", 0))
+            LOG.debug(
+                f"�o. [PHASE A3] PRE-FLIGHT OK: Position {position_amt} for {symbol}")
+            return True
 
-                        oid = o.get("orderId")
-                        try:
-                            await self.adapter.cancel_order(sym, oid)
-                            # 📋 Детальний лог про скасований ордер
-                            LOG.info(
-                                f"✅ [ORPHAN_CLEANUP] Cancelled orphaned {otype} order {oid} for {sym} "
-                                f"(reduceOnly={reduce_only}, closePosition={close_pos})")
-                            cancels_this_run += 1
-                            self._orphan_metrics["cancels"] += 1
-                            self._orphan_rate_count += 1
-                        except Exception as e:
-                            LOG.warning(
-                                f"❌ [ORPHAN_CLEANUP] Failed to cancel {otype} order {oid} for {sym}: {e}")
-                            self._orphan_metrics["errors"] += 1
-                # If batch limit reached for this run, stop scanning further symbols
-                if batch_limit and cancels_this_run >= batch_limit:
-                    break
         except Exception as e:
-            LOG.debug(f"cleanup_orphaned_bracket_orders error: {e}")
-            self._orphan_metrics["errors"] += 1
-
-        # 📊 Логування результату cleanup
-        if cancels_this_run > 0:
-            LOG.info(f"✅ [ORPHAN_CLEANUP] Completed: cancelled {cancels_this_run} orders "
-                     f"(skipped_age={self._orphan_metrics.get('skipped_age', 0)}, "
-                     f"skipped_rate_limit={self._orphan_metrics.get('skipped_rate_limit', 0)})")
+            LOG.warning(
+                f"�s��,? [PHASE A3] PRE-FLIGHT ERROR for {symbol}: {e}")
+            return False
 
     async def _cleanup_loop(self) -> None:
         """Periodic orphaned-order cleanup loop (interval from config)."""
@@ -1636,7 +2290,7 @@ class ExecPosFSM:
                 interval = max(
                     5, int(self._orphan_cfg.get("periodic_interval_sec", 300)))
                 await asyncio.sleep(interval)
-                await self.cleanup_orphaned_bracket_orders()
+                await self.order_guardian.cleanup_orphans()
                 self._orphan_metrics["loops"] += 1
             except asyncio.CancelledError:
                 raise
@@ -1644,7 +2298,68 @@ class ExecPosFSM:
                 LOG.debug(f"cleanup loop error: {e}")
                 self._orphan_metrics["errors"] += 1
 
-    async def sync_open_orders_and_positions(self) -> None:
+    async def _startup_order_guardian_reconcile(self) -> None:
+        """
+        Startup reconciliation: Link existing orders and positions for OrderGuardian.
+
+        This ensures OrderGuardian has accurate tracking of existing orders/positions
+        after restart, enabling proper orphan detection and cleanup.
+        """
+        try:
+            LOG.info("🔄 Starting OrderGuardian startup reconciliation...")
+
+            # ✅ FIX: First link existing orders from REST API for all symbols with positions
+            if self.adapter:
+                try:
+                    positions = await self.adapter.get_open_positions()
+                    symbols_with_positions = set()
+
+                    # Convert positions to dict if needed and collect symbols
+                    positions_list = [
+                        p.to_dict() if hasattr(p, 'to_dict') else (
+                            p.__dict__ if not isinstance(p, dict) else p)
+                        for p in positions
+                    ]
+
+                    for pos in positions_list:
+                        symbol = pos.get("symbol")
+                        if symbol:
+                            symbols_with_positions.add(symbol)
+
+                    # Also check for symbols with open orders
+                    all_orders = await self.adapter.get_open_orders()
+                    orders_list = [
+                        o.to_dict() if hasattr(o, 'to_dict') else (
+                            o.__dict__ if not isinstance(o, dict) else o)
+                        for o in all_orders
+                    ]
+
+                    for order in orders_list:
+                        symbol = order.get("symbol")
+                        if symbol:
+                            symbols_with_positions.add(symbol)
+
+                    symbols_with_positions.update(
+                        self._collect_guardian_symbols())
+
+                    # Link existing orders for each symbol
+                    for symbol in symbols_with_positions:
+                        await self.order_guardian.link_existing_from_rest(symbol)
+                        LOG.debug(f"✅ Linked existing orders for {symbol}")
+                        await self.order_guardian.cleanup_orphans(symbol=symbol)
+
+                    LOG.info(
+                        f"✅ Linked existing orders for {len(symbols_with_positions)} symbols")
+
+                except Exception as e:
+                    LOG.warning(
+                        f"Failed to link existing orders during startup: {e}")
+
+            # Then run cleanup to remove orphans
+            await self.order_guardian.cleanup_orphans()
+            LOG.info("✅ OrderGuardian startup reconciliation completed")
+        except Exception as e:
+            LOG.error(f"❌ OrderGuardian startup reconciliation failed: {e}")
         """
         Synchronize open orders and positions with Binance at startup.
 
@@ -1707,10 +2422,10 @@ class ExecPosFSM:
                 for p in positions
             ]
 
-            # ✅ NEW: Use cleanup_orphaned_bracket_orders instead of duplicating logic
+            # ✅ NEW: Use order_guardian.cleanup_orphans() for centralized cleanup
             # This ensures consistent orphan detection across startup and runtime
             LOG.info("🧹 Running orphan cleanup on startup...")
-            await self.cleanup_orphaned_bracket_orders()  # Scans ALL symbols
+            await self.order_guardian.cleanup_orphans()  # Scans ALL symbols
             LOG.info("✅ Startup orphan cleanup completed")
 
             # 3. For each position, check if we have matching FSM state

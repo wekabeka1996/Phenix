@@ -16,7 +16,7 @@ import hmac
 import logging
 import time
 from decimal import Decimal, ROUND_DOWN, ROUND_UP
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode, quote_plus
 
 import httpx
@@ -130,9 +130,16 @@ class BinanceAdapter(AbstractExchangeAdapter):
             headers={"X-MBX-APIKEY": self.api_key},
         )
 
+        # PHASE B1: ClientOrderId ledger for -4116 idempotency
+        # Format: {clientOrderId: (timestamp_ms: int, order_id: str, symbol: str)}
+        self._clientorderid_ledger: Dict[str, Tuple[int, str, str]] = {}
+
         self._mark_price_cache: Dict[
             str, Dict[str, Any]
         ] = {}  # symbol -> {'price': float, 'timestamp': float}
+
+        # Logger reference for diagnostics
+        self.logger = logging.getLogger(__name__)
 
     # опційно: контекст-менеджер для акуратного закриття
     async def __aenter__(self) -> "BinanceAdapter":
@@ -146,6 +153,73 @@ class BinanceAdapter(AbstractExchangeAdapter):
             await self.session.aclose()
         except Exception:
             pass
+
+    async def start(self) -> None:
+        """
+        Start the adapter (no-op for REST-only adapter).
+
+        This method exists for compatibility with FSM initialization
+        that expects polling adapters. Since this adapter is REST-only,
+        no background polling is started.
+        """
+        LOG.info("BinanceAdapter started (REST-only mode, no polling)")
+
+    async def stop(self) -> None:
+        """
+        Stop the adapter (no-op for REST-only adapter).
+
+        This method exists for compatibility with FSM cleanup
+        that expects polling adapters. Since this adapter is REST-only,
+        no background polling needs to be stopped.
+        """
+        LOG.info("BinanceAdapter stopped (REST-only mode, no polling)")
+
+    # PHASE B1: ClientOrderId Ledger Methods
+    def register_clientorderid(self, client_order_id: str, order_id: str, symbol: str) -> None:
+        """
+        Register a successful order in ClientOrderId ledger.
+
+        Args:
+            client_order_id: The client order ID (from place_order response)
+            order_id: The Binance order ID
+            symbol: Trading symbol
+        """
+        timestamp_ms = int(time.time() * 1000)
+        self._clientorderid_ledger[client_order_id] = (
+            timestamp_ms, order_id, symbol)
+        LOG.debug(
+            f"✅ [B1] Registered ClientOrderId {client_order_id} → {order_id} ({symbol})")
+
+    def check_clientorderid_reuse(self, symbol: str, client_order_id: str) -> Optional[str]:
+        """
+        Check if ClientOrderId can be reused (was successful within 24h).
+
+        Args:
+            symbol: Trading symbol
+            client_order_id: The client order ID to check
+
+        Returns:
+            Original Binance order_id if reusable, None if should generate new ID
+        """
+        if client_order_id not in self._clientorderid_ledger:
+            return None
+
+        timestamp_ms, order_id, ledger_symbol = self._clientorderid_ledger[client_order_id]
+
+        # Check: same symbol and within 24 hours
+        age_ms = int(time.time() * 1000) - timestamp_ms
+        if ledger_symbol == symbol and age_ms < 24 * 3600 * 1000:
+            LOG.info(
+                f"🔄 [B1] REUSING ClientOrderId {client_order_id} → {order_id} ({symbol}) - age {age_ms/1000:.0f}s")
+            return order_id
+
+        # Stale entry: remove from ledger
+        if age_ms >= 24 * 3600 * 1000:
+            del self._clientorderid_ledger[client_order_id]
+            LOG.debug(
+                f"🗑️ [B1] Cleaned stale ClientOrderId {client_order_id} (age {age_ms/3600000:.1f}h)")
+
+        return None
 
     def _norm_params(self, d: dict) -> dict:
         """Фільтрує None і нормалізує значення до рядків, сумісних з Binance."""
@@ -560,6 +634,21 @@ class BinanceAdapter(AbstractExchangeAdapter):
         path = "/fapi/v2/balance"
         return await self._request("GET", path)
 
+    async def get_order(self, symbol: str, order_id: int) -> Dict[str, Any]:
+        """
+        Get order information by order ID.
+
+        Args:
+            symbol: Trading symbol.
+            order_id: Order ID.
+
+        Returns:
+            Order information.
+        """
+        path = "/fapi/v1/order"
+        params = {"symbol": symbol, "orderId": order_id}
+        return await self._request("GET", path, params)
+
     async def get_exchange_info(self, symbol: str) -> Dict[str, Any]:
         """
         Get exchange information for a symbol.
@@ -776,7 +865,38 @@ class BinanceAdapter(AbstractExchangeAdapter):
             params["positionSide"] = position_side
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
-        return await self._request("POST", "/fapi/v1/order", params)
+
+        # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
+        try:
+            resp = await self._request("POST", "/fapi/v1/order", params)
+            if new_client_order_id and "orderId" in resp:
+                self.register_clientorderid(
+                    new_client_order_id, str(resp["orderId"]), symbol)
+            return resp
+        except BinanceAPIError as e:
+            if e.code == -4116 and new_client_order_id:
+                # Duplicate ClientOrderId: try to reuse from ledger
+                LOG.warning(
+                    f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
+                existing_order_id = self.check_clientorderid_reuse(
+                    symbol, new_client_order_id)
+                if existing_order_id:
+                    LOG.info(
+                        f"✅ [B1] Reusing order {existing_order_id} from ledger")
+                    # Fetch the order to return
+                    try:
+                        order = await self.get_order(symbol, int(existing_order_id))
+                        return order
+                    except Exception as fetch_err:
+                        LOG.warning(
+                            f"⚠️ [B1] Could not fetch reused order: {fetch_err}")
+                        raise e
+                else:
+                    LOG.warning(
+                        f"⚠️ [B1] -4116 error but no ledger entry for {new_client_order_id}")
+                    raise e
+            else:
+                raise
 
     async def place_take_profit_market_close_position(
         self,
@@ -812,7 +932,38 @@ class BinanceAdapter(AbstractExchangeAdapter):
             params["positionSide"] = position_side
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
-        return await self._request("POST", "/fapi/v1/order", params)
+
+        # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
+        try:
+            resp = await self._request("POST", "/fapi/v1/order", params)
+            if new_client_order_id and "orderId" in resp:
+                self.register_clientorderid(
+                    new_client_order_id, str(resp["orderId"]), symbol)
+            return resp
+        except BinanceAPIError as e:
+            if e.code == -4116 and new_client_order_id:
+                # Duplicate ClientOrderId: try to reuse from ledger
+                LOG.warning(
+                    f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
+                existing_order_id = self.check_clientorderid_reuse(
+                    symbol, new_client_order_id)
+                if existing_order_id:
+                    LOG.info(
+                        f"✅ [B1] Reusing order {existing_order_id} from ledger")
+                    # Fetch the order to return
+                    try:
+                        order = await self.get_order(symbol, int(existing_order_id))
+                        return order
+                    except Exception as fetch_err:
+                        LOG.warning(
+                            f"⚠️ [B1] Could not fetch reused order: {fetch_err}")
+                        raise e
+                else:
+                    LOG.warning(
+                        f"⚠️ [B1] -4116 error but no ledger entry for {new_client_order_id}")
+                    raise e
+            else:
+                raise
 
     async def place_limit_reduce_only(
         self,
@@ -850,7 +1001,38 @@ class BinanceAdapter(AbstractExchangeAdapter):
             params["positionSide"] = position_side
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
-        return await self._request("POST", "/fapi/v1/order", params)
+
+        # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
+        try:
+            resp = await self._request("POST", "/fapi/v1/order", params)
+            if new_client_order_id and "orderId" in resp:
+                self.register_clientorderid(
+                    new_client_order_id, str(resp["orderId"]), symbol)
+            return resp
+        except BinanceAPIError as e:
+            if e.code == -4116 and new_client_order_id:
+                # Duplicate ClientOrderId: try to reuse from ledger
+                LOG.warning(
+                    f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
+                existing_order_id = self.check_clientorderid_reuse(
+                    symbol, new_client_order_id)
+                if existing_order_id:
+                    LOG.info(
+                        f"✅ [B1] Reusing order {existing_order_id} from ledger")
+                    # Fetch the order to return
+                    try:
+                        order = await self.get_order(symbol, int(existing_order_id))
+                        return order
+                    except Exception as fetch_err:
+                        LOG.warning(
+                            f"⚠️ [B1] Could not fetch reused order: {fetch_err}")
+                        raise e
+                else:
+                    LOG.warning(
+                        f"⚠️ [B1] -4116 error but no ledger entry for {new_client_order_id}")
+                    raise e
+            else:
+                raise
 
     async def place_market_reduce_only(
         self,
@@ -884,7 +1066,37 @@ class BinanceAdapter(AbstractExchangeAdapter):
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id
 
-        return await self._request("POST", "/fapi/v1/order", params)
+        # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
+        try:
+            resp = await self._request("POST", "/fapi/v1/order", params)
+            if new_client_order_id and "orderId" in resp:
+                self.register_clientorderid(
+                    new_client_order_id, str(resp["orderId"]), symbol)
+            return resp
+        except BinanceAPIError as e:
+            if e.code == -4116 and new_client_order_id:
+                # Duplicate ClientOrderId: try to reuse from ledger
+                LOG.warning(
+                    f"⚠️ [B1] -4116 Duplicate ClientOrderId {new_client_order_id}, checking ledger...")
+                existing_order_id = self.check_clientorderid_reuse(
+                    symbol, new_client_order_id)
+                if existing_order_id:
+                    LOG.info(
+                        f"✅ [B1] Reusing order {existing_order_id} from ledger")
+                    # Fetch the order to return
+                    try:
+                        order = await self.get_order(symbol, int(existing_order_id))
+                        return order
+                    except Exception as fetch_err:
+                        LOG.warning(
+                            f"⚠️ [B1] Could not fetch reused order: {fetch_err}")
+                        raise e
+                else:
+                    LOG.warning(
+                        f"⚠️ [B1] -4116 error but no ledger entry for {new_client_order_id}")
+                    raise e
+            else:
+                raise
 
     async def close_session(self):
         """Close the httpx session."""
@@ -950,18 +1162,39 @@ class BinanceAdapter(AbstractExchangeAdapter):
         path = "/fapi/v1/order"
         return await self._request("POST", path, order_params)
 
-    async def create_take_profit_market_order(self, order_params: Dict[str, Any]) -> Dict[str, Any]:
+    async def get_positions_notional_usd_shadow(self) -> float:
         """
-        Create a TAKE_PROFIT_MARKET order.
+        Get total notional value in USD of all open positions from exchange perspective.
 
-        Args:
-            order_params: Order parameters.
+        This is used for shadow notional checking to compare with portfolio state.
+        Returns the sum of (position_amount * mark_price) for all non-zero positions.
 
         Returns:
-            Order response.
+            Total notional value in USD as float.
         """
-        path = "/fapi/v1/order"
-        return await self._request("POST", path, order_params)
+        try:
+            # Get all open positions (non-zero only, as per get_open_positions)
+            positions = await self.get_open_positions()
+
+            total_notional = 0.0
+            for pos in positions:
+                # position_amount is stored as string, mark_price as string
+                position_amt = float(pos.position_amount)
+                mark_price = float(pos.mark_price)
+
+                # Calculate notional for this position
+                notional = abs(position_amt) * mark_price
+                total_notional += notional
+
+                LOG.debug(
+                    f"Shadow position {pos.symbol}: amt={position_amt}, mark={mark_price}, notional={notional}")
+
+            LOG.debug(f"Total shadow notional: {total_notional}")
+            return total_notional
+
+        except Exception as e:
+            LOG.error(f"Failed to get shadow positions notional: {e}")
+            raise
 
 
 # ---- helpers ----

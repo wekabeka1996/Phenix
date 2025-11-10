@@ -8,13 +8,12 @@ Fail-closed: without data — block.
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone, date
-from decimal import Decimal, InvalidOperation
 from typing import Optional, Dict, Any, Tuple
 
 
 def _d(x: Any) -> float:
     """Safe decimal conversion with fallback to 0."""
-    from decimal import Decimal as D
+    from decimal import Decimal as D, InvalidOperation
 
     try:
         return float(D(str(x)))

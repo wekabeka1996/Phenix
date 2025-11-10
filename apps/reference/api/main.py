@@ -204,6 +204,28 @@ else:
                 "execution_mode": execution_mode,
             },
         }
+
+        # Merge ExecPosFSM and Guardian metrics (JSON)
+        try:
+            from apps.reference.main import execution_position  # type: ignore
+            if execution_position:
+                data["execution_position"] = execution_position.get_metrics()
+                # Guardian metrics (best-effort)
+                try:
+                    og = getattr(execution_position, 'order_guardian', None)
+                    if og and hasattr(og, '_impl'):
+                        # If services guardian has internal metrics, expose minimal introspection
+                        data["guardian"] = {
+                            "unified": True,
+                            "emit_tidy_event": True,
+                        }
+                    else:
+                        data["guardian"] = {"note": "guardian metrics not available"}
+                except Exception:
+                    data["guardian"] = {"note": "guardian metrics error"}
+        except Exception:
+            # Keep /statdump working if execution_position not initialized
+            pass
         from fastapi.responses import JSONResponse
 
         return JSONResponse(data)

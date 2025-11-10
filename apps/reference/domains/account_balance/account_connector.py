@@ -195,16 +195,17 @@ class AccountConnector:
                                     pos.get("positionAmt", 0)))
                         if abs(amt) > 0.0001:
                             LOG.info(
-                                f"   📊 {pos.get('symbol')}: {amt} @ {pos.get('entry_price', pos.get('entryPrice', 'N/A'))}")
+                                f"   📊 {pos.get('symbol')}: {amt} @ "
+                                f"{pos.get('entry_price', pos.get('entryPrice', 'N/A'))}")
 
                     # 🔴 DIAGNOSTIC: Check for divergence (API empty but internal has data)
                     if api_position_count == 0:
                         LOG.warning(
-                            f"🚨 CRITICAL: API returned EMPTY positions! Will trigger FALLBACK in margin calculation")
+                            "🚨 CRITICAL: API returned EMPTY positions! Will trigger FALLBACK in margin calculation")
                         LOG.warning(
-                            f"   → This means system will use internal self._positions (if any)")
+                            "   → This means system will use internal self._positions (if any)")
                         LOG.warning(
-                            f"   → Check: Are orders filled on Binance? Is API key valid?")
+                            "   → Check: Are orders filled on Binance? Is API key valid?")
 
                     # Always emit positions update, even if empty
                     self._emit_positions_update(positions_list)
@@ -262,8 +263,7 @@ class AccountConnector:
                 "entryPrice": str(decimal.Decimal(pos.get("entry_price", pos.get("entryPrice", "0")))),
                 "unRealizedProfit": str(
                     decimal.Decimal(
-                        pos.get("unrealized_pnl", pos.get("unRealizedProfit", "0")))
-                ),
+                        pos.get("unrealized_pnl", pos.get("unRealizedProfit", "0")))),
                 "leverage": int(pos.get("leverage", 1)),
                 "marginType": pos.get("marginType", "cross"),
                 "markPrice": str(decimal.Decimal(pos.get("mark_price", pos.get("markPrice", "0")))),
@@ -285,7 +285,9 @@ class AccountConnector:
         cross_wallet_balance = "0"
 
         LOG.debug(
-            f"_emit_positions_update: _latest_balance_data is {type(self._latest_balance_data)} with value: {self._latest_balance_data is not None}"
+            f"_emit_positions_update: _latest_balance_data is "
+            f"{type(self._latest_balance_data)} with value: "
+            f"{self._latest_balance_data is not None}"
         )
 
         if self._latest_balance_data:
@@ -315,10 +317,12 @@ class AccountConnector:
                 )
 
                 LOG.info(
-                    f"   ✅ Found USDT: balance={wallet_balance}, unrealizedProfit={unrealized_profit}, crossWalletBalance={cross_wallet_balance}"
+                    f"   ✅ Found USDT: balance={wallet_balance}, "
+                    f"unrealizedProfit={unrealized_profit}, "
+                    f"crossWalletBalance={cross_wallet_balance}"
                 )
             else:
-                LOG.warning(f"   ⚠️  No USDT asset found in balance data")
+                LOG.warning("   ⚠️  No USDT asset found in balance data")
         else:
             LOG.warning(
                 "⚠️  No balance data available yet; positions update will have zero wallet balance"
@@ -338,5 +342,7 @@ class AccountConnector:
             why="Open positions data updated from Binance API.",
         )
         LOG.info(
-            f"Emitted positions update: {len(open_positions)} open positions, totalWalletBalance={wallet_balance}, totalUnrealizedProfit={unrealized_profit}"
+            f"Emitted positions update: {len(open_positions)} open positions, "
+            f"totalWalletBalance={wallet_balance}, "
+            f"totalUnrealizedProfit={unrealized_profit}"
         )

@@ -27,7 +27,8 @@ class ExecutionManagement:
     def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
         self.fsm = fsm
         self.config = config
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
 
         # Subscribe to trade intent events
         self.fsm.listen("EVT:TRADE_INTENT_PROPOSED", self.on_trade_intent)
@@ -96,5 +97,6 @@ class ExecutionManagement:
         # TODO: Implement actual forwarding to execution_position FSM
         # For now, just log the intent
         self.logger.info(
-            f"Trade intent processed: {trade_intent.get('side')} {trade_intent.get('order', {}).get('qty')} {symbol}"
+            f"Trade intent processed: {trade_intent.get('side')} "
+            f"{trade_intent.get('order', {}).get('qty')} {symbol}"
         )

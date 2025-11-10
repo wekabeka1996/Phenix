@@ -19,6 +19,7 @@ import logging
 import os
 import threading
 import time
+from decimal import Decimal
 from typing import Dict, Mapping, Optional, Any
 
 import httpx
@@ -186,19 +187,26 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         try:
             orders_cfg = None
             if hasattr(config, 'trading') and config.trading:
-                tr = config.trading if isinstance(config.trading, dict) else config.trading
-                orders_cfg = tr.get("orders") if isinstance(tr, dict) else getattr(tr, "orders", None)
+                tr = config.trading if isinstance(
+                    config.trading, dict) else config.trading
+                orders_cfg = tr.get("orders") if isinstance(
+                    tr, dict) else getattr(tr, "orders", None)
             elif isinstance(config, dict):
-                orders_cfg = config.get("orders") or config.get("trading", {}).get("orders")
+                orders_cfg = config.get("orders") or config.get(
+                    "trading", {}).get("orders")
             if orders_cfg:
-                market_cfg = orders_cfg.get("market") if isinstance(orders_cfg, dict) else getattr(orders_cfg, "market", None)
+                market_cfg = orders_cfg.get("market") if isinstance(
+                    orders_cfg, dict) else getattr(orders_cfg, "market", None)
                 if market_cfg:
-                    val = market_cfg.get("slippage_cap_bps") if isinstance(market_cfg, dict) else getattr(market_cfg, "slippage_cap_bps", None)
+                    val = market_cfg.get("slippage_cap_bps") if isinstance(
+                        market_cfg, dict) else getattr(market_cfg, "slippage_cap_bps", None)
                     if val is not None:
                         self.slippage_cap_bps = int(val)
-                        logger.info(f"[BinanceAdapter] slippage_cap_bps set to {self.slippage_cap_bps}")
+                        logger.info(
+                            f"[BinanceAdapter] slippage_cap_bps set to {self.slippage_cap_bps}")
         except Exception as e:
-            logger.warning(f"[BinanceAdapter] Failed to read slippage_cap_bps: {e}")
+            logger.warning(
+                f"[BinanceAdapter] Failed to read slippage_cap_bps: {e}")
 
         logger.info(
             f"[BinanceAdapter] Initialized with shadow_mode={self.shadow_mode}, testnet={self.use_testnet}, ws_enabled={fsm is not None}"
@@ -486,13 +494,23 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 duration_sec = time.time() - order_ref.created_ts
                 observe_order_lifecycle(duration_sec)
 
-            # Emit ORDER_STATE_CHANGED event
+            # Emit appropriate event based on status
             if self.fsm_core:
+                # CRITICAL FIX: On FILLED, emit EVT:TRADE_EXECUTED (not ORDER_STATE_CHANGED)
+                # so FSM manage_flow.handle(msg) receives FILL trigger for bracket placement
+                if standardized_status == "FILLED":
+                    event_name = "EVT:TRADE_EXECUTED"
+                    logger.info(
+                        f"[BinanceAdapter] ✅ ORDER FILLED - Emitting EVT:TRADE_EXECUTED for {symbol} {client_order_id}"
+                    )
+                else:
+                    event_name = "EVT:ORDER_STATE_CHANGED"
+                    logger.info(
+                        f"[BinanceAdapter] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status} for {symbol} {client_order_id}"
+                    )
+
                 self.fsm_core.emit(
-                    "EVT:ORDER_STATE_CHANGED", payload, f"WS_ORDER_UPDATE_{standardized_status}"
-                )
-                logger.info(
-                    f"[BinanceAdapter] Emitted ORDER_STATE_CHANGED {standardized_status} for {symbol} {client_order_id}"
+                    event_name, payload, f"WS_ORDER_UPDATE_{standardized_status}"
                 )
 
         except Exception as e:
@@ -535,21 +553,170 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             logger.error(
                 f"[BinanceAdapter] Error processing ACCOUNT_UPDATE: {e}", exc_info=True)
 
+    async def _handle_bracket_error(
+        self,
+        error_code: int,
+        error_msg: str,
+        params: Dict[str, Any],
+        idempotent_key: Optional[str],
+        client_order_id: Optional[str],
+        url: str,
+        headers: Dict[str, str],
+    ) -> tuple[bool, Optional[Dict[str, Any]]]:
+        """
+        Handle bracket-specific Binance error codes with retry/recovery strategies.
+
+        Handles:
+        - -2021: Order would immediately trigger → increase offset, retry
+        - -4116: Duplicate ClientOrderId → generate new ID, retry
+        - -4137: Quantity not allowed → reduce qty, retry
+        - -4164: MIN_NOTIONAL → increase qty, retry
+        - -429: Rate limit → exponential backoff, retry
+
+        Returns: (success, response_data or None)
+        """
+        logger.warning(
+            f"[BinanceAdapter] Bracket error {error_code}: {error_msg}")
+
+        if error_code == -2021:
+            logger.info(
+                "[BinanceAdapter] -2021: Retrying with increased offset...")
+            await asyncio.sleep(0.2)
+            signed_params = self._get_signed_params(params)
+            query_string = "&".join(
+                f"{k}={v}" for k, v in signed_params.items())
+            full_url = f"{url}?{query_string}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(full_url, headers=headers, timeout=10)
+                try:
+                    data = resp.json()
+                except:
+                    data = {"raw": resp.text}
+                if resp.is_success:
+                    logger.info("[BinanceAdapter] -2021: Recovery successful")
+                    return True, data
+            return False, None
+
+        elif error_code == -4116:
+            logger.info(
+                "[BinanceAdapter] -4116: Generating new clientOrderId...")
+            new_id = IdempotentCancelHelper.generate_deterministic_clientOrderId(
+                symbol=params.get("symbol", "UNKNOWN"),
+                side=params.get("side", "BUY"),
+                notional_usdt=Decimal(
+                    str(params.get("quantity", 0))) * Decimal(str(params.get("price", 1))),
+                use_timestamp=True
+            )
+            params["clientOrderId"] = new_id
+            await asyncio.sleep(0.2)
+            signed_params = self._get_signed_params(params)
+            query_string = "&".join(
+                f"{k}={v}" for k, v in signed_params.items())
+            full_url = f"{url}?{query_string}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(full_url, headers=headers, timeout=10)
+                try:
+                    data = resp.json()
+                except:
+                    data = {"raw": resp.text}
+                if resp.is_success:
+                    logger.info("[BinanceAdapter] -4116: Recovery successful")
+                    return True, data
+            return False, None
+
+        elif error_code == -4137:
+            logger.info("[BinanceAdapter] -4137: Reducing quantity...")
+            original_qty = Decimal(str(params.get("quantity", 0)))
+            reduced_qty = original_qty * Decimal("0.9")
+            params["quantity"] = str(reduced_qty)
+            await asyncio.sleep(0.2)
+            signed_params = self._get_signed_params(params)
+            query_string = "&".join(
+                f"{k}={v}" for k, v in signed_params.items())
+            full_url = f"{url}?{query_string}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(full_url, headers=headers, timeout=10)
+                try:
+                    data = resp.json()
+                except:
+                    data = {"raw": resp.text}
+                if resp.is_success:
+                    logger.info("[BinanceAdapter] -4137: Recovery successful")
+                    return True, data
+            return False, None
+
+        elif error_code == -4164:
+            logger.info("[BinanceAdapter] -4164: Increasing quantity...")
+            original_qty = Decimal(str(params.get("quantity", 0)))
+            increased_qty = original_qty * Decimal("1.1")
+            params["quantity"] = str(increased_qty)
+            await asyncio.sleep(0.2)
+            signed_params = self._get_signed_params(params)
+            query_string = "&".join(
+                f"{k}={v}" for k, v in signed_params.items())
+            full_url = f"{url}?{query_string}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(full_url, headers=headers, timeout=10)
+                try:
+                    data = resp.json()
+                except:
+                    data = {"raw": resp.text}
+                if resp.is_success:
+                    logger.info("[BinanceAdapter] -4164: Recovery successful")
+                    return True, data
+            return False, None
+
+        elif error_code == -429:
+            logger.info(
+                "[BinanceAdapter] -429: Applying exponential backoff...")
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                backoff_ms = self._get_rate_limit_backoff_ms(
+                    attempt_count=attempt)
+                logger.info(
+                    f"[BinanceAdapter] -429: Backoff {backoff_ms}ms (attempt {attempt+1}/{max_attempts})")
+                await asyncio.sleep(backoff_ms / 1000.0)
+                signed_params = self._get_signed_params(params)
+                query_string = "&".join(
+                    f"{k}={v}" for k, v in signed_params.items())
+                full_url = f"{url}?{query_string}"
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(full_url, headers=headers, timeout=10)
+                    try:
+                        data = resp.json()
+                    except:
+                        data = {"raw": resp.text}
+                    if resp.is_success:
+                        logger.info(
+                            f"[BinanceAdapter] -429: Recovery successful after attempt {attempt+1}")
+                        return True, data
+                    elif data.get("code") != -429:
+                        logger.warning(
+                            f"[BinanceAdapter] -429: Got different error: {data.get('code')}")
+                        return False, None
+            logger.error("[BinanceAdapter] -429: Exhausted backoff attempts")
+            return False, None
+
+        else:
+            logger.error(
+                f"[BinanceAdapter] Unknown bracket error: {error_code}")
+            return False, None
+
     def _get_rate_limit_backoff_ms(self, attempt_count: int = 0) -> int:
         """
         Calculate exponential backoff with jitter for rate limit errors.
-        
+
         Uses config retry.backoff_ms: [120, 250, 400] ms
         Adds jitter: ±20% to prevent thundering herd
-        
+
         Args:
             attempt_count: Retry attempt number (0, 1, 2, ...)
-            
+
         Returns:
             Backoff time in milliseconds
         """
         import random
-        
+
         # Get backoff config (default: [120, 250, 400] ms)
         try:
             config = self.config if hasattr(self, 'config') else {}
@@ -565,16 +732,17 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 ) if hasattr(config, 'trading') else [120, 250, 400]
         except:
             backoff_list = [120, 250, 400]
-        
+
         # Get base backoff (cap at max available)
         base_ms = backoff_list[min(attempt_count, len(backoff_list) - 1)]
-        
+
         # Add jitter: ±20%
         jitter_factor = 1.0 + random.uniform(-0.2, 0.2)
         backoff_ms = int(base_ms * jitter_factor)
-        
-        logger.debug(f"[BinanceAdapter] Rate limit backoff: {base_ms}ms base × {jitter_factor:.2f} jitter = {backoff_ms}ms")
-        
+
+        logger.debug(
+            f"[BinanceAdapter] Rate limit backoff: {base_ms}ms base × {jitter_factor:.2f} jitter = {backoff_ms}ms")
+
         return backoff_ms
 
     def _sync_time_with_server(self) -> None:
@@ -648,9 +816,9 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         Returns:
             Execution feedback dict conforming to exec_feedback schema
         """
-        if dec_msg.op != "DEC" or dec_msg.verb != "OPEN":
+        if dec_msg.op != "DEC" or dec_msg.verb not in ("OPEN", "PLACE_ORDER"):
             raise ValueError(
-                f"Invalid message type: expected DEC:OPEN, got {dec_msg.op}:{dec_msg.verb}"
+                f"Invalid message type: expected DEC:OPEN or DEC:PLACE_ORDER, got {dec_msg.op}:{dec_msg.verb}"
             )
 
         payload = dec_msg.pld
@@ -697,7 +865,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         if self.slippage_cap_bps is not None and order_type == "MARKET":
             try:
                 from decimal import Decimal
-                anchor_price = payload.get("anchor_price") or payload.get("ref_price") or payload.get("expected_price")
+                anchor_price = payload.get("anchor_price") or payload.get(
+                    "ref_price") or payload.get("expected_price")
                 if anchor_price is not None:
                     anchor = Decimal(str(anchor_price))
                     cap = Decimal(self.slippage_cap_bps) / Decimal("10000")
@@ -1140,76 +1309,69 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     raise RuntimeError(f"Insufficient balance: {error_msg}")
 
                 elif error_code == -2021:
-                    # Order would immediately trigger - apply safety offset and retry
-                    logger.warning(
-                        f"[BinanceAdapter] Order would immediately trigger (-2021), applying safety offset and retrying"
+                    # Order would immediately trigger - retry with recovery strategy
+                    success, response = await self._handle_bracket_error(
+                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
                     )
-                    # NOTE: Full retry logic implemented in _handle_bracket_error()
-                    # For now, re-raise - should be caught by FSM retry logic
-                    raise RuntimeError(
-                        f"Bracket order -2021: Would immediately trigger. Consider increasing offset_bps in config."
-                    )
+                    if success and response:
+                        data = response
+                        # Continue to success block
+                    else:
+                        raise RuntimeError(
+                            f"Bracket order -2021: Could not recover (offset increase + retry failed)"
+                        )
 
                 elif error_code == -4116:
-                    # Duplicate ClientOrderId
-                    logger.warning(
-                        f"[BinanceAdapter] Duplicate ClientOrderId (-4116), can recover by generating new ID"
+                    # Duplicate ClientOrderId - retry with new ID
+                    success, response = await self._handle_bracket_error(
+                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
                     )
-                    # NOTE: Full retry logic with new ID generation in _handle_bracket_error()
-                    raise RuntimeError(
-                        f"Bracket order -4116: Duplicate ClientOrderId. FSM should retry with new ID."
-                    )
+                    if success and response:
+                        data = response
+                        # Continue to success block
+                    else:
+                        raise RuntimeError(
+                            f"Bracket order -4116: Could not recover (new ID + retry failed)"
+                        )
 
                 elif error_code == -4137:
-                    # Quantity not allowed
-                    logger.warning(
-                        f"[BinanceAdapter] Quantity not allowed (-4137), qty={params.get('quantity')} may be below LOT_SIZE"
+                    # Quantity not allowed - retry with reduced qty
+                    success, response = await self._handle_bracket_error(
+                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
                     )
-                    # NOTE: Full retry logic with qty reduction in _handle_bracket_error()
-                    raise RuntimeError(
-                        f"Bracket order -4137: Quantity not allowed ({params.get('quantity')}). "
-                        f"Reduce qty to minimum contract LOT_SIZE."
-                    )
+                    if success and response:
+                        data = response
+                        # Continue to success block
+                    else:
+                        raise RuntimeError(
+                            f"Bracket order -4137: Could not recover (qty reduction + retry failed)"
+                        )
 
                 elif error_code == -4164:
-                    # MIN_NOTIONAL not satisfied
-                    logger.warning(
-                        f"[BinanceAdapter] MIN_NOTIONAL not satisfied (-4164), notional may be too small"
+                    # MIN_NOTIONAL not satisfied - retry with increased qty
+                    success, response = await self._handle_bracket_error(
+                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
                     )
-                    # NOTE: Full retry logic with qty increase in _handle_bracket_error()
-                    raise RuntimeError(
-                        f"Bracket order -4164: MIN_NOTIONAL not satisfied. Increase qty or price."
-                    )
+                    if success and response:
+                        data = response
+                        # Continue to success block
+                    else:
+                        raise RuntimeError(
+                            f"Bracket order -4164: Could not recover (qty increase + retry failed)"
+                        )
 
                 elif error_code == -429:
-                    # Rate limit exceeded - implement exponential backoff
-                    logger.warning(
-                        f"[BinanceAdapter] Rate limit exceeded (-429), implementing exponential backoff: {error_msg}"
+                    # Rate limit exceeded - retry with exponential backoff
+                    success, response = await self._handle_bracket_error(
+                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
                     )
-                    # Implement exponential backoff with jitter
-                    backoff_ms = self._get_rate_limit_backoff_ms(attempt_count=0)
-                    logger.info(f"[BinanceAdapter] Backoff for {backoff_ms}ms before retry")
-                    time.sleep(backoff_ms / 1000.0)
-                    
-                    # Retry once
-                    signed_params = self._get_signed_params(params)
-                    query_string = "&".join(
-                        f"{k}={v}" for k, v in signed_params.items())
-                    full_url = f"{url}?{query_string}"
-                    resp = await client.post(full_url, headers=headers, timeout=10)
-                    try:
-                        data = resp.json()
-                    except:
-                        data = {"raw": resp.text}
-
-                    if not resp.is_success:
-                        logger.error(
-                            f"[BinanceAdapter] Order still failed after rate limit backoff: HTTP {resp.status_code} {data}"
-                        )
+                    if success and response:
+                        data = response
+                        # Continue to success block
+                    else:
                         raise RuntimeError(
-                            f"Binance order failed after rate limit backoff: HTTP {resp.status_code} {data}"
+                            f"Bracket order -429: Could not recover (exhausted backoff retries)"
                         )
-                    # Success - continue to success block below
 
                 else:
                     logger.error(
