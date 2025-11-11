@@ -96,6 +96,10 @@ class OrderGuardian:
     async def reconcile_symbol(self, *args, **kwargs):
         return await self._impl.reconcile_symbol(*args, **kwargs)
 
+    # type: ignore[no-untyped-def]
+    async def cleanup_other_brackets_for_symbol(self, *args, **kwargs):
+        return await self._impl.cleanup_other_brackets_for_symbol(*args, **kwargs)
+
     async def start(self):
         return await self._impl.start()
 

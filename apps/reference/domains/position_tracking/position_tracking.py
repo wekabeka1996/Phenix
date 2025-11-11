@@ -15,6 +15,14 @@ from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal  # WAL module for disaster recovery
 
+# Import AlertManager for manual intervention alerts
+try:
+    from apps.reference.telemetry.alerts import AlertManager
+    ALERT_MANAGER_AVAILABLE = True
+except ImportError:
+    ALERT_MANAGER_AVAILABLE = False
+    AlertManager = None  # type: ignore
+
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
 
@@ -53,6 +61,17 @@ class PositionTracking:
         self.fsm.listen("EVT:ACCOUNT_UPDATE_RECEIVED", self.on_account_update)
         self.fsm.listen("EVT:BALANCE_UPDATE_RECEIVED", self.on_balance_update)
 
+        # Initialize AlertManager for manual intervention alerts
+        self.alert_manager: Optional[AlertManager] = None
+        if ALERT_MANAGER_AVAILABLE:
+            try:
+                self.alert_manager = AlertManager(
+                    config=config, logger=self.logger)
+                self.logger.info(
+                    "AlertManager initialized in PositionTracking")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize AlertManager: {e}")
+
         # State tracking
         # symbol -> position data
         self._positions: Dict[str, Dict[str, Any]] = {}
@@ -63,6 +82,9 @@ class PositionTracking:
         self._initial_balance: Optional[decimal.Decimal] = (
             None  # Initial wallet balance (AURORA_STATE_SYNC_V1)
         )
+
+        # Manual intervention metrics
+        self.manual_intervention_detected_total = 0
 
     def start(self) -> None:
         """Start the position tracking component and emit initial portfolio state."""
@@ -319,7 +341,21 @@ class PositionTracking:
         if manually_closed:
             self.logger.warning(
                 f"⚠️  SYNC: Detected manually closed positions: {manually_closed}")
+
+            # Increment manual intervention metric
+            self.manual_intervention_detected_total += len(manually_closed)
+
+            # Send alerts for each manually closed position
             for symbol in manually_closed:
+                position_details = self._positions.get(symbol, {})
+
+                # Alert via AlertManager if available
+                if self.alert_manager:
+                    self.alert_manager.check_manual_intervention(
+                        symbol=symbol,
+                        position_details=position_details
+                    )
+
                 self.logger.info(
                     f"🧹 SYNC: Removing {symbol} from internal state (closed manually)")
                 self._positions.pop(symbol, None)
@@ -836,9 +872,14 @@ class PositionTracking:
             "short_margin": short_margin.quantize(decimal.Decimal("0.01"))
         }
 
-    def get_positions(self) -> Dict[str, Dict[str, Any]]:
-        """Returns a copy of the internal positions dictionary."""
-        return self._positions.copy()
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get position tracking metrics for monitoring."""
+        return {
+            "manual_intervention_detected_total": self.manual_intervention_detected_total,
+            "positions_tracked": len(self._positions),
+            "equity_usd": float(self._equity),
+            "realized_pnl_usd": float(self._realized_pnl)
+        }
 
     def _get_positions_snapshot(self) -> List[Dict[str, Any]]:
         """

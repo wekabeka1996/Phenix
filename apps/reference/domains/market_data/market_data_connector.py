@@ -77,7 +77,8 @@ class MarketDataConnector:
                 instruments = {}
         except Exception:
             instruments = {}
-        self.symbols = list(instruments.keys()) if instruments else ["SOLUSDT", "ETHUSDT"]
+        self.symbols = list(instruments.keys()) if instruments else [
+            "SOLUSDT", "ETHUSDT"]
 
         # Get anchor symbols from config.market_data.macro_sync.anchors
         macro_sync_config = trading_section.get(
@@ -100,12 +101,16 @@ class MarketDataConnector:
         try:
             if hasattr(trading_section, "market_data") and getattr(trading_section, "market_data"):
                 md = trading_section.market_data
-                poll_interval_sec = float(getattr(md, "poll_interval_sec", poll_interval_sec))
-                websocket_streams = list(getattr(md, "websocket_streams", websocket_streams))
+                poll_interval_sec = float(
+                    getattr(md, "poll_interval_sec", poll_interval_sec))
+                websocket_streams = list(
+                    getattr(md, "websocket_streams", websocket_streams))
             elif isinstance(trading_section, dict):
                 md = trading_section.get("market_data", {})
-                poll_interval_sec = float(md.get("poll_interval_sec", poll_interval_sec))
-                websocket_streams = list(md.get("websocket_streams", websocket_streams))
+                poll_interval_sec = float(
+                    md.get("poll_interval_sec", poll_interval_sec))
+                websocket_streams = list(
+                    md.get("websocket_streams", websocket_streams))
         except Exception:
             pass
         self.poll_interval_sec = poll_interval_sec
@@ -122,7 +127,8 @@ class MarketDataConnector:
                     f"MarketDataConnector using domain-specific mode: {mode}")
             except Exception as e:
                 LOG.warning(f"Could not get domain mode, using fallback: {e}")
-                mode = getattr(self.config, "trading_mode", "testnet") if not isinstance(self.config, dict) else self.config.get("trading_mode", "testnet")
+                mode = getattr(self.config, "trading_mode", "testnet") if not isinstance(
+                    self.config, dict) else self.config.get("trading_mode", "testnet")
         else:
             # Fallback to global mode
             if hasattr(self.config, "trading_mode"):
@@ -140,11 +146,13 @@ class MarketDataConnector:
             if mode in ["live", "hybrid_live_data_testnet_exec"]:
                 env = getattr(bapi, "live", None)
                 self.data_source_tag = "live"
-                LOG.info("MarketDataConnector is configured to use LIVE data source.")
+                LOG.info(
+                    "MarketDataConnector is configured to use LIVE data source.")
             else:
                 env = getattr(bapi, "testnet", None)
                 self.data_source_tag = "testnet"
-                LOG.info("MarketDataConnector is configured to use TESTNET data source.")
+                LOG.info(
+                    "MarketDataConnector is configured to use TESTNET data source.")
 
             if env is not None:
                 api_key = getattr(env, "api_key", None)
@@ -152,14 +160,17 @@ class MarketDataConnector:
                 rest_url = getattr(env, "rest_url", None)
         elif isinstance(self.config, dict):
             bapi = self.config.get("binance_api", {})
-            env_dict = bapi.get("live", {}) if mode in ["live", "hybrid_live_data_testnet_exec"] else bapi.get("testnet", {})
-            self.data_source_tag = "live" if mode in ["live", "hybrid_live_data_testnet_exec"] else "testnet"
+            env_dict = bapi.get("live", {}) if mode in [
+                "live", "hybrid_live_data_testnet_exec"] else bapi.get("testnet", {})
+            self.data_source_tag = "live" if mode in [
+                "live", "hybrid_live_data_testnet_exec"] else "testnet"
             api_key = env_dict.get("api_key")
             api_secret = env_dict.get("api_secret")
             rest_url = env_dict.get("rest_url")
 
         if not all([api_key, api_secret, rest_url]):
-            raise ValueError(f"API configuration for '{mode}' mode is incomplete.")
+            raise ValueError(
+                f"API configuration for '{mode}' mode is incomplete.")
 
         self.adapter = BinanceAdapter(
             api_key=str(api_key),
@@ -361,6 +372,18 @@ class MarketDataConnector:
     def _emit_market_tick(self, symbol: str, tick: dict[str, Any]) -> None:
         """Emit a market tick event with real feature data."""
         try:
+            # Debug: Log what we actually received
+            LOG.debug(f"🔍 Tick data for {symbol}: {tick}")
+
+            # Defensive: Check required keys exist
+            required_keys = ["ts", "price", "bid", "ask", "mid", "bid_size",
+                             "ask_size", "buy_volume", "sell_volume", "data_source"]
+            missing_keys = [key for key in required_keys if key not in tick]
+            if missing_keys:
+                LOG.error(
+                    f"❌ Tick data missing required keys for {symbol}: {missing_keys}. Available keys: {list(tick.keys())}")
+                return
+
             payload = {
                 "ts": tick["ts"],
                 "symbol": symbol,
@@ -374,7 +397,7 @@ class MarketDataConnector:
                 "sell_volume": tick["sell_volume"],  # ✅ NOW REAL!
                 "data_type": "market_tick_aggregated",
                 "data_source": tick["data_source"],
-                "debug_info": f"BID/ASK: {tick['bid_ask_count']}, Trades: {tick['trade_count']}",
+                "debug_info": f"BID/ASK: {tick.get('bid_ask_count', 'N/A')}, Trades: {tick.get('trade_count', 'N/A')}",
             }
 
             self.fsm.emit(
@@ -386,8 +409,8 @@ class MarketDataConnector:
             LOG.info(
                 f"📊 {symbol} Tick: bid={tick['bid_size']}@{tick['bid']}, "
                 f"ask={tick['ask_size']}@{tick['ask']}, "
-                f"trades: BUY={tick['trade_count'].split(':')[1].split()[0]} "
-                f"SELL={tick['trade_count'].split(':')[2]}"
+                f"trades: BUY={tick.get('trade_count', 'N/A').split(':')[1].split()[0] if tick.get('trade_count') else 'N/A'} "
+                f"SELL={tick.get('trade_count', 'N/A').split(':')[2] if tick.get('trade_count') else 'N/A'}"
             )
 
         except Exception as e:

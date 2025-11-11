@@ -745,6 +745,258 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         return backoff_ms
 
+    def _get_fallback_backoff_ms(self) -> List[int]:
+        """
+        Get fallback retry backoff configuration for get_open_positions.
+
+        PHASE P0: Added for fallback mode retry/backoff on empty API responses.
+        Uses trading.execution.fallback.backoff_ms or defaults to [200, 500, 1000] ms.
+
+        Returns:
+            List of backoff times in milliseconds
+        """
+        # Get backoff config (default: [200, 500, 1000] ms for fallback)
+        try:
+            config = self.config if hasattr(self, 'config') else {}
+            if isinstance(config, dict):
+                backoff_list = config.get("trading", {}).get("execution", {}).get(
+                    "fallback", {}).get("backoff_ms", [200, 500, 1000])
+            else:
+                # Try Pydantic config
+                backoff_list = getattr(
+                    config.trading.execution.fallback,
+                    "backoff_ms",
+                    [200, 500, 1000]
+                ) if hasattr(config, 'trading') and hasattr(config.trading, 'execution') and hasattr(config.trading.execution, 'fallback') else [200, 500, 1000]
+        except:
+            backoff_list = [200, 500, 1000]
+
+        return backoff_list
+
+    async def get_open_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        PHASE P0: Get open positions from Binance with retry/backoff for empty responses.
+
+        Implements fallback mode safety: if API returns empty positions when we expect data,
+        enters fallback mode and applies configured policy (fail-closed or risk reduction).
+
+        Args:
+            symbol: Optional symbol filter. If provided, returns positions for that symbol only.
+
+        Returns:
+            List of position dicts from Binance API
+        """
+        if self.shadow_mode:
+            logger.info(
+                "[BinanceAdapter] Shadow mode: returning empty positions")
+            return []
+
+        try:
+            # Get fallback backoff configuration
+            backoff_ms = self._get_fallback_backoff_ms()
+            max_attempts = len(backoff_ms) + 1  # +1 for initial attempt
+            attempt = 0
+
+            while attempt < max_attempts:
+                attempt += 1
+                try:
+                    # Sync time with server
+                    self._sync_time_with_server()
+
+                    # Build signed request
+                    base_url = BASE_URL
+                    endpoint = "/fapi/v2/positionRisk"
+
+                    params = {"timestamp": int(time.time() * 1000)}
+                    signed_params = self._get_signed_params(params)
+
+                    headers = {"X-MBX-APIKEY": self.api_key}
+
+                    url = f"{base_url}{endpoint}"
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(url, params=signed_params, headers=headers, timeout=10)
+
+                        if response.status_code == 200:
+                            positions = response.json()
+
+                            # Filter by symbol if requested
+                            if symbol:
+                                positions = [p for p in positions if p.get(
+                                    "symbol") == symbol]
+
+                            # Check for empty positions when we might expect data
+                            if not positions and attempt == 1:
+                                logger.warning(
+                                    f"[BinanceAdapter] get_open_positions returned empty list (attempt {attempt}/{max_attempts})"
+                                )
+                                # Continue to retry/backoff logic below
+                            else:
+                                # Success - return positions
+                                logger.debug(
+                                    f"[BinanceAdapter] get_open_positions success: {len(positions)} positions"
+                                )
+                                return positions
+
+                        else:
+                            error_msg = f"HTTP {response.status_code}: {response.text}"
+                            logger.error(
+                                f"[BinanceAdapter] get_open_positions failed: {error_msg}"
+                            )
+                            # Don't retry on HTTP errors, just return empty
+                            return []
+
+                except Exception as e:
+                    logger.error(
+                        f"[BinanceAdapter] get_open_positions attempt {attempt} error: {e}"
+                    )
+
+                # If we got here, either empty response or error
+                if attempt < max_attempts:
+                    # Apply backoff before retry
+                    backoff_sec = backoff_ms[attempt - 1] / 1000.0
+                    logger.info(
+                        f"[BinanceAdapter] get_open_positions retrying in {backoff_ms[attempt - 1]}ms (attempt {attempt + 1}/{max_attempts})"
+                    )
+                    await asyncio.sleep(backoff_sec)
+                else:
+                    # Exhausted retries - enter fallback mode
+                    logger.error(
+                        f"[BinanceAdapter] get_open_positions exhausted {max_attempts} attempts, entering fallback mode"
+                    )
+
+                    # Enter fallback mode in ExposureGuard if available
+                    if hasattr(self, 'fsm') and self.fsm and hasattr(self.fsm, 'exposure_guard'):
+                        try:
+                            self.fsm.exposure_guard.enter_fallback_mode(
+                                "API_POSITIONS_EMPTY")
+                            logger.warning(
+                                "[BinanceAdapter] Entered fallback mode due to empty positions API response"
+                            )
+                        except Exception as fb_e:
+                            logger.error(
+                                f"[BinanceAdapter] Failed to enter fallback mode: {fb_e}"
+                            )
+
+                    # Return empty list as final fallback
+                    return []
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceAdapter] get_open_positions fatal error: {e}")
+            return []
+
+    async def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get open orders from Binance with retry/backoff for empty responses.
+
+        Implements fallback mode safety: if API returns empty orders when we expect data,
+        enters fallback mode and applies configured policy (fail-closed or risk reduction).
+
+        Args:
+            symbol: Optional symbol filter. If provided, returns orders for that symbol only.
+
+        Returns:
+            List of open order dicts from Binance API
+        """
+        if self.shadow_mode:
+            logger.info("[BinanceAdapter] Shadow mode: returning empty orders")
+            return []
+
+        try:
+            # Get fallback backoff configuration
+            backoff_ms = self._get_fallback_backoff_ms()
+            max_attempts = len(backoff_ms) + 1  # +1 for initial attempt
+            attempt = 0
+
+            while attempt < max_attempts:
+                attempt += 1
+                try:
+                    # Sync time with server
+                    self._sync_time_with_server()
+
+                    # Build signed request
+                    base_url = BASE_URL
+                    endpoint = "/fapi/v1/openOrders"
+
+                    params = {"timestamp": int(time.time() * 1000)}
+                    if symbol:
+                        params["symbol"] = symbol
+
+                    signed_params = self._get_signed_params(params)
+                    headers = {"X-MBX-APIKEY": self.api_key}
+
+                    url = f"{base_url}{endpoint}"
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(url, params=signed_params, headers=headers, timeout=10)
+
+                        if response.status_code == 200:
+                            orders = response.json()
+
+                            # Filter by symbol if requested (additional filtering)
+                            if symbol:
+                                orders = [o for o in orders if o.get(
+                                    "symbol") == symbol]
+
+                            # Check for empty orders when we might expect data
+                            if not orders and attempt == 1:
+                                logger.warning(
+                                    f"[BinanceAdapter] get_open_orders returned empty list (attempt {attempt}/{max_attempts})"
+                                )
+                                # Continue to retry/backoff logic below
+                            else:
+                                # Success - return orders
+                                logger.debug(
+                                    f"[BinanceAdapter] get_open_orders success: {len(orders)} orders"
+                                )
+                                return orders
+
+                        else:
+                            error_msg = f"HTTP {response.status_code}: {response.text}"
+                            logger.error(
+                                f"[BinanceAdapter] get_open_orders failed: {error_msg}"
+                            )
+                            # Don't retry on HTTP errors, just return empty
+                            return []
+
+                except Exception as e:
+                    logger.error(
+                        f"[BinanceAdapter] get_open_orders attempt {attempt} error: {e}"
+                    )
+
+                # If we got here, either empty response or error
+                if attempt < max_attempts:
+                    # Apply backoff before retry
+                    backoff_sec = backoff_ms[attempt - 1] / 1000.0
+                    logger.info(
+                        f"[BinanceAdapter] get_open_orders retrying in {backoff_ms[attempt - 1]}ms (attempt {attempt + 1}/{max_attempts})"
+                    )
+                    await asyncio.sleep(backoff_sec)
+                else:
+                    # Exhausted retries - enter fallback mode
+                    logger.error(
+                        f"[BinanceAdapter] get_open_orders exhausted {max_attempts} attempts, entering fallback mode"
+                    )
+
+                    # Enter fallback mode in ExposureGuard if available
+                    if hasattr(self, 'fsm') and self.fsm and hasattr(self.fsm, 'exposure_guard'):
+                        try:
+                            self.fsm.exposure_guard.enter_fallback_mode(
+                                "API_ORDERS_EMPTY")
+                            logger.warning(
+                                "[BinanceAdapter] Entered fallback mode due to empty orders API response"
+                            )
+                        except Exception as fb_e:
+                            logger.error(
+                                f"[BinanceAdapter] Failed to enter fallback mode: {fb_e}"
+                            )
+
+                    # Return empty list as final fallback
+                    return []
+
+        except Exception as e:
+            logger.error(f"[BinanceAdapter] get_open_orders fatal error: {e}")
+            return []
+
     def _sync_time_with_server(self) -> None:
         """
         Synchronize local time with Binance server time.

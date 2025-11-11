@@ -424,11 +424,17 @@ class DecisionMaking:
 
         self._normalize_signals: bool = bool(normalize_val)
 
+        # Exposure cache for pre-checking exposure limits
+        self._exposure_cache: Optional[Dict[str, Any]] = None
+        self._exposure_cache_timestamp: float = 0.0
+
         # FSM event listeners
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features)
         self.fsm.listen("EVT:RISK_ASSESSMENT_COMPLETED", self.on_risk)
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", self.on_portfolio)
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
+        self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED",
+                        self.update_exposure_cache)
 
     def _qos_allow(
         self, symbol: str, is_exposure_block: bool = False
@@ -1635,6 +1641,32 @@ class DecisionMaking:
                 "price_ref": str(price_ref),
             },
         )
+
+        # ✅ EXPOSURE_CACHE_PRECHECK: Check exposure limits before proposing intent
+        notional_usd = float(qty * price_ref)
+        if not self._precheck_exposure_cache(symbol, side, notional_usd):
+            reject_reason = "exposure_limit_exceeded_cache_precheck"
+            normalized_reason = NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED
+            self.logger.warning(
+                f"[{symbol}] Trade intent rejected by exposure cache precheck: {reject_reason} (NRR: {normalized_reason})"
+            )
+
+            # Log to OrderLoggerV1
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": side.upper(),
+                "quantity": float(qty),
+                "nrr_code": "NRR-011",
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "EXPOSURE_CACHE_BLOCK", "notional_usd": notional_usd}
+            })
+
+            self.clear_internal_state_for_symbol(symbol)
+            return
+
         self._propose_trade_intent(
             symbol, side, qty, price_ref, why_chain, rid
         )
@@ -1713,6 +1745,32 @@ class DecisionMaking:
                     base_notional = base_notional * regime_multiplier
             except Exception:
                 pass
+
+            # Apply volatility-based multiplier to SL_bps for adaptive sizing
+            volatility_multiplier = decimal.Decimal(
+                "1.0")  # Default multiplier
+            volatility_state = sizing_meta.get("volatility_state")
+            if volatility_state == "HIGH_VOL":
+                volatility_multiplier = decimal.Decimal("1.4")
+            elif volatility_state == "LOW_VOL":
+                volatility_multiplier = decimal.Decimal("0.8")
+            # else: keep default 1.0 for other states
+
+            # Recalculate with adjusted SL_bps
+            adjusted_sl_bps = sl_bps_dec * volatility_multiplier
+            adjusted_denom = (adjusted_sl_bps / decimal.Decimal("10000")
+                              ) if adjusted_sl_bps else decimal.Decimal("0.005")
+            adjusted_q_notional = (q_dec * equity / adjusted_denom)
+            if isinstance(kelly_fraction, decimal.Decimal) and kelly_fraction > 0:
+                adjusted_kelly_notional = kelly_fraction * equity
+                base_notional = min(adjusted_q_notional,
+                                    adjusted_kelly_notional)
+            else:
+                base_notional = adjusted_q_notional
+
+            self.logger.debug(
+                f"[{symbol}] SL_BPS_ADJUSTED: base={sl_bps_dec}, multiplier={volatility_multiplier}, final={adjusted_sl_bps}")
+
             # Apply liquidity kappa at the end
             try:
                 kappa_dec = decimal.Decimal(str(kappa_liq))
@@ -1723,7 +1781,7 @@ class DecisionMaking:
             if final_pos_size_usd > self.liq_cap_usd:
                 final_pos_size_usd = self.liq_cap_usd
             why_parts.append(
-                f"sizing=slbps q={q_dec} sl_bps={sl_bps_dec} m_regime={sizing_meta.get('regime_multiplier','1.0')} kappa={kappa_dec}")
+                f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={sizing_meta.get('regime_multiplier','1.0')} m_vol={volatility_multiplier} kappa={kappa_dec}")
         else:
             final_pos_size_usd = min(
                 self.liq_cap_usd, equity * decimal.Decimal("0.1")
@@ -1920,3 +1978,61 @@ class DecisionMaking:
     def stop(self) -> None:
         """Stop the decision making component."""
         self.logger.info("DecisionMaking stopped")
+
+    def update_exposure_cache(self, event: Message) -> None:
+        """Update exposure cache from EVT:EXPOSURE_SUMMARY_UPDATED events."""
+        try:
+            payload = event.pld or {}
+            exposure_summary = payload.get("exposure_summary", {})
+            if exposure_summary:
+                self._exposure_cache = exposure_summary
+                self._exposure_cache_timestamp = time.time()
+                self.logger.debug(
+                    f"✅ Exposure cache updated: {len(exposure_summary)} symbols")
+        except Exception as e:
+            self.logger.warning(f"Failed to update exposure cache: {e}")
+
+    def _precheck_exposure_cache(self, symbol: str, side: str, notional_usd: float) -> bool:
+        """
+        Pre-check exposure limits using cached exposure summary.
+
+        Returns True if trade should be allowed, False if blocked by exposure limits.
+        """
+        if not self._exposure_cache:
+            # No cache available, allow trade (fail-open for safety)
+            return True
+
+        try:
+            # Check if cache is stale (older than 30 seconds)
+            cache_age = time.time() - self._exposure_cache_timestamp
+            if cache_age > 30.0:
+                self.logger.debug(
+                    f"Exposure cache stale ({cache_age:.1f}s), allowing trade")
+                return True
+
+            # Get exposure data for symbol
+            symbol_exposure = self._exposure_cache.get(symbol, {})
+            current_exposure = symbol_exposure.get("current_exposure_usd", 0.0)
+            max_exposure = symbol_exposure.get(
+                "max_exposure_usd", float('inf'))
+
+            # Calculate projected exposure after this trade
+            projected_exposure = current_exposure + notional_usd
+
+            if projected_exposure > max_exposure:
+                self.logger.info(
+                    f"[{symbol}] EXPOSURE_CACHE_BLOCK: projected={projected_exposure:.2f} > max={max_exposure:.2f}, "
+                    f"blocking {side.upper()} trade"
+                )
+                return False
+
+            self.logger.debug(
+                f"[{symbol}] EXPOSURE_CACHE_ALLOW: current={current_exposure:.2f}, "
+                f"projected={projected_exposure:.2f}, max={max_exposure:.2f}"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.warning(
+                f"Error in exposure cache precheck: {e}, allowing trade")
+            return True

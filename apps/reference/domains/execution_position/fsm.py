@@ -246,6 +246,17 @@ class ExecPosFSM:
         except (AttributeError, TypeError):
             watchdog_config = None
 
+        # Fallback to trading.watchdog if execution.watchdog is not available
+        if watchdog_config is None or not watchdog_config:
+            try:
+                if hasattr(self.config, 'trading') and self.config.trading:
+                    watchdog_config = self.config.trading.watchdog
+                elif isinstance(self.config, dict):
+                    watchdog_config = self.config.get(
+                        "trading", {}).get("watchdog", {})
+            except (AttributeError, TypeError):
+                watchdog_config = {}
+
         if watchdog_config is None:
             watchdog_config = {}
 
@@ -260,6 +271,35 @@ class ExecPosFSM:
 
         ack_ttl_ms: int = int(get_watchdog_setting("ack_ttl_ms", 8000))
         fill_ttl_ms: int = int(get_watchdog_setting("fill_ttl_ms", 30000))
+
+        # Log TTL configuration source and values
+        ttl_source = "execution.watchdog"
+        if watchdog_config is None or not watchdog_config:
+            ttl_source = "trading.watchdog"
+        elif hasattr(self.config, 'trading') and self.config.trading and hasattr(self.config.trading, 'orders') and self.config.trading.orders:
+            # Check if override was applied
+            try:
+                orders_cfg = None
+                if hasattr(self.config, 'trading') and self.config.trading:
+                    tr = self.config.trading if isinstance(
+                        self.config.trading, dict) else self.config.trading
+                    orders_cfg = tr.get("orders") if isinstance(
+                        tr, dict) else getattr(tr, "orders", None)
+                if orders_cfg:
+                    default_ttl_seconds = None
+                    if isinstance(orders_cfg, dict):
+                        default_ttl_seconds = orders_cfg.get(
+                            "default_ttl_seconds")
+                    else:
+                        default_ttl_seconds = getattr(
+                            orders_cfg, "default_ttl_seconds", None)
+                    if default_ttl_seconds is not None:
+                        ttl_source = "trading.orders.default_ttl_seconds"
+            except Exception:
+                pass
+
+        LOG.info(
+            f"ExecPosFSM TTL config: ack_ttl_ms={ack_ttl_ms}, fill_ttl_ms={fill_ttl_ms}, source={ttl_source}")
 
         # Optional override from trading.orders.default_ttl_seconds (Balanced profile)
         try:
@@ -294,6 +334,9 @@ class ExecPosFSM:
             on_timeout_callback=self._handle_order_timeout
         )
 
+        # Initialize processed events tracking for idempotent WS/REST handling
+        self._processed_events: Set[str] = set()
+
         # Initialize AlertManager for circuit breaker alerts
         self.alert_manager: Optional[AlertManager] = None
         if ALERT_MANAGER_AVAILABLE:
@@ -307,6 +350,39 @@ class ExecPosFSM:
 
         if not self.shadow_mode:
             self._initialize_adapter()
+            # 🔧 POLLING FIX: Connect Watchdog hooks to adapter functions after initialization
+            if hasattr(self.watchdog, 'set_hooks') and self.adapter:
+                async def emit_trade_executed(event_name, payload, why="polling_fill"):
+                    """Emit TRADE_EXECUTED event via FSM event system."""
+                    try:
+                        verb = event_name.split(
+                            ":")[1] if ":" in event_name else event_name
+
+                        # Build kwargs for Message, only include rid if present
+                        msg_kwargs = {
+                            "op": "EVT",
+                            "verb": verb,
+                            "src": "execution_position",
+                            "dst": "execution_position",
+                            "pld": payload,
+                            "why": why
+                        }
+
+                        # Only add rid if it's present and not None
+                        if payload.get("rid") is not None:
+                            msg_kwargs["rid"] = payload["rid"]
+
+                        msg = Message(**msg_kwargs)
+                        await emit_compat(self.fsm, msg, logger=LOG)
+                    except Exception as e:
+                        LOG.error(f"Failed to emit {event_name}: {e}")
+
+                self.watchdog.set_hooks(
+                    get_order_fn=self.adapter.get_order,
+                    emit_fn=emit_trade_executed
+                )
+                LOG.info(
+                    "✅ Watchdog REST polling hooks connected to adapter functions")
             # Initialize OrderGuardian for TP/SL cleanup with strict ownership tracking
             # Get poll_interval_ms from config
             poll_interval_ms = self._guardian_poll_interval_ms or 500
@@ -595,6 +671,30 @@ class ExecPosFSM:
         # EXP-LEVERAGE-001: Update exposure guard with latest portfolio state
         self.exposure_guard.on_portfolio(self._latest_portfolio_state)
 
+        # ✅ EVT:EXPOSURE_SUMMARY_UPDATED: Emit exposure summary after portfolio update
+        try:
+            exposure_summary = self.exposure_guard.get_exposure_summary()
+            exposure_msg = Message(
+                op="EVT",
+                verb="EXPOSURE_SUMMARY_UPDATED",
+                src="execution_position",
+                dst="decision_making",
+                rid="portfolio_update",
+                pld={
+                    "exposure_summary": exposure_summary,
+                    "portfolio_state": self._latest_portfolio_state,
+                    "timestamp_ms": int(time.time() * 1000)
+                },
+                why="exposure_summary_updated_after_portfolio_change",
+            )
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(
+                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
+                )
+        except Exception as e:
+            LOG.debug(f"Failed to emit exposure summary update: {e}")
+
         # ✅ FIX: Check for position closures and trigger orphan cleanup
         # When position becomes 0, TP/SL orders become orphaned and need cleanup
         try:
@@ -686,6 +786,14 @@ class ExecPosFSM:
                 f"[ACK] Missing orderId or symbol in ACK event: {payload}")
             return
 
+        # 🔄 IDEMPOTENT: Check if this event was already processed
+        event_key = f"ack_{order_id}_{symbol}"
+        if event_key in self._processed_events:
+            LOG.debug(
+                f"[ACK] Skipping duplicate ACK for {symbol} order {order_id}")
+            return
+        self._processed_events.add(event_key)
+
         LOG.debug(
             f"[ACK] Processing ACK for {symbol} order {order_id} (rid={rid})")
 
@@ -712,6 +820,14 @@ class ExecPosFSM:
                 f"[FILL] Missing orderId, symbol or quantity in FILL event: {payload}")
             return
 
+        # 🔄 IDEMPOTENT: Check if this event was already processed
+        event_key = f"fill_{order_id}_{symbol}"
+        if event_key in self._processed_events:
+            LOG.debug(
+                f"[FILL] Skipping duplicate FILL for {symbol} order {order_id}")
+            return
+        self._processed_events.add(event_key)
+
         LOG.debug(
             f"[FILL] Processing FILL for {symbol} order {order_id}, qty={filled_qty} (rid={rid})")
 
@@ -727,9 +843,40 @@ class ExecPosFSM:
             LOG.debug(f"[FILL] Created postfill hold for {postfill_key}")
 
         # Best-effort cleanup of orphaned brackets in case this fill closed the position
+        # Debounce: wait 500ms to allow TP/SL registration before cleanup
         loop = self._get_async_loop()
         if loop:
-            self._submit_async(self.order_guardian.cleanup_orphans(), loop)
+            async def delayed_cleanup():
+                await asyncio.sleep(0.5)
+                await self.order_guardian.cleanup_orphans()
+            self._submit_async(delayed_cleanup(), loop)
+
+        # ✅ EVT:EXPOSURE_SUMMARY_UPDATED: Emit exposure summary after fill
+        try:
+            exposure_summary = self.exposure_guard.get_exposure_summary()
+            exposure_msg = Message(
+                op="EVT",
+                verb="EXPOSURE_SUMMARY_UPDATED",
+                src="execution_position",
+                dst="decision_making",
+                rid=rid or f"fill_{order_id}",
+                pld={
+                    "exposure_summary": exposure_summary,
+                    "fill_order_id": order_id,
+                    "fill_symbol": symbol,
+                    "fill_quantity": filled_qty,
+                    "timestamp_ms": int(time.time() * 1000)
+                },
+                why="exposure_summary_updated_after_fill",
+            )
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(
+                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
+                )
+        except Exception as e:
+            LOG.debug(
+                f"Failed to emit exposure summary update after fill: {e}")
 
     def shutdown(self):
         """Shutdown the FSM and cleanup resources."""
@@ -934,14 +1081,13 @@ class ExecPosFSM:
             if self._check_exposure_fail_closed(msg):
                 return None  # Error already emitted
             result = open_flow.handle(msg)
-        elif msg.verb in ["PARTIAL_FILL", "FILL", "TRADE_EXECUTED", "ORDER_UPDATED"]:
-            manage_result = manage_flow.handle(msg)
-            close_result = close_flow.handle(msg)
-            result = manage_result if manage_result else close_result
+        elif msg.verb == "ORDER_STATE_CHANGED":
+            # Handle cancel/expire from Watchdog REST polling
+            self._handle_cancel_event(msg)
 
-            # EXP-FIX: Handle post-fill hold for FILLED orders
-            if msg.verb == "FILL" and result:
-                self._handle_fill_event(msg)
+        elif msg.verb == "ORDER_CANCELLED":
+            # EXP-FIX: Handle order cancellation for exposure summary update
+            self._handle_cancel_event(msg)
 
         elif msg.verb == "CLOSE":
             # ✅ FIX: Set closing flag immediately on CMD:CLOSE to prevent bracket race
@@ -1585,6 +1731,19 @@ class ExecPosFSM:
                     rid=decision.rid
                 )
 
+                # After registering new brackets, proactively cancel any older
+                # brackets tied to previous entries for this symbol. This
+                # prevents accumulation of hanging reduceOnly/closePosition orders
+                # when multiple entries occur sequentially.
+                try:
+                    await self.order_guardian.cleanup_other_brackets_for_symbol(
+                        symbol,
+                        keep_parent_order_id=str(entry_resp.get("orderId", "")),
+                    )
+                except Exception as _e:
+                    LOG.debug(
+                        f"OrderGuardian cleanup_other_brackets_for_symbol skipped: {_e}")
+
             # ✅ NEW: Sync bracket IDs with ManageFlowFSM for OCO emulation
             # Ensures ManageFlowFSM has accurate tracking even if WebSocket events are delayed
             manage_flow = self.manage_flows.get(symbol)
@@ -2066,11 +2225,95 @@ class ExecPosFSM:
         except Exception as e:
             LOG.error(f"FILL_HANDLE_ERROR: {e}", exc_info=True)
 
+        # ✅ EVT:EXPOSURE_SUMMARY_UPDATED: Emit exposure summary after fill
+        try:
+            exposure_summary = self.exposure_guard.get_exposure_summary()
+            exposure_msg = Message(
+                op="EVT",
+                verb="EXPOSURE_SUMMARY_UPDATED",
+                src="execution_position",
+                dst="decision_making",
+                rid=pld.get("rid") or msg.rid or f"fill_{reserve_key}",
+                pld={
+                    "exposure_summary": exposure_summary,
+                    "fill_order_id": pld.get("order_id"),
+                    "fill_symbol": pld.get("symbol"),
+                    "fill_quantity": qty,
+                    "timestamp_ms": int(time.time() * 1000)
+                },
+                why="exposure_summary_updated_after_fill",
+            )
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(
+                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
+                )
+        except Exception as e:
+            LOG.debug(
+                f"Failed to emit exposure summary update after fill: {e}")
+
         # Notify watchdog of order fill
         order_id = pld.get("order_id")
         if order_id:
             self.watchdog.ensure_started()  # Safe late-start if needed
             self.watchdog.on_order_fill(order_id)
+
+    def _handle_cancel_event(self, msg: Message) -> None:
+        """
+        EXP-FIX: Handle order cancellation events for exposure summary update.
+
+        Emits EVT:EXPOSURE_SUMMARY_UPDATED after order cancellation to ensure
+        exposure monitoring stays current.
+        """
+        pld = msg.pld or {}
+        symbol = pld.get("symbol")
+        order_id = pld.get("order_id") or pld.get("orderId")
+        client_order_id = pld.get("client_order_id")
+
+        LOG.info(
+            f"CANCEL_EVENT: Processing cancellation for {symbol} order {order_id}")
+
+        # Emit exposure summary update after cancellation
+        try:
+            from vfoundation import emit_compat
+            from vfoundation.message import Message
+
+            exposure_msg = Message(
+                op="EVT",
+                verb="EXPOSURE_SUMMARY_UPDATED",
+                src="execution_position",
+                dst="monitoring",
+                rid=pld.get("rid") or msg.rid or f"cancel_{order_id}",
+                pld={
+                    "symbol": symbol,
+                    "order_id": order_id,
+                    "client_order_id": client_order_id,
+                    "reason": "order_cancelled",
+                    "timestamp": int(time.time() * 1000)
+                },
+                why="order_cancelled_exposure_update",
+            )
+
+            # Emit asynchronously
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(
+                    self._emit_exposure_update_async(exposure_msg), loop)
+            else:
+                LOG.warning(
+                    "No event loop available for cancel exposure update")
+
+        except Exception as e:
+            LOG.error(
+                f"CANCEL_EVENT_ERROR: Failed to emit exposure update for {order_id}: {e}")
+
+    async def _emit_exposure_update_async(self, msg: Message) -> None:
+        """Asynchronously emit exposure update event."""
+        try:
+            from vfoundation import emit_compat
+            await emit_compat(self.fsm, msg, logger=getattr(self, "logger", None))
+        except Exception as e:
+            LOG.exception(f"Failed to emit exposure update event: {e}")
 
     async def _check_shadow_notional(self) -> None:
         """
@@ -2346,7 +2589,6 @@ class ExecPosFSM:
                     for symbol in symbols_with_positions:
                         await self.order_guardian.link_existing_from_rest(symbol)
                         LOG.debug(f"✅ Linked existing orders for {symbol}")
-                        await self.order_guardian.cleanup_orphans(symbol=symbol)
 
                     LOG.info(
                         f"✅ Linked existing orders for {len(symbols_with_positions)} symbols")

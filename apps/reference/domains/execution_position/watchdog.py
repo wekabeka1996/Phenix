@@ -66,6 +66,53 @@ class OrderTimeoutWatchdog:
         self.cancel_attempt_count = 0
         self.cancel_success_count = 0
 
+        # 🔧 POLLING FIX: REST polling infrastructure
+        self.get_order_fn = None  # Will be set via set_hooks()
+        self.emit_fn = None  # Will be set via set_hooks()
+        # order_id -> poll metadata
+        self._poll_meta: Dict[str, Dict[str, Any]] = {}
+        self._rest_polls_total = 0
+        self._rest_detected_fills_total = 0
+        self._rest_detected_cancels_total = 0
+
+        # 🔧 POLLING FIX: Global RPS throttle for REST polling
+        self._rps_limit = 10  # Max 10 requests per second globally
+        self._rps_window_start = 0
+        self._rps_request_count = 0
+        self._rps_throttle_hits = 0
+
+    def set_hooks(self, get_order_fn, emit_fn) -> None:
+        """
+        🔧 POLLING FIX: Connect REST polling hooks to adapter functions.
+
+        Enables proactive REST polling for fill detection when WebSocket is unavailable.
+        """
+        self.get_order_fn = get_order_fn
+        self.emit_fn = emit_fn
+        LOG.info("✅ OrderTimeoutWatchdog REST polling hooks connected")
+
+    def _check_rps_limit(self) -> bool:
+        """
+        🔧 POLLING FIX: Check global RPS limit for REST polling.
+
+        Returns True if request is allowed, False if throttled.
+        """
+        current_time_ms = int(time.time() * 1000)
+        window_start = current_time_ms // 1000 * 1000  # Current second window
+
+        # Reset counter if we're in a new second
+        if window_start != self._rps_window_start:
+            self._rps_window_start = window_start
+            self._rps_request_count = 0
+
+        # Check if we're under the limit
+        if self._rps_request_count < self._rps_limit:
+            self._rps_request_count += 1
+            return True
+        else:
+            self._rps_throttle_hits += 1
+            return False
+
     def start(self) -> None:
         """
         Safe start: якщо немає running loop – нічого не робимо (відкладений старт).
@@ -197,9 +244,168 @@ class OrderTimeoutWatchdog:
             if current_time_ms >= deadline.deadline_ms
         ]
 
+        # 🔧 POLLING FIX: Proactive REST polling for fill detection
+        # Poll orders based on their individual backoff schedules
+        if self.get_order_fn:
+            await self._poll_order_statuses()
+
         # Handle expired orders
         for deadline in expired_pending + expired_acked:
             await self._handle_timeout(deadline)
+
+    async def _poll_order_statuses(self) -> None:
+        """
+        🔧 POLLING FIX: Proactive REST polling for fill detection.
+
+        Polls order status via REST API to detect fills that WebSocket might have missed.
+        Reduces false ORDER_TIMEOUT by providing secondary fill detection.
+        """
+        if not self.get_order_fn:
+            return
+
+        try:
+            # Get all tracked order IDs
+            tracked_order_ids = set(self.pending_orders.keys()) | set(
+                self.acked_orders.keys())
+            if not tracked_order_ids:
+                return
+
+            current_time_ms = int(time.time() * 1000)
+
+            # Poll each tracked order individually
+            for order_id in tracked_order_ids:
+                # Get poll metadata for this order
+                meta = self._poll_meta.get(order_id, {
+                    'next_poll_at': 0,
+                    'attempts': 0,
+                    'backoff_ms': 1000  # Start with 1 second backoff
+                })
+
+                # Check if we should poll this order (respect backoff)
+                if current_time_ms < meta['next_poll_at']:
+                    continue
+
+                # Get symbol for this order
+                symbol = None
+                if order_id in self.pending_orders:
+                    symbol = self.pending_orders[order_id].symbol
+                elif order_id in self.acked_orders:
+                    symbol = self.acked_orders[order_id].symbol
+
+                if not symbol:
+                    continue
+
+                try:
+                    # Check global RPS limit before making request
+                    if not self._check_rps_limit():
+                        LOG.debug(
+                            f"🔧 POLLING THROTTLED: RPS limit hit for {order_id}")
+                        continue
+
+                    self._rest_polls_total += 1
+                    order_status = await self.get_order_fn(symbol, order_id)
+
+                    if order_status:
+                        status = str(order_status.get("status", "")).upper()
+                        executed_qty = float(
+                            order_status.get("executedQty", 0))
+
+                        if status == "FILLED" and executed_qty > 0:
+                            # Check if already processed (idempotency)
+                            if meta.get('terminal', False):
+                                LOG.debug(
+                                    f"🔧 POLLING SKIP: {order_id} already processed (terminal=True)")
+                                continue
+
+                            # Order was filled! Notify via event emission
+                            LOG.info(
+                                f"🔧 POLLING DETECTED FILL: {order_id} ({symbol}) qty={executed_qty}")
+                            self._rest_detected_fills_total += 1
+
+                            # Emit TRADE_EXECUTED event instead of direct FSM call
+                            fill_payload = {
+                                "orderId": order_id,
+                                "symbol": symbol,
+                                "quantity": executed_qty,
+                                "price": float(order_status.get("avgPrice", 0)),
+                                "client_order_id": order_status.get("clientOrderId", ""),
+                                "rid": None  # Will be looked up from correlation store
+                            }
+
+                            if self.emit_fn:
+                                await self.emit_fn("EVT:TRADE_EXECUTED", fill_payload)
+
+                            # Mark as terminal to prevent duplicate processing
+                            meta['terminal'] = True
+                            # Reset backoff on success
+                            meta['attempts'] = 0
+                            meta['backoff_ms'] = 1000
+
+                        elif status in ("CANCELED", "REJECTED", "EXPIRED"):
+                            # Check if already processed (idempotency)
+                            if meta.get('terminal', False):
+                                LOG.debug(
+                                    f"🔧 POLLING SKIP: {order_id} already processed (terminal=True)")
+                                continue
+
+                            # Order was cancelled/expired, emit ORDER_STATE_CHANGED and remove from tracking
+                            LOG.debug(
+                                f"🔧 POLLING DETECTED CANCEL: {order_id} ({symbol}) status={status}")
+                            self._rest_detected_cancels_total += 1
+
+                            # Emit ORDER_STATE_CHANGED event for symmetry with TRADE_EXECUTED
+                            cancel_payload = {
+                                "orderId": order_id,
+                                "symbol": symbol,
+                                "status": status,
+                                "client_order_id": order_status.get("clientOrderId", ""),
+                                "rid": None  # Will be looked up from correlation store
+                            }
+
+                            if self.emit_fn:
+                                await self.emit_fn("EVT:ORDER_STATE_CHANGED", cancel_payload)
+
+                            self.on_order_cancel(order_id)
+
+                            # Mark as terminal to prevent duplicate processing
+                            meta['terminal'] = True
+                            # Reset backoff
+                            meta['attempts'] = 0
+                            meta['backoff_ms'] = 1000
+
+                        else:
+                            # Order still pending, increase backoff
+                            meta['attempts'] += 1
+                            # Exponential backoff, max 30s
+                            meta['backoff_ms'] = min(
+                                meta['backoff_ms'] * 2, 30000)
+
+                    else:
+                        # Order not found, might be cancelled
+                        LOG.debug(f"🔧 POLLING: Order {order_id} not found")
+                        # Check if already processed (idempotency)
+                        if not meta.get('terminal', False):
+                            self.on_order_cancel(order_id)
+                            meta['terminal'] = True
+                        # Reset backoff
+                        meta['attempts'] = 0
+                        meta['backoff_ms'] = 1000
+
+                    # Update next poll time
+                    meta['next_poll_at'] = current_time_ms + meta['backoff_ms']
+                    self._poll_meta[order_id] = meta
+
+                except Exception as e:
+                    LOG.debug(
+                        f"Error polling order {order_id} for {symbol}: {e}")
+                    # On error, increase backoff
+                    meta['attempts'] += 1
+                    meta['backoff_ms'] = min(meta['backoff_ms'] * 2, 30000)
+                    meta['next_poll_at'] = current_time_ms + meta['backoff_ms']
+                    self._poll_meta[order_id] = meta
+
+        except Exception as e:
+            LOG.debug(f"Error in REST polling: {e}")
 
     async def _handle_timeout(self, deadline: OrderDeadline):
         """Handle a timed-out order."""
@@ -235,4 +441,10 @@ class OrderTimeoutWatchdog:
             "cancel_successes": self.cancel_success_count,
             "ack_ttl_ms": self.ack_ttl_ms,
             "fill_ttl_ms": self.fill_ttl_ms,
+            # 🔧 POLLING FIX: REST polling metrics
+            "rest_polls_total": self._rest_polls_total,
+            "rest_detected_fills_total": self._rest_detected_fills_total,
+            "rest_detected_cancels_total": self._rest_detected_cancels_total,
+            "rps_throttle_hits": self._rps_throttle_hits,
+            "rps_limit": self._rps_limit,
         }

@@ -64,42 +64,47 @@ guardian:
   emit_tidy_event: true
   ledger_db_path: "data/order_ledger.db"
 
-# Exposure guard configuration (additive)
-trading:
-  execution:
-    # OrderGuardian centralized order/position monitor & cleanup
-    order_guardian:
-      poll_interval_ms: 500        # Polling interval for background cleanup (0 disables)
-      batch_limit: 50              # Max orders to cancel per cleanup operation
-      rate_limit_per_min: 120      # Global per-minute cancel rate limit across symbols (0 disables)
+      # Exposure guard configuration (additive)
+      trading:
+        execution:
+          # OrderGuardian centralized order/position monitor & cleanup
+          order_guardian:
+            poll_interval_ms: 500        # Polling interval for background cleanup (0 disables)
+            batch_limit: 50              # Max orders to cancel per cleanup operation
+            rate_limit_per_min: 120      # Global per-minute cancel rate limit across symbols (0 disables)
 
-    exposure:
-      # Increase stale TTL from 5s to 15s to handle slower portfolio updates
-      positions_stale_ttl_sec: 15
+          exposure:
+            # Increase stale TTL from 5s to 15s to handle slower portfolio updates
+            positions_stale_ttl_sec: 15
 
-      # Increase equity utilization from 20% to 30% to allow more exposure
-      max_equity_utilization_pct: "0.30"
+            # Increase equity utilization from 20% to 30% to allow more exposure
+            max_equity_utilization_pct: "0.30"
 
-      # Per-side utilization limits (increase from 12% to 15%)
-      max_side_utilization_pct:
-        long: "0.15"
-        short: "0.15"
+            # Per-side utilization limits (increase from 12% to 15%)
+            max_side_utilization_pct:
+              long: "0.15"
+              short: "0.15"
 
-      # Directional ratio control (allow up to 3:1 imbalance)
-      max_directional_ratio: "3.0"
+            # Directional ratio control (allow up to 3:1 imbalance)
+            max_directional_ratio: "3.0"
 
-      # Per-symbol concentration limit (8% of equity per symbol)
-      per_symbol_cap_pct: "0.08"
+            # Per-symbol concentration limit (8% of equity per symbol)
+            per_symbol_cap_pct: "0.08"
 
-      # Enable soft clipping instead of hard rejection
-      count_pending_orders: true
-      exclude_reduce_only: true
+            # Enable soft clipping instead of hard rejection
+            count_pending_orders: true
+            exclude_reduce_only: true
 
-  # Risk management with soft limits
-  risk:
-    soft_limits:
-      mode: "clip"  # "clip" or "reject"
-      clip_min_notional_usdt: 10.0
-      directional_ratio_max: 3.0
-      side_exposure_usdt: 600.0
-      margin_exposure_usdt: 1100.0
+          # Fallback mode configuration (PHASE P0)
+          fallback:
+            # Retry backoff for empty position API responses
+            backoff_ms: [200, 500, 1000]  # Retry delays in milliseconds
+
+      # Risk management with soft limits
+      risk:
+        soft_limits:
+          mode: "clip"  # "clip" or "reject"
+          clip_min_notional_usdt: 10.0
+          directional_ratio_max: 3.0
+          side_exposure_usdt: 600.0
+          margin_exposure_usdt: 1100.0

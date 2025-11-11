@@ -38,6 +38,7 @@ class AlertType(str, Enum):
     WAL_SIZE = "wal_size"
     SYSTEM_HEALTH = "system_health"
     TRADE_EXECUTION = "trade_execution"
+    MANUAL_INTERVENTION = "manual_intervention"
 
 
 @dataclass
@@ -134,7 +135,7 @@ class AlertManager:
             slack_payload = {
                 "attachments": [{
                     "color": color,
-                    "title": f"🚨 {alert.title}",
+                    "title": f"ALERT: {alert.title}",
                     "text": alert.message,
                     "fields": [
                         {"title": "Type", "value": alert.alert_type.value, "short": True},
@@ -176,8 +177,8 @@ class AlertManager:
             "alert_id": alert.alert_id,
             "level": alert.level.value,
             "type": alert.alert_type.value,
-            "title": alert.title,
-            "message": alert.message,
+            "title": f"{alert.title}",
+            "alert_message": alert.message,  # Renamed to avoid conflict with LogRecord.message
             "details": alert.details,
             "timestamp": alert.timestamp,
             "resolved": alert.resolved
@@ -310,6 +311,21 @@ class AlertManager:
                     "threshold_mb": self.wal_size_threshold_mb
                 }
             )
+
+    def check_manual_intervention(self, symbol: str, position_details: Dict[str, Any]) -> None:
+        """Check for manual intervention (position closed without system events) and raise alert."""
+        self.raise_alert(
+            level=AlertLevel.WARNING,
+            alert_type=AlertType.MANUAL_INTERVENTION,
+            title=f"Manual Position Intervention Detected: {symbol}",
+            message=f"Position {symbol} was closed manually without system events",
+            details={
+                "symbol": symbol,
+                "position_details": position_details,
+                "timestamp": time.time(),
+                "recommendation": "Review account activity and consider symbol cooldown"
+            }
+        )
 
     def get_active_alerts(self) -> Dict[str, Alert]:
         """Get all active (unresolved) alerts."""

@@ -57,6 +57,16 @@ class ExposureState:
     ]  # key -> {'notional': Decimal, 'exp_ts': float}
 
 
+@dataclass
+class FallbackState:
+    """PHASE P0: Fallback mode state management."""
+    active: bool = False
+    entered_at: Optional[float] = None
+    reason: Optional[str] = None
+    # 50% risk reduction in fallback mode
+    risk_reduction_pct: Decimal = Decimal("0.5")
+
+
 class ExposureGuard:
     """
     Exposure Guard with hard portfolio notional gate.
@@ -234,6 +244,10 @@ class ExposureGuard:
             self.soft_limit_config, logger=self.logger
         )
 
+        # PHASE P0: Fallback mode configuration and state
+        self.fallback_config = self._load_fallback_config()
+        self.fallback_state = FallbackState()
+
         # State
         self.state = ExposureState(
             reservations={},
@@ -255,6 +269,10 @@ class ExposureGuard:
             "exposure_mismatch_total": 0,
             "clip_total": 0,  # PHASE 2
             "clip_notional_total": Decimal("0"),  # PHASE 2
+            # PHASE P0: Fallback mode metrics
+            "fallback_mode_entries_total": 0,
+            "fallback_blocks_total": 0,
+            "fallback_duration_ms_total": 0,
         }
 
     def _load_soft_limit_config(self) -> SoftLimitConfig:
@@ -299,6 +317,184 @@ class ExposureGuard:
         )
         return config
 
+    def _load_fallback_config(self) -> Dict[str, Any]:
+        """
+        PHASE P0: Load fallback mode configuration.
+        Reads from trading.execution.fallback with fallbacks.
+        """
+        try:
+            if hasattr(self.config, 'trading') and hasattr(self.config.trading, 'execution') and hasattr(self.config.trading.execution, 'fallback'):
+                fallback_config = self.config.trading.execution.fallback or {}
+            elif isinstance(self.config, dict):
+                fallback_config = self.config.get("trading", {}).get(
+                    "execution", {}).get("fallback", {})
+            else:
+                fallback_config = {}
+        except (AttributeError, TypeError):
+            fallback_config = {}
+
+        # Parse configuration with defaults
+        policy = fallback_config.get("policy", "fail_closed") if isinstance(
+            fallback_config, dict) else getattr(fallback_config, "policy", "fail_closed")
+        risk_reduction_pct = Decimal(str(fallback_config.get("risk_reduction_pct", "0.5") if isinstance(
+            fallback_config, dict) else getattr(fallback_config, "risk_reduction_pct", "0.5")))
+        backoff_ms = fallback_config.get("backoff_ms", [200, 500, 1000]) if isinstance(
+            fallback_config, dict) else getattr(fallback_config, "backoff_ms", [200, 500, 1000])
+
+        config = {
+            "policy": policy,
+            "risk_reduction_pct": risk_reduction_pct,
+            "backoff_ms": backoff_ms,
+        }
+        self.logger.info(
+            f"FALLBACK_CONFIG loaded: policy={policy}, risk_reduction_pct={risk_reduction_pct}, backoff_ms={backoff_ms}"
+        )
+        return config
+
+    def enter_fallback_mode(self, reason: str) -> None:
+        """
+        PHASE P0: Enter fallback mode with specified reason.
+
+        Args:
+            reason: Reason for entering fallback mode (e.g., "API_TIMEOUT", "EMPTY_POSITIONS")
+        """
+        now_ms = int(time.time() * 1000)
+
+        if self.fallback_state.active:
+            self.logger.warning(
+                f"FALLBACK_MODE_ALREADY_ACTIVE: reason={reason}, current_reason={self.fallback_state.reason}"
+            )
+            return
+
+        # Enter fallback mode
+        self.fallback_state.active = True
+        self.fallback_state.reason = reason
+        self.fallback_state.entered_at = now_ms
+
+        # Increment metrics
+        self._increment_metric("fallback_mode_entries_total", reason)
+
+        self.logger.warning(
+            f"FALLBACK_MODE_ENTERED: reason={reason}, policy={self.fallback_config['policy']}, "
+            f"risk_reduction_pct={self.fallback_config['risk_reduction_pct']}"
+        )
+
+        # Emit alert event
+        if self.fsm:
+            from vfoundation.core.protocol import Message
+            from vfoundation.core.fsm_emit_compat import emit_compat
+            import asyncio
+
+            msg = Message(
+                op="EVT",
+                verb="FALLBACK_MODE_ENTERED",
+                src="execution_position",
+                dst="*",
+                pld={
+                    "reason": reason,
+                    "policy": self.fallback_config["policy"],
+                    "risk_reduction_pct": float(self.fallback_config["risk_reduction_pct"]),
+                    "entered_at_ms": now_ms
+                },
+                why="fallback_mode_entered",
+            )
+            self._safe_create_task(emit_compat(
+                self.fsm, msg, logger=self.logger))
+
+        # Alert manager notification
+        try:
+            from vfoundation.core.alert_manager import AlertManager
+            alert_mgr = AlertManager.get_instance()
+            alert_mgr.alert(
+                level="WARNING",
+                title="Fallback Mode Activated",
+                message=f"ExposureGuard entered fallback mode: {reason}",
+                source="ExposureGuard",
+                metadata={
+                    "reason": reason,
+                    "policy": self.fallback_config["policy"],
+                    "risk_reduction_pct": float(self.fallback_config["risk_reduction_pct"])
+                }
+            )
+        except Exception as e:
+            self.logger.error(
+                f"ALERT_MANAGER_ERROR: Failed to send fallback alert - {e}")
+
+    def exit_fallback_mode(self) -> None:
+        """
+        PHASE P0: Exit fallback mode and resume normal operation.
+        """
+        if not self.fallback_state.active:
+            self.logger.debug("FALLBACK_MODE_NOT_ACTIVE: No action needed")
+            return
+
+        # Calculate duration
+        now_ms = int(time.time() * 1000)
+        duration_ms = now_ms - self.fallback_state.entered_at
+
+        # Update metrics
+        self.metrics["fallback_duration_ms_total"] = self.metrics.get(
+            "fallback_duration_ms_total", 0) + duration_ms
+
+        reason = self.fallback_state.reason
+
+        # Exit fallback mode
+        self.fallback_state.active = False
+        self.fallback_state.reason = ""
+        self.fallback_state.entered_at = 0
+
+        self.logger.info(
+            f"FALLBACK_MODE_EXITED: reason={reason}, duration_ms={duration_ms}"
+        )
+
+        # Emit alert event
+        if self.fsm:
+            from vfoundation.core.protocol import Message
+            from vfoundation.core.fsm_emit_compat import emit_compat
+            import asyncio
+
+            msg = Message(
+                op="EVT",
+                verb="FALLBACK_MODE_EXITED",
+                src="execution_position",
+                dst="*",
+                pld={
+                    "previous_reason": reason,
+                    "duration_ms": duration_ms,
+                    "exited_at_ms": now_ms
+                },
+                why="fallback_mode_exited",
+            )
+            self._safe_create_task(emit_compat(
+                self.fsm, msg, logger=self.logger))
+
+        # Alert manager notification
+        try:
+            from vfoundation.core.alert_manager import AlertManager
+            alert_mgr = AlertManager.get_instance()
+            alert_mgr.alert(
+                level="INFO",
+                title="Fallback Mode Deactivated",
+                message=f"ExposureGuard exited fallback mode after {duration_ms}ms",
+                source="ExposureGuard",
+                metadata={
+                    "previous_reason": reason,
+                    "duration_ms": duration_ms
+                }
+            )
+        except Exception as e:
+            self.logger.error(
+                f"ALERT_MANAGER_ERROR: Failed to send exit alert - {e}")
+
+    def is_fallback_mode_active(self) -> bool:
+        """
+        PHASE P0: Check if fallback mode is currently active.
+
+        Returns:
+            bool: True if fallback mode is active
+        """
+        return self.fallback_state.active
+
     def resolve_symbol_leverage(self, symbol: str) -> Decimal:
         """
         Resolve leverage for a symbol.
@@ -316,7 +512,7 @@ class ExposureGuard:
                 exposure_config = self.config.trading.execution.exposure if self.config.trading.execution and self.config.trading.execution else None
             elif isinstance(self.config, dict):
                 exposure_config = (
-                    self.self.config.trading.get(
+                    self.config.trading.get(
                         "execution", {}).get("exposure", {})
                 )
             else:
@@ -561,6 +757,70 @@ class ExposureGuard:
                 self._safe_create_task(emit_compat(
                     self.fsm, msg, logger=self.logger))
             return {"allowed": False, "reason": reason, "stale_sec": stale_sec}
+
+        # PHASE P0: Apply fallback mode policy if active
+        if self.is_fallback_mode_active():
+            policy = self.fallback_config["policy"]
+            if policy == "fail_closed":
+                reason = f"FALLBACK_FAIL_CLOSED_{self.fallback_state.reason}"
+                self._increment_metric("fallback_blocks_total", reason)
+                self.logger.warning(
+                    f"FALLBACK_BLOCK: {reason} - blocking trade during fallback mode"
+                )
+                # Emit event for monitoring
+                if self.fsm:
+                    from vfoundation.core.protocol import Message
+                    from vfoundation.core.fsm_emit_compat import emit_compat
+                    import asyncio
+
+                    msg = Message(
+                        op="EVT",
+                        verb="FALLBACK_BLOCK",
+                        src="execution_position",
+                        dst="*",
+                        pld={
+                            "reason": reason,
+                            "fallback_reason": self.fallback_state.reason,
+                            "policy": policy
+                        },
+                        why="fallback_mode_block",
+                    )
+                    self._safe_create_task(emit_compat(
+                        self.fsm, msg, logger=self.logger))
+                return {"allowed": False, "reason": reason}
+            elif policy == "risk_reduction":
+                # Apply risk reduction by scaling down the notional
+                risk_reduction_pct = self.fallback_config["risk_reduction_pct"]
+                reduced_notional = notional_usd * \
+                    (Decimal("1") - risk_reduction_pct)
+                self.logger.warning(
+                    f"FALLBACK_RISK_REDUCTION: {symbol} notional {notional_usd:.2f} → {reduced_notional:.2f} "
+                    f"({risk_reduction_pct:.1%} reduction) due to {self.fallback_state.reason}"
+                )
+                # Update notional for subsequent checks
+                notional_usd = reduced_notional
+                # Emit event for monitoring
+                if self.fsm:
+                    from vfoundation.core.protocol import Message
+                    from vfoundation.core.fsm_emit_compat import emit_compat
+                    import asyncio
+
+                    msg = Message(
+                        op="EVT",
+                        verb="FALLBACK_RISK_REDUCTION",
+                        src="execution_position",
+                        dst="*",
+                        pld={
+                            "symbol": symbol,
+                            "original_notional": float(notional_usd / (Decimal("1") - risk_reduction_pct)),
+                            "reduced_notional": float(reduced_notional),
+                            "reduction_pct": float(risk_reduction_pct),
+                            "fallback_reason": self.fallback_state.reason
+                        },
+                        why="fallback_risk_reduction",
+                    )
+                    self._safe_create_task(emit_compat(
+                        self.fsm, msg, logger=self.logger))
 
         # EXP-LEVERAGE-001: Calculate margin-based exposure
         # Calculate reserve margin for this order

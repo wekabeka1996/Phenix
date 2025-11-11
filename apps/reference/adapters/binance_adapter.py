@@ -519,77 +519,121 @@ class BinanceAdapter(AbstractExchangeAdapter):
         USDT-M Futures: повертає тільки відкриті (non-zero) позиції.
         Працює і в ONE_WAY (positionSide='BOTH'), і в HEDGE (LONG/SHORT).
         Implements AbstractExchangeAdapter.get_open_positions()
+
+        PHASE P0: Added retry/backoff for empty API responses to handle network/API failures.
         """
         params: Dict[str, Any] = {}
         if symbol:
             params["symbol"] = symbol
 
-        # signed GET /fapi/v2/positionRisk
-        raw = await self._request("GET", "/fapi/v2/positionRisk", params)
+        # PHASE P0: Get fallback retry configuration
+        fallback_backoff_ms = self._get_fallback_backoff_ms()
 
-        # 🔴 DIAGNOSTIC: Log raw API response
-        self.logger.debug(
-            f"🌐 BinanceAdapter.get_open_positions() raw response type: {type(raw)}, len: {len(raw) if isinstance(raw, list) else 'N/A'}")
-        if not isinstance(raw, list) or len(raw) == 0:
-            self.logger.warning(
-                f"⚠️ API /fapi/v2/positionRisk returned empty or non-list: {raw}")
-        else:
-            self.logger.info(
-                f"✅ API /fapi/v2/positionRisk returned {len(raw)} total records")
+        # PHASE P0: Retry logic for empty responses
+        max_retries = len(fallback_backoff_ms)
+        last_exception = None
 
-        positions: List[ExchangePosition] = []
-        for p in raw:
-            # Binance віддає числа як строки — зберігаємо precision, конвертуємо тільки коли потрібно
-            amt_str = p.get("positionAmt", "0")
-            amt = float(amt_str)
-            symbol = p.get('symbol', 'UNKNOWN')
+        for attempt in range(max_retries + 1):  # +1 for initial attempt
+            try:
+                # signed GET /fapi/v2/positionRisk
+                raw = await self._request("GET", "/fapi/v2/positionRisk", params)
 
-            # 🔴 DIAGNOSTIC: Log ALL positions from API
-            if abs(amt) > 0.0001:
-                self.logger.info(
-                    f"  ✅ API Position: {symbol} {p.get('positionSide', 'BOTH')} {amt} @ entry={p.get('entryPrice', 'N/A')}, mark={p.get('markPrice', 'N/A')}, unPnL={p.get('unRealizedProfit', 'N/A')}")
-
-            if abs(amt) <= 0.0:
-                # 🔴 DIAGNOSTIC: Log filtered positions
+                # 🔴 DIAGNOSTIC: Log raw API response
                 self.logger.debug(
-                    f"  ❌ Skipping zero position for {symbol}: positionAmt={amt_str}")
-                continue  # пропускаємо нульові
+                    f"🌐 BinanceAdapter.get_open_positions() attempt={attempt+1}/{max_retries+1} raw response type: {type(raw)}, len: {len(raw) if isinstance(raw, list) else 'N/A'}")
+                if not isinstance(raw, list) or len(raw) == 0:
+                    if attempt < max_retries:
+                        self.logger.warning(
+                            f"⚠️ API /fapi/v2/positionRisk returned empty/non-list on attempt {attempt+1}, retrying in {fallback_backoff_ms[attempt]}ms: {raw}")
+                        await asyncio.sleep(fallback_backoff_ms[attempt] / 1000.0)
+                        continue
+                    else:
+                        self.logger.error(
+                            f"❌ API /fapi/v2/positionRisk still empty after {max_retries+1} attempts, returning empty positions")
+                else:
+                    if attempt > 0:
+                        self.logger.info(
+                            f"✅ API /fapi/v2/positionRisk recovered after {attempt+1} attempts, returned {len(raw)} total records")
+                    else:
+                        self.logger.info(
+                            f"✅ API /fapi/v2/positionRisk returned {len(raw)} total records")
 
-            entry_str = p.get("entryPrice", "0") or "0"
-            entry = float(entry_str)
-            mark_str = p.get("markPrice", "0") or "0"
-            mark = float(mark_str)
-            upnl_str = p.get("unRealizedProfit", "0") or "0"
-            upnl = float(upnl_str)
-            lev = int(float(p.get("leverage", "0") or 0))
+                positions: List[ExchangePosition] = []
+                for p in raw:
+                    # Binance віддає числа як строки — зберігаємо precision, конвертуємо тільки коли потрібно
+                    amt_str = p.get("positionAmt", "0")
+                    amt = float(amt_str)
+                    symbol = p.get('symbol', 'UNKNOWN')
 
-            # Hedge: 'LONG'/'SHORT'; One-way: 'BOTH'
-            pos_side = p.get("positionSide", "BOTH") or "BOTH"
-            side = "LONG" if (amt > 0 and pos_side in (
-                "BOTH", "LONG")) else "SHORT"
+                    # 🔴 DIAGNOSTIC: Log ALL positions from API
+                    if abs(amt) > 0.0001:
+                        self.logger.info(
+                            f"  ✅ API Position: {symbol} {p.get('positionSide', 'BOTH')} {amt} @ entry={p.get('entryPrice', 'N/A')}, mark={p.get('markPrice', 'N/A')}, unPnL={p.get('unRealizedProfit', 'N/A')}")
 
-            pos_obj = ExchangePosition(
-                symbol=p.get("symbol", ""),
-                position_side=pos_side,  # BOTH/LONG/SHORT
-                side=side,  # LONG/SHORT (зручно для бізнес-логіки)
-                position_amount=amt_str,  # зберігаємо string для precision
-                entry_price=entry_str,  # зберігаємо string для precision
-                mark_price=mark_str,  # зберігаємо string для precision
-                unrealized_profit=upnl_str,  # зберігаємо string для precision
-                leverage=lev,
-                margin_type=p.get("marginType", "cross").upper(),
-                isolated_margin=float(p.get("isolatedMargin", "0") or 0),
-                update_time_ms=int(p.get("updateTime", 0) or 0),
-            )
-            positions.append(pos_obj)
-            # 🔴 DIAGNOSTIC: Log accepted position
-            self.logger.info(
-                f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}")
+                    if abs(amt) <= 0.0:
+                        # 🔴 DIAGNOSTIC: Log filtered positions
+                        self.logger.debug(
+                            f"  ❌ Skipping zero position for {symbol}: positionAmt={amt_str}")
+                        continue  # пропускаємо нульові
 
-        # 🔴 DIAGNOSTIC: Final summary
-        self.logger.info(
-            f"🎯 get_open_positions() returning {len(positions)} non-zero positions")
-        return positions
+                    entry_str = p.get("entryPrice", "0") or "0"
+                    entry = float(entry_str)
+                    mark_str = p.get("markPrice", "0") or "0"
+                    mark = float(mark_str)
+                    upnl_str = p.get("unRealizedProfit", "0") or "0"
+                    upnl = float(upnl_str)
+                    lev = int(float(p.get("leverage", "0") or 0))
+
+                    # Hedge: 'LONG'/'SHORT'; One-way: 'BOTH'
+                    pos_side = p.get("positionSide", "BOTH") or "BOTH"
+                    side = "LONG" if (amt > 0 and pos_side in (
+                        "BOTH", "LONG")) else "SHORT"
+
+                    pos_obj = ExchangePosition(
+                        symbol=p.get("symbol", ""),
+                        position_side=pos_side,  # BOTH/LONG/SHORT
+                        side=side,  # LONG/SHORT (зручно для бізнес-логіки)
+                        position_amount=amt_str,  # зберігаємо string для precision
+                        entry_price=entry_str,  # зберігаємо string для precision
+                        mark_price=mark_str,  # зберігаємо string для precision
+                        unrealized_profit=upnl_str,  # зберігаємо string для precision
+                        leverage=lev,
+                        margin_type=p.get("marginType", "cross").upper(),
+                        isolated_margin=float(
+                            p.get("isolatedMargin", "0") or 0),
+                        update_time_ms=int(p.get("updateTime", 0) or 0),
+                    )
+                    positions.append(pos_obj)
+                    # 🔴 DIAGNOSTIC: Log accepted position
+                    self.logger.info(
+                        f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}")
+
+                # 🔴 DIAGNOSTIC: Final summary
+                self.logger.info(
+                    f"🎯 get_open_positions() returning {len(positions)} non-zero positions")
+
+                # PHASE P0: If we got empty positions after successful API call, enter fallback mode
+                if not positions and isinstance(raw, list) and len(raw) == 0:
+                    # Log warning about empty position response
+                    self.logger.warning(
+                        "FALLBACK_TRIGGER: Empty positions response detected - this may trigger fallback mode in ExposureGuard"
+                    )
+
+                return positions
+
+            except Exception as e:
+                last_exception = e
+                if attempt < max_retries:
+                    self.logger.warning(
+                        f"⚠️ get_open_positions() attempt {attempt+1} failed: {e}, retrying in {fallback_backoff_ms[attempt]}ms")
+                    await asyncio.sleep(fallback_backoff_ms[attempt] / 1000.0)
+                else:
+                    self.logger.error(
+                        f"❌ get_open_positions() failed after {max_retries+1} attempts: {e}")
+                    raise last_exception
+
+        # This should never be reached, but just in case
+        raise last_exception
 
     async def get_mark_price(self, symbol: str, ttl_ms: int = 250) -> float:
         """
@@ -1162,39 +1206,32 @@ class BinanceAdapter(AbstractExchangeAdapter):
         path = "/fapi/v1/order"
         return await self._request("POST", path, order_params)
 
-    async def get_positions_notional_usd_shadow(self) -> float:
+    def _get_fallback_backoff_ms(self) -> List[int]:
         """
-        Get total notional value in USD of all open positions from exchange perspective.
-
-        This is used for shadow notional checking to compare with portfolio state.
-        Returns the sum of (position_amount * mark_price) for all non-zero positions.
+        PHASE P0: Get fallback backoff configuration for retry logic.
 
         Returns:
-            Total notional value in USD as float.
+            List of backoff delays in milliseconds.
         """
         try:
-            # Get all open positions (non-zero only, as per get_open_positions)
-            positions = await self.get_open_positions()
+            if hasattr(self.config, 'trading') and hasattr(self.config.trading, 'execution') and hasattr(self.config.trading.execution, 'fallback'):
+                fallback_config = self.config.trading.execution.fallback or {}
+            elif isinstance(self.config, dict):
+                fallback_config = self.config.get("trading", {}).get(
+                    "execution", {}).get("fallback", {})
+            else:
+                fallback_config = {}
+        except (AttributeError, TypeError):
+            fallback_config = {}
 
-            total_notional = 0.0
-            for pos in positions:
-                # position_amount is stored as string, mark_price as string
-                position_amt = float(pos.position_amount)
-                mark_price = float(pos.mark_price)
+        # Get backoff_ms with defaults
+        backoff_ms = fallback_config.get("backoff_ms", [200, 500, 1000]) if isinstance(
+            fallback_config, dict) else getattr(fallback_config, "backoff_ms", [200, 500, 1000])
 
-                # Calculate notional for this position
-                notional = abs(position_amt) * mark_price
-                total_notional += notional
+        if not isinstance(backoff_ms, list):
+            backoff_ms = [200, 500, 1000]
 
-                LOG.debug(
-                    f"Shadow position {pos.symbol}: amt={position_amt}, mark={mark_price}, notional={notional}")
-
-            LOG.debug(f"Total shadow notional: {total_notional}")
-            return total_notional
-
-        except Exception as e:
-            LOG.error(f"Failed to get shadow positions notional: {e}")
-            raise
+        return backoff_ms
 
 
 # ---- helpers ----

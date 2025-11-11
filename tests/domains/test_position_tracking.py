@@ -739,3 +739,142 @@ def test_position_tracking_partial_close(mock_config):
     assert abs(float(final_payload["realized_pnl"]) - 495.0) < 1e-9
 
     print(f"✅ Partial close test passed! Final position: {btc_pos}")
+
+
+def test_position_tracking_manual_intervention_detection(mock_config):
+    """
+    Test position tracking detects manual intervention and sends alerts.
+    """
+    from unittest.mock import Mock
+
+    # Step 1: Initialize FSM core
+    fsm = FSMCore()
+
+    # Step 2: Set up mock listeners
+    portfolio_listener = Mock()
+    fsm.listen("EVT:PORTFOLIO_STATE_UPDATED", portfolio_listener)
+
+    # Step 3: Initialize component with mocked AlertManager
+    import sys
+    import os
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    position_tracker = PositionTracking(fsm=fsm, config=mock_config)
+
+    # Mock AlertManager to verify alert calls
+    mock_alert_manager = Mock()
+    position_tracker.alert_manager = mock_alert_manager
+
+    position_tracker.start()
+
+    # Step 4: First trade - buy BTC to establish position
+    buy_payload = {
+        "symbol": "BTCUSDT",
+        "side": "buy",
+        "price": 50000.0,
+        "quantity": 0.1,
+        "ts": 1693526400000,
+        "fees": 0.0,
+        "venue": "binance",
+    }
+
+    fsm.emit("EVT:TRADE_EXECUTED", payload=buy_payload, why="Buy BTC.")
+
+    # Step 5: Simulate account update WITHOUT the BTC position (manual close)
+    account_payload = {
+        "totalWalletBalance": "100000.0",
+        "totalUnrealizedProfit": "0.0",
+        "totalCrossWalletBalance": "100000.0",
+        "positions": [
+            # BTC position is missing - manually closed
+            {
+                "symbol": "ETHUSDT",
+                "positionAmt": "1.0",
+                "entryPrice": "3000.0",
+                "markPrice": "3100.0",
+                "leverage": "10",
+                "notional": "3100.0"
+            }
+        ]
+    }
+
+    fsm.emit("EVT:ACCOUNT_UPDATE_RECEIVED", payload=account_payload,
+             why="Account update without BTC position.")
+
+    # Step 6: Verify manual intervention detection
+    # Should have 3 calls: initial state + trade update + account update
+    assert portfolio_listener.call_count == 3
+
+    # Verify AlertManager was called for manual intervention
+    mock_alert_manager.check_manual_intervention.assert_called_once()
+    call_args = mock_alert_manager.check_manual_intervention.call_args
+    args, kwargs = call_args
+    assert kwargs["symbol"] == "BTCUSDT"  # symbol
+
+    # Verify position details in alert
+    position_details = kwargs["position_details"]
+    assert "quantity" in position_details
+    assert "avg_price" in position_details
+    assert "venues" in position_details
+
+    # Verify metric was incremented
+    assert position_tracker.manual_intervention_detected_total == 1
+
+    # Verify position was removed from internal state
+    assert "BTCUSDT" not in position_tracker._positions
+
+    # Verify ETH position is still tracked
+    assert "ETHUSDT" in position_tracker._positions
+
+    print("✅ Manual intervention detection test passed!")
+
+
+def test_position_tracking_manual_intervention_metrics(mock_config):
+    """
+    Test position tracking metrics for manual intervention.
+    """
+    # Step 1: Initialize FSM core
+    fsm = FSMCore()
+
+    # Step 2: Initialize component
+    import sys
+    import os
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    position_tracker = PositionTracking(fsm=fsm, config=mock_config)
+
+    # Step 3: Verify initial metrics
+    metrics = position_tracker.get_metrics()
+    assert metrics["manual_intervention_detected_total"] == 0
+    assert metrics["positions_tracked"] == 0
+    assert metrics["equity_usd"] == 0.0
+    assert metrics["realized_pnl_usd"] == 0.0
+
+    # Step 4: Manually set some state to test metrics
+    position_tracker._positions = {
+        "BTCUSDT": {
+            "quantity": 0.1,
+            "avg_price": 50000.0,
+            "venues": ["binance"]
+        }
+    }
+    position_tracker._equity = 100000.0
+    position_tracker._realized_pnl = 5000.0
+    position_tracker.manual_intervention_detected_total = 2
+
+    # Step 5: Verify metrics reflect state
+    metrics = position_tracker.get_metrics()
+    assert metrics["manual_intervention_detected_total"] == 2
+    assert metrics["positions_tracked"] == 1
+    assert metrics["equity_usd"] == 100000.0
+    assert metrics["realized_pnl_usd"] == 5000.0
+
+    print("✅ Manual intervention metrics test passed!")

@@ -917,6 +917,134 @@ class OrderGuardian:
 
         return cancelled_count
 
+    async def cleanup_other_brackets_for_symbol(
+        self,
+        symbol: str,
+        keep_parent_order_id: str,
+        batch_limit: int = 50,
+    ) -> int:
+        """
+        Cancel our bracket orders for a symbol that are tied to a different
+        parent entry than the currently active one (keep_parent_order_id).
+
+        Unlike cleanup_orphans(), this runs even when a position is open.
+
+        Returns count of cancelled orders.
+        """
+        if not self.adapter:
+            LOG.debug("No adapter available, skipping cleanup_other_brackets_for_symbol")
+            return 0
+
+        cancelled_count = 0
+        cancelled_this_batch = 0
+
+        try:
+            open_orders = await self.adapter.get_open_orders(symbol)
+
+            for raw_order in open_orders:
+                if cancelled_this_batch >= batch_limit:
+                    break
+
+                order = self._normalize_order_payload(raw_order)
+                if not order:
+                    continue
+
+                order_id = order.get("orderId")
+                client_order_id = order.get("clientOrderId")
+                order_type = order.get("type", "")
+                if not order_id:
+                    continue
+
+                # Determine reduceOnly/closePosition flags
+                is_reduce_only_raw = order.get("reduceOnly", False)
+                is_close_position_raw = order.get("closePosition", False)
+                is_reduce_only = (
+                    str(is_reduce_only_raw).lower() == "true"
+                    if isinstance(is_reduce_only_raw, str)
+                    else bool(is_reduce_only_raw)
+                )
+                is_close_position = (
+                    str(is_close_position_raw).lower() == "true"
+                    if isinstance(is_close_position_raw, str)
+                    else bool(is_close_position_raw)
+                )
+
+                guardian_like = self._is_guardian_client_order_id(client_order_id)
+
+                # Ensure we have metadata for decision
+                order_meta = self.store.get(f"order:{order_id}")
+                if not order_meta and (is_reduce_only or is_close_position or guardian_like):
+                    inferred_symbol = symbol or order.get("symbol")
+                    order_meta = {
+                        "symbol": inferred_symbol,
+                        "type": order_type,
+                        "reduce_only": is_reduce_only,
+                        "close_position": is_close_position,
+                        "parent_entry_id": None,
+                        "client_order_id": client_order_id,
+                        "kind": order_type.replace("_MARKET", "").upper() if order_type else None,
+                    }
+                    self.store.put(f"order:{order_id}", order_meta)
+                    if client_order_id:
+                        self.store.put(f"client:{client_order_id}", order_id)
+                    if inferred_symbol:
+                        self.update_known_symbols([inferred_symbol])
+
+                if not order_meta:
+                    continue
+
+                # Only act on bracket-like orders
+                if not (order_meta.get("reduce_only") or order_meta.get("close_position")):
+                    continue
+
+                parent_id = order_meta.get("parent_entry_id")
+                if parent_id and str(parent_id) == str(keep_parent_order_id):
+                    # Bracket belongs to the current entry, keep it
+                    continue
+
+                # Cancel bracket for old/missing parent entry
+                try:
+                    result = await self.adapter.cancel_order(symbol, order_id)
+                    if self._is_successful_cancel(result):
+                        cancelled_count += 1
+                        cancelled_this_batch += 1
+                        self._metrics["guardian_orphans_cancelled_total"] += 1
+                        LOG.info(
+                            "[GUARD] Cancelled old bracket for previous entry",
+                            extra={
+                                "event_type": "cleanup_other_brackets",
+                                "symbol": symbol,
+                                "order_id": order_id,
+                                "client_order_id": order_meta.get("client_order_id"),
+                                "parent_entry_id": parent_id,
+                                "keep_parent_order_id": keep_parent_order_id,
+                            },
+                        )
+                    else:
+                        LOG.warning(
+                            f"[GUARD] Failed to cancel old bracket {order_id}, result: {result}"
+                        )
+                except Exception as e:
+                    is_unknown_error = isinstance(e, BinanceAPIError) and getattr(e, "code", None) == -2011
+                    if not is_unknown_error and "unknown order" not in str(e).lower():
+                        LOG.warning(
+                            f"[GUARD] Exception cancelling old bracket {order_id}: {e}"
+                        )
+                    else:
+                        cancelled_count += 1
+                        cancelled_this_batch += 1
+                        self._metrics["guardian_orphans_cancelled_total"] += 1
+                        LOG.info(
+                            f"[GUARD] Old bracket {order_id} already absent (-2011) for {symbol}"
+                        )
+
+        except Exception as e:
+            LOG.error(
+                f"cleanup_other_brackets_for_symbol failed for {symbol}: {e}"
+            )
+
+        return cancelled_count
+
     def _is_successful_cancel(self, result: Dict[str, Any]) -> bool:
         """Check if cancel was successful, treating -2011 as success"""
         normalized = self._normalize_order_payload(
