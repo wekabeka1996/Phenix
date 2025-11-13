@@ -81,6 +81,9 @@ class OrderTimeoutWatchdog:
         self._rps_request_count = 0
         self._rps_throttle_hits = 0
 
+        # Metrics logging counter
+        self._metrics_log_counter = 0
+
     def set_hooks(self, get_order_fn, emit_fn) -> None:
         """
         🔧 POLLING FIX: Connect REST polling hooks to adapter functions.
@@ -225,6 +228,12 @@ class OrderTimeoutWatchdog:
             try:
                 await self._check_timeouts()
                 await asyncio.sleep(self.check_interval_ms / 1000)
+
+                # Log metrics every 100 iterations (approximately every 10 seconds at 1000ms interval)
+                self._metrics_log_counter += 1
+                if self._metrics_log_counter >= 100:
+                    self._log_metrics()
+                    self._metrics_log_counter = 0
             except Exception as e:
                 LOG.error(f"Watchdog loop error: {e}", exc_info=True)
 
@@ -430,6 +439,10 @@ class OrderTimeoutWatchdog:
             except Exception as e:
                 LOG.error(
                     f"Timeout callback error for order {deadline.order_id}: {e}", exc_info=True)
+
+    def _log_metrics(self) -> None:
+        """Log watchdog metrics periodically."""
+        LOG.info(f"WATCHDOG_METRICS rest_polls_total={self._rest_polls_total} rest_detected_fills_total={self._rest_detected_fills_total} rps_throttle_hits={self._rps_throttle_hits}")
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get watchdog metrics."""

@@ -388,7 +388,7 @@ class ExecPosFSM:
                     emit_fn=emit_trade_executed
                 )
                 LOG.info(
-                    "✅ Watchdog REST polling hooks connected to adapter functions")
+                    "✅ Watchdog REST polling hooks connected")
             # Initialize OrderGuardian for TP/SL cleanup with strict ownership tracking
             # Get poll_interval_ms from config
             poll_interval_ms = self._guardian_poll_interval_ms or 500
