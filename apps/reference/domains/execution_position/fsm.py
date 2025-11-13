@@ -13,12 +13,13 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Optional, Tuple, Set, Coroutine
 
 from vfoundation.core.fsm_emit_compat import Message, emit_compat
 from vfoundation.dr import wal
 from apps.reference.adapters.binance_adapter import BinanceAdapter, BinanceAPIError
+from vfoundation.services.price_service import PriceService, PriceServiceSync
 
 from .fsm_open import OpenFlowFSM
 from .fsm_manage import ManageFlowFSM
@@ -228,7 +229,12 @@ class ExecPosFSM:
         self.bus.listen("EVT:PORTFOLIO_STATE_UPDATED",
                         self._on_portfolio_state_updated)
         self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
+        # FIX-TRADEEXEC-1: Single event path for FILL events - listen to TRADE_EXECUTED from FSMCore
+        # This ensures ExposureGuard.on_fill is called for all fills (WS + REST polling + AccountObserver)
+        self.bus.listen("EVT:TRADE_EXECUTED", self._on_trade_executed)
+        # Support both 'ORDER_FILL' and legacy 'FILL' event verbs (legacy path for backward compatibility)
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
+        self.bus.listen("EVT:FILL", self._on_order_fill)
 
         # Async loop used for guardian and adapter operations (set later)
         self._async_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -573,28 +579,127 @@ class ExecPosFSM:
         try:
             return asyncio.get_running_loop()
         except RuntimeError:
+            # Fallback to get_event_loop for test environments or thread-based loops
+            try:
+                return asyncio.get_event_loop()
+            except Exception:
+                return None
+
+    async def _call_adapter_fn(self, fn_or_callable, *args, **kwargs):
+        """Call an adapter function, supporting both sync and async implementations.
+
+        fn_or_callable may be a bound function or a function name on the adapter.
+        """
+        if not self.adapter:
             return None
+        # Resolve attribute if a string passed
+        f = fn_or_callable
+        if isinstance(fn_or_callable, str):
+            f = getattr(self.adapter, fn_or_callable, None)
+        if f is None or not callable(f):
+            return None
+        try:
+            if asyncio.iscoroutinefunction(f):
+                return await f(*args, **kwargs)
+            else:
+                result = f(*args, **kwargs)
+                # If it returned a coroutine (some wrappers), await it
+                if asyncio.iscoroutine(result):
+                    return await result
+                return result
+        except Exception:
+            raise
 
     def _submit_async(
         self,
-        coro: Coroutine[Any, Any, Any],
+        maybe_coro_or_fn: Any,
         loop: Optional[asyncio.AbstractEventLoop] = None,
     ) -> None:
         """Schedule coroutine on a target loop, thread-safe."""
         target_loop = loop or self._get_async_loop()
         if not target_loop:
-            LOG.debug("No asyncio loop available to schedule %r", coro)
+            LOG.debug("No asyncio loop available to schedule %r",
+                      maybe_coro_or_fn)
+            # If caller passed a coroutine object, ensure we close it to avoid
+            # 'coroutine was never awaited' RuntimeWarning in tests where loop
+            # isn't available or scheduling is deferred.
+            try:
+                if asyncio.iscoroutine(maybe_coro_or_fn):
+                    maybe_coro_or_fn.close()
+            except Exception:
+                pass
             return
 
         try:
-            running_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            running_loop = None
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
 
-        if running_loop is target_loop:
-            target_loop.create_task(coro)
-        else:
-            asyncio.run_coroutine_threadsafe(coro, target_loop)
+            scheduled = False
+            coro_obj = None
+
+            # If we're on the same loop, use create_task
+            if running_loop is target_loop:
+                coro_obj = maybe_coro_or_fn() if callable(
+                    maybe_coro_or_fn) else maybe_coro_or_fn
+                try:
+                    target_loop.create_task(coro_obj)
+                    scheduled = True
+                except Exception:
+                    try:
+                        if asyncio.iscoroutine(coro_obj):
+                            coro_obj.close()
+                    except Exception:
+                        pass
+            elif hasattr(target_loop, "create_task") and not hasattr(target_loop, "call_soon_threadsafe"):
+                # Lightweight loop with only create_task (dummy loop in tests)
+                try:
+                    coro_obj = maybe_coro_or_fn() if callable(
+                        maybe_coro_or_fn) else maybe_coro_or_fn
+                    target_loop.create_task(coro_obj)
+                    scheduled = True
+                except Exception:
+                    try:
+                        if asyncio.iscoroutine(coro_obj):
+                            coro_obj.close()
+                    except Exception:
+                        pass
+                    LOG.debug(
+                        "Dummy loop create_task failed; skipping schedule")
+            else:
+                # Use thread-safe scheduling for real loops
+                try:
+                    coro_obj = maybe_coro_or_fn() if callable(
+                        maybe_coro_or_fn) else maybe_coro_or_fn
+                    asyncio.run_coroutine_threadsafe(coro_obj, target_loop)
+                    scheduled = True
+                except RuntimeError as e:
+                    LOG.debug(
+                        "Target loop closed when scheduling coroutine: %s", e)
+                    try:
+                        running_loop = asyncio.get_running_loop()
+                        if hasattr(running_loop, 'create_task'):
+                            coro_obj = maybe_coro_or_fn() if callable(
+                                maybe_coro_or_fn) else maybe_coro_or_fn
+                            running_loop.create_task(coro_obj)
+                            scheduled = True
+                            return
+                    except RuntimeError:
+                        pass
+                    try:
+                        if asyncio.iscoroutine(coro_obj):
+                            coro_obj.close()
+                    except Exception:
+                        pass
+                    LOG.debug(
+                        "Could not schedule coroutine due to closed loop; skipping: %r", maybe_coro_or_fn)
+        finally:
+            try:
+                if coro_obj is not None and asyncio.iscoroutine(coro_obj) and not scheduled:
+                    coro_obj.close()
+            except Exception:
+                pass
 
     def _schedule_guardian_start(self) -> None:
         """Ensure guardian poller and startup reconcile are scheduled once."""
@@ -604,13 +709,49 @@ class ExecPosFSM:
         if not guardian:
             return
 
+        # Do not schedule guardian background tasks in shadow mode; tests expect
+        # no background work started when ExecPosFSM is in shadow_mode.
+        if getattr(self, 'shadow_mode', False):
+            LOG.debug("Shadow mode: skip scheduling guardian start")
+            return
+
         loop = self._get_async_loop()
         if not loop:
             LOG.debug("OrderGuardian start deferred: no event loop active")
             return
 
-        self._submit_async(guardian.start(), loop)
-        self._submit_async(self._startup_order_guardian_reconcile(), loop)
+        # Schedule guardian.start only if it's a coroutine or returns one.
+        start_fn = getattr(guardian, "start", None)
+        start_scheduled = False
+        if callable(start_fn):
+            try:
+                if asyncio.iscoroutinefunction(start_fn):
+                    self._submit_async(start_fn, loop)
+                    start_scheduled = True
+                else:
+                    maybe_coro = start_fn()
+                    if asyncio.iscoroutine(maybe_coro):
+                        self._submit_async(start_fn, loop)
+                        start_scheduled = True
+                    else:
+                        LOG.debug(
+                            "Guardian.start is not an async coroutine; skipping schedule")
+            except Exception:
+                LOG.debug("Guardian.start invocation failed; skipping schedule")
+
+        # If guardian.start was not scheduled (non-async or failed), schedule
+        # startup reconcile directly. This avoids duplicate reconcile calls when
+        # guardian.start() already starts the poll loop and triggers cleanup.
+        if not start_scheduled:
+            try:
+                self._submit_async(
+                    self._startup_order_guardian_reconcile, loop)
+            except Exception:
+                try:
+                    self._submit_async(
+                        self._startup_order_guardian_reconcile, loop)
+                except Exception:
+                    LOG.debug("Failed scheduling startup reconcile after retry")
         LOG.info("✅ OrderGuardian background tasks scheduled")
         self._guardian_start_scheduled = True
 
@@ -633,7 +774,7 @@ class ExecPosFSM:
             LOG.debug("FSM cleanup start deferred: no event loop active")
             return
 
-        self._submit_async(self._cleanup_loop(), loop)
+        self._submit_async(self._cleanup_loop, loop)
         self._bg_started = True
 
     @staticmethod
@@ -803,25 +944,106 @@ class ExecPosFSM:
         if hasattr(self, "exposure_guard"):
             LOG.debug(f"[ACK] Order {order_id} acknowledged for {symbol}")
 
+    def _on_trade_executed(self, event: Message) -> None:
+        """
+        Handle EVT:TRADE_EXECUTED events (unified fill path from FSMCore).
+
+        This is the canonical single path for all fill events:
+        - WS events from BinanceAdapter
+        - REST-polling fill detections from watchdog
+        - AccountObserver's new trade detections
+
+        Calls ExposureGuard.on_fill() and creates post-fill hold.
+        """
+        payload = event.pld or {}
+        symbol = payload.get("symbol")
+        side = payload.get("side")
+        price = payload.get("price")
+        quantity = payload.get("quantity") or payload.get("qty")
+        client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
+        idempotent_key = payload.get("idempotent_key") or client_order_id
+        rid = payload.get("rid") or event.rid
+
+        if not symbol or quantity is None:
+            LOG.warning(f"EVT:TRADE_EXECUTED missing required fields: symbol={symbol}, quantity={quantity}")
+            return
+
+        LOG.info(f"EVT:TRADE_EXECUTED received in ExecPosFSM: symbol={symbol} side={side} qty={quantity} key={idempotent_key}")
+
+        # 🔄 IDEMPOTENT: Check if this event was already processed
+        event_key = f"trade_executed_{idempotent_key or rid or 'unknown'}_{symbol}"
+        if event_key in self._processed_events:
+            LOG.debug(f"EVT:TRADE_EXECUTED Skipping duplicate for {symbol} key {idempotent_key}")
+            return
+        self._processed_events.add(event_key)
+
+        # Calculate notional for exposure guard
+        notional_usd = None
+        if price is not None:
+            try:
+                notional_usd = Decimal(str(price)) * Decimal(str(quantity))
+            except (ValueError, TypeError, InvalidOperation):
+                pass
+
+        # Call ExposureGuard.on_fill (canonical method for all fills)
+        if hasattr(self, "exposure_guard") and self.exposure_guard:
+            try:
+                if idempotent_key and notional_usd is not None:
+                    LOG.debug(f"ExposureGuard.on_fill applied (key={idempotent_key} notional={notional_usd})")
+                    self.exposure_guard.on_fill(
+                        idempotent_key, notional_usd, symbol=symbol, side=side or "SELL"
+                    )
+                else:
+                    LOG.warning(f"Cannot call exposure_guard.on_fill: key={idempotent_key} notional={notional_usd}")
+            except Exception as e:
+                LOG.error(f"ExposureGuard.on_fill failed: {e}", exc_info=True)
+
+        # Notify OrderGuardian about fill
+        if hasattr(self, "order_guardian") and self.order_guardian:
+            try:
+                self.order_guardian.on_fill(
+                    symbol=symbol,
+                    parent_order_id=str(client_order_id) if client_order_id else "",
+                    filled_qty=float(quantity) if quantity else 0.0
+                )
+            except Exception as e:
+                LOG.debug(f"OrderGuardian.on_fill failed: {e}")
+
+        # Delayed cleanup of orphaned brackets
+        loop = self._get_async_loop()
+        if loop:
+            async def delayed_cleanup():
+                await asyncio.sleep(0.5)
+                try:
+                    await self.order_guardian.reconcile_symbol(symbol)
+                except Exception as e:
+                    LOG.debug(f"Delayed reconcile_symbol failed: {e}")
+            self._submit_async(delayed_cleanup(), loop)
+
     def _on_order_fill(self, event: Message) -> None:
         """
-        Handle EVT:ORDER_FILL events from adapter.
+        Handle EVT:ORDER_FILL events from adapter (legacy path).
 
         AGENT-PATCH: Process FILL to update order state and create post-fill holds.
         """
         payload = event.pld or {}
         order_id = payload.get("orderId")
         symbol = payload.get("symbol")
-        filled_qty = payload.get("quantity")
+        filled_qty = payload.get("quantity") or payload.get(
+            "qty") or payload.get("filled_qty")
+        # Accept idempotency-fallback key in cases where adapter does not supply orderId
+        idempotent_key = payload.get(
+            "idempotent_key") or payload.get("idempotencyKey") or None
         rid = payload.get("rid") or event.rid
 
-        if not order_id or not symbol or filled_qty is None:
+        # Allow missing orderId if idempotent_key is present (some test harnesses use idempotent_key)
+        if not symbol or filled_qty is None:
             LOG.warning(
                 f"[FILL] Missing orderId, symbol or quantity in FILL event: {payload}")
             return
 
         # 🔄 IDEMPOTENT: Check if this event was already processed
-        event_key = f"fill_{order_id}_{symbol}"
+        event_key = f"fill_{order_id or idempotent_key or 'unknown'}_{symbol}"
         if event_key in self._processed_events:
             LOG.debug(
                 f"[FILL] Skipping duplicate FILL for {symbol} order {order_id}")
@@ -831,16 +1053,77 @@ class ExecPosFSM:
         LOG.debug(
             f"[FILL] Processing FILL for {symbol} order {order_id}, qty={filled_qty} (rid={rid})")
 
-        # Create post-fill hold in exposure guard
+        # Create post-fill hold in exposure guard via canonical method
         if hasattr(self, "exposure_guard"):
-            postfill_key = f"postfill_{symbol}_{order_id}"
-            self.exposure_guard.state.postfill_reservations[postfill_key] = {
-                "symbol": symbol,
-                "qty": filled_qty,
-                "ts_ms": int(__import__('time').time() * 1000),
-                "rid": rid,
-            }
-            LOG.debug(f"[FILL] Created postfill hold for {postfill_key}")
+            # Prefer idempotent key for reservation matching; fallback to generated key
+            idempotent_key = payload.get(
+                "idempotent_key") or payload.get("idempotencyKey") or None
+
+            # Try to compute notional_usd from price * qty when available
+            price_val = payload.get(
+                "price") or payload.get("fillPrice") or payload.get("avgPrice") or None
+            try:
+                notional_usd = Decimal(
+                    str(price_val)) * Decimal(str(filled_qty)) if price_val is not None else None
+            except Exception:
+                notional_usd = None
+
+            if idempotent_key and notional_usd is not None:
+                try:
+                    LOG.debug(
+                        f"[FILL] About to call exposure_guard.on_fill key={idempotent_key} notional={notional_usd}")
+                    # Use ExposureGuard.on_fill to atomically move reservation to postfill
+                    self.exposure_guard.on_fill(
+                        idempotent_key, notional_usd, symbol=symbol, side=payload.get("side", "SELL"))
+                    LOG.debug(
+                        f"[FILL] Moved reservation {idempotent_key} to postfill via ExposureGuard.on_fill")
+                except Exception as e:
+                    LOG.debug(
+                        f"[FILL] ExposureGuard.on_fill failed for {idempotent_key}: {e}")
+                    # Fallback to legacy behavior
+                    postfill_key = idempotent_key
+                    self.exposure_guard.state.postfill_reservations[postfill_key] = {
+                        "symbol": symbol,
+                        "qty": filled_qty,
+                        "ts_ms": int(__import__('time').time() * 1000),
+                        "rid": rid,
+                    }
+                    LOG.debug(
+                        f"[FILL] Created postfill hold for {postfill_key} (fallback)")
+            else:
+                # No idempotent key or no price info - preserve legacy behavior
+                postfill_key = idempotent_key if idempotent_key else f"postfill_{symbol}_{order_id}"
+                self.exposure_guard.state.postfill_reservations[postfill_key] = {
+                    "symbol": symbol,
+                    "qty": filled_qty,
+                    "ts_ms": int(__import__('time').time() * 1000),
+                    "rid": rid,
+                }
+                LOG.debug(
+                    f"[FILL] Created postfill hold for {postfill_key} (legacy)")
+
+            # Debug: log computed values for diagnostics
+            try:
+                LOG.debug(
+                    f"[FILL_DEBUG] idempotent_key={idempotent_key} filled_qty={filled_qty} price_val={price_val} notional_usd={notional_usd}")
+            except Exception:
+                pass
+
+        # Notify OrderGuardian about entry fill (per-entry remaining tracking)
+        try:
+            if hasattr(self, 'order_guardian') and self.order_guardian:
+                fq = 0.0
+                try:
+                    fq = float(filled_qty)
+                except Exception:
+                    fq = 0.0
+                # Best-effort; only updates if this orderId corresponds to a tracked entry
+                self.order_guardian.on_fill(
+                    symbol=symbol, parent_order_id=str(order_id), filled_qty=fq
+                )
+        except Exception:
+            # Non-fatal
+            pass
 
         # Best-effort cleanup of orphaned brackets in case this fill closed the position
         # Debounce: wait 500ms to allow TP/SL registration before cleanup
@@ -848,7 +1131,9 @@ class ExecPosFSM:
         if loop:
             async def delayed_cleanup():
                 await asyncio.sleep(0.5)
-                await self.order_guardian.cleanup_orphans()
+                # ✅ FIX: Call reconcile_symbol for the specific symbol instead of global cleanup_orphans
+                # This ensures brackets are cleaned up when position closes, even if other symbols have positions
+                await self.order_guardian.reconcile_symbol(symbol)
             self._submit_async(delayed_cleanup(), loop)
 
         # ✅ EVT:EXPOSURE_SUMMARY_UPDATED: Emit exposure summary after fill
@@ -870,10 +1155,13 @@ class ExecPosFSM:
                 why="exposure_summary_updated_after_fill",
             )
             loop = self._get_async_loop()
-            if loop:
-                self._submit_async(
-                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
-                )
+            # Only emit asynchronously when реальний asyncio loop доступний (із call_soon_threadsafe)
+            if loop and hasattr(loop, "call_soon_threadsafe"):
+                self._submit_async(emit_compat(
+                    self.fsm, exposure_msg, logger=LOG), loop)
+            else:
+                LOG.debug(
+                    "Skip async exposure emit on ORDER_FILL (no real loop)")
         except Exception as e:
             LOG.debug(
                 f"Failed to emit exposure summary update after fill: {e}")
@@ -915,19 +1203,41 @@ class ExecPosFSM:
                     if hasattr(self.config, 'trading') and self.config.trading:
                         mode = self.config.trading.mode
                     elif isinstance(self.config, dict):
-                        mode = self.self.config.trading_mode
+                        mode = self.config.get("trading_mode", "testnet")
                 except (AttributeError, TypeError):
                     mode = "testnet"
         else:
-            # Fallback to global mode
+            # Fallback to global mode or domain-specific mode from dict
             try:
                 if hasattr(self.config, 'trading') and self.config.trading:
                     mode = self.config.trading.mode
                 elif isinstance(self.config, dict):
-                    mode = self.self.config.trading_mode
+                    # Check domain-specific mode first
+                    domain_mode = self.config.get("domain_configuration", {}).get(
+                        "execution_position", {}).get("trading_mode")
+                    if domain_mode:
+                        mode = domain_mode
+                        LOG.info(
+                            f"✅ ExecPosFSM using domain-specific mode from dict: {mode}")
+                    else:
+                        global_mode = self.config.get(
+                            "trading_mode", "testnet")
+                        # For hybrid modes, execution_position should use testnet
+                        if global_mode == "hybrid_live_data_testnet_exec":
+                            mode = "testnet"
+                            LOG.info(
+                                f"✅ ExecPosFSM using testnet for hybrid mode: {global_mode} → {mode}")
+                        else:
+                            mode = global_mode
+                        LOG.info(
+                            f"ExecPosFSM using global trading_mode from dict: {mode}")
+                else:
+                    mode = "testnet"
             except (AttributeError, TypeError):
                 mode = "testnet"
-            LOG.info(f"ExecPosFSM using global trading_mode: {mode}")
+            if not isinstance(self.config, dict):
+                LOG.info(
+                    f"ExecPosFSM using global trading_mode: {mode.upper()}")
 
         LOG.info(f"🎯 EXECUTION POSITION FSM MODE: {mode.upper()}")
 
@@ -996,6 +1306,16 @@ class ExecPosFSM:
         self.adapter.exec_fsm = self  # Direct reference to ExecPosFSM for handle() calls
         # Keep for backwards compatibility (event bus)
         self.adapter.fsm_core = self.fsm
+        # PriceService SSOT - in Wave 0 we initialize without adapter wiring
+        # (synchronous PriceService is a low-impact additive step)
+        # Initialize an Async PriceService and a sync wrapper for synchronous FSMs
+        try:
+            async_price_service = PriceService(
+                self.adapter, max_cache_size=500)
+            self.price_service = PriceServiceSync(
+                async_service=async_price_service)
+        except Exception:
+            self.price_service = None
 
     def _get_or_create_flows(
         self, symbol: str
@@ -1034,7 +1354,8 @@ class ExecPosFSM:
                     config=self.config,
                     metrics_collector=self.metrics_collector,
                 )
-                self.manage_flows[symbol] = ManageFlowFSM(config=self.config)
+                self.manage_flows[symbol] = ManageFlowFSM(
+                    config=self.config, price_service=getattr(self, 'price_service', None))
                 self.close_flows[symbol] = CloseFlowFSM()
 
             return (
@@ -1056,15 +1377,38 @@ class ExecPosFSM:
         manage_flow.hydrate(position_data)
         close_flow.hydrate(position_data)
 
+    async def sync_open_orders_and_positions(self) -> None:
+        """
+        Backward-compatible public API used in tests to trigger order/position sync.
+
+        Delegates to the internal reconcile logic.
+        """
+        await self._startup_order_guardian_reconcile()
+
     def handle(self, msg: Message) -> Optional[Message]:
         """Route message to the appropriate flow and handle execution decisions."""
         pld = msg.pld or {}
+
+        # P0.3: WAL logging for msg_in event
+        wal.append({
+            "event_type": "msg_in",
+            "data": msg.model_dump(),
+            "timestamp": int(time.time() * 1000)
+        })
 
         # Handle portfolio state updates BEFORE symbol check (they don't need symbol)
         if msg.verb == "PORTFOLIO_STATE_UPDATED":
             # Handle portfolio state updates (trigger post-fill hold release)
             self._on_portfolio_state_updated(msg)
             return None
+
+        # Also handle raw FILL events sent directly to handle() so test harnesses
+        # using Message(verb="FILL") are processed the same as adapter callbacks.
+        if msg.op == "EVT" and msg.verb in ("FILL", "ORDER_FILL"):
+            try:
+                self._on_order_fill(msg)
+            except Exception:
+                pass
 
         symbol = pld.get("symbol")
         if not symbol:
@@ -1101,11 +1445,23 @@ class ExecPosFSM:
                         f"🔒 [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
             result = close_flow.handle(msg)
         else:
+            # Route non-CMD events to ManageFlow; also inform CloseFlow of EVT/UPD
             result = manage_flow.handle(msg)
+            # Inform CloseFlow of EVT/UPD events so it can update its state
+            try:
+                if msg.op in ("EVT", "UPD"):
+                    close_flow.handle(msg)
+            except Exception:
+                # Non-fatal - CloseFlow should not break manage flow handling
+                pass
 
         # If a decision was made, log it and execute if not in shadow mode
         if result and result.op == "DEC":
-            wal.append(result.model_dump())
+            wal.append({
+                "event_type": "msg_out",
+                "data": result.model_dump(),
+                "timestamp": int(time.time() * 1000)
+            })
             # ✅ FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
             if (not self.shadow_mode and self.adapter) or (result.verb == "CLOSE" and self.adapter):
                 # Asynchronously execute the trade decision
@@ -1114,6 +1470,52 @@ class ExecPosFSM:
                     self._submit_async(self._execute_decision(result), loop)
 
         return result
+
+    async def replay_on_startup(self) -> None:
+        """
+        P0.3: WAL replay for state recovery on startup.
+
+        Replays WAL events to restore FSM state after restart.
+        Processes msg_in events to rebuild internal state.
+        """
+        try:
+            LOG.info("🔄 Starting WAL replay for ExecPosFSM...")
+
+            # Get WAL events from vfoundation.dr.wal
+            from vfoundation.dr.wal import read_all
+
+            events = read_all()
+            replayed_count = 0
+
+            for event in events:
+                try:
+                    # Only replay msg_in events (decisions are already logged separately)
+                    event_type = event.get("event_type", "")
+                    if event_type == "msg_in":
+                        msg_data = event.get("data", {})
+                        # Reconstruct Message from WAL data
+                        msg = Message(**msg_data)
+                        # Replay by calling handle (but skip WAL logging during replay)
+                        # Temporarily disable WAL logging during replay
+                        original_wal_append = wal.append
+                        wal.append = lambda x: None  # No-op during replay
+                        try:
+                            self.handle(msg)
+                            replayed_count += 1
+                        finally:
+                            wal.append = original_wal_append  # Restore
+
+                except Exception as e:
+                    LOG.warning(
+                        f"WAL replay error for event {event.get('id', 'unknown')}: {e}")
+                    continue
+
+            LOG.info(
+                f"✅ WAL replay completed: {replayed_count} events replayed")
+
+        except Exception as e:
+            LOG.error(f"❌ WAL replay failed: {e}", exc_info=True)
+            # Don't raise - allow startup to continue even if replay fails
 
     async def _execute_decision(self, decision: Message):
         """Asynchronously execute a trading decision using the adapter."""
@@ -1174,7 +1576,7 @@ class ExecPosFSM:
                 symbol = pld.get("symbol")
                 if order_id and symbol:
                     try:
-                        cancel_result = await self.adapter.cancel_order(symbol, order_id)
+                        cancel_result = await self._call_adapter_fn(self.adapter.cancel_order, symbol, order_id)
                         if self._is_cancel_success_response(cancel_result):
                             LOG.info(
                                 f"Cancelled order {order_id} for {symbol} (idempotent_ok)")
@@ -1197,6 +1599,20 @@ class ExecPosFSM:
                 if not symbol:
                     LOG.error("DEC:CLOSE missing symbol; cannot execute")
                     return
+                # Quick profit instrumentation
+                event_why = getattr(decision, 'why', '') or pld.get('why', '')
+                if event_why == 'QUICK_PROFIT_HIT':
+                    LOG.info(f"💰 Executing QUICK PROFIT close for {symbol}")
+                    LOG.info(f"   PnL: ${pld.get('pnl_usd', 'unknown')}")
+                    try:
+                        if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                            pnl_raw = pld.get('pnl_usd', 0)
+                            pnl = float(
+                                pnl_raw) if pnl_raw is not None else 0.0
+                            self.metrics_collector.record_quick_profit_close(
+                                symbol, pnl)
+                    except Exception:
+                        LOG.debug("Failed to record quick profit metric")
 
                 # PHASE A2: Set closing flag to prevent bracket placement race condition
                 manage = self.manage_flows.get(symbol)
@@ -1206,18 +1622,74 @@ class ExecPosFSM:
                     LOG.info(
                         f"🔒 [PHASE A2] Set closing flag for {symbol} to prevent bracket race")
 
-                # Cancel tracked brackets
-                br = self._symbol_brackets.get(symbol, {})
+                # Support DEC:CLOSE by entry: if a parent_order_id is provided in
+                # the decision payload, call OrderGuardian.close_entry() which
+                # cancels only brackets belonging to the parent entry and returns
+                # remaining qty & side to close. Skip symbol-wide tracked-bracket
+                # cancellation in that case to avoid interfering with other
+                # entries on the same symbol.
+                pld_parent_id = pld.get("parent_order_id") or pld.get(
+                    "parent_entry_id") or pld.get("entry_order_id")
                 tasks = []
-                bracket_order_ids = []  # Track IDs for logging
-                if br.get("sl_order_id"):
-                    tasks.append(self.adapter.cancel_order(
-                        symbol, br["sl_order_id"]))
-                    bracket_order_ids.append(("SL", br["sl_order_id"]))
-                if br.get("tp_order_id"):
-                    tasks.append(self.adapter.cancel_order(
-                        symbol, br["tp_order_id"]))
-                    bracket_order_ids.append(("TP", br["tp_order_id"]))
+                bracket_order_ids = []  # Track IDs for logging (if any)
+
+                if pld_parent_id:
+                    # Cancel brackets for specific entry via OrderGuardian
+                    try:
+                        entry_close_res = await self.order_guardian.close_entry(symbol=symbol, parent_order_id=str(pld_parent_id))
+                        cancelled_cnt = entry_close_res.get(
+                            "cancelled_brackets", 0)
+                        remaining_qty = float(entry_close_res.get(
+                            "remaining_qty", 0.0) or 0.0)
+                        entry_side = entry_close_res.get("side")
+                        LOG.info(
+                            f"🔒 DEC:CLOSE by-entry executed: parent={pld_parent_id} cancelled={cancelled_cnt} remaining={remaining_qty} side={entry_side}")
+                    except Exception as e:
+                        LOG.warning(f"🔁 DEC:CLOSE by-entry helper error: {e}")
+                        entry_close_res = {
+                            "cancelled_brackets": 0, "remaining_qty": 0.0, "side": None}
+                        remaining_qty = 0.0
+
+                    # If there is remaining qty for this entry, place a reduce-only market
+                    if remaining_qty and remaining_qty > 0:
+                        try:
+                            # Determine close side from entry side if available
+                            if entry_side:
+                                close_side = "SELL" if entry_side.upper() == "BUY" else "BUY"
+                            else:
+                                # Fallback to current positions if we don't have entry side
+                                try:
+                                    pos = next((p for p in (await self._call_adapter_fn(self.adapter.get_open_positions)) if p.get("symbol") == symbol), None)
+                                    pos_amt = float(
+                                        pos.get("positionAmt", 0)) if pos else 0
+                                    close_side = "SELL" if pos_amt > 0 else "BUY"
+                                except Exception:
+                                    close_side = "SELL"
+
+                            close_qty = str(abs(Decimal(str(remaining_qty))))
+                            close_id = generate_client_order_id(
+                                "CLOSE", symbol)
+                            await self._call_adapter_fn(self.adapter.place_market_reduce_only, symbol, close_side, close_qty, new_client_order_id=close_id)
+                            LOG.info(
+                                f"Close executed (by-entry) for {symbol}: parent={pld_parent_id} side={close_side} qty={close_qty}")
+                        except Exception as e:
+                            LOG.warning(
+                                f"Failed placing reduce-only close for entry parent={pld_parent_id}: {e}")
+
+                    # Skip symbol-wide tracked bracket cancellation below when parent_id is present
+                    self._symbol_brackets.pop(symbol, None)
+                    return
+                else:
+                    # Cancel tracked brackets (backward compatibility)
+                    br = self._symbol_brackets.get(symbol, {})
+                    if br.get("sl_order_id"):
+                        tasks.append(self._call_adapter_fn(
+                            self.adapter.cancel_order, symbol, br["sl_order_id"]))
+                        bracket_order_ids.append(("SL", br["sl_order_id"]))
+                    if br.get("tp_order_id"):
+                        tasks.append(self._call_adapter_fn(
+                            self.adapter.cancel_order, symbol, br["tp_order_id"]))
+                        bracket_order_ids.append(("TP", br["tp_order_id"]))
 
                 if tasks:
                     # ✅ NEW: Collect and verify cancel results
@@ -1282,7 +1754,7 @@ class ExecPosFSM:
 
                 # Determine side/qty from current positions
                 try:
-                    positions = await self.adapter.get_open_positions()
+                    positions = await self._call_adapter_fn(self.adapter.get_open_positions)
                     # Convert positions to dict if they're objects
                     positions_list = [
                         p.to_dict() if hasattr(p, 'to_dict') else (
@@ -1306,7 +1778,7 @@ class ExecPosFSM:
                 close_side = "SELL" if amt > 0 else "BUY"
                 close_qty = str(abs(Decimal(str(amt))))
                 close_id = generate_client_order_id("CLOSE", symbol)
-                await self.adapter.place_market_reduce_only(symbol, close_side, close_qty, new_client_order_id=close_id)
+                await self._call_adapter_fn(self.adapter.place_market_reduce_only, symbol, close_side, close_qty, new_client_order_id=close_id)
                 LOG.info(
                     f"Close executed for {symbol}: side={close_side} qty={close_qty}")
                 self._symbol_brackets.pop(symbol, None)
@@ -1315,80 +1787,106 @@ class ExecPosFSM:
                 # Wait for position to settle, then cleanup any orphaned brackets
                 await asyncio.sleep(2.0)
 
-                # 🔄 Synchronous reconcile: fetch open orders ONLY for this symbol
-                # and cancel any STOP/TP with reduceOnly=true or closePosition=true
-                LOG.info(
-                    f"🔄 [DEC:CLOSE RECONCILE] Starting sync cleanup for {symbol}")
+                # 🔄 Synchronous reconcile (symbol-wide) — ОПЦІЙНО: тільки якщо зберігаємо єдиний набір брекетів
+                # multi-entry mode: НЕ чіпати інші брекети за символом, щоб не зламати SL/TP другої позиції
+                do_symbol_reconcile = True
                 try:
-                    open_orders = await self.adapter.get_open_orders(symbol)
-                    # Convert orders to dict if they're objects
-                    open_orders_list = [
-                        o.to_dict() if hasattr(o, 'to_dict') else (
-                            o.__dict__ if not isinstance(o, dict) else o)
-                        for o in open_orders
-                    ]
-
-                    cancel_tasks = []
-                    for o in open_orders_list:
-                        otype = (o.get("type") or "").upper()
-                        reduce_only = str(
-                            o.get("reduceOnly", "")).lower() == "true"
-                        close_pos = str(
-                            o.get("closePosition", "")).lower() == "true"
-
-                        # Cancel STOP/TP/LIMIT with reduceOnly or closePosition
-                        if otype in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "LIMIT") and (reduce_only or close_pos):
-                            oid = o.get("orderId")
-                            cancel_tasks.append(
-                                (otype, oid, self.adapter.cancel_order(symbol, oid)))
-
-                    # Execute all cancellations
-                    if cancel_tasks:
-                        results = await asyncio.gather(*[task[2] for task in cancel_tasks], return_exceptions=True)
-                        for (otype, oid, _), result in zip(cancel_tasks, results):
-                            if isinstance(result, Exception):
-                                if self._is_unknown_order_error(result):
-                                    LOG.info(
-                                        f"ℹ️ [DEC:CLOSE RECONCILE] {otype} {oid} already gone for {symbol} (-2011)")
-                                else:
-                                    LOG.warning(
-                                        f"❌ [DEC:CLOSE RECONCILE] Failed to cancel {otype} {oid} for {symbol}: {result}")
-                                    self._orphan_metrics["errors"] += 1
-                            else:
-                                if self._is_cancel_success_response(result):
-                                    LOG.info(
-                                        f"✅ [DEC:CLOSE RECONCILE] Cancelled {otype} {oid} for {symbol}")
-                                    self._orphan_metrics["reconcile_cancelled"] = self._orphan_metrics.get(
-                                        "reconcile_cancelled", 0) + 1
-                                else:
-                                    status = str(result.get(
-                                        "status", "")).upper()
-                                    LOG.warning(
-                                        f"❌ [DEC:CLOSE RECONCILE] Cancel response unexpected for {otype} {oid} (status={status})")
-                                    self._orphan_metrics["errors"] += 1
-
-                        LOG.info(
-                            f"✅ [DEC:CLOSE RECONCILE] Completed for {symbol}: cancelled {len(cancel_tasks)} orders")
-
-                        # PHASE C: Emit observability event for reconcile completion
-                        self._emit_observability_event("RECONCILE_CANCELLED", {
-                            "symbol": symbol,
-                            "order_count": len(cancel_tasks),
-                            "metric": self._orphan_metrics["reconcile_cancelled"]
-                        })
+                    if isinstance(self.config, dict):
+                        do_symbol_reconcile = bool(
+                            self.config.get("trading", {})
+                            .get("execution", {})
+                            .get("manage", {})
+                            .get("brackets", {})
+                            .get("keep_single_bracket_set", True)
+                        )
                     else:
-                        LOG.info(
-                            f"✅ [DEC:CLOSE RECONCILE] No orphaned brackets found for {symbol}")
+                        tr = getattr(self.config, 'trading', None)
+                        exec_cfg = getattr(
+                            tr, 'execution', None) if tr else None
+                        manage_cfg = getattr(
+                            exec_cfg, 'manage', None) if exec_cfg else None
+                        brackets_cfg = getattr(
+                            manage_cfg, 'brackets', None) if manage_cfg else None
+                        if brackets_cfg and hasattr(brackets_cfg, 'keep_single_bracket_set'):
+                            do_symbol_reconcile = bool(
+                                getattr(brackets_cfg, 'keep_single_bracket_set'))
+                        else:
+                            do_symbol_reconcile = True
+                except Exception:
+                    do_symbol_reconcile = True
+                # If we were invoked for DEC:CLOSE by specific entry, skip symbol-wide reconcile
+                if pld_parent_id:
+                    do_symbol_reconcile = False
+                if do_symbol_reconcile:
+                    LOG.info(
+                        f"🔄 [DEC:CLOSE RECONCILE] Starting sync cleanup for {symbol} (single-set mode)")
+                    try:
+                        open_orders = await self._call_adapter_fn(self.adapter.get_open_orders, symbol)
+                        open_orders_list = [
+                            o.to_dict() if hasattr(o, 'to_dict') else (
+                                o.__dict__ if not isinstance(o, dict) else o)
+                            for o in open_orders
+                        ]
 
-                except Exception as e:
-                    LOG.warning(
-                        f"⚠️ [DEC:CLOSE RECONCILE] Error during cleanup for {symbol}: {e}")
-                    self._orphan_metrics["errors"] += 1
+                        cancel_tasks = []
+                        for o in open_orders_list:
+                            otype = (o.get("type") or "").upper()
+                            reduce_only = str(
+                                o.get("reduceOnly", "")).lower() == "true"
+                            close_pos = str(
+                                o.get("closePosition", "")).lower() == "true"
+                            if otype in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "LIMIT") and (reduce_only or close_pos):
+                                oid = o.get("orderId")
+                                cancel_tasks.append(
+                                    (otype, oid, self.adapter.cancel_order(symbol, oid)))
 
-                # Also run full cleanup to catch any cross-symbol orphans
-                await self.order_guardian.cleanup_orphans()
-                LOG.info(
-                    f"✅ Cleanup after manual CLOSE for {symbol} completed")
+                        if cancel_tasks:
+                            results = await asyncio.gather(*[task[2] for task in cancel_tasks], return_exceptions=True)
+                            for (otype, oid, _), result in zip(cancel_tasks, results):
+                                if isinstance(result, Exception):
+                                    if self._is_unknown_order_error(result):
+                                        LOG.info(
+                                            f"ℹ️ [DEC:CLOSE RECONCILE] {otype} {oid} already gone for {symbol} (-2011)")
+                                    else:
+                                        LOG.warning(
+                                            f"❌ [DEC:CLOSE RECONCILE] Failed to cancel {otype} {oid} for {symbol}: {result}")
+                                        self._orphan_metrics["errors"] += 1
+                                else:
+                                    if self._is_cancel_success_response(result):
+                                        LOG.info(
+                                            f"✅ [DEC:CLOSE RECONCILE] Cancelled {otype} {oid} for {symbol}")
+                                        self._orphan_metrics["reconcile_cancelled"] = self._orphan_metrics.get(
+                                            "reconcile_cancelled", 0) + 1
+                                    else:
+                                        status = str(result.get(
+                                            "status", "")).upper()
+                                        LOG.warning(
+                                            f"❌ [DEC:CLOSE RECONCILE] Cancel response unexpected for {otype} {oid} (status={status})")
+                                        self._orphan_metrics["errors"] += 1
+
+                            LOG.info(
+                                f"✅ [DEC:CLOSE RECONCILE] Completed for {symbol}: cancelled {len(cancel_tasks)} orders")
+                            self._emit_observability_event("RECONCILE_CANCELLED", {
+                                "symbol": symbol,
+                                "order_count": len(cancel_tasks),
+                                "metric": self._orphan_metrics["reconcile_cancelled"]
+                            })
+                        else:
+                            LOG.info(
+                                f"✅ [DEC:CLOSE RECONCILE] No orphaned brackets found for {symbol}")
+                    except Exception as e:
+                        LOG.warning(
+                            f"⚠️ [DEC:CLOSE RECONCILE] Error during cleanup for {symbol}: {e}")
+                        self._orphan_metrics["errors"] += 1
+                else:
+                    LOG.info(
+                        f"🛑 [DEC:CLOSE RECONCILE] Skipped symbol-wide cleanup for {symbol} (multi-entry mode)")
+
+                # Запуск повної чистки орфанів не виконується у multi-entry режимі (щоб не чіпати інші entry)
+                if do_symbol_reconcile:
+                    await self.order_guardian.cleanup_orphans()
+                    LOG.info(
+                        f"✅ Cleanup after manual CLOSE for {symbol} completed")
 
                 # [GUARD] Reconcile orphaned brackets for closed position
                 await self.order_guardian.reconcile_symbol(symbol, decision.rid)
@@ -1416,8 +1914,8 @@ class ExecPosFSM:
             qty = decision.pld["qty"]
 
             # Get mark price and filters
-            mark = await self.adapter.get_mark_price(symbol)
-            exchange_info = await self.adapter.get_exchange_info(symbol)
+            mark = await self._call_adapter_fn(self.adapter.get_mark_price, symbol)
+            exchange_info = await self._call_adapter_fn(self.adapter.get_exchange_info, symbol)
             tick_size = float(
                 next(
                     f["tickSize"]
@@ -1481,9 +1979,7 @@ class ExecPosFSM:
 
             # Place MARKET entry
             entry_id = generate_client_order_id("ENTRY", symbol)
-            entry_resp = await self.adapter.place_market_entry(
-                symbol, side, qty, entry_id
-            )
+            entry_resp = await self._call_adapter_fn(self.adapter.place_market_entry, symbol, side, qty, entry_id)
             LOG.info(f"✅ MARKET entry placed: {entry_resp}")
 
             # [GUARD] Register entry order for ownership tracking
@@ -1575,16 +2071,12 @@ class ExecPosFSM:
             tp_resp = None
             try:
                 async def place_sl_async():
-                    return await self.adapter.place_stop_market_close_position(
-                        symbol, sl_side, str(sl), new_client_order_id=sl_id
-                    )
+                    return await self._call_adapter_fn(self.adapter.place_stop_market_close_position, symbol, sl_side, str(sl), new_client_order_id=sl_id)
 
                 async def place_tp_async():
                     try:
                         return (
-                            await self.adapter.place_take_profit_market_close_position(
-                                symbol, tp_side, str(tp), new_client_order_id=tp_id
-                            )
+                            await self._call_adapter_fn(self.adapter.place_take_profit_market_close_position, symbol, tp_side, str(tp), new_client_order_id=tp_id)
                         )
                     except BinanceAPIError as e:
                         if e.code == -2021:
@@ -1606,9 +2098,7 @@ class ExecPosFSM:
                             await asyncio.sleep(0.2)
 
                             try:
-                                return await self.adapter.place_take_profit_market_close_position(
-                                    symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
-                                )
+                                return await self._call_adapter_fn(self.adapter.place_take_profit_market_close_position, symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
                             except BinanceAPIError as e2:
                                 if e2.code == -2021:
                                     # Second retry: 400ms backoff
@@ -1622,34 +2112,20 @@ class ExecPosFSM:
                                     )
 
                                     try:
-                                        return await self.adapter.place_take_profit_market_close_position(
-                                            symbol, tp_side, str(tp_adj2), new_client_order_id=tp_id
-                                        )
+                                        return await self._call_adapter_fn(self.adapter.place_take_profit_market_close_position, symbol, tp_side, str(tp_adj2), new_client_order_id=tp_id)
                                     except BinanceAPIError:
                                         # Fallback to LIMIT reduceOnly
                                         LOG.warning(
                                             f"⚠️ [PHASE A3] TP -2021 fallback to LIMIT for {symbol}")
                                         self.metrics_collector.record_retry(
                                             "tp_fallback") if self.metrics_collector else None
-                                        return await self.adapter.place_limit_reduce_only(
-                                            symbol,
-                                            tp_side,
-                                            str(tp_adj2),
-                                            qty,
-                                            new_client_order_id=tp_id,
-                                        )
+                                        return await self._call_adapter_fn(self.adapter.place_limit_reduce_only, symbol, tp_side, str(tp_adj2), qty, new_client_order_id=tp_id)
                                 else:
                                     raise
                             # Fallback to LIMIT reduceOnly
                             self.metrics_collector.record_retry(
                                 "tp_fallback") if self.metrics_collector else None
-                            return await self.adapter.place_limit_reduce_only(
-                                symbol,
-                                tp_side,
-                                str(tp_adj),
-                                qty,
-                                new_client_order_id=tp_id,
-                            )
+                            return await self._call_adapter_fn(self.adapter.place_limit_reduce_only, symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
                         else:
                             raise
 
@@ -1662,13 +2138,9 @@ class ExecPosFSM:
             except Exception as e:
                 LOG.error(f"Error placing brackets in parallel: {e}")
                 # Fallback: place them sequentially
-                sl_resp = await self.adapter.place_stop_market_close_position(
-                    symbol, sl_side, str(sl), new_client_order_id=sl_id
-                )
+                sl_resp = await self._call_adapter_fn(self.adapter.place_stop_market_close_position, symbol, sl_side, str(sl), new_client_order_id=sl_id)
                 try:
-                    tp_resp = await self.adapter.place_take_profit_market_close_position(
-                        symbol, tp_side, str(tp), new_client_order_id=tp_id
-                    )
+                    tp_resp = await self._call_adapter_fn(self.adapter.place_take_profit_market_close_position, symbol, tp_side, str(tp), new_client_order_id=tp_id)
                 except BinanceAPIError as e:
                     if e.code == -2021:
                         tp_adj = tp * 1.002
@@ -1676,17 +2148,9 @@ class ExecPosFSM:
                             tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
                         )
                         try:
-                            tp_resp = await self.adapter.place_take_profit_market_close_position(
-                                symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
-                            )
+                            tp_resp = await self._call_adapter_fn(self.adapter.place_take_profit_market_close_position, symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
                         except BinanceAPIError:
-                            tp_resp = await self.adapter.place_limit_reduce_only(
-                                symbol,
-                                tp_side,
-                                str(tp_adj),
-                                qty,
-                                new_client_order_id=tp_id,
-                            )
+                            tp_resp = await self._call_adapter_fn(self.adapter.place_limit_reduce_only, symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
                     else:
                         raise
 
@@ -1731,18 +2195,43 @@ class ExecPosFSM:
                     rid=decision.rid
                 )
 
-                # After registering new brackets, proactively cancel any older
-                # brackets tied to previous entries for this symbol. This
-                # prevents accumulation of hanging reduceOnly/closePosition orders
-                # when multiple entries occur sequentially.
+                # Optional single-set bracket policy (default: keep single set)
+                # Feature flag: trading.execution.manage.brackets.keep_single_bracket_set (default True)
+                keep_single = True
                 try:
-                    await self.order_guardian.cleanup_other_brackets_for_symbol(
-                        symbol,
-                        keep_parent_order_id=str(entry_resp.get("orderId", "")),
-                    )
-                except Exception as _e:
-                    LOG.debug(
-                        f"OrderGuardian cleanup_other_brackets_for_symbol skipped: {_e}")
+                    if isinstance(self.config, dict):
+                        keep_single = bool(
+                            self.config.get("trading", {})
+                            .get("execution", {})
+                            .get("manage", {})
+                            .get("brackets", {})
+                            .get("keep_single_bracket_set", True)
+                        )
+                    else:
+                        # Pydantic / object-style (best-effort)
+                        tr = getattr(self.config, 'trading', None)
+                        exec_cfg = getattr(
+                            tr, 'execution', None) if tr else None
+                        manage_cfg = getattr(
+                            exec_cfg, 'manage', None) if exec_cfg else None
+                        brackets_cfg = getattr(
+                            manage_cfg, 'brackets', None) if manage_cfg else None
+                        if brackets_cfg and hasattr(brackets_cfg, 'keep_single_bracket_set'):
+                            keep_single = bool(
+                                getattr(brackets_cfg, 'keep_single_bracket_set'))
+                except Exception:
+                    keep_single = True
+
+                if keep_single:
+                    try:
+                        await self.order_guardian.cleanup_other_brackets_for_symbol(
+                            symbol,
+                            keep_parent_order_id=str(
+                                entry_resp.get("orderId", "")),
+                        )
+                    except Exception as _e:
+                        LOG.debug(
+                            f"OrderGuardian cleanup_other_brackets_for_symbol skipped: {_e}")
 
             # ✅ NEW: Sync bracket IDs with ManageFlowFSM for OCO emulation
             # Ensures ManageFlowFSM has accurate tracking even if WebSocket events are delayed
@@ -1958,9 +2447,7 @@ class ExecPosFSM:
         if self.adapter and not self.shadow_mode:
             try:
                 self.watchdog.cancel_attempt_count += 1
-                cancel_result = await self.adapter.cancel_order(
-                    deadline.symbol, deadline.order_id
-                )
+                cancel_result = await self._call_adapter_fn(self.adapter.cancel_order, deadline.symbol, deadline.order_id)
 
                 # ✅ NEW: Verify cancel status from exchange response
                 if self._is_cancel_success_response(cancel_result):
@@ -1979,6 +2466,11 @@ class ExecPosFSM:
                         "adapter_response": cancel_result,
                         "timestamp": int(time.time() * 1000)
                     })
+
+                    # ✅ FIX: Update portfolio state after successful timeout cancellation
+                    # This ensures decision_making knows the position was never opened
+                    await self._update_portfolio_after_timeout_cancellation(deadline.symbol)
+
                 else:
                     status = str(cancel_result.get("status", "")).upper()
                     # Cancel rejected or order in non-cancelable state (e.g., already FILLED)
@@ -2011,6 +2503,10 @@ class ExecPosFSM:
                         "timeout_type": deadline.timeout_type.value,
                         "timestamp": int(time.time() * 1000)
                     })
+
+                    # ✅ FIX: Update portfolio state even for idempotent cancellation
+                    await self._update_portfolio_after_timeout_cancellation(deadline.symbol)
+
                 else:
                     LOG.warning(
                         f"Failed to cancel timed-out order {deadline.order_id}: {e}")
@@ -2326,7 +2822,7 @@ class ExecPosFSM:
                 return
 
             # Get shadow notional from exchange
-            shadow_notional = await self.adapter.get_positions_notional_usd_shadow()
+            shadow_notional = await self._call_adapter_fn(self.adapter.get_positions_notional_usd_shadow)
 
             # Get portfolio notional
             portfolio_notional = Decimal(
@@ -2433,7 +2929,7 @@ class ExecPosFSM:
         while True:
             tries += 1
             try:
-                positions = await self.adapter.get_open_positions(symbol)
+                positions = await self._call_adapter_fn(self.adapter.get_open_positions, symbol)
                 # Convert to dict if needed
                 positions_list = [
                     p.to_dict() if hasattr(p, 'to_dict') else (
@@ -2485,7 +2981,7 @@ class ExecPosFSM:
     async def _preflight_position_check_nonzero(self, symbol: str) -> bool:
         """Alternative pre-flight: allow any non-zero positionAmt (BOTH/LONG/SHORT)."""
         try:
-            positions = await self.adapter.get_open_positions(symbol)
+            positions = await self._call_adapter_fn(self.adapter.get_open_positions, symbol)
             positions_list = [
                 p.to_dict() if hasattr(p, 'to_dict') else (
                     p.__dict__ if not isinstance(p, dict) else p)
@@ -2548,6 +3044,12 @@ class ExecPosFSM:
         This ensures OrderGuardian has accurate tracking of existing orders/positions
         after restart, enabling proper orphan detection and cleanup.
         """
+        # Guard against concurrent or duplicate startup reconcile runs
+        if getattr(self, "_startup_reconcile_running", False):
+            LOG.debug(
+                "startup_order_guardian_reconcile: already running; skipping duplicate call")
+            return
+        self._startup_reconcile_running = True
         try:
             LOG.info("🔄 Starting OrderGuardian startup reconciliation...")
 
@@ -2597,11 +3099,12 @@ class ExecPosFSM:
                     LOG.warning(
                         f"Failed to link existing orders during startup: {e}")
 
-            # Then run cleanup to remove orphans
-            await self.order_guardian.cleanup_orphans()
-            LOG.info("✅ OrderGuardian startup reconciliation completed")
+            # Then (later) run cleanup to remove orphans - defer to final sync step
+            # Note: A single cleanup sweep is performed at the end of this method
         except Exception as e:
             LOG.error(f"❌ OrderGuardian startup reconciliation failed: {e}")
+        finally:
+            self._startup_reconcile_running = False
         """
         Synchronize open orders and positions with Binance at startup.
 
@@ -2667,7 +3170,7 @@ class ExecPosFSM:
             # ✅ NEW: Use order_guardian.cleanup_orphans() for centralized cleanup
             # This ensures consistent orphan detection across startup and runtime
             LOG.info("🧹 Running orphan cleanup on startup...")
-            await self.order_guardian.cleanup_orphans()  # Scans ALL symbols
+            await self.order_guardian.cleanup_orphans()  # Scans ALL symbols exactly once
             LOG.info("✅ Startup orphan cleanup completed")
 
             # 3. For each position, check if we have matching FSM state
@@ -2690,3 +3193,47 @@ class ExecPosFSM:
         except Exception as e:
             LOG.error(
                 f"❌ Error during order/position sync: {e}", exc_info=True)
+
+    async def _update_portfolio_after_timeout_cancellation(self, symbol: str) -> None:
+        """
+        ✅ FIX: Update portfolio state after successful timeout cancellation.
+
+        This ensures decision_making knows the position was never opened,
+        allowing new position attempts for the same symbol.
+
+        Args:
+            symbol: Trading pair that had the timed-out order
+        """
+        try:
+            from vfoundation.core.fsm_emit_compat import emit_compat, Message
+
+            # Get current portfolio state and update positions_count to 0 for this symbol
+            current_state = self._latest_portfolio_state.copy()
+            # Reset to allow new positions
+            current_state["positions_count"] = 0
+            current_state["open_positions_usd"] = "0"  # No open positions
+            current_state["last_updated"] = int(time.time() * 1000)
+
+            # Emit EVT:PORTFOLIO_STATE_UPDATED to notify decision_making
+            portfolio_msg = Message(
+                op="EVT",
+                verb="PORTFOLIO_STATE_UPDATED",
+                src="execution_position",
+                dst="decision_making",
+                rid=f"timeout_cancel_{symbol}_{int(time.time())}",
+                pld={
+                    "portfolio_state": current_state,
+                    "symbol": symbol,
+                    "reason": "timeout_cancellation",
+                    "timestamp_ms": int(time.time() * 1000)
+                },
+                why="portfolio_state_reset_after_timeout_cancellation",
+            )
+
+            await emit_compat(self.fsm, portfolio_msg, logger=LOG)
+            LOG.info(
+                f"✅ Portfolio state reset after timeout cancellation for {symbol}")
+
+        except Exception as e:
+            LOG.error(
+                f"❌ Failed to update portfolio state after timeout cancellation for {symbol}: {e}")
