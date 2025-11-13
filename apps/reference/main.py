@@ -748,7 +748,7 @@ def debug_event_listener(event: Any) -> None:
             trade_formatted_logger.info(trade_info)
 
 
-def initialize_domains(config: dict[str, Any]) -> FSMCore:
+def initialize_domains(config) -> FSMCore:
     """Initialize all application domains and wire them up."""
     global fsm, execution_position
 
@@ -759,8 +759,7 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
 
     # 2. Initialize EXECUTION POSITION FSM FIRST (before market_data triggers trade intents)
     # This ensures execution_position is ready when on_trade_intent_proposed is called
-    config_dict = config
-    execution_position = ExecPosFSM(config=config_dict, fsm=fsm)
+    execution_position = ExecPosFSM(config=config, fsm=fsm)
     LOG.info("✅ Execution position FSM initialized first")
 
     # 3. Initialize other domains
@@ -879,6 +878,8 @@ def main() -> None:
         # In a real scenario, this would trigger a system-wide deferral or shutdown.
         # For now, we just log and continue, assuming downstream components will handle deferral.
         # TODO: Implement a global deferral mechanism or graceful shutdown here.
+    else:
+        LOG.info("HYBRID: OK (live data, testnet exec)")
 
     # Step 2: Initialize FSM Core
     LOG.info("Initializing FSM Core...")
@@ -915,6 +916,10 @@ def main() -> None:
     # FSMP-P3-T01: Use resolved risk_portfolio_source for AccountObserver environment
     risk_portfolio_source = config.get("_resolved", {}).get(
         "risk_portfolio_source", "testnet")  # Default to testnet for safety
+    # Set _resolved for preflight checks
+    if not hasattr(config, '_resolved'):
+        config._resolved = {}
+    config._resolved["risk_portfolio_source"] = risk_portfolio_source
     account_observer = AccountObserver(
         fsm=fsm, config=config.to_dict(), environment=risk_portfolio_source)
 
@@ -974,8 +979,8 @@ def main() -> None:
 
     # Execution Position (handles order execution on testnet)
     global execution_position
-    execution_position = ExecPosFSM(config=config.to_dict(), fsm=fsm)
-    LOG.info("✅ Execution position FSM initialized")
+    # execution_position = ExecPosFSM(config=config.to_dict(), fsm=fsm)  # REMOVED: Duplicate initialization
+    LOG.info("✅ Execution position FSM already initialized in initialize_domains()")
 
     # ==========================================
     # DR: DISASTER RECOVERY STATE RESTORATION
@@ -997,10 +1002,30 @@ def main() -> None:
 
             # Load snapshot data
             with open(latest_snapshot_path, "r", encoding="utf-8") as f:
-                snapshot_data = json.load(f)
+                snapshot_wrapper = json.load(f)
+            # If snapshot is wrapped with integrity, verify and extract
+            try:
+                if isinstance(snapshot_wrapper, dict) and "integrity_hash" in snapshot_wrapper and "data" in snapshot_wrapper:
+                    wrapper_data = snapshot_wrapper["data"]
+                    expected_hash = snapshot_wrapper.get("integrity_hash")
+                    # Compute hash of data for verification
+                    import hashlib
+                    import json as _json
+                    actual_hash = hashlib.sha256(_json.dumps(
+                        wrapper_data, sort_keys=True).encode("utf-8")).hexdigest()
+                    if expected_hash and expected_hash != actual_hash:
+                        raise ValueError(
+                            "Snapshot integrity verification failed")
+                    snapshot_data = wrapper_data
+                else:
+                    snapshot_data = snapshot_wrapper
+            except Exception as e:
+                LOG.error(
+                    f"Snapshot integrity check failed for {latest_snapshot_path.name}: {e}")
+                snapshot_data = None
 
             # Restore state from snapshot
-            if position_tracking.load_snapshot(snapshot_data):
+            if snapshot_data and position_tracking.load_snapshot(snapshot_data):
                 LOG.info("✅ Successfully loaded state from snapshot")
                 LOG.info(
                     f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}"
@@ -1124,14 +1149,47 @@ def main() -> None:
 
     # Initialize Snapshot Scheduler (DR - Phase L4)
     LOG.info("Initializing snapshot scheduler (DR)...")
+    # Snapshot scheduler configuration (overridable via config.wave_0.snapshot)
+    # Default values (testing defaults): 30s interval
+    snapshot_enabled_default = True
+    snapshot_interval_default = 30
+    snapshot_dir_default = "ops/snapshots"
+    snapshot_domains_default = ["position_tracking"]
+
+    try:
+        wave0_cfg = config.to_dict().get("wave_0", {})
+    except Exception:
+        wave0_cfg = {}
+
+    snapshot_cfg = (wave0_cfg.get("snapshot") if isinstance(
+        wave0_cfg, dict) else None) or {}
+    snapshot_enabled = snapshot_cfg.get("enabled", snapshot_enabled_default)
+    snapshot_interval = snapshot_cfg.get(
+        "interval_sec", snapshot_interval_default)
+    snapshot_dir_val = snapshot_cfg.get("snapshot_dir", snapshot_dir_default)
+    snapshot_domains = snapshot_cfg.get("domains", snapshot_domains_default)
+
     snapshot_scheduler_config = {
-        "interval_sec": 30,  # 30 seconds for testing (production: 300)
-        "snapshot_dir": "ops/snapshots",
-        "domains": ["position_tracking"],  # Start with position_tracking only
+        "interval_sec": snapshot_interval,
+        "snapshot_dir": snapshot_dir_val,
+        "domains": snapshot_domains,
     }
-    # snapshot_scheduler = SnapshotScheduler(
-    #     fsm=fsm, config=snapshot_scheduler_config)
-    snapshot_scheduler = None  # Temporarily disabled
+    if snapshot_enabled:
+        try:
+            from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import SnapshotScheduler
+
+            snapshot_scheduler = SnapshotScheduler(
+                fsm=fsm, config=snapshot_scheduler_config)
+            # Register and start
+            # fsm.register_domain('snapshot_scheduler', snapshot_scheduler)
+            snapshot_scheduler.start()
+            LOG.info(
+                f"✅ Snapshot scheduler enabled (interval={snapshot_interval}s)")
+        except Exception as e:
+            LOG.error(f"Failed to initialize snapshot_scheduler: {e}")
+            snapshot_scheduler = None
+    else:
+        snapshot_scheduler = None
     # fsm.register_domain('snapshot_scheduler', snapshot_scheduler)
 
     # Step 4: Start all components

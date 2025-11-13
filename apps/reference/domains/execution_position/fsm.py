@@ -104,7 +104,7 @@ class ExecPosFSM:
     per symbol and handles trade execution via the BinanceAdapter.
     """
 
-    def __init__(self, config: Dict[str, Any], fsm, shadow_mode: bool = False):
+    def __init__(self, config: Any, fsm, shadow_mode: bool = False):
         self.config = config
         self.fsm = fsm
         self.shadow_mode = shadow_mode
@@ -960,20 +960,24 @@ class ExecPosFSM:
         side = payload.get("side")
         price = payload.get("price")
         quantity = payload.get("quantity") or payload.get("qty")
-        client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
+        client_order_id = payload.get(
+            "clientOrderId") or payload.get("client_order_id")
         idempotent_key = payload.get("idempotent_key") or client_order_id
         rid = payload.get("rid") or event.rid
 
         if not symbol or quantity is None:
-            LOG.warning(f"EVT:TRADE_EXECUTED missing required fields: symbol={symbol}, quantity={quantity}")
+            LOG.warning(
+                f"EVT:TRADE_EXECUTED missing required fields: symbol={symbol}, quantity={quantity}")
             return
 
-        LOG.info(f"EVT:TRADE_EXECUTED received in ExecPosFSM: symbol={symbol} side={side} qty={quantity} key={idempotent_key}")
+        LOG.info(
+            f"EVT:TRADE_EXECUTED received in ExecPosFSM: symbol={symbol} side={side} qty={quantity} key={idempotent_key}")
 
         # 🔄 IDEMPOTENT: Check if this event was already processed
         event_key = f"trade_executed_{idempotent_key or rid or 'unknown'}_{symbol}"
         if event_key in self._processed_events:
-            LOG.debug(f"EVT:TRADE_EXECUTED Skipping duplicate for {symbol} key {idempotent_key}")
+            LOG.debug(
+                f"EVT:TRADE_EXECUTED Skipping duplicate for {symbol} key {idempotent_key}")
             return
         self._processed_events.add(event_key)
 
@@ -989,12 +993,14 @@ class ExecPosFSM:
         if hasattr(self, "exposure_guard") and self.exposure_guard:
             try:
                 if idempotent_key and notional_usd is not None:
-                    LOG.debug(f"ExposureGuard.on_fill applied (key={idempotent_key} notional={notional_usd})")
+                    LOG.debug(
+                        f"ExposureGuard.on_fill applied (key={idempotent_key} notional={notional_usd})")
                     self.exposure_guard.on_fill(
                         idempotent_key, notional_usd, symbol=symbol, side=side or "SELL"
                     )
                 else:
-                    LOG.warning(f"Cannot call exposure_guard.on_fill: key={idempotent_key} notional={notional_usd}")
+                    LOG.warning(
+                        f"Cannot call exposure_guard.on_fill: key={idempotent_key} notional={notional_usd}")
             except Exception as e:
                 LOG.error(f"ExposureGuard.on_fill failed: {e}", exc_info=True)
 
@@ -1003,7 +1009,8 @@ class ExecPosFSM:
             try:
                 self.order_guardian.on_fill(
                     symbol=symbol,
-                    parent_order_id=str(client_order_id) if client_order_id else "",
+                    parent_order_id=str(
+                        client_order_id) if client_order_id else "",
                     filled_qty=float(quantity) if quantity else 0.0
                 )
             except Exception as e:
