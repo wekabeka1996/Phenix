@@ -17,7 +17,7 @@ Set LOG_LEVEL environment variable to control logging:
 - LOG_LEVEL=ERROR - Show only errors
 """
 
-from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMPORT
+from apps.reference.bootstrap.preflight import check_hybrid_coherence, HybridIncoherenceError  # NEW IMPORT
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 # from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
@@ -870,16 +870,13 @@ def main() -> None:
     LOG.info("✅ Alert Manager initialized")
 
     # FSMP-P3-T01: Pre-flight check for hybrid coherence
-    is_coherent, reasons = check_hybrid_coherence(config.to_dict())
-    if not is_coherent:
-        LOG.critical(
-            f"🚨 CRITICAL: Hybrid mode is incoherent. Trading will be deferred. Reasons: {'; '.join(reasons)}"
-        )
-        # In a real scenario, this would trigger a system-wide deferral or shutdown.
-        # For now, we just log and continue, assuming downstream components will handle deferral.
-        # TODO: Implement a global deferral mechanism or graceful shutdown here.
-    else:
+    try:
+        is_coherent, reasons = check_hybrid_coherence(config.to_dict())
         LOG.info("HYBRID: OK (live data, testnet exec)")
+    except HybridIncoherenceError as e:
+        LOG.critical(f"🚨 CRITICAL: {e}")
+        # Hard fail - exit the application
+        sys.exit(1)
 
     # Step 2: Initialize FSM Core
     LOG.info("Initializing FSM Core...")

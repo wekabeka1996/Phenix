@@ -4,6 +4,11 @@ import logging
 log = logging.getLogger(__name__)
 
 
+class HybridIncoherenceError(Exception):
+    """Raised when hybrid mode configuration is incoherent."""
+    pass
+
+
 _HYBRID_COHERENCE_STATE = {
     'last_check_ts': None,
     'last_result': {'ok': False, 'reasons': []},
@@ -69,8 +74,9 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
         pass  # Metrics unavailable, continue
 
     if not ok:
-        log.warning(
-            "HYBRID_INCOHERENT: Hybrid mode pre-flight check failed. Reasons: %s", "; ".join(reasons))
+        error_msg = f"HYBRID_INCOHERENT: Hybrid mode pre-flight check failed. Reasons: {'; '.join(reasons)}"
+        log.error(error_msg)
+        raise HybridIncoherenceError(error_msg)
     else:
         log.info("✅ Hybrid mode pre-flight check passed.")
     return ok, reasons
