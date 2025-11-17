@@ -65,6 +65,16 @@ trading:
         fixed_bps: 100
 ```
 
+### Configuration Contract
+
+DecisionMaking consumes configuration via the SSOT v1.0 contract:
+
+- Schema: `config_schema_v1.py`
+- Resolver map: `config_contract_map.md`
+- Validation: `python config_validate.py --ci`
+
+Only the resolvers listed in the contract map (`resolve_brackets_config`, `compute_effective_trading_modes`, etc.) may be used to read configuration. This keeps TP/SL, sizing, and mode overrides aligned with execution flows.
+
 ## Events
 
 ### EVT:TRADE_INTENT_PROPOSED

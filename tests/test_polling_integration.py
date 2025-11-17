@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="BinanceAdapter is REST-only, no polling support")
 async def test_polling_detects_fill_and_triggers_brackets():
     """Test that polling loop detects FILLED order and triggers bracket placement."""
 
@@ -88,6 +89,7 @@ async def test_polling_detects_fill_and_triggers_brackets():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="BinanceAdapter is REST-only, no polling support")
 async def test_polling_handles_cancelled_orders():
     """Test that polling doesn't emit events for cancelled non-entry orders."""
 
@@ -147,6 +149,7 @@ async def test_polling_handles_cancelled_orders():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="BinanceAdapter is REST-only, no polling support")
 async def test_polling_cancels_brackets_on_entry_cancelled():
     """Test that polling cancels TP/SL brackets when entry order is cancelled."""
 

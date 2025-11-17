@@ -1,0 +1,21 @@
+# v2 config for regimes domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+detector:
+  window_minutes: 2          # rv_window / 60 ≈ 120/60 = 2 minutes
+  min_regime_duration_min: 15 # min time to hold regime
+  debounce_changes: true
+
+regimes:
+  NORMAL:
+    vol_std_bps_min: 0
+    vol_std_bps_max: 80
+  HIGH_VOLATILITY:
+    vol_std_bps_min: 80
+    vol_std_bps_max: 200
+  CRISIS:
+    vol_std_bps_min: 200
+    vol_std_bps_max: 10000
+
+hotreload:
+  allowed: ["NORMAL", "HIGH_VOLATILITY", "CRISIS"]

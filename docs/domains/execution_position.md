@@ -1,146 +1,145 @@
 #            Execution Position (                                 )
 
-##                                      
+##
 
-**                                       :** `execution_position`  
-**            :** FSMP-P1-T02  
-**                          :**                                                                                                  
+**                                       :** `execution_position`
+**            :** FSMP-P1-T02
+**                          :**
 
-##                                  
+##
 
            `execution_position`                                                                    Aurora.                                        FSM                                                                          (Open, Manage, Close)                                     ,                                                                                                                                                 .
 
-###                                 
+###
 -                                                                 Binance API
 -                                                                   (                  /                    /                )
--                                                                                                          
+-
 -                                          WAL        disaster recovery
 
-##                                
+##
 
-###                                    
+###
 
 #### ExecPosFSM (                                       )
                                       ,                                    FSM                                   .
 
 **                          :**
--                          BinanceAdapter                                                      
--                                             FSM                                                    
--                                                              
+-                          BinanceAdapter
+-                                             FSM
+-
 
 **                                          :**
 - `hydrate()` -                                      snapshot
 - `handle()` -                                                                               FSM
 
-####        FSM                               
+####        FSM
 
 ##### OpenFlowFSM (`fsm_open.py`)
-**                                :**                                               
-**          :** IDLE     OPENING     OPENED  
+**                                :**
+**          :** IDLE     OPENING     OPENED
 **          :** OPEN     DEC:ORDER_OPEN
 
 ##### ManageFlowFSM (`fsm_manage.py`)
-**                                :**                                                               
-**          :** MANAGING     ADJUSTING     MANAGED  
+**                                :**
+**          :** MANAGING     ADJUSTING     MANAGED
 **          :** PARTIAL_FILL, FILL, TRADE_EXECUTED     DEC:ORDER_ADJUST
 
 ##### CloseFlowFSM (`fsm_close.py`)
-**                                :**                                  
-**          :** CLOSING     CLOSED  
-**          :** CLOSE     DEC:ORDER_CLOSE
+**Purpose:** handles manual `CMD:CLOSE` requests only; legacy auto-close timers now live in `ManageFlowFSM`.
+**States:** IDLE     CLOSING     DONE
+**Events:** CLOSE     DEC:ORDER_CLOSE (manual path)
 
-###                                          
+###
 
-####                                        
+####
 ```
 handle(msg) -> route to appropriate flow
               OPEN     open_flow.handle()
-              TRADE_EXECUTED/FILL     manage_flow.handle() + close_flow.handle()
+              TRADE_EXECUTED/FILL     manage_flow.handle()
               CLOSE     close_flow.handle()
-                           manage_flow.handle()
 ```
 
-####                                        
+####
 ```
 DECISION made     _execute_decision()
-              Safety guardrail                   
+              Safety guardrail
                            adapter.create_order()
                              feedback
                            EVT:ORDER_ACCEPTED        ERR:EXECUTION_FAILED
 ```
 
-## FSM           
+## FSM
 
-###                                
+###
 
 #### DEC:ORDER_OPEN
-**              :** OpenFlowFSM  
-**            :**                OPEN                                               
-**Payload:**                                                                         
+**              :** OpenFlowFSM
+**            :**                OPEN
+**Payload:**
 
 #### DEC:ORDER_ADJUST
-**              :** ManageFlowFSM  
-**            :**            FILL/PARTIAL_FILL                                               
-**Payload:**                                                             
+**              :** ManageFlowFSM
+**            :**            FILL/PARTIAL_FILL
+**Payload:**
 
 #### DEC:ORDER_CLOSE
-**              :** CloseFlowFSM  
-**            :**                CLOSE                                     
-**Payload:**                                                                       
+**Emitted by:** ManageFlowFSM (automatic rules) / CloseFlowFSM (manual CMD:CLOSE)
+**Triggers:**    TRACKING/WAIT_MODE rule hits or explicit CLOSE command
+**Payload:**
 
 #### EVT:ORDER_ACCEPTED
-**              :** ExecPosFSM                                
-**            :**                                                           adapter  
-**Payload:**                                             
+**              :** ExecPosFSM
+**            :**                                                           adapter
+**Payload:**
 
 #### ERR:EXECUTION_FAILED
-**              :** ExecPosFSM                        
-**            :**                                              adapter  
+**              :** ExecPosFSM
+**            :**                                              adapter
 **Payload:**                                                         decision
 
-###                              
+###
 
 #### CMD:OPEN
-**              :** Execution Management  
-**                        :**                                                       
+**              :** Execution Management
+**                        :**
 **              :**                       OpenFlowFSM
 
 #### CMD:ADJUST
-**              :** Execution Management  
-**                        :**                                                         
+**              :** Execution Management
+**                        :**
 **              :**                       ManageFlowFSM
 
 #### CMD:CLOSE
-**              :** Execution Management  
-**                        :**                                  
+**              :** Execution Management
+**                        :**
 **              :**                       CloseFlowFSM
 
 #### EVT:TRADE_EXECUTED
-**              :** Account Observer  
-**                        :**                                                             
+**              :** Account Observer
+**                        :**
 **              :**                                  ManageFlowFSM
 
-##                                                    
+##
 
-###                        '        
+###                        '
 
 #### Execution Management
 - **        :** CMD:OPEN, CMD:ADJUST, CMD:CLOSE
 - **          :** DEC:ORDER_OPEN, DEC:ORDER_ADJUST, DEC:ORDER_CLOSE
-- **                        :**                                                                         
-- **              :**               
+- **                        :**
+- **              :**
 
 #### Account Observer
 - **        :** EVT:TRADE_EXECUTED
-- **                        :**                                                             
-- **              :**                                                
+- **                        :**
+- **              :**
 
 #### Position Tracking
 - **          :** EVT:POSITION_UPDATED
-- **                        :**                                                          
-- **              :**                                             
+- **                        :**
+- **              :**
 
-###                                          
+###
                         Execution Management                          Account Observer                                .
 
 ## Safety Guardrails
@@ -158,13 +157,13 @@ if mode == "hybrid_live_data_testnet_exec":
 ### Shadow Mode
                               API                                                             shadow mode (                                            ).
 
-##                         
+##
 
-###                                  
+###
 ```yaml
 domain_configuration:
   execution_position:
-    trading_mode: "testnet"  #                  testnet                                     
+    trading_mode: "testnet"  #                  testnet
 
 binance_api:
   testnet:
@@ -178,9 +177,9 @@ trading:
     guard_enabled: true
 ```
 
-###                          
-- **live:**                                                        
-- **testnet:**                                                          
+###
+- **live:**
+- **testnet:**
 - **shadow:**                                              (                              API             )
 
 ## WAL      Disaster Recovery
@@ -200,57 +199,57 @@ hydrate(position_data) -> restore FSM states
 
 **        :**                                                                                   .
 
-##                                                 
+##
 
-###               
--                                      /                               
-- Success rate                                  
--                                           
+###
+-                                      /
+- Success rate
+-
 -                    guardrail triggers
 
-###                   
-- **                        :**                    FSM,                                
+###
+- **                        :**                    FSM,
 - **                        :** Guardrail triggers, shadow mode
 - **              :** Execution failures, API errors
 
-##                              
+##
 
-###                                          
+###
 1. **API               :**                                                   shadow mode
-2. **FSM               :**                                                       
+2. **FSM               :**
 3. **Config               :** Fallback      shadow mode
 
 ### Graceful degradation
                                                                                                                 .
 
-##                     
+##
 
-###                                    
--                                        FSM               
+###
+-                                        FSM
 -                    safety guardrails
 -                      WAL integration
 
-###                            
--                                   FSM             
--                                                           
+###
+-                                   FSM
+-
 -                      error handling
 
-##                                                
+##
 
 ### Per-Symbol FSM Instances
                                                             3 FSM,                          :
--                                                      
--                                              
--                                                     
+-
+-
+-
 
 ### Command Routing Pattern
                                                                                                  FSM                  :
 -                           (OPEN/MANAGE/CLOSE)
--                                             
--                                  
+-
+-
 
 ### Async Execution
                                                            :
--                                                                    
--                                             multiple                 
--              responsiveness               
+-
+-                                             multiple
+-              responsiveness

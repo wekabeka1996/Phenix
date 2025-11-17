@@ -8,6 +8,93 @@ All models are designed to fail fast (startup validation) rather than silently a
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
+from dataclasses import dataclass
+
+
+@dataclass
+class ConfigV2:
+    """Config v2 structure for modular configuration."""
+    core: Optional[Dict[str, Any]] = None
+    symbols: Optional[Dict[str, Any]] = None
+    instruments: Optional[Dict[str, Any]] = None
+    domains: Dict[str, Dict[str, Any]] = None  # type: ignore[assignment]
+    overrides: Optional[Dict[str, Any]] = None
+    modes: Optional[Dict[str, Any]] = None
+
+    def __post_init__(self):
+        if self.domains is None:
+            self.domains = {}
+
+
+@dataclass(frozen=True)
+class InstrumentProfile:
+    """Unified instrument profile for all domains."""
+    symbol: str
+    exchange: str
+    base_asset: str
+    quote_asset: str
+
+    precision_quantity: int
+    precision_price: int
+
+    min_notional: float
+    min_qty: float
+    min_price: float
+    step_size: float
+    tick_size: float
+
+    max_position_size: float
+    max_leverage: float
+
+    default_tp_bps: Optional[float] = None
+    default_sl_bps: Optional[float] = None
+    min_sl_bps: Optional[float] = None
+    min_tp_bps: Optional[float] = None
+
+    regime_multipliers: Optional[Dict[str, float]] = None
+    risk_max_drawdown_pct: Optional[float] = None
+    risk_fraction: Optional[float] = None
+
+    source: str = "legacy"
+
+
+@dataclass
+class RegimeDetectorConfig:
+    """Configuration for RegimeDetector domain."""
+    window_minutes: int
+    min_regime_duration_min: int
+    debounce_changes: bool
+    # e.g., {"NORMAL": {"vol_std_bps_min": 0, ...}, ...}
+    regimes: Dict[str, Dict[str, float]]
+    hotreload_allowed: List[str]
+    # Models configuration (sma_trend, volatility, sideways)
+    models: Dict[str, Any]
+    source: str = "legacy"
+
+
+@dataclass
+class SizingPolicy:
+    """Configuration for position sizing."""
+    mode: str
+    max_risk_pct: float
+    max_risk_usd: float
+    min_notional_usd: float
+    max_notional_usd: float
+    liquidity_kappa: float = 1.0
+    liquidity_kappa_mode: str = "static"
+    kelly: Optional[Dict[str, Any]] = None
+    source: str = "legacy"
+
+
+@dataclass
+class DecisionPolicy:
+    """Configuration for decision making."""
+    signal_threshold: float
+    neutral_threshold: float
+    max_intents_per_minute_per_symbol: int
+    symbol_intent_cooldown_sec: int
+    exposure_block_cooldown_sec: int
+    source: str = "legacy"
 
 
 class InstrumentSpec(BaseModel):
@@ -79,11 +166,27 @@ class KellyConfig(BaseModel):
 
 class QosConfig(BaseModel):
     """Quality of Service configuration for rate limiting."""
+    model_config = ConfigDict(extra='allow')
+
     exposure_block_cooldown_sec: int = Field(default=60)
-    symbol_cooldown_sec: int = Field(default=3)
+    symbol_intent_cooldown_sec: int = Field(default=3)
+    # Deprecated: kept for backward compatibility until all consumers migrate
+    symbol_cooldown_sec: Optional[int] = Field(default=None)
     max_intents_per_minute_per_symbol: int = Field(default=10)
     mode: str = Field(default="defer", description="defer | block")
     enforce: bool = Field(default=False)
+
+    @field_validator(
+        "exposure_block_cooldown_sec",
+        "symbol_intent_cooldown_sec",
+        "max_intents_per_minute_per_symbol",
+        check_fields=False,
+    )
+    @classmethod
+    def _validate_non_negative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("QoS cooldown parameters must be non-negative")
+        return value
 
 
 class DecisionConfig(BaseModel):
@@ -109,6 +212,41 @@ class DecisionConfig(BaseModel):
         default_factory=dict, description="Regime-specific multipliers")
     regime_thresholds: Dict[str, float] = Field(
         default_factory=dict, description="Regime-specific signal thresholds")
+
+
+@dataclass
+class RiskSoftLimits:
+    """Soft limit clipping configuration for exposure guard."""
+    mode: str
+    clip_min_notional_usdt: float
+    directional_ratio_max: float
+    side_exposure_usdt: float
+    margin_exposure_usdt: float
+    source: str = "legacy"
+
+
+@dataclass
+class RiskScoreWeights:
+    """Weights for composite risk score calculation."""
+    delta_price_pct: float
+    obi: float
+    tfi: float
+    absorption_inverse: float
+    source: str = "legacy"
+
+
+@dataclass
+class TradingAllowedThresholds:
+    """Risk gate thresholds controlling trading permission."""
+    max_risk_score: float
+    overrides: Optional[Dict[str, float]] = None
+    source: str = "legacy"
+
+    def for_profile(self, profile: Optional[str]) -> float:
+        """Return threshold for a specific profile, falling back to base value."""
+        if profile and self.overrides and profile in self.overrides:
+            return self.overrides[profile]
+        return self.max_risk_score
 
 
 class SLConfig(BaseModel):
@@ -187,15 +325,26 @@ class MarketDataConfig(BaseModel):
     macro_sync: Optional[MacroSyncConfig] = Field(default=None)
 
 
-class FeatureEngineeringConfig(BaseModel):
-    """Feature engineering configuration."""
-    model_config = ConfigDict(extra='allow')
-
-    ema: Dict[str, Any] = Field(default_factory=dict)
-    volume: Dict[str, Any] = Field(default_factory=dict)
-    volatility: Dict[str, Any] = Field(default_factory=dict)
-    liquidity: Dict[str, Any] = Field(default_factory=dict)
-    macro_sync: Dict[str, Any] = Field(default_factory=dict)
+@dataclass
+class FeatureEngineeringConfig:
+    """Configuration for FeatureEngineering domain."""
+    enable_new_metrics: bool
+    ema_period_short: int
+    ema_period_long: int
+    ema_bias_clamp: float
+    volume_window_sec: int
+    volume_sma_length: int
+    volume_spike_cap: float
+    volatility_window_sec: int
+    volatility_sma_length: int
+    volatility_ratio_cap: float
+    liquidity_depth_half: float
+    liquidity_kappa_min: float
+    liquidity_kappa_max: float
+    macro_sync_enabled: bool
+    macro_sync_anchors: List[str]
+    macro_sync_window: int
+    source: str = "legacy"
 
 
 class TradingConfig(BaseModel):
@@ -292,6 +441,23 @@ class AuroraConfig(BaseModel):
         default=None, description="Override trading.execution if set")
     brackets: Optional[BracketsConfig] = Field(default=None)
     trailing: Dict[str, Any] = Field(default_factory=dict)
+
+    # Config v2 support
+    config_v2: Optional[ConfigV2] = Field(
+        default=None, description="Config v2 structure")
+
+    def has_config_v2(self) -> bool:
+        """Check if any config v2 files were loaded."""
+        if self.config_v2 is None:
+            return False
+        return (
+            self.config_v2.core is not None or
+            self.config_v2.symbols is not None or
+            self.config_v2.instruments is not None or
+            bool(self.config_v2.domains) or
+            self.config_v2.overrides is not None or
+            self.config_v2.modes is not None
+        )
 
     @field_validator('trading_mode')
     @classmethod

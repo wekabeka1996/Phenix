@@ -59,6 +59,9 @@ class MetricsCollector:
             "exposure_mismatch_total": defaultdict(int),
             # Order timeout metrics
             "order_timeout_total": 0,
+            # Quick profit closes
+            "quick_profit_closes_total": 0,
+            "quick_profit_closes_by_symbol": {},
         }
 
         # Rolling window data for time-based analysis
@@ -233,6 +236,21 @@ class MetricsCollector:
                 self._metrics.get("order_timeout_total", 0))
             self._metrics["order_timeout_total"] = timeout_total + 1
 
+    def record_quick_profit_close(self, symbol: str, pnl_usd: float) -> None:
+        """Record quick profit close event into metrics storage."""
+        with self._lock:
+            total: int = int(self._metrics.get('quick_profit_closes_total', 0))
+            self._metrics['quick_profit_closes_total'] = total + 1
+            if symbol is None:
+                symbol = 'unknown'
+            by_sym = self._metrics.get('quick_profit_closes_by_symbol') or {}
+            cur = by_sym.get(symbol, {'count': 0, 'total_pnl': 0.0})
+            cur['count'] = cur.get('count', 0) + 1
+            cur['total_pnl'] = float(
+                cur.get('total_pnl', 0.0)) + float(pnl_usd)
+            by_sym[symbol] = cur
+            self._metrics['quick_profit_closes_by_symbol'] = by_sym
+
     def get_summary_metrics(self) -> Dict[str, Any]:
         """Get summary metrics for the entire system."""
         with self._lock:
@@ -308,6 +326,9 @@ class MetricsCollector:
                 "exposure_mismatch": dict(self._metrics.get("exposure_mismatch_total", {})),
                 # Order timeout metrics
                 "order_timeout_total": int(self._metrics.get("order_timeout_total", 0)),
+                # Quick profit metrics
+                "quick_profit_closes_total": int(self._metrics.get("quick_profit_closes_total", 0)),
+                "quick_profit_closes_by_symbol": dict(self._metrics.get("quick_profit_closes_by_symbol", {})),
             }
 
     def get_symbol_metrics(self, symbol: str) -> Dict[str, Any]:
@@ -430,6 +451,9 @@ class MetricsCollector:
                 "exposure_mismatch_total": defaultdict(int),
                 # Order timeout metrics
                 "order_timeout_total": 0,
+                # Quick profit metrics
+                "quick_profit_closes_total": 0,
+                "quick_profit_closes_by_symbol": {},
             }
             self._symbol_metrics.clear()
             self._rolling_data.clear()

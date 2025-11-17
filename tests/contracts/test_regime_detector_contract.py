@@ -39,28 +39,58 @@ with open(SCHEMA_PATH, "r") as f:
 @pytest.fixture
 def regime_detector():
     """Create RegimeDetector instance with full config for all regime types."""
+    from apps.reference.config_models import AuroraConfig, ConfigV2
+
     mock_fsm = MagicMock()
-    config = {
-        "trading": {
-            "regime_detector": {
-                "models": {
-                    "sma_trend": {
-                        "enabled": True,
-                        "sma_short_period": 20,
-                        "sma_long_period": 50,
-                        "mean_reversion_threshold": "0.005",
-                    },
-                    "volatility": {
-                        "enabled": True,
-                        "threshold_multiplier": "2.0",
-                        "low_vol_multiplier": "0.5",
-                        "atr_period": 14,
-                    },
+    cfg = AuroraConfig()
+    cfg.config_v2 = ConfigV2()
+    cfg.config_v2.domains = {
+        "regimes": {
+            "detector": {
+                "window_minutes": 2,
+                "min_regime_duration_min": 15,
+                "debounce_changes": True
+            },
+            "regimes": {
+                "NORMAL": {"vol_std_bps_min": 0, "vol_std_bps_max": 100},
+                "HIGH_VOLATILITY": {"vol_std_bps_min": 100, "vol_std_bps_max": 200},
+                "CRISIS": {"vol_std_bps_min": 200, "vol_std_bps_max": 1000}
+            },
+            "hotreload": {
+                "allowed": ["NORMAL", "HIGH_VOLATILITY", "CRISIS"]
+            },
+            "models": {
+                "sma_trend": {
+                    "enabled": True,
+                    "fast_period": 10,
+                    "slow_period": 50,
+                    "confidence_multiplier": 20.0,
+                    "confidence_min": 0.5,
+                    "confidence_max": 0.95
+                },
+                "volatility": {
+                    "enabled": True,
+                    "atr_period": 14,
+                    "threshold_multiplier": 2.0,
+                    "low_vol_multiplier": 0.5,
+                    "atr_sma_length": 100,
+                    "high_vol_confidence_base": 0.5,
+                    "high_vol_confidence_multiplier": 2.0,
+                    "low_vol_confidence_base": 0.5,
+                    "low_vol_confidence_multiplier": 3.0,
+                    "confidence_max": 0.95
+                },
+                "sideways": {
+                    "enabled": True,
+                    "deviation_threshold": 0.02,
+                    "confidence_base": 0.5,
+                    "confidence_multiplier": 100.0,
+                    "confidence_max": 0.95
                 }
             }
         }
     }
-    detector = RegimeDetector(config=config, fsm=mock_fsm)
+    detector = RegimeDetector(aurora_cfg=cfg, fsm=mock_fsm)
     detector.logger = MagicMock()
     return detector
 
@@ -72,8 +102,8 @@ def regime_detector():
         ({"price": "4100", "sma_short": "4050", "sma_long": "3900"}, "TREND_UP"),
         # TREND_DOWN: Price below falling SMAs
         ({"price": "3700", "sma_short": "3750", "sma_long": "3900"}, "TREND_DOWN"),
-        # MEAN_REVERSION: Tight price clustering
-        ({"price": "3898", "sma_short": "3900", "sma_long": "3902"}, "MEAN_REVERSION"),
+        # SIDEWAYS: Tight price clustering (formerly MEAN_REVERSION)
+        ({"price": "3898", "sma_short": "3900", "sma_long": "3902"}, "SIDEWAYS"),
         # HIGH_VOLATILITY: ATR spike (2.14x above average) - SKIP for now (needs tuning)
         pytest.param(
             {
@@ -187,7 +217,7 @@ def test_all_regime_types_covered_in_schema():
     expected_regimes = {
         "TREND_UP",
         "TREND_DOWN",
-        "MEAN_REVERSION",
+        "SIDEWAYS",
         "HIGH_VOLATILITY",
         "LOW_VOLATILITY",
         "UNCERTAIN",

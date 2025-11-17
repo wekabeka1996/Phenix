@@ -15,6 +15,7 @@ from typing import Dict, Any, TYPE_CHECKING, Optional
 from collections import deque
 import statistics
 from vfoundation.core.protocol import Message
+from apps.reference.config_features import resolve_feature_engineering_config
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
 class FeatureEngineering:
     def __init__(self, fsm: "FSMCore", config: dict[str, Any], feature_store: Optional[Any] = None) -> None:
         self.fsm = fsm
-        self.config = config
+        self.raw_config = config
         self.feature_store = feature_store
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
@@ -32,113 +33,33 @@ class FeatureEngineering:
         # Phase 1: State per symbol for new metrics
         self.symbol_state: Dict[str, Dict[str, Any]] = {}
 
-        # Config for new metrics
-        try:
-            if hasattr(self.config.trading, 'feature_engineering'):
-                fe_config = self.config.trading.feature_engineering
-            elif isinstance(self.config, dict):
-                fe_config = (self.config.get("trading", {})).get(
-                    "feature_engineering", {})
-            else:
-                fe_config = {}
-        except (AttributeError, TypeError):
-            fe_config = {}
+        # ✅ REFACTORED: Use dual-mode resolver (v2 primary, legacy fallback)
+        from apps.reference.config_loader import reload_config
+        aurora_config = reload_config()
+        self.config = resolve_feature_engineering_config(aurora_config)
 
-        try:
-            if hasattr(fe_config, 'enable_new_metrics'):
-                self.enable_new_metrics = fe_config.enable_new_metrics
-            else:
-                self.enable_new_metrics = True
-        except (AttributeError, TypeError):
-            self.enable_new_metrics = True
+        self.logger.info(
+            "Resolved feature engineering config",
+            extra={
+                "source": self.config.source,
+                "enable_new_metrics": self.config.enable_new_metrics,
+                "ema_period_short": self.config.ema_period_short,
+                "ema_period_long": self.config.ema_period_long,
+                "macro_sync_enabled": self.config.macro_sync_enabled,
+            },
+        )
 
-        try:
-            if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'ema'):
-                self.ema_config = self.config.trading.feature_engineering.ema
-            elif isinstance(self.config, dict):
-                trading_config = self.config.get("trading", {})
-                fe_config = trading_config.get("feature_engineering", {})
-                self.ema_config = fe_config.get("ema", {})
-            else:
-                self.ema_config = {}
-        except (AttributeError, TypeError):
-            self.ema_config = {}
-
-        try:
-            if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'volume'):
-                self.volume_config = self.config.trading.feature_engineering.volume
-            elif isinstance(self.config, dict):
-                trading_config = self.config.get("trading", {})
-                fe_config = trading_config.get("feature_engineering", {})
-                self.volume_config = fe_config.get("volume", {})
-            else:
-                self.volume_config = {}
-        except (AttributeError, TypeError):
-            self.volume_config = {}
-
-        try:
-            if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'volatility'):
-                self.volatility_config = self.config.trading.feature_engineering.volatility
-            elif isinstance(self.config, dict):
-                trading_config = self.config.get("trading", {})
-                fe_config = trading_config.get("feature_engineering", {})
-                self.volatility_config = fe_config.get("volatility", {})
-            else:
-                self.volatility_config = {}
-        except (AttributeError, TypeError):
-            self.volatility_config = {}
-
-        try:
-            if hasattr(self.config.trading, 'feature_engineering') and hasattr(self.config.trading.feature_engineering, 'liquidity'):
-                self.liquidity_config = self.config.trading.feature_engineering.liquidity
-            elif isinstance(self.config, dict):
-                trading_config = self.config.get("trading", {})
-                fe_config = trading_config.get("feature_engineering", {})
-                self.liquidity_config = fe_config.get("liquidity", {})
-            else:
-                self.liquidity_config = {}
-        except (AttributeError, TypeError):
-            self.liquidity_config = {}
-
-        # Macro sync config
-        try:
-            if hasattr(self.config.trading, 'market_data') and hasattr(self.config.trading.market_data, 'macro_sync'):
-                self.macro_sync_config = self.config.trading.market_data.macro_sync
-            elif isinstance(self.config, dict):
-                self.macro_sync_config = ((self.config.get("trading", {})).get(
-                    "market_data", {})).get("macro_sync", {})
-            else:
-                self.macro_sync_config = {}
-        except (AttributeError, TypeError):
-            self.macro_sync_config = {}
-
-        try:
-            if hasattr(self.macro_sync_config, 'enabled'):
-                self.macro_sync_enabled = self.macro_sync_config.enabled
-            else:
-                self.macro_sync_enabled = False
-        except (AttributeError, TypeError):
-            self.macro_sync_enabled = False
-
-        try:
-            if hasattr(self.macro_sync_config, 'anchors'):
-                self.anchor_symbols = self.macro_sync_config.anchors
-            else:
-                self.anchor_symbols = ["BTCUSDT", "ETHUSDT"]
-        except (AttributeError, TypeError):
-            self.anchor_symbols = ["BTCUSDT", "ETHUSDT"]
-
-        try:
-            if hasattr(self.macro_sync_config, 'window'):
-                self.macro_window = self.macro_sync_config.window
-            else:
-                self.macro_window = 60
-        except (AttributeError, TypeError):
-            self.macro_window = 60
+        # Extract frequently used values for convenience
+        self.enable_new_metrics = self.config.enable_new_metrics
+        self.macro_sync_enabled = self.config.macro_sync_enabled
+        self.anchor_symbols = self.config.macro_sync_anchors
+        self.macro_window = self.config.macro_sync_window
 
         # Anchor price buffers for macro_sync
-        self.anchor_prices: Dict[str, deque] = {anchor: deque(maxlen=self.macro_window)
-                                                for anchor in self.anchor_symbols}
+        self.anchor_prices: Dict[str, deque] = {
+            anchor: deque(maxlen=self.macro_window)
+            for anchor in self.anchor_symbols
+        }
 
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
 
@@ -153,37 +74,11 @@ class FeatureEngineering:
 
     def _init_symbol_state(self, symbol: str) -> None:
         """Initialize state for a new symbol."""
-        try:
-            if hasattr(self.ema_config, 'period_short'):
-                ema_short = self.ema_config.period_short
-            else:
-                ema_short = 3
-        except (AttributeError, TypeError):
-            ema_short = 3
-
-        try:
-            if hasattr(self.ema_config, 'period_long'):
-                ema_long = self.ema_config.period_long
-            else:
-                ema_long = 7
-        except (AttributeError, TypeError):
-            ema_long = 7
-
-        try:
-            if hasattr(self.volume_config, 'sma_length'):
-                vol_sma_len = self.volume_config.sma_length
-            else:
-                vol_sma_len = 5
-        except (AttributeError, TypeError):
-            vol_sma_len = 5
-
-        try:
-            if hasattr(self.volatility_config, 'sma_length'):
-                vol_range_sma_len = self.volatility_config.sma_length
-            else:
-                vol_range_sma_len = 10
-        except (AttributeError, TypeError):
-            vol_range_sma_len = 10
+        # ✅ REFACTORED: Direct access to config properties (no try-except needed)
+        ema_short = self.config.ema_period_short
+        ema_long = self.config.ema_period_long
+        vol_sma_len = self.config.volume_sma_length
+        vol_range_sma_len = self.config.volatility_sma_length
 
         self.symbol_state[symbol] = {
             # EMA state
@@ -224,11 +119,11 @@ class FeatureEngineering:
         state = self.symbol_state[symbol]
         if state["ema7"] and state["ema7"] > 0:
             bias = (state["ema3"] - state["ema7"]) / state["ema7"]
-            # Clamp to ±2% (-0.02, 0.02) and map to [0,1]
-            bias_clamped = max(decimal.Decimal("-0.02"),
-                               min(decimal.Decimal("0.02"), bias))
-            phi = (bias_clamped / decimal.Decimal("0.02") +
-                   decimal.Decimal("1")) / decimal.Decimal("2")
+            # ✅ REFACTORED: Use config value instead of magic number 0.02
+            bias_clamp = decimal.Decimal(str(self.config.ema_bias_clamp))
+            bias_clamped = max(-bias_clamp, min(bias_clamp, bias))
+            phi = (bias_clamped / bias_clamp + decimal.Decimal("1")) / \
+                decimal.Decimal("2")
             return phi
         return decimal.Decimal("0.5")
 
@@ -237,14 +132,8 @@ class FeatureEngineering:
         state = self.symbol_state[symbol]
         current_ts = current_tick["ts"]
 
-        try:
-            if hasattr(self.volume_config, 'window_sec'):
-                window_sec = self.volume_config.window_sec
-            else:
-                window_sec = 60
-        except (AttributeError, TypeError):
-            window_sec = 60
-
+        # ✅ REFACTORED: Direct config access
+        window_sec = self.config.volume_window_sec
         window_ms = window_sec * 1000
 
         # Initialize or reset window if needed
@@ -282,9 +171,10 @@ class FeatureEngineering:
 
         if avg_vol > 0:
             spike = current_vol / avg_vol
-            # Cap at 3.0 and map to [0,1]
-            spike_capped = min(spike, decimal.Decimal("3.0"))
-            phi = spike_capped / decimal.Decimal("3.0")
+            # ✅ REFACTORED: Use config value instead of magic number 3.0
+            spike_cap = decimal.Decimal(str(self.config.volume_spike_cap))
+            spike_capped = min(spike, spike_cap)
+            phi = spike_capped / spike_cap
             return phi
         return decimal.Decimal("0.5")
 
@@ -293,14 +183,8 @@ class FeatureEngineering:
         state = self.symbol_state[symbol]
         current_ts = current_tick["ts"]
 
-        try:
-            if hasattr(self.volatility_config, 'window_sec'):
-                window_sec = self.volatility_config.window_sec
-            else:
-                window_sec = 60
-        except (AttributeError, TypeError):
-            window_sec = 60
-
+        # ✅ REFACTORED: Direct config access
+        window_sec = self.config.volatility_window_sec
         window_ms = window_sec * 1000
 
         # Initialize window
@@ -337,22 +221,17 @@ class FeatureEngineering:
 
         if avg_range > 0:
             ratio = current_range / avg_range
-            ratio_capped = min(ratio, decimal.Decimal("3.0"))
-            phi = ratio_capped / decimal.Decimal("3.0")
+            # ✅ REFACTORED: Use config value instead of magic number 3.0
+            ratio_cap = decimal.Decimal(str(self.config.volatility_ratio_cap))
+            ratio_capped = min(ratio, ratio_cap)
+            phi = ratio_capped / ratio_cap
             return phi
         return decimal.Decimal("0.5")
 
     def _compute_depth_imbalance(self, bid_size: decimal.Decimal, ask_size: decimal.Decimal) -> decimal.Decimal:
         """Compute depth imbalance from bid/ask sizes."""
-        try:
-            if hasattr(self.liquidity_config, 'depth_half'):
-                depth_half = self.liquidity_config.depth_half
-            else:
-                depth_half = 1000
-        except (AttributeError, TypeError):
-            depth_half = 1000
-
-        depth_half = decimal.Decimal(str(depth_half))
+        # ✅ REFACTORED: Direct config access
+        depth_half = decimal.Decimal(str(self.config.liquidity_depth_half))
 
         # ratio = (asks + depth_half) / (bids + depth_half)
         denominator = bid_size + depth_half
@@ -488,21 +367,16 @@ class FeatureEngineering:
                 prev_price if time_diff < 5000 else decimal.Decimal(0)
 
             # Liquidity kappa
-            try:
-                if hasattr(self.liquidity_config, 'depth_half'):
-                    depth_half_val = self.liquidity_config.depth_half
-                else:
-                    depth_half_val = 1000
-            except (AttributeError, TypeError):
-                depth_half_val = 1000
-
-            depth_half = decimal.Decimal(str(depth_half_val))
+            # ✅ REFACTORED: Direct config access
+            depth_half = decimal.Decimal(str(self.config.liquidity_depth_half))
             liq_ratio = (depth / (depth + depth_half)) if (depth +
                                                            depth_half) > 0 else decimal.Decimal("0")
             liq_ratio = max(decimal.Decimal("0"), min(
                 decimal.Decimal("1"), liq_ratio))
-            liq_kappa = max(decimal.Decimal("0.3"), min(
-                decimal.Decimal("1.0"), liq_ratio))
+            # ✅ REFACTORED: Use config values instead of magic numbers 0.3 and 1.0
+            kappa_min = decimal.Decimal(str(self.config.liquidity_kappa_min))
+            kappa_max = decimal.Decimal(str(self.config.liquidity_kappa_max))
+            liq_kappa = max(kappa_min, min(kappa_max, liq_ratio))
 
             # Phase 1: Compute new metrics
             features = {

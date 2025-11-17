@@ -37,6 +37,8 @@ class AccountConnector:
         self.config = config
         self.thread: Optional[threading.Thread] = None
         self.running = False
+        self._adapter_fetch_lock = threading.RLock()
+        self._manual_resync_lock = threading.Lock()
 
         # Extract account_observer config for polling interval
         # Handle both dict and Pydantic object access patterns
@@ -130,14 +132,28 @@ class AccountConnector:
         asyncio.set_event_loop(loop)
         try:
             while self.running:
-                loop.run_until_complete(self._fetch_and_emit_account_data())
+                with self._adapter_fetch_lock:
+                    loop.run_until_complete(
+                        self._fetch_and_emit_account_data())
                 time.sleep(self.update_interval)
         finally:
             loop.close()
             LOG.info("Account monitoring loop ended.")
 
-    async def _fetch_and_emit_account_data(self) -> None:
+    async def _fetch_and_emit_account_data(
+        self,
+        *,
+        symbol: Optional[str] = None,
+        force_reason: Optional[str] = None,
+        rid: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Fetch account data from Binance API and emit FSM events."""
+        summary: Dict[str, Any] = {
+            "symbol": symbol,
+            "force_reason": force_reason,
+            "balance_assets": 0,
+            "positions_total": 0,
+        }
         try:
             balance_data = await self.adapter.get_account_balance()
             if balance_data:
@@ -145,6 +161,7 @@ class AccountConnector:
                     self._latest_balance_data = (
                         balance_data  # Store for use in positions update
                     )
+                    summary["balance_assets"] = len(balance_data)
                     LOG.info(
                         f"✅ Stored balance data: {len(balance_data)} assets")
                     # Log USDT balance specifically
@@ -207,8 +224,14 @@ class AccountConnector:
                         LOG.warning(
                             "   → Check: Are orders filled on Binance? Is API key valid?")
 
+                    summary["positions_total"] = len(positions_list)
                     # Always emit positions update, even if empty
-                    self._emit_positions_update(positions_list)
+                    self._emit_positions_update(
+                        positions_list,
+                        force_reason=force_reason,
+                        rid=rid,
+                        requested_symbol=symbol,
+                    )
                 else:
                     LOG.error(
                         f"Error processing positions data: expected a list, got {type(positions_data)}"
@@ -218,7 +241,9 @@ class AccountConnector:
         except Exception as e:
             LOG.error(f"Error fetching open positions: {e}", exc_info=True)
 
-    def _emit_balance_update(self, balance_data: List[Dict[str, Any]]) -> None:
+        return summary
+
+    def _emit_balance_update(self, balance_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Emit balance update event with asset balances."""
         assets = [
             {
@@ -235,13 +260,14 @@ class AccountConnector:
         ]
 
         if not assets:
-            return
+            return {"assets_emitted": 0, "updateTime": 0}
+
+        last_update = max((asset.get("updateTime", 0)
+                          for asset in assets), default=0)
 
         payload = {
             "assets": assets,
-            "updateTime": max(
-                (asset.get("updateTime", 0) for asset in assets), default=0
-            ),
+            "updateTime": last_update,
         }
         self.fsm.emit(
             event_name="EVT:BALANCE_UPDATE_RECEIVED",
@@ -250,8 +276,72 @@ class AccountConnector:
         )
         LOG.info(
             f"Emitted balance update: {len(assets)} assets with balance > 0.")
+        return {"assets_emitted": len(assets), "updateTime": last_update}
 
-    def _emit_positions_update(self, positions_data: List[Dict[str, Any]]) -> None:
+    def force_snapshot_refresh(
+        self,
+        *,
+        reason: str,
+        rid: Optional[str] = None,
+        symbol: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Synchronously fetch and emit a fresh snapshot for manual resync."""
+        if not reason:
+            reason = "manual_resync"
+
+        if not self._manual_resync_lock.acquire(blocking=False):
+            LOG.warning(
+                "Force snapshot already in progress, rejecting new request")
+            return {
+                "status": "busy",
+                "reason": "resync_in_progress",
+            }
+
+        try:
+            def _run() -> Dict[str, Any]:
+                loop = asyncio.new_event_loop()
+                try:
+                    with self._adapter_fetch_lock:
+                        return loop.run_until_complete(
+                            self._fetch_and_emit_account_data(
+                                symbol=symbol,
+                                force_reason=reason,
+                                rid=rid,
+                            )
+                        )
+                finally:
+                    try:
+                        loop.run_until_complete(loop.shutdown_asyncgens())
+                    except Exception:
+                        pass
+                    loop.close()
+
+            summary = _run()
+            summary.update(
+                {
+                    "status": "ok",
+                    "reason": reason,
+                }
+            )
+            return summary
+        except Exception as exc:
+            LOG.error(f"Force snapshot refresh failed: {exc}", exc_info=True)
+            return {
+                "status": "error",
+                "reason": reason,
+                "error": str(exc),
+            }
+        finally:
+            self._manual_resync_lock.release()
+
+    def _emit_positions_update(
+        self,
+        positions_data: List[Dict[str, Any]],
+        *,
+        force_reason: Optional[str] = None,
+        rid: Optional[str] = None,
+        requested_symbol: Optional[str] = None,
+    ) -> None:
         """Emit account update event with open positions."""
         LOG.info(
             f"📊 Processing positions data: {len(positions_data)} raw positions")
@@ -335,6 +425,17 @@ class AccountConnector:
             "positions": open_positions,
             "updateTime": int(time.time() * 1000),
         }
+
+        if requested_symbol:
+            payload["requested_symbol"] = requested_symbol
+
+        if force_reason:
+            payload["_force_resync"] = True
+            payload["_force_resync_reason"] = force_reason
+            if rid:
+                payload["_force_resync_rid"] = str(rid)
+            if requested_symbol:
+                payload["_force_resync_symbol"] = requested_symbol
 
         self.fsm.emit(
             event_name="EVT:ACCOUNT_UPDATE_RECEIVED",

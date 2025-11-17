@@ -1,0 +1,33 @@
+# DISC-04 Test Invariants
+
+## Перелік релевантних тестів
+
+| Файл | Тест | Сценарій / зафіксований інваріант |
+| --- | --- | --- |
+| `tests/domains/execution_position/test_aggregated_oco_scale_in_legacy.py` | `test_scale_in_with_aggregated_oco_keeps_full_sl_coverage` | Перевіряє, що при `recalc_on_scale_in=true` агрегований OCO після додаткового входу пересоздає SL так, щоб кількість останнього дорівнювала новому `position_qty`, тобто агрегація не залишає «голе» положення. |
+| той самий файл | `test_scale_in_reinstalls_sl_when_aggregated_enabled` | Підтверджує, що кожен повторний входить тригерить нову пару SL/TP з новим `BracketSetMeta`, тобто старий набор списується, а новий охоплює всю позицію. |
+| `tests/domains/execution_position/test_aggregated_oco_partial_close_legacy.py` | `test_partial_close_with_aggregated_oco_keeps_full_sl_coverage` | Показує: для `recalc_on_partial_close=True` або `allow_unprotected_position=False` часткове закриття негайно перераховує TP/SL, щоб залишки позиції і далі були покриті. |
+| `tests/domains/execution_position/test_aggregated_oco_multi_entry_flow.py` | `test_three_entries_share_single_bracket_set`, `test_partial_close_rebuilds_brackets_with_new_qty`, `test_full_close_clears_guardian_state` | Детальний harness (`AggregatedOcoHarness` + fake adapter) імітує кілька entry/scale-in/partial/full closes, потім перевіряє `OrderGuardian.ensure_single_bracket_set_for_position`, видалення старого `BracketSetMeta` при повному закритті та ізоляцію між символами. |
+| `tests/domains/execution_position/test_aggregated_oco_dr_restart.py` | `test_aggregated_oco_dr_restart_preserves_sl_cleanup_guard` | Confirm restart rehydrates OpenOrders/`BracketSetMeta`, не знищує SL/TP під час DR і дозволяє `OrderGuardian` продовжити cleanup без втрати `meta`. |
+| `tests/domains/execution_position/test_order_guardian_bracket_state.py` | `test_register_bracket_set_increments_version_on_update`, `test_register_bracket_set_normalizes_buy_sell_side`, `test_rehydrate_bracket_set_registers_latest_pair` | Гарантує, що `register_bracket_set` веде версію, нормалізує canonical `LONG`/`SHORT`, і при реєтрації з open orders/rehydration зберігає останні `sl_order_id/tp_order_id`. |
+| `tests/domains/execution_position/test_order_guardian_aggregated_cleanup.py` | `test_ttl_guard_does_not_cancel_fresh_bracket`, `test_fail_closed_does_not_remove_last_sl`, `test_position_zero_clears_bracket_metadata`, `test_cleanup_extra_brackets_keeps_active_sl_tp` | Invariants: 1) `ttl_protect_new_bracket_ms` блокує cleanup щойно створених позицій; 2) `allow_unprotected_position=false` ніколи не видаляє останній SL; 3) `position_amt==0` очищає metadata і справа reduceOnly cancel; 4) лише extra/brackets поза `BracketSetMeta` скасовуються. |
+| `tests/order_guardian/test_register_and_link.py` | `test_register_entry_basic`, `test_register_bracket_sl`, `test_link_existing_from_rest_placeholder` | Перевіряє, що entry/bracket регіструються (client↔order mapping), `_store` зберігає `parent_entry_id`, і `link_existing_from_rest` додає щойно знайдені bracket-ордера у стор. |
+| `tests/order_guardian/test_cleanup_orphans_no_position.py` | `test_cleanup_orphans_cancels_reduce_only_when_flat` | `cleanup_orphans` при `position_amt==0` дійсно скасовує всі `reduceOnly`/`closePosition` ордери (з `hard=True` — безпосередньо) і надсилає `EVT:SYMBOL_TIDY`. |
+| `tests/order_guardian/test_cleanup_before_close_by_parent.py` | `test_cleanup_before_close_targets_parent_entry_brackets` | Перевіряє, що `cleanup_before_close(parent_order_id)` прибирає тільки SL/TP конкретного entry, повідомляє `remaining_qty`, не торкаючись інших символів. |
+| `tests/order_guardian/test_fsm_delegation.py` | `test_cleanup_orphans_delegated`, `test_close_entry_delegated`, `test_reconcile_symbol_delegated` | Покривають: ExecPosFSM делегує `cleanup_orphans`, `close_entry` і `reconcile_symbol` в OrderGuardian, тобто FSM не рахує брактети самостійно. |
+
+## Існуючі інваріанти
+- Агрегований OCO забезпечує максимум два `reduceOnly/closePosition` ордери на `(symbol, side)` і підтримує `BracketSetMeta` з версіями (scale-in + multi-entry) (`tests/domains/execution_position/test_aggregated_oco_multi_entry_flow.py`, `test_order_guardian_bracket_state.py`). |
+- Scale-in/partial-close/DR сценаріїм гарантується, що SL обов’язково покриває поточну `position_qty`, старі набори знищуються, а повне закриття очищає метадані (`tests/domains/execution_position/test_aggregated_oco_scale_in_legacy.py`, `test_aggregated_oco_partial_close_legacy.py`, `test_aggregated_oco_dr_restart.py`). |
+- TTL/`allow_unprotected_position` охороняють нові брекети і забороняють cleanup, якщо залишився хоча б один SL (`tests/domains/execution_position/test_order_guardian_aggregated_cleanup.py`). |
+- `OrderGuardian` гарантує, що кожен tracked entry/bracket має запис (`register_entry`, `register_bracket`), посилює `should_place_brackets` (немає TP/SL без позиції) і очищує обʼєкти при `cleanup_orphans`/`close_entry` (`tests/order_guardian/test_register_and_link.py`, `test_cleanup_orphans_no_position.py`, `test_cleanup_before_close_by_parent.py`, `test_fsm_delegation.py`). |
+- DR-перезапуск (`link_existing_from_rest`) не губить reduceOnly/closePosition ордери і дозволяє `OrderGuardian` заново побудувати SSOT (`tests/order_guardian/test_register_and_link.py`, `tests/domains/execution_position/test_aggregated_oco_dr_restart.py`). |
+
+## Прогалини, які треба покрити
+- Watchdog / REST-поліга `OrderTimeoutWatchdog` (відповідає за відлов missed fills та генерацію `ORDER_TIMEOUT`) ще не має смислових тестів у цих наборах. |
+- `_preflight_position_check` (WS snapshot + `/fapi/v2/positionRisk` fallback) та кеш позицій (`PositionSnapshot`) напряму не перевіряються у цих `tests/domains`/`order_guardian`, тому нову `position_snapshot_cache` варто покрити окремо. |
+- `aggregated_oco.allow_unprotected_position=true` та `OrderGuardian.cleanup_other_brackets_for_symbol` працюють тільки у `cleanup`/`reconcile`, тести не моделюють цей режим і ризик залишення SL-LESS позиції (потребує менше strict-guard). |
+- `OrderGuardian` poll loop, TTL guard конфіг, `agg_oco.watchdog` автозцілення та `AGG_OCO_BRACKET_GUARD`/`AGG_OCO_BRACKET_SET_CHANGED` events не перевіряються повністю (є unit-тести, але не інтеграція з ExecPosFSM), тому ревізія new design має включати coverage для `orphan cleanup`/`agg_watchdog` під час реального `ExecPosFSM` run. |
+
+## JOURNAL / TODO
+- Додати запис `RID: OCO-DISCOVERY-AGGREGATED_OCO_V1` до `JOURNAL.md`: коротко зазначити, що стартувала фаза аудиту позицій, TP/SL, Guardian і FSM для чистого агрегованого OCO-дизайну; цей запис буде єдиним для поточного Discovery-етапу. |

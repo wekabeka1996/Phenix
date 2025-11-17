@@ -6,10 +6,16 @@ import hashlib
 import pathlib
 import sys
 import threading
+import logging
+import decimal
+import datetime
+from collections.abc import Mapping, Sequence
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
 
 from ..config import config
+
+_logger = logging.getLogger(__name__)
 
 # Cross-platform file locking
 if sys.platform == "win32":
@@ -30,19 +36,130 @@ else:
         fcntl = None  # type: ignore
 
 WAL_DIR = config.wal_dir
+WAL_FSYNC_ENABLED = True
+WAL_SHARED_HANDLES_ENABLED = True
+_wal_dir_initialized = False
+_shared_wal_handles: dict[pathlib.Path, Any] = {}
+_shared_handle_lock = threading.Lock()
+_last_hash_file: Optional[pathlib.Path] = None
+_last_wal_size: int = 0
 
 # Global state for performance optimization
 _last_hash: Optional[str] = None
 _last_hash_lock = threading.Lock()
 
+_JSON_SAFE_PRIMITIVES = (str, int, float, bool, type(None))
+
+
+def _sanitize_for_json(value: Any, path: str = "record") -> Any:
+    """Best-effort conversion of nested WAL payloads into JSON-safe structures."""
+    if isinstance(value, _JSON_SAFE_PRIMITIVES):
+        return value
+
+    if isinstance(value, decimal.Decimal):
+        return str(value)
+
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        try:
+            return value.isoformat()
+        except Exception:
+            return str(value)
+
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for key, sub_value in value.items():
+            if isinstance(key, str):
+                safe_key = key
+            else:
+                safe_key = str(key)
+                _logger.warning(
+                    "WAL sanitize: coerced non-string key at %s (type=%s)",
+                    path,
+                    type(key).__name__,
+                )
+            sanitized[safe_key] = _sanitize_for_json(
+                sub_value, f"{path}.{safe_key}"
+            )
+        return sanitized
+
+    if isinstance(value, set):
+        ordered_items = sorted(value, key=lambda item: repr(item))
+        return [
+            _sanitize_for_json(item, f"{path}[{idx}]")
+            for idx, item in enumerate(ordered_items)
+        ]
+
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
+        return [
+            _sanitize_for_json(item, f"{path}[{idx}]")
+            for idx, item in enumerate(value)
+        ]
+
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            decoded = value.decode("utf-8")
+        except Exception:
+            decoded = value.decode("utf-8", errors="replace")
+        _logger.warning("WAL sanitize: decoded bytes at %s", path)
+        return decoded
+
+    try:
+        json.dumps(value, ensure_ascii=False)
+        return value
+    except TypeError:
+        pass
+
+    sanitized_str = str(value)
+    _logger.warning(
+        "WAL sanitize: coerced non-JSON value at %s (type=%s)",
+        path,
+        type(value).__name__,
+    )
+    return sanitized_str
+
+
+def _sanitize_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Sanitize top-level WAL record before hashing/serialization."""
+    sanitized = _sanitize_for_json(record, path="record")
+    if not isinstance(sanitized, dict):
+        raise TypeError("WAL append expects a dictionary record")
+    return sanitized
+
+
+def _should_disable_fsync(new_dir: pathlib.Path) -> bool:
+    """Detect if WAL should skip fsync (e.g., when pointing to temp dirs for tests)."""
+    try:
+        import tempfile
+
+        temp_root = pathlib.Path(tempfile.gettempdir()).resolve()
+        new_dir_resolved = new_dir.resolve()
+
+        try:
+            return new_dir_resolved.is_relative_to(temp_root)
+        except AttributeError:
+            # Python < 3.9 fallback (should not trigger, but kept for safety)
+            return str(new_dir_resolved).startswith(str(temp_root))
+    except Exception:
+        return False
+
 
 def set_wal_dir(path: pathlib.Path) -> None:
     """Set custom WAL directory (useful for testing)"""
-    global WAL_DIR, _last_hash
+    global WAL_DIR, _last_hash, WAL_FSYNC_ENABLED, _last_hash_file, _last_wal_size, _wal_dir_initialized, WAL_SHARED_HANDLES_ENABLED
     WAL_DIR = path
     # Clear cache when directory changes
     with _last_hash_lock:
         _last_hash = None
+        _last_hash_file = None
+        _last_wal_size = 0
+    _wal_dir_initialized = False
+    _close_shared_handles()
+    # Auto disable fsync + shared handles for temp directories used in tests
+    disable_features = _should_disable_fsync(path)
+    WAL_FSYNC_ENABLED = not disable_features
+    WAL_SHARED_HANDLES_ENABLED = not disable_features
 
 
 def _get_wal_file_path() -> pathlib.Path:
@@ -53,7 +170,7 @@ def _get_wal_file_path() -> pathlib.Path:
 def read_last_hash() -> Optional[str]:
     """Read the hash of the last record in WAL (for CAS operations)"""
     # Fast path: check cache first
-    global _last_hash
+    global _last_hash, _last_hash_file, _last_wal_size
     with _last_hash_lock:
         if _last_hash is not None:
             return _last_hash
@@ -276,9 +393,96 @@ def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
 
 
 def _wal_file_for_today() -> pathlib.Path:
+    global _wal_dir_initialized
+    if not _wal_dir_initialized:
+        WAL_DIR.mkdir(parents=True, exist_ok=True)
+        _wal_dir_initialized = True
+
     d = time.strftime("%Y-%m-%d")
-    WAL_DIR.mkdir(parents=True, exist_ok=True)
     return WAL_DIR / f"{d}.jsonl"
+
+
+def _close_shared_handles() -> None:
+    with _shared_handle_lock:
+        for handle in _shared_wal_handles.values():
+            try:
+                handle.close()
+            except Exception:
+                pass
+        _shared_wal_handles.clear()
+
+
+def _get_shared_handle(path: pathlib.Path) -> Any:
+    with _shared_handle_lock:
+        handle = _shared_wal_handles.get(path)
+        if handle is None or handle.closed:
+            handle = path.open("ab+")
+            _shared_wal_handles[path] = handle
+        return handle
+
+
+class _SharedHandleContext:
+    """Context manager that keeps shared handles open across appends."""
+
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+
+    def __enter__(self) -> Any:
+        return self._handle
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        # Do not close shared handle; errors propagate normally
+        return False
+
+
+def _read_last_record_from_handle(handle: Any) -> Optional[Dict[str, Any]]:
+    """Read the last JSONL record using an existing binary file handle."""
+    current_pos = handle.tell()
+    handle.seek(0, os.SEEK_END)
+    file_size = handle.tell()
+
+    if file_size == 0:
+        handle.seek(current_pos, os.SEEK_SET)
+        return None
+
+    chunk_size = 4096
+    chunks: list[bytes] = []
+    newline_count = 0
+
+    while file_size > 0:
+        read_size = min(chunk_size, file_size)
+        file_size -= read_size
+        handle.seek(file_size)
+        chunk = handle.read(read_size)
+        chunks.append(chunk)
+        newline_count += chunk.count(b"\n")
+
+        if newline_count >= 2:
+            break
+
+    data = b"".join(reversed(chunks)).strip()
+    handle.seek(0, os.SEEK_END)
+
+    if not data:
+        return None
+
+    last_line = data.splitlines()[-1].strip()
+    if not last_line:
+        return None
+
+    try:
+        return json.loads(last_line.decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _read_last_record_fast(path: pathlib.Path) -> Optional[Dict[str, Any]]:
+    """Efficiently read the last JSONL record without scanning entire file."""
+    if not path.exists():
+        return None
+
+    with path.open("rb") as handle:
+        return _read_last_record_from_handle(handle)
 
 
 def append(record: Dict[str, Any], lock_timeout_s: Optional[float] = None) -> Optional[str]:
@@ -295,52 +499,62 @@ def append(record: Dict[str, Any], lock_timeout_s: Optional[float] = None) -> Op
     if lock_timeout_s is None:
         lock_timeout_s = config.wal_lock_timeout_sec
 
-    global _last_hash
+    global _last_hash, _last_hash_file, _last_wal_size
     path = _wal_file_for_today()
 
-    try:
-        # Open file with append mode (O_APPEND for atomic writes)
-        with path.open("a+", encoding="utf-8") as f:
-            with _file_lock(f, timeout_s=lock_timeout_s):
-                # Under lock: get actual previous hash from file
-                f.seek(0, 2)  # Seek to end
-                if f.tell() == 0:
-                    # File is empty
-                    prev_hash = "0" * 64
-                else:
-                    # File has content, read last line
-                    f.seek(0)
-                    last_line = None
-                    for line in f:
-                        last_line = line
+    line_size = 0
+    current_size = 0
 
-                    if last_line:
-                        try:
-                            prev_record = json.loads(last_line)
-                            prev_hash = prev_record.get("_hash", "0" * 64)
-                        except Exception:
-                            prev_hash = "0" * 64
+    if WAL_SHARED_HANDLES_ENABLED:
+        file_context = _SharedHandleContext(_get_shared_handle(path))
+    else:
+        file_context = path.open("ab+")
+
+    try:
+        with file_context as f:
+            with _file_lock(f, timeout_s=lock_timeout_s):
+                current_size = path.stat().st_size if path.exists() else 0
+
+                prev_hash: Optional[str] = None
+                with _last_hash_lock:
+                    if (
+                        _last_hash is not None
+                        and _last_hash_file == path
+                        and _last_wal_size == current_size
+                    ):
+                        prev_hash = _last_hash
+
+                if not prev_hash:
+                    last_record = _read_last_record_from_handle(f)
+                    if last_record and last_record.get("_hash"):
+                        prev_hash = last_record.get("_hash", "0" * 64)
                     else:
                         prev_hash = "0" * 64
 
-                # Build new record with correct hash chain (AURORA_HARDENING_V1)
-                payload = {**record, "_prev": prev_hash}
+                sanitized_record = _sanitize_record(record)
+                payload = {**sanitized_record, "_prev": prev_hash}
                 record_hash = _calculate_record_hash(payload)
                 payload["_hash"] = record_hash
 
-                # Atomic append (file opened with 'a+' mode)
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-                f.flush()  # Ensure data is written
-                os.fsync(f.fileno())  # Force OS to write to disk
+                line_bytes = (json.dumps(
+                    payload, ensure_ascii=False) + "\n").encode("utf-8")
+                line_size = len(line_bytes)
+                f.write(line_bytes)
+                if WAL_FSYNC_ENABLED:
+                    f.flush()
+                    os.fsync(f.fileno())
+                else:
+                    f.flush()
 
-        # Update cache with new hash (outside lock for performance)
-        with _last_hash_lock:
-            _last_hash = record_hash
-
-        return record_hash
     except TimeoutError:
-        # Lock timeout - return None to indicate failure
         return None
+
+    with _last_hash_lock:
+        _last_hash = record_hash
+        _last_hash_file = path
+        _last_wal_size = current_size + line_size
+
+    return record_hash
 
 
 def append_cas(
@@ -372,49 +586,58 @@ def append_cas(
         h = append(record, lock_timeout_s=lock_timeout_s)
         return (True, h)
 
+    global _last_hash, _last_hash_file, _last_wal_size
     path = _wal_file_for_today()
+    current_size = 0
+    line_size = 0
 
-    with path.open("a+", encoding="utf-8") as f:
+    if WAL_SHARED_HANDLES_ENABLED:
+        file_context = _SharedHandleContext(_get_shared_handle(path))
+    else:
+        file_context = path.open("ab+")
+
+    with file_context as f:
         with _file_lock(f, timeout_s=lock_timeout_s):
-            # Read actual current tail under lock
-            f.seek(0, 2)  # Seek to end
-            if f.tell() == 0:
-                # File is empty
-                actual_prev_hash = "0" * 64
-            else:
-                # File has content, read last line
-                f.seek(0)
-                last_line = None
-                for line in f:
-                    last_line = line
+            current_size = path.stat().st_size if path.exists() else 0
 
-                if last_line:
-                    try:
-                        prev_record = json.loads(last_line)
-                        actual_prev_hash = prev_record.get("_hash", "0" * 64)
-                    except Exception:
-                        actual_prev_hash = "0" * 64
+            prev_hash: Optional[str] = None
+            with _last_hash_lock:
+                if (
+                    _last_hash is not None
+                    and _last_hash_file == path
+                    and _last_wal_size == current_size
+                ):
+                    prev_hash = _last_hash
+
+            if not prev_hash:
+                last_record = _read_last_record_from_handle(f)
+                if last_record and last_record.get("_hash"):
+                    prev_hash = last_record.get("_hash", "0" * 64)
                 else:
-                    actual_prev_hash = "0" * 64
+                    prev_hash = "0" * 64
 
-            # CAS check
-            if actual_prev_hash != expected_prev_hash:
-                # Conflict: expected hash doesn't match actual
+            if prev_hash != expected_prev_hash:
                 return (False, None)
 
-            # CAS succeeded, proceed with append
-            payload = {**record, "_prev": actual_prev_hash}
+            sanitized_record = _sanitize_record(record)
+            payload = {**sanitized_record, "_prev": prev_hash}
             record_hash = _calculate_record_hash(payload)
             payload["_hash"] = record_hash
 
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+            line_bytes = (json.dumps(
+                payload, ensure_ascii=False) + "\n").encode("utf-8")
+            line_size = len(line_bytes)
+            f.write(line_bytes)
+            if WAL_FSYNC_ENABLED:
+                f.flush()
+                os.fsync(f.fileno())
+            else:
+                f.flush()
 
-    # Update cache with new hash
-    global _last_hash
     with _last_hash_lock:
         _last_hash = record_hash
+        _last_hash_file = path
+        _last_wal_size = current_size + line_size
 
     return (True, record_hash)
 
@@ -482,7 +705,7 @@ def calculate_merkle_root(hashes: list[str]) -> str:
 
 def reset() -> None:
     """Reset WAL state for testing purposes - clears metrics and hash tracking"""
-    global _lock_metrics, _last_hash
+    global _lock_metrics, _last_hash, _last_hash_file, _last_wal_size, _wal_dir_initialized, WAL_FSYNC_ENABLED, WAL_SHARED_HANDLES_ENABLED
     with _lock_metrics_lock:
         _lock_metrics = {
             "lock_contention_count": 0,
@@ -490,3 +713,10 @@ def reset() -> None:
             "lock_timeout_count": 0,
         }
     _last_hash = None
+    _last_hash_file = None
+    _last_wal_size = 0
+    _wal_dir_initialized = False
+    _close_shared_handles()
+    disable_features = _should_disable_fsync(WAL_DIR)
+    WAL_FSYNC_ENABLED = not disable_features
+    WAL_SHARED_HANDLES_ENABLED = not disable_features

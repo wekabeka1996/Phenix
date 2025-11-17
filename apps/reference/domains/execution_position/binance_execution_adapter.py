@@ -19,8 +19,8 @@ import logging
 import os
 import threading
 import time
-from decimal import Decimal
-from typing import Dict, Mapping, Optional, Any
+from decimal import Decimal, InvalidOperation
+from typing import Any, Dict, List, Mapping, Optional
 
 import httpx
 from vfoundation.core.protocol import Message
@@ -29,6 +29,7 @@ from .execution_adapter import AbstractExecutionAdapter
 from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult, ClientOrderIdConfig
 from apps.reference.telemetry.audit_logger import audit_logger
 from .metrics_aggregator import metrics_logger
+from apps.reference.config_exposure_policy import resolve_exposure_policy
 
 
 try:
@@ -437,9 +438,19 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             else:
                 logger.debug(f"[BinanceAdapter] No order_index available")
 
+            event_ts = msg.get("T") or msg.get("E") or int(time.time() * 1000)
+
             if not order_ref:
                 logger.warning(
-                    f"[BinanceAdapter] No correlation found for order {client_order_id}/{exchange_order_id}, skipping"
+                    f"[BinanceAdapter] No correlation found for order {client_order_id}/{exchange_order_id}, emitting fallback fill"
+                )
+                self._emit_trade_event(
+                    order_data,
+                    client_order_id=client_order_id,
+                    exchange_order_id=exchange_order_id,
+                    order_ref=None,
+                    event_ts=event_ts,
+                    reason="ws_fill_unmatched_order_index",
                 )
                 return
 
@@ -494,17 +505,23 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 duration_sec = time.time() - order_ref.created_ts
                 observe_order_lifecycle(duration_sec)
 
-            # Emit appropriate event based on status
+            trade_emitted = self._emit_trade_event(
+                order_data,
+                client_order_id=client_order_id,
+                exchange_order_id=exchange_order_id,
+                order_ref=order_ref,
+                event_ts=event_ts,
+                reason=f"WS_ORDER_UPDATE_{standardized_status}",
+            )
+
+            # Emit appropriate ORDER_STATE_CHANGED event for bookkeeping
             if self.fsm_core:
-                # CRITICAL FIX: On FILLED, emit EVT:TRADE_EXECUTED (not ORDER_STATE_CHANGED)
-                # so FSM manage_flow.handle(msg) receives FILL trigger for bracket placement
-                if standardized_status == "FILLED":
-                    event_name = "EVT:TRADE_EXECUTED"
+                event_name = "EVT:ORDER_STATE_CHANGED"
+                if standardized_status == "FILLED" and trade_emitted:
                     logger.info(
-                        f"[BinanceAdapter] ✅ ORDER FILLED - Emitting EVT:TRADE_EXECUTED for {symbol} {client_order_id}"
+                        f"[BinanceAdapter] ✅ ORDER FILLED - Canonical EVT:TRADE_EXECUTED emitted for {symbol} {client_order_id}"
                     )
                 else:
-                    event_name = "EVT:ORDER_STATE_CHANGED"
                     logger.info(
                         f"[BinanceAdapter] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status} for {symbol} {client_order_id}"
                     )
@@ -517,6 +534,103 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             logger.error(
                 f"[BinanceAdapter] Error processing ORDER_TRADE_UPDATE: {e}", exc_info=True
             )
+
+    def _emit_trade_event(
+        self,
+        order_data: Dict[str, Any],
+        *,
+        client_order_id: str,
+        exchange_order_id: str,
+        order_ref: Optional[Any],
+        event_ts: int,
+        reason: str,
+    ) -> bool:
+        """Build and emit canonical EVT:TRADE_EXECUTED when fill quantity is present."""
+        if not self.fsm_core:
+            return False
+
+        payload = self._build_trade_executed_payload(
+            order_data,
+            client_order_id=client_order_id,
+            exchange_order_id=exchange_order_id,
+            order_ref=order_ref,
+            event_ts=event_ts,
+        )
+
+        if not payload:
+            return False
+
+        try:
+            self.fsm_core.emit("EVT:TRADE_EXECUTED", payload, reason)
+            return True
+        except Exception as exc:  # pragma: no cover - defensive log
+            logger.error(
+                f"[BinanceAdapter] Failed to emit EVT:TRADE_EXECUTED for {payload.get('symbol')}: {exc}",
+                exc_info=True,
+            )
+            return False
+
+    def _build_trade_executed_payload(
+        self,
+        order_data: Dict[str, Any],
+        *,
+        client_order_id: str,
+        exchange_order_id: str,
+        order_ref: Optional[Any],
+        event_ts: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Normalize Binance WS fill into canonical trade payload."""
+        symbol = order_data.get("s")
+        side_raw = str(order_data.get("S", "")).lower()
+        side = "buy" if side_raw != "sell" else "sell"
+        price_raw = (
+            order_data.get("L")
+            or order_data.get("ap")
+            or order_data.get("p")
+            or "0"
+        )
+        quantity_raw = (
+            order_data.get("l")
+            or order_data.get("z")
+            or order_data.get("q")
+            or "0"
+        )
+
+        try:
+            qty_decimal = Decimal(str(quantity_raw))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+        if qty_decimal == 0:
+            return None
+
+        signed_qty = qty_decimal.copy_abs()
+        if side == "sell":
+            signed_qty = -signed_qty
+
+        fees = str(order_data.get("n", "0"))
+        venue = "binance_ws_testnet" if self.use_testnet else "binance_ws"
+
+        payload: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": side,
+            "price": str(price_raw),
+            "quantity": str(signed_qty),
+            "qty": str(signed_qty),
+            "ts": int(event_ts),
+            "fees": fees,
+            "venue": venue,
+            "clientOrderId": client_order_id,
+            "exchangeOrderId": exchange_order_id,
+            "orderId": exchange_order_id,
+        }
+
+        if order_ref:
+            payload["rid"] = getattr(order_ref, "rid", None)
+            payload["idempotent_key"] = getattr(
+                order_ref, "idempotent_key", None)
+
+        return payload
 
     def _handle_account_update(self, msg: Dict[str, Any]) -> None:
         """
@@ -745,33 +859,9 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         return backoff_ms
 
-    def _get_fallback_backoff_ms(self) -> List[int]:
-        """
-        Get fallback retry backoff configuration for get_open_positions.
-
-        PHASE P0: Added for fallback mode retry/backoff on empty API responses.
-        Uses trading.execution.fallback.backoff_ms or defaults to [200, 500, 1000] ms.
-
-        Returns:
-            List of backoff times in milliseconds
-        """
-        # Get backoff config (default: [200, 500, 1000] ms for fallback)
-        try:
-            config = self.config if hasattr(self, 'config') else {}
-            if isinstance(config, dict):
-                backoff_list = config.get("trading", {}).get("execution", {}).get(
-                    "fallback", {}).get("backoff_ms", [200, 500, 1000])
-            else:
-                # Try Pydantic config
-                backoff_list = getattr(
-                    config.trading.execution.fallback,
-                    "backoff_ms",
-                    [200, 500, 1000]
-                ) if hasattr(config, 'trading') and hasattr(config.trading, 'execution') and hasattr(config.trading.execution, 'fallback') else [200, 500, 1000]
-        except:
-            backoff_list = [200, 500, 1000]
-
-        return backoff_list
+    def _get_fallback_policy(self):
+        """Resolve fallback policy using centralized exposure configuration."""
+        return resolve_exposure_policy(self.config).fallback
 
     async def get_open_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -792,9 +882,11 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             return []
 
         try:
-            # Get fallback backoff configuration
-            backoff_ms = self._get_fallback_backoff_ms()
-            max_attempts = len(backoff_ms) + 1  # +1 for initial attempt
+            fallback_policy = self._get_fallback_policy()
+            backoff_ms = list(fallback_policy.backoff_sequence())
+            if not backoff_ms:
+                backoff_ms = [200, 500, 1000]
+            max_attempts = max(fallback_policy.max_attempts, 1)
             attempt = 0
 
             while attempt < max_attempts:
@@ -853,11 +945,16 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 # If we got here, either empty response or error
                 if attempt < max_attempts:
                     # Apply backoff before retry
-                    backoff_sec = backoff_ms[attempt - 1] / 1000.0
+                    if backoff_ms:
+                        idx = min(attempt - 1, len(backoff_ms) - 1)
+                        delay_ms = backoff_ms[idx]
+                    else:
+                        delay_ms = 0
                     logger.info(
-                        f"[BinanceAdapter] get_open_positions retrying in {backoff_ms[attempt - 1]}ms (attempt {attempt + 1}/{max_attempts})"
+                        f"[BinanceAdapter] get_open_positions retrying in {delay_ms}ms (attempt {attempt + 1}/{max_attempts})"
                     )
-                    await asyncio.sleep(backoff_sec)
+                    if delay_ms > 0:
+                        await asyncio.sleep(delay_ms / 1000.0)
                 else:
                     # Exhausted retries - enter fallback mode
                     logger.error(
@@ -903,9 +1000,11 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             return []
 
         try:
-            # Get fallback backoff configuration
-            backoff_ms = self._get_fallback_backoff_ms()
-            max_attempts = len(backoff_ms) + 1  # +1 for initial attempt
+            fallback_policy = self._get_fallback_policy()
+            backoff_ms = list(fallback_policy.backoff_sequence())
+            if not backoff_ms:
+                backoff_ms = [200, 500, 1000]
+            max_attempts = max(fallback_policy.max_attempts, 1)
             attempt = 0
 
             while attempt < max_attempts:
@@ -966,11 +1065,16 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 # If we got here, either empty response or error
                 if attempt < max_attempts:
                     # Apply backoff before retry
-                    backoff_sec = backoff_ms[attempt - 1] / 1000.0
+                    if backoff_ms:
+                        idx = min(attempt - 1, len(backoff_ms) - 1)
+                        delay_ms = backoff_ms[idx]
+                    else:
+                        delay_ms = 0
                     logger.info(
-                        f"[BinanceAdapter] get_open_orders retrying in {backoff_ms[attempt - 1]}ms (attempt {attempt + 1}/{max_attempts})"
+                        f"[BinanceAdapter] get_open_orders retrying in {delay_ms}ms (attempt {attempt + 1}/{max_attempts})"
                     )
-                    await asyncio.sleep(backoff_sec)
+                    if delay_ms > 0:
+                        await asyncio.sleep(delay_ms / 1000.0)
                 else:
                     # Exhausted retries - enter fallback mode
                     logger.error(

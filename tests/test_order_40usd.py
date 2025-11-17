@@ -6,26 +6,33 @@ TEST: $40 wallet, 60x leverage, ETHUSDT, single order with TP/SL
 
 from decimal import Decimal
 import json
+import copy
+
+from apps.reference.domains.execution_position.brackets_config import (
+    resolve_brackets_config,
+)
 
 # ============================================================================
 # КОНФІГ З config/aurora/trading.yaml
 # ============================================================================
 
 CONFIG = {
-    "execution": {
-        "manage": {
-            "brackets": {
-                "enable": True,
-                "stop_loss_bps": 50,
-                "take_profit_low_ratio": 0.6,
-                "take_profit_high_ratio": 1.0,
+    "trading": {
+        "execution": {
+            "manage": {
+                "brackets": {
+                    "enable": True,
+                    "stop_loss_bps": 50,
+                    "take_profit_low_ratio": 0.6,
+                    "take_profit_high_ratio": 1.0,
+                }
             }
-        }
-    },
-    "instruments": {
-        "ETHUSDT": {
-            "step_size": "0.001",
-            "min_notional": "10"
+        },
+        "instruments": {
+            "ETHUSDT": {
+                "step_size": "0.001",
+                "min_notional": "10"
+            }
         }
     }
 }
@@ -44,6 +51,7 @@ MARK_PRICE = 3500.0  # Наближена поточна ціна
 # РОЗРАХУНКИ
 # ============================================================================
 
+
 def calculate_order(wallet: float, leverage: float, mark_price: float, symbol: str, config: dict, side: str = "LONG"):
     """Розрахунок ордера"""
 
@@ -51,7 +59,9 @@ def calculate_order(wallet: float, leverage: float, mark_price: float, symbol: s
     notional = wallet * leverage
 
     # 2. Quantity (з урахуванням step_size)
-    step_size_str = config["instruments"][symbol]["step_size"]
+    step_size_str = (
+        config["trading"]["instruments"][symbol]["step_size"]
+    )
     step_size = Decimal(step_size_str)
 
     qty_decimal = Decimal(str(notional)) / Decimal(str(mark_price))
@@ -62,16 +72,26 @@ def calculate_order(wallet: float, leverage: float, mark_price: float, symbol: s
     real_notional = float(qty_quantized) * mark_price
 
     # 4. SL/TP calculation
-    sl_bps = config["execution"]["manage"]["brackets"]["stop_loss_bps"]
-    tp_low_ratio = config["execution"]["manage"]["brackets"]["take_profit_low_ratio"]
-    tp_high_ratio = config["execution"]["manage"]["brackets"]["take_profit_high_ratio"]
+    # Resolve canonical TP/SL once for consistency across code paths
+    resolved_brackets = resolve_brackets_config(config, symbol=symbol)
+
+    # Derive high TP (prefers take_profit_high_ratio when present)
+    sl_bps = float(resolved_brackets.sl_bps)
+    tp_high_bps = float(resolved_brackets.tp_bps)
+
+    # Derive low TP by disabling the high-ratio override while leaving low ratio intact
+    cfg_low = copy.deepcopy(config)
+    try:
+        cfg_low["trading"]["execution"]["manage"]["brackets"].pop(
+            "take_profit_high_ratio", None
+        )
+    except Exception:
+        pass
+    low_brackets = resolve_brackets_config(cfg_low, symbol=symbol)
+    tp_low_bps = float(low_brackets.tp_bps)
 
     # SL price
     sl_price = mark_price * (1.0 - sl_bps / 10000.0)
-
-    # TP prices
-    tp_low_bps = sl_bps * tp_low_ratio
-    tp_high_bps = sl_bps * tp_high_ratio
 
     tp_low_price = mark_price * (1.0 + tp_low_bps / 10000.0)
     tp_high_price = mark_price * (1.0 + tp_high_bps / 10000.0)
@@ -90,17 +110,17 @@ def calculate_order(wallet: float, leverage: float, mark_price: float, symbol: s
         "brackets": {
             "sl": {
                 "price": float(Decimal(str(sl_price)).quantize(Decimal(str(step_size)))),
-                "bps": sl_bps,
+                "bps": int(sl_bps),
             },
             "tp_low": {
                 "price": float(Decimal(str(tp_low_price)).quantize(Decimal(str(step_size)))),
                 "bps": int(tp_low_bps),
-                "ratio": tp_low_ratio,
+                "ratio": float(tp_low_bps / sl_bps) if sl_bps else 0,
             },
             "tp_high": {
                 "price": float(Decimal(str(tp_high_price)).quantize(Decimal(str(step_size)))),
                 "bps": int(tp_high_bps),
-                "ratio": tp_high_ratio,
+                "ratio": float(tp_high_bps / sl_bps) if sl_bps else 0,
             }
         },
         "wallet": wallet,
@@ -119,6 +139,7 @@ def calculate_order(wallet: float, leverage: float, mark_price: float, symbol: s
 # ============================================================================
 # ЗАПУСК
 # ============================================================================
+
 
 if __name__ == "__main__":
     print("\n" + "=" * 70)
@@ -183,9 +204,9 @@ if __name__ == "__main__":
 {'PRICES (TP/SL)':<40} {'─' * 60}
 {'SL Price':<40} ${order_full['brackets']['sl']['price']:<29.2f} ${order_micro['brackets']['sl']['price']:<29.2f}
 {'  └─ Distance from Entry':<40} {(order_full['entry_price'] - order_full['brackets']['sl']['price']):<29.2f} bps {(order_micro['entry_price'] - order_micro['brackets']['sl']['price']):<29.2f} bps
-{'TP LOW Price (k₁=0.6)':<40} ${order_full['brackets']['tp_low']['price']:<29.2f} ${order_micro['brackets']['tp_low']['price']:<29.2f}
+{'TP LOW Price (k₁≈0.6)':<40} ${order_full['brackets']['tp_low']['price']:<29.2f} ${order_micro['brackets']['tp_low']['price']:<29.2f}
 {'  └─ Distance from Entry':<40} {(order_full['brackets']['tp_low']['price'] - order_full['entry_price']):<29.2f} bps {(order_micro['brackets']['tp_low']['price'] - order_micro['entry_price']):<29.2f} bps
-{'TP HIGH Price (k₂=1.0)':<40} ${order_full['brackets']['tp_high']['price']:<29.2f} ${order_micro['brackets']['tp_high']['price']:<29.2f}
+{'TP HIGH Price (k₂≈1.0)':<40} ${order_full['brackets']['tp_high']['price']:<29.2f} ${order_micro['brackets']['tp_high']['price']:<29.2f}
 {'  └─ Distance from Entry':<40} {(order_full['brackets']['tp_high']['price'] - order_full['entry_price']):<29.2f} bps {(order_micro['brackets']['tp_high']['price'] - order_micro['entry_price']):<29.2f} bps
 
 {'P&L (PROFIT/LOSS)':<40} {'─' * 60}

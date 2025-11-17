@@ -1,0 +1,33 @@
+# Файл: config/archive/v1/trading.yaml — Архівна версія trading (v1)
+# Мета: збереження старої структури конфігів (legacy) для відкатів/порівнянь.
+#
+# Коментарі: Архіви важливі для traceability — зберігайте їх без змін у production.
+
+# --- Оригінальний вміст файлу ---
+trading:
+  mode: "testnet"
+  decision:
+    signal_threshold: 0.1
+    position_sizing:
+      min_position_size_usd: 10
+    signal_weights:
+      obi: 0.15
+      tfi: 0.15
+      delta_price: 0.10
+      ema_bias: 0.15
+      volume_spike: 0.10
+      volatility_state: 0.10
+      depth_imbalance: 0.15
+      macro_sync: 0.10
+  execution:
+    manage:
+      quick_profit:
+        enabled: true
+        mode: "fixed_usd"
+        target_usd: 2.0
+        priority: "highest"
+        ignore_other_rules: true
+  instruments:
+    ETHUSDT:
+      symbol: "ETHUSDT"
+      step_size: "0.001"

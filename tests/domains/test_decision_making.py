@@ -63,6 +63,32 @@ def mock_config():
             },
             "risk_parameters": {"cvar_confidence": 0.95, "max_leverage": 5.0},
         },
+        # Add decision at top level for DecisionMaking __init__ compatibility
+        "decision": {
+            "payoff_ratio_r": 2.0,
+            "signal_weights": {"obi": 0.3, "tfi": 0.4, "absorption": 0.3},
+            "probability_bounds": {"base": 0.5, "max_prob": 0.8, "min_prob": 0.1},
+            "signal_threshold": 0.1,
+            "p_calibration_version": "calibrated_v1",
+            "position_sizing": {
+                "kelly_conservative_factor": 0.1,
+                "kelly_alpha": 0.5,
+                "min_position_size_usd": 10.0,
+                "max_position_size_usd": 1000.0,
+                "default_notional_cap_usd": 1000.0,
+                "liquidity_based_cap_usd": 10000.0,
+            },
+            "calib_metrics_placeholder": "ECE=0.05, Brier=0.08",
+        },
+        "tca_prefs": {
+            "max_slippage_bps": 50.0,
+            "max_latency_ms": 5000,
+            "maker_preference": "allow",
+        },
+        "risk_budgets": {
+            "trade_cvar95_max_bps": 100.0,
+            "session_cvar95_max_bps": 200.0,
+        },
     }
 
 

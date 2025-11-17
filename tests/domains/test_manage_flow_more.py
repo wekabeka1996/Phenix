@@ -87,7 +87,16 @@ def test_trailing_activation_and_adjust():
             "step_bps": 10,
         }
     }
-    cfg_full = {"brackets": {"enable": True}, "trailing": cfg["trailing"]}
+    cfg_full = {
+        "trading": {
+            "execution": {
+                "manage": {
+                    "brackets": {"enable": True},
+                    "trailing": cfg["trailing"]
+                }
+            }
+        }
+    }
     fsm = ManageFlowFSM(config=cfg_full)
     fsm.position_qty = Decimal("1")
     fsm.position_entry_price = Decimal("100")

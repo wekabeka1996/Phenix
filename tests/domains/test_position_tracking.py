@@ -5,6 +5,7 @@ Tests that the domain correctly subscribes to EVT:TRADE_EXECUTED,
 processes it, and emits a valid EVT:PORTFOLIO_STATE_UPDATED event.
 """
 
+import decimal
 from unittest import mock
 import pytest
 from vfoundation.core.protocol import Message
@@ -878,3 +879,34 @@ def test_position_tracking_manual_intervention_metrics(mock_config):
     assert metrics["realized_pnl_usd"] == 5000.0
 
     print("✅ Manual intervention metrics test passed!")
+
+
+@pytest.mark.asyncio
+async def test_position_tracking_rollback():
+    """Test atomic rollback on insufficient balance."""
+    # Step 1: Initialize FSM core
+    fsm = FSMCore()
+
+    # Step 2: Initialize component
+    import sys
+    import os
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    position_tracker = PositionTracking(fsm=fsm, config={"trading": {}})
+
+    # Step 3: Set initial equity
+    position_tracker._equity = decimal.Decimal("100")
+
+    # Step 4: Try to update position with insufficient balance
+    with pytest.raises(ValueError, match="Insufficient balance"):
+        await position_tracker.update_position("BTCUSDT", decimal.Decimal("10"), decimal.Decimal("50000"))
+
+    # Step 5: Verify rollback - balance unchanged
+    assert position_tracker._equity == decimal.Decimal("100")
+    assert "BTCUSDT" not in position_tracker._positions
+
+    print("✅ Atomic rollback test passed!")

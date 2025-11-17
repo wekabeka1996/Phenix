@@ -1,0 +1,23 @@
+# v2 overrides for instruments and regimes
+
+symbols:
+  SOLUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.SOLUSDT
+  ETHUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.ETHUSDT
+    risk:
+      sizing_modifiers:  # from trading.instruments.ETHUSDT.sizing_modifiers
+        HIGH_VOLATILITY: 0.60
+        LOW_VOLATILITY: 1.20
+        MEAN_REVERSION: 0.50
+        UNCERTAIN: 0.50
+  BTCUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.__default__
+  BNBUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.__default__
+
+# regimes: none in legacy yet

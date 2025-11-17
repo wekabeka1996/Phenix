@@ -1,0 +1,21 @@
+# v2 config for core system settings (skeleton)
+# See docs/config_v2/specification.md for full structure.
+#
+# Intended fields (not yet active):
+# logging:
+#   level: INFO
+#   file: logs/aurora_core.log
+#   format: json
+#   rotation:
+#     max_bytes: 10485760
+#     backup_count: 5
+# system:
+#   hardening:
+#     ttl_config:
+#       entry_place_ttl_ms: 5000
+#       ...
+#   ops:
+#     metrics_url: http://127.0.0.1:8000/metrics
+#     reports_dir: reports
+#   account_observer:
+#     poll_interval: 30

@@ -1,0 +1,55 @@
+# Файл: features.yaml — Налаштування розрахунку фіч (feature engineering)
+# Мета: містить параметри для розрахунку EMA, volume spike, volatility state,
+# imbalance та macro synchronization.
+#
+# Основні секції:
+# - global.enable_new_metrics: вмикає додаткові фічі (ema_bias, volume_spike тощо)
+# - windows: часові вікна для різних метрик
+#   - ema.period_short / period_long: коротка та довга EMA для розрахунку bias
+#   - volume.window_sec: вікно для сукупного обсягу у секундах
+#   - sma_length: довжина SMA для згладжування
+# - features: граничні значення/клапани для конкретних фіч
+#   - bias_clamp: обмеження для EMA bias (наприклад, ±0.02 = ±2%)
+#   - spike_cap: максимальний множник spike для обсягу
+#   - liquidity.depth_half: параметр глибини стакана для imbalance (може бути USD або кількість)
+#   - kappa_min/kappa_max: границі liquidity kappa
+# - macro_sync: налаштування корельованих якорів (anchor symbols) для макро-синхронізації
+#
+# Практика: ці параметри впливають прямо на вихідні фічі, тому при тонкому тюнінгу
+# змінюйте їх поступово і перевіряйте WHY/WHY-coverage.
+
+# --- Оригінальний вміст файлу ---
+# v2 config for features domain
+# Migrated from trading.yaml feature_engineering.* and market_data.macro_sync.*
+# See docs/config_v2/specification.md for full structure.
+
+global:
+  enable_new_metrics: true  # Enable Phase 1 new metrics (ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync)
+
+windows:
+  ema:
+    period_short: 3   # EMA3 for ema_bias
+    period_long: 7    # EMA7 for ema_bias
+  volume:
+    window_sec: 60    # Volume window (seconds)
+    sma_length: 5     # SMA length for volume spike
+  volatility:
+    window_sec: 60    # Range window (seconds)
+    sma_length: 10    # SMA length for volatility state
+
+features:
+  ema:
+    bias_clamp: 0.02  # ±2% clamp for EMA bias
+  volume:
+    spike_cap: 3.0    # Max volume spike multiplier
+  volatility:
+    ratio_cap: 3.0    # Max volatility ratio
+  liquidity:
+    depth_half: 1000  # Depth parameter for imbalance calc (USD or count)
+    kappa_min: 0.3    # Min liquidity kappa
+    kappa_max: 1.0    # Max liquidity kappa
+
+macro_sync:
+  enabled: true
+  anchors: ["BTCUSDT", "ETHUSDT"]  # Anchor symbols for correlation
+  window: 60        # Window size for correlation (ticks/samples)

@@ -1,0 +1,34 @@
+# v2 config for features domain
+# Migrated from trading.yaml feature_engineering.* and market_data.macro_sync.*
+# See docs/config_v2/specification.md for full structure.
+
+global:
+  enable_new_metrics: true  # Enable Phase 1 new metrics (ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync)
+
+windows:
+  ema:
+    period_short: 3   # EMA3 for ema_bias
+    period_long: 7    # EMA7 for ema_bias
+  volume:
+    window_sec: 60    # Volume window (seconds)
+    sma_length: 5     # SMA length for volume spike
+  volatility:
+    window_sec: 60    # Range window (seconds)
+    sma_length: 10    # SMA length for volatility state
+
+features:
+  ema:
+    bias_clamp: 0.02  # ±2% clamp for EMA bias
+  volume:
+    spike_cap: 3.0    # Max volume spike multiplier
+  volatility:
+    ratio_cap: 3.0    # Max volatility ratio
+  liquidity:
+    depth_half: 1000  # Depth parameter for imbalance calc (USD or count)
+    kappa_min: 0.3    # Min liquidity kappa
+    kappa_max: 1.0    # Max liquidity kappa
+
+macro_sync:
+  enabled: true
+  anchors: ["BTCUSDT", "ETHUSDT"]  # Anchor symbols for correlation
+  window: 60        # Window size for correlation (ticks/samples)

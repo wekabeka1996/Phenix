@@ -1,102 +1,108 @@
-"""
-TEST #1: Preflight wait-until logic with exponential backoff.
+"""Unit tests for ExecPosFSM WS-driven preflight checks."""
 
-Tests that _preflight_position_check() retries with 120→250→400ms backoff
-when positionAmt is initially 0, and returns True when position appears.
-"""
+from __future__ import annotations
+
+import time
+from unittest.mock import MagicMock
+
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
-from apps.reference.domains.execution_position.fsm import ExecPosFSM
+
+from apps.reference.domains.execution_position.fsm import ExecPosFSM, PositionSnapshot
+
+
+class DummyAdapter:
+    def __init__(self, positions: list[dict[str, object]] | None = None) -> None:
+        self.positions = positions or []
+        self.calls = 0
+
+    def get_open_positions(self, symbol: str | None = None):  # pragma: no cover - simple shim
+        self.calls += 1
+        return list(self.positions)
+
+
+def _build_config(*, enabled: bool = True, max_age_ms: int = 1500, rest_enabled: bool = True):
+    return {
+        "trading": {
+            "execution": {
+                "manage": {
+                    "positions": {
+                        "ws_snapshot": {
+                            "enabled": enabled,
+                            "max_age_ms": max_age_ms,
+                            "rest_fallback_enabled": rest_enabled,
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+def _make_fsm(config=None) -> ExecPosFSM:
+    cfg = config or _build_config()
+    return ExecPosFSM(config=cfg, fsm=MagicMock())
 
 
 @pytest.mark.asyncio
-async def test_preflight_wait_until_success_on_third_try():
-    """
-    Mock adapter returns positionAmt=0, 0, then 0.001 on 3rd call.
-    Expect: _preflight_position_check() returns True, made 3 calls.
-    """
-    # Mock FSM with minimal mock fsm core
-    mock_fsm_core = MagicMock()
-    fsm = ExecPosFSM(config={}, fsm=mock_fsm_core)
+async def test_preflight_uses_fresh_ws_snapshot():
+    fsm = _make_fsm()
+    fsm.adapter = DummyAdapter()
+    fsm._ws_position_cache[("BTCUSDT", "LONG")] = PositionSnapshot(
+        symbol="BTCUSDT",
+        side="LONG",
+        position_amt=0.25,
+        avg_price=100.0,
+        updated_ts=time.time(),
+    )
 
-    # Mock adapter.get_open_positions to return 0, 0, 0.001
-    call_count = 0
-
-    async def mock_get_positions(symbol):
-        nonlocal call_count
-        call_count += 1
-        if call_count <= 2:
-            # First two calls: position not synced yet
-            return [{"symbol": symbol, "positionAmt": "0.0"}]
-        else:
-            # Third call: position synced
-            return [{"symbol": symbol, "positionAmt": "0.001"}]
-
-    fsm.adapter = MagicMock()
-    fsm.adapter.get_open_positions = AsyncMock(side_effect=mock_get_positions)
-
-    # Call preflight check
-    result = await fsm._preflight_position_check("BTCUSDT")
-
-    # Assertions
-    assert result is True, "Should return True when position found on 3rd try"
-    assert call_count == 3, f"Expected 3 calls, got {call_count}"
-    assert fsm.adapter.get_open_positions.call_count == 3
+    assert await fsm._preflight_position_check("BTCUSDT", "LONG") is True
+    assert fsm.adapter.calls == 0
 
 
 @pytest.mark.asyncio
-async def test_preflight_wait_until_exhausted_returns_false():
-    """
-    Mock adapter always returns positionAmt=0.
-    Expect: _preflight_position_check() returns False after 3+ tries.
-    """
-    mock_fsm_core = MagicMock()
-    fsm = ExecPosFSM(config={}, fsm=mock_fsm_core)
+async def test_preflight_rest_fallback_updates_cache():
+    fsm = _make_fsm()
+    adapter = DummyAdapter(
+        [{"symbol": "ETHUSDT", "positionAmt": "0.5", "entryPrice": "2000"}]
+    )
+    fsm.adapter = adapter
 
-    # Mock adapter to always return 0
-    async def mock_get_positions_zero(symbol):
-        return [{"symbol": symbol, "positionAmt": "0.0"}]
+    result = await fsm._preflight_position_check("ETHUSDT", "LONG")
 
-    fsm.adapter = MagicMock()
-    fsm.adapter.get_open_positions = AsyncMock(
-        side_effect=mock_get_positions_zero)
+    assert result is True
+    assert adapter.calls == 1
+    snapshot = fsm._ws_position_cache.get(("ETHUSDT", "LONG"))
+    assert snapshot is not None
+    assert snapshot.position_amt == pytest.approx(0.5)
 
-    # Call preflight check
-    result = await fsm._preflight_position_check("BTCUSDT")
 
-    # Assertions
-    assert result is False, "Should return False when position never appears"
-    assert fsm.adapter.get_open_positions.call_count == 4, "Should make 4 calls (1 + 3 retries)"
-    # Check metric incremented
+@pytest.mark.asyncio
+async def test_preflight_uses_rest_when_snapshot_stale():
+    fsm = _make_fsm(config=_build_config(max_age_ms=100))
+    adapter = DummyAdapter(
+        [{"symbol": "SOLUSDT", "positionAmt": "1.0", "entryPrice": "150"}]
+    )
+    fsm.adapter = adapter
+    fsm._ws_position_cache[("SOLUSDT", "LONG")] = PositionSnapshot(
+        symbol="SOLUSDT",
+        side="LONG",
+        position_amt=1.0,
+        avg_price=150.0,
+        updated_ts=time.time() - 5,  # stale (>100ms)
+    )
+
+    assert await fsm._preflight_position_check("SOLUSDT", "LONG") is True
+    assert adapter.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_preflight_reports_no_position_when_ws_and_rest_empty():
+    fsm = _make_fsm()
+    adapter = DummyAdapter([{"symbol": "BTCUSDT", "positionAmt": "0"}])
+    fsm.adapter = adapter
+
+    result = await fsm._preflight_position_check("BTCUSDT", "LONG")
+
+    assert result is False
+    assert adapter.calls == 1
     assert fsm._orphan_metrics.get("tp_sl_skipped_no_position", 0) == 1
-
-
-@pytest.mark.asyncio
-async def test_preflight_wait_until_immediate_success():
-    """
-    Mock adapter returns positionAmt=0.005 on first call.
-    Expect: _preflight_position_check() returns True immediately (no retries).
-    """
-    mock_fsm_core = MagicMock()
-    fsm = ExecPosFSM(config={}, fsm=mock_fsm_core)
-
-    # Mock adapter to return valid position immediately
-    async def mock_get_positions_immediate(symbol):
-        return [{"symbol": symbol, "positionAmt": "0.005"}]
-
-    fsm.adapter = MagicMock()
-    fsm.adapter.get_open_positions = AsyncMock(
-        side_effect=mock_get_positions_immediate)
-
-    # Call preflight check
-    result = await fsm._preflight_position_check("ETHUSDT")
-
-    # Assertions
-    assert result is True, "Should return True immediately when position exists"
-    assert fsm.adapter.get_open_positions.call_count == 1, "Should make only 1 call"
-
-
-if __name__ == "__main__":
-    # Run with: pytest tests/units/test_preflight_wait_until.py -v
-    pytest.main([__file__, "-v"])

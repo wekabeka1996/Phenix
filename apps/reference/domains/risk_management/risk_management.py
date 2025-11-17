@@ -8,6 +8,7 @@ from features data and emits EVT:RISK_ASSESSMENT_COMPLETED events.
 import decimal
 import logging
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
@@ -17,6 +18,12 @@ if TYPE_CHECKING:
     from vfoundation.core import FSMCore
 
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
+from apps.reference.config_risk import (
+    resolve_daily_risk_state,
+    resolve_risk_score_weights,
+    resolve_trading_allowed_thresholds,
+)
+from apps.reference.config_modes import get_domain_mode_from_mapping
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +40,48 @@ def _to_dec(x, default=decimal.Decimal("0")):
         return default
 
 
+def _ensure_mapping(section: Any) -> Dict[str, Any]:
+    """Best-effort conversion of config sections to dict form."""
+    if not section:
+        return {}
+    if isinstance(section, Mapping):
+        return dict(section)
+    if hasattr(section, "model_dump"):
+        try:
+            return section.model_dump()
+        except Exception:
+            return {}
+    if hasattr(section, "__dict__"):
+        return {
+            key: value
+            for key, value in section.__dict__.items()
+            if not key.startswith("_")
+        }
+    return {}
+
+
+def _get_config_section(cfg: Any, path: tuple[str, ...]) -> Any:
+    """Traverse nested dict/object path and return the final section."""
+    node = cfg
+    for key in path:
+        if node is None:
+            return None
+        if isinstance(node, Mapping):
+            node = node.get(key)
+        else:
+            node = getattr(node, key, None)
+    return node
+
+
+def _resolve_config_section(cfg: Any, paths: tuple[tuple[str, ...], ...]) -> Dict[str, Any]:
+    """Return first non-empty mapping for given config paths."""
+    for path in paths:
+        section = _ensure_mapping(_get_config_section(cfg, path))
+        if section:
+            return section
+    return {}
+
+
 class RiskManagement:
     """
     Risk management component that processes features and calculates risk parameters.
@@ -45,6 +94,37 @@ class RiskManagement:
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
+
+        # Resolve risk configuration policies with logging
+        try:
+            risk_weights = resolve_risk_score_weights(self.config)
+            self.logger.info(
+                "Resolved risk score weights",
+                extra={
+                    "source": getattr(risk_weights, 'source', 'unknown'),
+                    "delta_price_pct": getattr(risk_weights, 'delta_price_pct', None),
+                    "obi": getattr(risk_weights, 'obi', None),
+                    "tfi": getattr(risk_weights, 'tfi', None),
+                    "absorption_inverse": getattr(risk_weights, 'absorption_inverse', None),
+                },
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to resolve risk score weights: {e}")
+
+        try:
+            trading_thresholds = resolve_trading_allowed_thresholds(
+                self.config)
+            self.logger.info(
+                "Resolved trading allowed thresholds",
+                extra={
+                    "source": getattr(trading_thresholds, 'source', 'unknown'),
+                    "max_risk_score": getattr(trading_thresholds, 'max_risk_score', None),
+                },
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to resolve trading allowed thresholds: {e}")
+
         # Portfolio state tracking for holistic risk management
         self.portfolio_state: Optional[Dict[str, Any]] = None
         self.peak_equity: Optional[decimal.Decimal] = None
@@ -174,46 +254,14 @@ class RiskManagement:
 
         AGENT-PATCH: Daily drawdown check with correct threshold reading.
         """
-        # 1. Portfolio-level risk check (Circuit Breaker)
-        # AGENT-PATCH: Safe reading of max_allowed from overrides/config/fallback
+        # 1. Portfolio-level risk check (Circuit Breaker) resolved via config pipeline
         try:
-            if hasattr(self.config, 'risk'):
-                risk_config = self.config.risk if self.config.risk else {}
-            elif isinstance(self.config, dict):
-                risk_config = self.config.get("risk", {})
-            else:
-                risk_config = {}
-        except (AttributeError, TypeError):
-            risk_config = {}
-
-        # Try to read max_daily_drawdown_pct from different paths
-        max_drawdown_pct = None
-        if isinstance(risk_config, dict):
-            max_drawdown_pct = risk_config.get("max_daily_drawdown_pct", None)
-        else:
-            max_drawdown_pct = getattr(
-                risk_config, 'max_daily_drawdown_pct', None)
-
-        if max_drawdown_pct is None:
-            try:
-                if hasattr(self.config, 'system') and self.config.system:
-                    system_risk = self.config.system.risk if hasattr(
-                        self.config.system, 'risk') else None
-                    if system_risk:
-                        max_drawdown_pct = getattr(
-                            system_risk, 'max_daily_drawdown_limit', None)
-                elif isinstance(self.config, dict):
-                    max_drawdown_pct = self.config.get("system", {}).get(
-                        "risk", {}).get("max_daily_drawdown_limit")
-            except (AttributeError, TypeError):
-                max_drawdown_pct = None
-
-        if max_drawdown_pct is None:
-            max_drawdown_pct = 10.0
-
-        try:
-            max_drawdown_pct = float(max_drawdown_pct)
-        except (TypeError, ValueError):
+            daily_state = resolve_daily_risk_state(self.config)
+            max_drawdown_pct = float(getattr(
+                daily_state.cfg, "max_drawdown_pct", 10.0))
+        except Exception as exc:
+            self.logger.warning(
+                "Failed to resolve daily risk state: %s; using fallback", exc)
             max_drawdown_pct = 10.0
 
         # Compare drawdown_pct directly (both in %)
@@ -242,27 +290,20 @@ class RiskManagement:
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
         try:
-            if hasattr(self.config, 'risk_score_weights') and self.config.risk_score_weights:
-                score_weights = self.config.risk_score_weights
-            elif isinstance(self.config, dict):
-                score_weights = self.config.get("risk_score_weights", {})
-            else:
-                score_weights = {}
-        except (AttributeError, TypeError):
-            score_weights = {}
+            score_weights_cfg = resolve_risk_score_weights(self.config)
+        except Exception as exc:
+            self.logger.warning(
+                "Failed to resolve score_weights: %s; using defaults", exc)
+            score_weights_cfg = None
 
         delta_price_weight = _to_dec(
-            score_weights.get("delta_price_pct", "0.1") if isinstance(score_weights, dict)
-            else (getattr(score_weights, 'delta_price_pct', "0.1")
-                  if hasattr(score_weights, 'delta_price_pct') else "0.1"))
-        obi_weight = _to_dec(score_weights.get("obi", "0.3") if isinstance(score_weights, dict) else (
-            getattr(score_weights, 'obi', "0.3") if hasattr(score_weights, 'obi') else "0.3"))
-        tfi_weight = _to_dec(score_weights.get("tfi", "0.3") if isinstance(score_weights, dict) else (
-            getattr(score_weights, 'tfi', "0.3") if hasattr(score_weights, 'tfi') else "0.3"))
+            score_weights_cfg.delta_price_pct if score_weights_cfg else "0.1")
+        obi_weight = _to_dec(
+            score_weights_cfg.obi if score_weights_cfg else "0.3")
+        tfi_weight = _to_dec(
+            score_weights_cfg.tfi if score_weights_cfg else "0.3")
         absorption_inverse_weight = _to_dec(
-            score_weights.get("absorption_inverse", "0.3") if isinstance(score_weights, dict)
-            else (getattr(score_weights, 'absorption_inverse', "0.3")
-                  if hasattr(score_weights, 'absorption_inverse') else "0.3"))
+            score_weights_cfg.absorption_inverse if score_weights_cfg else "0.3")
 
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
@@ -288,24 +329,16 @@ class RiskManagement:
             risk_score = decimal.Decimal("1")
 
         try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                thresholds = (
-                    self.config.trading.risk.trading_allowed_thresholds
-                    if self.config.trading.risk and self.config.trading.risk
-                    else {}
-                )
-            elif isinstance(self.config, dict):
-                thresholds = self.config.get("trading", {}).get(
-                    "risk", {}).get("trading_allowed_thresholds", {})
-            else:
-                thresholds = {}
-        except (AttributeError, TypeError):
-            thresholds = {}
+            thresholds_cfg = resolve_trading_allowed_thresholds(self.config)
+            profile = get_domain_mode_from_mapping(
+                self.config, "risk_management")
+            threshold_value = thresholds_cfg.for_profile(profile)
+        except Exception as exc:
+            self.logger.warning(
+                "Failed to resolve trading_allowed_thresholds: %s; using fallback", exc)
+            threshold_value = 0.8
 
-        max_risk_score = _to_dec(
-            thresholds.get("max_risk_score", "0.8") if isinstance(thresholds, dict)
-            else (getattr(thresholds, 'max_risk_score', "0.8")
-                  if hasattr(thresholds, 'max_risk_score') else "0.8"))
+        max_risk_score = _to_dec(threshold_value)
         is_trading_allowed = risk_score <= max_risk_score
 
         if not is_trading_allowed:
@@ -336,26 +369,35 @@ class RiskManagement:
         issues = []
         warnings = []
 
+        raw_thresholds = _resolve_config_section(
+            self.config,
+            (
+                ("trading", "risk", "trading_allowed_thresholds"),
+                ("risk", "trading_allowed_thresholds"),
+                ("config_v2", "domains", "risk", "trading_allowed_thresholds"),
+                ("trading_allowed_thresholds",),
+            ),
+        )
+
+        if not raw_thresholds or raw_thresholds.get("max_risk_score") is None:
+            issues.append(
+                "Missing required threshold: max_risk_score (not configured)"
+            )
+
         try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                thresholds = (
-                    self.config.trading.risk.trading_allowed_thresholds
-                    if self.config.trading.risk and self.config.trading.risk
-                    else {}
-                )
-            elif isinstance(self.config, dict):
-                thresholds = self.config.get("trading", {}).get(
-                    "risk", {}).get("trading_allowed_thresholds", {})
-            else:
-                thresholds = {}
-        except (AttributeError, TypeError):
-            thresholds = {}
+            thresholds_cfg = resolve_trading_allowed_thresholds(self.config)
+        except Exception as exc:
+            self.logger.warning(
+                "validate_risk_thresholds: unable to resolve thresholds (%s)", exc)
+            thresholds_cfg = None
 
         required_thresholds = ["max_risk_score"]
 
         for threshold_name in required_thresholds:
-            threshold_val = thresholds.get(threshold_name) if isinstance(thresholds, dict) else (
-                getattr(thresholds, threshold_name, None) if hasattr(thresholds, threshold_name) else None)
+            if not thresholds_cfg:
+                issues.append(f"Missing required threshold: {threshold_name}")
+                continue
+            threshold_val = getattr(thresholds_cfg, threshold_name, None)
             if threshold_val is None:
                 issues.append(f"Missing required threshold: {threshold_name}")
             else:
@@ -371,36 +413,63 @@ class RiskManagement:
                         f"Invalid threshold value for {threshold_name}: {value}")
 
         # Check risk score weights
+        raw_risk_weights = _resolve_config_section(
+            self.config,
+            (
+                ("risk_score_weights",),
+                ("trading", "risk", "risk_score_weights"),
+                ("trading", "risk", "score_weights"),
+                ("risk", "risk_score_weights"),
+                ("risk", "score_weights"),
+                ("config_v2", "domains", "risk", "score_weights"),
+            ),
+        )
+
         try:
-            if hasattr(self.config, 'risk_score_weights') and self.config.risk_score_weights:
-                risk_weights = self.config.risk_score_weights
-            elif isinstance(self.config, dict):
-                risk_weights = self.config.get("risk_score_weights", {})
-            else:
-                risk_weights = {}
-        except (AttributeError, TypeError):
-            risk_weights = {}
+            risk_weights = resolve_risk_score_weights(self.config)
+        except Exception as exc:
+            self.logger.warning(
+                "validate_risk_thresholds: unable to resolve score_weights (%s)", exc)
+            risk_weights = None
 
         required_weights = ["delta_price_pct",
                             "obi", "tfi", "absorption_inverse"]
 
         total_weight = decimal.Decimal("0")
         for weight_name in required_weights:
-            weight_val = risk_weights.get(weight_name) if isinstance(risk_weights, dict) else (
-                getattr(risk_weights, weight_name, None) if hasattr(risk_weights, weight_name) else None)
-            if weight_val is None:
-                issues.append(f"Missing required risk weight: {weight_name}")
-            else:
-                value = risk_weights[weight_name]
-                try:
-                    dec_value = _to_dec(value)
+            raw_value_present = weight_name in raw_risk_weights
+            validated_value: Optional[decimal.Decimal] = None
+
+            if raw_value_present:
+                raw_value = raw_risk_weights.get(weight_name)
+                dec_value = _to_dec(raw_value, None)
+                if dec_value is None:
+                    issues.append(
+                        f"Invalid risk weight value for {weight_name}: {raw_value}"
+                    )
+                elif dec_value < 0:
+                    issues.append(
+                        f"Risk weight {weight_name}={raw_value} cannot be negative"
+                    )
+                else:
+                    validated_value = dec_value
+
+            if not raw_value_present:
+                weight_val = getattr(risk_weights, weight_name,
+                                     None) if risk_weights else None
+                if weight_val is None:
+                    issues.append(
+                        f"Missing required risk weight: {weight_name}")
+                else:
+                    dec_value = _to_dec(weight_val)
                     if dec_value < 0:
                         issues.append(
-                            f"Risk weight {weight_name}={value} cannot be negative")
-                    total_weight += dec_value
-                except (ValueError, TypeError):
-                    issues.append(
-                        f"Invalid risk weight value for {weight_name}: {value}")
+                            f"Risk weight {weight_name}={weight_val} cannot be negative")
+                    else:
+                        validated_value = dec_value
+
+            if validated_value is not None:
+                total_weight += validated_value
 
         # Check total weight is reasonable (should sum to ~1.0)
         if total_weight < decimal.Decimal("0.5") or total_weight > decimal.Decimal("2.0"):
@@ -445,8 +514,8 @@ class RiskManagement:
             "issues": issues,
             "warnings": warnings,
             "config_summary": {
-                "thresholds": thresholds,
-                "risk_weights": risk_weights,
+                "thresholds": thresholds_cfg.__dict__ if thresholds_cfg else {},
+                "risk_weights": risk_weights.__dict__ if risk_weights else {},
                 "total_weight": float(total_weight),
                 "circuit_breaker": circuit_breaker
             }

@@ -64,6 +64,12 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
         >>> assert 'sim_' in result['exchange_order_id']
     """
 
+    def __init__(self, fsm=None, config=None):
+        super().__init__(fsm=fsm, config=config)
+        # Internal store of orders and positions for simulated behavior
+        self._orders: Dict[str, Dict[str, Any]] = {}
+        self._positions: Dict[str, Dict[str, Any]] = {}
+
     def place_order(self, dec_msg: Message) -> Dict[str, Any]:
         """
         Simulate order placement.
@@ -102,13 +108,30 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
         mock_order_id = f"sim_{timestamp_ms}"
 
         # Return standardized success response
-        return {
+        result = {
             "status": "ACCEPTED",
             "exchange_order_id": mock_order_id,
-            "filled_qty": str(Decimal(qty)),  # Preserve precision, return as string
+            # Preserve precision, return as string
+            "filled_qty": str(Decimal(qty)),
             "message": "Order simulated successfully.",
             "timestamp": timestamp_ms,
         }
+
+        # Track order in internal store for get_open_orders
+        self._orders[mock_order_id] = {
+            "symbol": symbol,
+            "orderId": mock_order_id,
+            "clientOrderId": dec_msg.pld.get("newClientOrderId"),
+            "type": dec_msg.pld.get("order_type", "MARKET"),
+            "reduceOnly": dec_msg.pld.get("reduceOnly", False),
+            "closePosition": dec_msg.pld.get("closePosition", False),
+            "origQty": qty,
+            "executedQty": str(Decimal(qty)),
+            "status": "ACCEPTED",
+            "side": side,
+        }
+
+        return result
 
     def cancel_order(self, dec_msg: Message) -> Dict[str, Any]:
         """
@@ -142,13 +165,18 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
         timestamp_ms = int(time.time() * 1000)
 
         # Return standardized cancel success response
-        return {
+        res = {
             "status": "ACCEPTED",
             "exchange_order_id": order_id,
             "filled_qty": "0.0",  # No partial fills in simulation
             "message": "Cancel simulated successfully.",
             "timestamp": timestamp_ms,
         }
+
+        # Remove order from internal store if present
+        if order_id in self._orders:
+            self._orders.pop(order_id, None)
+        return res
 
     def get_status(self) -> str:
         """
@@ -163,3 +191,61 @@ class SimulatedExecutionAdapter(AbstractExecutionAdapter):
             - Real adapters would check actual connection health
         """
         return "CONNECTED"
+
+    # ---- Async adapter compatibility: awaitable high-level methods used by ExecPosFSM
+    async def place_market_entry(self, symbol: str, side: str, qty: str, new_client_order_id: str = None) -> Dict[str, Any]:
+        # Delegate to synchronous place_order logic for simplicity
+        # Build minimal dec_msg
+        dec_msg = Message(op="DEC", verb="OPEN", src="sim", dst="execution_position", rid="sim", pld={
+                          "symbol": symbol, "side": side, "qty": qty, "newClientOrderId": new_client_order_id})
+        return self.place_order(dec_msg)
+
+    async def place_stop_market_close_position(self, symbol: str, side: str, qty: str, new_client_order_id: str = None) -> Dict[str, Any]:
+        # Simulate stop market close: create a cancelable reduce-only order
+        dec_msg = Message(op="DEC", verb="PLACE_ORDER", src="sim", dst="execution_position", rid="sim", pld={
+                          "symbol": symbol, "side": side, "qty": qty, "order_type": "STOP_MARKET", "newClientOrderId": new_client_order_id, "reduceOnly": True, "closePosition": True})
+        return self.place_order(dec_msg)
+
+    async def place_take_profit_market_close_position(self, symbol: str, side: str, price: str, new_client_order_id: str = None) -> Dict[str, Any]:
+        dec_msg = Message(op="DEC", verb="PLACE_ORDER", src="sim", dst="execution_position", rid="sim", pld={
+                          "symbol": symbol, "side": side, "qty": "0.0", "order_type": "TAKE_PROFIT_MARKET", "price": price, "newClientOrderId": new_client_order_id, "reduceOnly": True})
+        return self.place_order(dec_msg)
+
+    async def place_limit_reduce_only(self, symbol: str, side: str, price: str, qty: str, new_client_order_id: str = None) -> Dict[str, Any]:
+        dec_msg = Message(op="DEC", verb="PLACE_ORDER", src="sim", dst="execution_position", rid="sim", pld={
+                          "symbol": symbol, "side": side, "qty": qty, "order_type": "LIMIT", "price": price, "newClientOrderId": new_client_order_id, "reduceOnly": True})
+        return self.place_order(dec_msg)
+
+    async def place_market_reduce_only(self, symbol: str, side: str, qty: str, new_client_order_id: str = None) -> Dict[str, Any]:
+        dec_msg = Message(op="DEC", verb="PLACE_ORDER", src="sim", dst="execution_position", rid="sim", pld={
+                          "symbol": symbol, "side": side, "qty": qty, "order_type": "MARKET", "newClientOrderId": new_client_order_id, "reduceOnly": True})
+        return self.place_order(dec_msg)
+
+    async def cancel_order_async(self, symbol: str, order_id: str = None, client_order_id: str = None) -> Dict[str, Any]:
+        # Support both signature styles: Cancel by order ID or client order ID
+        # Accept None and return accepted
+        dec_msg = Message(op="DEC", verb="CANCEL", src="sim", dst="execution_position", rid="sim", pld={
+                          "symbol": symbol, "exchange_order_id": order_id, "client_order_id": client_order_id})
+        return self.cancel_order_dec(dec_msg) if hasattr(self, 'cancel_order_dec') else {
+            "status": "ACCEPTED",
+            "exchange_order_id": order_id or client_order_id or "UNKNOWN",
+            "filled_qty": "0.0",
+            "message": "Cancel simulated successfully.",
+            "timestamp": int(time.time() * 1000),
+        }
+
+    # Backwards-compatible cancellation accepting Message
+    def cancel_order_dec(self, dec_msg: Message) -> Dict[str, Any]:
+        return self.cancel_order(dec_msg)
+
+    async def get_open_orders(self, symbol: str = None) -> list[Dict[str, Any]]:
+        if symbol:
+            return [v for v in self._orders.values() if v.get('symbol') == symbol]
+        return list(self._orders.values())
+
+    async def get_open_positions(self, symbol: str = None) -> list[Dict[str, Any]]:
+        # Positions not simulated in depth; return list based on tracked positions
+        if symbol:
+            pos = self._positions.get(symbol)
+            return [pos] if pos else []
+        return list(self._positions.values())

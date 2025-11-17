@@ -1,61 +1,88 @@
 #!/usr/bin/env python3
-"""Інтеграційна перевірка: Dynamic Trading CONFIG + PositionTracking LOG FIX"""
+"""Dynamic trading config smoke check using AuroraConfig + config v2 resolvers."""
 
-from unittest.mock import MagicMock
-import logging
-import yaml
-import sys
+from __future__ import annotations
 
-logging.basicConfig(level=logging.INFO)
+from pathlib import Path
 
-print("=" * 70)
-print("🧪 ІНТЕГРАЦІЙНА ПЕРЕВІРКА: Dynamic Trading CONFIG + PositionTracking FIX")
-print("=" * 70)
+import pytest
 
-# Крок 1: Завантажити конфіг
-try:
-    cfg = yaml.safe_load(open('config/aurora/trading.yaml', encoding='utf-8'))
-    sizing_mods = cfg.get('trading', {}).get(
-        'decision', {}).get('sizing_modifiers', {})
-    vol_model = cfg.get('trading', {}).get('models', {}).get('volatility', {})
-    print("\n✅ КРОК 1: Config завантажений")
-    print(
-        f"   - Sizing Modifiers: {sizing_mods if sizing_mods else 'не задано (OK)'}")
-    print(
-        f"   - Volatility Model: {vol_model if vol_model else 'не задано (OK)'}")
-except Exception as e:
-    print(f"❌ Помилка конфіг: {e}")
-    sys.exit(1)
+from apps.reference.config_decision import resolve_decision_policy
+from apps.reference.config_exposure_policy import resolve_exposure_policy
+from apps.reference.config_features import resolve_feature_engineering_config
+from apps.reference.config_loader import ConfigLoader
+from apps.reference.config_regimes import resolve_regime_detector_config
+from apps.reference.config_risk import resolve_daily_risk_state
+from apps.reference.config_sizing import resolve_sizing_policy
+from apps.reference.config_symbols import get_trading_symbols, resolve_instrument_profile
+from tools.config_validator_v2 import format_validation_summary, validate_config_v2
 
-# Крок 2: Завантажити PositionTracking (повинна працювати тепер)
-try:
-    from apps.reference.domains.position_tracking.position_tracking import PositionTracking
-    print("✅ КРОК 2: PositionTracking модуль завантажений (БЕЗ NameError)")
-except NameError as e:
-    print(f"❌ NameError при імпорту: {e}")
-    sys.exit(1)
-except Exception as e:
-    print(f"⚠️  Інша помилка (OK): {type(e).__name__}")
 
-# Крок 3: Завантажити DecisionMaking
-try:
-    from apps.reference.domains.decision_making.decision_making import DecisionMaking
-    print("✅ КРОК 3: DecisionMaking модуль завантажений")
-except Exception as e:
-    print(
-        f"⚠️  DecisionMaking помилка (OK): {type(e).__name__}: {str(e)[:50]}")
+@pytest.fixture(scope="module")
+def aurora_cfg():
+    """Load AuroraConfig from the config/v2 root and gate it via the validator."""
+    project_root = Path(__file__).resolve().parents[1]
+    validation_report = validate_config_v2(project_root / "config")
+    assert validation_report["status"] == "ok", (
+        f"Config v2 validation failed:\n{format_validation_summary(validation_report)}"
+    )
 
-# Крок 4: Завантажити RegimeDetector
-try:
-    from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
-    print("✅ КРОК 4: RegimeDetector модуль завантажений")
-except Exception as e:
-    print(
-        f"⚠️  RegimeDetector помилка (OK): {type(e).__name__}: {str(e)[:50]}")
+    loader = ConfigLoader(config_dir=project_root / "config")
+    return loader.load_config()
 
-print("\n" + "=" * 70)
-print("✅ ДИНАМІЧНА ТОРГІВЛЯ ГОТОВА:")
-print("   - LOG NameError ВИРІШЕНА ✅")
-print("   - YAML Config готовий (sizing_modifiers + volatility) ✅")
-print("   - Всі ключові модулі завантажуються ✅")
-print("=" * 70)
+
+def _pick_symbol(cfg) -> str:
+    symbols = get_trading_symbols()
+    if symbols:
+        return symbols[0]
+    legacy_symbols = ((getattr(cfg.trading, "instruments", {}) or {}))
+    if isinstance(legacy_symbols, dict):
+        for candidate in legacy_symbols.keys():
+            return candidate
+    return "BTCUSDT"
+
+
+def test_dynamic_integration_config_loads(aurora_cfg):
+    assert aurora_cfg.trading_mode, "AuroraConfig should expose a trading mode"
+    assert aurora_cfg.config_v2 is not None, "config_v2 payload must be attached"
+
+
+@pytest.mark.integration
+def test_dynamic_integration_resolvers_use_config_v2(aurora_cfg):
+    symbol = _pick_symbol(aurora_cfg)
+    exposure_policy = resolve_exposure_policy(aurora_cfg)
+    decision_policy = resolve_decision_policy(aurora_cfg)
+    sizing_policy = resolve_sizing_policy(
+        aurora_cfg, symbol=symbol, regime="NORMAL"
+    )
+    instrument_profile = resolve_instrument_profile(aurora_cfg, symbol)
+    risk_state = resolve_daily_risk_state(aurora_cfg)
+    features_cfg = resolve_feature_engineering_config(aurora_cfg)
+    regime_cfg = resolve_regime_detector_config(aurora_cfg)
+
+    assert exposure_policy.source == "config_v2"
+    assert decision_policy.source == "config_v2"
+    assert sizing_policy.source == "config_v2"
+    assert instrument_profile.source == "config_v2"
+    assert getattr(risk_state, "source", "config_v2") == "config_v2"
+    assert features_cfg.source == "config_v2"
+    assert regime_cfg.source == "config_v2"
+
+    # Sanity-check a couple of concrete datapoints to ensure we are not reading defaults
+    reservations = getattr(exposure_policy, "reservations", None)
+    assert reservations is not None, "Exposure reservations must be populated"
+    assert reservations.pending_ttl_sec != 90, "Pending TTL should originate from v2 overrides"
+    assert sizing_policy.max_risk_pct > 0
+    assert instrument_profile.min_qty > 0
+
+
+def test_dynamic_integration_supports_domain_imports():
+    """Ensure critical domain modules remain importable under config v2."""
+    from apps.reference.domains.position_tracking.position_tracking import PositionTracking  # noqa: F401
+    from apps.reference.domains.decision_making.decision_making import DecisionMaking  # noqa: F401
+    from apps.reference.domains.regime_detector.regime_detector import RegimeDetector  # noqa: F401
+
+    # If imports succeed pytest will keep the test green; no runtime side effects needed.
+    assert PositionTracking is not None
+    assert DecisionMaking is not None
+    assert RegimeDetector is not None

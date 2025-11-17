@@ -37,6 +37,19 @@ ManageFlowFSM = mod.ManageFlowFSM
 ManageState = mod.ManageState
 
 
+def build_manage_config(brackets: dict | None = None, auto: bool = True) -> dict:
+    return {
+        "trading": {
+            "execution": {
+                "manage": {
+                    "auto": auto,
+                    "brackets": brackets or {},
+                }
+            }
+        }
+    }
+
+
 def make_msg(op="EVT", verb="FILL", rid="r1", symbol="SOLUSDT", pld=None):
     """Helper to create test messages."""
     # Construct the payload - merge pld dict if provided
@@ -63,7 +76,9 @@ def test_oco_emulation_disabled_by_default():
     Test 1: OCO emulation is disabled by default.
     When oco_emulation=false, filling one bracket does NOT cancel the other.
     """
-    fsm = ManageFlowFSM(config={"brackets": {"oco_emulation": False}})
+    fsm = ManageFlowFSM(
+        config=build_manage_config({"enable": True, "oco_emulation": False})
+    )
 
     # Setup position with both brackets
     fsm.position_qty = Decimal("1.0")
@@ -111,14 +126,14 @@ def test_oco_emulation_tp_filled_cancels_sl():
     - Expected: SL order (ID: sl_order_123) should be CANCELLED
     """
     fsm = ManageFlowFSM(
-        config={
-            "brackets": {
-                "oco_emulation": True,  # ENABLED
+        config=build_manage_config(
+            {
+                "oco_emulation": True,
                 "enable": True,
                 "sl": {"fixed_bps": 50},
                 "tp": {"fixed_bps": 100},
             }
-        }
+        )
     )
 
     # Setup: Position with both brackets active
@@ -164,14 +179,14 @@ def test_oco_emulation_sl_filled_cancels_tp():
     - Expected: TP order (ID: tp_order_456) should be CANCELLED
     """
     fsm = ManageFlowFSM(
-        config={
-            "brackets": {
-                "oco_emulation": True,  # ENABLED
+        config=build_manage_config(
+            {
+                "oco_emulation": True,
                 "enable": True,
                 "sl": {"fixed_bps": 50},
                 "tp": {"fixed_bps": 100},
             }
-        }
+        )
     )
 
     # Setup: Position with both brackets active
@@ -212,12 +227,7 @@ def test_oco_non_bracket_order_ignored():
     If some other order fills, OCO should not react.
     """
     fsm = ManageFlowFSM(
-        config={
-            "brackets": {
-                "oco_emulation": True,
-                "enable": True,
-            }
-        }
+        config=build_manage_config({"oco_emulation": True, "enable": True})
     )
 
     fsm.position_qty = Decimal("1.0")
@@ -246,7 +256,7 @@ def test_oco_no_brackets_placed_yet():
 
     Edge case: message arrives before brackets placed.
     """
-    fsm = ManageFlowFSM(config={"brackets": {"oco_emulation": True}})
+    fsm = ManageFlowFSM(config=build_manage_config({"oco_emulation": True}))
 
     # No brackets placed yet
     fsm.sl_order_id = None
@@ -268,7 +278,7 @@ def test_oco_partial_bracket_state():
 
     If only SL is tracked, filling a non-existent TP shouldn't crash.
     """
-    fsm = ManageFlowFSM(config={"brackets": {"oco_emulation": True}})
+    fsm = ManageFlowFSM(config=build_manage_config({"oco_emulation": True}))
 
     fsm.sl_order_id = "sl_order_123"
     fsm.tp_order_id = None  # TP not yet placed
@@ -296,15 +306,14 @@ def test_oco_integration_scenario():
     4. TP fills
     5. SL must be cancelled
     """
-    cfg = {
-        "execution": {"manage": {"auto": True}},
-        "brackets": {
+    cfg = build_manage_config(
+        {
             "enable": True,
             "oco_emulation": True,
             "sl": {"fixed_bps": 50},
             "tp": {"fixed_bps": 100},
-        },
-    }
+        }
+    )
     fsm = ManageFlowFSM(config=cfg)
 
     # Step 1: Position opens (after FILL of market entry)

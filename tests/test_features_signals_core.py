@@ -1,5 +1,4 @@
-"""
-Test Suite: Features & Signals Verification
+"""Test Suite: Features & Signals Verification
 
 Tests verify:
 1. Signal weights are correctly loaded from config
@@ -10,76 +9,45 @@ Tests verify:
 
 import json
 import pytest
-import sys
-from pathlib import Path
+from apps.reference.config_loader import load_config
 
-# Add workspace root to path
-root_path = str(Path(__file__).parent.parent)
-sys.path.insert(0, root_path)
+CONFIG = load_config(config_root="config")
 
+def _signal_weights_dict() -> dict[str, float]:
+    decision = getattr(CONFIG.trading, "decision", None)
+    if decision is None:
+        return {}
+    weights = getattr(decision, "signal_weights", {}) or {}
+    if hasattr(weights, "model_dump"):
+        weights = weights.model_dump()
+    return {k: float(v) for k, v in weights.items() if v is not None}
 
 class TestSignalWeightsConfig:
-    """Test 1: Signal weights configuration."""
+    "Test 1: Signal weights configuration."
 
-    def test_config_file_exists(self):
-        """Verify trading.yaml exists and is readable."""
-        trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
-        assert trading_yaml.exists(
-        ), f"trading.yaml not found at {trading_yaml}"
-        print(f"✅ trading.yaml found at {trading_yaml}")
+    def test_signal_weights_present(self):
+        weights = _signal_weights_dict()
+        assert weights, "AuroraConfig.trading.decision.signal_weights should not be empty"
 
-    def test_signal_weights_in_config(self):
-        """Verify signal_weights are in trading.yaml (Phase 1 with 8 metrics)."""
-        trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
+    def test_expected_metrics(self):
+        expected_metrics = {
+            "obi",
+            "tfi",
+            "delta_price",
+            "ema_bias",
+            "volume_spike",
+            "volatility_state",
+            "depth_imbalance",
+            "macro_sync",
+        }
+        weights = _signal_weights_dict()
+        missing = expected_metrics - set(weights.keys())
+        assert not missing, f"Missing signal_weights metrics: {missing}"
+        assert all(weights[m] > 0 for m in expected_metrics)
 
-        with open(trading_yaml, "r", encoding="utf-8") as f:
-            content = f.read()
-            assert "signal_weights:" in content, (
-                "signal_weights not found in trading.yaml"
-            )
-            # Check for new metrics weights (Phase 1)
-            assert "obi:" in content, "obi weight not found"
-            assert "tfi:" in content, "tfi weight not found"
-            assert "delta_price:" in content, "delta_price weight not found"
-            assert "ema_bias:" in content, "ema_bias weight not found (Phase 1 metrics)"
-            assert "volume_spike:" in content, "volume_spike weight not found (Phase 1 metrics)"
-            assert "volatility_state:" in content, "volatility_state weight not found (Phase 1 metrics)"
-            assert "depth_imbalance:" in content, "depth_imbalance weight not found (Phase 1 metrics)"
-            assert "macro_sync:" in content, "macro_sync weight not found (Phase 1 metrics)"
-
-        print("✅ All signal_weights found in trading.yaml (8 metrics, Phase 1):")
-        print("   Legacy: obi, tfi, delta_price")
-        print("   Phase 1: ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync")
-
-    def test_signal_weights_under_trading_key(self):
-        """Verify signal_weights are nested under 'trading:' key."""
-        trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
-
-        with open(trading_yaml, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        trading_key_found = False
-        decision_key_found = False
-        signal_weights_found = False
-
-        for i, line in enumerate(lines):
-            if "^trading:" in line or line.startswith("trading:"):
-                trading_key_found = True
-                print("✅ Found 'trading:' key at root level")
-
-            if trading_key_found and ("  decision:" in line):
-                decision_key_found = True
-                print("✅ Found 'decision:' nested under 'trading:'")
-
-            if decision_key_found and ("signal_weights:" in line):
-                signal_weights_found = True
-                print("✅ Found 'signal_weights:' nested under 'trading.decision'")
-                break
-
-        assert trading_key_found, "trading: key not found at root"
-        assert decision_key_found, "decision: key not nested under trading:"
-        assert signal_weights_found, "signal_weights: not nested under trading.decision"
-
+    def test_nested_under_trading_decision(self):
+        assert hasattr(CONFIG.trading, "decision")
+        assert getattr(CONFIG.trading.decision, "signal_weights", None) is not None
 
 class TestSignalCalculation:
     """Test 2: Signal score calculation logic."""

@@ -7,3 +7,4 @@ pandas>=2.0.0
 numpy>=1.24.0
 duckdb>=0.8.0
 websockets==11.0.3
+Twisted>=25.5.0

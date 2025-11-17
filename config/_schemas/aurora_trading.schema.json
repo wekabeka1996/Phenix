@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aurora.scalp/shared/config/aurora_trading.schema.json",
+  "x-status": "deprecated",
+  "x-notes": "Legacy v1 monolithic trading.yaml schema; not used by config v2.",
   "title": "AuroraTradingConfig",
   "type": "object",
   "required": [

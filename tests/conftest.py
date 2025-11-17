@@ -1,3 +1,17 @@
+import sys
+import asyncio
+
+
+# On Windows, several async libraries (Tornado) expect the SelectorEventLoop.
+# This test suite sometimes uses Tornado's AsyncIOMainLoop and proxies the
+# running loop; ensure we set the policy early in the test process so plugins
+# initialize correctly.
+if sys.platform.startswith("win"):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        # If the policy is not available on the platform, ignore silently.
+        pass
 """Pytest configuration for vfoundation tests."""
 
 import sys
@@ -90,7 +104,8 @@ def cleanup_background_tasks():
     # Log active threads for debugging
     active_threads = threading.enumerate()
     if len(active_threads) > 1:  # Main thread always exists
-        print(f"\nWarning: {len(active_threads)} threads still active at test end")
+        print(
+            f"\nWarning: {len(active_threads)} threads still active at test end")
         for thread in active_threads:
             if thread != threading.main_thread():
                 print(f"   - {thread.name} (daemon={thread.daemon})")
@@ -102,3 +117,28 @@ def reset_singletons():
     yield
     # Clear any cached singletons or global state
     # This prevents test interference
+
+
+@pytest.fixture(scope="function", autouse=True)
+def fix_event_loop():
+    """Fix event loop for Windows Tornado compatibility."""
+    import sys
+    import asyncio
+    if sys.platform.startswith("win"):
+        try:
+            # Force SelectorEventLoop for Tornado compatibility
+            asyncio.set_event_loop_policy(
+                asyncio.WindowsSelectorEventLoopPolicy())
+            # Create a new event loop for this test
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        except Exception:
+            pass
+    yield
+    # Cleanup
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.stop()
+    except Exception:
+        pass

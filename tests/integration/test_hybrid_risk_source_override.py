@@ -6,7 +6,10 @@ from typing import Literal
 
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.account_observer.account_observer import AccountObserver
-from apps.reference.bootstrap.preflight import check_hybrid_coherence
+from apps.reference.bootstrap.preflight import (
+    HybridIncoherenceError,
+    check_hybrid_coherence,
+)
 from vfoundation.core import FSMCore
 
 # Configure logging for tests
@@ -160,6 +163,10 @@ trading:
   domain_configuration:
     market_data:
       trading_mode: "testnet" # This should be "live" for coherence
+    feature_engineering:
+      trading_mode: "testnet"
+    decision_making:
+      trading_mode: "testnet"
     execution_position:
       trading_mode: "testnet"
   risk_management:
@@ -179,11 +186,12 @@ binance_api:
 """
     with caplog.at_level(logging.WARNING):
         config = config_loader_with_mock_env(env_vars, trading_yaml_content)
-        is_coherent, reasons = check_hybrid_coherence(config.to_dict())
+        with pytest.raises(HybridIncoherenceError) as excinfo:
+            check_hybrid_coherence(config.to_dict())
 
-    assert is_coherent is False
-    assert "Market data trading_mode is 'testnet', expected 'live'." in reasons
-    assert "HYBRID_INCOHERENT: Hybrid mode pre-flight check failed." in caplog.text
+        error_msg = str(excinfo.value)
+        assert "Market data trading_mode is 'testnet', expected 'live'." in error_msg
+        assert "HYBRID_INCOHERENT: Hybrid mode pre-flight check failed." in caplog.text
 
     # Verify that the main application would log a critical error
     # This part would typically be in main.py, but we're testing the preflight function directly

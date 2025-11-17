@@ -19,14 +19,36 @@ class TestTradeExecutedPath:
 
     @pytest.fixture
     def config(self):
-        """Mock config object."""
-        config = Mock()
-        config.trading = Mock()
-        config.trading.execution = Mock()
-        config.trading.execution.watchdog = Mock()
-        config.trading.execution.watchdog.ack_ttl_ms = 8000
-        config.trading.execution.watchdog.fill_ttl_ms = 30000
-        return config
+        """Minimal config dict for testing."""
+        return {
+            "trading": {
+                "execution": {
+                    "watchdog": {
+                        "ack_ttl_ms": 8000,
+                        "fill_ttl_ms": 30000
+                    },
+                    "exposure": {
+                        "max_equity_utilization_pct": 80.0,
+                        "max_portfolio_notional_usd": 10000.0
+                    },
+                    "manage": {
+                        "orphan_monitor": {
+                            "enabled": True,
+                            "run_on_startup": True,
+                            "periodic_interval_sec": 300,
+                            "min_order_age_sec": 0,
+                            "batch_cancel_limit": 50,
+                            "rate_limit_per_min": 120
+                        }
+                    },
+                    "guardian": {
+                        "unified": True,
+                        "emit_tidy_event": True,
+                        "poll_interval_ms": 500
+                    }
+                }
+            }
+        }
 
     @pytest.fixture
     def fsm_mock(self):
@@ -38,13 +60,17 @@ class TestTradeExecutedPath:
     @pytest.fixture
     def exec_pos_fsm(self, config, fsm_mock):
         """Create ExecPosFSM instance with mocks."""
-        with patch('apps.reference.domains.execution_position.fsm.BinanceAdapter') as mock_adapter:
+        with patch('apps.reference.domains.execution_position.fsm.BinanceAdapter') as mock_adapter, \
+                patch('apps.reference.domains.execution_position.fsm.ExposureGuard') as mock_guard:
             mock_adapter_instance = Mock()
             mock_adapter.return_value = mock_adapter_instance
 
+            mock_guard_instance = Mock()
+            mock_guard.return_value = mock_guard_instance
+
             fsm = ExecPosFSM(config=config, fsm=fsm_mock)
-            # Mock exposure guard
-            fsm.exposure_guard = Mock(spec=ExposureGuard)
+            # Override with our mock
+            fsm.exposure_guard = mock_guard_instance
             fsm.order_guardian = Mock()
             fsm.order_guardian.on_fill = Mock()
             fsm.order_guardian.reconcile_symbol = AsyncMock()
@@ -80,12 +106,12 @@ class TestTradeExecutedPath:
 
         # Verify exposure guard was called
         exec_pos_fsm.exposure_guard.on_fill.assert_called_once()
-        call_args = exec_pos_fsm.exposure_guard.on_fill.call_args
-        assert call_args[0][0] == "test_order_123"  # idempotent_key
-        assert isinstance(call_args[0][1], Decimal)  # notional_usd
-        assert call_args[0][1] == Decimal("50.0")  # 50000 * 0.001
-        assert call_args[0][2] == "BTCUSDT"  # symbol
-        assert call_args[0][3] == "buy"  # side
+        call_args, call_kwargs = exec_pos_fsm.exposure_guard.on_fill.call_args
+        assert call_args[0] == "test_order_123"  # idempotent_key
+        assert isinstance(call_args[1], Decimal)  # notional_usd
+        assert call_args[1] == Decimal("50.0")  # 50000 * 0.001
+        assert call_kwargs["symbol"] == "BTCUSDT"  # symbol
+        assert call_kwargs["side"] == "buy"  # side
 
         # Verify order guardian was called
         exec_pos_fsm.order_guardian.on_fill.assert_called_once_with(
@@ -162,9 +188,9 @@ class TestTradeExecutedPath:
             pld=payload
         )
 
-        with patch('apps.reference.domains.execution_position.fsm.LOG') as mock_log:
+        with patch.object(exec_pos_fsm.logger, 'warning') as mock_log:
             exec_pos_fsm._on_trade_executed(event)
-            mock_log.warning.assert_called_with(
+            mock_log.assert_called_with(
                 "EVT:TRADE_EXECUTED missing required fields: symbol=None, quantity=0.001"
             )
 

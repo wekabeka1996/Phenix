@@ -1,5 +1,8 @@
 import time
 from decimal import Decimal
+from apps.reference.domains.execution_position.brackets_config import (
+    resolve_brackets_config,
+)
 from apps.reference.domains.execution_position.fsm_manage import (
     ManageFlowFSM,
     ManageState,
@@ -32,7 +35,6 @@ def test_hydrate_success_and_brackets_state():
     assert fsm.state in (
         ManageState.TRACKING,
         ManageState.BRACKETS_PLACED,
-        ManageState.OPENED,
     )
 
 
@@ -74,10 +76,22 @@ def test_calculate_bracket_prices_and_get_opposite():
     # _get_opposite_side() expects position_side to be "BUY"/"SELL"
     fsm.position_side = "BUY"
     fsm.position_qty = Decimal("1")
-    fsm.config = {"brackets": {
-        "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}}
+    fsm.config = {
+        "trading": {
+            "execution": {
+                "manage": {
+                    "brackets": {
+                        "sl": {"fixed_bps": 50},
+                        "tp": {"fixed_bps": 100},
+                    }
+                }
+            }
+        }
+    }
 
-    sl, tp = fsm._calculate_bracket_prices()
+    resolved = resolve_brackets_config(fsm.config)
+    sl, tp = fsm._calculate_bracket_prices(resolved)
+
     assert sl is not None and tp is not None
     # When position_side="BUY", opposite side is "SELL"
     assert fsm._get_opposite_side() == "SELL"

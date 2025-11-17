@@ -253,15 +253,21 @@ def test_integration_handle_order_trade_update_includes_orderId_in_payload():
     # Process event
     adapter._handle_order_trade_update(raw_event)
 
-    # Verify payload includes orderId on top level
-    assert len(fsm_core.emitted_events) == 1
-    event = fsm_core.emitted_events[0]
-    # Adapter emits EVT:TRADE_EXECUTED for FILLED orders (not ORDER_STATE_CHANGED)
-    assert event["verb"] in ("EVT:TRADE_EXECUTED", "EVT:ORDER_STATE_CHANGED")
-    assert "orderId" in event["payload"]
-    assert event["payload"]["orderId"] == "1234567890"
-    assert event["payload"]["status"] == "FILLED"
-    assert event["payload"]["exchangeOrderId"] == "1234567890"
+    # Verify both canonical TRADE_EXECUTED and ORDER_STATE_CHANGED events were emitted
+    assert len(fsm_core.emitted_events) >= 1
+    trade_events = [e for e in fsm_core.emitted_events
+                    if e["verb"] == "EVT:TRADE_EXECUTED"]
+    assert trade_events, "Expected canonical EVT:TRADE_EXECUTED emission"
+    trade_event = trade_events[0]
+    assert trade_event["payload"]["orderId"] == "1234567890"
+    assert trade_event["payload"]["exchangeOrderId"] == "1234567890"
+
+    state_events = [e for e in fsm_core.emitted_events
+                    if e["verb"] == "EVT:ORDER_STATE_CHANGED"]
+    assert state_events, "Expected ORDER_STATE_CHANGED bookkeeping event"
+    state_payload = state_events[0]["payload"]
+    assert state_payload["orderId"] == "1234567890"
+    assert state_payload["status"] == "FILLED"
 
 
 if __name__ == "__main__":

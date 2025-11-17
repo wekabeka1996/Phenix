@@ -1,0 +1,43 @@
+# v2 config for trading modes and domain configurations
+# Див. docs/config_v2/specification.md для деталей
+
+profiles:
+  shadow_live:
+    trading_mode: shadow_live
+    domains:
+      market_data: live
+      feature_engineering: live
+      decision_making: live
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: live
+
+  full_live:
+    trading_mode: full_live
+    domains:
+      market_data: live
+      feature_engineering: live
+      decision_making: live
+      risk_management: live
+      execution_position: live
+      audit_trail: live
+
+      full_testnet:
+    trading_mode: full_testnet
+    domains:
+      market_data: testnet
+      feature_engineering: testnet
+      decision_making: testnet
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: testnet
+
+  full_testnet:
+    trading_mode: full_testnet
+    domains:
+      market_data: testnet
+      feature_engineering: testnet
+      decision_making: testnet
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: testnet

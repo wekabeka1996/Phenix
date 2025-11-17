@@ -87,10 +87,14 @@ class CloseFlowFSM:
             return None
 
         # State transition: FLAT → OPENED on FILL or PARTIAL_FILL
-        if self.state == CloseState.FLAT and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL"):
+        if self.state == CloseState.FLAT and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL", "FILL"):
             # Check if this actually opened a position (qty > 0)
             pld = msg.pld or {}
-            qty = float(pld.get("qty", 0))
+            qty = float(
+                pld.get("qty")
+                or pld.get("quantity")
+                or pld.get('filled_qty', 0)
+            )
             if qty > 0:
                 self.position_active = True
                 self.position_open_ts = time.time()

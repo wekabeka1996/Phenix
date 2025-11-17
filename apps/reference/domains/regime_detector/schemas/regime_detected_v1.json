@@ -19,10 +19,10 @@
     },
     "regime": {
       "type": "string",
-      "enum": [
+        "enum": [
         "TREND_UP",
         "TREND_DOWN",
-        "MEAN_REVERSION",
+        "SIDEWAYS",
         "HIGH_VOLATILITY",
         "LOW_VOLATILITY",
         "UNCERTAIN"
@@ -37,6 +37,13 @@
     "source_model": {
       "type": "string",
       "description": "The name of the model used for detection, e.g., 'HMM_v1'.",
+      "minLength": 1,
+      "maxLength": 50
+    }
+    ,
+    "model": {
+      "type": "string",
+      "description": "Unversioned model name for human consumption, e.g., 'sma_trend'.",
       "minLength": 1,
       "maxLength": 50
     }

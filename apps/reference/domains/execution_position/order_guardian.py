@@ -9,9 +9,16 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from apps.reference.services.order_guardian import OrderGuardian as ServicesGuardian
+from apps.reference.services.order_guardian import (
+    OrderGuardian as ServicesGuardian,
+    AggregatedOcoGuardianConfig,
+    BracketSetMeta,
+)
 from apps.reference.services.ledger_store_adapter import LedgerStoreAdapter
 from apps.clean_TP_SL.order_ledger import OrderLedger
+from apps.reference.domains.execution_position.manage_config import (
+    resolve_execution_manage_config,
+)
 
 
 class OrderGuardian:
@@ -25,6 +32,7 @@ class OrderGuardian:
         bus: Optional[Any] = None,
     ):
         self._cfg = config or {}
+        self._aggregated_guardian_cfg = self._resolve_aggregated_cfg()
 
         # Feature flag: guardian.unified (default True)
         unified = True
@@ -51,7 +59,15 @@ class OrderGuardian:
             except Exception:
                 db_path = None
 
-            ledger = OrderLedger(db_path or ":memory:")
+            # Use file-based DB for thread safety (instead of :memory:)
+            if db_path is None:
+                import tempfile
+                import os
+                db_dir = os.path.join(tempfile.gettempdir(), 'phenix_ledger')
+                os.makedirs(db_dir, exist_ok=True)
+                db_path = os.path.join(db_dir, 'order_ledger.db')
+
+            ledger = OrderLedger(db_path)
             store = LedgerStoreAdapter(ledger)
 
         # Always use services guardian; if not unified, fall back to in-memory store
@@ -62,6 +78,7 @@ class OrderGuardian:
             poll_interval_ms=poll_interval_ms,
             bus=bus,
             config=self._cfg,
+            aggregated_oco_cfg=self._aggregated_guardian_cfg,
         )
 
     # Delegate API
@@ -71,6 +88,11 @@ class OrderGuardian:
     # type: ignore[no-untyped-def]
     def register_brackets(self, **kwargs) -> None:
         return self._impl.register_brackets(**kwargs)
+
+    # type: ignore[no-untyped-def]
+    def on_fill(self, **kwargs) -> None:
+        """Proxy to services guardian on_fill (per-entry fill tracking)."""
+        return self._impl.on_fill(**kwargs)
 
     # type: ignore[no-untyped-def]
     async def should_place_brackets(self, *args, **kwargs):
@@ -89,6 +111,11 @@ class OrderGuardian:
         return await self._impl.cleanup_before_close(*args, **kwargs)
 
     # type: ignore[no-untyped-def]
+    async def close_entry(self, *args, **kwargs):
+        """Cancel brackets and report remaining qty/side for an entry."""
+        return await self._impl.close_entry(*args, **kwargs)
+
+    # type: ignore[no-untyped-def]
     async def cleanup_orphans(self, *args, **kwargs):
         return await self._impl.cleanup_orphans(*args, **kwargs)
 
@@ -99,6 +126,26 @@ class OrderGuardian:
     # type: ignore[no-untyped-def]
     async def cleanup_other_brackets_for_symbol(self, *args, **kwargs):
         return await self._impl.cleanup_other_brackets_for_symbol(*args, **kwargs)
+
+    # type: ignore[no-untyped-def]
+    def rehydrate_bracket_set_for_position(self, *args, **kwargs):
+        return self._impl.rehydrate_bracket_set_for_position(*args, **kwargs)
+
+    # type: ignore[no-untyped-def]
+    async def link_existing_from_rest(self, *args, **kwargs):
+        return await self._impl.link_existing_from_rest(*args, **kwargs)
+
+    def list_entries(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        """List tracked entries (optionally by symbol)."""
+        return self._impl.list_entries(*args, **kwargs)
+
+    def list_bracket_sets(self) -> list[BracketSetMeta]:
+        """Expose aggregated bracket metadata for diagnostics/watchdog."""
+
+        try:
+            return self._impl.list_all_bracket_sets()
+        except AttributeError:
+            return []
 
     async def start(self):
         return await self._impl.start()
@@ -119,3 +166,29 @@ class OrderGuardian:
             return self._impl.get_metrics()
         except AttributeError:
             return {}
+
+    def _resolve_aggregated_cfg(self) -> AggregatedOcoGuardianConfig:
+        """Project execution.manage.brackets.aggregated_oco into guardian config."""
+        try:
+            manage_cfg = resolve_execution_manage_config(self._cfg)
+        except Exception:
+            return AggregatedOcoGuardianConfig()
+
+        try:
+            agg_meta = manage_cfg.brackets.aggregated_oco
+        except Exception:
+            agg_meta = None
+
+        if not agg_meta or not getattr(agg_meta, "enabled", False):
+            return AggregatedOcoGuardianConfig()
+
+        ttl_ms = int(getattr(agg_meta, "ttl_protect_new_bracket_ms", 0) or 0)
+        allow_unprotected = bool(
+            getattr(agg_meta, "allow_unprotected_position", False)
+        )
+
+        return AggregatedOcoGuardianConfig(
+            enabled=True,
+            ttl_protect_new_bracket_ms=ttl_ms,
+            allow_unprotected_position=allow_unprotected,
+        )

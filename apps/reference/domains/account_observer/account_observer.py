@@ -133,6 +133,17 @@ class AccountObserver:
                 account_observer_config, "poll_interval", 5)
         self.poll_interval = poll_interval
 
+        if isinstance(account_observer_config, dict):
+            self.emit_legacy_fill = account_observer_config.get(
+                "emit_legacy_fill", True)
+        else:
+            self.emit_legacy_fill = getattr(
+                account_observer_config, "emit_legacy_fill", True)
+        self.logger.info(
+            "AccountObserver legacy EVT:FILL emission %s",
+            "enabled" if self.emit_legacy_fill else "disabled",
+        )
+
         # Symbols to monitor - use trading.symbols_to_track if account_observer.symbols not set
         # This ensures we monitor all symbols being traded, not a hardcoded list
         if isinstance(account_observer_config, dict):
@@ -243,12 +254,8 @@ class AccountObserver:
                 payload["parent_client_order_id"] = corr_data.get(
                     "parent_client_order_id")
 
-            # Emit event
-            self.fsm.emit(
-                "EVT:FILL",
-                payload=payload,
-                why="Detected new user fill from Binance account.",
-            )
+            # Emit canonical + legacy events
+            self._emit_trade_events(payload)
 
             # Log with correlation
             corr_id_log = payload.get("corr_id", "unknown")
@@ -260,7 +267,24 @@ class AccountObserver:
             )
 
             self.logger.info(
-                f"Emitted EVT:FILL for trade {trade_id}: {payload}")
+                f"Emitted EVT:TRADE_EXECUTED for trade {trade_id}: {payload}")
+
+    def _emit_trade_events(self, payload: dict[str, Any]) -> None:
+        """Emit canonical TRADE_EXECUTED (and optional legacy FILL) events."""
+        trade_payload = payload.copy()
+        self.fsm.emit(
+            "EVT:TRADE_EXECUTED",
+            payload=trade_payload,
+            why="account_observer_detected_fill",
+        )
+
+        if self.emit_legacy_fill:
+            legacy_payload = payload.copy()
+            self.fsm.emit(
+                "EVT:FILL",
+                payload=legacy_payload,
+                why="Detected new user fill from Binance account.",
+            )
 
     def _trade_to_payload(self, trade: dict[str, Any], venue: str) -> dict[str, Any]:
         """Convert Binance trade dict to EVT:TRADE_EXECUTED payload."""
@@ -285,7 +309,9 @@ class AccountObserver:
             "side": side,
             "price": price,
             "quantity": quantity,
+            "qty": quantity,
             "ts": ts,
             "fees": fees,
             "venue": venue,
+            "orderId": str(trade.get("orderId", "")),
         }

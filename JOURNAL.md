@@ -1,5 +1,9 @@
 # Aurora FSM Development Journal
 
+## 2025-11-17 | RID: OCO-DISCOVERY-AGGREGATED_OCO_V1 | Aggregated position/TP/SL discovery phase
+
+- Коротко: стартуємо повний аудит позицій, TP/SL, OrderGuardian та ExecPosFSM, щоб закріпити існуючі контракти і спланувати чистий design aggregated OCO.
+
 ## 2025-11-09T07:30:00Z: Fallback Mode Implementation Complete - Retry/Backoff Logic Added ✅
 
 **RID**: P0_FALLBACK_MODE_RETRY_BACKOFF_COMPLETE_091125

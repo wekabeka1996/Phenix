@@ -1,9 +1,9 @@
 """
 FSMP-P1-T02: Open Flow FSM for execution_position domain.
 
-States: IDLE → CANDIDATE → READY → EMIT_DEC_OPEN → DONE
-Guards: min_notional, qty/price steps, cooldown
-Output: DEC:OPEN(symbol, side, qty, price?, tif?)
+Minimal state machine: IDLE → PROCESSING → DONE|ERROR.
+Guards: min_notional, qty/price steps, cooldown.
+Output: DEC:OPEN(symbol, side, qty, price?, tif?).
 
 Shadow-mode: no live API calls, all I/O via ACL stub.
 """
@@ -31,9 +31,7 @@ class OpenState(str, Enum):
     """FSM states for open flow."""
 
     IDLE = "IDLE"
-    CANDIDATE = "CANDIDATE"
-    READY = "READY"
-    EMIT_DEC_OPEN = "EMIT_DEC_OPEN"
+    PROCESSING = "PROCESSING"
     DONE = "DONE"
     ERROR = "ERROR"
 
@@ -140,6 +138,8 @@ class OpenFlowFSM:
             if self.metrics_collector:
                 self.metrics_collector.record_cmd_open()
             timestamp_cmd = time.time()
+
+            self.state = OpenState.PROCESSING
 
             # 0. Idempotency Check
             self._cleanup_idempotency_store()
@@ -328,55 +328,6 @@ class OpenFlowFSM:
                     pld={"error": str(e)},
                 )
 
-        elif (
-            msg.op == "EVT"
-            and msg.verb == "READY"
-            and self.state == OpenState.CANDIDATE
-        ):
-            self.state = OpenState.READY
-            return None
-
-        elif (
-            msg.op == "EVT" and msg.verb == "EXECUTE" and self.state == OpenState.READY
-        ):
-            # Generate DEC:OPEN
-            pld = msg.pld or {}
-            symbol = pld.get("symbol")
-            side = pld.get("side")
-            qty = pld.get("qty")
-            price = pld.get("price")
-
-            dec_pld = {
-                "symbol": symbol,
-                "side": side,
-                "qty": str(qty),
-                "order_type": "LIMIT",
-                "tif": "GTC",
-            }
-            if price is not None:
-                dec_pld["price"] = str(price)
-
-            dec = Message(
-                op="DEC",
-                verb="OPEN",
-                src=msg.dst,  # FSM as source
-                dst="execution_position",
-                rid=msg.rid,
-                why="OPEN_OK",
-                idempotent_key=msg.idempotent_key,
-                pld=dec_pld,
-                corr_id=str(uuid.uuid4()),
-                oco_group_id=str(uuid.uuid4()),
-                data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
-            )
-
-            # Update state and metrics
-            self.state = OpenState.DONE
-            self.last_open_ts = time.time()
-            self._metrics["fsm_open_decisions_total"] += 1
-
-            return dec
-
         return None
 
     def _check_qty_step(self, qty: Decimal) -> bool:
@@ -392,7 +343,9 @@ class OpenFlowFSM:
     def _reject(self, msg: Message, why: str, reason: str) -> Message:
         """Generate ERR message for guard failures."""
         self._metrics["fsm_guard_rejects_total"] += 1
-        if reason != "cooldown active":
+        if reason == "cooldown active":
+            self.state = OpenState.IDLE
+        else:
             self.state = OpenState.ERROR
         return Message(
             op="ERR",

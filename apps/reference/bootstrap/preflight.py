@@ -1,6 +1,8 @@
 ﻿from typing import Any, List, Tuple
 import logging
 
+from apps.reference.utils import compute_effective_trading_modes
+
 log = logging.getLogger(__name__)
 
 
@@ -39,15 +41,11 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
     mode_label = "hybrid_testnet"
 
     # 1) data must be live if будь-який з data-доменів live
-    dc = _nested_get(cfg, ["trading", "domain_configuration"], {}) or _nested_get(
-        cfg, ["domain_configuration"], {}) or {}
-    md_mode_candidates = [
-        _nested_get(dc, ["market_data", "trading_mode"]),
-        _nested_get(dc, ["feature_engineering", "trading_mode"]),
-        _nested_get(dc, ["decision_making", "trading_mode"]),
-        _nested_get(cfg, ["market_data", "trading_mode"])
-    ]
-    any_live = any(m == "live" for m in md_mode_candidates if m is not None)
+    modes = compute_effective_trading_modes(cfg)
+    any_live = any(
+        modes.domain_modes.get(domain) == "live"
+        for domain in ("market_data", "feature_engineering", "decision_making")
+    )
     if not any_live:
         reasons.append(
             "Market data trading_mode is 'testnet', expected 'live'.")
@@ -55,7 +53,8 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
     # 2) risk portfolio source → testnet (follow_execution у гібриді = testnet)
     rps = _nested_get(cfg, ["_resolved", "risk_portfolio_source"],
                       _nested_get(cfg, ["trading", "domain_configuration", "risk_management", "data_sources", "portfolio_state"],
-                                  _nested_get(cfg, ["risk_management", "data_sources", "portfolio_state"])))
+                                  _nested_get(cfg, ["trading", "risk_management", "data_sources", "portfolio_state"],
+                                              _nested_get(cfg, ["risk_management", "data_sources", "portfolio_state"]))))
     if rps == "follow_execution":
         rps = "testnet"
     if rps != "testnet":

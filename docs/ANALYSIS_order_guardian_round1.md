@@ -1,0 +1,35 @@
+# OrderGuardian / TP-SL Scale-in Investigation (Round 1)
+
+## 1. Вступ
+- **Мета:** зʼясувати, чому при scale-in (додавання частини позиції) `OrderGuardian`/FSM/adapter очищає свіжопоставлені TP/SL і залишає частину позиції без захисту.
+- **Переглянуті файли:** `apps/reference/domains/execution_position/order_guardian.py`, `apps/reference/services/order_guardian.py`, `apps/reference/domains/execution_position/fsm.py`, `apps/reference/domains/execution_position/manage_config.py`, `apps/reference/adapters/binance_adapter.py`, `config/aurora/trading.yaml`, `configs/master_config_v1.yaml`, `config_schema_v1.py`, `docs/config_analysis/*`, `docs/For_GPT/config_contract_map.md`, `tests/order_guardian/*`.
+
+## 2. Поведінкові точки OrderGuardian
+- **Які місця викликають guardian:** `ExecutionPositionFSM` викликає `order_guardian.cleanup_other_brackets_for_symbol` відразу після `manage_flow` зареєстрував нову пару SL/TP (рядки ~2290 FSM), а також `_cleanups` через `cleanup_orphans` після `EVENT:POSITION_UPDATE`/`EVENT:ORDER_FILLED` (рядки ~823–830, 1000–1030 FSM). Останній береться через `reconcile_symbol` після delayed cleanup (`_on_order_fill`).
+- **Умови очищення:** `cleanup_other_brackets_for_symbol` (services) перебирає відкриті ордери і скасовує ті, чия `parent_entry_id` не відповідає новій заявці; `cleanup_orphans` скидає reduceOnly/closePosition ордера при `positionAmt == 0` (skip, якщо позиція жива, див. блок на рядках ~882).
+- **Position.size:** в `cleanup_orphans` спочатку перевіряється `position_amt` з портфеля; якщо >0, cleanup пропускається (крім `hard=True`). Отже, guardian визначає, чи зменшилася позиція до нуля — тільки тоді йде cancel. Як наслідок, при scale-in (position збільшується) `position_amt` не падає до нуля, тож `cleanup_orphans` не спрацьовує.
+- **Більше одного TP/SL:** `ExecutionPositionFSM` читає `self._manage_cfg().brackets.keep_single_bracket_set` (default `True`). Якщо `keep_single_bracket_set` увімкнений, `cleanup_other_brackets_for_symbol` скасовує старі TP/SL після нової реєстрації (рядки ~2299 FSM). Отже, при scale-in система не зберігає стару нечутливу пару, а відразу відкидає попередні orders.
+- **reduceOnly:** під час cleanup-циклів `OrderGuardian` перевіряє поля `reduceOnly` і `closePosition` (рядки ~860, 1045 services) та доповнює метадані тільки для `guardian_like` clientOrderId. Виконується загальний guard, і duplicate `reduceOnly` з іншої entry видаляються.
+- **Очищення за подіями:** після `EVENT:OPENED`/`EVENT:ORDER_FILLED` `MaintainFlowFSM` викликає delayed cleanup (`cleanup_other_brackets_for_symbol`, `_cleanup_loop`), а після manual closes (DEC:CLOSE) робиться immediate cleanup (`_close_reconcile` частина пуз). Таким чином, свіже scale-in може бути потім омитий, якщо `keep_single_bracket_set=True`, навіть перед тим як нові TP/SL підтвердяться.
+
+## 3. Потенційні проблеми
+1. **Single-entry контракт:** `keep_single_bracket_set=True` перетворює логіку у single-entry режим — нові TP/SL вимітають попередні, що не дозволяє scale-in тримати кілька актуальних наборів.  
+2. **Індуковане очищення при scale-in:** `cleanup_other_brackets_for_symbol` запускається відразу після нового `register_brackets`, тобто TP/SL нової частини позиції легко видаляються, бо постійно слідкує за тим, щоб залишався лише один набір.  
+3. **Некоректна агрегація OCO-наборів:** `cleanup_other_brackets...` скасовує усі BRACKETS, де `parent_entry_id` відрізняється; якщо scale-in веде до нового `parent_entry_id` (нового entry order), старий набір вважається «іншим» і знищується. Виклик ідентично не спрощує OCO-логику, а видаляє щойно створений набір.  
+4. **Cleanup після EVENT:OPENED:** `ExecutionPositionFSM` привʼязує cleanup до розташування `cleanup_other_brackets...` у самому тілі `execution_decision`. Виникає ризик, що до завершення підтвердження TP/SL (ACK/FILL) Guardian уже запущений і скасовує `sl/tp` наново.  
+5. **Відсутність clientOrderId-кореляції:** хоча `OrderGuardian` зберігає clientOrderId, `cleanup_other_brackets...` використовує лише parent_order_id; new scale-in мав би вірно пов’язати clientOrderId, але не робить цього при switch на нову entry, тому старі SL/TP не вагаються до нових `clientOrderId`, а просто скасовуються.
+
+## 4. Місця високого ризику
+- `apps/reference/domains/execution_position/fsm.py` (приблизно рядки 2290–2330): після `manage_flow` завжди викликається `cleanup_other_brackets_for_symbol` якщо `keep_single_bracket_set`=True, незалежно від того, чи браслети з OCO вже були підтверджені. Це гарантовано знищує TP/SL нового entry у масштабуванні.  
+- `apps/reference/services/order_guardian.py` (рядки 860–930, 1040–1120): при кожному `cleanup_orphans`/`cleanup_other_brackets` перебираються всі `open_orders`; якщо більше одного reduceOnly/closePosition, перший non-parent скасовується без збереження state. Немає агрегації кількох ордерів, лише прямий `cancel` (remove instead of aggregate).  
+- `apps/reference/services/order_guardian.py` (рядки 700–774): `cleanup_before_close` викликається у `decide_close` (FSM) після `EVENT:ORDER_PLACED`/`EVENT:ORDER_FILLED`, що означає — навіть до остаточного закриття, TP/SL можуть бути вичищені (`cleanup_before_close` видаляє все перед reduce-only закриваючим ордером).  
+- `apps/reference/adapters/binance_adapter.py` (рядки 385, 1064, 1130): жорстко ставляться прапори `reduceOnly=true` для closing orders. Якщо `OrderGuardian` бачить більше одного `reduceOnly` ордера, то, згідно з config, скасовує дублікати. Не зберігається `clientOrderId` в логіці scale-in.  
+- `config/aurora/trading.yaml` (рядки ~230–270) та `configs/master_config_v1.yaml`: `atomic_close`, `bracket_tracking`, `orphan_monitor` і `guardian` TTL/interval задають політику, яка запускатиме cleanup щоразу, коли позиція переоцінена. `execution.allow_trade_with_guardian_tidy_only` (master config) дозволяє лише TP/SL, які guardian «прийняв»; будь-який новий набір вважається «несправжнім».
+
+## 5. Висновок
+- **Scale-in підтримується частково:** FSM/guardian дозвляють лише одне активне TP/SL-білдінг (keep_single_bracket_set), тому при додаванні позиції попередній набор OT/SL/TP цілком видаляється; scale-in залишається оправданим тільки при вимкненому flag.  
+- **Ризик очищення нових TP/SL:** оскільки cleanup запускається перед отриманням ACK/FILL, нова пара легко знищується. `cleanup_other_brackets` не перевіряє `reduceOnly` або `clientOrderId` для нового entry, лише parent order, тому TP/SL стали сиротами.  
+- **Рекомендації:**  
+  * Розглянути `keep_single_bracket_set=False` або умовне відкладання виклику `cleanup_other_brackets` до моменту фінального підтвердження нового TP/SL (ACK/FILL).  
+  * Додати агрегацію/маркування `clientOrderId`/`parent_entry_id`, щоби при scale-in guardian не вважав новий entry «сиротою» і не ліпив cleanup.  
+  * Документувати whitelisting config keys (`execution.guardian`, `trading.execution.manage`, `guardian.cleanup_ttl_ms`, `configuration_master`) як частину наступного раунду refactor (phase 2) та створити тест, який симулює scale-in, щоб побачити cleanup поведінку в реальному scenario.

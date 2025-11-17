@@ -1,7 +1,8 @@
 """
 FSMP-P1-T02: Manage Flow FSM for execution_position domain.
 
-States: FLAT|OPENED → TRACKING → EMIT_DEC_ADJUST → TRACKING
+States: FLAT → BRACKETS_PENDING → BRACKETS_PLACED → TRACKING
+    ↔ EMIT_DEC_ADJUST ↔ TRACKING, WAIT_MODE (pause)
 Rules (stubs): trail_pct, breakeven, time_stop
 Output: DEC:ADJUST(tp?, sl?, move_to_be?)
 
@@ -10,13 +11,32 @@ Shadow-mode: decisions only, no live modifications.
 
 from __future__ import annotations
 
+import logging
 import time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Dict, Any, Optional
+from vfoundation.services.price_service import PriceService
 
 from vfoundation.core.protocol import Message
+from apps.reference.domains.execution_position.brackets_config import (
+    ResolvedBrackets,
+    resolve_brackets_config,
+)
+from vfoundation.apps.reference.domains.execution_position.bracket_aggregator import (
+    AggregatedOcoError,
+    AggregatedOcoRiskConfig,
+    InstrumentPriceConstraints,
+    compute_aggregated_brackets,
+)
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
+from apps.reference.domains.execution_position.manage_config import (
+    ExecutionManageConfig,
+    resolve_execution_manage_config,
+)
+
+
+agg_oco_logger = logging.getLogger("agg_oco")
 
 
 try:
@@ -31,13 +51,11 @@ class ManageState(str, Enum):
     """FSM states for manage flow."""
 
     FLAT = "FLAT"
-    OPENED = "OPENED"
     TRACKING = "TRACKING"
     BRACKETS_PENDING = "BRACKETS_PENDING"
     BRACKETS_PLACED = "BRACKETS_PLACED"
     EMIT_DEC_ADJUST = "EMIT_DEC_ADJUST"
     ERROR = "ERROR"
-    EMERGENCY = "EMERGENCY"
     WAIT_MODE = "WAIT_MODE"
 
 
@@ -54,6 +72,8 @@ class ManageFlowFSM:
         trail_pct: float = 0.5,
         breakeven_after_sec: float = 300.0,
         config: Optional[Dict[str, Any]] = None,
+        price_service: Optional[PriceService] = None,
+        order_guardian: Optional[Any] = None,
     ):
         self.state = ManageState.FLAT
         self.trail_pct = trail_pct  # stub: trailing stop %
@@ -79,8 +99,18 @@ class ManageFlowFSM:
         self._closing_position: bool = False
         self._closing_position_ts: float = 0.0
 
+        # Aggregated OCO bookkeeping
+        self._aggregated_last_place_ts: int = 0
+        self._agg_side: Optional[str] = None
+
         # Configuration
         self.config = config or {}
+        # Optional price service (SSOT) for mark/last/mid retrieval
+        self.price_service: Optional[PriceService] = price_service
+        self._order_guardian = order_guardian
+        self._current_bracket_set_id: Optional[str] = None
+        self._current_bracket_meta: Optional[Any] = None
+        self._pending_bracket_log: Optional[Dict[str, Any]] = None
         # Emergency/WaitMode configuration
         # Using typed attribute access for Pydantic models
         try:
@@ -96,27 +126,19 @@ class ManageFlowFSM:
         except (AttributeError, TypeError, ValueError):
             self._bar_ms = 15 * 60 * 1000
 
-        try:
-            if isinstance(self.config, dict):
-                em_cfg = self.config.get("execution", {}).get(
-                    "manage", {}).get("emergency", {})
-                self._wait_mode_bars = int(em_cfg.get(
-                    "wait_mode_bars", 2)) if isinstance(em_cfg, dict) else 2
-            else:
-                em_cfg = self.config.execution.manage.emergency if self.config.execution else None
-                self._wait_mode_bars = int(
-                    getattr(em_cfg, "wait_mode_bars", 2)) if em_cfg else 2
-        except (AttributeError, TypeError, ValueError):
-            self._wait_mode_bars = 2
+        manage_cfg = self._manage_config()
+        self._wait_mode_bars = manage_cfg.emergency.wait_mode_bars
         self._wait_mode_until_ts: int = 0
 
         # Anti-race window (ms) configurable via config; default 800ms
         try:
             if hasattr(self.config, 'execution') and self.config.execution:
-                self._anti_race_close_ms = int(getattr(self.config.execution, 'anti_race_close_ms', 800))
+                self._anti_race_close_ms = int(
+                    getattr(self.config.execution, 'anti_race_close_ms', 800))
             elif hasattr(self.config, 'trading') and self.config.trading:
                 exec_cfg = getattr(self.config.trading, 'execution', None)
-                self._anti_race_close_ms = int(getattr(exec_cfg, 'anti_race_close_ms', 800)) if exec_cfg else 800
+                self._anti_race_close_ms = int(
+                    getattr(exec_cfg, 'anti_race_close_ms', 800)) if exec_cfg else 800
             elif isinstance(self.config, dict):
                 self._anti_race_close_ms = int(
                     self.config.get('execution', {}).get('anti_race_close_ms')
@@ -127,32 +149,7 @@ class ManageFlowFSM:
         except Exception:
             self._anti_race_close_ms = 800
 
-        # Read auto-manage flag from config
-        # Try both paths: trading.execution.manage and execution.manage
-        try:
-            if isinstance(self.config, dict):
-                # Dict config: check both execution.manage and trading.execution.manage
-                manage_cfg = (
-                    self.config.get("execution", {}).get("manage", {}) or
-                    self.config.get("trading", {}).get(
-                        "execution", {}).get("manage", {})
-                )
-                self._auto_manage_enabled = bool(manage_cfg.get(
-                    "auto", False)) if isinstance(manage_cfg, dict) else False
-            elif hasattr(self.config, 'trading') and self.config.trading:
-                cfg_exec = self.config.trading.execution
-                manage_cfg = cfg_exec.manage if cfg_exec else None
-                self._auto_manage_enabled = bool(
-                    manage_cfg.auto if manage_cfg and hasattr(manage_cfg, 'auto') else False)
-            elif hasattr(self.config, 'execution') and self.config.execution:
-                cfg_exec = self.config.execution
-                manage_cfg = cfg_exec.manage if cfg_exec else None
-                self._auto_manage_enabled = bool(
-                    manage_cfg.auto if manage_cfg and hasattr(manage_cfg, 'auto') else False)
-            else:
-                self._auto_manage_enabled = False
-        except (AttributeError, TypeError):
-            self._auto_manage_enabled = False
+        self._auto_manage_enabled = bool(manage_cfg.auto)
 
         # Log configuration status
         import logging
@@ -166,6 +163,14 @@ class ManageFlowFSM:
             "fsm_trailing_adjustments": 0,
             "fsm_errors_total": 0,
         }
+        qp_cfg = manage_cfg.quick_profit
+        self.quick_profit_enabled = qp_cfg.enabled
+        self.quick_profit_mode = qp_cfg.mode
+        self.quick_profit_target_usd = qp_cfg.target_usd
+        self.quick_profit_priority = qp_cfg.priority
+
+    def _manage_config(self) -> ExecutionManageConfig:
+        return resolve_execution_manage_config(self.config)
 
     def set_bracket_ids(self, sl_order_id: Optional[str], tp_order_id: Optional[str]) -> None:
         """
@@ -311,9 +316,21 @@ class ManageFlowFSM:
         """Update position state on fill event."""
         try:
             pld = msg.pld or {}
-            qty = Decimal(str(pld.get("qty", 0)))
+            qty_value = (
+                pld.get("qty")
+                if pld.get("qty") is not None
+                else pld.get("quantity")
+            )
+            qty = Decimal(str(qty_value or 0))
             price = Decimal(str(pld.get("price", 0)))
             side = pld.get("side")  # BUY or SELL
+            # Persist symbol for later lookups (used by _calculate_bracket_prices, _check_quick_profit etc.)
+            try:
+                self.symbol = pld.get("symbol") or getattr(
+                    self, 'symbol', None)
+            except Exception:
+                # be defensive; symbol is optional
+                pass
 
             if self.position_qty is None:
                 self.position_qty = qty
@@ -337,60 +354,51 @@ class ManageFlowFSM:
         except Exception:
             self._metrics["fsm_errors_total"] += 1
 
-    def _place_brackets(self, msg: Message) -> Optional[Message]:
+    def _place_brackets(self, msg: Message, reason: str = "entry_fill") -> Optional[Message]:
+        if self._is_aggregated_oco_enabled():
+            return self._place_brackets_aggregated(msg, reason=reason)
+        return self._place_brackets_legacy(msg)
+
+    def _place_brackets_legacy(self, msg: Message) -> Optional[Message]:
         """Place SL and TP bracket orders after position opens."""
 
-        # PHASE A2: Anti-race check - skip if position is closing
-        if self._closing_position:
-            elapsed_s = time.time() - self._closing_position_ts
-            if elapsed_s < (self._anti_race_close_ms / 1000.0):  # configurable anti-race window
-                # Position close still in progress, skip bracket placement
-                import logging
-                LOG = logging.getLogger(__name__)
-                LOG.info(
-                    f"[BRK] skip:closing_flag elapsed={elapsed_s:.3f}s (<{self._anti_race_close_ms/1000.0:.1f}s)")
-                self.state = ManageState.TRACKING
-                return None
-            else:
-                # Timeout: assume close finished, clear flag
-                self._closing_position = False
-                import logging
-                LOG = logging.getLogger(__name__)
-                LOG.info(
-                    f"[BRK] clearing closing_flag after {elapsed_s:.3f}s")
-
-        # HOTFIX: PHASE A1 - Dedup check + clear phantom IDs
-        # Note: Full REST dedup (openOrders check) should be done at async level (fsm.py)
-        # Here we do local dedup: if IDs are set but we're in FLAT->ENTRY transition,
-        # clear them (they're phantoms from previous trade)
-        # DO THIS BEFORE _should_place_brackets() check so IDs are always cleared
-        import logging
-        LOG = logging.getLogger(__name__)
-
-        if self.sl_order_id or self.tp_order_id:
-            # Local IDs present - likely phantoms if we're placing new brackets
-            LOG.info(
-                f"[BRK] local bracket IDs present (SL={self.sl_order_id}, TP={self.tp_order_id}) → clearing phantoms")
-            self.sl_order_id = None
-            self.tp_order_id = None
-
-        if not self._should_place_brackets():
-            self.state = ManageState.TRACKING
+        if not self._prepare_for_bracket_placement():
             return None
 
         try:
+            resolved_brackets = resolve_brackets_config(
+                self.config, symbol=getattr(self, "symbol", None)
+            )
+
             # Calculate bracket prices
-            sl_price, tp_price = self._calculate_bracket_prices()
+            sl_price, tp_price = self._calculate_bracket_prices(
+                resolved_brackets
+            )
             if sl_price is None or tp_price is None:
                 self.state = ManageState.TRACKING
+                print('[DEBUG] _place_brackets: sl_price or tp_price is None')
                 return None
 
             self.sl_price = sl_price
             self.tp_price = tp_price
 
             # === VALIDATION PHASE: Check SL/TP prices before submission ===
-            # Get current mark price (use entry price as proxy if not available)
+            # Get current mark price (prefer PriceService if available, fallback to entry price)
             current_mark = self.position_entry_price
+            try:
+                if self.price_service and getattr(self, 'symbol', None):
+                    quote = self.price_service.get_current(
+                        getattr(self, 'symbol', None))
+                    # Quote may be a PriceQuote dataclass; prefer mark then last
+                    q_mark = getattr(quote, 'mark', None)
+                    q_last = getattr(quote, 'last', None)
+                    if q_mark is not None:
+                        current_mark = Decimal(str(q_mark))
+                    elif q_last is not None:
+                        current_mark = Decimal(str(q_last))
+            except Exception:
+                # Do not block bracket placement on price service errors
+                pass
             if current_mark is None:
                 self.state = ManageState.TRACKING
                 return None
@@ -409,6 +417,7 @@ class ManageFlowFSM:
                 self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
                     "fsm_bracket_validation_failed", 0) + 1
                 self.state = ManageState.TRACKING
+                print('[DEBUG] _place_brackets: SL validation failed', sl_reason)
                 return None
 
             # Validate TP price
@@ -422,19 +431,11 @@ class ManageFlowFSM:
                 self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
                     "fsm_bracket_validation_failed", 0) + 1
                 self.state = ManageState.TRACKING
+                print('[DEBUG] _place_brackets: TP validation failed', tp_reason)
                 return None
 
             # === SAFETY OFFSET PHASE: Apply offset to avoid -2021 errors ===
-            # Read offset_bps from config (default 5)
-            offset_bps = 5
-            try:
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    offset_bps = self.config.trading.execution.manage.brackets.offset_bps if hasattr(
-                        self.config.trading.execution.manage.brackets, 'offset_bps') else 5
-                elif isinstance(self.config, dict):
-                    offset_bps = self.config.get("offset_bps", 5)
-            except (AttributeError, TypeError):
-                offset_bps = 5
+            offset_bps = resolved_brackets.offset_bps
 
             # Get tick_size from somewhere (use 0.01 as default for now)
             # TODO: fetch from /exchangeInfo or cache
@@ -497,37 +498,505 @@ class ManageFlowFSM:
             self._metrics["fsm_bracket_orders_placed"] += 2
             return sl_order  # Return first order, second will be handled separately
 
-        except Exception:
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
             self._metrics["fsm_errors_total"] += 1
             self.state = ManageState.TRACKING
             return None
 
+    def _prepare_for_bracket_placement(self) -> bool:
+        """Common guard rails before emitting new bracket orders."""
+        # PHASE A2: Anti-race check - skip if position is closing
+        if self._closing_position:
+            elapsed_s = time.time() - self._closing_position_ts
+            if elapsed_s < (self._anti_race_close_ms / 1000.0):
+                import logging
+                LOG = logging.getLogger(__name__)
+                LOG.info(
+                    f"[BRK] skip:closing_flag elapsed={elapsed_s:.3f}s (<{self._anti_race_close_ms/1000.0:.1f}s)")
+                self.state = ManageState.TRACKING
+                return False
+            self._closing_position = False
+
+        import logging
+        LOG = logging.getLogger(__name__)
+
+        if self.sl_order_id or self.tp_order_id:
+            LOG.info(
+                f"[BRK] local bracket IDs present (SL={self.sl_order_id}, TP={self.tp_order_id}) → clearing phantoms")
+            self.sl_order_id = None
+            self.tp_order_id = None
+
+        if not self._should_place_brackets():
+            self.state = ManageState.TRACKING
+            print('[DEBUG] _prepare_for_bracket_placement: placing disabled')
+            return False
+
+        return True
+
+    def _place_brackets_aggregated(self, msg: Message, reason: str) -> Optional[Message]:
+        if not self._prepare_for_bracket_placement():
+            return None
+
+        try:
+            levels = self._compute_aggregated_bracket_levels(reason=reason)
+        except AggregatedOcoError as exc:
+            import logging
+            LOG = logging.getLogger(__name__)
+            LOG.warning(
+                "[BRK][agg] failed to compute aggregated brackets: %s", exc)
+            self.state = ManageState.TRACKING
+            self._metrics["fsm_errors_total"] += 1
+            return None
+
+        return self._place_or_update_bracket_set_from_levels(msg, levels, reason)
+
+    def _place_or_update_bracket_set_from_levels(
+        self,
+        msg: Message,
+        levels,
+        reason: str,
+    ) -> Optional[Message]:
+        if self.position_qty is None or self.position_side is None:
+            return None
+
+        agg_side = self._convert_position_side()
+        self._agg_side = agg_side
+
+        sl_before = self.sl_price
+        tp_before = self.tp_price
+        qty_before = self.position_qty
+        avg_before = self.position_entry_price
+        action = self._map_reason_to_action(reason)
+
+        # Ensure we track the new bracket prices
+        self.sl_price = levels.sl_price
+        self.tp_price = levels.tp_price
+        self.state = ManageState.BRACKETS_PENDING
+
+        self._pending_bracket_log = {
+            "action": action,
+            "position_qty_before": str(qty_before) if qty_before is not None else None,
+            "position_qty_after": str(self.position_qty) if self.position_qty is not None else None,
+            "avg_price_before": str(avg_before) if avg_before is not None else None,
+            "avg_price_after": str(self.position_entry_price) if self.position_entry_price is not None else None,
+            "sl_price_before": str(sl_before) if sl_before is not None else None,
+            "sl_price_after": str(levels.sl_price) if levels.sl_price is not None else None,
+            "tp_price_before": str(tp_before) if tp_before is not None else None,
+            "tp_price_after": str(levels.tp_price) if levels.tp_price is not None else None,
+            "why": self._clip_why(levels.why),
+            "rid": getattr(msg, "rid", None),
+        }
+
+        position_id = getattr(msg, "rid", "agg") or "agg"
+        timestamp_suffix = str(int(time.time()))
+        base_client_id = f"{position_id}_{timestamp_suffix}"
+
+        sl_client_id = f"{base_client_id}_sl"
+        tp_client_id = f"{base_client_id}_tp"
+
+        self._current_bracket_set_id = base_client_id
+
+        qty_str = str(self.position_qty)
+        opposite_side = self._get_opposite_side()
+
+        sl_order = self._emit_place_order(
+            msg,
+            sl_client_id,
+            "STOP_MARKET",
+            opposite_side,
+            qty_str,
+            str(levels.sl_price),
+            levels.why,
+        )
+
+        self._emit_place_order(
+            msg,
+            tp_client_id,
+            "LIMIT",
+            opposite_side,
+            qty_str,
+            str(levels.tp_price),
+            levels.why,
+        )
+
+        self._metrics["fsm_bracket_orders_placed"] += 2
+        self._aggregated_last_place_ts = int(time.time() * 1000)
+        return sl_order
+
+    def _maybe_register_bracket_set(self) -> None:
+        if not (self._order_guardian and self._is_aggregated_oco_enabled()):
+            self._pending_bracket_log = None
+            return
+        if not self.sl_order_id and not self.tp_order_id:
+            self._pending_bracket_log = None
+            return
+
+        symbol = getattr(self, "symbol", None)
+        side = self.position_side
+        if not symbol or not side:
+            self._pending_bracket_log = None
+            return
+
+        agg_side = self._agg_side
+        if not agg_side and side:
+            try:
+                agg_side = self._convert_position_side()
+            except AggregatedOcoError:
+                agg_side = None
+        if not agg_side:
+            self._pending_bracket_log = None
+            return
+
+        bracket_set_id = self._current_bracket_set_id or self._build_fallback_bracket_set_id()
+
+        try:
+            meta = self._order_guardian.register_bracket_set(
+                bracket_set_id=bracket_set_id,
+                symbol=symbol,
+                side=agg_side,
+                sl_order_id=self.sl_order_id,
+                tp_order_id=self.tp_order_id,
+                created_ts=time.time(),
+            )
+            self._current_bracket_meta = meta
+            self._log_bracket_set_event(meta, self._pending_bracket_log)
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "[BRK][agg] failed to register bracket set", exc_info=exc
+            )
+            self._pending_bracket_log = None
+
+    def _build_fallback_bracket_set_id(self) -> str:
+        symbol = getattr(self, "symbol", "unknown") or "unknown"
+        side = self.position_side or "SIDELESS"
+        return f"{symbol}:{side}:{int(time.time() * 1000)}"
+
+    def _clear_guardian_bracket_set(self, symbol: Optional[str], side: Optional[str]) -> None:
+        if not (self._order_guardian and self._is_aggregated_oco_enabled()):
+            return
+        if not symbol or not side:
+            return
+        # Aggregated OCO side must already be canonical ("LONG"/"SHORT").
+        try:
+            self._order_guardian.clear_bracket_set_for_position(
+                symbol=symbol,
+                side=side,
+            )
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "[BRK][agg] failed to clear bracket set", exc_info=exc
+            )
+
+    @staticmethod
+    def _map_reason_to_action(reason: Optional[str]) -> str:
+        mapping = {
+            "entry_fill": "create",
+            "scale_in_fill": "recalc_scale_in",
+            "partial_close_fill": "recalc_partial",
+            "partial_close_unprotected": "recalc_manual_fix",
+        }
+        if not reason:
+            return "create"
+        return mapping.get(reason, reason)
+
+    @staticmethod
+    def _clip_why(value: Optional[Any]) -> Optional[str]:
+        if value is None:
+            return None
+        return str(value)[:80]
+
+    def _log_bracket_set_event(self, meta: Any, context: Optional[Dict[str, Any]]) -> None:
+        if not meta or context is None:
+            self._pending_bracket_log = None
+            return
+
+        action = context.get("action") or "create"
+        if getattr(meta, "version", 0) == 0 and action not in {"cleanup_full_close", "flip_reset"}:
+            action = "create"
+
+        extra = {
+            "event_type": "AGG_OCO_BRACKET_SET_CHANGED",
+            "symbol": getattr(meta, "symbol", None),
+            "side": getattr(meta, "side", None),
+            "bracket_set_id": getattr(meta, "bracket_set_id", None),
+            "version": getattr(meta, "version", None),
+            "action": action,
+            "position_qty_before": context.get("position_qty_before"),
+            "position_qty_after": context.get("position_qty_after"),
+            "avg_price_before": context.get("avg_price_before"),
+            "avg_price_after": context.get("avg_price_after"),
+            "sl_price_before": context.get("sl_price_before"),
+            "sl_price_after": context.get("sl_price_after"),
+            "tp_price_before": context.get("tp_price_before"),
+            "tp_price_after": context.get("tp_price_after"),
+            "why": self._clip_why(context.get("why")),
+            "rid": context.get("rid"),
+        }
+
+        agg_oco_logger.info("Aggregated OCO bracket set changed", extra=extra)
+        self._pending_bracket_log = None
+
+    def _compute_aggregated_bracket_levels(self, *, reason: str):
+        if (
+            self.position_qty is None
+            or self.position_entry_price is None
+            or self.position_side is None
+        ):
+            raise AggregatedOcoError("position snapshot is incomplete")
+
+        resolved = resolve_brackets_config(
+            self.config, symbol=getattr(self, "symbol", None)
+        )
+
+        sl_bps = Decimal(str(resolved.sl_bps))
+        tp_bps = Decimal(str(resolved.tp_bps))
+        if sl_bps <= 0:
+            raise AggregatedOcoError("sl_bps must be > 0 for aggregated OCO")
+
+        sl_pct = sl_bps / Decimal("10000")
+        tp_rr = tp_bps / sl_bps if tp_bps > 0 else Decimal("1")
+
+        risk_cfg = AggregatedOcoRiskConfig(
+            sl_pct=sl_pct,
+            tp_rr=tp_rr,
+        )
+
+        constraints = self._get_instrument_constraints()
+        side = self._convert_position_side()
+
+        return compute_aggregated_brackets(
+            position_amt=abs(self.position_qty),
+            avg_entry_price=self.position_entry_price,
+            side=side,
+            risk_cfg=risk_cfg,
+            constraints=constraints,
+            why=reason,
+        )
+
+    def _get_instrument_constraints(self) -> InstrumentPriceConstraints:
+        tick_size = self._lookup_instrument_value(
+            "tick_size") or Decimal("0.01")
+        min_price = (
+            self._lookup_instrument_value("min_price")
+            or tick_size
+            or Decimal("0.01")
+        )
+        return InstrumentPriceConstraints(
+            tick_size=tick_size,
+            min_price=min_price,
+        )
+
+    def _lookup_instrument_value(self, field: str) -> Optional[Decimal]:
+        symbol = getattr(self, "symbol", None)
+        if not symbol:
+            return None
+
+        trading_cfg = getattr(self.config, "trading", None)
+        if trading_cfg:
+            instruments = getattr(trading_cfg, "instruments", None)
+            if hasattr(instruments, "model_dump"):
+                instruments = instruments.model_dump()
+            value = self._extract_instrument_field(instruments, symbol, field)
+            dec_value = self._coerce_decimal_value(value)
+            if dec_value is not None:
+                return dec_value
+
+        if isinstance(self.config, dict):
+            instruments = self.config.get("trading", {}).get("instruments", {})
+            value = self._extract_instrument_field(instruments, symbol, field)
+            dec_value = self._coerce_decimal_value(value)
+            if dec_value is not None:
+                return dec_value
+
+        return None
+
+    @staticmethod
+    def _extract_instrument_field(source: Any, symbol: str, field: str) -> Any:
+        if not source or symbol not in source:
+            return None
+        sym_cfg = source.get(symbol)
+        if isinstance(sym_cfg, dict):
+            return sym_cfg.get(field)
+        try:
+            return getattr(sym_cfg, field)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _coerce_decimal_value(value: Any) -> Optional[Decimal]:
+        if value is None:
+            return None
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+    def _convert_position_side(self) -> str:
+        if self.position_side == "BUY":
+            return "LONG"
+        if self.position_side == "SELL":
+            return "SHORT"
+        raise AggregatedOcoError(
+            f"Unsupported position side for aggregated OCO: {self.position_side}"
+        )
+
+    def _is_aggregated_oco_enabled(self) -> bool:
+        try:
+            return bool(self._manage_config().brackets.aggregated_oco.enabled)
+        except Exception:
+            return False
+
+    def _handle_aggregated_fill_event(self, msg: Message) -> Optional[Message]:
+        agg_cfg = self._manage_config().brackets.aggregated_oco
+        pld = msg.pld or {}
+
+        qty_value = (
+            pld.get("qty")
+            if pld.get("qty") is not None
+            else pld.get("quantity")
+        )
+        if qty_value is None:
+            return None
+
+        try:
+            fill_qty = Decimal(str(qty_value))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+        if fill_qty <= 0:
+            return None
+
+        order_type = str(pld.get("order_type") or pld.get("type") or "")
+        close_position = (
+            str(pld.get("closePosition") or pld.get("cp") or "")
+            .strip()
+            .lower()
+            == "true"
+        )
+        reduce_only = (
+            str(pld.get("reduceOnly") or "")
+            .strip()
+            .lower()
+            == "true"
+        )
+        is_exit_fill = order_type in {
+            "TAKE_PROFIT_MARKET", "STOP_MARKET"} or close_position or reduce_only
+
+        if is_exit_fill:
+            remaining = self._apply_exit_fill(fill_qty)
+            if remaining is None:
+                return None
+            if remaining == 0:
+                self._clear_position_state()
+                return None
+            if agg_cfg.recalc_on_partial_close:
+                return self._recalc_aggregated_brackets(msg, reason="partial_close_fill")
+            if self._needs_bracket_recalc_after_partial_close(agg_cfg):
+                return self._recalc_aggregated_brackets(
+                    msg,
+                    reason="partial_close_unprotected",
+                )
+            return None
+
+        was_open = self.position_qty is not None
+        self._on_fill(msg)
+        if was_open and agg_cfg.recalc_on_scale_in:
+            return self._recalc_aggregated_brackets(msg, reason="scale_in_fill")
+        return None
+
+    def _needs_bracket_recalc_after_partial_close(self, agg_cfg) -> bool:
+        if agg_cfg.allow_unprotected_position:
+            return False
+        if self.position_qty is None or self.position_qty == 0:
+            return False
+        # Require both SL and TP ids so Guardian can protect the set.
+        return (self.sl_order_id is None) or (self.tp_order_id is None)
+
+    def _apply_exit_fill(self, fill_qty: Decimal) -> Optional[Decimal]:
+        if self.position_qty is None:
+            return None
+
+        remaining = self.position_qty - abs(fill_qty)
+        if remaining <= 0:
+            self.position_qty = None
+            return Decimal("0")
+
+        self.position_qty = remaining
+        return remaining
+
+    def _clear_position_state(self) -> None:
+        symbol = getattr(self, "symbol", None)
+        prev_side = self.position_side
+        agg_side = self._agg_side
+        if not agg_side and prev_side:
+            if prev_side == "BUY":
+                agg_side = "LONG"
+            elif prev_side == "SELL":
+                agg_side = "SHORT"
+        cleanup_context = {
+            "action": "cleanup_full_close",
+            "position_qty_before": str(self.position_qty) if self.position_qty is not None else None,
+            "position_qty_after": "0",
+            "avg_price_before": str(self.position_entry_price) if self.position_entry_price is not None else None,
+            "avg_price_after": None,
+            "sl_price_before": str(self.sl_price) if self.sl_price is not None else None,
+            "sl_price_after": None,
+            "tp_price_before": str(self.tp_price) if self.tp_price is not None else None,
+            "tp_price_after": None,
+            "why": self._clip_why("cleanup_full_close"),
+            "rid": None,
+        }
+        self._log_bracket_set_event(
+            self._current_bracket_meta, cleanup_context)
+        self.position_qty = None
+        self.position_entry_price = None
+        self.position_side = None
+        self.position_open_ts = 0.0
+        self.sl_order_id = None
+        self.tp_order_id = None
+        self.sl_price = None
+        self.tp_price = None
+        self._current_bracket_set_id = None
+        self._current_bracket_meta = None
+        self._aggregated_last_place_ts = 0
+        self._agg_side = None
+        self.state = ManageState.FLAT
+        self._clear_guardian_bracket_set(symbol, agg_side)
+
+    def _recalc_aggregated_brackets(self, msg: Message, *, reason: str) -> Optional[Message]:
+        agg_cfg = self._manage_config().brackets.aggregated_oco
+        now_ms = int(time.time() * 1000)
+        ttl_ms = max(int(agg_cfg.ttl_protect_new_bracket_ms or 0), 0)
+
+        if self._aggregated_last_place_ts and ttl_ms > 0:
+            elapsed = now_ms - self._aggregated_last_place_ts
+            if elapsed < ttl_ms:
+                if agg_cfg.allow_unprotected_position or (
+                    self.sl_order_id or self.tp_order_id
+                ):
+                    import logging
+
+                    LOG = logging.getLogger(__name__)
+                    LOG.info(
+                        "[BRK][agg] skip recalc reason=%s elapsed=%sms ttl=%sms",
+                        reason,
+                        elapsed,
+                        ttl_ms,
+                    )
+                    return None
+
+        return self._place_brackets_aggregated(msg, reason=reason)
+
     def _should_place_brackets(self) -> bool:
         """Check if brackets should be placed based on config."""
-        try:
-            # Try Pydantic attribute access first
-            if hasattr(self.config, 'trading') and self.config.trading:
-                brackets_config = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-            elif isinstance(self.config, dict):
-                # Dict config: navigate full path trading.execution.manage.brackets
-                brackets_config = (
-                    self.config.get("trading", {})
-                    .get("execution", {})
-                    .get("manage", {})
-                    .get("brackets", {})
-                )
-            else:
-                brackets_config = None
+        brackets_cfg = self._manage_config().brackets
+        return bool(brackets_cfg.enable)
 
-            if brackets_config and hasattr(brackets_config, 'enable'):
-                return bool(brackets_config.enable)
-            elif isinstance(brackets_config, dict):
-                return bool(brackets_config.get("enable", False))
-            return False
-        except (AttributeError, TypeError):
-            return False
-
-    def _calculate_bracket_prices(self) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    def _calculate_bracket_prices(
+        self, resolved: ResolvedBrackets
+    ) -> tuple[Optional[Decimal], Optional[Decimal]]:
         """Calculate SL and TP prices based on config and position.
 
         Supports both NEW and LEGACY config keys:
@@ -542,101 +1011,15 @@ class ManageFlowFSM:
             return None, None
 
         try:
-            # Try Pydantic attribute access first
-            if hasattr(self.config, 'trading') and self.config.trading:
-                brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                sl_config = brackets.sl if brackets else None
-                tp_config = brackets.tp if brackets else None
-                brackets_dict = brackets if brackets else {}
-            elif isinstance(self.config, dict):
-                # Dict config: navigate full path trading.execution.manage.brackets
-                brackets_config = (
-                    self.config.get("trading", {})
-                    .get("execution", {})
-                    .get("manage", {})
-                    .get("brackets", {})
-                )
-                sl_config = brackets_config.get("sl", {}) if isinstance(
-                    brackets_config, dict) else None
-                tp_config = brackets_config.get("tp", {}) if isinstance(
-                    brackets_config, dict) else None
-                brackets_dict = brackets_config if isinstance(
-                    brackets_config, dict) else {}
-            else:
-                sl_config = None
-                tp_config = None
-                brackets_dict = {}
-
-            # For now, use fixed BPS mode (ATR mode would need ATR data)
             entry_price = self.position_entry_price
 
-            # ========== Calculate SL price ==========
-            sl_bps = 50  # Default fallback
-
-            # Try NEW key first (sl.fixed_bps)
-            if sl_config:
-                if hasattr(sl_config, 'fixed_bps'):
-                    sl_bps = sl_config.fixed_bps
-                else:
-                    sl_bps = getattr(sl_config, "fixed_bps", None)
-                    if sl_bps is None:
-                        sl_bps = 50
-
-            # If NEW key not found, fallback to LEGACY key (stop_loss_bps)
-            if sl_bps == 50 and (not sl_config or not hasattr(sl_config, 'fixed_bps')):
-                if isinstance(brackets_dict, dict):
-                    legacy_sl = brackets_dict.get("stop_loss_bps", None)
-                    if legacy_sl is not None:
-                        sl_bps = legacy_sl
-                elif hasattr(brackets_dict, 'stop_loss_bps'):
-                    legacy_sl = getattr(brackets_dict, 'stop_loss_bps', None)
-                    if legacy_sl is not None:
-                        sl_bps = legacy_sl
+            sl_bps = resolved.sl_bps
+            tp_bps = resolved.tp_bps
 
             if self.position_side == "BUY":
                 sl_price = entry_price * (1 - Decimal(str(sl_bps)) / 10000)
             else:  # SELL
                 sl_price = entry_price * (1 + Decimal(str(sl_bps)) / 10000)
-
-            # ========== Calculate TP price ==========
-            tp_bps = 100  # Default fallback
-
-            # Try NEW key first (tp.fixed_bps)
-            if tp_config:
-                if hasattr(tp_config, 'fixed_bps'):
-                    tp_bps = tp_config.fixed_bps
-                else:
-                    tp_bps = getattr(tp_config, "fixed_bps", None)
-                    if tp_bps is None:
-                        tp_bps = 100
-
-            # If NEW key not found, fallback to LEGACY keys (take_profit_low_ratio, take_profit_high_ratio)
-            if tp_bps == 100 and (not tp_config or not hasattr(tp_config, 'fixed_bps')):
-                if isinstance(brackets_dict, dict):
-                    tp_high_ratio = brackets_dict.get(
-                        "take_profit_high_ratio", None)
-                    tp_low_ratio = brackets_dict.get(
-                        "take_profit_low_ratio", None)
-                    # Use take_profit_high_ratio if available (more aggressive), else low_ratio, else default
-                    if tp_high_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_high_ratio))
-                    elif tp_low_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_low_ratio))
-                    else:
-                        tp_bps = 100
-                elif hasattr(brackets_dict, 'take_profit_high_ratio') or hasattr(brackets_dict, 'take_profit_low_ratio'):
-                    tp_high_ratio = getattr(
-                        brackets_dict, 'take_profit_high_ratio', None)
-                    tp_low_ratio = getattr(
-                        brackets_dict, 'take_profit_low_ratio', None)
-                    if tp_high_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_high_ratio))
-                    elif tp_low_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_low_ratio))
-                    else:
-                        tp_bps = 100
-                else:
-                    tp_bps = 100
 
             if self.position_side == "BUY":
                 tp_price = entry_price * (1 + Decimal(str(tp_bps)) / 10000)
@@ -648,23 +1031,26 @@ class ManageFlowFSM:
             tick_size = None
             try:
                 symbol = getattr(self, 'symbol', None)
-                if symbol and hasattr(self.config, 'trading') and self.config.trading:
-                    instruments = self.config.trading.instruments if hasattr(
-                        self.config.trading, 'instruments') else None
-                    if instruments and isinstance(instruments, dict):
-                        sym_config = instruments.get(symbol, {})
-                        if isinstance(sym_config, dict):
-                            tick_size = sym_config.get("tick_size", None)
-                        elif hasattr(sym_config, 'tick_size'):
-                            tick_size = sym_config.tick_size
-                elif isinstance(self.config, dict):
-                    instruments = self.config.get("instruments", {})
+                brackets_cfg = getattr(self.config, "trading", None)
+                if brackets_cfg:
+                    instruments = getattr(brackets_cfg, "instruments", None)
+                    if hasattr(instruments, "model_dump"):
+                        instruments = instruments.model_dump()
                     if isinstance(instruments, dict):
-                        symbol = getattr(self, 'symbol', None)
-                        if symbol:
-                            sym_config = instruments.get(symbol, {})
-                            if isinstance(sym_config, dict):
-                                tick_size = sym_config.get("tick_size", None)
+                        sym_config = instruments.get(
+                            symbol, {}) if symbol else {}
+                        if isinstance(sym_config, dict):
+                            tick_size = sym_config.get("tick_size")
+                        elif hasattr(sym_config, "tick_size"):
+                            tick_size = getattr(sym_config, "tick_size")
+                elif isinstance(self.config, dict):
+                    instruments = (
+                        self.config.get("trading", {})
+                        .get("instruments", {})
+                    )
+                    sym_config = instruments.get(symbol, {}) if symbol else {}
+                    if isinstance(sym_config, dict):
+                        tick_size = sym_config.get("tick_size")
             except (AttributeError, TypeError, KeyError):
                 tick_size = None
 
@@ -704,23 +1090,9 @@ class ManageFlowFSM:
         # Get workingType and priceProtect from config
         working_type = "MARK_PRICE"  # Default
         price_protect = False  # Default
-
-        try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                if brackets:
-                    if hasattr(brackets, 'working_type_default'):
-                        working_type = brackets.working_type_default
-                    if hasattr(brackets, 'price_protect'):
-                        price_protect = brackets.price_protect
-            elif isinstance(self.config, dict):
-                brackets_config = self.config.get("brackets", {})
-                if isinstance(brackets_config, dict):
-                    working_type = brackets_config.get(
-                        "working_type_default", "MARK_PRICE")
-                    price_protect = brackets_config.get("price_protect", False)
-        except (AttributeError, TypeError):
-            pass
+        brackets_meta = self._manage_config().brackets
+        working_type = brackets_meta.working_type_default or "MARK_PRICE"
+        price_protect = bool(brackets_meta.price_protect)
 
         # Build payload
         payload = {
@@ -771,7 +1143,66 @@ class ManageFlowFSM:
                 print(
                     f"[ManageFlowFSM] Both brackets placed: SL={self.sl_order_id}, TP={self.tp_order_id}"
                 )
+                self._maybe_register_bracket_set()
 
+        return None
+
+    def _check_quick_profit(self, msg: Message) -> Optional[Message]:
+        """PRIORITY CHECK: Close position if quick profit target reached.
+
+        Returns DEC:CLOSE if threshold hit, otherwise None.
+        """
+        if not self.quick_profit_enabled:
+            return None
+
+        if self.position_qty is None or self.position_entry_price is None:
+            return None
+
+        try:
+            # Prefer PriceService if available
+            current_price = None
+            try:
+                if self.price_service and getattr(self, 'symbol', None):
+                    quote = self.price_service.get_current(
+                        getattr(self, 'symbol', None))
+                    # Prefer mark, then last, then mid
+                    current_price = getattr(quote, 'mark', None) or getattr(
+                        quote, 'last', None) or getattr(quote, 'mid', None)
+            except Exception:
+                # On any price service error, fallback to payload
+                current_price = None
+
+            if current_price is None:
+                pld = msg.pld or {}
+                current_price = pld.get('mark_price') or pld.get(
+                    'last_price') or pld.get('price')
+            if current_price is None:
+                return None
+            current_price_dec = Decimal(str(current_price))
+
+            if self.position_side == 'BUY':
+                pnl_per_unit = current_price_dec - self.position_entry_price
+            else:
+                pnl_per_unit = self.position_entry_price - current_price_dec
+
+            total_pnl_usd = pnl_per_unit * abs(self.position_qty)
+            # If using percentage mode, target may be relative; only fixed_usd supported now
+            if total_pnl_usd >= self.quick_profit_target_usd:
+                import logging
+                LOG = logging.getLogger(__name__)
+                LOG.info(
+                    f"🎯 QUICK PROFIT HIT: symbol={getattr(self,'symbol', None)} pnl_usd={total_pnl_usd} target={self.quick_profit_target_usd}")
+                # Emit close decision - do not cancel brackets here; ExecPosFSM will do cleanup
+                details = {
+                    'rule': 'quick_profit',
+                    'pnl_usd': str(total_pnl_usd),
+                    'current_price': str(current_price_dec),
+                    'target_usd': str(self.quick_profit_target_usd)
+                }
+                return self._emit_close(msg, 'QUICK_PROFIT_HIT', details)
+        except Exception:
+            self._metrics['fsm_errors_total'] = self._metrics.get(
+                'fsm_errors_total', 0) + 1
         return None
 
     def _check_rules(self, msg: Message) -> Optional[Message]:
@@ -784,79 +1215,82 @@ class ManageFlowFSM:
         if self.position_qty is None or self.position_entry_price is None:
             return None
 
+        if (
+            self._is_aggregated_oco_enabled()
+            and msg.op == "EVT"
+            and msg.verb in ("PARTIAL_FILL", "FILL", "TRADE_EXECUTED")
+        ):
+            agg_decision = self._handle_aggregated_fill_event(msg)
+            if agg_decision:
+                return agg_decision
+
+        # PRIORITY: Quick profit rule (highest priority)
         try:
-            # Emergency protection (optional)
-            try:
-                if hasattr(self.config, 'execution') and self.config.execution:
-                    emergency_cfg = self.config.execution.manage.emergency if self.config.execution.manage else None
-                elif isinstance(self.config, dict):
-                    emergency_cfg = self.config.get("emergency", {})
-                else:
-                    emergency_cfg = None
-            except (AttributeError, TypeError):
-                emergency_cfg = None
+            if self.quick_profit_enabled and self.quick_profit_priority == 'highest':
+                qp = self._check_quick_profit(msg)
+                if qp:
+                    return qp
+        except Exception:
+            # Do not block other rules if quick_profit check fails
+            self._metrics['fsm_errors_total'] = self._metrics.get(
+                'fsm_errors_total', 0) + 1
 
+        try:
+            emergency_cfg = self._manage_config().emergency
+            emergency_enabled = emergency_cfg.enabled
+            emergency_sl_bps = emergency_cfg.sl_bps
+        except Exception:
             emergency_enabled = False
-            emergency_sl_bps = 100
-            if emergency_cfg:
-                if hasattr(emergency_cfg, 'enable'):
-                    emergency_enabled = bool(emergency_cfg.enable)
-                elif isinstance(emergency_cfg, dict):
-                    emergency_enabled = bool(
-                        self.config.trading.execution.manage.emergency.enable)
+            emergency_sl_bps = Decimal("100")
 
-                if hasattr(emergency_cfg, 'emergency_sl_bps'):
-                    emergency_sl_bps = emergency_cfg.emergency_sl_bps
-                else:
-                    emergency_sl_bps = getattr(
-                        emergency_cfg, "emergency_sl_bps", 100)
+        if emergency_enabled and msg.op == "UPD" and msg.verb == "MARKET_DATA":
+            pld = msg.pld or {}
+            cur = pld.get("price")
+            if cur is not None and self.position_entry_price:
+                current_price_dec = Decimal(str(cur))
+                sl_em_bps = Decimal(str(emergency_sl_bps))
+                adverse = (self.position_entry_price - current_price_dec) if (
+                    self.position_side == "BUY") else (current_price_dec - self.position_entry_price)
+                if adverse > 0:
+                    adverse_bps = (
+                        adverse / self.position_entry_price) * Decimal("10000")
+                    if adverse_bps >= sl_em_bps:
+                        # Move to WAIT_MODE for configured number of bars
+                        try:
+                            now_ts = int((msg.pld or {}).get("ts")) if (
+                                msg.pld or {}).get("ts") else int(time.time() * 1000)
+                        except Exception:
+                            now_ts = int(time.time() * 1000)
+                        bar_index = now_ts // getattr(self,
+                                                      "_bar_ms", 900000)
+                        self._wait_mode_until_ts = (
+                            bar_index + getattr(self, "_wait_mode_bars", 2)) * getattr(self, "_bar_ms", 900000)
+                        self.state = ManageState.WAIT_MODE
+                        new_sl = (self.position_entry_price * (Decimal("1") - sl_em_bps / Decimal("10000"))) if self.position_side == "BUY" else (
+                            self.position_entry_price * (Decimal("1") + sl_em_bps / Decimal("10000")))
+                        return self._emit_place_order(
+                            msg,
+                            client_id=f"{getattr(msg,'rid','')}_emergency_sl",
+                            order_type="STOP_MARKET",
+                            side=self.position_side or "",
+                            qty=str(self.position_qty),
+                            price=str(new_sl),
+                            why="emergency_stop_activate",
+                        )
 
-            if emergency_enabled and msg.op == "UPD" and msg.verb == "MARKET_DATA":
-                pld = msg.pld or {}
-                cur = pld.get("price")
-                if cur is not None and self.position_entry_price:
-                    current_price_dec = Decimal(str(cur))
-                    sl_em_bps = Decimal(str(emergency_sl_bps))
-                    adverse = (self.position_entry_price - current_price_dec) if (
-                        self.position_side == "BUY") else (current_price_dec - self.position_entry_price)
-                    if adverse > 0:
-                        adverse_bps = (
-                            adverse / self.position_entry_price) * Decimal("10000")
-                        if adverse_bps >= sl_em_bps:
-                            # Move to WAIT_MODE for configured number of bars
-                            try:
-                                now_ts = int((msg.pld or {}).get("ts")) if (
-                                    msg.pld or {}).get("ts") else int(time.time() * 1000)
-                            except Exception:
-                                now_ts = int(time.time() * 1000)
-                            bar_index = now_ts // getattr(self,
-                                                          "_bar_ms", 900000)
-                            self._wait_mode_until_ts = (
-                                bar_index + getattr(self, "_wait_mode_bars", 2)) * getattr(self, "_bar_ms", 900000)
-                            self.state = ManageState.WAIT_MODE
-                            new_sl = (self.position_entry_price * (Decimal("1") - sl_em_bps / Decimal("10000"))) if self.position_side == "BUY" else (
-                                self.position_entry_price * (Decimal("1") + sl_em_bps / Decimal("10000")))
-                            return self._emit_place_order(
-                                msg,
-                                client_id=f"{getattr(msg,'rid','')}_emergency_sl",
-                                order_type="STOP_MARKET",
-                                side=self.position_side or "",
-                                qty=str(self.position_qty),
-                                price=str(new_sl),
-                                why="emergency_stop_activate",
-                            )
-            # Handle bracket fills (OCO emulation)
-            if msg.verb in ("TRADE_EXECUTED", "ORDER_UPDATED"):
-                bracket_action = self._handle_bracket_fill(msg)
-                if bracket_action:
-                    return bracket_action
+        # Handle bracket fills (OCO emulation)
+        if msg.verb in ("TRADE_EXECUTED", "ORDER_UPDATED"):
+            bracket_action = self._handle_bracket_fill(msg)
+            if bracket_action:
+                return bracket_action
 
-            # Handle trailing stop
-            if msg.op == "UPD" and msg.verb == "MARKET_DATA":
-                trailing_action = self._check_trailing_stop(msg)
-                if trailing_action:
-                    return trailing_action
+        # Handle trailing stop
+        if msg.op == "UPD" and msg.verb == "MARKET_DATA":
+            trailing_action = self._check_trailing_stop(msg)
+            if trailing_action:
+                return trailing_action
 
+        try:
             now = time.time()
             elapsed = now - self.position_open_ts
 
@@ -873,7 +1307,8 @@ class ManageFlowFSM:
                     return self._emit_adjust(
                         msg,
                         "ADJUST_TRAIL",
-                        {"rule": "trail", "trigger_price": str(trail_trigger)},
+                        {"rule": "trail", "trigger_price": str(
+                            trail_trigger)},
                     )
 
             # Rule 2: Breakeven (stub: move SL to BE after X seconds)
@@ -907,17 +1342,7 @@ class ManageFlowFSM:
         if order_id == self.sl_order_id:
             # SL filled - cancel TP (OCO emulation)
             decision = None
-            try:
-                oco_enabled = False
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                    if brackets and hasattr(brackets, 'oco_emulation'):
-                        oco_enabled = bool(brackets.oco_emulation)
-                elif isinstance(self.config, dict):
-                    oco_enabled = bool(self.config.get(
-                        "brackets", {}).get("oco_emulation", False))
-            except (AttributeError, TypeError):
-                oco_enabled = False
+            oco_enabled = bool(self._manage_config().brackets.oco_emulation)
 
             if self.tp_order_id and oco_enabled:
                 print(
@@ -932,17 +1357,7 @@ class ManageFlowFSM:
         elif order_id == self.tp_order_id:
             # TP filled - cancel SL (OCO emulation)
             decision = None
-            try:
-                oco_enabled = False
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                    if brackets and hasattr(brackets, 'oco_emulation'):
-                        oco_enabled = bool(brackets.oco_emulation)
-                elif isinstance(self.config, dict):
-                    oco_enabled = bool(self.config.get(
-                        "brackets", {}).get("oco_emulation", False))
-            except (AttributeError, TypeError):
-                oco_enabled = False
+            oco_enabled = bool(self._manage_config().brackets.oco_emulation)
 
             if self.sl_order_id and oco_enabled:
                 print(
@@ -959,27 +1374,10 @@ class ManageFlowFSM:
     def _check_trailing_stop(self, msg: Message) -> Optional[Message]:
         """Check and adjust trailing stop if conditions met."""
         try:
-            # Try Pydantic attribute access first
-            if hasattr(self.config, 'trading') and self.config.trading:
-                trailing = self.config.trading.execution.manage.trailing if self.config.trading.execution and self.config.trading.execution.manage else None
-            elif isinstance(self.config, dict):
-                trailing = self.config.get("trailing", {})
-            else:
-                trailing = None
-        except (AttributeError, TypeError):
-            trailing = None
+            trailing_cfg = self._manage_config().trailing
+            if not trailing_cfg.enabled or not self.sl_order_id:
+                return None
 
-        trailing_enabled = False
-        if trailing:
-            if hasattr(trailing, 'enable'):
-                trailing_enabled = bool(trailing.enable)
-            elif isinstance(trailing, dict):
-                trailing_enabled = bool(trailing.get("enable", False))
-
-        if not trailing_enabled or not self.sl_order_id:
-            return None
-
-        try:
             pld = msg.pld or {}
             current_price = pld.get("mark_price") or pld.get("last_price")
             if not current_price:
@@ -991,13 +1389,8 @@ class ManageFlowFSM:
             # Check activation condition
             if not self.trailing_activated and self.position_entry_price:
                 # Get activation_profit_atr_k
-                activation_k = 1.0
-                if trailing:
-                    if hasattr(trailing, 'activation_profit_atr_k'):
-                        activation_k = float(trailing.activation_profit_atr_k)
-                    elif isinstance(trailing, dict):
-                        activation_k = float(trailing.get(
-                            "activation_profit_atr_k", 1.0))
+                activation_k = float(
+                    trailing_cfg.activation_profit_atr_k or 1.0)
 
                 activation_threshold = self.position_entry_price * (
                     1
@@ -1022,11 +1415,11 @@ class ManageFlowFSM:
                     return None
 
             # Check cooldown
-            if now - self.last_trailing_ts < self.config.trading.execution.manage.trailing.cooldown_sec:
+            if now - self.last_trailing_ts < float(trailing_cfg.cooldown_sec or 0.0):
                 return None
 
             # Calculate new SL price
-            step_bps = self.config.trading.execution.manage.trailing.step_bps
+            step_bps = trailing_cfg.step_bps
             if self.position_side == "BUY" and self.sl_price:
                 # For long position, trail up
                 new_sl_price = max(
@@ -1115,6 +1508,36 @@ class ManageFlowFSM:
         self.state = ManageState.TRACKING
         return dec
 
+    def _emit_close(self, msg: Message, why: str, details: Dict[str, Any]) -> Message:
+        """Generate DEC:CLOSE with reduce_only=true and include symbol when available.
+
+        This mirrors CloseFlowFSM._emit_close, but is emitted from ManageFlowFSM.
+        """
+        self.state = ManageState.EMIT_DEC_ADJUST
+        self._metrics["fsm_adjust_decisions_total"] = self._metrics.get(
+            "fsm_adjust_decisions_total", 0) + 1
+
+        symbol = (msg.pld or {}).get("symbol") or getattr(self, 'symbol', None)
+
+        dec = Message(
+            op="DEC",
+            verb="CLOSE",
+            src=msg.dst,
+            dst="execution_position",
+            rid=msg.rid,
+            why=why[:80],
+            idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
+            pld={
+                "reduce_only": True,
+                **({"symbol": symbol} if symbol else {}),
+                **details,
+            },
+            data_ref=msg.data_ref.copy() if msg.data_ref else [],
+        )
+
+        self.state = ManageState.TRACKING
+        return dec
+
     def get_metrics(self) -> Dict[str, int]:
         """Return metrics for observability."""
         return self._metrics.copy()
@@ -1134,7 +1557,7 @@ class ManageFlowFSM:
 
             # Restore position data
             self.position_qty = Decimal(
-                str(state_data.get("qty", 0))) if state_data.get("qty") else None
+                str(state_data.get("qty", state_data.get("quantity", 0)))) if state_data.get("qty") or state_data.get("quantity") else None
             self.position_entry_price = Decimal(str(state_data.get(
                 "entry_price", 0))) if state_data.get("entry_price") else None
             self.position_side = state_data.get("side")
@@ -1143,6 +1566,12 @@ class ManageFlowFSM:
             # Restore bracket data
             self.sl_order_id = state_data.get("sl_order_id")
             self.tp_order_id = state_data.get("tp_order_id")
+            # Restore symbol if present
+            try:
+                self.symbol = state_data.get(
+                    'symbol', getattr(self, 'symbol', None))
+            except Exception:
+                self.symbol = getattr(self, 'symbol', None)
 
             # Set appropriate state based on what data is available
             if self.position_qty and self.position_qty != 0:

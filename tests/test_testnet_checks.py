@@ -10,8 +10,12 @@ Criteria:
 
 import logging
 import sys
-import yaml
-from pathlib import Path
+
+from apps.reference.domains.execution_position.brackets_config import (
+    DEFAULT_SL_BPS,
+    resolve_brackets_config,
+)
+from apps.reference.config_loader import load_config
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
@@ -78,25 +82,29 @@ def test_why_length_in_message():
 
 
 def test_sl_bps_default_warning():
-    """Warn if SL_bps missing from config."""
-    cfg_path = Path(__file__).parent / "config" / "aurora" / "trading.yaml"
+    """Warn if SL_bps missing from config v2 resolvers."""
+    aurora_cfg = load_config()
 
-    if not cfg_path.exists():
-        LOG.warning(f"⚠️  Cannot find {cfg_path}, skipping SL_bps check")
-        return True
-
-    with open(cfg_path, 'r', encoding='utf-8-sig', errors='replace') as f:
-        cfg = yaml.safe_load(f)
-
-    execution_brackets = cfg.get("trading", {}).get(
-        "execution", {}).get("manage", {}).get("brackets", {})
-    sl_bps = execution_brackets.get("stop_loss_bps", None)
-
-    if sl_bps is None:
+    try:
+        resolved = resolve_brackets_config(aurora_cfg)
+        sl_bps = resolved.sl_bps
+        if resolved.sl_source == "default":
+            LOG.warning(
+                "⚠️  WARN: SL_bps not found in execution.manage.brackets. Defaulting to %sbps.",
+                DEFAULT_SL_BPS,
+            )
+        else:
+            LOG.info(
+                "✅ SL_bps present in config via %s: %s bps",
+                resolved.sl_source,
+                sl_bps,
+            )
+    except Exception as exc:
         LOG.warning(
-            "⚠️  WARN: SL_bps not found in execution.manage.brackets. Defaulting to 50bps.")
-    else:
-        LOG.info(f"✅ SL_bps present in config: {sl_bps} bps")
+            "⚠️  WARN: Failed to resolve brackets (%s). Assuming default %s bps.",
+            exc,
+            DEFAULT_SL_BPS,
+        )
 
     return True
 

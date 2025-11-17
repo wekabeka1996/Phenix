@@ -21,6 +21,12 @@ from .dm_log_adapter import (
     DecisionLog,
 )
 from apps.reference.telemetry.metrics import inc_decision_deferred
+from apps.reference.config_decision import resolve_decision_policy
+from apps.reference.domains.execution_position.brackets_config import (
+    DEFAULT_SL_BPS,
+    DEFAULT_TP_BPS,
+    resolve_brackets_config,
+)
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
 from apps.reference.telemetry.order_logger import order_logger
 
@@ -56,25 +62,22 @@ class DecisionMaking:
     and generates trade intents based on aurora decision logic.
     """
 
-    def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
+    def __init__(self, fsm: "FSMCore", config: Any) -> None:
         self.fsm = fsm
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
 
-        # Helper method for safe config access (supports both dict and Pydantic objects)
-        def safe_config_get(*keys, default=None):
-            current = self.config
-            for key in keys:
-                if hasattr(current, key):
-                    current = getattr(current, key)
-                elif isinstance(current, dict):
-                    current = current.get(key, default)
-                else:
-                    return default
-            return current
-
-        self._safe_config_get = safe_config_get
+        # Resolve decision policy using config v2 resolver
+        self.decision_policy = resolve_decision_policy(config)
+        self.logger.info(
+            "Resolved decision policy",
+            extra={
+                "source": self.decision_policy.source,
+                "signal_threshold": self.decision_policy.signal_threshold,
+                "neutral_threshold": self.decision_policy.neutral_threshold,
+            },
+        )
 
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
             lambda: {"features": None, "risk": None}
@@ -237,16 +240,30 @@ class DecisionMaking:
         self.qos_exposure_block_cooldown_sec = int(exp_cooldown)
 
         # QoS symbol cooldown
+        sym_cooldown_val = None
         try:
-            if hasattr(qos_config, 'symbol_cooldown_sec'):
-                sym_cooldown = qos_config.symbol_cooldown_sec or 3
+            if hasattr(qos_config, 'symbol_intent_cooldown_sec'):
+                sym_cooldown_val = qos_config.symbol_intent_cooldown_sec
             elif isinstance(qos_config, dict):
-                sym_cooldown = self.config.trading.decision.qos.symbol_cooldown_sec
-            else:
-                sym_cooldown = 3
+                sym_cooldown_val = qos_config.get(
+                    "symbol_intent_cooldown_sec")
         except (AttributeError, TypeError):
-            sym_cooldown = 3
-        self.qos_symbol_cooldown_sec = int(sym_cooldown)
+            sym_cooldown_val = None
+
+        if sym_cooldown_val is None:
+            try:
+                if hasattr(qos_config, 'symbol_cooldown_sec'):
+                    sym_cooldown_val = qos_config.symbol_cooldown_sec
+                elif isinstance(qos_config, dict):
+                    sym_cooldown_val = qos_config.get(
+                        "symbol_cooldown_sec")
+            except (AttributeError, TypeError):
+                sym_cooldown_val = None
+
+        if sym_cooldown_val is None:
+            sym_cooldown_val = 3
+
+        self.qos_symbol_cooldown_sec = int(sym_cooldown_val)
 
         # QoS max intents
         try:
@@ -1279,7 +1296,7 @@ class DecisionMaking:
             )
 
         base_threshold = decimal.Decimal(
-            str(decision_config.get("signal_threshold", "0.1")))
+            str(self.decision_policy.signal_threshold))
         # Regime-based threshold multiplier (Δθ); defaults to 1.0 if not configured or regime missing
         regime_thresholds_cfg = self._safe_config_get(
             "trading", "decision", "regime_threshold_multipliers", default={}
@@ -1514,43 +1531,30 @@ class DecisionMaking:
                     "trading", "decision", "kelly", default={}).get("kelly_cap", 0.25)))
                 alpha = decimal.Decimal(str(self._safe_config_get(
                     "trading", "decision", "kelly", default={}).get("kelly_alpha", 0.8)))
-                # SSOT: compute payoff ratio r from execution.manage.brackets TP/SL (fallback to config)
+                # SSOT: resolve TP/SL bps via shared brackets resolver
                 try:
-                    exec_cfg = self._safe_config_get(
-                        "trading", "execution", "manage", default={}) or {}
-                except (AttributeError, TypeError):
-                    exec_cfg = None
-
-                if exec_cfg is None:
-                    exec_cfg = {}
-
-                # Try primary path first (trading.execution.brackets)
-                brackets_cfg = self._safe_config_get(
-                    "trading", "execution", "brackets", default={}) or {}
-
-                # If empty, fallback to manage.brackets (new standard path)
-                if not brackets_cfg:
-                    brackets_cfg = self._safe_config_get(
-                        "trading", "execution", "manage", "brackets", default={}) or {}
-
-                sl_cfg = (brackets_cfg.get("sl") if isinstance(
-                    brackets_cfg, dict) else None) or {}
-                tp_cfg = (brackets_cfg.get("tp") if isinstance(
-                    brackets_cfg, dict) else None) or {}
-                try:
+                    resolved_brackets = resolve_brackets_config(
+                        self.config, symbol=symbol
+                    )
                     sl_bps_val = decimal.Decimal(
-                        str((sl_cfg or {}).get("fixed_bps", 50)))
-                except Exception:
-                    sl_bps_val = decimal.Decimal("50")
-                try:
+                        str(resolved_brackets.sl_bps))
                     tp_bps_val = decimal.Decimal(
-                        str((tp_cfg or {}).get("fixed_bps", 100)))
+                        str(resolved_brackets.tp_bps))
+                    sizing_meta["kelly_bracket_sources"] = {
+                        "sl": resolved_brackets.sl_source,
+                        "tp": resolved_brackets.tp_source,
+                    }
                 except Exception:
-                    tp_bps_val = decimal.Decimal("100")
+                    self.logger.warning(
+                        "Failed to resolve brackets for Kelly; using defaults",
+                        exc_info=True,
+                    )
+                    sl_bps_val = decimal.Decimal(str(DEFAULT_SL_BPS))
+                    tp_bps_val = decimal.Decimal(str(DEFAULT_TP_BPS))
                 if sl_bps_val <= 0:
                     self.logger.warning(
                         "SL_bps missing/invalid; using default 50 bps for Kelly r")
-                    sl_bps_val = decimal.Decimal("50")
+                    sl_bps_val = decimal.Decimal(str(DEFAULT_SL_BPS))
                 try:
                     payoff_r = tp_bps_val / sl_bps_val
                 except Exception:
@@ -2036,3 +2040,29 @@ class DecisionMaking:
             self.logger.warning(
                 f"Error in exposure cache precheck: {e}, allowing trade")
             return True
+
+    def _safe_config_get(self, *keys, default=None):
+        """
+        Safely get nested config values with fallback to default.
+
+        Args:
+            *keys: Variable number of keys to traverse the config dict
+            default: Default value if key path not found
+
+        Returns:
+            Config value or default
+        """
+        try:
+            value = self.config
+            for key in keys:
+                if isinstance(value, dict):
+                    value = value.get(key)
+                elif hasattr(value, key):
+                    value = getattr(value, key)
+                else:
+                    return default
+                if value is None:
+                    return default
+            return value
+        except (AttributeError, TypeError, KeyError):
+            return default

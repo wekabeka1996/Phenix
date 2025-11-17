@@ -30,22 +30,25 @@ class FSMCore:
         )
 
 
-def create_trade_event(symbol, side, quantity, price, fees=0.0, venue="binance"):
+def create_trade_event(symbol, side, quantity, price, fees=0.0, venue="binance", extra_pld=None):
     """Helper to create an EVT:TRADE_EXECUTED message."""
+    payload = {
+        "symbol": symbol,
+        "side": side,
+        "quantity": quantity,
+        "price": price,
+        "ts": 1234567890,
+        "fees": fees,
+        "venue": venue,
+    }
+    if extra_pld:
+        payload.update(extra_pld)
     return Message(
         op="EVT",
         verb="TRADE_EXECUTED",
         src="execution",
         dst="position_tracking",
-        pld={
-            "symbol": symbol,
-            "side": side,
-            "quantity": quantity,
-            "price": price,
-            "ts": 1234567890,
-            "fees": fees,
-            "venue": venue,
-        },
+        pld=payload,
     )
 
 
@@ -224,7 +227,8 @@ def test_flips_long_to_short():
 
     position = tracker._positions["BTCUSDT"]
     assert position["quantity"] == Decimal("-0.5")  # Net short
-    assert position["avg_price"] == Decimal("75000")  # New position at flip price
+    assert position["avg_price"] == Decimal(
+        "75000")  # New position at flip price
 
 
 def test_flips_short_to_long():
@@ -247,7 +251,8 @@ def test_flips_short_to_long():
 
     position = tracker._positions["ETHUSDT"]
     assert position["quantity"] == Decimal("0.5")  # Net long
-    assert position["avg_price"] == Decimal("2800")  # New position at flip price
+    assert position["avg_price"] == Decimal(
+        "2800")  # New position at flip price
 
 
 def test_calculates_realized_pnl_on_close():
@@ -566,3 +571,325 @@ def test_start_method():
     # Should not raise an exception
     tracker.start()
     assert True  # Test passes if no exception
+
+
+def test_trade_dedup_skips_duplicate_trades():
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(
+        config={"trading": {"position_sync": {"trade_dedup_window_sec": 120}}},
+        fsm=fsm,
+    )
+
+    trade_event = create_trade_event(
+        "BTCUSDT",
+        "buy",
+        0.5,
+        70000,
+        extra_pld={"trade_id": "abc-123"},
+    )
+
+    tracker.on_trade_executed(trade_event)
+    tracker.on_trade_executed(trade_event)  # Duplicate
+
+    assert tracker.trade_dedup_hits_total == 1
+    assert tracker._positions["BTCUSDT"]["quantity"] == Decimal("0.5")
+    portfolio_events = [
+        e for e in fsm.emitted_events if e["event_name"] == "EVT:PORTFOLIO_STATE_UPDATED"
+    ]
+    assert len(portfolio_events) == 1
+
+
+def test_account_update_overrides_local_state():
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(config={}, fsm=fsm)
+
+    open_trade = create_trade_event("BTCUSDT", "buy", 1.0, 70000)
+    tracker.on_trade_executed(open_trade)
+
+    account_msg = Message(
+        op="EVT",
+        verb="ACCOUNT_UPDATE_RECEIVED",
+        src="broker",
+        dst="position_tracking",
+        pld={
+            "totalWalletBalance": 100000.0,
+            "totalUnrealizedProfit": 0.0,
+            "positions": [
+                {"symbol": "BTCUSDT", "positionAmt": "2.0", "entryPrice": "72000"}
+            ],
+            "ts": 1234567999,
+        },
+    )
+
+    tracker.on_account_update(account_msg)
+
+    assert tracker._positions["BTCUSDT"]["quantity"] == Decimal("2.0")
+    assert tracker._positions["BTCUSDT"]["avg_price"] == Decimal("72000")
+    assert tracker.snapshot_reconciliation_drift_total >= 1
+
+
+def test_account_update_detects_manual_closure():
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(config={}, fsm=fsm)
+
+    trade = create_trade_event("ETHUSDT", "buy", 0.5, 3500)
+    tracker.on_trade_executed(trade)
+
+    account_msg = Message(
+        op="EVT",
+        verb="ACCOUNT_UPDATE_RECEIVED",
+        src="broker",
+        dst="position_tracking",
+        pld={
+            "totalWalletBalance": 50000.0,
+            "totalUnrealizedProfit": 0.0,
+            "positions": [],
+            "ts": 1234568000,
+        },
+    )
+
+    tracker.on_account_update(account_msg)
+
+    assert "ETHUSDT" not in tracker._positions
+    assert tracker.manual_intervention_detected_total == 1
+
+
+def test_trade_processing_continues_when_wal_soft_fail(monkeypatch):
+    """WAL returning None should not block processing when strict_wal is disabled."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(
+        config={"trading": {"dr": {"strict_wal": False}}},
+        fsm=fsm,
+    )
+
+    def fake_append(_payload):
+        return None
+
+    monkeypatch.setattr(
+        "apps.reference.domains.position_tracking.position_tracking.wal.append",
+        fake_append,
+    )
+
+    trade_event = create_trade_event("BTCUSDT", "buy", 0.2, 50000)
+    tracker.on_trade_executed(trade_event)
+
+    assert "BTCUSDT" in tracker._positions, "Position should still update"
+    assert any(
+        event["event_name"] == "EVT:PORTFOLIO_STATE_UPDATED"
+        for event in fsm.emitted_events
+    ), "Portfolio update should be emitted"
+
+
+def test_trade_processing_stops_when_wal_strict(monkeypatch):
+    """Default strict_wal should halt processing on WAL failure."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(config={}, fsm=fsm)
+
+    monkeypatch.setattr(
+        "apps.reference.domains.position_tracking.position_tracking.wal.append",
+        lambda _payload: None,
+    )
+
+    trade_event = create_trade_event("ETHUSDT", "buy", 0.1, 3000)
+    tracker.on_trade_executed(trade_event)
+
+    assert "ETHUSDT" not in tracker._positions
+    assert not any(
+        event["event_name"] == "EVT:PORTFOLIO_STATE_UPDATED"
+        for event in fsm.emitted_events
+    )
+
+
+def test_account_update_continues_when_wal_soft_fail(monkeypatch):
+    """Account updates should still refresh state when strict_wal is disabled."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(
+        config={"trading": {"dr": {"strict_wal": False}}},
+        fsm=fsm,
+    )
+
+    def raise_append(_payload):
+        raise RuntimeError("wal down")
+
+    monkeypatch.setattr(
+        "apps.reference.domains.position_tracking.position_tracking.wal.append",
+        raise_append,
+    )
+
+    account_msg = Message(
+        op="EVT",
+        verb="ACCOUNT_UPDATE_RECEIVED",
+        src="broker",
+        dst="position_tracking",
+        pld={
+            "totalWalletBalance": 100000.0,
+            "totalUnrealizedProfit": 0.0,
+            "positions": [],
+            "ts": 1,
+        },
+    )
+
+    tracker.on_account_update(account_msg)
+    assert tracker._equity == Decimal("100000.0")
+
+
+def test_account_update_stops_when_wal_strict(monkeypatch):
+    """Strict WAL should block account update processing on failure."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(config={}, fsm=fsm)
+
+    def fail_append(_payload):
+        raise RuntimeError("wal down")
+
+    monkeypatch.setattr(
+        "apps.reference.domains.position_tracking.position_tracking.wal.append",
+        fail_append,
+    )
+
+    account_msg = Message(
+        op="EVT",
+        verb="ACCOUNT_UPDATE_RECEIVED",
+        src="broker",
+        dst="position_tracking",
+        pld={
+            "totalWalletBalance": 50000.0,
+            "totalUnrealizedProfit": 0.0,
+            "positions": [],
+            "ts": 1,
+        },
+    )
+
+    tracker.on_account_update(account_msg)
+    assert tracker._equity == Decimal("0")
+
+
+def test_force_full_resync_uses_registered_fetcher():
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(config={}, fsm=fsm)
+
+    calls = []
+
+    def fake_fetcher(symbol, reason, rid):
+        calls.append((symbol, reason, rid))
+        return {
+            "status": "ok",
+            "symbol": symbol or "ALL",
+            "extra": "snapshot",
+        }
+
+    tracker.register_snapshot_fetcher(fake_fetcher)
+
+    summary = tracker.force_full_resync(
+        reason="manual_resync",
+        symbol="BTCUSDT",
+        rid="RID-123",
+    )
+
+    assert calls == [("BTCUSDT", "manual_resync", "RID-123")]
+    assert summary["status"] == "ok"
+    assert summary["symbol"] == "BTCUSDT"
+    assert summary["reason"] == "manual_resync"
+
+
+def test_force_resync_command_emits_error_without_fetcher():
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(config={}, fsm=fsm)
+
+    cmd = Message(
+        op="CMD",
+        verb="POSITION_FORCE_RESYNC",
+        src="debug",
+        dst="position_tracking",
+        pld={"symbol": "ETHUSDT", "reason": "manual"},
+    )
+
+    tracker.on_force_resync_command(cmd)
+
+    completion_events = [
+        event for event in fsm.emitted_events if event["event_name"] == "EVT:POSITION_FORCE_RESYNC_COMPLETED"
+    ]
+    assert completion_events, "force resync completion event should be emitted"
+    assert completion_events[-1]["payload"]["status"] == "error"
+
+
+def test_account_update_force_resync_skips_wal(monkeypatch):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from apps.reference.domains.position_tracking.position_tracking import (
+        PositionTracking,
+    )
+
+    fsm = FSMCore()
+    tracker = PositionTracking(config={}, fsm=fsm)
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError(
+            "_append_event_to_wal should not be called for force_resync payloads")
+
+    monkeypatch.setattr(
+        "apps.reference.domains.position_tracking.position_tracking.PositionTracking._append_event_to_wal",
+        explode,
+    )
+
+    account_msg = Message(
+        op="EVT",
+        verb="ACCOUNT_UPDATE_RECEIVED",
+        src="broker",
+        dst="position_tracking",
+        pld={
+            "_force_resync": True,
+            "_force_resync_reason": "manual",
+            "_force_resync_symbol": "BTCUSDT",
+            "totalWalletBalance": 1000.0,
+            "totalUnrealizedProfit": 0.0,
+            "positions": [],
+            "ts": 1700000000,
+        },
+    )
+
+    tracker.on_account_update(account_msg)
+    assert tracker._equity == Decimal("1000.0")

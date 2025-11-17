@@ -1,0 +1,40 @@
+# Файл: overrides.yaml — Переопреділення для конкретних символів/режимів
+# Мета: дозволяє задати винятки або конкретні значення для певних символів
+# без зміни базового профілю інструментів. Часто використовується для підвищення
+# левериджу на тестнеті або для налаштування sizing/risk під конкретні символи.
+#
+# Ключі та пояснення:
+# - symbols: словник символів, для яких задаються переопреділення
+#   - <SYMBOL>:
+#     - limits.max_leverage: максимальний леверидж для цього символу (перезаписує дефолт)
+#     - risk.sizing_modifiers: множники розміру позицій залежно від режиму/регіму
+#       - приклад: HIGH_VOLATILITY: 0.60 означає, що при високій волатильності макс.розмір позиції
+#         множиться на 0.60 (зменшується)
+#
+# Практична порада: overrides використовуються для швидкого налаштування без ризику
+# зміни базових профілів, особливо під час canary/cutover.
+
+# --- Оригінальний вміст файлу ---
+# v2 overrides for instruments and regimes
+
+symbols:
+  SOLUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.SOLUSDT
+  ETHUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.ETHUSDT
+    risk:
+      sizing_modifiers:  # from trading.instruments.ETHUSDT.sizing_modifiers
+        HIGH_VOLATILITY: 0.60
+        LOW_VOLATILITY: 1.20
+        MEAN_REVERSION: 0.50
+        UNCERTAIN: 0.50
+  BTCUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.__default__
+  BNBUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.exposure.leverage_defaults.__default__
+
+# regimes: none in legacy yet

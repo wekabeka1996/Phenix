@@ -1,0 +1,43 @@
+# Файл: tests/config/aurora/trading.yaml — Тестове налаштування trading (aurora)
+# Мета: конфіг для тестів; використовується в unit/integration тестах.
+#
+# Основні поля:
+# - trading.mode: середовище (testnet/live) — для тестів зазвичай 'testnet'
+# - decision:
+#   - signal_threshold: поріг для вважання сигналу релевантним
+#   - position_sizing.min_position_size_usd: мінімальний розмір позиції в тестах
+#   - signal_weights: ваги для формули сигналу (впливають на кінцевий score)
+# - execution.manage.quick_profit: налаштування швидкого фікса прибутку (для тестів увімкнено)
+# - instruments: тестова підміна параметрів інструментів
+#
+# Важливо: тестові налаштування можуть відрізнятися від production (наприклад, більший leverage або
+# вімкнений quick_profit), щоб покривати крайні сценарії.
+
+# --- Оригінальний вміст файлу ---
+trading:
+  mode: "testnet"
+  decision:
+    signal_threshold: 0.1
+    position_sizing:
+      min_position_size_usd: 10
+    signal_weights:
+      obi: 0.15
+      tfi: 0.15
+      delta_price: 0.10
+      ema_bias: 0.15
+      volume_spike: 0.10
+      volatility_state: 0.10
+      depth_imbalance: 0.15
+      macro_sync: 0.10
+  execution:
+    manage:
+      quick_profit:
+        enabled: true
+        mode: "fixed_usd"
+        target_usd: 2.0
+        priority: "highest"
+        ignore_other_rules: true
+  instruments:
+    ETHUSDT:
+      symbol: "ETHUSDT"
+      step_size: "0.001"

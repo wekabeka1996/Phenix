@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Test config_symbols utility and system integration."""
 
-from apps.reference.config_symbols import get_trading_symbols, get_first_symbol, get_symbol_config
 from apps.reference.config_loader import get_config
+from apps.reference.config_symbols import get_trading_symbols, get_first_symbol, get_symbol_config
+from apps.reference.config_loader import reload_config
+
+# Reload config to ensure v2 is loaded
+config = reload_config()
 
 print("=" * 60)
 print("✅ Config Symbols Tests")
@@ -37,13 +41,15 @@ print("✅ AuroraConfig Tests")
 print("=" * 60)
 
 config = get_config()
-# Access Pydantic object directly
-instruments = config.trading.instruments if hasattr(
-    config.trading, 'instruments') else {}
-print(f"\n1. Instruments from config:")
-print(f"   Result: {list(instruments.keys())}")
-assert list(instruments.keys()) == symbols, "Should match config symbols"
-print(f"   ✅ Pass")
+config_v2_instruments = (
+    list(config.config_v2.instruments.get("instruments", {}).keys())
+    if config.config_v2 and config.config_v2.instruments
+    else []
+)
+print(f"\n1. Instruments from config v2:")
+print(f"   Result: {config_v2_instruments}")
+assert set(config_v2_instruments) == set(symbols), "config v2 instruments should match trading symbols"
+print("   ✅ Pass")
 
 print(f"\n2. Trading mode:")
 mode = config.trading_mode  # Direct attribute access
@@ -51,10 +57,7 @@ print(f"   Result: {mode}")
 assert mode is not None, "Should have trading_mode"
 print(f"   ✅ Pass")
 
-print("\n" + "=" * 60)
-print("✅✅✅ ALL TESTS PASSED ✅✅✅")
-print("=" * 60)
 print("\nSystem is configuration-driven:")
 print(f"  - Symbols: {symbols}")
 print(f"  - Mode: {mode}")
-print("\nTo change symbols: edit config/aurora/trading.yaml → instruments")
+print("\nTo change symbols: edit config/instruments.yaml and config/overrides.yaml")

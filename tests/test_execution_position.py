@@ -9,6 +9,7 @@ import asyncio
 import logging
 import time
 from decimal import Decimal
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -192,6 +193,101 @@ class TestExecutionPositionDomain:
         assert result.op == "DEC"
         assert result.verb == "CLOSE"
         assert result.pld["symbol"] == "BTCUSDT"
+
+    @pytest.mark.asyncio
+    async def test_dec_close_by_entry_cancels_only_parent_entry(self, mock_config, mock_fsm_core):
+        """Test DEC:CLOSE for a specific parent_entry_id cancels only that entry's brackets and places reduce-only close for remaining qty."""
+        # Use a real OrderGuardian to exercise per-entry cleanup
+        from apps.reference.services.order_guardian import OrderGuardian
+
+        adapter = AsyncMock()
+        # Simulate a combined position of 3 units (two entries: 1 + 2)
+        adapter.get_open_positions.return_value = [
+            {"symbol": "SOLUSDT", "positionAmt": "3.0"}]
+
+        # Setup adapter open orders for both entries (A & B)
+        adapter.get_open_orders.return_value = [
+            {"orderId": "SLA", "symbol": "SOLUSDT", "status": "NEW", "type": "STOP_MARKET",
+                "reduceOnly": True, "closePosition": True, "parentEntryId": "A"},
+            {"orderId": "TPA", "symbol": "SOLUSDT", "status": "NEW", "type": "TAKE_PROFIT_MARKET",
+                "reduceOnly": True, "closePosition": True, "parentEntryId": "A"},
+            {"orderId": "SLB", "symbol": "SOLUSDT", "status": "NEW", "type": "STOP_MARKET",
+                "reduceOnly": True, "closePosition": True, "parentEntryId": "B"},
+            {"orderId": "TPB", "symbol": "SOLUSDT", "status": "NEW", "type": "TAKE_PROFIT_MARKET",
+                "reduceOnly": True, "closePosition": True, "parentEntryId": "B"},
+        ]
+
+        adapter.cancel_order.return_value = {"status": "CANCELED"}
+        adapter.place_market_reduce_only.return_value = {"orderId": "CLOSE1"}
+        adapter.base_url = "https://testnet.binance.vision"
+
+        # Create guardian & register entries + brackets
+        guardian = OrderGuardian(adapter=adapter, poll_interval_ms=0)
+        # Entry A: qty 1
+        guardian.register_entry(
+            symbol="SOLUSDT", order_id="A", client_order_id="client_A", side="BUY", qty=1.0)
+        guardian.register_bracket(symbol="SOLUSDT", parent_order_id="A",
+                                  order_id="SLA", client_order_id="client_sla", kind="SL")
+        guardian.register_bracket(symbol="SOLUSDT", parent_order_id="A",
+                                  order_id="TPA", client_order_id="client_tpa", kind="TP")
+        # Entry B: qty 2
+        guardian.register_entry(
+            symbol="SOLUSDT", order_id="B", client_order_id="client_B", side="BUY", qty=2.0)
+        guardian.register_bracket(symbol="SOLUSDT", parent_order_id="B",
+                                  order_id="SLB", client_order_id="client_slb", kind="SL")
+        guardian.register_bracket(symbol="SOLUSDT", parent_order_id="B",
+                                  order_id="TPB", client_order_id="client_tpb", kind="TP")
+
+        # Create FSM and inject our adapter & guardian
+        with patch('apps.reference.domains.execution_position.fsm.OrderTimeoutWatchdog'):
+            fsm = ExecPosFSM(mock_config, mock_fsm_core, shadow_mode=False)
+
+        # Stop the guardian created during FSM init to avoid double-polling
+        try:
+            await fsm.order_guardian.stop()
+        except Exception:
+            pass
+
+        fsm.adapter = adapter
+        fsm.order_guardian = guardian
+        # Set multi-entry mode - disable symbol-wide reconcile which cancels other entries
+        try:
+            fsm.config["trading"]["execution"]["manage"]["brackets"]["keep_single_bracket_set"] = False
+        except Exception:
+            pass
+
+        # Sanity-check: guardian has entry + brackets
+        assert guardian.get_brackets_for_entry(
+            "A") and "sl" in guardian.get_brackets_for_entry("A")
+
+        # Sanity-check: guardian.close_entry cancels A's brackets outside of FSM
+        adapter.cancel_order.reset_mock()
+        res_close = await guardian.close_entry(symbol="SOLUSDT", parent_order_id="A")
+        assert res_close.get("cancelled_brackets", 0) >= 1
+        assert adapter.cancel_order.call_count >= 1
+
+        # DEC:CLOSE by entry A
+        close_decision = Message(op="DEC", verb="CLOSE", src="decision_making", dst="execution_position", pld={
+            "symbol": "SOLUSDT", "parent_order_id": "A"}, timestamp_utc=datetime.utcnow())
+
+        await fsm._execute_decision(close_decision)
+
+        # Assert adapter.cancel_order called for A's brackets but not for B's
+    # Debug prints removed
+        adapter.cancel_order.assert_any_call("SOLUSDT", "SLA")
+        adapter.cancel_order.assert_any_call("SOLUSDT", "TPA")
+        # Ensure B's brackets were not cancelled
+        assert not any(
+            call.args[1] == "SLB" for call in adapter.cancel_order.call_args_list), "SLB should not be cancelled"
+        assert not any(
+            call.args[1] == "TPB" for call in adapter.cancel_order.call_args_list), "TPB should not be cancelled"
+
+        # Assert place_market_reduce_only called to close remaining qty for entry A (1.0 units)
+        assert adapter.place_market_reduce_only.call_count == 1
+        args, kwargs = adapter.place_market_reduce_only.call_args
+        # Validate we're closing roughly '1.0' units (args[2] is qty)
+        qty_arg = args[2] if len(args) > 2 else kwargs.get('qty')
+        assert float(qty_arg or 0) == pytest.approx(1.0)
 
     def test_handle_portfolio_state_update(self, exec_pos_fsm):
         """Test handling portfolio state updates."""
@@ -790,6 +886,62 @@ class TestIntegrationScenarios:
 
         result = full_exec_pos_fsm.handle(no_symbol_msg)
         assert result is None  # Should be ignored
+
+    @pytest.mark.asyncio
+    async def test_ws_snapshot_preflight_skips_rest(self, mock_fsm_core):
+        ws_config = {
+            "trading": {
+                "mode": "testnet",
+                "execution": {
+                    "manage": {
+                        "positions": {
+                            "ws_snapshot": {
+                                "enabled": True,
+                                "max_age_ms": 2000,
+                                "rest_fallback_enabled": True,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        fsm = ExecPosFSM(ws_config, mock_fsm_core, shadow_mode=True)
+
+        class NoopAdapter:
+            def __init__(self):
+                self.calls = 0
+
+            def get_open_positions(self, symbol=None):
+                self.calls += 1
+                return []
+
+        adapter = NoopAdapter()
+        fsm.adapter = adapter
+
+        portfolio_msg = Message(
+            op="EVT",
+            verb="PORTFOLIO_STATE_UPDATED",
+            src="portfolio",
+            dst="execution_position",
+            pld={
+                "positions": [
+                    {
+                        "symbol": "BNBUSDT",
+                        "positionAmt": "0.3",
+                        "entryPrice": "600",
+                        "positionSide": "LONG",
+                    }
+                ],
+                "positions_last_ts_ms": int(time.time() * 1000),
+            },
+        )
+        fsm._on_portfolio_state_updated(portfolio_msg)
+
+        assert (
+            await fsm._preflight_position_check("BNBUSDT", "LONG")
+        ) is True
+        assert adapter.calls == 0
 
     def test_exposure_guard_integration(self, full_exec_pos_fsm):
         """Test exposure guard integration with trading decisions."""

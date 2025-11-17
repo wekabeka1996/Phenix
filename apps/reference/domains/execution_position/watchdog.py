@@ -116,42 +116,36 @@ class OrderTimeoutWatchdog:
             self._rps_throttle_hits += 1
             return False
 
-    def start(self) -> None:
-        """
-        Safe start: якщо немає running loop – нічого не робимо (відкладений старт).
-        Гарантія: не створюємо корутину ДО перевірки loop (щоб не було 'never awaited').
-        Ідемпотентність: повторні виклики безпечні.
-        """
-        if self._started:
+    def _start_task(self, loop: Optional[asyncio.AbstractEventLoop]) -> None:
+        """Start watchdog loop on a loop if task isn't already running."""
+        if self._started or not loop:
             return
+        try:
+            self._watchdog_task = loop.create_task(self._watchdog_loop())
+            self._started = True
+            LOG.info("OrderTimeoutWatchdog running (loop=%s)", loop)
+        except Exception as exc:
+            LOG.warning("OrderTimeoutWatchdog failed to start: %s", exc)
+
+    def start(self) -> None:
+        """Start watchdog when a running loop already exists."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            # Немає активного event loop (sync-контекст старту/тест)
             LOG.info(
                 "OrderTimeoutWatchdog deferred: no running event loop (startup/test).")
             return
+        self._start_task(loop)
 
-        # Тільки тут створюємо корутину і таск
-        self._watchdog_task = loop.create_task(self._watchdog_loop())
-        self._started = True
-        LOG.info("OrderTimeoutWatchdog started on running event loop.")
-
-    def ensure_started(self) -> None:
-        """
-        Легка обгортка, яку можна викликати в будь-яких async-хендлерах FSM
-        (ACK/FILL/PLACE): якщо loop вже є і task ще не створений – створимо.
-        """
-        if self._started:
-            return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # все ще нема лупа – тихо ідемо далі
-            return
-        self._watchdog_task = loop.create_task(self._watchdog_loop())
-        self._started = True
-        LOG.info("OrderTimeoutWatchdog late-started on running event loop.")
+    def ensure_started(self, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
+        """Attempt to start watchdog using provided loop or current running loop."""
+        target_loop = loop
+        if target_loop is None:
+            try:
+                target_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                target_loop = None
+        self._start_task(target_loop)
 
     def stop(self) -> None:
         """
@@ -335,9 +329,9 @@ class OrderTimeoutWatchdog:
                             fill_payload = {
                                 "orderId": order_id,
                                 "symbol": symbol,
-                                "quantity": executed_qty,
-                                "price": float(order_status.get("avgPrice", 0)),
-                                "client_order_id": order_status.get("clientOrderId", ""),
+                                "quantity": str(executed_qty),
+                                "price": str(order_status.get("price", 0)),
+                                "clientOrderId": order_status.get("clientOrderId", ""),
                                 "rid": None  # Will be looked up from correlation store
                             }
 
@@ -367,7 +361,7 @@ class OrderTimeoutWatchdog:
                                 "orderId": order_id,
                                 "symbol": symbol,
                                 "status": status,
-                                "client_order_id": order_status.get("clientOrderId", ""),
+                                "clientOrderId": order_status.get("clientOrderId", ""),
                                 "rid": None  # Will be looked up from correlation store
                             }
 
@@ -442,7 +436,8 @@ class OrderTimeoutWatchdog:
 
     def _log_metrics(self) -> None:
         """Log watchdog metrics periodically."""
-        LOG.info(f"WATCHDOG_METRICS rest_polls_total={self._rest_polls_total} rest_detected_fills_total={self._rest_detected_fills_total} rps_throttle_hits={self._rps_throttle_hits}")
+        LOG.info(
+            f"WATCHDOG_METRICS rest_polls_total={self._rest_polls_total} rest_detected_fills_total={self._rest_detected_fills_total} rps_throttle_hits={self._rps_throttle_hits}")
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get watchdog metrics."""

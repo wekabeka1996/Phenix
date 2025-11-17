@@ -58,6 +58,16 @@ g_exposure_limit_usd = Gauge(
 g_exposure_margin_limit_usd = Gauge(
     "exposure_margin_limit_usd", "Margin exposure limit in USD (equity * utilization_pct)")  # EXP-LEVERAGE-001
 
+# Position sync metrics
+g_position_sync_last_account_update_age_seconds = Gauge(
+    "position_sync_last_account_update_age_seconds",
+    "Seconds since the last EVT:ACCOUNT_UPDATE_RECEIVED was processed."
+)
+g_position_sync_current_drift = Gauge(
+    "position_sync_position_drift_current",
+    "Number of symbols adjusted during the latest snapshot reconciliation."
+)
+
 # Gauges with labels
 g_reservation_margin_usd = Gauge(
     "reservation_margin_usd", "Margin reserved for pending orders", ["symbol"])  # EXP-LEVERAGE-001
@@ -73,6 +83,19 @@ c_manage_skipped_total = Counter(
 c_orders_placed_total = Counter(
     "orders_placed_total", "Orders placed (entry & brackets)")
 c_orders_filled_total = Counter("orders_filled_total", "Orders filled")
+c_position_sync_drift_total = Counter(
+    "position_sync_position_drift_detected_total",
+    "Total symbols adjusted by account snapshot reconciliation"
+)
+c_position_sync_trade_dedup_hit_total = Counter(
+    "position_sync_trade_dedup_hit_total",
+    "Total number of trade events dropped by deduplication"
+)
+c_position_sync_resync_total = Counter(
+    "position_sync_resync_total",
+    "Manual or automatic force-resync triggers",
+    ["reason"],
+)
 c_decision_rate_limited = Counter(
     "decision_rate_limited_total", "Decision intents rate-limited", ["symbol"]
 )
@@ -174,6 +197,27 @@ def inc_order_placed() -> None:
 
 def inc_order_filled() -> None:
     c_orders_filled_total.inc()
+
+
+def update_position_sync_last_account_update_age(age_seconds: float) -> None:
+    g_position_sync_last_account_update_age_seconds.set(max(age_seconds, 0.0))
+
+
+def inc_position_sync_drift_total(count: int) -> None:
+    if count > 0:
+        c_position_sync_drift_total.inc(count)
+
+
+def set_position_sync_current_drift(count: int) -> None:
+    g_position_sync_current_drift.set(max(count, 0))
+
+
+def inc_position_sync_trade_dedup_hit() -> None:
+    c_position_sync_trade_dedup_hit_total.inc()
+
+
+def inc_position_sync_resync_total(reason: str) -> None:
+    c_position_sync_resync_total.labels(reason=reason or "unknown").inc()
 
 
 def inc_decision_rl(symbol: str) -> None:

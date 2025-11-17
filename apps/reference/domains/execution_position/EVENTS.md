@@ -60,6 +60,17 @@ Order placement decision for position opening.
 }
 ```
 
+## OpenFlowFSM Lifecycle
+
+The open-flow state machine now reflects the minimal runtime behaviour:
+
+- **IDLE** – waiting for the next `CMD:OPEN`.
+- **PROCESSING** – guards and idempotency checks are running for the current command.
+- **DONE** – a `DEC:OPEN` was emitted successfully.
+- **ERROR** – guard or validation failure (emits `ERR:OPEN`).
+
+There are no intermediate `CANDIDATE/READY` stages and no `EVT:READY` / `EVT:EXECUTE` triggers. The external contract stays unchanged: `CMD:OPEN` produces either `DEC:OPEN` or `ERR:OPEN`.
+
 ### DEC:CLOSE
 Order placement decision for position closure.
 
@@ -185,6 +196,22 @@ CMD:OPEN → ExposureGuard → DEC:OPEN → EVT:FILL → Position Tracking → B
 ```
 EVT:FILL → _place_brackets() → DEC:PLACE_ORDER × 2 → EVT:ORDER_UPDATED → State: BRACKETS_PLACED
 ```
+
+### ManageFlowFSM Lifecycle
+- **FLAT** – no active position tracked.
+- **BRACKETS_PENDING** – initial fill observed, awaiting confirmation of emitted brackets.
+- **BRACKETS_PLACED** – both SL/TP acknowledgements received; begin steady-state monitoring.
+- **TRACKING** – steady state for trailing, breakeven, and quick-profit rules; also used after bracket placement when deduped.
+- **EMIT_DEC_ADJUST** – transient state while emitting `DEC:ADJUST` / `DEC:CLOSE`, immediately returns to `TRACKING`.
+- **WAIT_MODE** – temporary pause after emergency SL trigger; resumes `TRACKING` once bar-based cooldown elapses.
+- **ERROR** – hydration or state restore failure; guarded by tests.
+
+### CloseFlowFSM Lifecycle
+- **IDLE** – default resting state; awaits explicit `CMD:CLOSE`.
+- **CLOSING** – processing manual close command, emits `DEC:CLOSE` when guards pass.
+- **DONE** – terminal acknowledgement after manual close; legacy auto-close timers no longer feed this FSM.
+
+CloseFlowFSM більше не підписується на `EVT`/`UPD`. Автоматичні правила (`quick_profit`, trailing, emergency, hold) тепер живуть виключно в `ManageFlowFSM`, який під час роботи в `TRACKING`/`WAIT_MODE` генерує відповідні `DEC:CLOSE`.
 
 ### Position Closing Flow
 ```

@@ -28,6 +28,7 @@ class Message(BaseModel):
     rid: str = Field(default_factory=lambda: str(uuid.uuid4()))
     span_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     parent_span_id: Optional[str] = None
+    parent_rid: Optional[str] = None  # Parent message RID for WHY-chain
     ts: int = Field(default_factory=lambda: int(time.time() * 1000))
     ttl_ms: int = 2000
     key: Optional[str] = None
@@ -63,3 +64,13 @@ class Message(BaseModel):
 
     def is_expired(self) -> bool:
         return (int(time.time() * 1000) - self.ts) > self.ttl_ms
+
+    @classmethod
+    def from_parent(cls, parent: "Message", **kwargs) -> "Message":
+        """Створити повідомлення з автоматичним parent_rid."""
+        return cls(
+            parent_rid=parent.rid,
+            parent_span_id=parent.span_id,
+            data_ref=parent.data_ref + [parent.rid],  # WHY-chain
+            **kwargs
+        )

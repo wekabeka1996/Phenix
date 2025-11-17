@@ -1,43 +1,24 @@
 [
   {
     "symbol": "SOLUSDT",
-    "step_size": "0.01",
-    "tick_size": "0.01",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading.yaml"
+    "source_config": "config\\instruments.yaml"
   },
   {
     "symbol": "ETHUSDT",
-    "step_size": "0.001",
-    "tick_size": "0.01",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading.yaml"
+    "source_config": "config\\instruments.yaml"
   },
   {
     "symbol": "BTCUSDT",
-    "step_size": "0.001",
-    "tick_size": "0.10",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading.yaml"
+    "source_config": "config\\instruments.yaml"
   },
   {
     "symbol": "BNBUSDT",
-    "step_size": "0.01",
-    "tick_size": "0.01",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading.yaml"
-  },
-  {
-    "symbol": "SOLUSDT",
-    "step_size": "0.01",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading_v0.2.yaml"
+    "source_config": "config\\instruments.yaml"
   },
   {
     "symbol": "ETHUSDT",
     "step_size": "0.001",
-    "min_notional": "10",
-    "source_config": "config\\aurora\\trading_v0.2.yaml"
+    "source_config": "config\\archive\\v1\\trading.yaml"
   },
   {
     "symbol": "ETHUSDT",

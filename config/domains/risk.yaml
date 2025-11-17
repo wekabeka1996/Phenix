@@ -1,0 +1,39 @@
+# v2 config for risk domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+daily_limits:
+  max_drawdown_pct: 5.0   # from trading.risk.daily_limits.max_drawdown_pct (0–100%)
+  max_loss_pct: 2.0       # from trading.risk.daily_limits.max_loss_pct (0–100%)
+  max_loss_usd: 250.0     # from trading.risk.daily_limits.max_loss_usd
+  reset_time_utc: "00:00" # перенесено з trading.risk.daily.reset_time_utc
+
+soft_limits:
+  mode: "clip"                 # from trading.risk.soft_limits.mode
+  clip_min_notional_usdt: 10.0  # Minimum notional after clipping
+  directional_ratio_max: 3.0    # Max ratio between long/short margin (base profile)
+  side_exposure_usdt: 600.0     # Max per-side exposure before clipping
+  margin_exposure_usdt: 1100.0  # Max total margin exposure
+
+score_weights:
+  delta_price_pct: 0.05         # Weight for normalized delta price
+  obi: 0.35                     # Order book imbalance weight
+  tfi: 0.35                     # Trade flow imbalance weight
+  absorption_inverse: 0.25      # Inverse absorption (liquidity) weight
+
+trading_allowed_thresholds:
+  max_risk_score: 0.9           # Global default gate
+  overrides:
+    testnet: 0.87               # Higher tolerance for exploration
+    production: 0.8             # Stricter live trading cap
+
+# legacy note:
+# trading.risk.daily.* залишається як fallback до повного видалення legacy-конфігів
+
+budgets:
+  max_portfolio_risk_pct: 5.0        # Mirrors trading.risk_budgets.max_portfolio_risk_pct
+  max_single_position_risk_pct: 1.0  # Legacy single-position budget
+  max_daily_loss_pct: 2.0            # Used by DecisionMaking safeguards
+
+data_sources:
+  portfolio_state: testnet           # Risk portfolio should follow execution (testnet during hybrid)
+  market_data: live                  # Consume live data stream for risk inputs

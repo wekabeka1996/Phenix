@@ -1,0 +1,11 @@
+# v2 config for trading symbols/universe
+# See docs/config_v2/specification.md for full structure.
+
+symbols:
+  - SOLUSDT
+  - ETHUSDT
+  - BTCUSDT
+  - BNBUSDT
+
+filters:
+  min_volume_24h: 1000000

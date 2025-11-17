@@ -11,11 +11,49 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 
 from vfoundation.core.protocol import Message
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_timestamp_us(raw_timestamp: Union[str, int, float, None]) -> Optional[int]:
+    """Convert assorted timestamp formats to microseconds since epoch."""
+
+    if raw_timestamp is None:
+        return None
+
+    value: Optional[int] = None
+
+    if isinstance(raw_timestamp, (int, float)):
+        value = int(raw_timestamp)
+    elif isinstance(raw_timestamp, str):
+        candidate = raw_timestamp.strip()
+        if not candidate:
+            return None
+        if candidate.isdigit():
+            value = int(candidate)
+        else:
+            try:
+                iso_dt = datetime.fromisoformat(
+                    candidate.replace("Z", "+00:00"))
+                value = int(iso_dt.timestamp() * 1_000_000)
+            except ValueError:
+                return None
+    else:
+        return None
+
+    if value is None:
+        return None
+
+    # Heuristics: normalize seconds or milliseconds to microseconds
+    if value < 1_000_000_000:  # < ~1970-04-26 in seconds
+        value *= 1_000_000
+    elif value < 1_000_000_000_000:  # treat as milliseconds
+        value *= 1_000
+
+    return value
 
 
 def find_latest_snapshot(snapshot_dir: str = "ops/snapshots") -> Optional[Path]:
@@ -66,11 +104,13 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
 
     try:
         # Parse start timestamp
-        start_dt = datetime.fromisoformat(start_timestamp_utc.replace("Z", "+00:00"))
+        start_dt = datetime.fromisoformat(
+            start_timestamp_utc.replace("Z", "+00:00"))
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=timezone.utc)
     except (ValueError, AttributeError) as e:
-        logger.error(f"Invalid timestamp format: {start_timestamp_utc}, error: {e}")
+        logger.error(
+            f"Invalid timestamp format: {start_timestamp_utc}, error: {e}")
         return 0
 
     # Find all WAL files (sorted by date)
@@ -100,14 +140,21 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
                         msg_dict = json.loads(line)
 
                         # Extract timestamp (stored in microseconds in 'timestamp' field or 'ts' in payload)
-                        timestamp_us = msg_dict.get("timestamp")
-                        if timestamp_us is None:
-                            # Fallback to payload timestamp
-                            timestamp_us = msg_dict.get("pld", {}).get("ts")
+                        timestamp_raw = msg_dict.get("timestamp")
+                        if timestamp_raw is None:
+                            timestamp_raw = msg_dict.get("pld", {}).get("ts")
 
-                        if timestamp_us is None:
+                        if timestamp_raw is None:
                             logger.warning(
                                 f"No timestamp found in {file_path.name}:{line_num}, skipping"
+                            )
+                            skipped_count += 1
+                            continue
+
+                        timestamp_us = _coerce_timestamp_us(timestamp_raw)
+                        if timestamp_us is None:
+                            logger.warning(
+                                f"Invalid timestamp value '{timestamp_raw}' in {file_path.name}:{line_num}, skipping"
                             )
                             skipped_count += 1
                             continue

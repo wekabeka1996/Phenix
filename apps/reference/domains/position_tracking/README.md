@@ -199,6 +199,14 @@ else:
 
 ## Configuration
 
+### SSOT Contract
+
+- Schema: `config_schema_v1.py`
+- Resolver map: `config_contract_map.md`
+- Validation command: `python config_validate.py --ci`
+
+Position Tracking reads leverage defaults, pending TTLs, and exposure caps exclusively through `resolve_exposure_policy`, as mandated by the contract map. Direct YAML access is frozen in SSOT v1.0.
+
 ### Required Configuration
 ```yaml
 trading:

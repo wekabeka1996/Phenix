@@ -1,5 +1,6 @@
 """Tests for debug_api.py metrics functions (non-FastAPI parts)."""
 
+from fastapi.testclient import TestClient
 from vfoundation.obs import debug_api
 
 
@@ -125,3 +126,47 @@ def test_debug_api_metrics_thread_safety():
 
     rate = debug_api.get_timeout_rate()
     assert 0.0 <= rate <= 1.0
+
+
+def test_force_resync_endpoint_invokes_handler(monkeypatch):
+    """Force-resync endpoint should call registered handler and return details."""
+    monkeypatch.setenv("TRADING_ENV", "production")
+    client = TestClient(debug_api.app)
+
+    captured = {}
+
+    def handler(reason, symbol):
+        captured["reason"] = reason
+        captured["symbol"] = symbol
+        return {"status": "ok", "symbol": symbol or "ALL"}
+
+    monkeypatch.setattr(debug_api, "_resync_handler", None)
+    debug_api.register_resync_handler(handler)
+
+    response = client.post(
+        "/debug/position/force-resync",
+        json={"reason": "manual", "symbol": "BTCUSDT"},
+        params={"authorization": "dev-admin-token-test"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["reason"] == "manual"
+    assert body["symbol"] == "BTCUSDT"
+    assert captured == {"reason": "manual", "symbol": "BTCUSDT"}
+
+
+def test_force_resync_endpoint_requires_auth(monkeypatch):
+    """Production mode should enforce admin token for manual resync endpoint."""
+    monkeypatch.setenv("TRADING_ENV", "production")
+    client = TestClient(debug_api.app)
+    monkeypatch.setattr(debug_api, "_resync_handler",
+                        lambda *_: {"status": "ok"})
+
+    response = client.post(
+        "/debug/position/force-resync",
+        json={"reason": "manual"},
+    )
+
+    assert response.status_code == 403

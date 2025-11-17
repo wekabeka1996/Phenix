@@ -6,7 +6,7 @@ from apps.reference.adapters.binance_adapter import BinanceAdapter
 
 class TestBinanceAdapterQuantizeQuantity:
     @pytest.fixture
-    async def adapter(self):
+    def adapter(self):
         # Mock adapter without real session
         adapter = BinanceAdapter(
             "key", "secret", "https://testnet.binancefuture.com")
@@ -127,7 +127,7 @@ class TestBinanceAdapterQuantizeQuantity:
 
 class TestBinanceAdapterRequest:
     @pytest.fixture(scope="function")
-    async def adapter(self):
+    def adapter(self):
         # Create adapter with fully isolated mocked httpx session
         mock_session = MagicMock()
         mock_session.request = AsyncMock()

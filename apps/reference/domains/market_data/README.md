@@ -179,6 +179,16 @@ trading:
         - ETHUSDT
 ```
 
+### Configuration Contract
+
+Market data domain follows the SSOT v1.0 configuration contract.
+
+- Schema: `config_schema_v1.py`
+- Resolver map: `config_contract_map.md`
+- Validation command: `python config_validate.py --ci`
+
+Only the domain-mode resolver (`compute_effective_trading_modes`) and other resolvers documented in the contract map may be used to access configuration.
+
 ## Testing
 
 ### Test Structure

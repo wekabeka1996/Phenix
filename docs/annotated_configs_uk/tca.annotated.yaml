@@ -1,0 +1,29 @@
+# Файл: tca.yaml — Налаштування TCA (Transaction Cost Analysis / маршрутизація)
+# Мета: визначає переваги маршрутизації ордерів, максимальне прослизання,
+# пріоритет виконання та fallback-поведінку.
+#
+# Ключі:
+# - prefs:
+#   - max_slippage_pct: максимальне допустиме прослизання у відсотках (наприклад, 0.5 = 0.5%)
+#     Система може відхилити/переформатувати ордер, якщо очікуване прослизання перевищує це.
+#   - preferred_venue: пріоритетна біржа/рішення для виконання.
+#   - execution_priority: 'speed'|'cost' — вибір між пріоритетом швидкості чи мінімізації комісій.
+#   - routing:
+#     - fallback: стратегія, коли ринкова маршрутизація недоступна (limit/post-only)
+#     - allow_post_only: якщо true — дозволяє пост-only ордери для зниження комісій.
+#
+# Практичні зауваги:
+# - Для тестування на testnet можна підвищити max_slippage_pct щоб дозволити більше помилок.
+# - 'execution_priority' впливає на те, які адаптери/алгоритми обираються під час TCA.
+
+# --- Оригінальний вміст файлу ---
+# v2 config for tca domain
+# See docs/config_v2/specification.md for full structure.
+
+prefs:
+  max_slippage_pct: 0.5          # Mirrors trading.tca_prefs.max_slippage_pct
+  preferred_venue: binance       # Matches legacy preference for Binance Futures
+  execution_priority: speed      # Preserve "speed" priority for market orders
+  routing:
+    fallback: limit              # Use LIMIT when market route fails (legacy behaviour)
+    allow_post_only: false       # Align with legacy auto-trading defaults

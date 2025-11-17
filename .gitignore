@@ -24,7 +24,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+ops/
 # PyInstaller
 *.manifest
 *.spec
@@ -193,6 +193,9 @@ coverage*.xml
 # Analysis results
 analyzer*.json
 analysis_results.json
+
+# Config inventory artifacts
+docs/config_analysis/config_inventory_raw.json
 
 .gemini/
 gha-creds-*.json

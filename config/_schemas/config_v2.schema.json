@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.scalp/shared/config/config_v2.schema.json",
+  "title": "AuroraConfigV2",
+  "type": "object",
+  "properties": {
+    "core": {
+      "type": ["object", "null"],
+      "description": "Optional shared settings that overlay system defaults."
+    },
+    "symbols": {
+      "type": ["object", "null"],
+      "description": "Optional symbol-level overrides that complement instruments."
+    },
+    "instruments": {
+      "type": "object",
+      "description": "Definitions of supported instruments (precision, limits, defaults)."
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Explicit override blocks (symbols, domains, etc.)."
+    },
+    "modes": {
+      "type": "object",
+      "description": "Trading mode profiles and domain mode maps.",
+      "properties": {
+        "profiles": {
+          "type": "object",
+          "description": "Named trading profiles with domain-mode mappings."
+        }
+      },
+      "additionalProperties": true
+    },
+    "domains": {
+      "type": "object",
+      "description": "Domain-specific configuration fragments.",
+      "properties": {
+        "execution": {
+          "type": "object",
+          "properties": {
+            "exposure": {
+              "type": "object",
+              "properties": {
+                "max_equity_utilization_pct": {
+                  "type": "number",
+                  "description": "High-level exposure cap."
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "risk": {
+          "type": "object"
+        },
+        "decision": {
+          "type": "object"
+        },
+        "sizing": {
+          "type": "object"
+        },
+        "features": {
+          "type": "object"
+        },
+        "regimes": {
+          "type": "object"
+        },
+        "tca": {
+          "type": ["object", "null"]
+        }
+      },
+      "required": [
+        "execution",
+        "risk",
+        "decision",
+        "sizing",
+        "features",
+        "regimes"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "instruments",
+    "overrides",
+    "modes",
+    "domains"
+  ],
+  "additionalProperties": true
+}

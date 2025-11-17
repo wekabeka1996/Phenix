@@ -1,33 +1,19 @@
 #!/usr/bin/env python3
+"""Simple script to verify AuroraConfig picks up binance credentials."""
+
 import os
 from dotenv import load_dotenv
-from pathlib import Path
-import yaml
-import re
 
-env_path = Path.cwd() / ".env"
-load_dotenv(env_path)
+from apps.reference.config_loader import load_config
 
-yaml_path = Path.cwd() / "config" / "aurora" / "trading.yaml"
-with open(yaml_path, encoding='utf-8') as f:
-    data = yaml.safe_load(f)
+load_dotenv()
 
-binance_api = data.get("binance_api", {})
-print("Raw YAML binance_api.live:")
-print(f"  api_key: {binance_api.get('live', {}).get('api_key')}")
+cfg = load_config(config_root="config")
+binance_api = cfg.binance_api
 
-# Test regex substitution
-pattern = re.compile(r"\$\{\s*(\w+)\s*\}")
-
-api_key_str = binance_api.get("live", {}).get("api_key", "")
-print(f"\nBefore substitution: {api_key_str}")
-
-
-def resolve(s):
-    if isinstance(s, str):
-        return pattern.sub(lambda m: os.environ.get(m.group(1), m.group(0)), s)
-    return s
-
-
-result = resolve(api_key_str)
-print(f"After substitution: {result[:30]}...")
+print("Resolved Binance API keys via AuroraConfig:")
+print(f"  Live API key : {binance_api.live.api_key}")
+print(f"  Testnet API key : {binance_api.testnet.api_key}")
+print("Environment snapshot:")
+print(f"  BINANCE_TESTNET_API_KEY = {os.environ.get('BINANCE_TESTNET_API_KEY')}")
+print(f"  BINANCE_LIVE_API_KEY = {os.environ.get('BINANCE_LIVE_API_KEY')}")

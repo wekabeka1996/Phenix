@@ -60,11 +60,11 @@ import statistics  # Для розрахунку mean/stdev (якщо потрі
         "volatility": {
           "$ref": "#/$defs/volatility_config"
         },
-        "mean_reversion": {
-          "$ref": "#/$defs/mean_reversion_config"
+        "sideways": {
+          "$ref": "#/$defs/sideways_config"
         }
       },
-      "required": ["sma_trend", "volatility", "mean_reversion"]
+      "required": ["sma_trend", "volatility", "sideways"]
     },
     "max_period": {
       "type": "integer",
@@ -93,7 +93,7 @@ import statistics  # Для розрахунку mean/stdev (якщо потрі
       },
       "required": ["enabled", "atr_period", "high_vol_threshold", "low_vol_threshold"]
     },
-    "mean_reversion_config": {
+    "sideways_config": {
       "type": "object",
       "properties": {
         "enabled": {"type": "boolean", "default": true},
@@ -170,7 +170,7 @@ import statistics  # Для розрахунку mean/stdev (якщо потрі
     },
     "regime": {
       "type": "string",
-      "enum": ["TREND_UP", "TREND_DOWN", "SIDEWAYS", "HIGH_VOLATILITY", "LOW_VOLATILITY", "MEAN_REVERSION"],
+      "enum": ["TREND_UP", "TREND_DOWN", "SIDEWAYS", "HIGH_VOLATILITY", "LOW_VOLATILITY"],
       "description": "Detected market regime"
     },
     "confidence": {
@@ -181,8 +181,12 @@ import statistics  # Для розрахунку mean/stdev (якщо потрі
     },
     "model": {
       "type": "string",
-      "enum": ["sma_trend", "volatility", "mean_reversion"],
+      "enum": ["sma_trend", "volatility", "sideways"],
       "description": "Model that detected the regime"
+    },
+    "source_model": {
+      "type": "string",
+      "description": "Legacy model identifier for backward compatibility"
     },
     "indicators": {
       "type": "object",
@@ -214,8 +218,8 @@ class SymbolState:
     current_atr: Optional[Decimal] = None
     avg_atr: Optional[Decimal] = None
 
-    # Mean Reversion model
-    mean_reversion_sma: Optional[Decimal] = None
+    # Sideways model
+    sideways_sma: Optional[Decimal] = None
 
     # Metadata
     last_update_ts: int = 0
@@ -239,7 +243,7 @@ class VolatilityConfig:
     low_vol_threshold: float = 0.5
 
 @dataclass
-class MeanReversionConfig:
+class SidewaysConfig:
     enabled: bool = True
     sma_period: int = 50
     deviation_threshold: float = 0.02

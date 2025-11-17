@@ -1,6 +1,7 @@
 {
   "files": {
     ".github\\workflows\\ci.yml": {},
+    ".github\\workflows\\config_contract_ci.yml": {},
     ".github\\workflows\\gemini-dispatch.yml": {},
     ".github\\workflows\\gemini-invoke.yml": {},
     ".github\\workflows\\gemini-review.yml": {},
@@ -16,16 +17,33 @@
         "ERR"
       ]
     },
-    "config\\aurora\\regime.yaml": {},
-    "config\\aurora\\system.yaml": {},
-    "config\\aurora\\trading.staging.override.yaml": {},
-    "config\\aurora\\trading.yaml": {},
-    "config\\aurora\\trading_v0.2.yaml": {},
+    "config\\instruments.yaml": {},
+    "config\\modes.yaml": {},
+    "config\\overrides.yaml": {},
+    "config\\symbols.yaml": {},
+    "config\\archive\\v1\\system.yaml": {},
+    "config\\archive\\v1\\trading.yaml": {},
+    "config\\domains\\decision.yaml": {},
+    "config\\domains\\execution.yaml": {},
+    "config\\domains\\features.yaml": {},
+    "config\\domains\\regimes.yaml": {},
+    "config\\domains\\risk.yaml": {},
+    "config\\domains\\sizing.yaml": {},
+    "config\\domains\\tca.yaml": {},
     "configs\\master_config_v1.yaml": {
       "execution": {
-        "manage": {
-          "auto": true
-        }
+        "preflight_backoff_ms": [
+          120,
+          250,
+          400,
+          800,
+          1200,
+          1800
+        ],
+        "anti_race_close_ms": 800,
+        "min_post_interval_per_symbol_ms": 300,
+        "allow_trade_with_guardian_tidy_only": true,
+        "fsm_periodic_cleanup_enabled": false
       },
       "ops": {
         "metrics_url": "http://127.0.0.1:8000/metrics",
@@ -61,9 +79,18 @@
   },
   "merged_master": {
     "execution": {
-      "manage": {
-        "auto": true
-      }
+      "preflight_backoff_ms": [
+        120,
+        250,
+        400,
+        800,
+        1200,
+        1800
+      ],
+      "anti_race_close_ms": 800,
+      "min_post_interval_per_symbol_ms": 300,
+      "allow_trade_with_guardian_tidy_only": true,
+      "fsm_periodic_cleanup_enabled": false
     },
     "ops": {
       "metrics_url": "http://127.0.0.1:8000/metrics",

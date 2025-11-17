@@ -21,14 +21,36 @@ class TestConcurrency:
 
     @pytest.fixture
     def config(self):
-        """Mock config object."""
-        config = Mock()
-        config.trading = Mock()
-        config.trading.execution = Mock()
-        config.trading.execution.watchdog = Mock()
-        config.trading.execution.watchdog.ack_ttl_ms = 8000
-        config.trading.execution.watchdog.fill_ttl_ms = 30000
-        return config
+        """Minimal config dict for testing."""
+        return {
+            "trading": {
+                "execution": {
+                    "watchdog": {
+                        "ack_ttl_ms": 8000,
+                        "fill_ttl_ms": 30000
+                    },
+                    "exposure": {
+                        "max_equity_utilization_pct": 80.0,
+                        "max_portfolio_notional_usd": 10000.0
+                    },
+                    "manage": {
+                        "orphan_monitor": {
+                            "enabled": True,
+                            "run_on_startup": True,
+                            "periodic_interval_sec": 300,
+                            "min_order_age_sec": 0,
+                            "batch_cancel_limit": 50,
+                            "rate_limit_per_min": 120
+                        }
+                    },
+                    "guardian": {
+                        "unified": True,
+                        "emit_tidy_event": True,
+                        "poll_interval_ms": 500
+                    }
+                }
+            }
+        }
 
     @pytest.fixture
     def fsm_mock(self):
@@ -40,12 +62,17 @@ class TestConcurrency:
     @pytest.fixture
     def exec_pos_fsm(self, config, fsm_mock):
         """Create ExecPosFSM instance with mocks."""
-        with patch('apps.reference.domains.execution_position.fsm.BinanceAdapter'):
+        with patch('apps.reference.domains.execution_position.fsm.BinanceAdapter') as mock_adapter, \
+                patch('apps.reference.domains.execution_position.fsm.ExposureGuard') as mock_guard:
+            mock_adapter_instance = Mock()
+            mock_adapter.return_value = mock_adapter_instance
+
+            mock_guard_instance = Mock()
+            mock_guard.return_value = mock_guard_instance
+
             fsm = ExecPosFSM(config=config, fsm=fsm_mock)
-            # Mock exposure guard
-            fsm.exposure_guard = Mock(spec=ExposureGuard)
-            fsm.exposure_guard.can_open = Mock(return_value=True)
-            fsm.exposure_guard.reserve = Mock(return_value=True)
+            # Override with our mock
+            fsm.exposure_guard = mock_guard_instance
             fsm.order_guardian = Mock()
             return fsm
 
@@ -66,7 +93,8 @@ class TestConcurrency:
 
                 # Simulate exposure guard check
                 if exec_pos_fsm.exposure_guard.can_open(symbol, Decimal("0.001"), Decimal("50000")):
-                    exec_pos_fsm.exposure_guard.reserve(order_id, Decimal("50.0"), symbol, "BUY")
+                    exec_pos_fsm.exposure_guard.reserve(
+                        order_id, Decimal("50.0"), symbol, "BUY")
                     results.append(f"success_{order_id}")
                 else:
                     results.append(f"blocked_{order_id}")
@@ -75,6 +103,7 @@ class TestConcurrency:
 
         # Configure exposure guard to allow only one reservation
         call_count = 0
+
         def can_open_side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -127,7 +156,12 @@ class TestConcurrency:
         # Add multiple orders to watchdog
         for i in range(5):
             order_id = f"timeout_order_{i}"
-            exec_pos_fsm.watchdog.on_order_ack(order_id, "BTCUSDT")
+            exec_pos_fsm.watchdog.track_order_placed(
+                order_id=order_id,
+                client_order_id=f"client_{order_id}",
+                symbol="BTCUSDT"
+            )
+            exec_pos_fsm.watchdog.on_order_ack(order_id)
 
         initial_pending = len(exec_pos_fsm.watchdog.pending_orders)
         initial_acked = len(exec_pos_fsm.watchdog.acked_orders)
@@ -135,7 +169,8 @@ class TestConcurrency:
         # Simulate timeout by directly calling timeout handler
         # (In real scenario, this would happen via _check_timeouts)
         async def simulate_timeout():
-            deadline = exec_pos_fsm.watchdog.acked_orders[list(exec_pos_fsm.watchdog.acked_orders.keys())[0]]
+            deadline = exec_pos_fsm.watchdog.acked_orders[list(
+                exec_pos_fsm.watchdog.acked_orders.keys())[0]]
             await exec_pos_fsm.watchdog._handle_timeout(deadline)
 
         asyncio.run(simulate_timeout())
@@ -176,5 +211,10 @@ class TestConcurrency:
         assert len(results) == 10
         assert exec_pos_fsm.exposure_guard.on_fill.call_count == 10
 
-        # Verify no duplicates in processed events
-        assert len(exec_pos_fsm._processed_events) == 10
+        # Verify no duplicates in processed trade events (fill keys may be tracked separately)
+        trade_events = {
+            key
+            for key in exec_pos_fsm._processed_events
+            if key.startswith("trade_executed_")
+        }
+        assert len(trade_events) == 10

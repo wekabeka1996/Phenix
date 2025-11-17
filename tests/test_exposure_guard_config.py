@@ -4,17 +4,17 @@ Test script to verify exposure guard configuration allows TP/SL placement for al
 """
 
 import asyncio
-import yaml
 from decimal import Decimal
+
+from apps.reference.config_loader import get_config
 from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
 
 
 async def test_exposure_guard():
     """Test exposure guard with updated configuration."""
 
-    # Load config
-    with open('configs/master_config_v1.yaml', 'r') as f:
-        config = yaml.safe_load(f)
+    # Load config via ConfigLoader to ensure v2 primary path
+    config = get_config()
 
     # Create exposure guard
     guard = ExposureGuard(config)

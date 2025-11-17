@@ -1,0 +1,28 @@
+# Файл: decision.yaml — Налаштування домену прийняття рішень
+# Мета: пороги для сигналів, QoS обмеження та cooldown-логіки для запобігання флік.
+#
+# Ключі:
+# - thresholds:
+#   - signal_threshold: мінімальна абсолютна величина сигналу, щоб вважати його значущим
+#   - neutral_threshold: ширша межа, в якій сигнал класифікується як нейтральний
+#     (часто |score| < neutral_threshold => відхилити/ігнорувати)
+# - qos: обмеження на частоту пропозицій (intents)
+#   - max_intents_per_minute_per_symbol: максимальна кількість ініціацій рішень по символу в хвилину
+#   - symbol_intent_cooldown_sec: мінімальний інтервал між intent для одного символу
+#   - exposure_block_cooldown_sec: cooldown при досягненні лімітів експозиції
+#
+# Примітка: пороги та QoS можуть комбінуватися з bias-множниками (side bias) для корекції
+# порогу залежно від поточної експозиції або ринкової позиції.
+
+# --- Оригінальний вміст файлу ---
+# v2 config for decision domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+thresholds:
+  signal_threshold: 0.05      # from trading.decision.signal_threshold
+  neutral_threshold: 0.10     # from trading.decision.neutral_threshold
+
+qos:
+  max_intents_per_minute_per_symbol: 60  # from trading.decision.qos.max_intents_per_minute_per_symbol
+  symbol_intent_cooldown_sec: 1          # from trading.decision.qos.symbol_intent_cooldown_sec
+  exposure_block_cooldown_sec: 30        # from trading.decision.qos.exposure_block_cooldown_sec

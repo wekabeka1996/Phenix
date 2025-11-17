@@ -60,7 +60,7 @@ def yaml_mocker(system_content, trading_content):
 class TestConfigSecurityAndModes:
     """Test suite for the new `trading_mode` configuration logic."""
 
-    @patch("apps.reference.config_loader.ConfigLoader._load_yaml")
+    @patch("apps.reference.config_loader.ConfigLoader._load_yaml_optional")
     def test_hybrid_mode_loads_both_live_and_testnet_keys(self, mock_load_yaml):
         """
         Verify that in 'hybrid' mode, the config correctly contains both
@@ -86,7 +86,7 @@ class TestConfigSecurityAndModes:
             assert config.binance_api.live.api_key == "live_key_from_env"
             assert config.binance_api.testnet.api_key == "testnet_key_from_env"
 
-    @patch("apps.reference.config_loader.ConfigLoader._load_yaml")
+    @patch("apps.reference.config_loader.ConfigLoader._load_yaml_optional")
     def test_live_mode_loads_live_keys(self, mock_load_yaml):
         """
         Verify that in 'live' mode, the config correctly loads the live section.
@@ -117,7 +117,7 @@ class TestConfigSecurityAndModes:
             if "testnet" in api_config_dict:
                 assert api_config_dict["testnet"].get("api_key") is None
 
-    @patch("apps.reference.config_loader.ConfigLoader._load_yaml")
+    @patch("apps.reference.config_loader.ConfigLoader._load_yaml_optional")
     def test_env_vars_override_yaml_keys(self, mock_load_yaml):
         """
         Verify that environment variables correctly override keys defined in the YAML.
@@ -142,7 +142,7 @@ class TestConfigSecurityAndModes:
             assert config.binance_api.live.api_secret == "live_secret_from_yaml_default"
             assert config.binance_api.testnet.api_secret == "testnet_secret_from_env"
 
-    @patch("apps.reference.config_loader.ConfigLoader._load_yaml")
+    @patch("apps.reference.config_loader.ConfigLoader._load_yaml_optional")
     def test_loader_fails_if_required_keys_are_missing(self, mock_load_yaml):
         """
         Verify that the ConfigLoader raises a ValueError if a required key is missing.

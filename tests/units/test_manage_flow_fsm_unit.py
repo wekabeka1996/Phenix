@@ -1,3 +1,5 @@
+import pytest
+from vfoundation.core.protocol import Message
 import time
 from decimal import Decimal
 
@@ -22,7 +24,7 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 ManageFlowFSM = mod.ManageFlowFSM
 ManageState = mod.ManageState
-from vfoundation.core.protocol import Message
+ResolvedBrackets = mod.ResolvedBrackets
 
 
 def test_hydrate_sets_state_and_fields():
@@ -48,24 +50,41 @@ def test_hydrate_sets_state_and_fields():
     assert fsm.tp_order_id == "tp-1"
 
 
-import pytest
-
-
 def test_calculate_bracket_prices_buy_and_sell():
     fsm = ManageFlowFSM()
     # set entry price and side BUY
     fsm.position_entry_price = Decimal("100")
     fsm.position_side = "BUY"
-    fsm.config = {"brackets": {"sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}}
+    brackets_cfg = {
+        "sl": {"fixed_bps": 50},
+        "tp": {"fixed_bps": 100},
+    }
+    fsm.config = {
+        "trading": {
+            "execution": {
+                "manage": {
+                    "brackets": brackets_cfg,
+                }
+            }
+        }
+    }
 
-    sl, tp = fsm._calculate_bracket_prices()
+    resolved = ResolvedBrackets(
+        sl_bps=Decimal("50"),
+        tp_bps=Decimal("100"),
+        offset_bps=5,
+        sl_source="test",
+        tp_source="test",
+    )
+
+    sl, tp = fsm._calculate_bracket_prices(resolved)
     # For BUY, sl = entry*(1 - 50/10000) = 99.5 ; tp = entry*(1 + 100/10000) = 101.0
     assert float(sl) == pytest.approx(100 * (1 - 50 / 10000))
     assert float(tp) == pytest.approx(100 * (1 + 100 / 10000))
 
     # SELL side
     fsm.position_side = "SELL"
-    sl2, tp2 = fsm._calculate_bracket_prices()
+    sl2, tp2 = fsm._calculate_bracket_prices(resolved)
     # For SELL, sl = entry*(1 + 50/10000), tp = entry*(1 - 100/10000)
     assert float(sl2) == pytest.approx(100 * (1 + 50 / 10000))
     assert float(tp2) == pytest.approx(100 * (1 - 100 / 10000))

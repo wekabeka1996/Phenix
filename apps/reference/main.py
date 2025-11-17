@@ -40,6 +40,11 @@ from apps.reference.telemetry.alerts import AlertManager
 from vfoundation.core.fsm_emit_compat import emit_compat
 from vfoundation.core import FSMCore
 from vfoundation.core.protocol import Message
+from apps.reference.utils import get_domain_mode_from_mapping
+from tools.config_validator_v2 import (
+    format_validation_summary,
+    validate_config_v2,
+)
 import json
 import logging
 import sys
@@ -51,6 +56,7 @@ from typing import Any, Optional
 from logging.handlers import RotatingFileHandler
 import asyncio
 import threading
+from vfoundation.obs import debug_api
 
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -533,11 +539,19 @@ class JSONFormatter(logging.Formatter):
     """JSON formatter for structured event chain logging."""
 
     def format(self, record):
-        # Extract extra fields from record
-        extra_fields = {}
+        log_entry = {
+            "timestamp": datetime.utcfromtimestamp(record.created).isoformat() + "Z",
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+            "function": record.funcName,
+            "line": record.lineno,
+        }
+
+        extra_fields: dict[str, Any] = {}
         if hasattr(record, "__dict__"):
             for key, value in record.__dict__.items():
-                if key not in [
+                if key not in {
                     "name",
                     "msg",
                     "args",
@@ -559,23 +573,10 @@ class JSONFormatter(logging.Formatter):
                     "processName",
                     "process",
                     "message",
-                ]:
+                }:
                     extra_fields[key] = value
 
-        # Create structured log entry
-        log_entry = {
-            "timestamp": self.formatTime(record),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-        }
-
-        # Add extra fields
         log_entry.update(extra_fields)
-
         return json.dumps(log_entry, default=str, ensure_ascii=False)
 
 
@@ -774,6 +775,18 @@ def initialize_domains(config) -> FSMCore:
     account_observer = AccountObserver(fsm, config_dict)
     # snapshot_scheduler = SnapshotScheduler(fsm, config_dict)  # Moved to main()
 
+    try:
+        position_tracking.register_snapshot_fetcher(
+            lambda symbol, reason, rid: account_balance.force_snapshot_refresh(
+                symbol=symbol,
+                reason=reason,
+                rid=rid,
+            )
+        )
+    except Exception as e:
+        LOG.warning(
+            f"Failed to register snapshot fetcher in initialize_domains: {e}")
+
     # 4. Register domains in the FSM core for inter-domain communication if needed
     fsm.register_domain("market_data", market_data)
     fsm.register_domain("feature_engineering", feature_engineering)
@@ -799,6 +812,13 @@ def main() -> None:
     config_loader = ConfigLoader(config_dir=project_root / "config" / "aurora")
     config = config_loader.load_config()
     LOG.info("Configuration loaded successfully")
+
+    validation_result = validate_config_v2(project_root / "config")
+    summary = format_validation_summary(validation_result)
+    LOG.info("Config v2 validation summary:\n%s", summary)
+    if validation_result.get("status") != "ok":
+        LOG.critical("Config v2 validation failed; aborting startup.")
+        sys.exit(1)
 
     # Initialize WAL Garbage Collector
     wal_dir = project_root / "ops" / "wal"
@@ -948,8 +968,11 @@ def main() -> None:
 
     # Risk Management (assesses position risk)
     # Extract domain-specific config with correct mode overrides
-    risk_domain_mode = config.to_dict().get("trading", {}).get(
-        "domain_configuration", {}).get("risk_management", {}).get("trading_mode", "live")
+    try:
+        risk_domain_mode = config.get_domain_mode("risk_management")
+    except AttributeError:
+        risk_domain_mode = get_domain_mode_from_mapping(
+            config, "risk_management")
     risk_config = config.to_dict()
 
     # Always apply mode-specific overrides for risk domain (even if same as global mode)
@@ -974,17 +997,38 @@ def main() -> None:
     # Position Tracking (tracks portfolio state)
     position_tracking = PositionTracking(fsm=fsm, config=config.to_dict())
 
+    try:
+        position_tracking.register_snapshot_fetcher(
+            lambda symbol, reason, rid: account_balance.force_snapshot_refresh(
+                symbol=symbol,
+                reason=reason,
+                rid=rid,
+            )
+        )
+    except Exception as e:
+        LOG.warning(f"Failed to register snapshot fetcher: {e}")
+
+    try:
+        debug_api.register_resync_handler(
+            lambda reason, symbol=None: position_tracking.force_full_resync(
+                reason=reason,
+                symbol=symbol,
+            )
+        )
+    except Exception as e:
+        LOG.warning(f"Failed to register debug resync handler: {e}")
+
     # Execution Position (handles order execution on testnet)
     global execution_position
-    # execution_position = ExecPosFSM(config=config.to_dict(), fsm=fsm)  # REMOVED: Duplicate initialization
-    LOG.info("✅ Execution position FSM already initialized in initialize_domains()")
+    execution_position = ExecPosFSM(config=config, fsm=fsm)
+    LOG.info("✅ Execution position FSM initialized")
 
     # ==========================================
     # DR: DISASTER RECOVERY STATE RESTORATION
     # ==========================================
     LOG.info("--- Starting Disaster Recovery Check ---")
 
-    # Initialize components needed for DR (execution_position already initialized in initialize_domains)
+    # Initialize components needed for DR (execution_position initialized above)
     from apps.reference.dr_loader import find_latest_snapshot, replay_wal_after
     import json
 
@@ -1130,19 +1174,18 @@ def main() -> None:
     LOG.info("--- Order/Position Synchronization Finished ---")
     LOG.info("--- Order/Position Synchronization Finished ---")
 
-    # Decision Making (generates trade intents) - execution_position already initialized in initialize_domains()
+    # Decision Making (generates trade intents) - execution_position initialized above
     decision_making = DecisionMaking(fsm=fsm, config=config.to_dict())
 
     # Register all domains in FSM core for cross-domain access
-    # NOTE: Temporarily commented out - register_domain not yet implemented in FSMCore
-    # fsm.register_domain('account_balance', account_balance)
-    # fsm.register_domain('account_observer', account_observer)
-    # fsm.register_domain('market_data', market_data)
-    # fsm.register_domain('feature_engineering', feature_engineering)
-    # fsm.register_domain('risk_management', risk_management)
-    # fsm.register_domain('position_tracking', position_tracking)
-    # fsm.register_domain('decision_making', decision_making)
-    # fsm.register_domain('execution_position', execution_position)
+    fsm.register_domain('account_balance', account_balance)
+    fsm.register_domain('account_observer', account_observer)
+    fsm.register_domain('market_data', market_data)
+    fsm.register_domain('feature_engineering', feature_engineering)
+    fsm.register_domain('risk_management', risk_management)
+    fsm.register_domain('position_tracking', position_tracking)
+    fsm.register_domain('decision_making', decision_making)
+    fsm.register_domain('execution_position', execution_position)
 
     # Initialize Snapshot Scheduler (DR - Phase L4)
     LOG.info("Initializing snapshot scheduler (DR)...")

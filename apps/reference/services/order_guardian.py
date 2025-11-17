@@ -19,7 +19,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, asdict, is_dataclass
-from typing import Dict, Any, List, Optional, Protocol, Union, TypeAlias, Iterable, Set
+from typing import Dict, Any, List, Optional, Protocol, Union, TypeAlias, Iterable, Set, Sequence, Tuple
 
 from apps.reference.adapters.binance_adapter import BinanceAPIError
 from decimal import Decimal
@@ -55,6 +55,8 @@ file_handler.setFormatter(logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ))
 LOG.addHandler(file_handler)
+
+agg_oco_logger = logging.getLogger("agg_oco")
 
 
 class AdapterProtocol(Protocol):
@@ -116,6 +118,28 @@ class InMemoryStore:
             self._data.pop(key, None)
 
 
+@dataclass
+class BracketSetMeta:
+    """Metadata describing the aggregated bracket set for (symbol, side)."""
+
+    bracket_set_id: str
+    symbol: str
+    side: str
+    sl_order_id: Optional[str]
+    tp_order_id: Optional[str]
+    created_ts: float
+    version: int = 0
+
+
+@dataclass
+class AggregatedOcoGuardianConfig:
+    """Config knob set for aggregated OCO cleanup semantics."""
+
+    enabled: bool = False
+    ttl_protect_new_bracket_ms: int = 0
+    allow_unprotected_position: bool = False
+
+
 class OrderGuardian:
     """
     Centralized order/position monitor & cleanup.
@@ -132,11 +156,20 @@ class OrderGuardian:
         poll_interval_ms: int = 500,
         bus: Optional[Any] = None,
         config: Optional[Any] = None,
+        aggregated_oco_cfg: Optional[AggregatedOcoGuardianConfig] = None,
     ):
         self.adapter = adapter
         self.clock = clock or time
         self.store = store or InMemoryStore()
-        self.poll_interval_ms = poll_interval_ms
+        # When adapter is None (shadow mode), set a longer default poll interval
+        # to avoid aggressive polling in test environments while keeping a sane
+        # default for production. If user explicitly provided a positive
+        # poll_interval_ms, respect it. If they provided 0 or negative, set to
+        # 5000ms for shadow mode.
+        if self.adapter is None and (poll_interval_ms is None or poll_interval_ms <= 0):
+            self.poll_interval_ms = 5000
+        else:
+            self.poll_interval_ms = poll_interval_ms
         self.bus = bus  # Optional event bus for EVT:SYMBOL_TIDY etc.
         self._cfg = config or {}
         self._known_symbols: Set[str] = set()
@@ -148,6 +181,11 @@ class OrderGuardian:
             "guardian_poll_last_duration_ms": 0,
         }
         self._last_cycle_started_ms: float = 0.0
+
+        self._aggregated_oco_cfg = aggregated_oco_cfg or AggregatedOcoGuardianConfig()
+
+        # Aggregated bracket sets keyed by (symbol, side)
+        self._bracket_sets: Dict[tuple[str, str], BracketSetMeta] = {}
 
         if config:
             try:
@@ -170,6 +208,620 @@ class OrderGuardian:
             "event_type": "guardian_init",
             "poll_interval_ms": poll_interval_ms
         })
+
+    # --- Aggregated OCO state accessors ---
+
+    def register_bracket_set(
+        self,
+        *,
+        bracket_set_id: str,
+        symbol: str,
+        side: str,
+        sl_order_id: Optional[str],
+        tp_order_id: Optional[str],
+        created_ts: float,
+    ) -> BracketSetMeta:
+        """Register or update the aggregated bracket set metadata for (symbol, side)."""
+
+        key = self._symbol_side_key(symbol, side)
+        prev = self._bracket_sets.get(key)
+        version = 0 if prev is None else prev.version + 1
+
+        meta = BracketSetMeta(
+            bracket_set_id=bracket_set_id,
+            symbol=key[0],
+            side=key[1],
+            sl_order_id=sl_order_id,
+            tp_order_id=tp_order_id,
+            created_ts=created_ts,
+            version=version,
+        )
+        self._bracket_sets[key] = meta
+        return meta
+
+    def _symbol_side_key(self, symbol: str, side: str) -> tuple[str, str]:
+        return (str(symbol or "").upper(), self._normalize_side(side))
+
+    @staticmethod
+    def _normalize_side(side: Optional[str]) -> str:
+        normalized = (side or "").upper()
+        if normalized == "BUY":
+            return "LONG"
+        if normalized == "SELL":
+            return "SHORT"
+        return normalized
+
+    def get_active_bracket_set(self, symbol: str, side: str) -> Optional[BracketSetMeta]:
+        """Return the active BracketSetMeta for (symbol, side) if registered."""
+
+        return self._bracket_sets.get(self._symbol_side_key(symbol, side))
+
+    def clear_bracket_set_for_position(self, *, symbol: str, side: str) -> None:
+        """Remove any tracked bracket set metadata for (symbol, side)."""
+
+        self._bracket_sets.pop(self._symbol_side_key(symbol, side), None)
+
+    def list_all_bracket_sets(self) -> List[BracketSetMeta]:
+        """Return a shallow copy list of all known bracket set metadata objects."""
+
+        return list(self._bracket_sets.values())
+
+    def rehydrate_bracket_set_for_position(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        position_amt: float,
+        open_orders: Sequence[Any],
+        now_ts: Optional[float] = None,
+    ) -> Optional[BracketSetMeta]:
+        """Reconstruct aggregated bracket metadata from live open orders."""
+
+        cfg = self._aggregated_oco_cfg
+        if not cfg.enabled:
+            return None
+
+        try:
+            abs_position = abs(float(position_amt or 0.0))
+        except (TypeError, ValueError):
+            abs_position = 0.0
+
+        if abs_position <= 0:
+            return None
+
+        existing = self.get_active_bracket_set(symbol, side)
+        if existing:
+            return existing
+
+        candidates = self._select_bracket_orders_for_symbol_side(
+            symbol=symbol,
+            side=side,
+            open_orders=open_orders or [],
+        )
+        if not candidates:
+            return None
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for _raw_order, normalized in candidates:
+            client_id = normalized.get("clientOrderId") or ""
+            base_id = self._extract_bracket_base_from_client_id(client_id)
+            if not base_id:
+                continue
+
+            entry = grouped.setdefault(
+                base_id,
+                {"base_id": base_id, "sl": None, "tp": None, "ts": 0.0},
+            )
+
+            client_id_lower = str(client_id).lower()
+            if client_id_lower.endswith("_sl"):
+                entry["sl"] = normalized
+            elif client_id_lower.endswith("_tp"):
+                entry["tp"] = normalized
+            else:
+                continue
+            entry["ts"] = max(
+                entry["ts"], self._extract_order_timestamp(normalized))
+
+        valid_groups = [g for g in grouped.values() if g.get("sl")
+                        or g.get("tp")]
+        if not valid_groups:
+            return None
+
+        best_group = max(valid_groups, key=lambda group: group.get("ts", 0.0))
+        now = now_ts if now_ts is not None else self.clock.time()
+
+        bracket_set_id = best_group.get("base_id") or self._build_rehydrated_bracket_id(
+            symbol,
+            side,
+            now,
+        )
+        sl_order = best_group.get("sl")
+        tp_order = best_group.get("tp")
+        sl_order_id = str(sl_order.get("orderId")
+                          ) if sl_order and sl_order.get("orderId") else None
+        tp_order_id = str(tp_order.get("orderId")
+                          ) if tp_order and tp_order.get("orderId") else None
+
+        meta = self.register_bracket_set(
+            bracket_set_id=bracket_set_id,
+            symbol=symbol,
+            side=side,
+            sl_order_id=sl_order_id,
+            tp_order_id=tp_order_id,
+            created_ts=now,
+        )
+
+        LOG.info(
+            "[GUARD] Rehydrated aggregated bracket set",
+            extra={
+                "event_type": "agg_oco_rehydrate",
+                "symbol": symbol,
+                "side": side,
+                "bracket_set_id": bracket_set_id,
+                "sl_order_id": sl_order_id,
+                "tp_order_id": tp_order_id,
+            },
+        )
+
+        return meta
+
+    @staticmethod
+    def _clip_guard_why(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return str(value)[:80]
+
+    def _emit_guard_event(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        meta: Optional[BracketSetMeta],
+        position_amt: float,
+        decision: str,
+        extra_cancelled: int,
+        has_sl_after: Optional[bool],
+        why: Optional[str],
+        rid: Optional[str] = None,
+    ) -> None:
+        extra = {
+            "event_type": "AGG_OCO_BRACKET_GUARD",
+            "symbol": symbol,
+            "side": side,
+            "bracket_set_id": getattr(meta, "bracket_set_id", None),
+            "position_amt": str(position_amt) if position_amt is not None else None,
+            "decision": decision,
+            "extra_cancelled": extra_cancelled,
+            "has_sl_after": bool(has_sl_after),
+            "why": self._clip_guard_why(why),
+            "rid": rid,
+        }
+        agg_oco_logger.info("Aggregated OCO guardian decision", extra=extra)
+
+    @staticmethod
+    def _extract_bracket_base_from_client_id(client_order_id: Optional[str]) -> Optional[str]:
+        if not client_order_id:
+            return None
+        cid = str(client_order_id)
+        lowered = cid.lower()
+        if lowered.endswith("_sl") or lowered.endswith("_tp"):
+            return cid[:-3]
+        return None
+
+    @staticmethod
+    def _extract_order_timestamp(normalized: Dict[str, Any]) -> float:
+        for key in ("updateTime", "time", "timestamp", "ts"):
+            value = normalized.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                try:
+                    return float(str(value))
+                except (TypeError, ValueError):
+                    continue
+        return 0.0
+
+    @staticmethod
+    def _build_rehydrated_bracket_id(symbol: str, side: str, now_ts: float) -> str:
+        suffix = int(max(now_ts, 0) * 1000)
+        return f"rehydrated:{symbol.upper()}:{side.upper()}:{suffix}"
+
+    def ensure_single_bracket_set_for_position(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        position_amt: float,
+        open_orders: Sequence[Any],
+        now_ts: Optional[float] = None,
+    ) -> int:
+        """Perform aggregated cleanup ensuring a single bracket set per (symbol, side)."""
+
+        cfg = self._aggregated_oco_cfg
+        if not cfg.enabled:
+            return 0
+
+        norm_side = self._normalize_side(side)
+        key = self._symbol_side_key(symbol, norm_side)
+        meta = self._bracket_sets.get(key)
+        if not meta:
+            self._emit_guard_event(
+                symbol=symbol,
+                side=norm_side,
+                meta=None,
+                position_amt=position_amt,
+                decision="no_meta_state",
+                extra_cancelled=0,
+                has_sl_after=False,
+                why="no_meta_registered",
+            )
+            return 0
+
+        try:
+            abs_position = abs(float(position_amt or 0.0))
+        except (TypeError, ValueError):
+            abs_position = 0.0
+
+        candidates = self._select_bracket_orders_for_symbol_side(
+            symbol=symbol,
+            side=norm_side,
+            open_orders=open_orders or [],
+        )
+
+        if abs_position == 0:
+            cancelled = 0
+            for raw_order, normalized in candidates:
+                if self._cancel_order_safe(
+                    raw_order,
+                    reason="agg_oco_cleanup_zero_position",
+                    normalized=normalized,
+                ):
+                    cancelled += 1
+
+            if cancelled:
+                LOG.info(
+                    "[GUARD] Aggregated zero-position cleanup cancelled brackets",
+                    extra={
+                        "event_type": "agg_oco_zero_position_cleanup",
+                        "symbol": symbol,
+                        "side": norm_side,
+                        "cancelled": cancelled,
+                    },
+                )
+
+            self._emit_guard_event(
+                symbol=symbol,
+                side=norm_side,
+                meta=meta,
+                position_amt=position_amt,
+                decision="cleanup_zero_position",
+                extra_cancelled=cancelled,
+                has_sl_after=False,
+                why="position_amt_zero",
+            )
+            self.clear_bracket_set_for_position(symbol=symbol, side=norm_side)
+            return cancelled
+
+        if not candidates:
+            return 0
+
+        now = now_ts if now_ts is not None else self.clock.time()
+        if cfg.ttl_protect_new_bracket_ms > 0:
+            age_ms = max(0.0, (now - meta.created_ts) * 1000.0)
+            if age_ms < cfg.ttl_protect_new_bracket_ms:
+                LOG.debug(
+                    "[GUARD] Aggregated TTL guard skipping cleanup",
+                    extra={
+                        "event_type": "agg_oco_ttl_guard",
+                        "symbol": symbol,
+                        "side": norm_side,
+                        "age_ms": age_ms,
+                        "ttl_ms": cfg.ttl_protect_new_bracket_ms,
+                    },
+                )
+                self._emit_guard_event(
+                    symbol=symbol,
+                    side=norm_side,
+                    meta=meta,
+                    position_amt=position_amt,
+                    decision="ttl_skip",
+                    extra_cancelled=0,
+                    has_sl_after=bool(meta.sl_order_id),
+                    why=f"age_ms={int(age_ms)} ttl_ms={cfg.ttl_protect_new_bracket_ms}",
+                )
+                return 0
+
+        protected_ids = {
+            str(meta.sl_order_id) if meta.sl_order_id else None,
+            str(meta.tp_order_id) if meta.tp_order_id else None,
+        }
+
+        to_cancel: List[Tuple[Any, Dict[str, Any]]] = []
+        for raw_order, normalized in candidates:
+            order_id = normalized.get("orderId")
+            if order_id is None:
+                continue
+            order_id_str = str(order_id)
+            if order_id_str in protected_ids:
+                continue
+            to_cancel.append((raw_order, normalized))
+
+        if not to_cancel:
+            return 0
+
+        if abs_position > 0 and not cfg.allow_unprotected_position:
+            remaining_sl = [
+                normalized
+                for raw_order, normalized in candidates
+                if self._is_sl_order(normalized) and (raw_order, normalized) not in to_cancel
+            ]
+            if not remaining_sl:
+                LOG.warning(
+                    "[GUARD] Fail-closed guard prevented aggregated cleanup",
+                    extra={
+                        "event_type": "agg_oco_fail_closed",
+                        "symbol": symbol,
+                        "side": norm_side,
+                        "position_amt": position_amt,
+                    },
+                )
+                self._emit_guard_event(
+                    symbol=symbol,
+                    side=norm_side,
+                    meta=meta,
+                    position_amt=position_amt,
+                    decision="skip_to_keep_sl",
+                    extra_cancelled=0,
+                    has_sl_after=False,
+                    why="fail_closed_guard",
+                )
+                return 0
+
+        cancelled = 0
+        for raw_order, normalized in to_cancel:
+            scheduled = self._cancel_order_safe(
+                raw_order,
+                reason="agg_oco_cleanup_extra_bracket",
+                normalized=normalized,
+            )
+            if scheduled:
+                cancelled += 1
+
+        if cancelled:
+            LOG.info(
+                "[GUARD] Aggregated cleanup scheduled duplicate brackets",
+                extra={
+                    "event_type": "agg_oco_cleanup",
+                    "symbol": symbol,
+                    "side": norm_side,
+                    "cancelled": cancelled,
+                },
+            )
+            self._emit_guard_event(
+                symbol=symbol,
+                side=norm_side,
+                meta=meta,
+                position_amt=position_amt,
+                decision="cleanup_extras",
+                extra_cancelled=cancelled,
+                has_sl_after=bool(meta.sl_order_id),
+                why="cleanup_extra_brackets",
+            )
+
+        return cancelled
+
+    def _select_bracket_orders_for_symbol_side(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        open_orders: Sequence[Any],
+    ) -> List[Tuple[Any, Dict[str, Any]]]:
+        """Return bracket-like orders for the requested (symbol, side)."""
+
+        selected: List[Tuple[Any, Dict[str, Any]]] = []
+        symbol_upper = symbol.upper()
+        for raw_order in open_orders:
+            normalized = self._normalize_order_payload(raw_order)
+            if not normalized:
+                continue
+            order_symbol = str(normalized.get("symbol") or "").upper()
+            if order_symbol and order_symbol != symbol_upper:
+                continue
+            if not self._is_bracket_candidate(normalized):
+                continue
+            if not self._matches_requested_position_side(normalized, side):
+                continue
+            selected.append((raw_order, normalized))
+        return selected
+
+    @staticmethod
+    def _boolish(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in {"true", "1", "yes", "y"}
+        return bool(value)
+
+    def _is_bracket_candidate(self, normalized_order: Dict[str, Any]) -> bool:
+        reduce_only = self._boolish(normalized_order.get("reduceOnly"))
+        close_position = self._boolish(normalized_order.get("closePosition"))
+        return reduce_only or close_position
+
+    def _matches_requested_position_side(self, normalized_order: Dict[str, Any], desired_side: str) -> bool:
+        desired = (desired_side or "").upper()
+        if not desired:
+            return True
+
+        order_side = str(
+            normalized_order.get("positionSide")
+            or normalized_order.get("side")
+            or ""
+        ).upper()
+
+        if not order_side:
+            return True
+
+        if order_side in {"LONG", "SHORT"}:
+            return order_side == desired
+
+        if order_side in {"BUY", "SELL"}:
+            if desired == "LONG":
+                return order_side == "SELL"
+            if desired == "SHORT":
+                return order_side == "BUY"
+
+        return True
+
+    def _is_sl_order(self, normalized_order: Dict[str, Any]) -> bool:
+        kind = str(normalized_order.get("kind") or "").upper()
+        order_type = str(normalized_order.get("type") or "").upper()
+        if kind in {"SL", "STOP", "STOP_MARKET", "STOP_LOSS"}:
+            return True
+        if "STOP" in order_type:
+            return True
+        return False
+
+    def _cancel_order_safe(
+        self,
+        order: Any,
+        *,
+        reason: str,
+        normalized: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Best-effort cancellation helper that tolerates missing adapter/state."""
+
+        normalized_payload = normalized or self._normalize_order_payload(order)
+        if not normalized_payload:
+            return False
+
+        order_id = normalized_payload.get("orderId")
+        symbol = normalized_payload.get("symbol")
+        if not order_id or not symbol:
+            return False
+
+        if not self.adapter:
+            LOG.debug(
+                "[GUARD] No adapter available for cancel request",
+                extra={
+                    "event_type": "agg_oco_cancel_skip",
+                    "symbol": symbol,
+                    "order_id": order_id,
+                    "reason": reason,
+                },
+            )
+            return False
+
+        async def _perform_cancel() -> None:
+            try:
+                result = await self.adapter.cancel_order(str(symbol), str(order_id))
+                if self._is_successful_cancel(result):
+                    LOG.info(
+                        "[GUARD] Cancelled bracket during aggregated cleanup",
+                        extra={
+                            "event_type": "agg_oco_cancelled",
+                            "symbol": symbol,
+                            "order_id": order_id,
+                            "reason": reason,
+                        },
+                    )
+                else:
+                    LOG.warning(
+                        "[GUARD] Aggregated cleanup cancel returned non-success",
+                        extra={
+                            "event_type": "agg_oco_cancel_failed",
+                            "symbol": symbol,
+                            "order_id": order_id,
+                            "reason": reason,
+                            "result": result,
+                        },
+                    )
+            except Exception as exc:  # pragma: no cover - network path
+                LOG.warning(
+                    "[GUARD] Aggregated cleanup cancel errored",
+                    extra={
+                        "event_type": "agg_oco_cancel_error",
+                        "symbol": symbol,
+                        "order_id": order_id,
+                        "reason": reason,
+                        "error": str(exc),
+                    },
+                )
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and not loop.is_closed():
+            loop.create_task(_perform_cancel())
+        else:  # pragma: no cover - fallback path
+            asyncio.run(_perform_cancel())
+
+        return True
+
+    def _extract_position_amount_for_side(
+        self,
+        *,
+        positions: Sequence[PositionTypeAlias],
+        symbol: str,
+        side: str,
+    ) -> float:
+        """Best-effort extraction of absolute position amount for a given side."""
+
+        desired = (side or "").upper()
+        target_symbol = symbol.upper()
+
+        for pos in positions:
+            pos_symbol = None
+            pos_side_attr = None
+            amount_value: Any = 0.0
+
+            if hasattr(pos, "symbol"):
+                pos_symbol = getattr(pos, "symbol")
+            elif isinstance(pos, dict):
+                pos_symbol = pos.get("symbol")
+
+            if not pos_symbol or str(pos_symbol).upper() != target_symbol:
+                continue
+
+            if hasattr(pos, "position_side"):
+                pos_side_attr = getattr(pos, "position_side")
+            elif hasattr(pos, "positionSide"):
+                pos_side_attr = getattr(pos, "positionSide")
+            elif isinstance(pos, dict):
+                pos_side_attr = pos.get(
+                    "positionSide") or pos.get("position_side")
+
+            if hasattr(pos, "position_amount"):
+                amount_value = getattr(pos, "position_amount")
+            elif hasattr(pos, "positionAmt"):
+                amount_value = getattr(pos, "positionAmt")
+            elif isinstance(pos, dict):
+                amount_value = (
+                    pos.get("position_amount")
+                    or pos.get("positionAmt")
+                    or pos.get("amount")
+                )
+
+            try:
+                amount = float(amount_value or 0.0)
+            except (TypeError, ValueError):
+                amount = 0.0
+
+            pos_side = str(pos_side_attr or "").upper()
+            if pos_side:
+                if pos_side == desired:
+                    return abs(amount)
+                continue
+
+            if desired == "LONG" and amount > 0:
+                return amount
+            if desired == "SHORT" and amount < 0:
+                return abs(amount)
+
+        return 0.0
 
     # ---- Registration API ----
 
@@ -196,6 +848,8 @@ class OrderGuardian:
             "symbol": symbol,
             "side": side,
             "qty": qty,
+            "filled_qty": 0.0,  # additive: track cumulative fills
+            "remaining_qty": float(qty),
             "ts": ts,
             "corr_id": corr_id,
             "rid": rid,
@@ -222,9 +876,47 @@ class OrderGuardian:
             "client_order_id": client_order_id,
             "side": side,
             "qty": qty,
+            "filled_qty": 0.0,
             "corr_id": corr_id,
             "rid": rid
         })
+
+    def on_fill(self, *, symbol: str, parent_order_id: str, filled_qty: float) -> None:
+        """Update cumulative fill state for a tracked entry.
+
+        Safe no-op if entry is unknown. Never raises.
+        """
+        try:
+            entry_key = f"entry:{parent_order_id}"
+            entry_data: Optional[Dict[str, Any]] = self.store.get(entry_key)
+            if not entry_data:
+                return
+
+            if str(entry_data.get("symbol", "")).upper() != str(symbol).upper():
+                # Symbol mismatch – keep defensive but still update
+                pass
+
+            prev_filled = float(entry_data.get("filled_qty", 0.0) or 0.0)
+            qty_total = float(entry_data.get("qty", 0.0) or 0.0)
+            new_filled = max(0.0, prev_filled + float(filled_qty or 0.0))
+            if qty_total > 0:
+                new_filled = min(new_filled, qty_total)
+            remaining = max(0.0, qty_total - new_filled)
+
+            entry_data["filled_qty"] = new_filled
+            entry_data["remaining_qty"] = remaining
+            self.store.put(entry_key, entry_data)
+
+            LOG.info("Entry fill updated", extra={
+                "event_type": "entry_fill_update",
+                "symbol": symbol,
+                "parent_order_id": parent_order_id,
+                "filled_qty": new_filled,
+                "remaining_qty": remaining,
+            })
+        except Exception:
+            # Best-effort only
+            pass
 
     def register_bracket(
         self,
@@ -710,6 +1402,72 @@ class OrderGuardian:
 
         return cancelled_count
 
+    async def close_entry(self, *, symbol: str, parent_order_id: str) -> Dict[str, Any]:
+        """Cancel brackets for an entry and report remaining qty/side.
+
+        This method does NOT place a close order; caller should place a reduce-only
+        order for the returned remaining_qty if > 0.
+        """
+        cancelled = await self.cleanup_before_close(symbol, parent_order_id)
+
+        entry_key = f"entry:{parent_order_id}"
+        entry_data: Optional[Dict[str, Any]] = self.store.get(entry_key)
+        side = None
+        remaining = 0.0
+        if entry_data:
+            side = entry_data.get("side")
+            try:
+                remaining = float(entry_data.get("remaining_qty") or 0.0)
+            except Exception:
+                remaining = 0.0
+
+        LOG.info("Entry close prepared", extra={
+            "event_type": "entry_close_prepare",
+            "symbol": symbol,
+            "parent_order_id": parent_order_id,
+            "cancelled_brackets": cancelled,
+            "remaining_qty": remaining,
+            "side": side,
+        })
+
+        return {
+            "cancelled_brackets": cancelled,
+            "remaining_qty": remaining,
+            "side": side,
+        }
+
+    def list_entries(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List tracked entries, optionally filtered by symbol.
+
+        Returns list of dicts: {"order_id", "symbol", "side", "qty", "filled_qty", "remaining_qty", "ts"}
+        """
+        out: List[Dict[str, Any]] = []
+        try:
+            raw_store = getattr(self.store, "_data", {})
+            if not isinstance(raw_store, dict):
+                return out
+            for key, val in raw_store.items():
+                if not (isinstance(key, str) and key.startswith("entry:")):
+                    continue
+                if not isinstance(val, dict):
+                    continue
+                sym = val.get("symbol")
+                if symbol and str(sym).upper() != str(symbol).upper():
+                    continue
+                order_id = key.split(":", 1)[1]
+                out.append({
+                    "order_id": order_id,
+                    "symbol": sym,
+                    "side": val.get("side"),
+                    "qty": val.get("qty"),
+                    "filled_qty": val.get("filled_qty", 0.0),
+                    "remaining_qty": val.get("remaining_qty", val.get("qty", 0.0)),
+                    "ts": val.get("ts"),
+                })
+        except Exception:
+            return out
+        return out
+
     async def cleanup_orphans(
         self,
         symbol: Optional[str] = None,
@@ -811,22 +1569,32 @@ class OrderGuardian:
 
                 # Check if this is our bracket order
                 order_meta = self.store.get(f"order:{order_id}")
-                if not order_meta and (is_reduce_only or is_close_position or guardian_like):
-                    inferred_symbol = symbol or order.get("symbol")
-                    order_meta = {
-                        "symbol": inferred_symbol,
-                        "type": order_type,
-                        "reduce_only": is_reduce_only,
-                        "close_position": is_close_position,
-                        "parent_entry_id": None,
-                        "client_order_id": client_order_id,
-                        "kind": order_type.replace("_MARKET", "").upper() if order_type else None,
-                    }
-                    self.store.put(f"order:{order_id}", order_meta)
-                    if client_order_id:
-                        self.store.put(f"client:{client_order_id}", order_id)
-                    if inferred_symbol:
-                        self.update_known_symbols([inferred_symbol])
+                # Do not auto-infer/store metadata for unknown orders unless they
+                # appear to be guardian-managed (guardian_like). This prevents
+                # cancelling untracked bracket-like orders that belong to other
+                # systems or users. Linking should be explicit via link_existing_from_rest.
+                if not order_meta:
+                    if guardian_like:
+                        inferred_symbol = symbol or order.get("symbol")
+                        order_meta = {
+                            "symbol": inferred_symbol,
+                            "type": order_type,
+                            "reduce_only": is_reduce_only,
+                            "close_position": is_close_position,
+                            "parent_entry_id": None,
+                            "client_order_id": client_order_id,
+                            "kind": order_type.replace("_MARKET", "").upper() if order_type else None,
+                        }
+                        self.store.put(f"order:{order_id}", order_meta)
+                        if client_order_id:
+                            self.store.put(
+                                f"client:{client_order_id}", order_id)
+                        if inferred_symbol:
+                            self.update_known_symbols([inferred_symbol])
+                    else:
+                        LOG.debug(
+                            f"Order {order_id} not tracked and not guardian-like; skipping")
+                        continue
 
                 if not order_meta:
                     LOG.debug(f"Order {order_id} not tracked by guardian")
@@ -932,7 +1700,8 @@ class OrderGuardian:
         Returns count of cancelled orders.
         """
         if not self.adapter:
-            LOG.debug("No adapter available, skipping cleanup_other_brackets_for_symbol")
+            LOG.debug(
+                "No adapter available, skipping cleanup_other_brackets_for_symbol")
             return 0
 
         cancelled_count = 0
@@ -940,6 +1709,31 @@ class OrderGuardian:
 
         try:
             open_orders = await self.adapter.get_open_orders(symbol)
+
+            if self._aggregated_oco_cfg.enabled:
+                metas = [
+                    meta
+                    for meta in self._bracket_sets.values()
+                    if meta.symbol.upper() == symbol.upper()
+                ]
+                if metas:
+                    positions = await self.adapter.get_open_positions()
+                    now_ts = self.clock.time()
+                    aggregated_cancelled = 0
+                    for meta in metas:
+                        pos_amt = self._extract_position_amount_for_side(
+                            positions=positions,
+                            symbol=meta.symbol,
+                            side=meta.side,
+                        )
+                        aggregated_cancelled += self.ensure_single_bracket_set_for_position(
+                            symbol=meta.symbol,
+                            side=meta.side,
+                            position_amt=pos_amt,
+                            open_orders=open_orders,
+                            now_ts=now_ts,
+                        )
+                    return aggregated_cancelled
 
             for raw_order in open_orders:
                 if cancelled_this_batch >= batch_limit:
@@ -969,26 +1763,35 @@ class OrderGuardian:
                     else bool(is_close_position_raw)
                 )
 
-                guardian_like = self._is_guardian_client_order_id(client_order_id)
+                guardian_like = self._is_guardian_client_order_id(
+                    client_order_id)
 
                 # Ensure we have metadata for decision
                 order_meta = self.store.get(f"order:{order_id}")
-                if not order_meta and (is_reduce_only or is_close_position or guardian_like):
-                    inferred_symbol = symbol or order.get("symbol")
-                    order_meta = {
-                        "symbol": inferred_symbol,
-                        "type": order_type,
-                        "reduce_only": is_reduce_only,
-                        "close_position": is_close_position,
-                        "parent_entry_id": None,
-                        "client_order_id": client_order_id,
-                        "kind": order_type.replace("_MARKET", "").upper() if order_type else None,
-                    }
-                    self.store.put(f"order:{order_id}", order_meta)
-                    if client_order_id:
-                        self.store.put(f"client:{client_order_id}", order_id)
-                    if inferred_symbol:
-                        self.update_known_symbols([inferred_symbol])
+                # Same guard as in cleanup_orphans: only infer metadata for guardian-like
+                # orders. This avoids touching untracked reduceOnly/closePosition orders.
+                if not order_meta:
+                    if guardian_like:
+                        inferred_symbol = symbol or order.get("symbol")
+                        order_meta = {
+                            "symbol": inferred_symbol,
+                            "type": order_type,
+                            "reduce_only": is_reduce_only,
+                            "close_position": is_close_position,
+                            "parent_entry_id": None,
+                            "client_order_id": client_order_id,
+                            "kind": order_type.replace("_MARKET", "").upper() if order_type else None,
+                        }
+                        self.store.put(f"order:{order_id}", order_meta)
+                        if client_order_id:
+                            self.store.put(
+                                f"client:{client_order_id}", order_id)
+                        if inferred_symbol:
+                            self.update_known_symbols([inferred_symbol])
+                    else:
+                        LOG.debug(
+                            f"Order {order_id} not tracked and not guardian-like; skipping")
+                        continue
 
                 if not order_meta:
                     continue
@@ -1025,7 +1828,8 @@ class OrderGuardian:
                             f"[GUARD] Failed to cancel old bracket {order_id}, result: {result}"
                         )
                 except Exception as e:
-                    is_unknown_error = isinstance(e, BinanceAPIError) and getattr(e, "code", None) == -2011
+                    is_unknown_error = isinstance(
+                        e, BinanceAPIError) and getattr(e, "code", None) == -2011
                     if not is_unknown_error and "unknown order" not in str(e).lower():
                         LOG.warning(
                             f"[GUARD] Exception cancelling old bracket {order_id}: {e}"
@@ -1143,6 +1947,17 @@ class OrderGuardian:
         """Start background polling if enabled"""
         if self.poll_interval_ms > 0 and self._poller_task is None:
             await self._startup_relink_known_symbols()
+
+            # Emit EVT:SYMBOL_TIDY for all known symbols on startup to prevent first-trade blocking
+            if self.bus:
+                symbols = self._iter_symbols_for_poll()
+                for sym in symbols:
+                    try:
+                        self.bus.emit("EVT:SYMBOL_TIDY", {
+                                      "symbol": sym, "source": "guardian_startup"})
+                    except Exception:
+                        pass
+
             self._poller_task = asyncio.create_task(self._poll_loop())
 
     async def stop(self):

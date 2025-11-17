@@ -27,6 +27,7 @@
   "regime": "TREND_UP",
   "confidence": 0.85,
   "model": "sma_trend",
+  "source_model": "sma_trend_v1",
   "indicators": {
     "fast_sma": "45123.45",
     "slow_sma": "44890.12",
@@ -115,7 +116,7 @@ volatility:
   low_vol_threshold: 0.5   # 0.5x average ATR
 ```
 
-### Mean Reversion Detection
+### Sideways Detection
 
 #### Логіка визначення
 ```python
@@ -123,15 +124,15 @@ volatility:
 deviation = abs(current_price - sma) / sma
 
 if deviation < deviation_threshold:
-    regime = "MEAN_REVERSION"
+    regime = "SIDEWAYS"
     confidence = 1.0 - (deviation / deviation_threshold)
 else:
-    confidence = 0.0  # Не mean reversion
+    confidence = 0.0  # Не sideways
 ```
 
 #### Конфігурація
 ```yaml
-mean_reversion:
+sideways:
   enabled: true
   sma_period: 50
   deviation_threshold: 0.02  # 2% відхилення
@@ -150,7 +151,7 @@ symbol_state: Dict[str, Dict[str, Any]] = {
     "slow_sma": Optional[Decimal],
     "atr_values": deque(maxlen=atr_period),
     "current_atr": Optional[Decimal],
-    "mean_reversion_sma": Optional[Decimal]
+    "sideways_sma": Optional[Decimal]
 }
 ```
 
@@ -182,7 +183,7 @@ models:
     high_vol_threshold: 2.0
     low_vol_threshold: 0.5
 
-  mean_reversion:
+  sideways:
     enabled: true
     sma_period: 50
     deviation_threshold: 0.02
@@ -203,7 +204,7 @@ confidence = min(0.0233 / 0.001, 1.0) = 1.0
 # HIGH_VOLATILITY з atr_ratio = 2.5
 confidence = min(2.5 / 2.0, 1.0) = 1.0
 
-# MEAN_REVERSION з deviation = 0.005, threshold = 0.02
+# SIDEWAYS з deviation = 0.005, threshold = 0.02
 confidence = 1.0 - (0.005 / 0.02) = 0.75
 ```
 

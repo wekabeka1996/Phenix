@@ -1,0 +1,35 @@
+{
+  "status": "ok",
+  "domains": {
+    "execution": {
+      "status": "ok",
+      "errors": [],
+      "warnings": []
+    },
+    "risk": {
+      "status": "ok",
+      "errors": [],
+      "warnings": []
+    },
+    "sizing": {
+      "status": "ok",
+      "errors": [],
+      "warnings": []
+    },
+    "decision": {
+      "status": "ok",
+      "errors": [],
+      "warnings": []
+    },
+    "instruments": {
+      "status": "ok",
+      "errors": [],
+      "warnings": []
+    },
+    "modes": {
+      "status": "ok",
+      "errors": [],
+      "warnings": []
+    }
+  }
+}

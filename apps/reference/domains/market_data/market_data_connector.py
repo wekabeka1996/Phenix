@@ -14,6 +14,7 @@ import time
 from typing import Any, Optional, TYPE_CHECKING
 
 from apps.reference.adapters.binance_adapter import BinanceAdapter
+from apps.reference.utils import get_domain_mode_from_mapping
 from .websocket_aggregator import WebSocketAggregator
 
 if TYPE_CHECKING:
@@ -127,17 +128,28 @@ class MarketDataConnector:
                     f"MarketDataConnector using domain-specific mode: {mode}")
             except Exception as e:
                 LOG.warning(f"Could not get domain mode, using fallback: {e}")
-                mode = getattr(self.config, "trading_mode", "testnet") if not isinstance(
-                    self.config, dict) else self.config.get("trading_mode", "testnet")
+                try:
+                    mode = get_domain_mode_from_mapping(
+                        self.config, "market_data")
+                except Exception:
+                    mode = getattr(self.config, "trading_mode", "testnet") if not isinstance(
+                        self.config, dict) else self.config.get("trading_mode", "testnet")
         else:
-            # Fallback to global mode
-            if hasattr(self.config, "trading_mode"):
-                mode = self.config.trading_mode
-            elif isinstance(self.config, dict):
-                mode = self.config.get("trading_mode", "testnet")
-            else:
-                mode = "testnet"
-            LOG.info(f"MarketDataConnector using global trading_mode: {mode}")
+            try:
+                mode = get_domain_mode_from_mapping(self.config, "market_data")
+                LOG.info(
+                    "MarketDataConnector using domain-specific mode via resolver: %s",
+                    mode,
+                )
+            except Exception:
+                if hasattr(self.config, "trading_mode"):
+                    mode = getattr(self.config, "trading_mode", "testnet")
+                elif isinstance(self.config, dict):
+                    mode = self.config.get("trading_mode", "testnet")
+                else:
+                    mode = "testnet"
+                LOG.info(
+                    f"MarketDataConnector using global trading_mode: {mode}")
 
         # Resolve API env config (Pydantic-first with dict fallback)
         api_key = api_secret = rest_url = None

@@ -17,7 +17,8 @@ class TestOrderLifecycleCorrelation:
 
     def test_correlation_through_open_flow(self):
         """Test that corr_id and oco_group_id are generated in DEC:OPEN."""
-        config = {"trading": {"execution": {"cooldown_ms": 1000, "guard_enabled": False}}}
+        config = {"trading": {"execution": {
+            "cooldown_ms": 1000, "guard_enabled": False}}}
         open_fsm = OpenFlowFSM(config=config)
 
         msg = Message(
@@ -60,7 +61,8 @@ class TestOrderLifecycleCorrelation:
 
         # Simulate SL order ACK
         sl_order_id = "67890"
-        store.put_sl_tp_ack(sl_order_id, "entry-client-123", 'corr-uuid-1', 'oco-uuid-1', 'rid-123')
+        store.put_sl_tp_ack(sl_order_id, "entry-client-123",
+                            'corr-uuid-1', 'oco-uuid-1', 'rid-123')
 
         # Verify retrieval
         entry_corr = store.get_by_order_id(entry_order_id)
@@ -71,7 +73,7 @@ class TestOrderLifecycleCorrelation:
         assert sl_corr['corr_id'] == 'corr-uuid-1'
 
     def test_account_observer_fill_correlation(self):
-        """Test that EVT:FILL includes correlation data from store."""
+        """Test that AccountObserver emits correlated EVT:TRADE_EXECUTED payloads."""
         # Mock FSM
         mock_fsm = MagicMock()
         mock_fsm.emit = MagicMock()
@@ -111,26 +113,26 @@ class TestOrderLifecycleCorrelation:
         })
 
         # Process trades
-        observer._process_trades(mock_client.get_my_trades.return_value, "binance")
+        observer._process_trades(
+            mock_client.get_my_trades.return_value, "binance")
 
-        # Verify EVT:FILL was emitted with correlation
-        mock_fsm.emit.assert_called_once_with(
-            "EVT:FILL",
-            payload={
-                'symbol': 'BTCUSDT',
-                'side': 'buy',
-                'price': '50000',
-                'quantity': '0.001',
-                'ts': 1640995200000,
-                'fees': '0.0001',
-                'venue': 'binance',
-                'corr_id': 'corr-uuid-1',
-                'link_fill_id': '12345',
-                'oco_group_id': 'oco-uuid-1',
-                'parent_client_order_id': None
-            },
-            why="Detected new user fill from Binance account."
-        )
+        calls = mock_fsm.emit.call_args_list
+        expected_calls = 2 if observer.emit_legacy_fill else 1
+        assert len(calls) == expected_calls
+
+        trade_call = calls[0]
+        assert trade_call.args[0] == "EVT:TRADE_EXECUTED"
+        trade_payload = trade_call.kwargs["payload"]
+        assert trade_payload["corr_id"] == 'corr-uuid-1'
+        assert trade_payload["link_fill_id"] == '12345'
+        assert trade_payload["oco_group_id"] == 'oco-uuid-1'
+        assert trade_payload["symbol"] == 'BTCUSDT'
+
+        if observer.emit_legacy_fill:
+            legacy_call = calls[1]
+            assert legacy_call.args[0] == "EVT:FILL"
+            legacy_payload = legacy_call.kwargs["payload"]
+            assert legacy_payload == trade_payload
 
     def test_correlation_persistence(self):
         """Test that correlation IDs persist through the entire flow."""
@@ -162,7 +164,8 @@ class TestOrderLifecycleCorrelation:
             dst="decision_making",
             corr_id=corr_id,
             link_fill_id="12345",
-            pld={"symbol": "BTCUSDT", "side": "BUY", "qty": "0.001", "price": "50000"}
+            pld={"symbol": "BTCUSDT", "side": "BUY",
+                 "qty": "0.001", "price": "50000"}
         )
 
         assert fill_msg.corr_id == corr_id

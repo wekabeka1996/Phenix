@@ -5,7 +5,7 @@
 
 from apps.reference.adapters.binance_adapter import BinanceAdapter
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
-from apps.reference.config_loader import ConfigLoader
+from apps.reference.config_loader import load_config
 import asyncio
 import logging
 import sys
@@ -30,8 +30,7 @@ async def test_tidy_gate():
         LOG.info("🔍 Початок тесту TIDY/gate функціональності")
 
         # Завантажуємо конфігурацію
-        config_loader = ConfigLoader()
-        config = config_loader.load_config('config/aurora/trading.yaml')
+        config = load_config(config_root="config").model_dump()
         LOG.info("✅ Конфігурація завантажена")
 
         # Створюємо адаптер (симуляція)

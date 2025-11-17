@@ -6,55 +6,39 @@ import sys
 import time
 from urllib.request import urlopen, Request
 from urllib.error import URLError
-import yaml
 from pathlib import Path
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 
+from apps.reference.config_loader import reload_config
+
 
 def _get_cfg():
-    # читання з YAML конфігу або env з дефолтами
-    config_path = os.environ.get(
-        "OPS_CONFIG_PATH", "configs/master_config_v1.yaml")
+    # читання з централізованого ConfigLoader або env fallback
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
+        cfg = reload_config()
+        ops_config = getattr(cfg, "ops", None)
+        if ops_config is None and isinstance(cfg, dict):
+            ops_config = cfg.get("ops", {})
 
-        # Pydantic-first, fallback to dict
-        try:
-            if hasattr(config, 'ops'):
-                ops_config = config.ops
-            elif isinstance(config, dict):
-                ops_config = config.get("ops", {})
-            else:
-                ops_config = {}
-        except (AttributeError, TypeError):
+        if ops_config is None:
             ops_config = {}
 
-        # Get metrics_url
-        try:
-            if hasattr(ops_config, 'metrics_url'):
-                url = ops_config.metrics_url
-            elif isinstance(ops_config, dict):
-                url = ops_config.get(
-                    "metrics_url", "http://127.0.0.1:8000/metrics")
-            else:
-                url = "http://127.0.0.1:8000/metrics"
-        except (AttributeError, TypeError):
+        if hasattr(ops_config, "metrics_url"):
+            url = ops_config.metrics_url
+        elif isinstance(ops_config, dict):
+            url = ops_config.get(
+                "metrics_url", "http://127.0.0.1:8000/metrics")
+        else:
             url = "http://127.0.0.1:8000/metrics"
 
-        # Get reports_dir
-        try:
-            if hasattr(ops_config, 'reports_dir'):
-                out_dir = ops_config.reports_dir
-            elif isinstance(ops_config, dict):
-                out_dir = ops_config.get("reports_dir", "reports")
-            else:
-                out_dir = "reports"
-        except (AttributeError, TypeError):
+        if hasattr(ops_config, "reports_dir"):
+            out_dir = ops_config.reports_dir
+        elif isinstance(ops_config, dict):
+            out_dir = ops_config.get("reports_dir", "reports")
+        else:
             out_dir = "reports"
-    except (FileNotFoundError, yaml.YAMLError):
-        # fallback до env
+    except Exception:
         url = os.environ.get(
             "OPS_METRICS_URL", "http://127.0.0.1:8000/metrics")
         out_dir = os.environ.get("OPS_REPORTS_DIR", "reports")

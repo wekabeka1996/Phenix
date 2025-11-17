@@ -12,7 +12,11 @@ def metrics():
 
 
 def test_hybrid_incoherent_metrics_export(metrics):
-    from apps.reference.bootstrap.preflight import check_hybrid_coherence, get_hybrid_coherence_state
+    from apps.reference.bootstrap.preflight import (
+        HybridIncoherenceError,
+        check_hybrid_coherence,
+        get_hybrid_coherence_state,
+    )
     from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
 
     # Simulate an incoherent configuration
@@ -26,13 +30,12 @@ def test_hybrid_incoherent_metrics_export(metrics):
         "_resolved": {"risk_portfolio_source": "live"},  # Incoherent
     }
 
-    # Perform the check
-    check_hybrid_coherence(mock_config)
+    # Perform the check (expected to raise for incoherent configs)
+    with pytest.raises(HybridIncoherenceError):
+        check_hybrid_coherence(mock_config)
 
     # Update metrics based on the state
-    from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
     state = get_hybrid_coherence_state()
-    from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
     update_hybrid_coherence_metrics(state)
 
     # Assertions for incoherent state

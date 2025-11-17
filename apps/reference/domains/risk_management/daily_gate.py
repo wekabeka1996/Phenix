@@ -36,6 +36,34 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_dict(value: Any) -> Dict[str, Any]:
+    """Best-effort conversion of config fragments to dict."""
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        try:
+            dumped = value.model_dump()
+            if isinstance(dumped, dict):
+                return dumped
+        except Exception:  # pragma: no cover - defensive
+            pass
+    raw = getattr(value, "__dict__", None)
+    if isinstance(raw, dict):
+        return {k: v for k, v in raw.items() if not k.startswith("_")}
+    return {}
+
+
+def _normalize_percent(value: Any) -> Optional[float]:
+    """Normalize config percent values to 0-100 scale."""
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric * 100.0 if 0 <= numeric <= 1.0 else numeric
+
+
 @dataclass
 class DailyConfig:
     """Configuration for daily risk limits."""
@@ -58,30 +86,52 @@ class DailyRiskState:
         self.log = logger
 
         # Safe extraction of risk config from dict or Pydantic object
-        if isinstance(cfg, dict):
-            risk_cfg = cfg.get("risk", {})
-            daily_cfg = risk_cfg.get("daily", {}) if isinstance(
-                risk_cfg, dict) else {}
-        else:
-            risk_cfg = getattr(cfg, "risk", {})
-            daily_cfg = getattr(risk_cfg, "daily", {}) if risk_cfg else {}
+        raw_risk_cfg = cfg.get("risk", {}) if isinstance(
+            cfg, dict) else getattr(cfg, "risk", {})
+        risk_cfg = _as_dict(raw_risk_cfg)
+        daily_limits_cfg = _as_dict(risk_cfg.get("daily_limits"))
+        daily_cfg = _as_dict(risk_cfg.get("daily"))
 
-        # Extract values safely
-        if isinstance(daily_cfg, dict):
-            max_loss = daily_cfg.get("max_realized_loss_usd", "250")
-            max_dd = daily_cfg.get("max_drawdown_pct", 8)
-            reset_time = daily_cfg.get("reset_time_utc", "00:00")
-        else:
-            max_loss = getattr(daily_cfg, "max_realized_loss_usd", "250")
-            max_dd = getattr(daily_cfg, "max_drawdown_pct", 8)
-            reset_time = getattr(daily_cfg, "reset_time_utc", "00:00")
+        max_loss_usd = None
+        for candidate in (
+            daily_limits_cfg.get("max_loss_usd"),
+            daily_cfg.get("max_realized_loss_usd"),
+            risk_cfg.get("max_realized_loss_usd"),
+        ):
+            if candidate is None:
+                continue
+            value = _d(candidate)
+            if value > 0:
+                max_loss_usd = value
+                break
+        if not max_loss_usd:
+            max_loss_usd = 250.0
+
+        max_drawdown_pct = None
+        for candidate in (
+            daily_limits_cfg.get("max_drawdown_pct"),
+            risk_cfg.get("max_daily_drawdown_limit"),
+            daily_cfg.get("max_drawdown_pct"),
+        ):
+            normalized = _normalize_percent(candidate)
+            if normalized is not None:
+                max_drawdown_pct = normalized
+                break
+        if max_drawdown_pct is None:
+            max_drawdown_pct = 8.0
+
+        reset_time = (
+            daily_cfg.get("reset_time_utc")
+            or daily_limits_cfg.get("reset_time_utc")
+            or "00:00"
+        )
 
         reset_time_str = str(reset_time)
         reset_parts = reset_time_str.split(":")
 
         self.cfg = DailyConfig(
-            max_realized_loss_usd=_d(max_loss),
-            max_drawdown_pct=_d(max_dd),
+            max_realized_loss_usd=_d(max_loss_usd),
+            max_drawdown_pct=_d(max_drawdown_pct),
             reset_h=int(reset_parts[0] if len(reset_parts) > 0 else "0"),
             reset_m=int(reset_parts[1] if len(reset_parts) > 1 else "0"),
         )

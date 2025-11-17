@@ -1,0 +1,11 @@
+# v2 config for decision domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+thresholds:
+  signal_threshold: 0.05      # from trading.decision.signal_threshold
+  neutral_threshold: 0.10     # from trading.decision.neutral_threshold
+
+qos:
+  max_intents_per_minute_per_symbol: 60  # from trading.decision.qos.max_intents_per_minute_per_symbol
+  symbol_intent_cooldown_sec: 1          # from trading.decision.qos.symbol_intent_cooldown_sec
+  exposure_block_cooldown_sec: 30        # from trading.decision.qos.exposure_block_cooldown_sec

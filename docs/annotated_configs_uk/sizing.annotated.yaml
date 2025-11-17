@@ -1,0 +1,49 @@
+# Файл: sizing.yaml — Налаштування розмірів позицій (sizing)
+# Мета: визначає стратегії розрахунку розміру позицій (fixed risk, kelly, тощо),
+# обмеження у відсотках і доларах, та мультиплікатори для різних режимів.
+#
+# Пояснення ключів:
+# - defaults:
+#   - mode: обрана стратегія розміру позицій:
+#       - fixed_risk_pct: фіксований відсоток від equity для кожної угоди
+#       - fixed_usd: фіксований розмір угоди в USD
+#       - kelly: використовувати Kelly criterion для розрахунку розміру
+#       - hybrid: гібридна логіка
+#   - max_risk_pct: максимальний відсоток equity, який ризикуємо в одній угоді
+#   - max_risk_usd: верхній жорсткий ліміт у доларах (запобігає великим позиціям)
+#   - min_notional_usd / max_notional_usd: мінімум/максимум вартості угоди
+#   - liquidity_kappa: множник для врахування ліквідності (зменшує розмір при низькій ліквідності)
+#   - liquidity_kappa_mode: dynamic/static — чи адаптується kappa динамічно
+#   - kelly: параметри для розрахунку Kelly (якщо mode == 'kelly')
+#
+# - symbols: (опціонально) специфічні переопреділення для символів
+# - regimes: множники для різних ринкових режимів (HIGH_VOLATILITY, LOW_VOLATILITY)
+#
+# Порада: поєднуйте max_risk_pct і max_risk_usd, щоб убезпечити як по валюті, так і
+# по відсотку капіталу. Для агресивних стратегій зменшіть liquidity_kappa або зміни режим.
+
+# --- Оригінальний вміст файлу ---
+# v2 config for sizing domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+defaults:
+  mode: "fixed_risk_pct"     # fixed_risk_pct / fixed_usd / kelly / hybrid
+  max_risk_pct: 1.0          # % від equity на одну угоду (risk_fraction_q * 100)
+  max_risk_usd: 50.0         # hard cap у USD
+  min_notional_usd: 10.0     # мінімальний розмір угоди
+  max_notional_usd: 10000.0  # максимальний розмір угоди (liquidity_based_cap_usd)
+  liquidity_kappa: 1.0       # liquidity kappa factor
+  liquidity_kappa_mode: "dynamic"  # dynamic / static
+  kelly:
+    base_probability: 0.55
+    kelly_cap: 0.25
+    kelly_alpha: 0.8
+    payoff_ratio_r: 2.0
+
+symbols: {}
+
+regimes:
+  HIGH_VOLATILITY: 0.60   # sizing multiplier
+  LOW_VOLATILITY: 1.20
+  MEAN_REVERSION: 0.50
+  UNCERTAIN: 0.50

@@ -75,7 +75,8 @@ class TestDRLoader:
     def test_replay_wal_no_directory(self):
         """Should return 0 when WAL directory doesn't exist"""
         mock_fsm = MagicMock()
-        count = replay_wal_after("/nonexistent/wal", "2025-01-01T00:00:00Z", mock_fsm)
+        count = replay_wal_after(
+            "/nonexistent/wal", "2025-01-01T00:00:00Z", mock_fsm)
         assert count == 0
 
     def test_replay_wal_invalid_timestamp(self):
@@ -129,7 +130,8 @@ class TestDRLoader:
             }
 
             # Event after snapshot (should be replayed)
-            after_ts = int((snapshot_ts + timedelta(minutes=5)).timestamp() * 1_000_000)
+            after_ts = int((snapshot_ts + timedelta(minutes=5)
+                            ).timestamp() * 1_000_000)
             event_after = {
                 "op": "EVT",
                 "verb": "TRADE_EXECUTED",
@@ -200,7 +202,8 @@ class TestDRLoader:
             # Verify correct event was replayed
             trade_call_args = mock_fsm.on_trade_executed.call_args[0][0]
             assert trade_call_args.verb == "TRADE_EXECUTED"
-            assert trade_call_args.pld["symbol"] == "ETHUSDT"  # The AFTER event
+            # The AFTER event
+            assert trade_call_args.pld["symbol"] == "ETHUSDT"
             assert trade_call_args.rid == "RID-after"
 
             account_call_args = mock_fsm.on_account_update.call_args[0][0]
@@ -216,7 +219,8 @@ class TestDRLoader:
             wal_file = tmppath / "2025-10-20.jsonl"
 
             snapshot_ts = datetime(2025, 10, 20, 10, 0, 0, tzinfo=timezone.utc)
-            after_ts = int((snapshot_ts + timedelta(minutes=5)).timestamp() * 1_000_000)
+            after_ts = int((snapshot_ts + timedelta(minutes=5)
+                            ).timestamp() * 1_000_000)
 
             valid_event = {
                 "op": "EVT",
@@ -282,3 +286,64 @@ class TestDRLoader:
 
             assert count == 0, "Should not replay events without timestamp"
             assert mock_fsm.on_trade_executed.call_count == 0
+
+    def test_replay_wal_accepts_string_numeric_timestamp(self):
+        """Should parse timestamps provided as numeric strings."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            wal_file = tmppath / "2025-10-21.jsonl"
+
+            snapshot_ts = datetime(2025, 10, 21, 10, 0, 0, tzinfo=timezone.utc)
+            event_ts = int((snapshot_ts + timedelta(minutes=1)
+                            ).timestamp() * 1_000_000)
+
+            event = {
+                "op": "EVT",
+                "verb": "ACCOUNT_UPDATE_RECEIVED",
+                "pld": {"equity": 12000, "ts": str(event_ts)},
+                "src": "account_connector",
+                "dst": "position_tracking",
+                "rid": "RID-string",
+                "timestamp": str(event_ts),
+            }
+
+            with open(wal_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(event) + "\n")
+
+            mock_fsm = MagicMock()
+            mock_fsm.on_account_update = MagicMock()
+
+            count = replay_wal_after(tmpdir, snapshot_ts.isoformat(), mock_fsm)
+
+            assert count == 1
+            mock_fsm.on_account_update.assert_called_once()
+
+    def test_replay_wal_accepts_iso_timestamp_strings(self):
+        """Should parse timestamps provided as ISO 8601 strings."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            wal_file = tmppath / "2025-10-22.jsonl"
+
+            snapshot_ts = datetime(2025, 10, 22, 10, 0, 0, tzinfo=timezone.utc)
+            iso_ts = (snapshot_ts + timedelta(minutes=2)).isoformat()
+
+            event = {
+                "op": "EVT",
+                "verb": "TRADE_EXECUTED",
+                "pld": {"symbol": "BTCUSDT", "ts": iso_ts},
+                "src": "execution_engine",
+                "dst": "position_tracking",
+                "rid": "RID-iso",
+                "timestamp": iso_ts,
+            }
+
+            with open(wal_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(event) + "\n")
+
+            mock_fsm = MagicMock()
+            mock_fsm.on_trade_executed = MagicMock()
+
+            count = replay_wal_after(tmpdir, snapshot_ts.isoformat(), mock_fsm)
+
+            assert count == 1
+            mock_fsm.on_trade_executed.assert_called_once()

@@ -1,0 +1,64 @@
+# Файл: modes.yaml — Профілі режимів торгівлі (trading modes)
+# Мета: визначає набори доменів та їх режими виконання (live/testnet/shadow)
+#
+# Пояснення ключів:
+# - profiles: набір передналаштованих профілів режиму (strings -> домени)
+#   - <profile_name> (наприклад, shadow_live, full_live, full_testnet):
+#     - trading_mode: коротка назва режиму
+#     - domains: словник доменів -> режим виконання
+#       - market_data: live або testnet — звідки надходять ринки
+#       - feature_engineering: live/testnet — джерело фіч
+#       - decision_making: live/testnet — де виконуються рішення (логіка)
+#       - risk_management: live/testnet — чи risk працює на живих даних
+#       - execution_position: live/testnet — де відправляються/імітуються ордери
+#       - audit_trail: live/testnet — збереження XAI/WHY у холодне сховище
+#
+# Примітка: profile 'shadow_live' означає: живі дані/аналітика але тестова (testnet)
+# або часткова верифікація на етапі cutover. 'full_live' = повністю робочий режим.
+#
+# Рекомендація: для безпечного тестування використовуйте 'shadow_live' або 'full_testnet'.
+
+# --- Оригінальний вміст файлу ---
+# v2 config for trading modes and domain configurations
+# Див. docs/config_v2/specification.md для деталей
+
+profiles:
+  shadow_live:
+    trading_mode: shadow_live
+    domains:
+      market_data: live
+      feature_engineering: live
+      decision_making: live
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: live
+
+  full_live:
+    trading_mode: full_live
+    domains:
+      market_data: live
+      feature_engineering: live
+      decision_making: live
+      risk_management: live
+      execution_position: live
+      audit_trail: live
+
+      full_testnet:
+    trading_mode: full_testnet
+    domains:
+      market_data: testnet
+      feature_engineering: testnet
+      decision_making: testnet
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: testnet
+
+  full_testnet:
+    trading_mode: full_testnet
+    domains:
+      market_data: testnet
+      feature_engineering: testnet
+      decision_making: testnet
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: testnet

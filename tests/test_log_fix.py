@@ -25,7 +25,22 @@ except Exception as e:
 # Створюємо mock FSM та config
 mock_fsm = MagicMock()
 mock_fsm.emit = MagicMock()
-mock_config = MagicMock()
+mock_config = {
+    "risk_budgets": {"BTCUSDT": {"max_position_size_usd": 10000}},
+    "instruments": {"BTCUSDT": {"min_qty": 0.001}},
+    "alerting": {
+        "dedup_window_s": 60,
+        "risk_threshold_pct": 80,
+        "wal_threshold_mb": 500,
+    },
+    "alerts": {
+        "thresholds": {
+            "cb_active_sec": 60,
+            "risk_gate_percent": 80,
+            "wal_size_mb": 500,
+        }
+    },
+}
 
 # Створюємо instance
 try:

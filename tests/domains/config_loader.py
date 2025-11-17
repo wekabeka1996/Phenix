@@ -64,9 +64,13 @@ class ConfigLoader:
         Args:
             config_dir: Directory containing YAML config files (default: config/aurora)
         """
-        self.config_dir = (
-            config_dir or Path(__file__).parent.parent.parent / "config" / "aurora"
-        )
+        if config_dir is not None:
+            self.config_dir = Path(config_dir)
+        else:
+            project_root = Path(__file__).resolve().parents[2]
+            primary_dir = project_root / "config" / "aurora"
+            archive_dir = project_root / "config" / "archive" / "v1"
+            self.config_dir = primary_dir if primary_dir.exists() else archive_dir
         self._configs: Dict[str, Dict[str, Any]] = {}
 
         # Load environment variables from .env file if available
@@ -95,7 +99,8 @@ class ConfigLoader:
         """Get environment variable with validation."""
         value = os.environ.get(name, default)
         if required and not value:
-            raise ValueError(f"Required environment variable '{name}' is not set")
+            raise ValueError(
+                f"Required environment variable '{name}' is not set")
         return value
 
     def load_config(self) -> AuroraConfig:
@@ -113,7 +118,8 @@ class ConfigLoader:
         system_config = self._load_yaml("system.yaml")
 
         # Load environment variables
-        use_testnet = self._get_env_var("USE_TESTNET", "true").lower() == "true"
+        use_testnet = self._get_env_var(
+            "USE_TESTNET", "true").lower() == "true"
 
         if use_testnet:
             binance_api_key = self._get_env_var(
