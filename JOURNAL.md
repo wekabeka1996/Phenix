@@ -1,5 +1,141 @@
 # Aurora FSM Development Journal
 
+## EP-MCFG-ENC-01 — Нормалізація manage_config.py
+
+- manage_config.py переведено з UTF-16 у UTF-8 без зміни логіки та додано `# -*- coding: utf-8 -*-` на початку.
+- Подальший рефакторинг resolver-ів і видалення legacy-гілок виконуватимуться вже на UTF-8 версії.
+- Тести: `python -m py_compile apps/reference/domains/execution_position/manage_config.py`; `pytest -q` (падає через відсутній `clear_brackets_warning_cache` в `brackets_config.py`).
+
+## 2025-11-18 | RID: OCO-11.12C_AGG_OCO_PROFILE_LOCKED
+
+- Створено `docs/PROFILE_aggregated_oco_production.md` з runtime/operational інваріантами aggregated-only ExecPos (watchdog, guardian, exposure капи, SOL/BNB таблиця) та закріплено ASCII-only формат.
+- Додано контрактні тести `tests/domains/execution_position/test_agg_oco_symbol_profiles.py`, які читають YAML-конфіги/overrides і перевіряють відповідність документа (таблиця профілів, aggregated-only прапори, leverage 125x, `per_symbol_cap_pct`).
+- Забезпечено, що документація слугує SsOT: тест перевіряє наявність ключових рядків і конфіг-збігів, щоб будь-яка зміна вимагала оновлення профілю.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_symbol_profiles.py -v`
+
+## 2025-11-18 | RID: OCO-11.12B_AGG_OCO_OBSERVABILITY
+
+- Розширено покриття `get_agg_oco_state_snapshot()` через новий `tests/domains/execution_position/test_agg_oco_state_dump.py`, який інжектить WS snapshot, ManageFlow state, Guardian `BracketSetMeta` й watchdog статус.
+- Тест підтверджує, що snapshot повертає текстові qty/ціни, актуальні SL/TP, `bracket_set_id`, `bracket_sl_order_id`, а також watchdog status/details → це гарантує стабільність CLI/WHY dump.
+- Використано monkeypatch для приглушення планувальників Guardian/Watchdog, щоб тест концентрувався на структурі даних.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_state_dump.py -v`
+
+## 2025-11-18 | RID: OCO-11.12A_CONFIG_MODES_HARDENED
+
+- `_validate_manage_config` тепер виводить ефективний режим для застарілих або неповних конфігів (якщо `mode` відсутній, але `aggregated_oco.enabled=true`, автоматично застосовується `aggregated_only`), і повертає оновлений `ExecutionManageConfig` через `dataclasses.replace`.
+- Додаткові перевірки гарантують, що aggregated-only профіль завжди вимагає `recalc_on_partial_close=true`, а watchdog може бути увімкнений тільки у відповідному режимі.
+- Розширено `tests/domains/execution_position/test_manage_config_aggregated_modes.py` новими сценаріями (авто-визначення режиму, блокування небезпечних прапорів), щоб уникнути регресій.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_manage_config_aggregated_modes.py -v`
+
+## 2025-11-17 | RID: OCO-11.12A_CONFIG_MODES_HARDENED
+
+- Execution manage config resolver now requires explicit `mode` (`legacy` vs `aggregated_only`) via `_normalize_manage_mode`, defaulting to aggregated-only whenever `aggregated_oco.enabled` is true.
+- `_validate_manage_config` enforces that aggregated-only deployments keep watchdog/partial-close flags enabled and forbid `allow_unprotected_position`, while legacy mode rejects any aggregated-only toggles.
+- Config manifests (`config/domains/execution.yaml`, `configs/master_config_v1.yaml`) declare `manage.mode: aggregated_only`, and new regression `tests/domains/execution_position/test_manage_config_aggregated_modes.py` covers valid/invalid combinations.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_manage_config_aggregated_modes.py -v`
+
+## 2025-11-17 | RID: OCO-11.11_AGG_QTY_GUARD
+
+- Додано `ExecutionQtyGuard` захист від stepSize/minQty/minNotional для aggregated-only DEC, включно з XAI-телеметрією та fail-closed адаптерним guard у ExecPosFSM.
+- ManageFlowFSM тепер нормалізує reduce-only qty перед емісією aggregated SL/TP; дрібні корекції, що не проходять біржові обмеження, пропускаються без порушення FSM.
+- Розширено тестове покриття: юніт-тести guard, інтеграційні сценарії aggregated-only, та ExecPosFSM fail-closed шлях; контрактні та watchdog регресії також перегнані.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/units/test_qty_guard_min_step.py tests/domains/execution_position/test_qty_guard.py tests/domains/execution_position/test_agg_oco_min_qty_guard_runtime.py tests/domains/execution_position/test_execpos_decision_fail_closed.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_watchdog_runtime.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_watchdog_emit_trade_executed.py -v`
+
+## 2025-11-17 | RID: OCO-11.10_AGG_OCO_FULL_AUDIT
+
+- Проведено повний аудит aggregated-only OCO режиму та його інтеграції з ExecPosFSM, ManageFlowFSM, OrderGuardian і BinanceAdapter, включно з DR/startup сценаріями та watchdog-інваріантами.
+- Підтверджено, що при `aggregated_only_mode=true` inline TP/SL гілки в ExecPosFSM/ManageFlowFSM фактично відсічені, а захист позиції повністю делегується Aggregated OCO (Guardian + watchdog) без конфлікту з адаптером Binance.
+- Зафіксовано потенційний змішаний режим (`aggregated_oco.enabled=true`, `aggregated_only_mode=false`) і рекомендації щодо посилення валідації конфігів та додаткових контракт‑тестів у `docs/audit/OCO_aggregated_only_full_audit.md`.
+
+## 2025-11-17 | RID: OCO-11.6_TRADE_EXECUTED_EMIT_FIX | Watchdog EVT:TRADE_EXECUTED delivery restored
+
+- Centralized OrderTimeoutWatchdog → ExecPosFSM wiring through `_bind_watchdog_hooks()` and `_emit_watchdog_event`, guaranteeing every REST-detected fill routes through the same Message path as WS events (LocalBus fallback now also invokes `handle()` so ManageFlow/aggregated SL logic always sees the message).
+- Added fail-closed telemetry in `watchdog.py` (`WATCHDOG_EMIT_TRADE_EXECUTED`, `WATCHDOG_EMIT_MISSING`, `WATCHDOG_EMIT_FAILED`) and enriched ExecPosFSM logging with `source` tagging to distinguish REST watchdog fills from other producers.
+- Introduced regression coverage in `tests/domains/execution_position/test_watchdog_emit_trade_executed.py` to assert ManageFlow receives watchdog-driven fills and that missing emit hooks never fail silently.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_watchdog_emit_trade_executed.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_watchdog_runtime.py -v`
+
+## 2025-11-17 | RID: OCO-11.4_AGG_OCO_WATCHDOG_RUNTIME | Aggregated OCO watchdog + auto-heal
+
+- Promoted the pure aggregated OCO invariant checker into `agg_oco_watchdog.py` with structured violation types, normalization helpers, and compatibility shims for existing diagnostics.
+- Wired ExecPosFSM to schedule the watchdog loop, hydrate Guardian metadata from live orders, emit structured logging, and auto-heal zero-position orphan SL/TP sets via new OrderGuardian APIs.
+- Enabled config gates (`manage_config`, `config/domains/execution.yaml`, `configs/master_config_v1.yaml`) to require aggregated-only deployments before watchdog activation and exposed guardian delegates for bracket metadata cleanup.
+- Authored a runtime pytest harness to exercise orphan cleanup, no-SL alert-only paths, and DR-style rehydration ahead of validation.
+
+### Highlights
+- `apps/reference/domains/execution_position/agg_oco_watchdog.py` now exports `AggOcoViolation*` DTOs, normalization helpers, and a list-based validator that downstream runtimes reuse.
+- `apps/reference/domains/execution_position/fsm.py` adds `_list_guardian_bracket_sets`, `_rehydrate_guardian_state`, `_log_watchdog_violation`, and `_heal_orphan_sl_for_zero_position`, ensuring structured WHY logging plus deterministic cleanup.
+- `apps/reference/domains/execution_position/order_guardian.py` exposes `clear_bracket_set_for_position`, unlocking watchdog-triggered metadata resets without touching services internals.
+
+### Artifacts
+- Runtime logic: `apps/reference/domains/execution_position/agg_oco_watchdog.py`, `apps/reference/domains/execution_position/fsm.py`, `apps/reference/domains/execution_position/order_guardian.py`.
+- Config + validation: `apps/reference/domains/execution_position/manage_config.py`, `config/domains/execution.yaml`, `configs/master_config_v1.yaml`.
+- Tests: `tests/units/test_agg_oco_invariants_checker.py`, `tests/units/test_agg_oco_watchdog.py`, `tests/domains/execution_position/test_agg_oco_watchdog_runtime.py`.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/units/test_agg_oco_invariants_checker.py tests/units/test_agg_oco_watchdog.py -v` *(emits existing `PytestUnraisableExceptionWarning` from asyncio loop disposal, no failing cases).*
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_watchdog_runtime.py -v`
+
+
+## 2025-11-17 | RID: OCO-11.3_RUNTIME_AGG_ONLY_FLAG | Runtime aggregated-only gating and regressions
+
+- Enabled `aggregated_only_mode` flag from config through ManageFlowFSM/ExecPosFSM so inline TP/SL code paths fail-closed and only aggregated OCO orchestrates protection when the flag is true.
+- Hardened config resolver validation and logging to prevent misconfiguration plus surfaced XAI warnings whenever legacy payloads slip through during aggregated-only sessions.
+- Re-ran the full aggregated-only regression matrix plus guardian cleanup to ensure the new gating preserves all previously green scenarios.
+
+### Highlights
+- `apps/reference/domains/execution_position/fsm_manage.py` raises when legacy bracket placement is attempted under aggregated-only mode and reroutes `_place_brackets` exclusively to aggregated flows.
+- `apps/reference/domains/execution_position/fsm.py` now short-circuits inline TP/SL computation when `_aggregated_only_mode` is active and emits WHY-chain breadcrumbs for aggregated payloads.
+- Config changes (`config/domains/execution.yaml`, `configs/master_config_v1.yaml`) ensure orchestrator deployments can opt-in via declarative toggles with validation in `manage_config.py`.
+
+### Artifacts
+- Runtime wiring: `apps/reference/domains/execution_position/fsm_manage.py`, `apps/reference/domains/execution_position/fsm.py`, `apps/reference/domains/execution_position/manage_config.py`.
+- Config manifests: `config/domains/execution.yaml`, `configs/master_config_v1.yaml`.
+- Contract/document updates already reflected in `docs/CONTRACT_aggregated_orders_v1.md`.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/units/test_agg_oco_invariants_checker.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_aggregated_oco_multi_entry_flow.py tests/domains/execution_position/test_aggregated_oco_partial_close_legacy.py tests/domains/execution_position/test_aggregated_oco_scale_in_legacy.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_order_guardian_aggregated_cleanup.py -v`
+
+## 2025-11-17 | RID: OCO-11.2_TESTS_AGGREGATED_ONLY_CONTRACT | Aggregated-only contract regression suite
+
+- Added dedicated contract tests to lock `CONTRACT_aggregated_orders_v1` guarantees (entry/exit payload rules + lifecycle scenarios).
+- Introduced a pure-function invariant checker + unit tests ahead of watchdog wiring.
+- Verified coverage with targeted pytest runs for the new suites plus all existing Aggregated OCO regressions and guardian cleanup.
+
+### Highlights
+- `tests/domains/execution_position/test_contract_aggregated_orders_mode.py` exercises: entry/exit payloads without inline TP/SL, open/scale-in/partial/full/flip behaviour, and Guardian metadata guarantees.
+- `tests/units/test_agg_oco_invariants_checker.py` codifies Section 6 invariants (no-SL, orphan-SL, multi-meta) for future watchdog integration.
+- Reused Aggregated OCO harness + ExecPos FSM with safe monkeypatching to avoid background loop noise while asserting payload structure.
+
+### Artifacts
+- New tests: `tests/domains/execution_position/test_contract_aggregated_orders_mode.py`, `tests/units/test_agg_oco_invariants_checker.py`.
+- Supporting harness imports reused from `test_aggregated_oco_multi_entry_flow.py` (no runtime edits required).
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/units/test_agg_oco_invariants_checker.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_aggregated_oco_multi_entry_flow.py tests/domains/execution_position/test_aggregated_oco_partial_close_legacy.py tests/domains/execution_position/test_aggregated_oco_scale_in_legacy.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_order_guardian_aggregated_cleanup.py -v`
+
+
 ## 2025-11-17 | RID: OCO-DISCOVERY-AGGREGATED_OCO_V1 | Aggregated position/TP/SL discovery phase
 
 - Коротко: стартуємо повний аудит позицій, TP/SL, OrderGuardian та ExecPosFSM, щоб закріпити існуючі контракти і спланувати чистий design aggregated OCO.
@@ -7035,57 +7171,52 @@ if msg.op == "EVT" and msg.verb in ("ORDER_REJECTED", "ORDER_CANCELED", "ORDER_F
  
  
 
-### 2025-11-08 06:15 - CRITICAL FIX: WebSocket ?????????, ?????? polling
-**RID**: wss-polling-fix-001
-**Why**: Entry ?????? ?? fill'????? (?????????? NEW), ?? BinanceAdapter REST-only ??? WebSocket
-**Changes**:
-- ?????? _poll_order_status_loop() ? inance_adapter.py (polling ????? 300ms)
-- ?????? 	rack_order() method ??? ?????????? ??????? ??? ???????????
-- ?????? _emit_fill_event() ??? ?????? EVT:TRADE_EXECUTED ??? ????????? FILLED
-- ? sm.py:953 ?????? ?????? dapter.track_order(entry_resp) ????? ?????????? entry
-- ???????? start()/stop() ??? ????????? polling task
-**Impact**: Hotfix ???????? ???????? fills ??? WebSocket ??? testnet; p95 ???????? ~300-600ms
-**Links**: BRK-HOTFIX-01 ?????????????, ?????? POLLING-FIX-01
 
-### 2025-11-08 06:25 - HOTFIX: Polling loop ?? ????????? (lazy init)
-**RID**: polling-lazy-start-fix
-**Why**: start() ?????????? ?? ????????? event loop  RuntimeError  polling ?? ????????
+### 2025-11-08 06:15 - CRITICAL FIX: WebSocket fallback and polling support
+**RID**: wss-polling-fix-001
+**Why**: Order fills were not being detected when the WebSocket connection was unavailable. The Binance adapter relied on WebSocket events and had no REST polling fallback.
 **Changes**:
-- ??????? start() ?? ??????? flag enable (??? create_task)
-- ?????? lazy start ? 	rack_order() - loop ??????? ??? ??????? tracked order
-- ????????, ?? event loop ??? ????? ??? ??? create_task()
-**Impact**: Polling ????? ??????? ??????; ?????????? ?????? EVT:TRADE_EXECUTED
+- Added a _poll_order_status_loop() in binance_adapter.py to poll order status when WebSocket is unavailable (interval ~300ms).
+- Added track_order() to register entry orders for polling.
+- Implemented _emit_fill_event() to emit EVT:TRADE_EXECUTED when a polled order is detected as FILLED.
+- Updated fsm.py to call adapter.track_order(entry_resp) for entry orders so they are tracked by the polling loop.
+- Added start()/stop() controls for the polling task.
+**Impact**: Ensures order fills are detected even without WebSocket connectivity (useful on testnet). Typical detection latency p95 ≈ 300–600 ms.
+**Links**: BRK-HOTFIX-01, POLLING-FIX-01
+
+### 2025-11-08 06:25 - HOTFIX: Lazy initialization of the polling loop
+**RID**: polling-lazy-start-fix
+**Why**: The polling task was being created before an asyncio event loop was available, causing RuntimeError at startup.
+**Changes**:
+- Made start() idempotent and defer creation of the polling task until an event loop is running.
+- Implemented lazy start: the polling loop is started when track_order() is first called if it is not already running.
+**Impact**: Polling starts reliably without raising event-loop related errors and will emit EVT:TRADE_EXECUTED as orders complete.
 **Links**: POLLING-FIX-01 (phase 2)
 
-### 2025-11-08 06:30 - HOTFIX: FILLED ????? ?? ??????????? FSM (Message format)
+### 2025-11-08 06:30 - HOTFIX: Emit filled events as FSM Message objects
 **RID**: polling-message-format-fix
-**Why**: _emit_fill_event() ?????????? dict, ? FSM ????? Message ??'???
+**Why**: _emit_fill_event() previously forwarded raw dict payloads. The FSM expects vfoundation.core.protocol.Message objects.
 **Changes**:
-- ?????? Message ? vfoundation.core.protocol
-- ???????? ??????????? Message(op=EVT, verb=TRADE_EXECUTED, pld={...})
-- ?????? self.fsm_core.handle(message) ??????? emit()
-**Impact**: FSM ????? ??????? FILLED ?????  ??? ??????????? bracket placement
+- Wrap fill payloads in Message(op="EVT", verb="TRADE_EXECUTED", pld={...}) from vfoundation.core.protocol.
+- Use the FSM-compatible emit API to deliver the event instead of passing raw dicts.
+**Impact**: The FSM now receives and processes FILLED events correctly, which is required for downstream bracket placement and state transitions.
 **Links**: POLLING-FIX-01 (phase 3)
 
-### 2025-11-08 06:35 - DEBUG: ?????? ???????? ????????? emit_fill_event
+### 2025-11-08 06:35 - DEBUG: Add diagnostic logging around emit_fill_event
 **RID**: polling-debug-logging
-**Why**: FSM ?? ??????? TRADE_EXECUTED ????? - ???????? ???????????
+**Why**: The FSM was not consistently processing TRADE_EXECUTED events; additional diagnostics were needed to trace the event flow.
 **Changes**:
-- ?????? ???? ?????/????? sm_core.handle() ???????
-- ?????? ????????? ?? sm_core ????????????
-- ?????? 	ype ???? ? pld ??? ManageFlowFSM
-- ????????? result type ?? exception traceback
-**Impact**: ????????? ???????? ?? ????? ???????? ?? FSM ? ?? ????????????
-**Next**: ????????????? ??????? ? ??????????? ???????? ????
+- Added detailed try/except logging around calls to the FSM emit API.
+- Log payload types, event names, and handler results or exception tracebacks to improve observability.
+**Impact**: Improved visibility into the polling-to-FSM flow, making it easier to diagnose and fix issues.
 
-### 2025-11-08 06:40 - CRITICAL FIX: FSMCore.emit() ??????? handle()
+### 2025-11-08 06:40 - CRITICAL FIX: Use the correct FSMCore.emit() API
 **RID**: polling-fsm-emit-fix
-**Why**: AttributeError: 'FSMCore' object has no attribute 'handle' - wrong API
+**Why**: Code mistakenly called a non-existent fsm_core.handle() method, causing AttributeError and preventing events from being delivered to the FSM.
 **Changes**:
-- ???????? self.fsm_core.handle(message) ?? self.fsm_core.emit(event_name, payload, why)
-- ??????????? ?????????? FSMCore API: emit() ??????? handle()
-- Event name format: "EVT:TRADE_EXECUTED"
-**Impact**: ????? ????? ????? ????????? ???????? ?? ExecPosFSM ????? event bus
+- Replace calls to self.fsm_core.handle(message) with self.fsm_core.emit(event_name, payload, why).
+- Standardize event naming (for example: "EVT:TRADE_EXECUTED").
+**Impact**: Restores proper event delivery to ExecPosFSM and the event bus.
 **Links**: POLLING-FIX-01 (phase 4 - FINAL)
 
 ### 2025-11-08 06:45 - FIX: ?????? price ? TRADE_EXECUTED payload
@@ -7185,3 +7316,37 @@ test_polling_cancels_brackets_on_entry_cancelled
 **Next Steps**: Ready for production deployment with centralized order management.
 
 ---
+
+**Audit**:
+- Completed T1 inventory for the alpha/regime/decision stack in docs/audit/alpha_regime/T1_inventory.md.
+---
+
+**Audit**:
+- Captured alpha search/ensemble implementation versus docs in docs/audit/alpha_regime/T2_alpha_ensemble.md.
+---
+
+**Audit**:
+- Documented regime detector inputs, algorithms, and integration in docs/audit/alpha_regime/T3_regime_detector.md.
+---
+
+**Audit**:
+- Captured DecisionMaking's regime/alpha handling in docs/audit/alpha_regime/T4_decision_integration.md.
+---
+
+**Audit**:
+- Summarized config v2 wiring for regimes/alpha decisions in docs/audit/alpha_regime/T5_config_wiring.md.
+---
+
+**Audit**:
+- Captured runtime observability for alpha/regime/decision signals in docs/audit/alpha_regime/T6_runtime_observability.md.
+---
+
+**Audit**:
+- Logged alpha backtest/performance attribution disconnect in docs/audit/alpha_regime/T7_alpha_performance_attribution.md.
+---
+
+**Audit complete**:
+- Alpha+regime audit finalized in docs/audit/alpha_regime/FINAL_ALPHA_REGIME_AUDIT.md.
+- Key findings: ensemble weights still confidence-only, regime multipliers partially unused, regime logging present but lacks weight/PnL details.
+---
+
