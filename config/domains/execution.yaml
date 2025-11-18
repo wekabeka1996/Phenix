@@ -22,6 +22,7 @@ exposure:
 
 manage:
   # from trading.execution.manage.*
+  mode: aggregated_only
   auto: true                         # Enable automatic position management (take-profit, stop-loss)
   brackets:
     enable: true                     # Enable bracket order management with atomic close and cancellation
@@ -43,6 +44,17 @@ manage:
     timeout_sec: 5                   # Timeout for pending order cleanup (seconds)
     atomic_close: true               # Prevent orphaned bracket accumulation
     bracket_tracking: true           # Track SL/TP order IDs per symbol
+    aggregated_oco:
+      enabled: true                  # Enable Aggregated OCO management for TP/SL
+      aggregated_only_mode: true     # Force clean entry/exit orders (no inline TP/SL)
+      recalc_on_scale_in: true       # Rebuild brackets when position grows
+      recalc_on_partial_close: true  # Rebuild brackets when position shrinks
+      ttl_protect_new_bracket_ms: 3000
+      allow_unprotected_position: false
+      watchdog:
+        enabled: true
+        interval_sec: 5
+        auto_heal_orphans: true
   quick_profit:
     enabled: false                   # Quick profit (close when profit target reached) - default disabled
     mode: "fixed_usd"
@@ -99,3 +111,14 @@ brackets:
   timeout_sec: 5
   atomic_close: true
   bracket_tracking: true
+  aggregated_oco:
+    enabled: true
+    aggregated_only_mode: true
+    recalc_on_scale_in: true
+    recalc_on_partial_close: true
+    ttl_protect_new_bracket_ms: 3000
+    allow_unprotected_position: false
+    watchdog:
+      enabled: true
+      interval_sec: 5
+      auto_heal_orphans: true

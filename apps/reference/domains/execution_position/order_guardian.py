@@ -89,6 +89,10 @@ class OrderGuardian:
     def register_brackets(self, **kwargs) -> None:
         return self._impl.register_brackets(**kwargs)
 
+    def register_bracket_set(self, **kwargs) -> BracketSetMeta:  # type: ignore[no-untyped-def]
+        """Register aggregated bracket set for (symbol, side)."""
+        return self._impl.register_bracket_set(**kwargs)
+
     # type: ignore[no-untyped-def]
     def on_fill(self, **kwargs) -> None:
         """Proxy to services guardian on_fill (per-entry fill tracking)."""
@@ -126,6 +130,10 @@ class OrderGuardian:
     # type: ignore[no-untyped-def]
     async def cleanup_other_brackets_for_symbol(self, *args, **kwargs):
         return await self._impl.cleanup_other_brackets_for_symbol(*args, **kwargs)
+
+    # type: ignore[no-untyped-def]
+    def clear_bracket_set_for_position(self, *args, **kwargs):
+        return self._impl.clear_bracket_set_for_position(*args, **kwargs)
 
     # type: ignore[no-untyped-def]
     def rehydrate_bracket_set_for_position(self, *args, **kwargs):

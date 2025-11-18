@@ -23,6 +23,32 @@
   {
     "symbol": "ETHUSDT",
     "step_size": "0.001",
+    "source_config": "docs\\annotated_configs_uk\\archive_trading_v1.annotated.yaml"
+  },
+  {
+    "symbol": "SOLUSDT",
+    "source_config": "docs\\annotated_configs_uk\\instruments.annotated.yaml"
+  },
+  {
+    "symbol": "ETHUSDT",
+    "source_config": "docs\\annotated_configs_uk\\instruments.annotated.yaml"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "source_config": "docs\\annotated_configs_uk\\instruments.annotated.yaml"
+  },
+  {
+    "symbol": "BNBUSDT",
+    "source_config": "docs\\annotated_configs_uk\\instruments.annotated.yaml"
+  },
+  {
+    "symbol": "ETHUSDT",
+    "step_size": "0.001",
+    "source_config": "docs\\annotated_configs_uk\\tests_aurora_trading.annotated.yaml"
+  },
+  {
+    "symbol": "ETHUSDT",
+    "step_size": "0.001",
     "source_config": "tests\\config\\aurora\\trading.yaml"
   }
 ]

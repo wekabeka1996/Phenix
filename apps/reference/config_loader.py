@@ -510,11 +510,8 @@ class ConfigLoader:
         """
         system_config = self._load_yaml_optional("system.yaml") or {}
         trading_config = self._load_yaml_optional("trading.yaml") or {}
-        if not system_config and not trading_config:
-            LOG.warning(
-                f"No legacy system/trading YAML found under {self.config_dir}; "
-                "continuing with defaults and config v2"
-            )
+        # Legacy YAML пакети можуть бути відсутніми після переходу на config v2.
+        # Раніше ми виводили WARNING, але тепер це нормальний шлях, тож попередження прибрано.
 
         # Merge: trading_config (source) → system_config (destination)
         merged_config: Dict[str, Any] = {}

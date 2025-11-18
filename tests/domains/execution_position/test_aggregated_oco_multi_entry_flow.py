@@ -6,12 +6,13 @@ import time
 import types
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import pytest
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+from apps.reference.domains.execution_position.qty_guard import ExecutionQtyGuard
 from apps.reference.services.order_guardian import (
     AggregatedOcoGuardianConfig,
     OrderGuardian,
@@ -140,6 +141,9 @@ class FakeOrderAdapter:
             })
         return result
 
+    def get_position_amt(self, symbol: str, side: str) -> Optional[Decimal]:
+        return self._positions.get((symbol.upper(), side.upper()))
+
     async def get_order(self, symbol: str, order_id: str) -> Dict[str, object]:
         order = self._orders.get(str(order_id))
         return order.to_dict() if order else {}
@@ -156,6 +160,7 @@ class AggregatedOcoHarness:
         aggregated_cfg: Dict[str, object],
         adapter: Optional[FakeOrderAdapter] = None,
         guardian: Optional[OrderGuardian] = None,
+        instrument_profile: Optional[Dict[str, str]] = None,
     ) -> None:
         self.symbol = symbol
         self.entry_side = entry_side.upper()
@@ -174,10 +179,42 @@ class AggregatedOcoHarness:
         )
         manage_config = _build_manage_config(
             self.symbol, aggregated_cfg=aggregated_cfg)
-        self.fsm = ManageFlowFSM(config=manage_config,
-                                 order_guardian=self.guardian)
+        self._avg_price = Decimal("100")
+        self._live_position_provider = self._build_live_snapshot_provider()
+        guard_profile = instrument_profile or {
+            "step_size": "0.0001",
+            "min_qty": "0.0001",
+            "min_notional": "0.001",
+            "source": "aggregated_harness",
+        }
+        qty_guard = ExecutionQtyGuard(
+            instrument_lookup=lambda symbol: guard_profile)
+        self.fsm = ManageFlowFSM(
+            config=manage_config,
+            order_guardian=self.guardian,
+            live_position_provider=self._live_position_provider,
+            qty_guard=qty_guard,
+        )
         self.position_qty = Decimal("0")
         self._install_order_hooks()
+
+    def _build_live_snapshot_provider(self) -> Callable[[], Dict[str, Any]]:
+        def _provider() -> Dict[str, Any]:
+            qty = self.adapter.get_position_amt(self.symbol, self.agg_side)
+            qty_dec = Decimal(qty) if isinstance(qty, Decimal) else Decimal(
+                str(qty)) if qty is not None else Decimal("0")
+            signed_qty = qty_dec if self.agg_side == "LONG" else -qty_dec
+            side = "BUY" if signed_qty >= 0 else "SELL"
+            return {
+                "symbol": self.symbol,
+                "qty": signed_qty,
+                "avg_price": self._avg_price,
+                "side": side,
+                "source": "harness_adapter",
+                "updated_ts": time.time(),
+            }
+
+        return _provider
 
     def _install_order_hooks(self) -> None:
         original_emit = self.fsm._emit_place_order
@@ -238,6 +275,9 @@ class AggregatedOcoHarness:
 
     def open_entry(self, qty: str | float | Decimal, *, enforce_guardian: bool = True) -> None:
         qty_dec = Decimal(str(qty))
+        self.position_qty += qty_dec
+        self.adapter.update_position(
+            self.symbol, self.agg_side, self.position_qty)
         msg = Message(
             op="EVT",
             verb="TRADE_EXECUTED",
@@ -252,14 +292,24 @@ class AggregatedOcoHarness:
             },
         )
         self.fsm.handle(msg)
-        self.position_qty += qty_dec
-        self.adapter.update_position(
-            self.symbol, self.agg_side, self.position_qty)
         if enforce_guardian:
             self._enforce_guardian_guard()
 
-    def partial_close(self, qty: str | float | Decimal) -> None:
+    def partial_close(
+        self,
+        qty: str | float | Decimal,
+        *,
+        final_position_qty: Optional[str | float | Decimal] = None,
+    ) -> None:
         qty_dec = Decimal(str(qty))
+        next_qty = max(Decimal("0"), self.position_qty - qty_dec)
+        if final_position_qty is not None:
+            next_qty = Decimal(str(final_position_qty))
+            if next_qty < 0:
+                next_qty = Decimal("0")
+        self.position_qty = next_qty
+        self.adapter.update_position(
+            self.symbol, self.agg_side, self.position_qty)
         msg = Message(
             op="EVT",
             verb="TRADE_EXECUTED",
@@ -277,15 +327,12 @@ class AggregatedOcoHarness:
             },
         )
         self.fsm.handle(msg)
-        self.position_qty = max(Decimal("0"), self.position_qty - qty_dec)
-        self.adapter.update_position(
-            self.symbol, self.agg_side, self.position_qty)
         self._enforce_guardian_guard()
 
     def full_close(self) -> None:
         if self.position_qty == 0:
             return
-        self.partial_close(self.position_qty)
+        self.partial_close(self.position_qty, final_position_qty=Decimal("0"))
 
     def current_orders(self) -> List[FakeOrder]:
         return self.adapter.snapshot_for_symbol(self.symbol)
@@ -309,9 +356,11 @@ def _build_aggregated_cfg(
     recalc_on_scale_in: bool = True,
     recalc_on_partial_close: bool = True,
     ttl_ms: int = 0,
+    aggregated_only_mode: bool = True,
 ) -> Dict[str, object]:
     return {
         "enabled": True,
+        "aggregated_only_mode": aggregated_only_mode,
         "recalc_on_scale_in": recalc_on_scale_in,
         "recalc_on_partial_close": recalc_on_partial_close,
         "ttl_protect_new_bracket_ms": ttl_ms,

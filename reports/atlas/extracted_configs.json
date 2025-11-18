@@ -1266,8 +1266,8 @@
     ],
     "raw": {
       "thresholds": {
-        "signal_threshold": 0.8,
-        "neutral_threshold": 0.12
+        "signal_threshold": 0.05,
+        "neutral_threshold": 0.1
       },
       "qos": {
         "max_intents_per_minute_per_symbol": 60,
@@ -1305,6 +1305,7 @@
         }
       },
       "manage": {
+        "mode": "aggregated_only",
         "auto": true,
         "brackets": {
           "enable": true,
@@ -1332,7 +1333,20 @@
           },
           "timeout_sec": 5,
           "atomic_close": true,
-          "bracket_tracking": true
+          "bracket_tracking": true,
+          "aggregated_oco": {
+            "enabled": true,
+            "aggregated_only_mode": true,
+            "recalc_on_scale_in": true,
+            "recalc_on_partial_close": true,
+            "ttl_protect_new_bracket_ms": 3000,
+            "allow_unprotected_position": false,
+            "watchdog": {
+              "enabled": true,
+              "interval_sec": 5,
+              "auto_heal_orphans": true
+            }
+          }
         },
         "quick_profit": {
           "enabled": false,
@@ -1350,8 +1364,8 @@
           "unified": true,
           "emit_tidy_event": true,
           "poll_interval_ms": 500,
-          "cleanup_ttl_ms": 6000,
-          "symbol_cooldown_ms": 4000
+          "cleanup_ttl_ms": 700,
+          "symbol_cooldown_ms": 800
         },
         "watchdog": {
           "ack_ttl_ms": 8000,
@@ -1405,7 +1419,20 @@
         },
         "timeout_sec": 5,
         "atomic_close": true,
-        "bracket_tracking": true
+        "bracket_tracking": true,
+        "aggregated_oco": {
+          "enabled": true,
+          "aggregated_only_mode": true,
+          "recalc_on_scale_in": true,
+          "recalc_on_partial_close": true,
+          "ttl_protect_new_bracket_ms": 3000,
+          "allow_unprotected_position": false,
+          "watchdog": {
+            "enabled": true,
+            "interval_sec": 5,
+            "auto_heal_orphans": true
+          }
+        }
       }
     }
   },
@@ -1624,6 +1651,19 @@
         },
         "tp": {
           "fixed_bps": 100
+        },
+        "aggregated_oco": {
+          "enabled": true,
+          "aggregated_only_mode": true,
+          "recalc_on_scale_in": true,
+          "recalc_on_partial_close": true,
+          "ttl_protect_new_bracket_ms": 3000,
+          "allow_unprotected_position": false,
+          "watchdog": {
+            "enabled": true,
+            "interval_sec": 5,
+            "auto_heal_orphans": true
+          }
         }
       },
       "trading": {
@@ -1692,6 +1732,627 @@
       "execution": {
         "manage": {
           "auto": false
+        }
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\archive_system_v1.annotated.yaml": {
+    "keys": [
+      "trading_mode",
+      "logging"
+    ],
+    "raw": {
+      "trading_mode": "testnet",
+      "logging": {
+        "level": "INFO"
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\archive_trading_v1.annotated.yaml": {
+    "keys": [
+      "trading"
+    ],
+    "raw": {
+      "trading": {
+        "mode": "testnet",
+        "decision": {
+          "signal_threshold": 0.1,
+          "position_sizing": {
+            "min_position_size_usd": 10
+          },
+          "signal_weights": {
+            "obi": 0.15,
+            "tfi": 0.15,
+            "delta_price": 0.1,
+            "ema_bias": 0.15,
+            "volume_spike": 0.1,
+            "volatility_state": 0.1,
+            "depth_imbalance": 0.15,
+            "macro_sync": 0.1
+          }
+        },
+        "execution": {
+          "manage": {
+            "quick_profit": {
+              "enabled": true,
+              "mode": "fixed_usd",
+              "target_usd": 2.0,
+              "priority": "highest",
+              "ignore_other_rules": true
+            }
+          }
+        },
+        "instruments": {
+          "ETHUSDT": {
+            "symbol": "ETHUSDT",
+            "step_size": "0.001"
+          }
+        }
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\core.annotated.yaml": {
+    "keys": null,
+    "raw": null
+  },
+  "docs\\annotated_configs_uk\\decision.annotated.yaml": {
+    "keys": [
+      "thresholds",
+      "qos"
+    ],
+    "raw": {
+      "thresholds": {
+        "signal_threshold": 0.05,
+        "neutral_threshold": 0.1
+      },
+      "qos": {
+        "max_intents_per_minute_per_symbol": 60,
+        "symbol_intent_cooldown_sec": 1,
+        "exposure_block_cooldown_sec": 30
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\execution.annotated.yaml": {
+    "keys": [
+      "exposure",
+      "manage",
+      "fallback",
+      "brackets"
+    ],
+    "raw": {
+      "exposure": {
+        "max_equity_utilization_pct": 200.0,
+        "max_portfolio_fraction": 2.0,
+        "max_side_utilization_pct": {
+          "long": 150.0,
+          "short": 150.0
+        },
+        "max_directional_ratio": 3.0,
+        "per_symbol_cap_pct": 8.0,
+        "count_pending_orders": true,
+        "exclude_reduce_only": true,
+        "pending_ttl_sec": 45,
+        "post_fill_hold_ttl_sec": 10,
+        "positions_stale_ttl_sec": 5,
+        "leverage_defaults": {
+          "SOLUSDT": 125,
+          "ETHUSDT": 125,
+          "__default__": 125
+        }
+      },
+      "manage": {
+        "auto": true,
+        "brackets": {
+          "enable": true,
+          "oco_emulation": true,
+          "stop_loss_bps": 50,
+          "take_profit_low_ratio": 0.5,
+          "take_profit_high_ratio": 1.0,
+          "sl": {
+            "fixed_bps": 50
+          },
+          "tp": {
+            "fixed_bps": 100
+          },
+          "offset_bps": 5,
+          "working_type_default": "MARK_PRICE",
+          "price_protect": false,
+          "retry": {
+            "max_attempts": 3,
+            "backoff_ms": [
+              120,
+              250,
+              400
+            ],
+            "fallback_to_limit": true
+          },
+          "timeout_sec": 5,
+          "atomic_close": true,
+          "bracket_tracking": true
+        },
+        "quick_profit": {
+          "enabled": false,
+          "mode": "fixed_usd",
+          "target_usd": 2.0,
+          "priority": "highest",
+          "ignore_other_rules": true
+        },
+        "order_guardian": {
+          "poll_interval_ms": 500,
+          "batch_limit": 50,
+          "rate_limit_per_min": 120
+        },
+        "guardian": {
+          "unified": true,
+          "emit_tidy_event": true,
+          "poll_interval_ms": 500,
+          "cleanup_ttl_ms": 700,
+          "symbol_cooldown_ms": 800
+        },
+        "watchdog": {
+          "ack_ttl_ms": 8000,
+          "fill_ttl_ms": 300000,
+          "check_interval_ms": 1000
+        },
+        "orphan_monitor": {
+          "enabled": true,
+          "run_on_startup": true,
+          "periodic_interval_sec": 90,
+          "min_order_age_sec": 0,
+          "batch_cancel_limit": 50,
+          "rate_limit_per_min": 120,
+          "offset_bps": 30
+        }
+      },
+      "fallback": {
+        "policy": "fail_closed",
+        "risk_reduction_pct": 0.5,
+        "backoff_ms": [
+          200,
+          500,
+          1000
+        ],
+        "max_attempts": 4,
+        "enabled": true
+      },
+      "brackets": {
+        "enable": true,
+        "oco_emulation": true,
+        "stop_loss_bps": 50,
+        "take_profit_low_ratio": 0.5,
+        "take_profit_high_ratio": 1.0,
+        "sl": {
+          "fixed_bps": 50
+        },
+        "tp": {
+          "fixed_bps": 100
+        },
+        "offset_bps": 5,
+        "working_type_default": "MARK_PRICE",
+        "price_protect": false,
+        "retry": {
+          "max_attempts": 3,
+          "backoff_ms": [
+            120,
+            250,
+            400
+          ],
+          "fallback_to_limit": true
+        },
+        "timeout_sec": 5,
+        "atomic_close": true,
+        "bracket_tracking": true
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\features.annotated.yaml": {
+    "keys": [
+      "global",
+      "windows",
+      "features",
+      "macro_sync"
+    ],
+    "raw": {
+      "global": {
+        "enable_new_metrics": true
+      },
+      "windows": {
+        "ema": {
+          "period_short": 3,
+          "period_long": 7
+        },
+        "volume": {
+          "window_sec": 60,
+          "sma_length": 5
+        },
+        "volatility": {
+          "window_sec": 60,
+          "sma_length": 10
+        }
+      },
+      "features": {
+        "ema": {
+          "bias_clamp": 0.02
+        },
+        "volume": {
+          "spike_cap": 3.0
+        },
+        "volatility": {
+          "ratio_cap": 3.0
+        },
+        "liquidity": {
+          "depth_half": 1000,
+          "kappa_min": 0.3,
+          "kappa_max": 1.0
+        }
+      },
+      "macro_sync": {
+        "enabled": true,
+        "anchors": [
+          "BTCUSDT",
+          "ETHUSDT"
+        ],
+        "window": 60
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\instruments.annotated.yaml": {
+    "keys": [
+      "instruments"
+    ],
+    "raw": {
+      "instruments": {
+        "SOLUSDT": {
+          "exchange": "binance",
+          "base_asset": "SOL",
+          "quote_asset": "USDT",
+          "precision": {
+            "quantity": 2,
+            "price": 2
+          },
+          "limits": {
+            "min_notional": 10.0,
+            "min_qty": 0.01,
+            "min_price": 0.01,
+            "step_size": 0.01,
+            "tick_size": 0.01,
+            "max_position_size": 5.0,
+            "max_leverage": 20
+          }
+        },
+        "ETHUSDT": {
+          "exchange": "binance",
+          "base_asset": "ETH",
+          "quote_asset": "USDT",
+          "precision": {
+            "quantity": 3,
+            "price": 2
+          },
+          "limits": {
+            "min_notional": 10.0,
+            "min_qty": 0.001,
+            "min_price": 0.01,
+            "step_size": 0.001,
+            "tick_size": 0.01,
+            "max_position_size": 5.0,
+            "max_leverage": 20
+          }
+        },
+        "BTCUSDT": {
+          "exchange": "binance",
+          "base_asset": "BTC",
+          "quote_asset": "USDT",
+          "precision": {
+            "quantity": 3,
+            "price": 2
+          },
+          "limits": {
+            "min_notional": 10.0,
+            "min_qty": 0.001,
+            "min_price": 0.1,
+            "step_size": 0.001,
+            "tick_size": 0.1,
+            "max_position_size": 3.0,
+            "max_leverage": 20
+          }
+        },
+        "BNBUSDT": {
+          "exchange": "binance",
+          "base_asset": "BNB",
+          "quote_asset": "USDT",
+          "precision": {
+            "quantity": 2,
+            "price": 2
+          },
+          "limits": {
+            "min_notional": 10.0,
+            "min_qty": 0.01,
+            "min_price": 0.01,
+            "step_size": 0.01,
+            "tick_size": 0.01,
+            "max_position_size": 5.0,
+            "max_leverage": 20
+          }
+        }
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\modes.annotated.yaml": {
+    "keys": [
+      "profiles"
+    ],
+    "raw": {
+      "profiles": {
+        "shadow_live": {
+          "trading_mode": "shadow_live",
+          "domains": {
+            "market_data": "live",
+            "feature_engineering": "live",
+            "decision_making": "live",
+            "risk_management": "testnet",
+            "execution_position": "testnet",
+            "audit_trail": "live"
+          }
+        },
+        "full_live": {
+          "trading_mode": "full_testnet",
+          "domains": {
+            "market_data": "testnet",
+            "feature_engineering": "testnet",
+            "decision_making": "testnet",
+            "risk_management": "testnet",
+            "execution_position": "testnet",
+            "audit_trail": "testnet"
+          }
+        },
+        "full_testnet": {
+          "trading_mode": "full_testnet",
+          "domains": {
+            "market_data": "testnet",
+            "feature_engineering": "testnet",
+            "decision_making": "testnet",
+            "risk_management": "testnet",
+            "execution_position": "testnet",
+            "audit_trail": "testnet"
+          }
+        }
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\overrides.annotated.yaml": {
+    "keys": [
+      "symbols"
+    ],
+    "raw": {
+      "symbols": {
+        "SOLUSDT": {
+          "limits": {
+            "max_leverage": 125
+          }
+        },
+        "ETHUSDT": {
+          "limits": {
+            "max_leverage": 125
+          },
+          "risk": {
+            "sizing_modifiers": {
+              "HIGH_VOLATILITY": 0.6,
+              "LOW_VOLATILITY": 1.2,
+              "MEAN_REVERSION": 0.5,
+              "UNCERTAIN": 0.5
+            }
+          }
+        },
+        "BTCUSDT": {
+          "limits": {
+            "max_leverage": 125
+          }
+        },
+        "BNBUSDT": {
+          "limits": {
+            "max_leverage": 125
+          }
+        }
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\regimes.annotated.yaml": {
+    "keys": [
+      "detector",
+      "regimes",
+      "hotreload"
+    ],
+    "raw": {
+      "detector": {
+        "window_minutes": 2,
+        "min_regime_duration_min": 15,
+        "debounce_changes": true
+      },
+      "regimes": {
+        "NORMAL": {
+          "vol_std_bps_min": 0,
+          "vol_std_bps_max": 80
+        },
+        "HIGH_VOLATILITY": {
+          "vol_std_bps_min": 80,
+          "vol_std_bps_max": 200
+        },
+        "CRISIS": {
+          "vol_std_bps_min": 200,
+          "vol_std_bps_max": 10000
+        }
+      },
+      "hotreload": {
+        "allowed": [
+          "NORMAL",
+          "HIGH_VOLATILITY",
+          "CRISIS"
+        ]
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\risk.annotated.yaml": {
+    "keys": [
+      "daily_limits",
+      "soft_limits",
+      "score_weights",
+      "trading_allowed_thresholds",
+      "budgets",
+      "data_sources"
+    ],
+    "raw": {
+      "daily_limits": {
+        "max_drawdown_pct": 5.0,
+        "max_loss_pct": 2.0,
+        "max_loss_usd": 250.0,
+        "reset_time_utc": "00:00"
+      },
+      "soft_limits": {
+        "mode": "clip",
+        "clip_min_notional_usdt": 10.0,
+        "directional_ratio_max": 3.0,
+        "side_exposure_usdt": 600.0,
+        "margin_exposure_usdt": 1100.0
+      },
+      "score_weights": {
+        "delta_price_pct": 0.05,
+        "obi": 0.35,
+        "tfi": 0.35,
+        "absorption_inverse": 0.25
+      },
+      "trading_allowed_thresholds": {
+        "max_risk_score": 0.9,
+        "overrides": {
+          "testnet": 0.87,
+          "production": 0.8
+        }
+      },
+      "budgets": {
+        "max_portfolio_risk_pct": 5.0,
+        "max_single_position_risk_pct": 1.0,
+        "max_daily_loss_pct": 2.0
+      },
+      "data_sources": {
+        "portfolio_state": "testnet",
+        "market_data": "live"
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\sizing.annotated.yaml": {
+    "keys": [
+      "defaults",
+      "symbols",
+      "regimes"
+    ],
+    "raw": {
+      "defaults": {
+        "mode": "fixed_risk_pct",
+        "max_risk_pct": 1.0,
+        "max_risk_usd": 50.0,
+        "min_notional_usd": 10.0,
+        "max_notional_usd": 10000.0,
+        "liquidity_kappa": 1.0,
+        "liquidity_kappa_mode": "dynamic",
+        "kelly": {
+          "base_probability": 0.55,
+          "kelly_cap": 0.25,
+          "kelly_alpha": 0.8,
+          "payoff_ratio_r": 2.0
+        }
+      },
+      "symbols": {},
+      "regimes": {
+        "HIGH_VOLATILITY": 0.6,
+        "LOW_VOLATILITY": 1.2,
+        "MEAN_REVERSION": 0.5,
+        "UNCERTAIN": 0.5
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\symbols.annotated.yaml": {
+    "keys": [
+      "symbols",
+      "filters"
+    ],
+    "raw": {
+      "symbols": [
+        "SOLUSDT",
+        "ETHUSDT",
+        "BTCUSDT",
+        "BNBUSDT"
+      ],
+      "filters": {
+        "min_volume_24h": 1000000
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\tca.annotated.yaml": {
+    "keys": [
+      "prefs"
+    ],
+    "raw": {
+      "prefs": {
+        "max_slippage_pct": 0.5,
+        "preferred_venue": "binance",
+        "execution_priority": "speed",
+        "routing": {
+          "fallback": "limit",
+          "allow_post_only": false
+        }
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\tests_aurora_system.annotated.yaml": {
+    "keys": [
+      "trading_mode",
+      "logging"
+    ],
+    "raw": {
+      "trading_mode": "testnet",
+      "logging": {
+        "level": "INFO"
+      }
+    }
+  },
+  "docs\\annotated_configs_uk\\tests_aurora_trading.annotated.yaml": {
+    "keys": [
+      "trading"
+    ],
+    "raw": {
+      "trading": {
+        "mode": "testnet",
+        "decision": {
+          "signal_threshold": 0.1,
+          "position_sizing": {
+            "min_position_size_usd": 10
+          },
+          "signal_weights": {
+            "obi": 0.15,
+            "tfi": 0.15,
+            "delta_price": 0.1,
+            "ema_bias": 0.15,
+            "volume_spike": 0.1,
+            "volatility_state": 0.1,
+            "depth_imbalance": 0.15,
+            "macro_sync": 0.1
+          }
+        },
+        "execution": {
+          "manage": {
+            "quick_profit": {
+              "enabled": true,
+              "mode": "fixed_usd",
+              "target_usd": 2.0,
+              "priority": "highest",
+              "ignore_other_rules": true
+            }
+          }
+        },
+        "instruments": {
+          "ETHUSDT": {
+            "symbol": "ETHUSDT",
+            "step_size": "0.001"
+          }
         }
       }
     }

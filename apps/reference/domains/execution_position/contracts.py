@@ -18,6 +18,47 @@ class Side(str, Enum):
     SELL = "SELL"
 
 
+class PositionSide(str, Enum):
+    """Canonical position side used by aggregated OCO/guardian paths."""
+
+    LONG = "LONG"
+    SHORT = "SHORT"
+    FLAT = "FLAT"
+
+
+def canonicalize_position_side(value: Optional[str]) -> Optional[PositionSide]:
+    """Map raw BUY/SELL strings (any casing) to LONG/SHORT."""
+
+    if value is None:
+        return None
+    normalized = str(value).strip().upper()
+    if not normalized:
+        return None
+    if normalized in {"LONG", "BUY"}:
+        return PositionSide.LONG
+    if normalized in {"SHORT", "SELL"}:
+        return PositionSide.SHORT
+    if normalized == "FLAT":
+        return PositionSide.FLAT
+    return None
+
+
+def canonicalize_position_side_from_qty(position_qty: Optional[Decimal]) -> PositionSide:
+    """Infer canonical position side directly from signed position quantity."""
+
+    if position_qty is None:
+        return PositionSide.FLAT
+    try:
+        qty = Decimal(str(position_qty))
+    except (InvalidOperation, ValueError, TypeError):
+        return PositionSide.FLAT
+    if qty > 0:
+        return PositionSide.LONG
+    if qty < 0:
+        return PositionSide.SHORT
+    return PositionSide.FLAT
+
+
 class OrderType(str, Enum):
     """Order type"""
 

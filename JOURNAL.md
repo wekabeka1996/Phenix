@@ -1,5 +1,59 @@
 # Aurora FSM Development Journal
 
+## 2025-11-18 | RID: OCO-11.14_CLIENT_ID_LENGTH_CAP
+
+- Aggregated-only ManageFlow FSM now enforces Binance's 36-character client order ID cap via a dedicated helper (`CLIENT_ORDER_ID_MAX_LEN = 36`), sanitized seeds, and suffix-aware trimming for emergency/trailing stops so `_sl/_tp` IDs and long suffixes never exceed exchange limits.
+- `_normalize_reduce_only_qty` guards now run before aggregated bracket placement and log skipped emissions, while `_compose_client_order_id` and `_build_sl_tp_client_ids` keep bracket set IDs stable and per-order suffixes compliant.
+- Added regression tests (`test_client_id_helper_caps_length`, `test_agg_oco_fill_to_brackets_pipeline`) under `tests/units/test_manage_flow_aggregated_oco.py` and tightened emergency/trailing ID generation to reuse the helper logic.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/units/test_manage_flow_aggregated_oco.py -q`
+
+## 2025-11-18 | RID: OCO-11.14_EXECUTE_DEC_PLACE_ORDER
+
+- ExecPosFSM `_execute_decision` отримав fail-closed гілку для `DEC:PLACE_ORDER`: контракт ManageFlow не переобчислюється, а payload валідовано (symbol/order_type/side/qty/stopPrice, reduceOnly/closePosition) і напряму передається в відповідні методи адаптера (`place_stop_market_close_position`, `place_take_profit_market_close_position`, `place_limit_reduce_only`).
+- Додано буфер `_aggregated_bracket_buffer` та лог `AGG_OCO_BRACKETS_PLACED`, що спрацьовує коли SL+TP з одного `_sl/_tp` clientId успішно встановлені; ManageFlow синхронізується через `set_bracket_ids`, а `_symbol_brackets` поповнюються для подальших CLOSE/guardian сценаріїв.
+- Нові тести покривають як unit (`test_execpos_place_order_decisions.py`) так і інтеграційний aggregated-only runtime (`test_agg_oco_fill_to_brackets_pipeline.py::test_execpos_executes_manageflow_bracket_decisions_runtime`), які перевіряють реальний виклик адаптера та появу логу `AGG_OCO_BRACKETS_PLACED` після подвійного DEC.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_execpos_place_order_decisions.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position -q`
+
+## 2025-11-18 | RID: OCO-11.14_CONFIG_V2_MODE_ENFORCEMENT
+
+- ExecutionManageConfig тепер явно повертає `mode`, а резолвер читає тільки config v2 (`config_v2.domains.execution.manage`) → legacy вузли більше не впливають на контракт; введено `_ALLOWED_MANAGE_MODES` та `_normalize_manage_mode`, які валідують aggregated-only інваріанти (`recalc_on_partial_close`, `allow_unprotected_position`, watchdog gates) і відразу кидають `ConfigError` замість fallback.
+- AggregatedOcoConfig отримав поле `aggregated_only_mode`, ManageFlowFSM більше не вгадує цей прапор з legacy конфігів; у тестових harness (`test_aggregated_oco_scale_in_legacy.py`) тепер генерується `config_v2` блок і все aggregated-only покриває вимоги (включно з `mode="aggregated_only"`).
+- Тест `test_manage_config_aggregated_modes.py` переписаний під `config_v2` (без `trading.execution.manage`), що забезпечує контрактний smoke для нових валідацій і відловлює заборонені legacy змішування.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_manage_config_aggregated_modes.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position -q`
+
+## 2025-11-18 | RID: OCO-11.14_QTY_GUARD_AND_PARTIAL_CLOSE
+
+- ExecutionQtyGuard тепер читає `min_qty`, `step_size` та `min_notional` навіть тоді, коли профіль інструмента приходить у v2-форматі з вкладеним `limits`, тому aggregated-only guard не падає на дефолти та гарантує fail-closed шлях для DEC.
+- ManageFlowFSM визначає `aggregated_only_mode` напряму з сирого config (`manage.mode` або `brackets.aggregated_oco.aggregated_only_mode`) і передає через нього весь aggregated-only pipeline: `_normalize_reduce_only_qty` запускає guard, а `_place_or_update_bracket_set_from_levels` використовує абсолютну net-qty зі snapshot.
+- Aggregated partial-close та scale-in тепер завжди покладаються на live position snapshot → Guard/OrderGuardian отримують одну й ту ж нормалізовану кількість, що синхронізує тести з фактичним контрактом.
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_min_qty_guard_runtime.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py::test_partial_close_rebuilds_brackets_based_on_position_snapshot -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py::test_scale_in_and_partial_close_share_same_recalc_path -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position -q` *(5 відомих фейлів у `test_manage_config_aggregated_modes.py` через відсутній `ExecutionManageConfig.mode`, left as-is per scope)*
+
+## 2025-11-18 | RID: OCO-11.13_AGG_OCO_DOMAIN_TESTS
+
+- Додано інтеграційний тест `test_agg_oco_fill_to_brackets_pipeline.py`, який через новий harness (`agg_oco_test_utils.make_execpos`) перевіряє, що watchdog `TRADE_EXECUTED` для aggregated-only ExecPosFSM приводить до виклику ManageFlow `_place_brackets_aggregated`, spy на методі рахує звернення, а логи `AGG_OCO_COMPUTE_*` гарантують запуск pure-агрегатора навіть без `AGG_OCO_HANDLE_FILL` (останній з’являється лише під час recalc flows, тому тест переведено на фактичні сигнали).
+- Підтверджено canonicalization шляху: новий тест `test_agg_oco_side_canonicalization.py` перевіряє `canonicalize_position_side_from_qty` та відсутність попереджень про `unsupported_position_side` при aggregated-only fill-ах, щоб PositionSide contracts не регресували.
+- Прогнано всю обов’язкову pytest-матрицю для OCO-11.13 (pipeline + canonicalization + state dump + symbol profiles) після виправлень; журнальний запис зафіксував RID і WHY (посилення aggregated-only контрактів).
+
+### Tests
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_fill_to_brackets_pipeline.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_side_canonicalization.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_state_dump.py -v`
+- `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_symbol_profiles.py -v`
+
 ## EP-MCFG-ENC-01 — Нормалізація manage_config.py
 
 - manage_config.py переведено з UTF-16 у UTF-8 без зміни логіки та додано `# -*- coding: utf-8 -*-` на початку.

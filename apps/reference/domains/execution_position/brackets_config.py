@@ -1,21 +1,10 @@
 """Brackets configuration resolver for execution_position domain.
 
 This helper centralises TP/SL resolution so that:
-- ManageFlowFSM, ExecPosFSM and other consumers share the same precedence rules.
-- Canonical keys (`sl.fixed_bps`, `tp.fixed_bps`, `offset_bps`) are treated as
-  single source of truth.
-- Legacy keys (`stop_loss_bps`, `take_profit_low_ratio`, `take_profit_high_ratio`)
-  remain as fallbacks with warning instrumentation.
-
-Kelly-specific behaviour:
-- When only legacy ratios are present, the resolver translates them into
-    `tp_bps` for downstream Kelly payoff calculations. Consumers do not need to
-    read ratio keys directly.
-
-Inventory of current readers (2025-11-13):
-- ManageFlowFSM (`fsm_manage.py`): bracket placement + validation.
-- ExecPosFSM (`fsm.py`): TP/SL preview during DEC:OPEN path.
-- DecisionMaking (`decision_making.py`): Kelly payoff ratio computation.
+- ManageFlowFSM (`fsm_manage.py`), ExecPosFSM (`fsm.py`), and DecisionMaking
+  share the same precedence rules.
+- Canonical keys (`sl.fixed_bps`, `tp.fixed_bps`, `offset_bps`) under
+  `config_v2.domains.execution.brackets` serve as the single source of truth.
 
 The resolver works with both dict configs and Pydantic `AuroraConfig` models
 without mutating the original structure.
@@ -24,14 +13,26 @@ without mutating the original structure.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Optional
 
 LOG = logging.getLogger(__name__)
 
-_LEGACY_WARNINGS_EMITTED: set[tuple[str, Optional[str]]] = set()
-_MANAGE_BRACKETS_WARNED = False
+_BRACKETS_WARNING_CACHE: set[str] = set()
+
+
+def clear_brackets_warning_cache() -> None:
+    """Reset warning cache to allow emitting warnings again (testing helper)."""
+
+    _BRACKETS_WARNING_CACHE.clear()
+
+
+def _warn_once(key: str, message: str) -> None:
+    if key in _BRACKETS_WARNING_CACHE:
+        return
+    _BRACKETS_WARNING_CACHE.add(key)
+    LOG.warning(message)
 
 
 def _ensure_mapping(candidate: Any) -> Optional[Dict[str, Any]]:
@@ -49,25 +50,58 @@ def _ensure_mapping(candidate: Any) -> Optional[Dict[str, Any]]:
 
 def _get_v2_execution_brackets_cfg(cfg: Any) -> Optional[Dict[str, Any]]:
     """Return canonical execution.brackets block (or manage.brackets fallback) if present."""
-    global _MANAGE_BRACKETS_WARNED
 
-    # Check if cfg is AuroraConfig with config_v2
-    if not hasattr(cfg, 'config_v2') or cfg.config_v2 is None:
+    execution_domain = _ensure_mapping(
+        _pluck(cfg, "config_v2", "domains", "execution")
+    )
+    if not execution_domain:
         return None
 
-    primary_cfg = _ensure_mapping(
-        _pluck(cfg, 'config_v2', 'domains', 'execution', 'brackets'))
+    primary_cfg = _ensure_mapping(execution_domain.get("brackets"))
     if primary_cfg is not None:
         return primary_cfg
 
-    manage_cfg = _ensure_mapping(
-        _pluck(cfg, 'config_v2', 'domains', 'execution', 'manage', 'brackets'))
-    if manage_cfg is not None and not _MANAGE_BRACKETS_WARNED:
-        LOG.warning(
-            "config_v2.execution.manage.brackets is deprecated; move data to execution.brackets"
+    fallback_cfg = _ensure_mapping(
+        _pluck(execution_domain, "manage", "brackets")
+    )
+    if fallback_cfg is not None:
+        _warn_once(
+            "config_v2_manage_brackets",
+            "execution.manage.brackets detected under config_v2; migrate to execution.brackets",
         )
-        _MANAGE_BRACKETS_WARNED = True
-    return manage_cfg
+        return fallback_cfg
+
+    return None
+
+
+def _get_legacy_execution_brackets_cfg(cfg: Any) -> Optional[Dict[str, Any]]:
+    """Return legacy execution.manage.brackets nodes when config_v2 is absent or invalid."""
+
+    execution_block = _ensure_mapping(_pluck(cfg, "execution"))
+    if execution_block:
+        primary_cfg = _ensure_mapping(execution_block.get("brackets"))
+        if primary_cfg is not None:
+            return primary_cfg
+        fallback_cfg = _ensure_mapping(
+            _pluck(execution_block, "manage", "brackets")
+        )
+        if fallback_cfg is not None:
+            return fallback_cfg
+
+    trading_exec_block = _ensure_mapping(
+        _pluck(cfg, "trading", "execution")
+    )
+    if trading_exec_block:
+        primary_cfg = _ensure_mapping(trading_exec_block.get("brackets"))
+        if primary_cfg is not None:
+            return primary_cfg
+        fallback_cfg = _ensure_mapping(
+            _pluck(trading_exec_block, "manage", "brackets")
+        )
+        if fallback_cfg is not None:
+            return fallback_cfg
+
+    return None
 
 
 def _pluck(obj: Any, *path: str) -> Any:
@@ -103,26 +137,6 @@ def _coerce_decimal(value: Any) -> Optional[Decimal]:
     return None
 
 
-def _log_legacy_once(key: str, symbol: Optional[str]) -> None:
-    cache_key = (key, symbol)
-    if cache_key in _LEGACY_WARNINGS_EMITTED:
-        return
-    _LEGACY_WARNINGS_EMITTED.add(cache_key)
-    scope = f" for symbol {symbol}" if symbol else ""
-    LOG.warning(
-        "Using legacy trading.execution.manage.brackets.%s%s; migrate to canonical fixed_bps keys",
-        key,
-        scope,
-    )
-
-
-def clear_brackets_warning_cache() -> None:
-    """Reset module-level warning caches (intended for tests)."""
-    global _MANAGE_BRACKETS_WARNED
-    _LEGACY_WARNINGS_EMITTED.clear()
-    _MANAGE_BRACKETS_WARNED = False
-
-
 @dataclass(frozen=True)
 class ResolvedBrackets:
     sl_bps: Decimal
@@ -130,7 +144,7 @@ class ResolvedBrackets:
     offset_bps: int
     sl_source: str
     tp_source: str
-    source: str = "legacy"
+    source: str = "config_v2"
 
 
 DEFAULT_SL_BPS = Decimal("50")
@@ -138,77 +152,11 @@ DEFAULT_TP_BPS = Decimal("100")
 DEFAULT_OFFSET_BPS = 5
 
 
-def _build_brackets_from_legacy(config: Any, symbol: Optional[str] = None) -> ResolvedBrackets:
-    """Legacy logic for brackets config."""
-    # Allow configs that embed trading.* at top-level
-    brackets_cfg = _pluck(config, "trading", "execution", "manage", "brackets")
-    if not brackets_cfg:
-        brackets_cfg = _pluck(config, "trading", "execution", "brackets")
-
-    sl_bps = DEFAULT_SL_BPS
-    tp_bps = DEFAULT_TP_BPS
-    sl_source = "default"
-    tp_source = "default"
-
-    if brackets_cfg:
-        sl_cfg = _pluck(brackets_cfg, "sl")
-        sl_fixed = _coerce_decimal(
-            _pluck(sl_cfg, "fixed_bps")) if sl_cfg else None
-        if sl_fixed is not None:
-            sl_bps = sl_fixed
-            sl_source = "sl.fixed_bps"
-        else:
-            legacy_sl = _coerce_decimal(_pluck(brackets_cfg, "stop_loss_bps"))
-            if legacy_sl is not None:
-                sl_bps = legacy_sl
-                sl_source = "stop_loss_bps"
-                _log_legacy_once("stop_loss_bps", symbol)
-
-        tp_cfg = _pluck(brackets_cfg, "tp")
-        tp_fixed = _coerce_decimal(
-            _pluck(tp_cfg, "fixed_bps")) if tp_cfg else None
-        if tp_fixed is not None:
-            tp_bps = tp_fixed
-            tp_source = "tp.fixed_bps"
-        else:
-            legacy_high = _coerce_decimal(
-                _pluck(brackets_cfg, "take_profit_high_ratio")
-            )
-            legacy_low = _coerce_decimal(
-                _pluck(brackets_cfg, "take_profit_low_ratio")
-            )
-            if legacy_high is not None and sl_bps is not None:
-                tp_bps = Decimal(
-                    str(int(round(float(sl_bps) * float(legacy_high))))
-                )
-                tp_source = "take_profit_high_ratio"
-                _log_legacy_once("take_profit_high_ratio", symbol)
-            elif legacy_low is not None and sl_bps is not None:
-                tp_bps = Decimal(
-                    str(int(round(float(sl_bps) * float(legacy_low))))
-                )
-                tp_source = "take_profit_low_ratio"
-                _log_legacy_once("take_profit_low_ratio", symbol)
-
-    offset_raw = _pluck(brackets_cfg, "offset_bps") if brackets_cfg else None
-    offset_bps = DEFAULT_OFFSET_BPS
-    if isinstance(offset_raw, (int, float)):
-        offset_bps = int(offset_raw)
-    elif isinstance(offset_raw, str):
-        try:
-            offset_bps = int(float(offset_raw))
-        except ValueError:
-            LOG.warning(
-                "Invalid offset_bps '%s' in trading.execution.manage.brackets", offset_raw
-            )
-
-    return ResolvedBrackets(
-        sl_bps=sl_bps,
-        tp_bps=tp_bps,
-        offset_bps=offset_bps,
-        sl_source=sl_source,
-        tp_source=tp_source,
-        source="legacy",
+def _log_legacy_usage(field: str, symbol: Optional[str]) -> None:
+    LOG.warning(
+        "legacy execution.brackets field '%s' used for symbol=%s; migrate to canonical sl/tp.fixed_bps",
+        field,
+        symbol or "GLOBAL",
     )
 
 
@@ -250,6 +198,34 @@ def _build_brackets_from_v2(v2_cfg: Dict[str, Any], symbol: Optional[str] = None
         else:
             raise ValueError(f"Invalid offset_bps type: {type(offset_raw)}")
 
+    legacy_cfg = v2_cfg or {}
+
+    if sl_source == "default":
+        legacy_sl_raw = legacy_cfg.get("stop_loss_bps")
+        if legacy_sl_raw is not None:
+            legacy_sl = _coerce_decimal(legacy_sl_raw)
+            if legacy_sl is None:
+                raise ValueError(
+                    f"Invalid stop_loss_bps value: {legacy_sl_raw}")
+            sl_bps = legacy_sl
+            sl_source = "stop_loss_bps"
+            _log_legacy_usage("stop_loss_bps", symbol)
+
+    if tp_source == "default":
+        for ratio_key in ("take_profit_high_ratio", "take_profit_low_ratio"):
+            ratio_raw = legacy_cfg.get(ratio_key)
+            if ratio_raw is None:
+                continue
+            ratio = _coerce_decimal(ratio_raw)
+            if ratio is None:
+                raise ValueError(f"Invalid {ratio_key} value: {ratio_raw}")
+            if ratio <= 0:
+                raise ValueError(f"{ratio_key} must be positive")
+            tp_bps = (sl_bps * ratio).quantize(Decimal("1"))
+            tp_source = ratio_key
+            _log_legacy_usage(ratio_key, symbol)
+            break
+
     return ResolvedBrackets(
         sl_bps=sl_bps,
         tp_bps=tp_bps,
@@ -260,22 +236,30 @@ def _build_brackets_from_v2(v2_cfg: Dict[str, Any], symbol: Optional[str] = None
     )
 
 
-def resolve_brackets_config(config: Any, *, symbol: Optional[str] = None) -> ResolvedBrackets:
-    """Resolve TP/SL basis points and offset_bps from trading config.
+def _build_brackets_from_legacy(legacy_cfg: Optional[Dict[str, Any]], symbol: Optional[str] = None) -> ResolvedBrackets:
+    resolved = _build_brackets_from_v2(legacy_cfg or {}, symbol)
+    return replace(resolved, source="legacy")
 
-    Precedence rules (per task spec):
-    1. Canonical keys `sl.fixed_bps` / `tp.fixed_bps` / `offset_bps`.
-    2. Legacy `stop_loss_bps`, `take_profit_high_ratio`, `take_profit_low_ratio`.
-    3. Defaults (50/100/5) if nothing configured.
-    """
+
+def resolve_brackets_config(config: Any, *, symbol: Optional[str] = None) -> ResolvedBrackets:
+    """Resolve TP/SL basis points and offset_bps from the execution domain config."""
 
     v2_cfg = _get_v2_execution_brackets_cfg(config)
-    if v2_cfg is not None:
+    if v2_cfg:
         try:
             return _build_brackets_from_v2(v2_cfg, symbol)
-        except Exception as e:
+        except ValueError as exc:
             LOG.warning(
-                "Failed to build brackets config from v2, falling back to legacy: %s", e)
-            return _build_brackets_from_legacy(config, symbol)
-    else:
-        return _build_brackets_from_legacy(config, symbol)
+                "Failed to build execution.brackets from config_v2, falling back to legacy: %s",
+                exc,
+            )
+
+    legacy_cfg = _get_legacy_execution_brackets_cfg(config)
+    if legacy_cfg:
+        return _build_brackets_from_legacy(legacy_cfg, symbol)
+
+    LOG.debug(
+        "execution.brackets config missing; using defaults for symbol=%s",
+        symbol,
+    )
+    return _build_brackets_from_legacy({}, symbol)

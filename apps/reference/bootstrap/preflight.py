@@ -41,7 +41,13 @@ def check_hybrid_coherence(cfg) -> Tuple[bool, List[str]]:
     mode_label = "hybrid_testnet"
 
     # 1) data must be live if будь-який з data-доменів live
-    modes = compute_effective_trading_modes(cfg)
+    cfg_for_modes = cfg
+    # AuroraConfig.to_dict() returns AuroraConfigDict with config_v2 attribute that
+    # still points to repo-level modes. During isolated tests we only want the
+    # serialized payload, so strip the auxiliary attribute to avoid cross-contamination.
+    if hasattr(cfg_for_modes, "config_v2"):
+        cfg_for_modes = dict(cfg_for_modes)
+    modes = compute_effective_trading_modes(cfg_for_modes)
     any_live = any(
         modes.domain_modes.get(domain) == "live"
         for domain in ("market_data", "feature_engineering", "decision_making")

@@ -1,0 +1,476 @@
+﻿# Combined config file merging config YAML layers (excludes archive directory).
+
+
+# Source: config/core.yaml
+---
+# v2 config for core system settings (skeleton)
+# See docs/config_v2/specification.md for full structure.
+#
+# Intended fields (not yet active):
+# logging:
+#   level: INFO
+#   file: logs/aurora_core.log
+#   format: json
+#   rotation:
+#     max_bytes: 10485760
+#     backup_count: 5
+# system:
+#   hardening:
+#     ttl_config:
+#       entry_place_ttl_ms: 5000
+#       ...
+#   ops:
+#     metrics_url: http://127.0.0.1:8000/metrics
+#     reports_dir: reports
+#   account_observer:
+#     poll_interval: 30
+
+
+# Source: config/domains/decision.yaml
+---
+# v2 config for decision domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+thresholds:
+  signal_threshold: 0.05      # from trading.decision.signal_threshold
+  neutral_threshold: 0.10     # from trading.decision.neutral_threshold
+
+qos:
+  max_intents_per_minute_per_symbol: 60  # from trading.decision.qos.max_intents_per_minute_per_symbol
+  symbol_intent_cooldown_sec: 1          # from trading.decision.qos.symbol_intent_cooldown_sec
+  exposure_block_cooldown_sec: 30        # from trading.decision.qos.exposure_block_cooldown_sec
+
+
+# Source: config/domains/execution.yaml
+---
+# v2 config for execution domain
+# See docs/config_v2/specification.md for full contract.
+
+exposure:
+  # from trading.execution.exposure.*
+  max_equity_utilization_pct: 200.0  # matches trading.execution.exposure.max_equity_utilization_pct (percent scale, 200% testnet)
+  max_portfolio_fraction: 2.00       # Notional-based fallback: max 200% for testnet
+  max_side_utilization_pct:
+    long: 150.0                      # Testnet: allow 150% for testing
+    short: 150.0                     # Testnet: allow 150% for testing
+  max_directional_ratio: 3.0         # Max ratio between long and short margin (3:1)
+  per_symbol_cap_pct: 8.0            # Max 8% of equity per symbol per side
+  count_pending_orders: true
+  exclude_reduce_only: true
+  pending_ttl_sec: 45                # Reduced from 90 for faster cleanup on testnet
+  post_fill_hold_ttl_sec: 10         # Hold filled intents a bit longer to avoid churn
+  positions_stale_ttl_sec: 5         # Consider reserved capacity stale quickly on testnet
+  leverage_defaults:                 # Leverage per symbol - testnet high leverage
+    SOLUSDT: 125
+    ETHUSDT: 125
+    __default__: 125
+
+manage:
+  # from trading.execution.manage.*
+  mode: aggregated_only
+  auto: true                         # Enable automatic position management (take-profit, stop-loss)
+  brackets:
+    enable: true                     # Enable bracket order management with atomic close and cancellation
+    oco_emulation: true              # Enable OCO emulation: when SL or TP fills, cancel the counterpart
+    stop_loss_bps: 50                # Fallback distance in bps, used by Kelly calculation
+    take_profit_low_ratio: 0.5       # Used if tp.fixed_bps not set
+    take_profit_high_ratio: 1.0      # Used if tp.fixed_bps not set
+    sl:
+      fixed_bps: 50                  # Priority over stop_loss_bps for SL calculation
+    tp:
+      fixed_bps: 100                 # Priority over take_profit_*_ratio for TP calculation
+    offset_bps: 5                    # Safety offset to apply before placing SL/TP (avoids -2021 errors)
+    working_type_default: "MARK_PRICE"  # Default workingType for SL/TP orders
+    price_protect: false             # Set priceProtect=true for SL/TP to prevent slippage
+    retry:
+      max_attempts: 3                # Max retry attempts for -2021/-4116/-4137 errors
+      backoff_ms: [120, 250, 400]    # Exponential backoff (ms)
+      fallback_to_limit: true        # After max retries on -2021, fallback to LIMIT order
+    timeout_sec: 5                   # Timeout for pending order cleanup (seconds)
+    atomic_close: true               # Prevent orphaned bracket accumulation
+    bracket_tracking: true           # Track SL/TP order IDs per symbol
+    aggregated_oco:
+      enabled: true                  # Enable Aggregated OCO management for TP/SL
+      aggregated_only_mode: true     # Force clean entry/exit orders (no inline TP/SL)
+      recalc_on_scale_in: true       # Rebuild brackets when position grows
+      recalc_on_partial_close: true  # Rebuild brackets when position shrinks
+      ttl_protect_new_bracket_ms: 3000
+      allow_unprotected_position: false
+      watchdog:
+        enabled: true
+        interval_sec: 5
+        auto_heal_orphans: true
+  quick_profit:
+    enabled: false                   # Quick profit (close when profit target reached) - default disabled
+    mode: "fixed_usd"
+    target_usd: 2.0
+    priority: "highest"
+    ignore_other_rules: true
+  order_guardian:
+    poll_interval_ms: 500
+    batch_limit: 50
+    rate_limit_per_min: 120
+  guardian:
+    unified: true
+    emit_tidy_event: true
+    poll_interval_ms: 500
+    cleanup_ttl_ms: 700
+    symbol_cooldown_ms: 800
+  watchdog:
+    ack_ttl_ms: 8000
+    fill_ttl_ms: 300000
+    check_interval_ms: 1000
+  orphan_monitor:
+    enabled: true                    # Master switch for background monitor
+    run_on_startup: true             # One-time sync on startup to cancel orphans immediately
+    periodic_interval_sec: 90        # Reduced from 300 to 90 seconds for faster cleanup
+    min_order_age_sec: 0             # Skip cancelling orders newer than this age (0 disables)
+    batch_cancel_limit: 50           # Max cancels per single loop run to avoid bursts
+    rate_limit_per_min: 120          # Global per-minute cancel cap across symbols (0 disables)
+    offset_bps: 30                   # Safety offset to apply before TP/SL (in basis points)
+
+fallback:
+  policy: fail_closed
+  risk_reduction_pct: 0.5
+  backoff_ms: [200, 500, 1000]
+  max_attempts: 4
+  enabled: true
+brackets:
+  # Canonical brackets block for resolve_brackets_config (mirrors manage.brackets during migration)
+  enable: true
+  oco_emulation: true
+  stop_loss_bps: 50
+  take_profit_low_ratio: 0.5
+  take_profit_high_ratio: 1.0
+  sl:
+    fixed_bps: 50
+  tp:
+    fixed_bps: 100
+  offset_bps: 5
+  working_type_default: "MARK_PRICE"
+  price_protect: false
+  retry:
+    max_attempts: 3
+    backoff_ms: [120, 250, 400]
+    fallback_to_limit: true
+  timeout_sec: 5
+  atomic_close: true
+  bracket_tracking: true
+  aggregated_oco:
+    enabled: true
+    aggregated_only_mode: true
+    recalc_on_scale_in: true
+    recalc_on_partial_close: true
+    ttl_protect_new_bracket_ms: 3000
+    allow_unprotected_position: false
+    watchdog:
+      enabled: true
+      interval_sec: 5
+      auto_heal_orphans: true
+
+
+# Source: config/domains/features.yaml
+---
+# v2 config for features domain
+# Migrated from trading.yaml feature_engineering.* and market_data.macro_sync.*
+# See docs/config_v2/specification.md for full structure.
+
+global:
+  enable_new_metrics: true  # Enable Phase 1 new metrics (ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync)
+
+windows:
+  ema:
+    period_short: 3   # EMA3 for ema_bias
+    period_long: 7    # EMA7 for ema_bias
+  volume:
+    window_sec: 60    # Volume window (seconds)
+    sma_length: 5     # SMA length for volume spike
+  volatility:
+    window_sec: 60    # Range window (seconds)
+    sma_length: 10    # SMA length for volatility state
+
+features:
+  ema:
+    bias_clamp: 0.02  # Â±2% clamp for EMA bias
+  volume:
+    spike_cap: 3.0    # Max volume spike multiplier
+  volatility:
+    ratio_cap: 3.0    # Max volatility ratio
+  liquidity:
+    depth_half: 1000  # Depth parameter for imbalance calc (USD or count)
+    kappa_min: 0.3    # Min liquidity kappa
+    kappa_max: 1.0    # Max liquidity kappa
+
+macro_sync:
+  enabled: true
+  anchors: ["BTCUSDT", "ETHUSDT"]  # Anchor symbols for correlation
+  window: 60        # Window size for correlation (ticks/samples)
+
+
+# Source: config/domains/regimes.yaml
+---
+# v2 config for regimes domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+detector:
+  window_minutes: 2          # rv_window / 60 â‰ˆ 120/60 = 2 minutes
+  min_regime_duration_min: 15 # min time to hold regime
+  debounce_changes: true
+
+regimes:
+  NORMAL:
+    vol_std_bps_min: 0
+    vol_std_bps_max: 80
+  HIGH_VOLATILITY:
+    vol_std_bps_min: 80
+    vol_std_bps_max: 200
+  CRISIS:
+    vol_std_bps_min: 200
+    vol_std_bps_max: 10000
+
+hotreload:
+  allowed: ["NORMAL", "HIGH_VOLATILITY", "CRISIS"]
+
+
+# Source: config/domains/risk.yaml
+---
+# v2 config for risk domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+daily_limits:
+  max_drawdown_pct: 5.0   # from trading.risk.daily_limits.max_drawdown_pct (0â€“100%)
+  max_loss_pct: 2.0       # from trading.risk.daily_limits.max_loss_pct (0â€“100%)
+  max_loss_usd: 250.0     # from trading.risk.daily_limits.max_loss_usd
+  reset_time_utc: "00:00" # Ð¿ÐµÑ€ÐµÐ½ÐµÑÐµÐ½Ð¾ Ð· trading.risk.daily.reset_time_utc
+
+soft_limits:
+  mode: "clip"                 # from trading.risk.soft_limits.mode
+  clip_min_notional_usdt: 10.0  # Minimum notional after clipping
+  directional_ratio_max: 3.0    # Max ratio between long/short margin (base profile)
+  side_exposure_usdt: 600.0     # Max per-side exposure before clipping
+  margin_exposure_usdt: 1100.0  # Max total margin exposure
+
+score_weights:
+  delta_price_pct: 0.05         # Weight for normalized delta price
+  obi: 0.35                     # Order book imbalance weight
+  tfi: 0.35                     # Trade flow imbalance weight
+  absorption_inverse: 0.25      # Inverse absorption (liquidity) weight
+
+trading_allowed_thresholds:
+  max_risk_score: 0.9           # Global default gate
+  overrides:
+    testnet: 0.87               # Higher tolerance for exploration
+    production: 0.8             # Stricter live trading cap
+
+# legacy note:
+# trading.risk.daily.* Ð·Ð°Ð»Ð¸ÑˆÐ°Ñ”Ñ‚ÑŒÑÑ ÑÐº fallback Ð´Ð¾ Ð¿Ð¾Ð²Ð½Ð¾Ð³Ð¾ Ð²Ð¸Ð´Ð°Ð»ÐµÐ½Ð½Ñ legacy-ÐºÐ¾Ð½Ñ„Ñ–Ð³Ñ–Ð²
+
+budgets:
+  max_portfolio_risk_pct: 5.0        # Mirrors trading.risk_budgets.max_portfolio_risk_pct
+  max_single_position_risk_pct: 1.0  # Legacy single-position budget
+  max_daily_loss_pct: 2.0            # Used by DecisionMaking safeguards
+
+data_sources:
+  portfolio_state: testnet           # Risk portfolio should follow execution (testnet during hybrid)
+  market_data: live                  # Consume live data stream for risk inputs
+
+
+# Source: config/domains/sizing.yaml
+---
+# v2 config for sizing domain
+# See docs/config_v2/specification.md and migration_standards.md
+
+defaults:
+  mode: "fixed_risk_pct"     # fixed_risk_pct / fixed_usd / kelly / hybrid
+  max_risk_pct: 1.0          # % Ð²Ñ–Ð´ equity Ð½Ð° Ð¾Ð´Ð½Ñƒ ÑƒÐ³Ð¾Ð´Ñƒ (risk_fraction_q * 100)
+  max_risk_usd: 50.0         # hard cap Ñƒ USD
+  min_notional_usd: 10.0     # Ð¼Ñ–Ð½Ñ–Ð¼Ð°Ð»ÑŒÐ½Ð¸Ð¹ Ñ€Ð¾Ð·Ð¼Ñ–Ñ€ ÑƒÐ³Ð¾Ð´Ð¸
+  max_notional_usd: 10000.0  # Ð¼Ð°ÐºÑÐ¸Ð¼Ð°Ð»ÑŒÐ½Ð¸Ð¹ Ñ€Ð¾Ð·Ð¼Ñ–Ñ€ ÑƒÐ³Ð¾Ð´Ð¸ (liquidity_based_cap_usd)
+  liquidity_kappa: 1.0       # liquidity kappa factor
+  liquidity_kappa_mode: "dynamic"  # dynamic / static
+  kelly:
+    base_probability: 0.55
+    kelly_cap: 0.25
+    kelly_alpha: 0.8
+    payoff_ratio_r: 2.0
+
+symbols: {}
+
+regimes:
+  HIGH_VOLATILITY: 0.60   # sizing multiplier
+  LOW_VOLATILITY: 1.20
+  MEAN_REVERSION: 0.50
+  UNCERTAIN: 0.50
+
+
+# Source: config/domains/tca.yaml
+---
+# v2 config for tca domain
+# See docs/config_v2/specification.md for full structure.
+
+prefs:
+  max_slippage_pct: 0.5          # Mirrors trading.tca_prefs.max_slippage_pct
+  preferred_venue: binance       # Matches legacy preference for Binance Futures
+  execution_priority: speed      # Preserve "speed" priority for market orders
+  routing:
+    fallback: limit              # Use LIMIT when market route fails (legacy behaviour)
+    allow_post_only: false       # Align with legacy auto-trading defaults
+
+
+# Source: config/instruments.yaml
+---
+# v2 instruments config (base profiles)
+# See docs/config_v2/instrument_profile.md and INSTRUMENT_TEMPLATE.md
+
+instruments:
+  SOLUSDT:
+    exchange: binance
+    base_asset: SOL
+    quote_asset: USDT
+    precision:
+      quantity: 2  # from trading.instruments.SOLUSDT.step_size "0.01"
+      price: 2     # from trading.instruments.SOLUSDT.tick_size "0.01"
+    limits:
+      min_notional: 10.0  # from trading.instruments.SOLUSDT.min_notional "10"
+      min_qty: 0.01       # inferred from Binance LOT_SIZE filter
+      min_price: 0.01     # inferred from Binance PRICE_FILTER
+      step_size: 0.01     # from trading.instruments.SOLUSDT.step_size "0.01"
+      tick_size: 0.01     # from trading.instruments.SOLUSDT.tick_size "0.01"
+      max_position_size: 5.0  # default cap until per-symbol data collected
+      max_leverage: 20        # conservative base leverage, overrides bump to 125 for testnet
+  ETHUSDT:
+    exchange: binance
+    base_asset: ETH
+    quote_asset: USDT
+    precision:
+      quantity: 3  # from trading.instruments.ETHUSDT.step_size "0.001"
+      price: 2     # from trading.instruments.ETHUSDT.tick_size "0.01"
+    limits:
+      min_notional: 10.0  # from trading.instruments.ETHUSDT.min_notional "10"
+      min_qty: 0.001
+      min_price: 0.01
+      step_size: 0.001    # from trading.instruments.ETHUSDT.step_size "0.001"
+      tick_size: 0.01     # from trading.instruments.ETHUSDT.tick_size "0.01"
+      max_position_size: 5.0
+      max_leverage: 20
+  BTCUSDT:
+    exchange: binance
+    base_asset: BTC
+    quote_asset: USDT
+    precision:
+      quantity: 3  # from trading.instruments.BTCUSDT.step_size "0.001"
+      price: 2     # from trading.instruments.BTCUSDT.tick_size "0.10" -> 2 decimals? Wait, "0.10" is 1 decimal, but typically 2 for price
+      # Actually, tick_size "0.10" means 1 decimal place, but for BTC it's usually 2. But follow legacy.
+    limits:
+      min_notional: 10.0  # from trading.instruments.BTCUSDT.min_notional "10"
+      min_qty: 0.001
+      min_price: 0.10
+      step_size: 0.001    # from trading.instruments.BTCUSDT.step_size "0.001"
+      tick_size: 0.10     # from trading.instruments.BTCUSDT.tick_size "0.10"
+      max_position_size: 3.0  # stricter cap due to volatility
+      max_leverage: 20
+  BNBUSDT:
+    exchange: binance
+    base_asset: BNB
+    quote_asset: USDT
+    precision:
+      quantity: 2  # from trading.instruments.BNBUSDT.step_size "0.01"
+      price: 2     # from trading.instruments.BNBUSDT.tick_size "0.01"
+    limits:
+      min_notional: 10.0  # from trading.instruments.BNBUSDT.min_notional "10"
+      min_qty: 0.01
+      min_price: 0.01
+      step_size: 0.01     # from trading.instruments.BNBUSDT.step_size "0.01"
+      tick_size: 0.01     # from trading.instruments.BNBUSDT.tick_size "0.01"
+      max_position_size: 5.0
+      max_leverage: 20
+
+
+# Source: config/modes.yaml
+---
+# v2 config for trading modes and domain configurations
+# Ð”Ð¸Ð². docs/config_v2/specification.md Ð´Ð»Ñ Ð´ÐµÑ‚Ð°Ð»ÐµÐ¹
+
+profiles:
+  shadow_live:
+    trading_mode: shadow_live
+    domains:
+      market_data: live
+      feature_engineering: live
+      decision_making: live
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: live
+
+  full_live:
+    trading_mode: full_live
+    domains:
+      market_data: live
+      feature_engineering: live
+      decision_making: live
+      risk_management: live
+      execution_position: live
+      audit_trail: live
+
+      full_testnet:
+    trading_mode: full_testnet
+    domains:
+      market_data: testnet
+      feature_engineering: testnet
+      decision_making: testnet
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: testnet
+
+  full_testnet:
+    trading_mode: full_testnet
+    domains:
+      market_data: testnet
+      feature_engineering: testnet
+      decision_making: testnet
+      risk_management: testnet
+      execution_position: testnet
+      audit_trail: testnet
+
+
+# Source: config/overrides.yaml
+---
+# v2 overrides for instruments and regimes
+
+symbols:
+  SOLUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.SOLUSDT
+  ETHUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.ETHUSDT
+    risk:
+      sizing_modifiers:  # from trading.instruments.ETHUSDT.sizing_modifiers
+        HIGH_VOLATILITY: 0.60
+        LOW_VOLATILITY: 1.20
+        MEAN_REVERSION: 0.50
+        UNCERTAIN: 0.50
+  BTCUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.__default__
+  BNBUSDT:
+    limits:
+      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.__default__
+
+# regimes: none in legacy yet
+
+
+# Source: config/symbols.yaml
+---
+# v2 config for trading symbols/universe
+# See docs/config_v2/specification.md for full structure.
+
+symbols:
+  - SOLUSDT
+  - ETHUSDT
+  - BTCUSDT
+  - BNBUSDT
+
+filters:
+  min_volume_24h: 1000000
+

@@ -7,6 +7,13 @@ and identifies trading regimes (TREND_UP, TREND_DOWN, etc.)
 WHY: TDD approach - define expected behavior before implementation [FSMP-PORTING-T01B]
 """
 
+from apps.reference.domains.regime_detector.config import (
+    SmaTrendConfig,
+    VolatilityConfig,
+    SidewaysConfig,
+    RegimeModels,
+    RegimeDetectorConfig,
+)
 from vfoundation.core.protocol import Message
 import pytest
 import copy
@@ -438,3 +445,488 @@ def test_model_field_unversioned_source_model_versioned(mock_config, mock_fsm_co
     # Both should be present
     assert "model" in emitted_payload
     assert "source_model" in emitted_payload
+
+
+# Tests for config.py coverage
+
+
+def test_sma_trend_config_defaults():
+    """Test SmaTrendConfig uses correct defaults."""
+    config = SmaTrendConfig()
+    assert config.enabled is True
+    assert config.fast_period == 5
+    assert config.slow_period == 20
+    assert config.threshold == 0.001
+    assert config.confidence_multiplier == 20.0
+    assert config.confidence_min == 0.5
+    assert config.confidence_max == 0.95
+
+
+def test_sma_trend_config_custom():
+    """Test SmaTrendConfig accepts custom values."""
+    config = SmaTrendConfig(
+        enabled=False,
+        fast_period=10,
+        slow_period=50,
+        threshold=0.002,
+        confidence_multiplier=25.0,
+        confidence_min=0.3,
+        confidence_max=0.9
+    )
+    assert config.enabled is False
+    assert config.fast_period == 10
+    assert config.slow_period == 50
+    assert config.threshold == 0.002
+    assert config.confidence_multiplier == 25.0
+    assert config.confidence_min == 0.3
+    assert config.confidence_max == 0.9
+
+
+def test_sma_trend_config_validation_fast_period_zero():
+    """Test SmaTrendConfig validation for fast_period <= 0."""
+    with pytest.raises(ValueError, match="fast_period must be > 0"):
+        SmaTrendConfig(fast_period=0)
+
+
+def test_sma_trend_config_validation_slow_period_zero():
+    """Test SmaTrendConfig validation for slow_period <= 0."""
+    with pytest.raises(ValueError, match="slow_period must be > 0"):
+        SmaTrendConfig(slow_period=0)
+
+
+def test_sma_trend_config_validation_fast_greater_equal_slow():
+    """Test SmaTrendConfig validation for fast_period >= slow_period."""
+    with pytest.raises(ValueError, match="fast_period .* must be < slow_period"):
+        SmaTrendConfig(fast_period=20, slow_period=10)
+
+
+def test_sma_trend_config_validation_threshold_zero():
+    """Test SmaTrendConfig validation for threshold <= 0."""
+    with pytest.raises(ValueError, match="threshold must be > 0"):
+        SmaTrendConfig(threshold=0)
+
+
+def test_sma_trend_config_validation_confidence_multiplier_zero():
+    """Test SmaTrendConfig validation for confidence_multiplier <= 0."""
+    with pytest.raises(ValueError, match="confidence_multiplier must be > 0"):
+        SmaTrendConfig(confidence_multiplier=0)
+
+
+def test_sma_trend_config_validation_confidence_min_out_of_range():
+    """Test SmaTrendConfig validation for confidence_min out of [0,1]."""
+    with pytest.raises(ValueError, match="confidence_min must be in \\[0, 1\\]"):
+        SmaTrendConfig(confidence_min=-0.1)
+
+    with pytest.raises(ValueError, match="confidence_min must be in \\[0, 1\\]"):
+        SmaTrendConfig(confidence_min=1.5)
+
+
+def test_sma_trend_config_validation_confidence_max_out_of_range():
+    """Test SmaTrendConfig validation for confidence_max out of [0,1]."""
+    with pytest.raises(ValueError, match="confidence_max must be in \\[0, 1\\]"):
+        SmaTrendConfig(confidence_max=-0.1)
+
+    with pytest.raises(ValueError, match="confidence_max must be in \\[0, 1\\]"):
+        SmaTrendConfig(confidence_max=1.5)
+
+
+def test_sma_trend_config_validation_confidence_min_greater_equal_max():
+    """Test SmaTrendConfig validation for confidence_min >= confidence_max."""
+    with pytest.raises(ValueError, match="confidence_min .* must be < confidence_max"):
+        SmaTrendConfig(confidence_min=0.8, confidence_max=0.7)
+
+
+def test_volatility_config_defaults():
+    """Test VolatilityConfig uses correct defaults."""
+    config = VolatilityConfig()
+    assert config.enabled is True
+    assert config.atr_period == 14
+    assert config.threshold_multiplier == 2.0
+    assert config.low_vol_multiplier == 0.5
+    assert config.atr_sma_length == 100
+    assert config.high_vol_confidence_base == 0.5
+    assert config.high_vol_confidence_multiplier == 2.0
+    assert config.low_vol_confidence_base == 0.5
+    assert config.low_vol_confidence_multiplier == 3.0
+    assert config.confidence_max == 0.95
+
+
+def test_volatility_config_custom():
+    """Test VolatilityConfig accepts custom values."""
+    config = VolatilityConfig(
+        enabled=False,
+        atr_period=20,
+        threshold_multiplier=3.0,
+        low_vol_multiplier=0.3,
+        atr_sma_length=200,
+        high_vol_confidence_base=0.6,
+        high_vol_confidence_multiplier=2.5,
+        low_vol_confidence_base=0.4,
+        low_vol_confidence_multiplier=4.0,
+        confidence_max=0.9
+    )
+    assert config.enabled is False
+    assert config.atr_period == 20
+    assert config.threshold_multiplier == 3.0
+    assert config.low_vol_multiplier == 0.3
+    assert config.atr_sma_length == 200
+    assert config.high_vol_confidence_base == 0.6
+    assert config.high_vol_confidence_multiplier == 2.5
+    assert config.low_vol_confidence_base == 0.4
+    assert config.low_vol_confidence_multiplier == 4.0
+    assert config.confidence_max == 0.9
+
+
+def test_volatility_config_validation_atr_period_zero():
+    """Test VolatilityConfig validation for atr_period <= 0."""
+    with pytest.raises(ValueError, match="atr_period must be > 0"):
+        VolatilityConfig(atr_period=0)
+
+
+def test_volatility_config_validation_threshold_multiplier_too_low():
+    """Test VolatilityConfig validation for threshold_multiplier <= 1.0."""
+    with pytest.raises(ValueError, match="threshold_multiplier must be > 1.0"):
+        VolatilityConfig(threshold_multiplier=1.0)
+
+
+def test_volatility_config_validation_low_vol_multiplier_too_high():
+    """Test VolatilityConfig validation for low_vol_multiplier >= 1.0."""
+    with pytest.raises(ValueError, match="low_vol_multiplier must be < 1.0"):
+        VolatilityConfig(low_vol_multiplier=1.0)
+
+
+def test_volatility_config_validation_atr_sma_length_zero():
+    """Test VolatilityConfig validation for atr_sma_length <= 0."""
+    with pytest.raises(ValueError, match="atr_sma_length must be > 0"):
+        VolatilityConfig(atr_sma_length=0)
+
+
+def test_volatility_config_validation_confidence_base_out_of_range():
+    """Test VolatilityConfig validation for confidence base values out of [0,1]."""
+    with pytest.raises(ValueError, match="high_vol_confidence_base must be in \\[0, 1\\]"):
+        VolatilityConfig(high_vol_confidence_base=-0.1)
+
+    with pytest.raises(ValueError, match="low_vol_confidence_base must be in \\[0, 1\\]"):
+        VolatilityConfig(low_vol_confidence_base=1.5)
+
+
+def test_volatility_config_validation_confidence_multiplier_zero():
+    """Test VolatilityConfig validation for confidence multiplier <= 0."""
+    with pytest.raises(ValueError, match="high_vol_confidence_multiplier must be > 0"):
+        VolatilityConfig(high_vol_confidence_multiplier=0)
+
+    with pytest.raises(ValueError, match="low_vol_confidence_multiplier must be > 0"):
+        VolatilityConfig(low_vol_confidence_multiplier=0)
+
+
+def test_volatility_config_validation_confidence_max_out_of_range():
+    """Test VolatilityConfig validation for confidence_max out of [0,1]."""
+    with pytest.raises(ValueError, match="confidence_max must be in \\[0, 1\\]"):
+        VolatilityConfig(confidence_max=1.5)
+
+
+def test_sideways_config_defaults():
+    """Test SidewaysConfig uses correct defaults."""
+    config = SidewaysConfig()
+    assert config.enabled is True
+    assert config.sma_period == 50
+    assert config.deviation_threshold == 0.02
+    assert config.confidence_base == 0.5
+    assert config.confidence_multiplier == 100.0
+    assert config.confidence_max == 0.95
+
+
+def test_sideways_config_custom():
+    """Test SidewaysConfig accepts custom values."""
+    config = SidewaysConfig(
+        enabled=False,
+        sma_period=100,
+        deviation_threshold=0.05,
+        confidence_base=0.6,
+        confidence_multiplier=150.0,
+        confidence_max=0.9
+    )
+    assert config.enabled is False
+    assert config.sma_period == 100
+    assert config.deviation_threshold == 0.05
+    assert config.confidence_base == 0.6
+    assert config.confidence_multiplier == 150.0
+    assert config.confidence_max == 0.9
+
+
+def test_sideways_config_validation_sma_period_zero():
+    """Test SidewaysConfig validation for sma_period <= 0."""
+    with pytest.raises(ValueError, match="sma_period must be > 0"):
+        SidewaysConfig(sma_period=0)
+
+
+def test_sideways_config_validation_deviation_threshold_zero():
+    """Test SidewaysConfig validation for deviation_threshold <= 0."""
+    with pytest.raises(ValueError, match="deviation_threshold must be > 0"):
+        SidewaysConfig(deviation_threshold=0)
+
+
+def test_sideways_config_validation_confidence_base_out_of_range():
+    """Test SidewaysConfig validation for confidence_base out of [0,1]."""
+    with pytest.raises(ValueError, match="confidence_base must be in \\[0, 1\\]"):
+        SidewaysConfig(confidence_base=-0.1)
+
+    with pytest.raises(ValueError, match="confidence_base must be in \\[0, 1\\]"):
+        SidewaysConfig(confidence_base=1.5)
+
+
+def test_sideways_config_validation_confidence_multiplier_zero():
+    """Test SidewaysConfig validation for confidence_multiplier <= 0."""
+    with pytest.raises(ValueError, match="confidence_multiplier must be > 0"):
+        SidewaysConfig(confidence_multiplier=0)
+
+
+def test_sideways_config_validation_confidence_max_out_of_range():
+    """Test SidewaysConfig validation for confidence_max out of [0,1]."""
+    with pytest.raises(ValueError, match="confidence_max must be in \\[0, 1\\]"):
+        SidewaysConfig(confidence_max=1.5)
+
+
+def test_regime_models_defaults():
+    """Test RegimeModels uses correct defaults."""
+    models = RegimeModels()
+    assert isinstance(models.sma_trend, SmaTrendConfig)
+    assert isinstance(models.volatility, VolatilityConfig)
+    assert isinstance(models.sideways, SidewaysConfig)
+
+
+def test_regime_detector_config_defaults():
+    """Test RegimeDetectorConfig uses correct defaults."""
+    config = RegimeDetectorConfig()
+    assert isinstance(config.models, RegimeModels)
+    assert config.max_period == 100
+
+
+def test_regime_detector_config_custom():
+    """Test RegimeDetectorConfig accepts custom values."""
+    custom_models = RegimeModels()
+    custom_models.sma_trend.fast_period = 15
+    config = RegimeDetectorConfig(models=custom_models, max_period=200)
+    assert config.models.sma_trend.fast_period == 15
+    assert config.max_period == 200
+
+
+def test_regime_detector_config_validation_max_period_zero():
+    """Test RegimeDetectorConfig validation for max_period <= 0."""
+    with pytest.raises(ValueError, match="max_period must be > 0"):
+        RegimeDetectorConfig(max_period=0)
+
+
+def test_regime_detector_config_from_dict_empty():
+    """Test RegimeDetectorConfig.from_dict with empty dict."""
+    config = RegimeDetectorConfig.from_dict({})
+    assert config.max_period == 100
+    assert config.models.sma_trend.fast_period == 5
+    assert config.models.sma_trend.slow_period == 20
+
+
+def test_regime_detector_config_from_dict_full():
+    """Test RegimeDetectorConfig.from_dict with full config."""
+    config_dict = {
+        "models": {
+            "sma_trend": {
+                "enabled": False,
+                "fast_period": 10,
+                "slow_period": 40,
+                "threshold": 0.002,
+                "confidence_multiplier": 25.0,
+                "confidence_min": 0.4,
+                "confidence_max": 0.9
+            },
+            "volatility": {
+                "enabled": True,
+                "atr_period": 20,
+                "threshold_multiplier": 3.0,
+                "low_vol_multiplier": 0.4,
+                "atr_sma_length": 150,
+                "high_vol_confidence_base": 0.6,
+                "high_vol_confidence_multiplier": 2.5,
+                "low_vol_confidence_base": 0.4,
+                "low_vol_confidence_multiplier": 3.5,
+                "confidence_max": 0.9
+            },
+            "sideways": {
+                "enabled": True,
+                "sma_period": 75,
+                "deviation_threshold": 0.03,
+                "confidence_base": 0.6,
+                "confidence_multiplier": 120.0,
+                "confidence_max": 0.9
+            }
+        },
+        "max_period": 150
+    }
+
+    config = RegimeDetectorConfig.from_dict(config_dict)
+
+    # Check sma_trend
+    assert config.models.sma_trend.enabled is False
+    assert config.models.sma_trend.fast_period == 10
+    assert config.models.sma_trend.slow_period == 40
+    assert config.models.sma_trend.threshold == 0.002
+    assert config.models.sma_trend.confidence_multiplier == 25.0
+    assert config.models.sma_trend.confidence_min == 0.4
+    assert config.models.sma_trend.confidence_max == 0.9
+
+    # Check volatility
+    assert config.models.volatility.enabled is True
+    assert config.models.volatility.atr_period == 20
+    assert config.models.volatility.threshold_multiplier == 3.0
+    assert config.models.volatility.low_vol_multiplier == 0.4
+    assert config.models.volatility.atr_sma_length == 150
+    assert config.models.volatility.high_vol_confidence_base == 0.6
+    assert config.models.volatility.high_vol_confidence_multiplier == 2.5
+    assert config.models.volatility.low_vol_confidence_base == 0.4
+    assert config.models.volatility.low_vol_confidence_multiplier == 3.5
+    assert config.models.volatility.confidence_max == 0.9
+
+    # Check sideways
+    assert config.models.sideways.enabled is True
+    assert config.models.sideways.sma_period == 75
+    assert config.models.sideways.deviation_threshold == 0.03
+    assert config.models.sideways.confidence_base == 0.6
+    assert config.models.sideways.confidence_multiplier == 120.0
+    assert config.models.sideways.confidence_max == 0.9
+
+    # Check max_period
+    assert config.max_period == 150
+
+
+def test_regime_detector_config_from_dict_legacy_sma_params():
+    """Test RegimeDetectorConfig.from_dict with legacy SMA parameters."""
+    import warnings
+
+    config_dict = {
+        "sma_short_period": 12,
+        "sma_long_period": 48
+    }
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        config = RegimeDetectorConfig.from_dict(config_dict)
+
+        # Check that warning was issued
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "deprecated config parameters" in str(w[0].message)
+
+    # Check that legacy params were used
+    assert config.models.sma_trend.fast_period == 12
+    assert config.models.sma_trend.slow_period == 48
+
+
+def test_regime_detector_config_from_dict_legacy_mean_reversion():
+    """Test RegimeDetectorConfig.from_dict with legacy mean_reversion section."""
+    import warnings
+
+    config_dict = {
+        "models": {
+            "mean_reversion": {
+                "sma_period": 60,
+                "threshold": 0.025
+            }
+        }
+    }
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        config = RegimeDetectorConfig.from_dict(config_dict)
+
+        # Check that warning was issued
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "deprecated config section 'mean_reversion'" in str(
+            w[0].message)
+
+    # Check that legacy params were mapped to sideways
+    assert config.models.sideways.sma_period == 60
+    assert config.models.sideways.deviation_threshold == 0.025
+
+
+def test_regime_detector_config_from_object():
+    """Test RegimeDetectorConfig.from_object with object config."""
+    from types import SimpleNamespace
+
+    config_obj = SimpleNamespace()
+    config_obj.models = SimpleNamespace()
+    config_obj.models.sma_trend = SimpleNamespace(
+        enabled=False, fast_period=15, slow_period=60, threshold=0.003,
+        confidence_multiplier=30.0, confidence_min=0.4, confidence_max=0.9
+    )
+    config_obj.models.volatility = SimpleNamespace(
+        enabled=True, atr_period=25, threshold_multiplier=2.5,
+        low_vol_multiplier=0.6, atr_sma_length=120,
+        high_vol_confidence_base=0.7, high_vol_confidence_multiplier=2.2,
+        low_vol_confidence_base=0.5, low_vol_confidence_multiplier=3.2,
+        confidence_max=0.9
+    )
+    config_obj.models.sideways = SimpleNamespace(
+        enabled=True, sma_period=80, deviation_threshold=0.04,
+        confidence_base=0.7, confidence_multiplier=110.0, confidence_max=0.9
+    )
+    config_obj.max_period = 180
+
+    config = RegimeDetectorConfig.from_object(config_obj)
+
+    # Check sma_trend
+    assert config.models.sma_trend.enabled is False
+    assert config.models.sma_trend.fast_period == 15
+    assert config.models.sma_trend.slow_period == 60
+    assert config.models.sma_trend.threshold == 0.003
+    assert config.models.sma_trend.confidence_multiplier == 30.0
+    assert config.models.sma_trend.confidence_min == 0.4
+    assert config.models.sma_trend.confidence_max == 0.9
+
+    # Check volatility
+    assert config.models.volatility.enabled is True
+    assert config.models.volatility.atr_period == 25
+    assert config.models.volatility.threshold_multiplier == 2.5
+    assert config.models.volatility.low_vol_multiplier == 0.6
+    assert config.models.volatility.atr_sma_length == 120
+    assert config.models.volatility.high_vol_confidence_base == 0.7
+    assert config.models.volatility.high_vol_confidence_multiplier == 2.2
+    assert config.models.volatility.low_vol_confidence_base == 0.5
+    assert config.models.volatility.low_vol_confidence_multiplier == 3.2
+    assert config.models.volatility.confidence_max == 0.9
+
+    # Check sideways
+    assert config.models.sideways.enabled is True
+    assert config.models.sideways.sma_period == 80
+    assert config.models.sideways.deviation_threshold == 0.04
+    assert config.models.sideways.confidence_base == 0.7
+    assert config.models.sideways.confidence_multiplier == 110.0
+    assert config.models.sideways.confidence_max == 0.9
+
+    # Check max_period
+    assert config.max_period == 180
+
+
+def test_regime_detector_config_from_object_legacy_mean_reversion():
+    """Test RegimeDetectorConfig.from_object with legacy mean_reversion."""
+    import warnings
+    from types import SimpleNamespace
+
+    config_obj = SimpleNamespace()
+    config_obj.models = SimpleNamespace()
+    config_obj.models.mean_reversion = SimpleNamespace(
+        sma_period=70, threshold=0.035
+    )
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        config = RegimeDetectorConfig.from_object(config_obj)
+
+        # Check that warning was issued
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "deprecated config section 'mean_reversion'" in str(
+            w[0].message)
+
+    # Check that legacy params were mapped to sideways
+    assert config.models.sideways.sma_period == 70
+    assert config.models.sideways.deviation_threshold == 0.035

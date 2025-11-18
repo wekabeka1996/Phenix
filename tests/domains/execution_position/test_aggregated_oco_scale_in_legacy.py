@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
@@ -222,32 +223,44 @@ def _build_manage_config(
     *,
     aggregated_cfg: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
+    manage_node: Dict[str, Any] = {
+        "auto": True,
+        "brackets": {
+            "enable": True,
+            "keep_single_bracket_set": True,
+            "sl": {"fixed_bps": 50},
+            "tp": {"fixed_bps": 100},
+            "offset_bps": 5,
+        },
+    }
+
+    if aggregated_cfg:
+        manage_node["mode"] = "aggregated_only"
+        manage_node["brackets"]["aggregated_oco"] = aggregated_cfg
+
     config: Dict[str, Any] = {
         "trading": {
             "instruments": {
                 symbol: {
                     "tick_size": "0.01",
+                    "step_size": "0.0001",
+                    "min_qty": "0.0001",
+                    "min_notional": "0.001",
                 }
             },
             "execution": {
-                "manage": {
-                    "auto": True,
-                    "brackets": {
-                        "enable": True,
-                        "keep_single_bracket_set": True,
-                        "sl": {"fixed_bps": 50},
-                        "tp": {"fixed_bps": 100},
-                        "offset_bps": 5,
-                    },
-                },
+                "manage": copy.deepcopy(manage_node),
             },
         }
     }
 
-    if aggregated_cfg:
-        config["trading"]["execution"]["manage"]["brackets"][
-            "aggregated_oco"
-        ] = aggregated_cfg
+    config["config_v2"] = {
+        "domains": {
+            "execution": {
+                "manage": copy.deepcopy(manage_node),
+            }
+        }
+    }
 
     return config
 
@@ -273,6 +286,7 @@ def _build_default_aggregated_cfg(
 
     return {
         "enabled": True,
+        "aggregated_only_mode": True,
         "recalc_on_scale_in": recalc_on_scale_in,
         "recalc_on_partial_close": recalc_on_partial_close,
         "ttl_protect_new_bracket_ms": 0,
@@ -386,7 +400,7 @@ def test_scale_in_with_aggregated_oco_keeps_full_sl_coverage():
         symbol,
         aggregated_oco_enabled=True,
         recalc_on_scale_in=True,
-        recalc_on_partial_close=False,
+        recalc_on_partial_close=True,
         allow_unprotected_position=False,
     )
 

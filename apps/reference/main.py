@@ -50,6 +50,7 @@ import logging
 import sys
 import time
 import os
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -945,11 +946,37 @@ def main() -> None:
     market_data = MarketDataConnector(fsm=fsm, config=config.to_dict())
 
     # Feature Store (stores historical features for backtesting)
-    feature_store = FeatureStore(
-        db_path=str(project_root / "data" / "features.db"),
-        retention_days=90
-    )
-    LOG.info("✅ Feature Store initialized")
+    def _init_feature_store(path: Path) -> FeatureStore:
+        return FeatureStore(
+            db_path=str(path),
+            retention_days=90,
+        )
+
+    configured_path = os.environ.get("FEATURE_STORE_DB_PATH")
+    feature_store_path = Path(
+        configured_path) if configured_path else project_root / "data" / "features.db"
+
+    try:
+        feature_store = _init_feature_store(feature_store_path)
+        LOG.info("✅ Feature Store initialized")
+    except Exception as exc:
+        if "Cannot open file" not in str(exc):
+            raise
+        fallback_root = Path(os.environ.get(
+            "FEATURE_STORE_TMP_DIR",
+            tempfile.gettempdir(),
+        ))
+        fallback_path = fallback_root / (
+            f"features_fallback_{os.getpid()}_{int(time.time())}.db"
+        )
+        LOG.warning(
+            "Feature Store at %s is locked (%s); falling back to %s",
+            feature_store_path,
+            exc,
+            fallback_path,
+        )
+        feature_store = _init_feature_store(fallback_path)
+        LOG.info("✅ Feature Store initialized via fallback path")
 
     # Initialize Multi-TF aggregator now that feature_store exists
     try:
@@ -1022,6 +1049,17 @@ def main() -> None:
     global execution_position
     execution_position = ExecPosFSM(config=config, fsm=fsm)
     LOG.info("✅ Execution position FSM initialized")
+
+    try:
+        debug_api.register_agg_oco_state_provider(
+            lambda symbol=None, side=None: execution_position.get_agg_oco_state_snapshot(
+                symbol=symbol,
+                side=side,
+                as_dict=True,
+            )
+        )
+    except Exception as exc:
+        LOG.warning(f"Failed to register agg_oco_state provider: {exc}")
 
     # ==========================================
     # DR: DISASTER RECOVERY STATE RESTORATION

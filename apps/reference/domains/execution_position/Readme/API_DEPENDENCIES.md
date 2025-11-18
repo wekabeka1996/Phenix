@@ -1,538 +1,298 @@
-# API Залежності - Execution Position Domain
+# Execution Position Domain - API Dependencies
 
-## Огляд Залежностей
+## Overview
 
-Домен execution_position інтегрується з Binance Futures API через кілька адаптерів та має залежності від core vFoundation компонентів. Всі залежності є event-driven та contract-based.
+The execution_position domain integrates with multiple external systems and internal components. This document outlines all API dependencies, contracts, and integration points.
 
-## Core Залежності
+## Core Dependencies
 
-### 1. Binance Futures API
+### 1. BinanceAdapter
+**Purpose**: Live order execution and market data feed
 
-#### API Endpoints
-```
-POST /fapi/v1/order              # Place order
-GET  /fapi/v1/order              # Query order
-DELETE /fapi/v1/order            # Cancel order
-GET  /fapi/v1/openOrders         # Get open orders
-GET  /fapi/v1/positionRisk       # Get position info
-GET  /fapi/v1/balance            # Get account balance
-GET  /fapi/v1/leverage           # Get/set leverage
-POST /fapi/v1/leverage           # Set leverage
-```
+**Interface**: `apps/reference/domains/execution_position/binance_execution_adapter.py`
 
-#### Authentication
-- **Method:** HMAC-SHA256 signature
-- **Headers:**
-  - `X-MBX-APIKEY`: API Key
-  - `X-MBX-TIMESTAMP`: Timestamp (ms)
-  - `X-MBX-SIGNATURE`: HMAC-SHA256 signature
-- **Timestamp Window:** 5000ms (server time)
-
-#### Rate Limits
-- **Orders:** 10 orders/second per symbol
-- **Queries:** 10 queries/second
-- **Weight:** Different endpoints have different weights
-- **Retry Logic:** Exponential backoff (1s, 2s, 4s, 8s, 16s max)
-
-### 2. vFoundation Core Components
-
-#### FSM Core (`vfoundation.fsm`)
+**Key Methods**:
 ```python
-from vfoundation.fsm import FSMCore, State, Transition
-
-class ExecPosFSM(FSMCore):
-    """Triple FSM orchestrator extending vFoundation FSMCore."""
-
-    def __init__(self, binance_adapter, correlation_store, config):
-        super().__init__(config)
-        self.binance_adapter = binance_adapter
-        self.correlation_store = correlation_store
+async def place_order(dec_msg: Message) -> Dict[str, object]
+async def cancel_order(dec_msg: Message) -> Dict[str, object]
+def get_status() -> str
 ```
 
-**Key Methods:**
-- `process_message(msg: Message) -> List[Message]`
-- `get_state() -> Dict[str, Any]`
-- `reset() -> None`
+**Events Emitted**:
+- `EVT:TRADE_EXECUTED` - Order fills
+- `EVT:ORDER_STATE_CHANGED` - Order status updates
+- `EVT:ACCOUNT_UPDATE_RECEIVED` - Portfolio updates
 
-#### Correlation Store (`vfoundation.correlation`)
-```python
-from vfoundation.correlation import CorrelationStore
-
-class CorrelationStore:
-    """Tracks request-response correlation across async operations."""
-
-    def create_rid(self, op: str, payload: Dict) -> str:
-        """Generate unique request ID."""
-
-    def get_correlation(self, rid: str) -> Optional[Dict]:
-        """Retrieve correlation data by RID."""
-
-    def update_correlation(self, rid: str, updates: Dict) -> None:
-        """Update correlation state."""
-```
-
-#### Metrics Collector (`vfoundation.metrics`)
-```python
-from vfoundation.metrics import MetricsCollector
-
-class MetricsCollector:
-    """Collects and exposes performance metrics."""
-
-    def increment_counter(self, name: str, tags: Dict = None) -> None:
-        """Increment named counter."""
-
-    def record_histogram(self, name: str, value: float, tags: Dict = None) -> None:
-        """Record histogram value."""
-
-    def record_gauge(self, name: str, value: float, tags: Dict = None) -> None:
-        """Record gauge value."""
-```
-
-### 3. Adapter Layer
-
-#### BinanceAdapter (`execution_position.binance_adapter`)
-```python
-class BinanceAdapter:
-    """Binance Futures API adapter with retry logic."""
-
-    def place_order(self, order_payload: Dict) -> Dict:
-        """Place order via API."""
-
-    def cancel_order(self, symbol: str, order_id: str) -> Dict:
-        """Cancel order via API."""
-
-    def get_open_orders(self, symbol: str) -> List[Dict]:
-        """Get open orders for symbol."""
-
-    def get_position_info(self, symbol: str) -> Dict:
-        """Get position information."""
-
-    def get_account_balance(self) -> Dict:
-        """Get account balance."""
-```
-
-**Dependencies:**
-- `requests` for HTTP calls
-- `hmac` + `hashlib` for signature generation
-- `time` for timestamp handling
-- `json` for payload serialization
-
-#### SimulatedAdapter (`execution_position.simulated_adapter`)
-```python
-class SimulatedAdapter:
-    """Paper trading adapter for testing."""
-
-    def place_order(self, order_payload: Dict) -> Dict:
-        """Simulate order placement."""
-
-    def get_simulated_fill(self, order_id: str) -> Optional[Dict]:
-        """Get simulated fill data."""
-```
-
-**Dependencies:**
-- Random number generation for fill simulation
-- Time-based delay simulation
-- Deterministic seed for reproducible testing
-
-### 4. Guard Components
-
-#### ExposureGuard (`execution_position.guards`)
-```python
-class ExposureGuard:
-    """Risk management guard for position exposure."""
-
-    def validate_exposure(self, symbol: str, qty: float, side: str) -> bool:
-        """Validate position doesn't exceed exposure limits."""
-
-    def get_current_exposure(self, symbol: str) -> float:
-        """Get current exposure for symbol."""
-```
-
-**Configuration:**
+**Configuration**:
 ```yaml
-exposure_limits:
-  max_position_qty: 1.0      # Max position size
-  max_total_exposure: 10.0   # Max total exposure across symbols
-  symbol_limits:
-    BTCUSDT: 2.0
-    ETHUSDT: 5.0
+trading:
+  mode: "testnet"  # or "live"
+  api_key: "your_key"
+  api_secret: "your_secret"
 ```
 
-#### OrderGuard (`execution_position.guards`)
+### 2. ExposureGuard
+**Purpose**: Risk management and position limits
+
+**Interface**: `apps/reference/domains/execution_position/exposure_guard.py`
+
+**Key Methods**:
 ```python
-class OrderGuard:
-    """Order validation guard."""
-
-    def validate_order(self, order: Dict) -> bool:
-        """Validate order parameters."""
-
-    def check_rate_limits(self, symbol: str) -> bool:
-        """Check if within rate limits."""
+def can_open(symbol: str, side: str, qty: str, price: str) -> Dict[str, Any]
+def reserve(symbol: str, exposure: Decimal) -> bool
+def release(symbol: str, exposure: Decimal) -> None
 ```
 
-### 5. Configuration Dependencies
+**Response Format**:
+```json
+{
+  "allowed": true,
+  "reason": "ok",
+  "reserved": 50000.0
+}
+```
 
-#### Pydantic Models
+### 3. OrderTimeoutWatchdog
+**Purpose**: Monitor order ACK/FILL timeouts
+
+**Interface**: `apps/reference/domains/execution_position/watchdog.py`
+
+**Key Methods**:
 ```python
-from pydantic import BaseModel, Field
-from decimal import Decimal
-
-class ExecutionPositionConfig(BaseModel):
-    """Configuration for execution position domain."""
-
-    max_position_qty: Decimal = Field(default=Decimal("1.0"))
-    order_cooldown_sec: float = Field(default=0.1)
-    max_retries: int = Field(default=3)
-    retry_backoff_sec: float = Field(default=1.0)
-
-    binance_config: BinanceConfig
-    risk_config: RiskConfig
-    simulation_config: SimulationConfig
+def register_order(order_id: str, timeout_ms: int) -> None
+def check_timeouts() -> List[str]  # Returns expired order IDs
+def cancel_expired(order_id: str) -> None
 ```
 
-#### Environment Variables
-```bash
-# Binance API
-BINANCE_API_KEY=your_api_key
-BINANCE_SECRET_KEY=your_secret_key
-BINANCE_TESTNET=true
+### 4. OrderGuardian
+**Purpose**: Orphan order detection and cleanup
 
-# Domain Config
-EXECUTION_POSITION_MAX_QTY=1.0
-EXECUTION_POSITION_COOLDOWN=0.1
+**Interface**: `apps/reference/domains/execution_position/order_guardian.py`
 
-# Risk Management
-EXPOSURE_MAX_TOTAL=10.0
-EXPOSURE_MAX_PER_SYMBOL=2.0
+**Key Methods**:
+```python
+async def cleanup_orphans() -> Dict[str, int]
+async def reconcile_positions() -> Dict[str, Any]
+def get_orphan_count() -> int
 ```
 
-## Залежності Графу
+## Internal Dependencies
 
+### 5. FSM Core
+**Purpose**: Event routing and message passing
+
+**Interface**: `vfoundation.core.protocol.Message`
+
+**Key Classes**:
+```python
+class Message:
+    op: str      # CMD, DEC, EVT, UPD
+    verb: str    # OPEN, CLOSE, FILL, etc.
+    src: str     # Source component
+    dst: str     # Destination component
+    rid: str     # Request ID
+    pld: Dict    # Payload
+    data_ref: List  # WHY chain
 ```
-execution_position/
-├── FSM Core (vfoundation.fsm)
-│   ├── State management
-│   ├── Message processing
-│   └── Event emission
-├── Adapters
-│   ├── BinanceAdapter
-│   │   ├── requests (HTTP client)
-│   │   ├── hmac/hashlib (auth)
-│   │   └── json (serialization)
-│   └── SimulatedAdapter
-│       ├── random (simulation)
-│       └── time (delays)
-├── Guards
-│   ├── ExposureGuard
-│   └── OrderGuard
-├── Correlation Store (vfoundation.correlation)
-│   ├── RID generation
-│   ├── State tracking
-│   └── Async coordination
-├── Metrics (vfoundation.metrics)
-│   ├── Counters
-│   ├── Histograms
-│   └── Gauges
-└── Configuration
-    ├── Pydantic models
-    └── Environment variables
+
+### 6. Metrics Aggregator
+**Purpose**: Performance monitoring and alerting
+
+**Interface**: `apps/reference/domains/execution_position/metrics_aggregator.py`
+
+**Key Methods**:
+```python
+def record_event(event_type: str, data: Dict) -> None
+def get_metrics() -> Dict[str, int]
+def reset_counters() -> None
 ```
+
+## External Integrations
+
+### 7. Portfolio Service
+**Purpose**: Position state synchronization
+
+**Events Consumed**:
+- `UPD:PORTFOLIO_STATE` - Current positions and balances
+
+**Events Produced**:
+- `EVT:POSITION_UPDATED` - Position changes
+
+### 8. Decision Making Domain
+**Purpose**: Trading signal processing
+
+**Events Consumed**:
+- `CMD:OPEN` - Position opening commands
+- `CMD:CLOSE` - Position closure commands
+- `CMD:ADJUST` - Position adjustment commands
+
+### 9. Risk Strategy Domain
+**Purpose**: Risk parameter coordination
+
+**Configuration Shared**:
+- Exposure limits
+- Position size constraints
+- Risk multipliers
+
+## Configuration Schema
+
+### Main Configuration Structure
+```yaml
+trading:
+  mode: "testnet"
+  execution:
+    cooldown_ms: 1000
+    guard_enabled: true
+    watchdog:
+      ack_ttl_ms: 8000
+      fill_ttl_ms: 30000
+    manage:
+      auto_manage: true
+      brackets:
+        enable: true
+        sl:
+          fixed_bps: 50
+        tp:
+          fixed_bps: 100
+        offset_bps: 5
+        oco_emulation: true
+      trailing:
+        enable: false
+        activation_profit_atr_k: 1.0
+        step_bps: 10
+        cooldown_sec: 60
+      emergency:
+        enable: true
+        emergency_sl_bps: 100
+    orphan_monitor:
+      enabled: true
+      run_on_startup: true
+      periodic_interval_sec: 300
+      min_order_age_sec: 0
+      batch_cancel_limit: 50
+      rate_limit_per_min: 120
+  orders:
+    default_ttl_seconds: 30
+  instruments:
+    BTCUSDT:
+      tick_size: "0.01"
+      min_qty: "0.000001"
+```
+
+## Data Contracts
+
+### Order Execution Feedback
+```json
+{
+  "instrument": "BTCUSDT",
+  "order_id": "12345",
+  "clientOrderId": "client_123",
+  "lifecycle": "filled",
+  "fills": [],
+  "tca_realized": {
+    "fees_bps": 0,
+    "slip_in_bps": 0,
+    "slip_out_bps": 0,
+    "adverse_bps": 0,
+    "latency_ms": 25,
+    "rebates_bps": 0
+  },
+  "breaches": [],
+  "why": ["EXEC_GUARD_PASS"],
+  "dto_version": "1.0.0",
+  "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json"
+}
+```
+
+### Position State
+```json
+{
+  "symbol": "BTCUSDT",
+  "qty": "0.001",
+  "entry_price": "50000.0",
+  "side": "BUY",
+  "open_ts": 1703123456.789,
+  "sl_order_id": "sl_123",
+  "tp_order_id": "tp_456",
+  "unrealized_pnl": "50.0"
+}
+```
+
+## Error Handling Contracts
+
+### Error Response Format
+```json
+{
+  "allowed": false,
+  "reason": "EXPOSURE_LIMIT_EXCEEDED",
+  "details": {
+    "requested": 100000,
+    "available": 50000,
+    "symbol": "BTCUSDT"
+  }
+}
+```
+
+### Exception Types
+- `ValueError`: Invalid input parameters
+- `RuntimeError`: Execution failures
+- `ConnectionError`: Network/adapter issues
+- `TimeoutError`: Order timeouts
+
+## Performance Contracts
+
+### Latency SLAs
+- **Hot Path** (CMD:OPEN → DEC:OPEN): p95 < 50ms
+- **Full Cycle** (CMD:OPEN → EVT:FILL): p95 < 100ms
+- **Timeout Rate**: < 1%
+- **Error Rate**: < 0.1%
+
+### Throughput
+- **Orders/second**: 10+ (limited by exchange)
+- **Concurrent Symbols**: 50+ (FSM per symbol)
+- **Memory/FSM**: < 1MB
+
+## Monitoring Contracts
+
+### Health Checks
+- **Adapter Status**: `connected`, `disconnected`, `shadow`
+- **FSM Health**: State validation, error counters
+- **Queue Depth**: Pending operations monitoring
+
+### Alert Conditions
+- Error rate > 1%
+- Timeout rate > 0.5%
+- Exposure limit breaches
+- Orphan order accumulation
 
 ## Version Compatibility
 
-### Python Version
-- **Required:** Python 3.9+
-- **Tested:** Python 3.9, 3.10, 3.11
-- **Dependencies:** All core deps support Python 3.9+
+### API Versions
+- **Message Protocol**: v1.0 (stable)
+- **Configuration Schema**: v1.0 (additive-only)
+- **Metrics Schema**: v1.0 (backward compatible)
 
-### Package Versions
+### Breaking Changes
+- None planned for v1.x
+- New features use additive configuration
+- Legacy support maintained for 6 months
+
+## Testing Dependencies
+
+### Mock Requirements
 ```python
-# requirements.txt
-pydantic>=2.0.0,<3.0.0
-requests>=2.28.0,<3.0.0
-pyyaml>=6.0,<7.0
-python-decimal>=1.0.0
+# BinanceAdapter mock
+mock_adapter = AsyncMock()
+mock_adapter.place_order.return_value = success_feedback
 
-# vFoundation core
-vfoundation>=0.1.0
+# ExposureGuard mock
+mock_guard = MagicMock()
+mock_guard.can_open.return_value = {"allowed": True}
 ```
 
-### Binance API Versions
-- **Futures API:** v1 (stable)
-- **Supported Features:**
-  - LIMIT orders
-  - MARKET orders
-  - STOP_MARKET orders
-  - TAKE_PROFIT_MARKET orders
-  - Position management
-  - Leverage adjustment
-
-## Runtime Dependencies
-
-### Memory Requirements
-- **Base:** 50MB RAM
-- **Per Active Position:** 2MB RAM
-- **Peak Load (100 positions):** 250MB RAM
-
-### CPU Requirements
-- **Base:** 0.1 CPU cores
-- **Per Order Operation:** 0.01 CPU cores
-- **Peak Load:** 1.0 CPU cores
-
-### Network Requirements
-- **Latency:** <100ms to Binance API
-- **Bandwidth:** 10KB/s average, 100KB/s peak
-- **Timeout:** 30s for API calls
-
-## Initialization Sequence
-
-### 1. Configuration Loading
-```python
-def load_config() -> ExecutionPositionConfig:
-    """Load and validate configuration."""
-    config = ExecutionPositionConfig.from_env()
-    config.validate_connections()
-    return config
-```
-
-### 2. Dependency Injection
-```python
-def create_dependencies(config: ExecutionPositionConfig):
-    """Create and wire dependencies."""
-
-    # Adapters
-    binance_adapter = BinanceAdapter(config.binance_config)
-    simulated_adapter = SimulatedAdapter(config.simulation_config)
-
-    # Guards
-    exposure_guard = ExposureGuard(config.risk_config)
-    order_guard = OrderGuard(config.rate_limits)
-
-    # Core services
-    correlation_store = CorrelationStore()
-    metrics_collector = MetricsCollector()
-
-    return {
-        'binance_adapter': binance_adapter,
-        'simulated_adapter': simulated_adapter,
-        'exposure_guard': exposure_guard,
-        'order_guard': order_guard,
-        'correlation_store': correlation_store,
-        'metrics_collector': metrics_collector
-    }
-```
-
-### 3. FSM Initialization
-```python
-def create_exec_pos_fsm(dependencies: Dict) -> ExecPosFSM:
-    """Create main FSM with dependencies."""
-
-    return ExecPosFSM(
-        binance_adapter=dependencies['binance_adapter'],
-        correlation_store=dependencies['correlation_store'],
-        config=dependencies['config']
-    )
-```
-
-## Error Handling Dependencies
-
-### Circuit Breaker Pattern
-```python
-class CircuitBreaker:
-    """Circuit breaker for API failures."""
-
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = 'CLOSED'  # CLOSED, OPEN, HALF_OPEN
-
-    def call(self, func: Callable) -> Any:
-        """Execute function with circuit breaker protection."""
-        if self.state == 'OPEN':
-            if self._should_attempt_reset():
-                self.state = 'HALF_OPEN'
-            else:
-                raise CircuitBreakerOpen()
-
-        try:
-            result = func()
-            self._on_success()
-            return result
-        except Exception as e:
-            self._on_failure()
-            raise e
-```
-
-### Retry Logic
-```python
-class RetryMechanism:
-    """Exponential backoff retry mechanism."""
-
-    def __init__(self, max_retries: int = 3, base_delay: float = 1.0):
-        self.max_retries = max_retries
-        self.base_delay = base_delay
-
-    def execute_with_retry(self, func: Callable) -> Any:
-        """Execute function with retry logic."""
-        last_exception = None
-
-        for attempt in range(self.max_retries + 1):
-            try:
-                return func()
-            except Exception as e:
-                last_exception = e
-                if attempt < self.max_retries:
-                    delay = self.base_delay * (2 ** attempt)
-                    time.sleep(delay)
-                else:
-                    raise last_exception
-```
-
-## Monitoring Dependencies
-
-### Health Checks
-```python
-class HealthChecker:
-    """Health check for all dependencies."""
-
-    def check_binance_api(self) -> bool:
-        """Check Binance API connectivity."""
-        try:
-            # Ping API
-            response = requests.get('https://fapi.binance.com/fapi/v1/ping')
-            return response.status_code == 200
-        except:
-            return False
-
-    def check_database(self) -> bool:
-        """Check correlation store connectivity."""
-        try:
-            # Test correlation store
-            rid = self.correlation_store.create_rid('TEST', {})
-            return rid is not None
-        except:
-            return False
-
-    def get_overall_health(self) -> Dict[str, bool]:
-        """Get health status of all components."""
-        return {
-            'binance_api': self.check_binance_api(),
-            'correlation_store': self.check_database(),
-            'fsm_core': True,  # Always healthy if running
-            'guards': True     # Always healthy if initialized
-        }
-```
-
-### Metrics Dependencies
-```python
-class ExecutionPositionMetrics:
-    """Metrics collection for execution position domain."""
-
-    def __init__(self, collector: MetricsCollector):
-        self.collector = collector
-
-        # Define metrics
-        self.order_placed = collector.create_counter('orders_placed')
-        self.order_failed = collector.create_counter('orders_failed')
-        self.position_opened = collector.create_counter('positions_opened')
-        self.position_closed = collector.create_counter('positions_closed')
-
-        self.order_latency = collector.create_histogram('order_latency_ms')
-        self.api_latency = collector.create_histogram('api_latency_ms')
-
-        self.active_positions = collector.create_gauge('active_positions')
-
-    def record_order_placed(self, symbol: str, side: str):
-        """Record successful order placement."""
-        self.order_placed.increment(tags={'symbol': symbol, 'side': side})
-
-    def record_api_latency(self, endpoint: str, latency_ms: float):
-        """Record API call latency."""
-        self.api_latency.record(latency_ms, tags={'endpoint': endpoint})
-```
-
-## Deployment Dependencies
-
-### Docker Configuration
-```dockerfile
-FROM python:3.11-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application
-COPY . /app
-WORKDIR /app
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Run application
-CMD ["python", "-m", "execution_position"]
-```
-
-### Kubernetes Dependencies
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: execution-position
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: execution-position
-  template:
-    metadata:
-      labels:
-        app: execution-position
-    spec:
-      containers:
-      - name: execution-position
-        image: execution-position:latest
-        env:
-        - name: BINANCE_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: binance-secrets
-              key: api-key
-        - name: BINANCE_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: binance-secrets
-              key: secret-key
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
-```
-
----
-
-**Статус Залежностей:** ✅ **Всі залежності верифіковані**
-**Дата перевірки:** 9 листопада 2025 г.</content>
-<filePath>filePath">c:\Users\user\Music\Phenix\apps\reference\domains\execution_position\Readme\API_DEPENDENCIES.md
+### Test Data Contracts
+- Use consistent symbol: `BTCUSDT`
+- Standard quantities: `0.001`
+- Standard prices: `50000.0`
+- Event verbs: Match adapter emissions</content>
+<parameter name="filePath">c:\Users\user\Music\Phenix\apps\reference\domains\execution_position\API_DEPENDENCIES.md

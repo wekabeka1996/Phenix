@@ -1,432 +1,251 @@
-# Архітектура Подій - Execution Position Domain
+# Execution Position Domain - Event Reference
 
-## Огляд Подій
-
-Домен execution_position працює як **command processor** та **decision emitter** в event-driven архітектурі. Він споживає високорівневі команди (CMD:OPEN/CLOSE/ADJUST) та емітує детальні рішення (DEC:OPEN/CLOSE/ADJUST) після validation та risk checks.
-
-## Вхідні Команди (Consumed Events)
+## Command Events (Input)
 
 ### CMD:OPEN
+Initiates position opening.
 
-**Тригери:**
-- User-initiated position opening
-- Rebalancing signals
-- Strategy execution commands
-
-**Payload Структура:**
+**Payload:**
 ```json
 {
   "symbol": "BTCUSDT",
   "side": "BUY",
   "qty": "0.001",
-  "order_type": "LIMIT",
-  "price": "45000.50",
-  "tif": "GTC",
-  "tp_bps": 50,
-  "sl_bps": 25,
-  "client_order_id": "strategy_123"
+  "price": "50000.0",
+  "price_ref": "50000.0"
 }
 ```
 
-**Обробка:**
-1. **OpenFlowFSM** validation (guards: min_notional, qty/price steps)
-2. **ExposureGuard** checks (position limits, portfolio exposure)
-3. **Cooldown** verification (minimum time between orders)
-4. **DEC:OPEN** emission if all guards pass
+**Response:** DEC:OPEN
 
 ### CMD:CLOSE
+Initiates position closure.
 
-**Тригери:**
-- Manual position closure
-- Risk management signals
-- Take-profit/stop-loss triggers
-- Time-based exits
+**Payload:**
+```json
+{
+  "symbol": "BTCUSDT"
+}
+```
 
-**Payload Структура:**
+**Response:** DEC:CLOSE
+
+### CMD:ADJUST
+Adjusts position management (brackets, trailing stops).
+
+**Payload:**
 ```json
 {
   "symbol": "BTCUSDT",
-  "close_type": "MARKET",
+  "action": "adjust_brackets",
+  "sl_price": "45000.0",
+  "tp_price": "55000.0"
+}
+```
+
+## Decision Events (Output)
+
+### DEC:OPEN
+Order placement decision for position opening.
+
+**Payload:**
+```json
+{
+  "symbol": "BTCUSDT",
+  "side": "BUY",
+  "qty": "0.001",
+  "order_type": "MARKET",
+  "price": null,
+  "newClientOrderId": "open_1234567890"
+}
+```
+
+## OpenFlowFSM Lifecycle
+
+The open-flow state machine now reflects the minimal runtime behaviour:
+
+- **IDLE** – waiting for the next `CMD:OPEN`.
+- **PROCESSING** – guards and idempotency checks are running for the current command.
+- **DONE** – a `DEC:OPEN` was emitted successfully.
+- **ERROR** – guard or validation failure (emits `ERR:OPEN`).
+
+There are no intermediate `CANDIDATE/READY` stages and no `EVT:READY` / `EVT:EXECUTE` triggers. The external contract stays unchanged: `CMD:OPEN` produces either `DEC:OPEN` or `ERR:OPEN`.
+
+### DEC:CLOSE
+Order placement decision for position closure.
+
+**Payload:**
+```json
+{
+  "symbol": "BTCUSDT",
   "reduce_only": true
 }
 ```
 
-**Обробка:**
-1. **CloseFlowFSM** state verification (position exists)
-2. **OrderGuardian** cleanup (cancel TP/SL orders)
-3. **DEC:CLOSE** emission
+### DEC:PLACE_ORDER
+Bracket order placement (SL/TP).
 
-### CMD:ADJUST
-
-**Тригери:**
-- Dynamic TP/SL adjustment
-- Risk management updates
-- Strategy parameter changes
-
-**Payload Структура:**
+**Payload:**
 ```json
 {
   "symbol": "BTCUSDT",
-  "tp_price": "46000.00",
-  "sl_price": "44000.00",
-  "adjust_type": "TRAILING"
-}
-```
-
-**Обробка:**
-1. **ManageFlowFSM** validation
-2. **Anti-2021** checks (TP/SL positioning)
-3. **DEC:ADJUST** emission
-
-## Вихідні Рішення (Emitted Events)
-
-### DEC:OPEN
-
-**Тригери:**
-- CMD:OPEN passed all guards in OpenFlowFSM
-- Position opening approved for execution
-
-**Payload Структура:**
-```json
-{
-  "symbol": "BTCUSDT",
-  "side": "BUY",
+  "side": "SELL",
   "qty": "0.001",
-  "price": "45000.50",
-  "tif": "GTC",
-  "client_order_id": "exec_pos_1703123456789",
-  "tp_price": "45225.25",
-  "sl_price": "44625.13",
-  "corr_id": "uuid-correlation-id",
-  "working_type": "MARK_PRICE"
+  "order_type": "STOP_MARKET",
+  "stopPrice": "45000.0",
+  "reduceOnly": true,
+  "newClientOrderId": "bracket_sl_1234567890"
 }
 ```
 
-**Споживачі:**
-- **execution_adapter:** Actual order placement on exchange
-- **order_logger:** Audit trail recording
-- **correlation_store:** Link internal/external order IDs
+### DEC:CANCEL_ORDER
+Order cancellation decision.
 
-### DEC:CLOSE
-
-**Тригери:**
-- CMD:CLOSE processed by CloseFlowFSM
-- Time-based or event-driven position closure
-
-**Payload Структура:**
+**Payload:**
 ```json
 {
-  "symbol": "BTCUSDT",
-  "close_type": "MARKET",
-  "reduce_only": true,
-  "client_order_id": "exec_close_1703123456789",
-  "corr_id": "uuid-correlation-id"
+  "orderId": "12345",
+  "symbol": "BTCUSDT"
 }
 ```
-
-**Споживачі:**
-- **execution_adapter:** Position closure execution
-- **order_guardian:** TP/SL order cleanup
-- **metrics_collector:** P&L calculation triggers
 
 ### DEC:ADJUST
+Position adjustment decisions (breakeven, trailing stop).
 
-**Тригери:**
-- CMD:ADJUST validation passed
-- TP/SL level modifications approved
-
-**Payload Структура:**
+**Payload:**
 ```json
 {
-  "symbol": "BTCUSDT",
-  "tp_price": "45500.00",
-  "sl_price": "44200.00",
-  "adjust_type": "MODIFY",
-  "client_order_id": "exec_adjust_1703123456789",
-  "corr_id": "uuid-correlation-id"
+  "rule": "breakeven",
+  "elapsed_sec": 3600
 }
 ```
 
-**Споживачі:**
-- **execution_adapter:** TP/SL order modifications
-- **exposure_guard:** Risk limit updates
-- **metrics_collector:** Adjustment tracking
+## Event Events (External)
 
-## FSM Data Flow
+### EVT:FILL / EVT:TRADE_EXECUTED
+Order fill confirmation from adapter.
 
-```
-CMD:OPEN
-    │
-    ▼
-OpenFlowFSM
-├── Guards: min_notional, qty/price validation, cooldown
-├── State: IDLE → CANDIDATE → READY → EMIT_DEC_OPEN → DONE
-└── Output: DEC:OPEN
-
-CMD:CLOSE
-    │
-    ▼
-CloseFlowFSM
-├── Conditions: position exists, close triggers met
-├── State: OPENED → CLOSE_COND → EMIT_DEC_CLOSE → DONE
-└── Output: DEC:CLOSE
-
-CMD:ADJUST
-    │
-    ▼
-ManageFlowFSM
-├── Validation: TP/SL positioning, anti-2021 checks
-├── State: Monitor → Adjust → Emit
-└── Output: DEC:ADJUST
+**Payload:**
+```json
+{
+  "symbol": "BTCUSDT",
+  "orderId": "12345",
+  "side": "BUY",
+  "qty": "0.001",
+  "price": "50000.0",
+  "status": "FILLED"
+}
 ```
 
-## Event Processing Pipeline
+### EVT:ORDER_STATE_CHANGED
+Order status updates from adapter.
 
-### 1. Command Reception
-```python
-def process_command(self, cmd: Message):
-    """Route command to appropriate FSM based on symbol."""
-    symbol = cmd.payload["symbol"]
-
-    if cmd.op == "CMD:OPEN":
-        self._route_to_open_flow(symbol, cmd)
-    elif cmd.op == "CMD:CLOSE":
-        self._route_to_close_flow(symbol, cmd)
-    elif cmd.op == "CMD:ADJUST":
-        self._route_to_manage_flow(symbol, cmd)
+**Payload:**
+```json
+{
+  "symbol": "BTCUSDT",
+  "orderId": "12345",
+  "status": "PARTIALLY_FILLED",
+  "filled_qty": "0.0005"
+}
 ```
 
-### 2. FSM Processing
-```python
-def _route_to_open_flow(self, symbol: str, cmd: Message):
-    """Process CMD:OPEN through OpenFlowFSM."""
-    flow = self.open_flows.get(symbol)
-    if not flow:
-        flow = OpenFlowFSM()
-        self.open_flows[symbol] = flow
+### EVT:ACCOUNT_UPDATE_RECEIVED
+Portfolio state updates.
 
-    # Process through FSM states
-    if flow.state == OpenState.IDLE:
-        flow.candidate(cmd.payload)
-        flow.state = OpenState.CANDIDATE
-
-    if flow.state == OpenState.CANDIDATE:
-        if flow.validate_guards():
-            flow.state = OpenState.READY
-
-    if flow.state == OpenState.READY:
-        dec_payload = flow.prepare_decision()
-        self.emit_decision("DEC:OPEN", dec_payload)
-        flow.state = OpenState.DONE
+**Payload:**
+```json
+{
+  "balances": [...],
+  "positions": [...]
+}
 ```
 
-### 3. Decision Emission
-```python
-def emit_decision(self, dec_type: str, payload: dict):
-    """Emit validated decision to execution layer."""
-    message = Message(
-        op=dec_type,
-        payload=payload,
-        why=f"Validated {dec_type.lower()} decision from execution_position FSM"
-    )
+## Update Events (Periodic)
 
-    emit_compat(
-        event_name=dec_type,
-        payload=payload,
-        why=message.why
-    )
+### UPD:MARKET_DATA
+Market price updates for trailing stops.
+
+**Payload:**
+```json
+{
+  "symbol": "BTCUSDT",
+  "price": "51000.0",
+  "ts": 1703123456789
+}
+```
+
+### UPD:TICK
+Timer events for time-based rules.
+
+**Payload:**
+```json
+{
+  "ts": 1703123456789
+}
+```
+
+## Event Flow Diagrams
+
+### Position Opening Flow
+```
+CMD:OPEN → ExposureGuard → DEC:OPEN → EVT:FILL → Position Tracking → Bracket Placement
+```
+
+### Position Management Flow
+```
+EVT:FILL → _place_brackets() → DEC:PLACE_ORDER × 2 → EVT:ORDER_UPDATED → State: BRACKETS_PLACED
+```
+
+### ManageFlowFSM Lifecycle
+- **FLAT** – no active position tracked.
+- **BRACKETS_PENDING** – initial fill observed, awaiting confirmation of emitted brackets.
+- **BRACKETS_PLACED** – both SL/TP acknowledgements received; begin steady-state monitoring.
+- **TRACKING** – steady state for trailing, breakeven, and quick-profit rules; also used after bracket placement when deduped.
+- **EMIT_DEC_ADJUST** – transient state while emitting `DEC:ADJUST` / `DEC:CLOSE`, immediately returns to `TRACKING`.
+- **WAIT_MODE** – temporary pause after emergency SL trigger; resumes `TRACKING` once bar-based cooldown elapses.
+- **ERROR** – hydration or state restore failure; guarded by tests.
+
+### CloseFlowFSM Lifecycle
+- **IDLE** – default resting state; awaits explicit `CMD:CLOSE`.
+- **CLOSING** – processing manual close command, emits `DEC:CLOSE` when guards pass.
+- **DONE** – terminal acknowledgement after manual close; legacy auto-close timers no longer feed this FSM.
+
+CloseFlowFSM більше не підписується на `EVT`/`UPD`. Автоматичні правила (`quick_profit`, trailing, emergency, hold) тепер живуть виключно в `ManageFlowFSM`, який під час роботи в `TRACKING`/`WAIT_MODE` генерує відповідні `DEC:CLOSE`.
+
+### Position Closing Flow
+```
+CMD:CLOSE → DEC:CLOSE → EVT:FILL → Position Reset
+Time Rules → DEC:CLOSE
+```
+
+### Risk Management Flow
+```
+Any Command → ExposureGuard.can_open() → BLOCK/ALLOW
+Order Timeout → DEC:CANCEL_ORDER
 ```
 
 ## Error Handling Events
 
-### EVT:ORDER_FAILED
-
-**Тригери:**
-- DEC:OPEN/DEC:CLOSE execution failures
-- API errors, rate limits, validation failures
+### EVT:MANAGE_SKIPPED
+Emitted when position management is disabled or in cooldown.
 
 **Payload:**
 ```json
 {
   "symbol": "BTCUSDT",
-  "error_code": "RATE_LIMIT_EXCEEDED",
-  "error_message": "Too many requests",
-  "original_command": "DEC:OPEN",
-  "corr_id": "uuid-correlation-id"
+  "reason": "auto_manage_disabled"
 }
 ```
 
-### EVT:GUARD_VIOLATION
+## Metrics Events
 
-**Тригери:**
-- Command failed guard validation
-- Risk limits exceeded, invalid parameters
+All metrics are collected internally and available via `get_metrics()` calls. Key metrics include:
 
-**Payload:**
-```json
-{
-  "symbol": "BTCUSDT",
-  "guard_type": "MIN_NOTIONAL",
-  "violated_value": 5.0,
-  "required_value": 10.0,
-  "original_command": "CMD:OPEN"
-}
-```
-
-## Correlation & Tracking
-
-### Correlation Integration
-
-**Store Lookup:**
-```python
-# Before emitting DEC:OPEN
-corr_data = self.correlation_store.get_by_command_id(cmd.id)
-if corr_data:
-    payload["corr_id"] = corr_data["corr_id"]
-    payload["parent_client_order_id"] = corr_data.get("client_order_id")
-```
-
-**ID Generation:**
-```python
-# Generate execution-specific IDs
-client_order_id = generate_client_order_id("exec_pos")
-payload["client_order_id"] = client_order_id
-```
-
-### Audit Trail
-
-**Event Logging:**
-```json
-{
-  "timestamp": "2024-01-15T10:30:00Z",
-  "domain": "execution_position",
-  "event": "DEC:OPEN",
-  "symbol": "BTCUSDT",
-  "corr_id": "uuid-123",
-  "client_order_id": "exec_pos_1703123456789",
-  "payload": {...}
-}
-```
-
-## State Management
-
-### Per-Symbol State
-
-**FSM Registry:**
-```python
-self.open_flows: Dict[str, OpenFlowFSM] = {}
-self.close_flows: Dict[str, CloseFlowFSM] = {}
-self.manage_flows: Dict[str, ManageFlowFSM] = {}
-```
-
-**State Persistence:**
-```python
-def save_state(self):
-    """Persist FSM states for recovery."""
-    state = {
-        "open_flows": {sym: flow.state for sym, flow in self.open_flows.items()},
-        "close_flows": {sym: flow.state for sym, flow in self.close_flows.items()},
-        "manage_flows": {sym: flow.state for sym, flow in self.manage_flows.items()}
-    }
-    # Save to WAL for crash recovery
-```
-
-## Performance Considerations
-
-### Event Throughput
-- **Validation Latency:** < 50ms per command
-- **Decision Emission:** < 10ms per decision
-- **State Transitions:** < 5ms per FSM step
-
-### Scalability Limits
-- **Concurrent Symbols:** Limited by memory (1KB per symbol)
-- **Event Queue:** Bounded queue prevents memory exhaustion
-- **API Rate Limits:** 10 orders/sec, 100K/day
-
-## Testing Event Flows
-
-### Unit Tests
-```python
-def test_open_command_to_decision_flow():
-    """Test CMD:OPEN → DEC:OPEN full flow."""
-    fsm = ExecPosFSM()
-
-    # Send command
-    cmd = Message(op="CMD:OPEN", payload=valid_open_payload)
-    fsm.process_command(cmd)
-
-    # Verify decision emitted
-    assert len(captured_events) == 1
-    assert captured_events[0]["op"] == "DEC:OPEN"
-    assert "client_order_id" in captured_events[0]["payload"]
-```
-
-### Integration Tests
-```python
-def test_full_order_lifecycle():
-    """Test complete order lifecycle with mocks."""
-    with mock_binance_api():
-        fsm = ExecPosFSM()
-
-        # Open position
-        open_cmd = Message(op="CMD:OPEN", payload=open_payload)
-        fsm.process_command(open_cmd)
-
-        # Verify DEC:OPEN emitted
-        assert_decision_emitted("DEC:OPEN")
-
-        # Simulate fill event
-        fill_event = Message(op="EVT:FILL", payload=fill_payload)
-        fsm.process_event(fill_event)
-
-        # Close position
-        close_cmd = Message(op="CMD:CLOSE", payload=close_payload)
-        fsm.process_command(close_cmd)
-
-        # Verify DEC:CLOSE emitted
-        assert_decision_emitted("DEC:CLOSE")
-```
-
-## Monitoring & Observability
-
-### Event Metrics
-
-**Prometheus Counters:**
-```python
-commands_received = Counter('execution_position_commands_total', 'Commands received')
-decisions_emitted = Counter('execution_position_decisions_total', 'Decisions emitted')
-guards_violated = Counter('execution_position_guards_violated_total', 'Guard violations')
-processing_errors = Counter('execution_position_errors_total', 'Processing errors')
-```
-
-**Latency Histograms:**
-```python
-command_processing_duration = Histogram('execution_position_command_duration_seconds', 'Command processing time')
-fsm_transition_duration = Histogram('execution_position_fsm_transition_duration_seconds', 'FSM transition time')
-```
-
-### Health Checks
-
-**Event Processing Health:**
-```python
-def check_event_processing_health(self) -> bool:
-    """Verify event processing pipeline is functioning."""
-    # Check recent command processing
-    last_command_age = time.time() - self._last_command_ts
-    if last_command_age > 300:  # 5 minutes
-        return False
-
-    # Check FSM states are valid
-    for flows in [self.open_flows, self.close_flows, self.manage_flows]:
-        for flow in flows.values():
-            if flow.state not in flow.valid_states:
-                return False
-
-    return True
-```
-
----
-
-**Версія:** 1.0
-**Дата:** 9 листопада 2025 г.</content>
-<filePath">c:\Users\user\Music\Phenix\apps\reference\domains\execution_position\Readme\EVENTS.md
+- `fsm_open_decisions_total`
+- `fsm_close_decisions_total`
+- `fsm_bracket_orders_placed`
+- `fsm_errors_total`
+- `exposure_guard_blocks`
+- `order_timeouts`</content>
+<parameter name="filePath">c:\Users\user\Music\Phenix\apps\reference\domains\execution_position\EVENTS.md

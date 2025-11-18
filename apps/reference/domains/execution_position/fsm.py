@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Coroutine
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Coroutine
 
 from vfoundation.core.fsm_emit_compat import Message, emit_compat
 from vfoundation.dr import wal
@@ -38,9 +38,12 @@ from .manage_config import (
     WsSnapshotConfig,
     resolve_execution_manage_config,
 )
+from .agg_oco_introspection import AggOcoStateRow
 from .agg_oco_watchdog import (
-    WatchdogViolation,
-    WatchdogViolationKind,
+    AggOcoViolation,
+    AggOcoViolationKind,
+    WatchdogPosition,
+    normalize_positions_for_watchdog,
     validate_agg_oco_invariants,
 )
 from .order_guardian import OrderGuardian
@@ -53,6 +56,7 @@ from .utils import (
     opposite_side,
 )
 from .watchdog import OrderTimeoutWatchdog
+from .contracts import canonicalize_position_side
 
 try:
     from apps.reference.telemetry.alerts import AlertManager
@@ -70,6 +74,7 @@ except ImportError:  # pragma: no cover
 
 
 LOG = logging.getLogger(__name__)
+agg_oco_logger = logging.getLogger("agg_oco")
 
 
 @dataclass(frozen=True)
@@ -169,6 +174,9 @@ class ExecPosFSM:
         self.correlation_store = CorrelationStore()
         # Track SL/TP bracket orders per symbol for atomic cleanup on close
         self._symbol_brackets: Dict[str, Dict[str, str]] = {}
+        # Track aggregated bracket placement outcomes until both SL & TP complete
+        self._aggregated_bracket_buffer: Dict[str, Dict[str, Dict[str, Any]]]
+        self._aggregated_bracket_buffer = {}
         # Background task started flag
         self._bg_started: bool = False
         self._guardian_start_scheduled: bool = False
@@ -223,6 +231,13 @@ class ExecPosFSM:
         agg_cfg = getattr(getattr(manage_cfg, "brackets",
                           None), "aggregated_oco", None)
         self._agg_oco_enabled: bool = bool(getattr(agg_cfg, "enabled", False))
+        self._aggregated_only_mode: bool = bool(
+            getattr(agg_cfg, "aggregated_only_mode", False)
+        )
+        LOG.info(
+            "ExecPosFSM aggregated-only mode",
+            extra={"aggregated_only_mode": self._aggregated_only_mode},
+        )
         self._agg_watchdog_cfg = getattr(agg_cfg, "watchdog", None)
         self._agg_watchdog_enabled: bool = bool(
             self._agg_oco_enabled and getattr(
@@ -238,6 +253,7 @@ class ExecPosFSM:
         ) if self._agg_watchdog_cfg else True
         self._agg_watchdog_task: Optional[asyncio.Task] = None
         self._agg_watchdog_lock = asyncio.Lock()
+        self._agg_watchdog_status: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         self._guardian_cfg = manage_cfg.guardian
         self._guardian_unified = bool(self._guardian_cfg.unified)
@@ -315,39 +331,7 @@ class ExecPosFSM:
 
         if not self.shadow_mode:
             self._initialize_adapter()
-            # 🔧 POLLING FIX: Connect Watchdog hooks to adapter functions after initialization
-            if hasattr(self.watchdog, 'set_hooks') and self.adapter:
-                async def emit_trade_executed(event_name, payload, why="polling_fill"):
-                    """Emit TRADE_EXECUTED event via FSM event system."""
-                    try:
-                        verb = event_name.split(
-                            ":")[1] if ":" in event_name else event_name
-
-                        # Build kwargs for Message, only include rid if present
-                        msg_kwargs = {
-                            "op": "EVT",
-                            "verb": verb,
-                            "src": "execution_position",
-                            "dst": "execution_position",
-                            "pld": payload,
-                            "why": why
-                        }
-
-                        # Only add rid if it's present and not None
-                        if payload.get("rid") is not None:
-                            msg_kwargs["rid"] = payload["rid"]
-
-                        msg = Message(**msg_kwargs)
-                        await emit_compat(self.fsm, msg, logger=LOG)
-                    except Exception as e:
-                        self.logger.error(f"Failed to emit {event_name}: {e}")
-
-                self.watchdog.set_hooks(
-                    get_order_fn=self.adapter.get_order,
-                    emit_fn=emit_trade_executed
-                )
-                self.logger.info(
-                    "✅ Watchdog REST polling hooks connected")
+            self._bind_watchdog_hooks()
             # Initialize OrderGuardian for TP/SL cleanup with strict ownership tracking
             poll_interval_ms, poll_source = self._effective_guardian_poll_interval()
             self.logger.info(
@@ -487,6 +471,86 @@ class ExecPosFSM:
         long_key = self._ws_cache_key(symbol_upper, "LONG")
         short_key = self._ws_cache_key(symbol_upper, "SHORT")
         return self._ws_position_cache.get(long_key) or self._ws_position_cache.get(short_key)
+
+    def _build_live_position_provider(self, symbol: str) -> Callable[[], Optional[Dict[str, Any]]]:
+        def _provider(symbol: str = symbol) -> Optional[Dict[str, Any]]:
+            return self._resolve_live_position_state(symbol)
+
+        return _provider
+
+    def _resolve_live_position_state(self, symbol: str) -> Optional[Dict[str, Any]]:
+        symbol_upper = symbol.upper()
+
+        def _as_decimal(value: Any) -> Optional[Decimal]:
+            if value is None:
+                return None
+            try:
+                return Decimal(str(value))
+            except (InvalidOperation, ValueError, TypeError):
+                return None
+
+        snapshot = self._get_ws_snapshot(symbol_upper, None)
+        if snapshot:
+            qty = _as_decimal(snapshot.position_amt)
+            if qty is not None:
+                signed_qty = qty if snapshot.side.upper() == "LONG" else -qty
+                avg_price = _as_decimal(snapshot.avg_price)
+                return {
+                    "symbol": symbol_upper,
+                    "qty": signed_qty,
+                    "avg_price": avg_price,
+                    "side": "BUY" if signed_qty >= 0 else "SELL",
+                    "source": "ws_snapshot",
+                    "updated_ts": snapshot.updated_ts,
+                }
+
+        latest_state = self._latest_portfolio_state if isinstance(
+            self._latest_portfolio_state, dict) else {}
+        positions_payload = latest_state.get("positions") or []
+        for raw in positions_payload:
+            mapping = self._as_mapping(raw)
+            if not mapping:
+                continue
+            if str(mapping.get("symbol", "")).upper() != symbol_upper:
+                continue
+            qty = _as_decimal(
+                mapping.get("positionAmt")
+                or mapping.get("position_amount")
+                or mapping.get("position_amt")
+                or mapping.get("qty")
+                or mapping.get("quantity")
+            )
+            if qty is None:
+                qty = Decimal("0")
+            side_hint = str(
+                mapping.get("positionSide")
+                or mapping.get("position_side")
+                or ("LONG" if qty >= 0 else "SHORT")
+            ).upper()
+            signed_qty = qty if side_hint == "LONG" else -qty
+            avg_price = _as_decimal(
+                mapping.get("entryPrice")
+                or mapping.get("avg_entry_price")
+                or mapping.get("avgPrice")
+                or mapping.get("avg_price")
+            )
+            updated_ts = mapping.get("updateTime") or mapping.get(
+                "ts") or latest_state.get("positions_last_ts_ms")
+            try:
+                updated_ts_val = float(
+                    updated_ts) if updated_ts is not None else None
+            except (TypeError, ValueError):
+                updated_ts_val = None
+            return {
+                "symbol": symbol_upper,
+                "qty": signed_qty,
+                "avg_price": avg_price,
+                "side": "BUY" if signed_qty >= 0 else "SELL",
+                "source": "portfolio_state",
+                "updated_ts": updated_ts_val,
+            }
+
+        return None
 
     def _ws_snapshot_age_ms(self, snapshot: PositionSnapshot) -> float:
         return max(0.0, (time.time() - snapshot.updated_ts) * 1000.0)
@@ -859,6 +923,200 @@ class ExecPosFSM:
                 self.logger.debug(
                     "OrderTimeoutWatchdog start fallback failed", exc_info=True)
 
+    def _bind_watchdog_hooks(self) -> None:
+        """(Re)bind watchdog REST hooks to the current adapter and emitter."""
+        watchdog = getattr(self, "watchdog", None)
+        if not watchdog or not hasattr(watchdog, "set_hooks"):
+            self.logger.debug(
+                "Watchdog hook binding skipped: watchdog missing set_hooks")
+            return
+
+        adapter = getattr(self, "adapter", None)
+        get_order_fn = getattr(adapter, "get_order", None) if adapter else None
+        if not callable(get_order_fn):
+            self.logger.debug(
+                "Watchdog hook binding skipped: adapter.get_order unavailable")
+            return
+
+        try:
+            watchdog.set_hooks(
+                get_order_fn=get_order_fn,
+                emit_fn=self._emit_watchdog_event,
+            )
+            self.logger.info("✅ Watchdog REST polling hooks connected")
+        except Exception:
+            self.logger.exception("Failed to bind watchdog REST polling hooks")
+
+    async def _emit_watchdog_event(
+        self,
+        event_name: str,
+        payload: Optional[Dict[str, Any]],
+        why: str = "rest_watchdog",
+    ) -> None:
+        """Deliver watchdog-detected events with guaranteed handle() delivery."""
+
+        raw_payload: Dict[str, Any] = dict(payload or {})
+        rid_hint = raw_payload.pop("rid", None)
+        raw_payload.setdefault(
+            "source", raw_payload.get("source") or "rest_watchdog")
+
+        verb = event_name.split(":", 1)[1] if ":" in event_name else event_name
+        canonical_payload, resolved_rid = self._canonicalize_watchdog_payload(
+            verb,
+            raw_payload,
+            rid_hint,
+        )
+        canonical_payload.setdefault("domain", "execution_position")
+
+        msg_kwargs = {
+            "op": "EVT",
+            "verb": verb,
+            "src": "execution_position.watchdog",
+            "dst": "execution_position",
+            "pld": canonical_payload,
+            "why": why or "rest_watchdog",
+        }
+        if resolved_rid is not None:
+            msg_kwargs["rid"] = resolved_rid
+
+        msg = Message(**msg_kwargs)
+        log_meta = {
+            "verb": msg.verb,
+            "symbol": canonical_payload.get("symbol"),
+            "order_id": canonical_payload.get("orderId"),
+            "rid": msg.rid,
+            "source": canonical_payload.get("source"),
+        }
+
+        self.logger.info("WATCHDOG_EMIT_TRADE_EXECUTED", extra=log_meta)
+
+        bus = getattr(self, "bus", None)
+        if bus is not None:
+            try:
+                if isinstance(bus, LocalBus):
+                    bus.emit(event_name, msg)
+                else:
+                    await emit_compat(bus, msg, logger=LOG)
+            except Exception:
+                self.logger.exception(
+                    "WATCHDOG_EMIT_FAILED_BUS", extra=log_meta)
+
+        delivery_meta = {
+            "verb": msg.verb,
+            "rid": msg.rid,
+            "symbol": canonical_payload.get("symbol"),
+        }
+
+        try:
+            self.handle(msg)
+            self.logger.info(
+                "WATCHDOG_EVENT_DELIVERED_TO_FSM",
+                extra=delivery_meta,
+            )
+        except Exception:
+            self.logger.exception(
+                "WATCHDOG_EMIT_FAILED_HANDLE",
+                extra=delivery_meta,
+            )
+
+    def _canonicalize_watchdog_payload(
+        self,
+        verb: str,
+        payload: Dict[str, Any],
+        rid_hint: Optional[str],
+    ) -> Tuple[Dict[str, Any], Optional[str]]:
+        """Normalize watchdog payloads to match canonical TRADE_EXECUTED contracts."""
+
+        canonical = dict(payload or {})
+        canonical.setdefault("source", canonical.get(
+            "source") or "rest_watchdog")
+        resolved_rid = rid_hint
+
+        client_id = canonical.get(
+            "clientOrderId") or canonical.get("client_order_id")
+        if client_id:
+            canonical["clientOrderId"] = str(client_id)
+
+        if verb == "TRADE_EXECUTED":
+            order_identifier = (
+                canonical.get("orderId")
+                or canonical.get("order_id")
+                or canonical.get("exchangeOrderId")
+            )
+            correlation = None
+            if order_identifier and hasattr(self, "correlation_store"):
+                try:
+                    correlation = self.correlation_store.get_by_order_id(
+                        str(order_identifier)
+                    )
+                except Exception:
+                    correlation = None
+
+            if correlation:
+                canonical.setdefault("corr_id", correlation.get("corr_id"))
+                canonical.setdefault(
+                    "parent_client_order_id",
+                    correlation.get("parent_client_order_id"),
+                )
+                canonical.setdefault(
+                    "oco_group_id", correlation.get("oco_group_id"))
+                corr_rid = correlation.get("rid")
+                if corr_rid and not resolved_rid:
+                    resolved_rid = corr_rid
+                parent_client_order_id = correlation.get(
+                    "parent_client_order_id")
+                if parent_client_order_id and not canonical.get("clientOrderId"):
+                    canonical["clientOrderId"] = parent_client_order_id
+
+            side = canonical.get("side") or canonical.get("orderSide")
+            if side:
+                canonical["side"] = str(side).lower()
+
+            qty_value = (
+                canonical.get("quantity")
+                or canonical.get("qty")
+                or canonical.get("executedQty")
+                or canonical.get("origQty")
+            )
+            if qty_value is not None:
+                quantity_str = str(qty_value).strip()
+                if quantity_str:
+                    quantity_str = quantity_str.lstrip("+")
+                    if canonical.get("side") == "sell":
+                        quantity_str = quantity_str.lstrip("-")
+                        if quantity_str and not quantity_str.startswith("-"):
+                            quantity_str = f"-{quantity_str}"
+                    elif canonical.get("side") == "buy":
+                        quantity_str = quantity_str.lstrip("-")
+                    canonical["quantity"] = quantity_str
+                    canonical.setdefault("qty", quantity_str)
+
+            price = (
+                canonical.get("price")
+                or canonical.get("avgPrice")
+                or canonical.get("avg_price")
+            )
+            if price is not None:
+                canonical["price"] = str(price)
+
+            ts_value = (
+                canonical.get("ts")
+                or canonical.get("updateTime")
+                or canonical.get("transactTime")
+                or canonical.get("time")
+            )
+            if ts_value is not None:
+                canonical["ts"] = ts_value
+
+            canonical.setdefault(
+                "venue", canonical.get("venue") or "binance_rest_watchdog"
+            )
+
+        if resolved_rid and "rid" not in canonical:
+            canonical["rid"] = resolved_rid
+
+        return canonical, resolved_rid
+
     def set_async_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Register the shared asyncio loop for guardian/adapter tasks."""
         self._async_loop = loop
@@ -902,6 +1160,39 @@ class ExecPosFSM:
                 return result
         except Exception:
             raise
+
+    async def _call_reduce_only_order(
+        self,
+        fn,
+        *,
+        symbol: str,
+        qty: Any,
+        context: str,
+        args: tuple[Any, ...],
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        try:
+            return await self._call_adapter_fn(fn, *(args or ()), **(kwargs or {}))
+        except ValueError as exc:
+            if self._is_qty_rounding_error(exc):
+                self._log_qty_rounding_skip(symbol, qty, context)
+                return None
+            raise
+
+    @staticmethod
+    def _is_qty_rounding_error(exc: Exception) -> bool:
+        return "Quantity rounds to zero with stepSize" in str(exc)
+
+    def _log_qty_rounding_skip(self, symbol: str, qty: Any, context: str) -> None:
+        self.logger.warning(
+            "DECISION_SKIPPED_QTY_UNDER_MIN",
+            extra={
+                "symbol": symbol,
+                "qty": str(qty),
+                "context": context,
+                "reason": "adapter_qty_rounds_to_zero",
+            },
+        )
 
     def _submit_async(
         self,
@@ -1075,6 +1366,61 @@ class ExecPosFSM:
         self._submit_async(self._cleanup_loop, loop)
         self._bg_started = True
 
+    def _list_guardian_bracket_sets(self) -> List[Any]:
+        guardian = getattr(self, "order_guardian", None)
+        if not guardian:
+            return []
+        try:
+            list_fn = getattr(guardian, "list_bracket_sets", None)
+            if callable(list_fn):
+                metas = list_fn() or []
+                return list(metas)
+        except Exception as exc:
+            self.logger.debug(
+                "Aggregated OCO watchdog failed to list bracket sets: %s", exc
+            )
+        return []
+
+    def _rehydrate_guardian_state(
+        self,
+        *,
+        normalized_positions: Sequence[WatchdogPosition],
+        open_orders: Sequence[Any],
+        metas: Sequence[Any],
+        now_ts: float,
+    ) -> None:
+        guardian = getattr(self, "order_guardian", None)
+        if not guardian or not normalized_positions:
+            return
+        rehydrate_fn = getattr(
+            guardian, "rehydrate_bracket_set_for_position", None)
+        if not callable(rehydrate_fn):
+            return
+        existing_keys = {
+            (str(getattr(meta, "symbol", "")).upper(),
+             str(getattr(meta, "side", "")).upper())
+            for meta in metas or []
+        }
+        for position in normalized_positions:
+            key = (position.symbol.upper(), position.side.upper())
+            if key in existing_keys:
+                continue
+            try:
+                rehydrate_fn(
+                    symbol=position.symbol,
+                    side=position.side,
+                    position_amt=position.quantity,
+                    open_orders=open_orders,
+                    now_ts=now_ts,
+                )
+            except Exception as exc:
+                self.logger.debug(
+                    "Aggregated OCO watchdog rehydrate failed for %s/%s: %s",
+                    position.symbol,
+                    position.side,
+                    exc,
+                )
+
     def _schedule_agg_oco_watchdog(self) -> None:
         """Start aggregated OCO watchdog loop when enabled and dependencies ready."""
 
@@ -1143,25 +1489,26 @@ class ExecPosFSM:
 
             open_orders = open_orders or []
             positions = positions or []
-
-            metas: Sequence[Any] = []
-            try:
-                list_fn = getattr(self.order_guardian,
-                                  "list_bracket_sets", None)
-                if callable(list_fn):
-                    metas = list_fn() or []
-            except Exception as exc:
-                metas = []
-                self.logger.debug(
-                    "Aggregated OCO watchdog failed to read bracket sets: %s", exc
+            now_ts = time.time()
+            metas: Sequence[Any] = self._list_guardian_bracket_sets()
+            normalized_positions = normalize_positions_for_watchdog(positions)
+            if normalized_positions:
+                self._rehydrate_guardian_state(
+                    normalized_positions=normalized_positions,
+                    open_orders=open_orders,
+                    metas=metas,
+                    now_ts=now_ts,
                 )
+                refreshed = self._list_guardian_bracket_sets()
+                if refreshed:
+                    metas = refreshed
 
             try:
-                result = validate_agg_oco_invariants(
+                violations = validate_agg_oco_invariants(
                     positions=positions,
                     open_orders=open_orders,
                     bracket_metas=metas,
-                    now_ts=time.time(),
+                    now_ts=now_ts,
                 )
             except Exception as exc:
                 self.logger.warning(
@@ -1169,7 +1516,14 @@ class ExecPosFSM:
                 )
                 return
 
-            if result.ok:
+            self._update_watchdog_snapshot(
+                violations=violations,
+                metas=metas,
+                normalized_positions=normalized_positions,
+                now_ts=now_ts,
+            )
+
+            if not violations:
                 self.logger.debug(
                     "Aggregated OCO watchdog OK (orders=%s metas=%s)",
                     len(open_orders),
@@ -1177,36 +1531,273 @@ class ExecPosFSM:
                 )
                 return
 
-            for violation in result.violations:
-                self.logger.warning(
-                    "[AGG_WATCHDOG] violation=%s symbol=%s side=%s details=%s",
-                    violation.kind.value,
-                    violation.symbol,
-                    violation.side,
-                    violation.details,
-                )
+            for violation in violations:
+                self._log_watchdog_violation(violation)
                 if self._agg_watchdog_auto_heal:
                     await self._auto_heal_watchdog_violation(violation)
 
-    async def _auto_heal_watchdog_violation(self, violation: WatchdogViolation) -> None:
-        if not self._agg_watchdog_auto_heal or not self.order_guardian:
-            return
-        healable_kinds = {
-            WatchdogViolationKind.ORPHAN_SL_FOR_ZERO_POSITION,
-            WatchdogViolationKind.STALE_META_FOR_ZERO_POSITION,
-        }
-        if violation.kind not in healable_kinds:
+    def _log_watchdog_violation(self, violation: AggOcoViolation) -> None:
+        try:
+            extra = {
+                "event_type": "AGG_OCO_WATCHDOG",
+                "symbol": violation.symbol,
+                "side": violation.side,
+                "kind": violation.kind.value,
+                "why": violation.why,
+            }
+            extra.update(violation.details or {})
+            self.logger.warning("AGG_OCO_WATCHDOG", extra=extra)
+        except Exception:
+            self.logger.warning(
+                "[AGG_WATCHDOG] violation=%s symbol=%s side=%s details=%s",
+                violation.kind.value,
+                violation.symbol,
+                violation.side,
+                violation.details,
+            )
+
+    async def _heal_orphan_sl_for_zero_position(self, violation: AggOcoViolation) -> None:
+        guardian = getattr(self, "order_guardian", None)
+        if not guardian:
             return
         rid = f"agg_watchdog_{int(time.time() * 1000)}"
         try:
-            await self.order_guardian.reconcile_symbol(violation.symbol, rid=rid)
+            await guardian.cleanup_orphans(symbol=violation.symbol)
         except Exception as exc:
             self.logger.warning(
-                "Aggregated OCO watchdog auto-heal failed for %s/%s: %s",
+                "Aggregated OCO watchdog orphan cleanup failed for %s/%s: %s",
                 violation.symbol,
                 violation.side,
                 exc,
             )
+            return
+
+        clear_fn = getattr(guardian, "clear_bracket_set_for_position", None)
+        if callable(clear_fn):
+            try:
+                clear_fn(symbol=violation.symbol, side=violation.side)
+            except Exception as exc:
+                self.logger.debug(
+                    "Aggregated OCO watchdog failed to clear bracket meta for %s/%s: %s",
+                    violation.symbol,
+                    violation.side,
+                    exc,
+                )
+
+        self.logger.info(
+            "AGG_OCO_WATCHDOG_AUTOHEAL",
+            extra={
+                "event_type": "AGG_OCO_WATCHDOG_AUTOHEAL",
+                "symbol": violation.symbol,
+                "side": violation.side,
+                "kind": violation.kind.value,
+                "why": "agg_watchdog_auto_heal_orphans",
+                "rid": rid,
+            },
+        )
+
+    async def _auto_heal_watchdog_violation(self, violation: AggOcoViolation) -> None:
+        if not self._agg_watchdog_auto_heal or not self.order_guardian:
+            return
+        if violation.kind == AggOcoViolationKind.ORPHAN_SL_FOR_ZERO_POSITION:
+            await self._heal_orphan_sl_for_zero_position(violation)
+
+    @staticmethod
+    def _format_decimal_value(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        try:
+            return str(Decimal(str(value)))
+        except (InvalidOperation, ValueError, TypeError):
+            try:
+                return str(value)
+            except Exception:
+                return None
+
+    def _record_watchdog_status(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        status: str,
+        updated_ts: float,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        key = (symbol.upper(), side.upper())
+        self._agg_watchdog_status[key] = {
+            "status": status,
+            "updated_ts": updated_ts,
+            "details": details or {},
+        }
+
+    def _update_watchdog_snapshot(
+        self,
+        *,
+        violations: Sequence[AggOcoViolation],
+        metas: Sequence[Any],
+        normalized_positions: Sequence[WatchdogPosition],
+        now_ts: float,
+    ) -> None:
+        observed_keys: Set[Tuple[str, str]] = set()
+        for position in normalized_positions or []:
+            observed_keys.add((position.symbol.upper(), position.side.upper()))
+        for meta in metas or []:
+            symbol = str(getattr(meta, "symbol", "")).upper()
+            side = str(getattr(meta, "side", "")).upper()
+            if symbol and side:
+                observed_keys.add((symbol, side))
+
+        violation_keys: Set[Tuple[str, str]] = set()
+        for violation in violations or []:
+            key = (violation.symbol.upper(), violation.side.upper())
+            violation_keys.add(key)
+            self._record_watchdog_status(
+                symbol=violation.symbol,
+                side=violation.side,
+                status=violation.kind.value,
+                updated_ts=now_ts,
+                details=violation.details or {},
+            )
+
+        if not observed_keys and violation_keys:
+            observed_keys = set(violation_keys)
+
+        if not violations:
+            for symbol, side in observed_keys:
+                self._record_watchdog_status(
+                    symbol=symbol,
+                    side=side,
+                    status="OK",
+                    updated_ts=now_ts,
+                )
+        else:
+            for symbol, side in observed_keys - violation_keys:
+                self._record_watchdog_status(
+                    symbol=symbol,
+                    side=side,
+                    status="OK",
+                    updated_ts=now_ts,
+                )
+
+    def get_agg_oco_state_snapshot(
+        self,
+        symbol: Optional[str] = None,
+        side: Optional[str] = None,
+        *,
+        as_dict: bool = True,
+    ) -> List[Any]:
+        """Return a merged Aggregated OCO state dump for observability/CLI."""
+
+        rows: Dict[Tuple[str, str], AggOcoStateRow] = {}
+        symbol_filter = symbol.upper() if symbol else None
+        side_filter = side.upper() if side else None
+
+        def _accept(key: Tuple[str, str]) -> bool:
+            if symbol_filter and key[0] != symbol_filter:
+                return False
+            if side_filter and key[1] != side_filter:
+                return False
+            return True
+
+        def _ensure_row(sym: str, row_side: str) -> AggOcoStateRow:
+            key = (sym.upper(), row_side.upper())
+            row = rows.get(key)
+            if row is None:
+                row = AggOcoStateRow(symbol=key[0], side=key[1])
+                rows[key] = row
+            return row
+
+        # 1) WS snapshot cache (live qty/avg price)
+        for (sym, row_side), snapshot in list(self._ws_position_cache.items()):
+            key = (sym.upper(), row_side.upper())
+            if not _accept(key):
+                continue
+            row = _ensure_row(sym, row_side)
+            row.position_qty = self._format_decimal_value(
+                snapshot.position_amt)
+            row.avg_entry_price = self._format_decimal_value(
+                snapshot.avg_price)
+            row.position_source = row.position_source or "ws_snapshot"
+            row.position_updated_ts = snapshot.updated_ts
+
+        # 2) ManageFlow state (sl/tp levels, fallback qty)
+        with self._flows_lock:
+            manage_items = list(self.manage_flows.items())
+        for sym, manage in manage_items:
+            agg_side = getattr(manage, "_agg_side", None)
+            if not agg_side:
+                pos_side = getattr(manage, "position_side", None)
+                canonical = canonicalize_position_side(pos_side)
+                if canonical is not None:
+                    agg_side = canonical.value
+            if not agg_side:
+                continue
+            key = (sym.upper(), agg_side.upper())
+            if not _accept(key):
+                continue
+            row = _ensure_row(sym, agg_side)
+            qty = getattr(manage, "position_qty", None)
+            if row.position_qty is None and qty is not None:
+                row.position_qty = self._format_decimal_value(qty)
+                row.position_source = row.position_source or "manage_flow"
+            avg_price = getattr(manage, "position_entry_price", None)
+            if row.avg_entry_price is None and avg_price is not None:
+                row.avg_entry_price = self._format_decimal_value(avg_price)
+            sl_price = getattr(manage, "sl_price", None)
+            tp_price = getattr(manage, "tp_price", None)
+            if row.sl_price is None and sl_price is not None:
+                row.sl_price = self._format_decimal_value(sl_price)
+            if row.tp_price is None and tp_price is not None:
+                row.tp_price = self._format_decimal_value(tp_price)
+            meta = getattr(manage, "_current_bracket_meta", None)
+            if meta:
+                if row.bracket_set_id is None:
+                    row.bracket_set_id = getattr(meta, "bracket_set_id", None)
+                if row.bracket_version is None:
+                    row.bracket_version = getattr(meta, "version", None)
+
+        # 3) OrderGuardian bracket metadata (ownership + order IDs)
+        for meta in self._list_guardian_bracket_sets():
+            sym = str(getattr(meta, "symbol", ""))
+            row_side = str(getattr(meta, "side", ""))
+            if not sym or not row_side:
+                continue
+            key = (sym.upper(), row_side.upper())
+            if not _accept(key):
+                continue
+            row = _ensure_row(sym, row_side)
+            row.bracket_set_id = getattr(
+                meta, "bracket_set_id", row.bracket_set_id)
+            row.bracket_version = getattr(meta, "version", row.bracket_version)
+            row.bracket_created_ts = getattr(
+                meta, "created_ts", row.bracket_created_ts)
+            row.bracket_sl_order_id = getattr(
+                meta, "sl_order_id", row.bracket_sl_order_id)
+            row.bracket_tp_order_id = getattr(
+                meta, "tp_order_id", row.bracket_tp_order_id)
+
+        # 4) Watchdog last status
+        for key, status in list(self._agg_watchdog_status.items()):
+            if not _accept(key):
+                continue
+            row = _ensure_row(*key)
+            row.watchdog_status = status.get("status", "UNKNOWN")
+            updated_ts = status.get("updated_ts")
+            if updated_ts is not None:
+                row.watchdog_updated_ts = updated_ts
+            details = status.get("details")
+            if details:
+                row.watchdog_details = details
+
+        for row in rows.values():
+            if row.position_qty is None and row.watchdog_status != "UNKNOWN":
+                row.position_qty = "0"
+                row.position_source = row.position_source or "watchdog"
+
+        ordered = [rows[key] for key in sorted(rows)]
+        if as_dict:
+            return [entry.as_dict() for entry in ordered]
+        return ordered
 
     @staticmethod
     def _is_cancel_success_response(result: Any) -> bool:
@@ -1415,8 +2006,18 @@ class ExecPosFSM:
                 f"EVT:TRADE_EXECUTED missing required fields: symbol={symbol}, quantity={quantity}")
             return
 
+        source = payload.get("source") or event.why or "unknown"
         self.logger.info(
-            f"EVT:TRADE_EXECUTED received in ExecPosFSM: symbol={symbol} side={side} qty={quantity} key={idempotent_key}")
+            f"EVT:TRADE_EXECUTED received in ExecPosFSM: symbol={symbol} side={side} qty={quantity} key={idempotent_key} source={source}",
+            extra={
+                "symbol": symbol,
+                "side": side,
+                "qty": quantity,
+                "key": idempotent_key,
+                "source": source,
+                "rid": rid,
+            },
+        )
 
         # 🔄 IDEMPOTENT: Check if this event was already processed
         event_key = f"trade_executed_{idempotent_key or rid or 'unknown'}_{symbol}"
@@ -1880,6 +2481,8 @@ class ExecPosFSM:
                     config=self.config,
                     price_service=getattr(self, 'price_service', None),
                     order_guardian=getattr(self, 'order_guardian', None),
+                    live_position_provider=self._build_live_position_provider(
+                        symbol),
                 )
                 self.close_flows[symbol] = CloseFlowFSM()
 
@@ -2042,24 +2645,52 @@ class ExecPosFSM:
 
         # If a decision was made, log it and execute if not in shadow mode
         if result and result.op == "DEC":
-            if symbol:
-                if result.verb == "CLOSE":
-                    state = self._close_position_state.setdefault(
-                        symbol, {"active": False, "open_ts": time.time()})
-                    state["active"] = False
-            wal.append({
-                "event_type": "msg_out",
-                "data": result.model_dump(),
-                "timestamp": int(time.time() * 1000)
-            })
-            # ✅ FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
-            if (not self.shadow_mode and self.adapter) or (result.verb == "CLOSE" and self.adapter):
-                # Asynchronously execute the trade decision
-                loop = self._get_async_loop()
-                if loop:
-                    self._submit_async(self._execute_decision(result), loop)
+            self._dispatch_decision(result, symbol)
+
+        pending_decisions: List[Message] = []
+        try:
+            if hasattr(manage_flow, "consume_pending_decisions"):
+                pending_decisions = manage_flow.consume_pending_decisions()
+        except Exception:
+            pending_decisions = []
+
+        for queued_decision in pending_decisions:
+            self._dispatch_decision(queued_decision, symbol)
 
         return result
+
+    def _dispatch_decision(self, decision: Message, symbol_hint: Optional[str]) -> None:
+        """Log and execute DEC messages emitted by sub-flows."""
+        if decision.op != "DEC":
+            return
+
+        target_symbol = symbol_hint
+        try:
+            if not target_symbol and isinstance(decision.pld, dict):
+                target_symbol = decision.pld.get("symbol")
+        except Exception:
+            target_symbol = symbol_hint
+
+        if target_symbol and decision.verb == "CLOSE":
+            state = self._close_position_state.setdefault(
+                target_symbol, {"active": False, "open_ts": time.time()})
+            state["active"] = False
+
+        wal.append({
+            "event_type": "msg_out",
+            "data": decision.model_dump(),
+            "timestamp": int(time.time() * 1000)
+        })
+
+        execute_decision = (not self.shadow_mode and self.adapter) or (
+            decision.verb == "CLOSE" and self.adapter)
+        if not execute_decision:
+            return
+
+        loop = self._get_async_loop()
+        if not loop:
+            return
+        self._submit_async(self._execute_decision(decision), loop)
 
     async def replay_on_startup(self) -> None:
         """
@@ -2110,6 +2741,23 @@ class ExecPosFSM:
     async def _execute_decision(self, decision: Message):
         """Asynchronously execute a trading decision using the adapter."""
         if not self.adapter:
+            return
+
+        try:
+            symbol_hint = (decision.pld or {}).get(
+                "symbol") if isinstance(decision.pld, dict) else None
+        except Exception:
+            symbol_hint = None
+
+        if not symbol_hint and decision.verb not in {"CANCEL_ORDER"}:
+            self.logger.error(
+                "DECISION_MISSING_SYMBOL",
+                extra={
+                    "verb": decision.verb,
+                    "rid": getattr(decision, "rid", None),
+                    "payload_keys": list((decision.pld or {}).keys()) if isinstance(decision.pld, dict) else None,
+                },
+            )
             return
 
         # --- CRITICAL SAFETY GUARDRAIL ---
@@ -2188,6 +2836,10 @@ class ExecPosFSM:
                         else:
                             self.logger.warning(
                                 f"Failed to cancel order {order_id} for {symbol}: {e}")
+                return
+
+            if decision.verb == "PLACE_ORDER":
+                await self._handle_place_order_decision(decision)
                 return
 
             # Execute close intent: cancel brackets then place reduce-only MARKET
@@ -2273,7 +2925,16 @@ class ExecPosFSM:
                             close_qty = str(abs(Decimal(str(remaining_qty))))
                             close_id = generate_client_order_id(
                                 "CLOSE", symbol)
-                            await self._call_adapter_fn(self.adapter.place_market_reduce_only, symbol, close_side, close_qty, new_client_order_id=close_id)
+                            close_resp = await self._call_reduce_only_order(
+                                self.adapter.place_market_reduce_only,
+                                symbol=symbol,
+                                qty=close_qty,
+                                context="close_market_reduce_only_entry",
+                                args=(symbol, close_side, close_qty),
+                                kwargs={"new_client_order_id": close_id},
+                            )
+                            if close_resp is None:
+                                return
                             self.logger.info(
                                 f"Close executed (by-entry) for {symbol}: parent={pld_parent_id} side={close_side} qty={close_qty}")
                         except Exception as e:
@@ -2382,7 +3043,16 @@ class ExecPosFSM:
                 close_side = "SELL" if amt > 0 else "BUY"
                 close_qty = str(abs(Decimal(str(amt))))
                 close_id = generate_client_order_id("CLOSE", symbol)
-                await self._call_adapter_fn(self.adapter.place_market_reduce_only, symbol, close_side, close_qty, new_client_order_id=close_id)
+                close_resp = await self._call_reduce_only_order(
+                    self.adapter.place_market_reduce_only,
+                    symbol=symbol,
+                    qty=close_qty,
+                    context="close_market_reduce_only",
+                    args=(symbol, close_side, close_qty),
+                    kwargs={"new_client_order_id": close_id},
+                )
+                if close_resp is None:
+                    return
                 self.logger.info(
                     f"Close executed for {symbol}: side={close_side} qty={close_qty}")
                 self._symbol_brackets.pop(symbol, None)
@@ -2496,49 +3166,52 @@ class ExecPosFSM:
             symbol = decision.pld["symbol"]
             side = decision.pld["side"].upper()
             qty = decision.pld["qty"]
-
-            # Get mark price and filters
-            mark = await self._call_adapter_fn(self.adapter.get_mark_price, symbol)
-            exchange_info = await self._call_adapter_fn(self.adapter.get_exchange_info, symbol)
-            tick_size = float(
-                next(
-                    f["tickSize"]
-                    for f in exchange_info["symbols"][0]["filters"]
-                    if f["filterType"] == "PRICE_FILTER"
+            tick_size = None
+            tp = None
+            sl = None
+            if not self._aggregated_only_mode:
+                # Get mark price and filters
+                mark = await self._call_adapter_fn(self.adapter.get_mark_price, symbol)
+                exchange_info = await self._call_adapter_fn(self.adapter.get_exchange_info, symbol)
+                tick_size = float(
+                    next(
+                        f["tickSize"]
+                        for f in exchange_info["symbols"][0]["filters"]
+                        if f["filterType"] == "PRICE_FILTER"
+                    )
                 )
-            )
 
-            # Resolve TP/SL basis points once via canonical helper
-            try:
-                resolved_brackets = resolve_brackets_config(
-                    self.config, symbol=symbol
+                # Resolve TP/SL basis points once via canonical helper
+                try:
+                    resolved_brackets = resolve_brackets_config(
+                        self.config, symbol=symbol
+                    )
+                    sl_bps = resolved_brackets.sl_bps
+                    tp_bps = resolved_brackets.tp_bps
+                except Exception:
+                    self.logger.warning(
+                        "resolve_brackets_config failed for %s; using default TP/SL bps",
+                        symbol,
+                        exc_info=True,
+                    )
+                    sl_bps = DEFAULT_SL_BPS
+                    tp_bps = DEFAULT_TP_BPS
+
+                tp, sl = calc_tp_sl_from_mark(
+                    mark, "LONG" if side == "BUY" else "SHORT", tp_bps, sl_bps
                 )
-                sl_bps = resolved_brackets.sl_bps
-                tp_bps = resolved_brackets.tp_bps
-            except Exception:
-                self.logger.warning(
-                    "resolve_brackets_config failed for %s; using default TP/SL bps",
-                    symbol,
-                    exc_info=True,
+
+                # Quantize
+                tp = quantize_stop_price(
+                    tp, tick_size, side="BUY" if side == "BUY" else "SELL"
                 )
-                sl_bps = DEFAULT_SL_BPS
-                tp_bps = DEFAULT_TP_BPS
+                sl = quantize_stop_price(
+                    sl, tick_size, side="SELL" if side == "BUY" else "BUY"
+                )
 
-            tp, sl = calc_tp_sl_from_mark(
-                mark, "LONG" if side == "BUY" else "SHORT", tp_bps, sl_bps
-            )
-
-            # Quantize
-            tp = quantize_stop_price(
-                tp, tick_size, side="BUY" if side == "BUY" else "SELL"
-            )
-            sl = quantize_stop_price(
-                sl, tick_size, side="SELL" if side == "BUY" else "BUY"
-            )
-
-            # Validate
-            validate_not_immediate(
-                "LONG" if side == "BUY" else "SHORT", tp, sl, mark)
+                # Validate
+                validate_not_immediate(
+                    "LONG" if side == "BUY" else "SHORT", tp, sl, mark)
 
             # GATE: Check SYMBOL_TIDY before placing MARKET entry (if enabled)
             if decision.verb == "OPEN":
@@ -2621,6 +3294,23 @@ class ExecPosFSM:
             self.watchdog.ensure_started(loop=self._get_async_loop())
             self.watchdog.on_order_ack(entry_order_id)
 
+            if self._aggregated_only_mode:
+                self.logger.info(
+                    "AGG_OCO_DELEGATE_MANAGEFLOW",
+                    extra={
+                        "symbol": symbol,
+                        "decision": decision.verb,
+                        "entry_order_id": entry_order_id,
+                        "qty": str(qty),
+                        "side": side,
+                    },
+                )
+                self.logger.info(
+                    "Aggregated-only mode: delegating TP/SL to ManageFlow",
+                    extra={"symbol": symbol, "decision": decision.verb},
+                )
+                return
+
             agg_side = "LONG" if str(side).upper() == "BUY" else "SHORT"
             # ✅ PHASE A3: Pre-flight check before placing TP/SL (WS-first)
             if not await self._preflight_position_check(symbol, agg_side):
@@ -2694,13 +3384,29 @@ class ExecPosFSM:
                                             f"⚠️ [PHASE A3] TP -2021 fallback to LIMIT for {symbol}")
                                         self.metrics_collector.record_retry(
                                             "tp_fallback") if self.metrics_collector else None
-                                        return await self._call_adapter_fn(self.adapter.place_limit_reduce_only, symbol, tp_side, str(tp_adj2), qty, new_client_order_id=tp_id)
+                                        return await self._call_reduce_only_order(
+                                            self.adapter.place_limit_reduce_only,
+                                            symbol=symbol,
+                                            qty=qty,
+                                            context="tp_limit_reduce_only_retry",
+                                            args=(symbol, tp_side,
+                                                  str(tp_adj2), qty),
+                                            kwargs={
+                                                "new_client_order_id": tp_id},
+                                        )
                                 else:
                                     raise
                             # Fallback to LIMIT reduceOnly
                             self.metrics_collector.record_retry(
                                 "tp_fallback") if self.metrics_collector else None
-                            return await self._call_adapter_fn(self.adapter.place_limit_reduce_only, symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
+                            return await self._call_reduce_only_order(
+                                self.adapter.place_limit_reduce_only,
+                                symbol=symbol,
+                                qty=qty,
+                                context="tp_limit_reduce_only_retry1",
+                                args=(symbol, tp_side, str(tp_adj), qty),
+                                kwargs={"new_client_order_id": tp_id},
+                            )
                         else:
                             raise
 
@@ -2725,7 +3431,14 @@ class ExecPosFSM:
                         try:
                             tp_resp = await self._call_adapter_fn(self.adapter.place_take_profit_market_close_position, symbol, tp_side, str(tp_adj), new_client_order_id=tp_id)
                         except BinanceAPIError:
-                            tp_resp = await self._call_adapter_fn(self.adapter.place_limit_reduce_only, symbol, tp_side, str(tp_adj), qty, new_client_order_id=tp_id)
+                            tp_resp = await self._call_reduce_only_order(
+                                self.adapter.place_limit_reduce_only,
+                                symbol=symbol,
+                                qty=qty,
+                                context="tp_limit_reduce_only_fallback",
+                                args=(symbol, tp_side, str(tp_adj), qty),
+                                kwargs={"new_client_order_id": tp_id},
+                            )
                     else:
                         raise
 
@@ -2785,9 +3498,14 @@ class ExecPosFSM:
                                 keep_parent_order_id=str(
                                     entry_resp.get("orderId", "")),
                             )
-                        except Exception as _e:
-                            self.logger.debug(
-                                f"OrderGuardian cleanup_other_brackets_for_symbol skipped: {_e}")
+                        except Exception:
+                            self.logger.exception(
+                                "DECISION_EXECUTION_FAILED",
+                                extra={
+                                    "verb": decision.verb,
+                                    "rid": getattr(decision, "rid", None),
+                                },
+                            )
 
             # ✅ NEW: Sync bracket IDs with ManageFlowFSM for OCO emulation
             # Ensures ManageFlowFSM has accurate tracking even if WebSocket events are delayed
@@ -2801,6 +3519,14 @@ class ExecPosFSM:
                     sl_order_id=sl_id, tp_order_id=tp_id)
 
         except Exception as e:
+            self.logger.exception(
+                "DECISION_EXECUTION_FAILED",
+                extra={
+                    "verb": decision.verb,
+                    "rid": getattr(decision, "rid", None),
+                    "symbol": (decision.pld or {}).get("symbol") if isinstance(decision.pld, dict) else None,
+                },
+            )
             self.logger.error(
                 f"❌ Adapter failed to execute decision {decision.verb} for {decision.pld.get('symbol')}: {e}",
                 exc_info=True,
@@ -2851,6 +3577,246 @@ class ExecPosFSM:
                 why="Execution failed due to adapter error",
             )
             await emit_compat(self.fsm, exec_failed_msg, logger=LOG)
+
+    async def _handle_place_order_decision(self, decision: Message) -> None:
+        """Execute DEC:PLACE_ORDER emitted by ManageFlow aggregated brackets.
+
+        ManageFlow (see fsm_manage._emit_place_order) is the contract owner and
+        always provides symbol, side, qty (string), order_type, price/stopPrice,
+        reduceOnly flag, and suffixed newClientOrderId (_sl/_tp). ExecPosFSM must
+        simply execute that payload without re-deriving protection levels.
+        """
+        payload = decision.pld or {}
+        symbol = payload.get("symbol")
+        order_type_raw = payload.get("order_type") or payload.get("type")
+        order_type = str(order_type_raw or "").upper()
+        side = str(payload.get("side") or "").upper()
+        if not symbol or not order_type or not side:
+            self._log_place_order_failure(
+                decision, "agg_place_order_missing_fields", order_type=order_type)
+            return
+
+        stop_price = payload.get("stopPrice") or payload.get(
+            "stop_price") or payload.get("price")
+        limit_price = payload.get("price")
+        qty_value = payload.get("qty")
+        qty_str = str(qty_value) if qty_value is not None else None
+        position_side = payload.get(
+            "position_side") or payload.get("positionSide")
+        reduce_only = self._truthy_flag(
+            payload.get("reduceOnly") or payload.get("reduce_only"))
+        close_position = self._truthy_flag(
+            payload.get("closePosition") or payload.get("close_position"))
+        client_order_id = payload.get(
+            "newClientOrderId") or payload.get("clientOrderId")
+
+        if not reduce_only and not close_position:
+            self._log_place_order_failure(
+                decision, "agg_place_order_not_reduce_only", order_type=order_type)
+            return
+
+        adapter_response = None
+        bracket_kind = None
+        try:
+            if order_type == "STOP_MARKET":
+                if not stop_price:
+                    self._log_place_order_failure(
+                        decision, "agg_place_order_missing_stop", order_type=order_type)
+                    return
+                adapter_response = await self._call_adapter_fn(
+                    self.adapter.place_stop_market_close_position,
+                    symbol,
+                    side,
+                    str(stop_price),
+                    position_side=position_side,
+                    new_client_order_id=client_order_id,
+                )
+                bracket_kind = "sl"
+            elif order_type in {"TAKE_PROFIT_MARKET", "TAKE_PROFIT"}:
+                if not stop_price:
+                    self._log_place_order_failure(
+                        decision, "agg_place_order_missing_tp_stop", order_type=order_type)
+                    return
+                adapter_response = await self._call_adapter_fn(
+                    self.adapter.place_take_profit_market_close_position,
+                    symbol,
+                    side,
+                    str(stop_price),
+                    position_side=position_side,
+                    new_client_order_id=client_order_id,
+                )
+                bracket_kind = "tp"
+            elif order_type == "LIMIT":
+                if not limit_price or not qty_str:
+                    self._log_place_order_failure(
+                        decision, "agg_place_order_missing_limit_fields", order_type=order_type)
+                    return
+                adapter_response = await self._call_reduce_only_order(
+                    self.adapter.place_limit_reduce_only,
+                    symbol=symbol,
+                    qty=qty_str,
+                    context="agg_place_order_limit",
+                    args=(symbol, side, str(limit_price), qty_str),
+                    kwargs={
+                        "position_side": position_side,
+                        "new_client_order_id": client_order_id,
+                    },
+                )
+                bracket_kind = "tp"
+            else:
+                self._log_place_order_failure(
+                    decision, "agg_place_order_invalid_type", order_type=order_type)
+                return
+        except ValueError as exc:
+            if self._is_qty_rounding_error(exc):
+                return
+            self._log_place_order_failure(
+                decision, "agg_place_order_value_error", error=str(exc), order_type=order_type)
+            return
+        except Exception as exc:  # pragma: no cover - defensive fail-closed
+            self._log_place_order_failure(
+                decision, "agg_place_order_adapter_exception", error=str(exc), order_type=order_type)
+            return
+
+        if not adapter_response:
+            self._log_place_order_failure(
+                decision, "agg_place_order_no_adapter_response", order_type=order_type)
+            return
+
+        order_identifier = adapter_response.get(
+            "orderId") or adapter_response.get("order_id")
+        if not order_identifier:
+            self._log_place_order_failure(
+                decision, "agg_place_order_missing_order_id", order_type=order_type)
+            return
+
+        order_id = str(order_identifier)
+        symbol_brackets = self._symbol_brackets.setdefault(symbol, {})
+        if bracket_kind == "sl":
+            symbol_brackets["sl_order_id"] = order_id
+        else:
+            symbol_brackets["tp_order_id"] = order_id
+
+        self._record_aggregated_bracket_success(
+            decision=decision,
+            symbol=symbol,
+            bracket_kind=bracket_kind,
+            client_order_id=adapter_response.get(
+                "clientOrderId") or client_order_id,
+            order_id=order_id,
+            qty=qty_str,
+            position_side=position_side or self._infer_position_side_from_side(
+                side),
+        )
+
+    @staticmethod
+    def _truthy_flag(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+        return bool(value)
+
+    def _log_place_order_failure(
+        self,
+        decision: Message,
+        reason: str,
+        **extra_fields: Any,
+    ) -> None:
+        payload = decision.pld or {}
+        extra = {
+            "verb": decision.verb,
+            "rid": getattr(decision, "rid", None),
+            "symbol": payload.get("symbol"),
+            "reason": reason,
+        }
+        if extra_fields:
+            extra.update(extra_fields)
+        self.logger.warning("DECISION_EXECUTION_FAILED", extra=extra)
+
+    def _record_aggregated_bracket_success(
+        self,
+        *,
+        decision: Message,
+        symbol: str,
+        bracket_kind: Optional[str],
+        client_order_id: Optional[str],
+        order_id: str,
+        qty: Optional[str],
+        position_side: Optional[str],
+    ) -> None:
+        if not self._aggregated_only_mode or bracket_kind not in {"sl", "tp"}:
+            return
+
+        base_key = self._derive_aggregated_bracket_key(
+            client_order_id, decision)
+        bucket = self._aggregated_bracket_buffer.setdefault(symbol, {})
+        entry = bucket.setdefault(
+            base_key,
+            {
+                "sl": None,
+                "tp": None,
+                "qty": qty,
+                "position_side": position_side,
+            },
+        )
+        if qty and not entry.get("qty"):
+            entry["qty"] = qty
+        if position_side and not entry.get("position_side"):
+            entry["position_side"] = position_side
+        entry[bracket_kind] = order_id
+
+        if entry.get("sl") and entry.get("tp"):
+            agg_oco_logger.info(
+                "AGG_OCO_BRACKETS_PLACED",
+                extra={
+                    "symbol": symbol,
+                    "position_side": entry.get("position_side"),
+                    "sl_order_id": entry["sl"],
+                    "tp_order_id": entry["tp"],
+                    "qty": entry.get("qty"),
+                },
+            )
+
+            manage_flow = self.manage_flows.get(symbol)
+            if manage_flow:
+                manage_flow.set_bracket_ids(
+                    sl_order_id=entry.get("sl"),
+                    tp_order_id=entry.get("tp"),
+                )
+
+            bucket.pop(base_key, None)
+            if not bucket:
+                self._aggregated_bracket_buffer.pop(symbol, None)
+
+    @staticmethod
+    def _infer_position_side_from_side(side: Optional[str]) -> Optional[str]:
+        if not side:
+            return None
+        normalized = side.upper()
+        if normalized == "SELL":
+            return "LONG"
+        if normalized == "BUY":
+            return "SHORT"
+        return None
+
+    @staticmethod
+    def _derive_aggregated_bracket_key(
+        client_order_id: Optional[str],
+        decision: Message,
+    ) -> str:
+        if client_order_id:
+            lowered = client_order_id.lower()
+            if lowered.endswith("_sl") or lowered.endswith("_tp"):
+                return client_order_id.rsplit("_", 1)[0]
+            return client_order_id
+        fallback = getattr(decision, "idempotent_key", None) or getattr(
+            decision, "rid", None) or f"agg_{decision.verb}"
+        return str(fallback)
 
     def get_metrics(self) -> Dict[str, Any]:
         """Aggregate metrics from all managed FSMs."""

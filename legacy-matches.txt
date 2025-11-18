@@ -1,0 +1,65 @@
+﻿apps\reference\domains\execution_position\agg_oco_watchdog.py:31:# Backward-compatible aliases for legacy imports
+apps\reference\domains\execution_position\brackets_config.py:11:- When only legacy ratios are present, the resolver translates them into
+apps\reference\domains\execution_position\brackets_config.py:106:def _log_legacy_once(key: str, symbol: Optional[str]) -> None:
+apps\reference\domains\execution_position\brackets_config.py:113:        "Using legacy trading.execution.manage.brackets.%s%s; migrate to canonical fixed_bps keys",
+apps\reference\domains\execution_position\brackets_config.py:133:    source: str = "legacy"
+apps\reference\domains\execution_position\brackets_config.py:141:def _build_brackets_from_legacy(config: Any, symbol: Optional[str] = None) -> ResolvedBrackets:
+apps\reference\domains\execution_position\brackets_config.py:161:            legacy_sl = _coerce_decimal(_pluck(brackets_cfg, "stop_loss_bps"))
+apps\reference\domains\execution_position\brackets_config.py:162:            if legacy_sl is not None:
+apps\reference\domains\execution_position\brackets_config.py:163:                sl_bps = legacy_sl
+apps\reference\domains\execution_position\brackets_config.py:165:                _log_legacy_once("stop_loss_bps", symbol)
+apps\reference\domains\execution_position\brackets_config.py:174:            legacy_high = _coerce_decimal(
+apps\reference\domains\execution_position\brackets_config.py:177:            legacy_low = _coerce_decimal(
+apps\reference\domains\execution_position\brackets_config.py:180:            if legacy_high is not None and sl_bps is not None:
+apps\reference\domains\execution_position\brackets_config.py:182:                    str(int(round(float(sl_bps) * float(legacy_high))))
+apps\reference\domains\execution_position\brackets_config.py:185:                _log_legacy_once("take_profit_high_ratio", symbol)
+apps\reference\domains\execution_position\brackets_config.py:186:            elif legacy_low is not None and sl_bps is not None:
+apps\reference\domains\execution_position\brackets_config.py:188:                    str(int(round(float(sl_bps) * float(legacy_low))))
+apps\reference\domains\execution_position\brackets_config.py:191:                _log_legacy_once("take_profit_low_ratio", symbol)
+apps\reference\domains\execution_position\brackets_config.py:211:        source="legacy",
+apps\reference\domains\execution_position\brackets_config.py:278:                "Failed to build brackets config from v2, falling back to legacy: %s", e)
+apps\reference\domains\execution_position\brackets_config.py:279:            return _build_brackets_from_legacy(config, symbol)
+apps\reference\domains\execution_position\brackets_config.py:281:        return _build_brackets_from_legacy(config, symbol)
+apps\reference\domains\execution_position\fsm.py:191:        self._manage_cfg_source = getattr(manage_cfg, "source", "legacy")
+apps\reference\domains\execution_position\fsm.py:286:        # Support both 'ORDER_FILL' and legacy 'FILL' event verbs (legacy path for backward compatibility)
+apps\reference\domains\execution_position\fsm.py:783:        """Hydrate legacy config nodes with resolver output for guardian fields."""
+apps\reference\domains\execution_position\fsm.py:841:    def _legacy_guardian_poll_interval(self) -> Optional[int]:
+apps\reference\domains\execution_position\fsm.py:842:        """Read poll interval from legacy config nodes when available."""
+apps\reference\domains\execution_position\fsm.py:866:        if getattr(self, "_manage_cfg_source", "legacy") == "config_v2":
+apps\reference\domains\execution_position\fsm.py:868:        legacy_override = self._legacy_guardian_poll_interval()
+apps\reference\domains\execution_position\fsm.py:869:        if legacy_override is not None:
+apps\reference\domains\execution_position\fsm.py:870:            return legacy_override, "legacy_override"
+apps\reference\domains\execution_position\fsm.py:2085:        Handle EVT:ORDER_FILL events from adapter (legacy path).
+apps\reference\domains\execution_position\fsm.py:2145:                    # Fallback to legacy behavior
+apps\reference\domains\execution_position\fsm.py:2156:                # No idempotent key or no price info - preserve legacy behavior
+apps\reference\domains\execution_position\fsm.py:2165:                    f"[FILL] Created postfill hold for {postfill_key} (legacy)")
+apps\reference\domains\execution_position\fsm.py:2294:                    "Domain mode resolver failed, falling back to legacy paths: %s",
+apps\reference\domains\execution_position\exposure_guard.py:1526:            legacy_total = current_value
+apps\reference\domains\execution_position\exposure_guard.py:1528:            if isinstance(legacy_total, (int, float, Decimal)) and legacy_total:
+apps\reference\domains\execution_position\exposure_guard.py:1529:                # Preserve any pre-existing aggregate count under a legacy bucket.
+apps\reference\domains\execution_position\exposure_guard.py:1530:                self.metrics[metric_name]["__legacy_total"] = legacy_total
+apps\reference\domains\execution_position\fsm_manage.py:402:        return self._place_brackets_legacy(msg)
+apps\reference\domains\execution_position\fsm_manage.py:404:    def _place_brackets_legacy(self, msg: Message) -> Optional[Message]:
+apps\reference\domains\execution_position\fsm_manage.py:408:                "legacy bracket path called while aggregated-only mode is enabled"
+apps\reference\domains\execution_position\fsm_manage.py:1304:        2. If not found, fallback to legacy keys for backward compatibility
+apps\reference\domains\execution_position\manage_config.py:21:_ALLOWED_MANAGE_MODES = {"legacy", "aggregated_only"}
+apps\reference\domains\execution_position\manage_config.py:141:        LOG.debug("Using legacy execution.manage fallback for manage config")
+apps\reference\domains\execution_position\manage_config.py:254:    source: str = "legacy"
+apps\reference\domains\execution_position\manage_config.py:255:    mode: str = "legacy"
+apps\reference\domains\execution_position\manage_config.py:524:        mode_candidate = "aggregated_only" if agg_cfg.enabled else "legacy"
+apps\reference\domains\execution_position\manage_config.py:528:def _build_manage_from_legacy(config: Any) -> ExecutionManageConfig:
+apps\reference\domains\execution_position\manage_config.py:545:        source="legacy",
+apps\reference\domains\execution_position\manage_config.py:672:    inferred_mode = "aggregated_only" if agg_cfg.enabled else "legacy"
+apps\reference\domains\execution_position\manage_config.py:680:    if mode == "legacy":
+apps\reference\domains\execution_position\manage_config.py:683:                "mode=legacy requires aggregated_oco.enabled=false and aggregated_only_mode=false"
+apps\reference\domains\execution_position\manage_config.py:687:                "mode=legacy does not support aggregated_oco.watchdog.enabled=true"
+apps\reference\domains\execution_position\manage_config.py:737:                "Failed to build manage config from v2, falling back to legacy: %s", e)
+apps\reference\domains\execution_position\manage_config.py:738:            resolved = _build_manage_from_legacy(config)
+apps\reference\domains\execution_position\manage_config.py:740:        resolved = _build_manage_from_legacy(config)
+apps\reference\domains\execution_position\Readme\EVENTS.md:212:- **DONE** ΓÇô terminal acknowledgement after manual close; legacy auto-close timers no longer feed this FSM.
+apps\reference\domains\execution_position\Readme\CONTRACT_aggregated_orders_v1.md:8:- **Out of scope** ΓÇö legacy per-order TP/SL payloads (inline `tp_price`, `sl_price`, `stopLoss`, `takeProfit`, client OCO groups). Those paths are **deprecated** and MUST remain disabled while this contract is active.
+apps\reference\domains\execution_position\Readme\CONTRACT_aggregated_orders_v1.md:78:- Inline TP/SL (per-order protection) is tagged **legacy**. Implementations MUST either hard-disable those code paths or guard them behind explicit feature flags so aggregated-only deployments cannot regress.
+apps\reference\domains\execution_position\Readme\CONTRACT_aggregated_orders_v1.md:83:  3. Remove legacy config from production manifests, leaving this contract as the ΓÇ£constitutionΓÇ¥ for order behaviour.
+apps\reference\domains\execution_position\Readme\CONTRACT_aggregated_oco_v1.md:12:- **parent_entry_id** ΓÇö exchange `orderId` of the initial entry (legacy concept, not the anchor for Aggregated OCO).
+apps\reference\domains\execution_position\Readme\CONTRACT_aggregated_oco_v1.md:132:When `aggregated_oco.enabled=true`, the legacy `keep_single_bracket_set` flag is considered deprecated.
+apps\reference\domains\execution_position\Readme\CHANGELOG.md:63:- Migrated from legacy execution components

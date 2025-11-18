@@ -9,8 +9,9 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Set, Any, Callable
+from decimal import Decimal, InvalidOperation
 from enum import Enum
+from typing import Any, Callable, Dict, Optional, Set
 
 LOG = logging.getLogger(__name__)
 
@@ -93,6 +94,29 @@ class OrderTimeoutWatchdog:
         self.get_order_fn = get_order_fn
         self.emit_fn = emit_fn
         LOG.info("✅ OrderTimeoutWatchdog REST polling hooks connected")
+
+    async def _emit_via_hook(self, event_name: str, payload: Dict[str, Any], log_event: str) -> None:
+        """Emit REST-detected events via ExecPosFSM hooks with structured logging."""
+
+        payload = dict(payload or {})
+        payload.setdefault("source", payload.get("source") or "rest_watchdog")
+
+        meta = {
+            "event": event_name,
+            "symbol": payload.get("symbol"),
+            "order_id": payload.get("orderId") or payload.get("clientOrderId"),
+            "quantity": payload.get("quantity") or payload.get("qty"),
+        }
+
+        if not self.emit_fn:
+            LOG.error("WATCHDOG_EMIT_MISSING", extra=meta)
+            return
+
+        try:
+            await self.emit_fn(event_name, payload)
+            LOG.info(log_event, extra=meta)
+        except Exception:
+            LOG.exception("WATCHDOG_EMIT_FAILED", extra=meta)
 
     def _check_rps_limit(self) -> bool:
         """
@@ -313,6 +337,12 @@ class OrderTimeoutWatchdog:
                         executed_qty = float(
                             order_status.get("executedQty", 0))
 
+                        qty_raw = order_status.get("executedQty", 0)
+                        try:
+                            executed_qty = Decimal(str(qty_raw))
+                        except (InvalidOperation, TypeError):
+                            executed_qty = Decimal("0")
+
                         if status == "FILLED" and executed_qty > 0:
                             # Check if already processed (idempotency)
                             if meta.get('terminal', False):
@@ -326,17 +356,18 @@ class OrderTimeoutWatchdog:
                             self._rest_detected_fills_total += 1
 
                             # Emit TRADE_EXECUTED event instead of direct FSM call
-                            fill_payload = {
-                                "orderId": order_id,
-                                "symbol": symbol,
-                                "quantity": str(executed_qty),
-                                "price": str(order_status.get("price", 0)),
-                                "clientOrderId": order_status.get("clientOrderId", ""),
-                                "rid": None  # Will be looked up from correlation store
-                            }
+                            fill_payload = self._build_trade_payload(
+                                symbol=symbol,
+                                order_id=order_id,
+                                order_status=order_status,
+                                executed_qty=executed_qty,
+                            )
 
-                            if self.emit_fn:
-                                await self.emit_fn("EVT:TRADE_EXECUTED", fill_payload)
+                            await self._emit_via_hook(
+                                event_name="EVT:TRADE_EXECUTED",
+                                payload=fill_payload,
+                                log_event="WATCHDOG_EMIT_TRADE_EXECUTED",
+                            )
 
                             # Mark as terminal to prevent duplicate processing
                             meta['terminal'] = True
@@ -365,8 +396,11 @@ class OrderTimeoutWatchdog:
                                 "rid": None  # Will be looked up from correlation store
                             }
 
-                            if self.emit_fn:
-                                await self.emit_fn("EVT:ORDER_STATE_CHANGED", cancel_payload)
+                            await self._emit_via_hook(
+                                event_name="EVT:ORDER_STATE_CHANGED",
+                                payload=cancel_payload,
+                                log_event="WATCHDOG_EMIT_ORDER_STATE_CHANGED",
+                            )
 
                             self.on_order_cancel(order_id)
 
@@ -409,6 +443,68 @@ class OrderTimeoutWatchdog:
 
         except Exception as e:
             LOG.debug(f"Error in REST polling: {e}")
+
+    def _build_trade_payload(
+        self,
+        *,
+        symbol: str,
+        order_id: str,
+        order_status: Dict[str, Any],
+        executed_qty: Decimal,
+    ) -> Dict[str, Any]:
+        """Construct canonical TRADE_EXECUTED payload for REST-detected fills."""
+
+        payload: Dict[str, Any] = {
+            "orderId": str(order_id),
+            "symbol": symbol,
+            "venue": order_status.get("venue") or "binance_rest_watchdog",
+            "source": "rest_watchdog",
+        }
+
+        client_order_id = order_status.get("clientOrderId")
+        if client_order_id:
+            payload["clientOrderId"] = str(client_order_id)
+
+        side_raw = order_status.get("side") or order_status.get("orderSide")
+        if side_raw:
+            payload["side"] = str(side_raw).lower()
+
+        qty_str = str(order_status.get("executedQty") or executed_qty)
+        qty_str = qty_str.strip()
+        if qty_str:
+            qty_str = qty_str.lstrip("+")
+            if payload.get("side") == "sell":
+                qty_str = qty_str.lstrip("-")
+                if qty_str and not qty_str.startswith("-"):
+                    qty_str = f"-{qty_str}"
+            else:
+                qty_str = qty_str.lstrip("-")
+
+        payload["quantity"] = qty_str or str(executed_qty)
+        payload["qty"] = payload["quantity"]
+
+        price = order_status.get("avgPrice")
+        if not price or float(price) == 0:
+            # Fallback: calculate from cummulativeQuoteQty / executedQty
+            cqq = float(order_status.get("cummulativeQuoteQty", 0))
+            eq = float(order_status.get("executedQty", 0))
+            if eq > 0:
+                price = str(cqq / eq)
+            else:
+                price = order_status.get("price")
+
+        if price is not None:
+            payload["price"] = str(price)
+
+        ts = order_status.get("updateTime") or order_status.get("time")
+        if ts is not None:
+            payload["ts"] = ts
+
+        for key in ("type", "orderType", "reduceOnly", "closePosition"):
+            if order_status.get(key) is not None:
+                payload[key] = order_status.get(key)
+
+        return payload
 
     async def _handle_timeout(self, deadline: OrderDeadline):
         """Handle a timed-out order."""

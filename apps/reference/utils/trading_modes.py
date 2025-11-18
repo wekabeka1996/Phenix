@@ -134,10 +134,11 @@ def _get_v2_modes_cfg(config: Any) -> Optional[Dict[str, Any]]:
     return modes
 
 
-def _build_legacy_mode_mapping_from_v2(modes_cfg: Mapping[str, Any], profile_name: str) -> Dict[str, Any]:
+def build_legacy_mode_mapping_from_v2(modes_cfg: Mapping[str, Any], profile_name: str) -> Dict[str, Any]:
     """
     Будує структуру, еквівалентну legacy trading.domain_configuration + trading.mode,
     на базі config v2 (modes.yaml).
+    Used by config v2 migration.
     """
     profiles = modes_cfg.get("profiles", {})
     if profile_name not in profiles:
@@ -174,11 +175,16 @@ def _build_legacy_mode_mapping_from_v2(modes_cfg: Mapping[str, Any], profile_nam
     return legacy_like
 
 
-def _compute_effective_trading_modes_from_legacy_like(legacy_like_cfg: Dict[str, Any], config: Any) -> EffectiveTradingModes:
+# Alias for backward compatibility
+_build_legacy_mode_mapping_from_v2 = build_legacy_mode_mapping_from_v2
+
+
+
+def compute_effective_trading_modes_from_legacy_like(legacy_like_cfg: Dict[str, Any], config: Any) -> EffectiveTradingModes:
     """
     Compute modes using legacy logic but with provided legacy-like config.
+    Used by config v2 migration to ensure proper Pydantic handling.
     """
-    # Create a dict config for legacy function
     dict_config = {
         "trading": legacy_like_cfg.get("trading", {}),
         "trading_mode": legacy_like_cfg["trading"]["mode"]
@@ -212,9 +218,9 @@ def compute_effective_trading_modes(config: Any) -> EffectiveTradingModes:
             trading_section = _get_value(config, "trading", {})
             profile = _canonicalize_profile(_get_value(
                 trading_section, "mode", _get_value(config, "trading_mode", None)))
-            legacy_like_cfg = _build_legacy_mode_mapping_from_v2(
+            legacy_like_cfg = build_legacy_mode_mapping_from_v2(
                 v2_cfg, profile)
-            result = _compute_effective_trading_modes_from_legacy_like(
+            result = compute_effective_trading_modes_from_legacy_like(
                 legacy_like_cfg, config)
             return result
         except Exception as e:

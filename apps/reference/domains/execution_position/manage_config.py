@@ -14,9 +14,12 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
+from vfoundation.errors import ConfigError
+
 LOG = logging.getLogger(__name__)
 
 _MANAGE_CACHE: Dict[int, Tuple[Any, "ExecutionManageConfig"]] = {}
+_ALLOWED_MANAGE_MODES = {"legacy", "aggregated_only"}
 
 
 def _get_v2_execution_manage_cfg(cfg: Any) -> Optional[Dict[str, Any]]:
@@ -25,15 +28,38 @@ def _get_v2_execution_manage_cfg(cfg: Any) -> Optional[Dict[str, Any]]:
     Інакше повертає None.
     """
     # Check if cfg is AuroraConfig with config_v2
-    if not hasattr(cfg, 'config_v2') or cfg.config_v2 is None:
+    config_v2 = None
+    if hasattr(cfg, 'config_v2'):
+        config_v2 = getattr(cfg, 'config_v2')
+    elif isinstance(cfg, dict):
+        config_v2 = cfg.get('config_v2')
+    if config_v2 is None:
         return None
-    execution_domain = cfg.config_v2.domains.get("execution")
+    domains = getattr(config_v2, 'domains', None)
+    if domains is None and isinstance(config_v2, dict):
+        domains = config_v2.get('domains')
+    if domains is None:
+        return None
+    if isinstance(domains, dict):
+        execution_domain = domains.get("execution")
+    else:
+        execution_domain = getattr(domains, "execution", None)
     if execution_domain is None:
         return None
-    manage_cfg = execution_domain.get("manage")
-    if manage_cfg is None or not manage_cfg:
+    if isinstance(execution_domain, dict):
+        manage_cfg = execution_domain.get("manage")
+    else:
+        manage_cfg = getattr(execution_domain, "manage", None)
+    if manage_cfg is None:
         return None
-    return manage_cfg
+    if hasattr(manage_cfg, "model_dump"):
+        try:
+            manage_cfg = manage_cfg.model_dump()
+        except Exception:
+            manage_cfg = None
+    if isinstance(manage_cfg, dict) and manage_cfg:
+        return manage_cfg
+    return None
 
 
 def _strict_coerce_decimal(value: Any, default: Decimal) -> Decimal:
@@ -184,6 +210,7 @@ class AggregatedOcoWatchdogConfig:
 @dataclass(frozen=True)
 class AggregatedOcoConfig:
     enabled: bool = False
+    aggregated_only_mode: bool = False
     recalc_on_scale_in: bool = True
     recalc_on_partial_close: bool = False
     ttl_protect_new_bracket_ms: int = 3000
@@ -249,6 +276,7 @@ class ExecutionManageConfig:
     watchdog: WatchdogConfig
     positions: PositionsConfig
     source: str = "legacy"
+    mode: str = "legacy"
 
 
 def _resolve_orphan_monitor(node: Any) -> OrphanMonitorConfig:
@@ -348,6 +376,9 @@ def _resolve_aggregated_oco(brackets_node: Any) -> AggregatedOcoConfig:
     agg_node = _pluck(brackets_node, "aggregated_oco") or {}
     return AggregatedOcoConfig(
         enabled=_coerce_bool(_pluck(agg_node, "enabled"), False),
+        aggregated_only_mode=_coerce_bool(
+            _pluck(agg_node, "aggregated_only_mode"), False
+        ),
         recalc_on_scale_in=_coerce_bool(
             _pluck(agg_node, "recalc_on_scale_in"), True),
         recalc_on_partial_close=_coerce_bool(
@@ -503,8 +534,64 @@ def _resolve_positions_from_v2(v2_cfg: Dict[str, Any]) -> PositionsConfig:
     return PositionsConfig(ws_snapshot=_resolve_ws_snapshot(node))
 
 
+def _normalize_manage_mode(raw_mode: Any, agg_cfg: AggregatedOcoConfig) -> str:
+    candidate: Optional[str]
+    if raw_mode is None:
+        candidate = None
+    else:
+        if isinstance(raw_mode, str):
+            candidate = raw_mode.strip().lower()
+        else:
+            candidate = str(raw_mode).strip().lower()
+    if not candidate:
+        candidate = "aggregated_only" if (
+            agg_cfg.enabled and agg_cfg.aggregated_only_mode
+        ) else "legacy"
+    if candidate not in _ALLOWED_MANAGE_MODES:
+        raise ConfigError(
+            f"Unknown execution.manage.mode '{candidate}' (allowed: {_ALLOWED_MANAGE_MODES})"
+        )
+    _validate_manage_mode(candidate, agg_cfg)
+    return candidate
+
+
+def _validate_manage_mode(mode: str, agg_cfg: AggregatedOcoConfig) -> None:
+    if mode == "legacy":
+        if agg_cfg.enabled or agg_cfg.aggregated_only_mode:
+            raise ConfigError(
+                "mode=legacy requires aggregated_oco.enabled=false and aggregated_only_mode=false"
+            )
+        if getattr(agg_cfg.watchdog, "enabled", False):
+            raise ConfigError(
+                "mode=legacy does not support aggregated_oco.watchdog.enabled=true"
+            )
+        return
+
+    # aggregated_only mode validations
+    if not agg_cfg.enabled:
+        raise ConfigError(
+            "mode=aggregated_only requires aggregated_oco.enabled=true"
+        )
+    if not agg_cfg.aggregated_only_mode:
+        raise ConfigError(
+            "aggregated_only mode requires aggregated_only_mode=true"
+        )
+    if agg_cfg.allow_unprotected_position:
+        raise ConfigError(
+            "aggregated_only mode forbids allow_unprotected_position=true"
+        )
+    if not agg_cfg.recalc_on_partial_close:
+        raise ConfigError(
+            "aggregated_only mode requires recalc_on_partial_close=true"
+        )
+
+
 def _build_manage_from_legacy(config: Any) -> ExecutionManageConfig:
     manage_node = _extract_manage_node(config)
+
+    brackets_meta = _resolve_brackets_meta(config, manage_node)
+    mode = _normalize_manage_mode(_pluck(manage_node, "mode"),
+                                  brackets_meta.aggregated_oco)
 
     return ExecutionManageConfig(
         auto=_coerce_bool(_pluck(manage_node, "auto"), False),
@@ -512,11 +599,12 @@ def _build_manage_from_legacy(config: Any) -> ExecutionManageConfig:
         quick_profit=_resolve_quick_profit(manage_node),
         trailing=_resolve_trailing(manage_node),
         emergency=_resolve_emergency(manage_node),
-        brackets=_resolve_brackets_meta(config, manage_node),
+        brackets=brackets_meta,
         guardian=_resolve_guardian(config, manage_node),
         watchdog=_resolve_watchdog(config, manage_node),
         positions=_resolve_positions_config(config, manage_node),
         source="legacy",
+        mode=mode,
     )
 
 
@@ -524,18 +612,25 @@ def _build_manage_from_v2(v2_cfg: Dict[str, Any], cfg: Any) -> ExecutionManageCo
     # Для v2, читаємо безпосередньо з v2_cfg
     # Якщо поле відсутнє, використовуємо дефолти з моделей або кидаємо виняток для критичних
     try:
+        brackets_meta = _resolve_brackets_meta_from_v2(v2_cfg)
+        mode = _normalize_manage_mode(
+            v2_cfg.get("mode"), brackets_meta.aggregated_oco
+        )
         return ExecutionManageConfig(
             auto=_coerce_bool(v2_cfg.get("auto"), False),
             orphan_monitor=_resolve_orphan_monitor(v2_cfg),
             quick_profit=_resolve_quick_profit_from_v2(v2_cfg),
             trailing=_resolve_trailing(v2_cfg),
             emergency=_resolve_emergency(v2_cfg),
-            brackets=_resolve_brackets_meta_from_v2(v2_cfg),
+            brackets=brackets_meta,
             guardian=_resolve_guardian_from_v2(v2_cfg),
             watchdog=_resolve_watchdog_from_v2(v2_cfg),
             positions=_resolve_positions_from_v2(v2_cfg),
             source="config_v2",
+            mode=mode,
         )
+    except ConfigError:
+        raise
     except Exception as e:
         raise ValueError(f"Invalid v2 manage config: {e}") from e
 
@@ -591,6 +686,9 @@ def _resolve_aggregated_oco_from_v2(brackets_node: Dict[str, Any]) -> Aggregated
     agg_node = brackets_node.get("aggregated_oco", {})
     return AggregatedOcoConfig(
         enabled=_coerce_bool(agg_node.get("enabled"), False),
+        aggregated_only_mode=_coerce_bool(
+            agg_node.get("aggregated_only_mode"), False
+        ),
         recalc_on_scale_in=_coerce_bool(
             agg_node.get("recalc_on_scale_in"), True
         ),
@@ -646,6 +744,8 @@ def resolve_execution_manage_config(config: Any) -> ExecutionManageConfig:
     if v2_cfg is not None:
         try:
             resolved = _build_manage_from_v2(v2_cfg, config)
+        except ConfigError:
+            raise
         except Exception as e:
             LOG.warning(
                 "Failed to build manage config from v2, falling back to legacy: %s", e)

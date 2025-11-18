@@ -46,6 +46,17 @@ Wave 0 addresses **4 critical safety risks** identified in audit:
 - [x] [OCO-10.1] WS-driven preflight cache (RID OCO-10.1_WS_POSITION_SNAPSHOT) — PR TBD.
 - [x] [OCO-10.2] Zero-position cleanup (RID OCO-10.2_ZERO_POSITION_CLEANUP) — PR TBD.
 - [x] [OCO-10.3] Aggregated OCO watchdog invariants (RID OCO-10.3_AGG_OCO_WATCHDOG) — PR TBD.
+- [x] [OCO-11.2] Тести aggregated-only режиму (entry/exit payloads без inline TP/SL, open/scale/partial/full/flip сценарії, baseline watchdog smoke) — ✅ `tests/domains/execution_position/test_contract_aggregated_orders_mode.py`, `tests/units/test_agg_oco_invariants_checker.py`.
+- [x] [OCO-11.3] Aggregated-only mode flag + жорстке вимкнення legacy inline TP/SL (entry payload validation, config gates, XAI warnings при legacy payloads, regression suite updates) — ✅ runtime flag wired + `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py tests/units/test_agg_oco_invariants_checker.py tests/domains/execution_position/test_aggregated_oco_multi_entry_flow.py tests/domains/execution_position/test_aggregated_oco_partial_close_legacy.py tests/domains/execution_position/test_aggregated_oco_scale_in_legacy.py tests/domains/execution_position/test_order_guardian_aggregated_cleanup.py -v`.
+- [x] [OCO-11.4] Watchdog інваріантів (`agg_oco_watchdog.py`, NO_SL/ORPHAN_SL/MULTIPLE_META auto-heal + alerts, integration with ExecPos/Guardian) — ✅ runtime watchdog loop + auto-heal, config gates + `.venv/Scripts/Activate.ps1; pytest tests/units/test_agg_oco_invariants_checker.py tests/units/test_agg_oco_watchdog.py -v` + `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_watchdog_runtime.py -v`.
+- [x] [OCO-11.6] Restore watchdog-driven `EVT:TRADE_EXECUTED` delivery to ExecPosFSM (RID OCO-11.6_TRADE_EXECUTED_EMIT_FIX) — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_watchdog_emit_trade_executed.py tests/domains/execution_position/test_agg_oco_watchdog_runtime.py -v`.
+- [x] [OCO-11.12A] Жорстка валідація execution/manage режимів (explicit `mode`, aggregated-only safeguards, config manifests, regression tests) — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_manage_config_aggregated_modes.py -v`; повторна валідація 2025-11-18 (auto mode inference + recalc guard).
+- [x] [OCO-11.12B] Observability/state dump: `ExecPosFSM.get_agg_oco_state_snapshot()` regression (`test_agg_oco_state_dump.py`) гарантує, що WS qty, ManageFlow SL/TP, Guardian metadata й watchdog статус зливаються у CLI/WHY snapshot — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_state_dump.py -v`.
+- [x] [OCO-11.12C] Production profile freeze: `docs/PROFILE_aggregated_oco_production.md` + контрактні тести `test_agg_oco_symbol_profiles.py` для SOLUSDT/BNBUSDT (min qty, step size, max position, leverage overrides, watchdog gates, exposure caps) — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_symbol_profiles.py -v`.
+- [ ] [OCO-11.13] Доменні тести aggregated-only (watchdog fill → ManageFlow pipeline, side canonicalization) + pytest матриця — PR TBD.
+- [ ] [OCO-11.14] Qty guard + partial-close parity в aggregated-only режимі (ExecutionQtyGuard nested limits, ManageFlowFSM live snapshot qty guard, contract recalc) — PR TBD.
+- [x] [OCO-11.14B] Config v2 execution.manage.mode enforcement (resolver validations + `test_manage_config_aggregated_modes.py`, aggregated harness) — PR TBD.
+- [x] [OCO-11.14C] ExecPosFSM `_execute_decision` гілка для DEC:PLACE_ORDER + AGG_OCO_BRACKETS_PLACED observability (adapter stop/limit routing, ManageFlow sync) — `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_execpos_place_order_decisions.py -v`, `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py -v`, `.venv\Scripts\Activate.ps1; pytest tests/domains/execution_position -q`.
 - [ ] [EXEC-FREEZE] Execution_position (Aggregated OCO v1) — frozen: подальші зміни поведінки лише через новий OCO v2+ RID; дозволено тільки конфіг-тюнінг, observability/XAI.
 
 ---
@@ -1380,6 +1391,11 @@ cp config/aurora/trading.yaml.backup.20251112 config/aurora/trading.yaml
 Додати функцію `build_resolver_mapping()` і оновити JSON-артефакт з додатковими полями.
 
 ---
+
+## OCO-11.x
+
+- [ ] OCO-11.11: Впровадити рекомендації з розділу 8 аудиту aggregated-only OCO (`docs/audit/OCO_aggregated_only_full_audit.md`) після затвердження оператором.
+- [ ] OCO-11.11: review live logs for AGG_SL_SKIPPED_MIN_QTY and refine strategy min position size if needed.
 
 ## [Phase 1] Detail mapping for all risk/decision/execution keys in specification.md
 

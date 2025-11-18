@@ -1,5 +1,7 @@
 # CONTRACT: Aggregated OCO v1 (execution_position)
 
+> **Scope note**: This document describes the Aggregated OCO layer (BracketSetMeta, Guardian behaviour, TTL rules). For the higher-level aggregated-only order contract (entry/exit rules, position sources, watchdog invariants) see [`CONTRACT_aggregated_orders_v1.md`](./CONTRACT_aggregated_orders_v1.md). If requirements conflict, the orders contract defines the expected outcomes while this file specifies how the Aggregated OCO layer fulfils them.
+
 ## 1. Terms and Entities
 
 - **position** — aggregated position per `(symbol, side)` that tracks `qty` and `avg_entry_price`.

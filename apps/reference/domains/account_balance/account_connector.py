@@ -298,9 +298,10 @@ class AccountConnector:
             }
 
         try:
-            def _run() -> Dict[str, Any]:
+            def _run_blocking() -> Dict[str, Any]:
                 loop = asyncio.new_event_loop()
                 try:
+                    asyncio.set_event_loop(loop)
                     with self._adapter_fetch_lock:
                         return loop.run_until_complete(
                             self._fetch_and_emit_account_data(
@@ -314,9 +315,33 @@ class AccountConnector:
                         loop.run_until_complete(loop.shutdown_asyncgens())
                     except Exception:
                         pass
+                    asyncio.set_event_loop(None)
                     loop.close()
 
-            summary = _run()
+            def _run_with_thread() -> Dict[str, Any]:
+                result: Dict[str, Any] = {}
+                error: Optional[BaseException] = None
+
+                def _worker() -> None:
+                    nonlocal result, error
+                    try:
+                        result = _run_blocking()
+                    except BaseException as exc:
+                        error = exc
+
+                thread = threading.Thread(target=_worker, daemon=True)
+                thread.start()
+                thread.join()
+                if error:
+                    raise error
+                return result
+
+            try:
+                asyncio.get_running_loop()
+                # Running inside an event loop, offload to worker thread
+                summary = _run_with_thread()
+            except RuntimeError:
+                summary = _run_blocking()
             summary.update(
                 {
                     "status": "ok",

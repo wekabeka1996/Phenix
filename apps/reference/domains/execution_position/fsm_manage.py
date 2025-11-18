@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
+from collections import deque
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Any, Callable, Deque, Dict, List, Optional
 from vfoundation.services.price_service import PriceService
 
 from vfoundation.core.protocol import Message
@@ -29,11 +31,18 @@ from vfoundation.apps.reference.domains.execution_position.bracket_aggregator im
     InstrumentPriceConstraints,
     compute_aggregated_brackets,
 )
-from apps.reference.domains.execution_position.contracts import TPSLValidationRules
+from apps.reference.domains.execution_position.contracts import (
+    TPSLValidationRules,
+    PositionSide,
+    canonicalize_position_side,
+    canonicalize_position_side_from_qty,
+)
 from apps.reference.domains.execution_position.manage_config import (
+    AggregatedOcoConfig,
     ExecutionManageConfig,
     resolve_execution_manage_config,
 )
+from apps.reference.domains.execution_position.qty_guard import ExecutionQtyGuard
 
 
 agg_oco_logger = logging.getLogger("agg_oco")
@@ -60,6 +69,9 @@ class ManageState(str, Enum):
 
 
 class ManageFlowFSM:
+    """State machine managing bracket placement per symbol."""
+
+    CLIENT_ORDER_ID_MAX_LEN = 36
     """
     Manage Flow FSM: tracks open positions and manages brackets/trailing stops.
 
@@ -74,6 +86,11 @@ class ManageFlowFSM:
         config: Optional[Dict[str, Any]] = None,
         price_service: Optional[PriceService] = None,
         order_guardian: Optional[Any] = None,
+        live_position_provider: Optional[Callable[[
+        ], Optional[Dict[str, Any]]]] = None,
+        symbol: Optional[str] = None,
+        rid: Optional[str] = None,
+        qty_guard: Optional[ExecutionQtyGuard] = None,
     ):
         self.state = ManageState.FLAT
         self.trail_pct = trail_pct  # stub: trailing stop %
@@ -84,12 +101,15 @@ class ManageFlowFSM:
         self.position_entry_price: Optional[Decimal] = None
         self.position_open_ts: float = 0.0
         self.position_side: Optional[str] = None  # 'BUY' or 'SELL'
+        self.symbol: Optional[str] = symbol
+        self.rid: Optional[str] = rid
 
         # Bracket orders tracking
         self.sl_order_id: Optional[str] = None
         self.tp_order_id: Optional[str] = None
         self.sl_price: Optional[Decimal] = None
         self.tp_price: Optional[Decimal] = None
+        self._pending_decisions: Deque[Message] = deque()
 
         # Trailing stop tracking
         self.trailing_activated: bool = False
@@ -108,9 +128,11 @@ class ManageFlowFSM:
         # Optional price service (SSOT) for mark/last/mid retrieval
         self.price_service: Optional[PriceService] = price_service
         self._order_guardian = order_guardian
+        self._live_position_provider = live_position_provider
         self._current_bracket_set_id: Optional[str] = None
         self._current_bracket_meta: Optional[Any] = None
         self._pending_bracket_log: Optional[Dict[str, Any]] = None
+        self._qty_guard = qty_guard or ExecutionQtyGuard(config=self.config)
         # Emergency/WaitMode configuration
         # Using typed attribute access for Pydantic models
         try:
@@ -157,12 +179,24 @@ class ManageFlowFSM:
         logger.info(
             f"ManageFlowFSM initialized: auto_manage_enabled={self._auto_manage_enabled}")
 
+        agg_cfg = getattr(manage_cfg, "brackets", None)
+        aggregated_meta = getattr(
+            agg_cfg, "aggregated_oco", None) if agg_cfg else None
+
         self._metrics: Dict[str, int] = {
             "fsm_adjust_decisions_total": 0,
             "fsm_bracket_orders_placed": 0,
             "fsm_trailing_adjustments": 0,
             "fsm_errors_total": 0,
         }
+        self._aggregated_only_mode = self._resolve_aggregated_only_mode_flag(
+            aggregated_meta
+        )
+        agg_oco_logger.info(
+            "ManageFlowFSM aggregated-only mode", extra={
+                "aggregated_only_mode": self._aggregated_only_mode
+            }
+        )
         qp_cfg = manage_cfg.quick_profit
         self.quick_profit_enabled = qp_cfg.enabled
         self.quick_profit_mode = qp_cfg.mode
@@ -171,6 +205,172 @@ class ManageFlowFSM:
 
     def _manage_config(self) -> ExecutionManageConfig:
         return resolve_execution_manage_config(self.config)
+
+    def _resolve_aggregated_only_mode_flag(self, aggregated_meta: Optional[AggregatedOcoConfig]) -> bool:
+        explicit = getattr(aggregated_meta or object(),
+                           "aggregated_only_mode", None)
+        if explicit is not None:
+            return bool(explicit)
+
+        if self._lookup_config_bool(
+            (
+                ("trading", "execution", "manage", "brackets",
+                 "aggregated_oco", "aggregated_only_mode"),
+                ("execution", "manage", "brackets",
+                 "aggregated_oco", "aggregated_only_mode"),
+                ("config_v2", "domains", "execution", "manage",
+                 "brackets", "aggregated_oco", "aggregated_only_mode"),
+            )
+        ):
+            return True
+
+        return self._is_manage_mode_aggregated_only()
+
+    def _lookup_config_bool(self, paths: tuple[tuple[str, ...], ...]) -> bool:
+        for path in paths:
+            raw_value = self._deep_pluck(self.config, *path)
+            normalized = self._coerce_optional_bool(raw_value)
+            if normalized is not None:
+                return normalized
+        return False
+
+    def _is_manage_mode_aggregated_only(self) -> bool:
+        mode_candidate = self._deep_pluck(
+            self.config, "trading", "execution", "manage", "mode"
+        )
+        if isinstance(mode_candidate, str) and mode_candidate.strip().lower() == "aggregated_only":
+            return True
+
+        mode_candidate = self._deep_pluck(
+            self.config, "config_v2", "domains", "execution", "manage", "mode"
+        )
+        return bool(
+            isinstance(mode_candidate, str)
+            and mode_candidate.strip().lower() == "aggregated_only"
+        )
+
+    @staticmethod
+    def _coerce_optional_bool(value: Any) -> Optional[bool]:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "on"}:
+                return True
+            if lowered in {"0", "false", "no", "off"}:
+                return False
+        try:
+            return bool(value)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _deep_pluck(source: Any, *path: str) -> Any:
+        current = source
+        for key in path:
+            if current is None:
+                return None
+            if isinstance(current, dict):
+                current = current.get(key)
+                continue
+            try:
+                current = getattr(current, key)
+                continue
+            except AttributeError:
+                pass
+            try:
+                current = current[key]  # type: ignore[index]
+            except Exception:
+                return None
+        return current
+
+    def _generate_client_seed(self, msg: Message, extra: Optional[str] = None) -> str:
+        """Generate sanitized alphanumeric seed for client order IDs."""
+        rid_component = str(getattr(msg, "rid", "") or "manage")
+        parts = [rid_component]
+
+        try:
+            if self.position_open_ts:
+                parts.append(str(int(self.position_open_ts)))
+        except (TypeError, ValueError):
+            pass
+
+        if extra:
+            parts.append(str(extra))
+
+        parts.append(str(int(time.time() * 1000)))
+        raw_seed = "".join(parts)
+        cleaned = "".join(ch for ch in raw_seed if ch.isalnum())
+        if not cleaned:
+            return uuid.uuid4().hex
+        return cleaned
+
+    def _compose_client_order_id(
+        self,
+        seed: str,
+        suffix: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Trim seed to Binance's limit and append suffix without exceeding it."""
+
+        max_len = self.CLIENT_ORDER_ID_MAX_LEN
+        suffix_token = ""
+        if suffix:
+            normalized = str(suffix).strip().replace(" ", "_")
+            if normalized:
+                suffix_token = (
+                    normalized if normalized.startswith(
+                        "_") else f"_{normalized}"
+                )
+
+        min_base = 8
+        available_for_suffix = max_len - min_base
+        if len(suffix_token) > available_for_suffix:
+            suffix_token = suffix_token[:available_for_suffix]
+
+        reserved = len(suffix_token)
+        budget = max_len - reserved
+        if budget < min_base:
+            budget = min_base
+            reserved = max_len - budget
+            suffix_token = suffix_token[:reserved]
+
+        base = seed[-budget:] if len(seed) > budget else seed
+        client_id = f"{base}{suffix_token}"
+        if len(client_id) > max_len:
+            overflow = len(client_id) - max_len
+            base = base[:-
+                        overflow] if overflow < len(base) else base[-max_len:]
+            client_id = f"{base}{suffix_token}"[-max_len:]
+
+        return base, client_id
+
+    def _build_sl_tp_client_ids(self, msg: Message) -> tuple[str, str, str]:
+        """Return base client id plus SL/TP variants within exchange limits."""
+        seed = self._generate_client_seed(msg)
+        standard_suffix_len = len("_tp")
+        base_budget = max(8, self.CLIENT_ORDER_ID_MAX_LEN -
+                          standard_suffix_len)
+        base_id = seed[-base_budget:] if len(seed) > base_budget else seed
+        sl_id = f"{base_id}_sl"[-self.CLIENT_ORDER_ID_MAX_LEN:]
+        tp_id = f"{base_id}_tp"[-self.CLIENT_ORDER_ID_MAX_LEN:]
+        return base_id, sl_id, tp_id
+
+    def _get_live_position_state(self) -> Optional[Dict[str, Any]]:
+        provider = getattr(self, "_live_position_provider", None)
+        if not callable(provider):
+            return None
+        try:
+            snapshot = provider()
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "[BRK][agg] live position provider raised", exc_info=True
+            )
+            return None
+        if not snapshot:
+            return None
+        return snapshot
 
     def set_bracket_ids(self, sl_order_id: Optional[str], tp_order_id: Optional[str]) -> None:
         """
@@ -188,7 +388,53 @@ class ManageFlowFSM:
         # Log synchronization for debugging
         import logging
         LOG = logging.getLogger(__name__)
-        LOG.debug(f"✅ Synced bracket IDs: SL={sl_order_id}, TP={tp_order_id}")
+        symbol = getattr(self, "symbol", None)
+        canonical = self._resolve_canonical_position_side()
+        agg_side = canonical.value if canonical != PositionSide.FLAT else None
+        LOG.debug(
+            "✅ Synced bracket IDs",
+            extra={
+                "symbol": symbol,
+                "sl_order_id": sl_order_id,
+                "tp_order_id": tp_order_id,
+                "agg_side": agg_side,
+            },
+        )
+        agg_oco_logger.info(
+            "AGG_OCO_SYNC_BRACKET_IDS",
+            extra={
+                "symbol": symbol,
+                "side": agg_side,
+                "sl_order_id": sl_order_id,
+                "tp_order_id": tp_order_id,
+                "pending_log": bool(self._pending_bracket_log),
+            },
+        )
+
+        should_register = (
+            self._order_guardian
+            and self._is_aggregated_oco_enabled()
+            and (self.sl_order_id or self.tp_order_id)
+        )
+        if not should_register:
+            return
+
+        if self._pending_bracket_log is None:
+            self._pending_bracket_log = {
+                "action": "sync_from_exec_pos",
+                "position_qty_before": str(self.position_qty) if self.position_qty is not None else None,
+                "position_qty_after": str(self.position_qty) if self.position_qty is not None else None,
+                "avg_price_before": str(self.position_entry_price) if self.position_entry_price is not None else None,
+                "avg_price_after": str(self.position_entry_price) if self.position_entry_price is not None else None,
+                "sl_price_before": str(self.sl_price) if self.sl_price is not None else None,
+                "sl_price_after": str(self.sl_price) if self.sl_price is not None else None,
+                "tp_price_before": str(self.tp_price) if self.tp_price is not None else None,
+                "tp_price_after": str(self.tp_price) if self.tp_price is not None else None,
+                "why": "agg_sync_from_exec_pos",
+                "rid": None,
+            }
+
+        self._maybe_register_bracket_set()
 
     def handle(self, msg: Message) -> Optional[Message]:
         """
@@ -323,7 +569,22 @@ class ManageFlowFSM:
             )
             qty = Decimal(str(qty_value or 0))
             price = Decimal(str(pld.get("price", 0)))
-            side = pld.get("side")  # BUY or SELL
+
+            # Fallback for missing price (e.g. market order with delayed avgPrice)
+            if price <= 0 and self.price_service and getattr(self, 'symbol', None):
+                try:
+                    quote = self.price_service.get_current(self.symbol)
+                    fallback = getattr(quote, 'mark', None) or getattr(quote, 'last', None)
+                    if fallback:
+                        price = Decimal(str(fallback))
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"[ManageFlowFSM] ⚠️ Price missing in fill payload, using PriceService fallback: {price}"
+                        )
+                except Exception:
+                    pass
+
+            side = self._normalize_order_side(pld.get("side"))
             # Persist symbol for later lookups (used by _calculate_bracket_prices, _check_quick_profit etc.)
             try:
                 self.symbol = pld.get("symbol") or getattr(
@@ -335,8 +596,11 @@ class ManageFlowFSM:
             if self.position_qty is None:
                 self.position_qty = qty
                 self.position_entry_price = price
-                self.position_side = side
+                self.position_side = side or "BUY"
                 self.position_open_ts = time.time()
+                canonical = canonicalize_position_side(self.position_side)
+                if canonical:
+                    self._agg_side = canonical.value
             else:
                 # Average down (stub logic)
                 total_qty = self.position_qty + qty
@@ -355,12 +619,22 @@ class ManageFlowFSM:
             self._metrics["fsm_errors_total"] += 1
 
     def _place_brackets(self, msg: Message, reason: str = "entry_fill") -> Optional[Message]:
+        if self._aggregated_only_mode:
+            if not self._is_aggregated_oco_enabled():
+                raise RuntimeError(
+                    "aggregated_only_mode requires aggregated_oco to be enabled"
+                )
+            return self._place_brackets_aggregated(msg, reason=reason)
         if self._is_aggregated_oco_enabled():
             return self._place_brackets_aggregated(msg, reason=reason)
         return self._place_brackets_legacy(msg)
 
     def _place_brackets_legacy(self, msg: Message) -> Optional[Message]:
         """Place SL and TP bracket orders after position opens."""
+        if self._aggregated_only_mode:
+            raise RuntimeError(
+                "legacy bracket path called while aggregated-only mode is enabled"
+            )
 
         if not self._prepare_for_bracket_placement():
             return None
@@ -404,7 +678,13 @@ class ManageFlowFSM:
                 return None
 
             # Convert BUY/SELL to LONG/SHORT for validation
-            validation_side = "LONG" if self.position_side == "BUY" else "SHORT" if self.position_side == "SELL" else self.position_side or "LONG"
+            canonical_side = self._resolve_canonical_position_side()
+            validation_side = (
+                canonical_side.value
+                if canonical_side != PositionSide.FLAT
+                else (self.position_side or "LONG")
+            )
+            entry_side = "BUY" if canonical_side != PositionSide.SHORT else "SELL"
 
             # Validate SL price
             is_sl_valid, sl_reason = TPSLValidationRules.validate_stop_price_for_side(
@@ -444,7 +724,7 @@ class ManageFlowFSM:
             # Apply offset to SL (move it AWAY from entry to be safer)
             sl_offset = TPSLValidationRules.add_safety_offset(
                 sl_price, tick_size, offset_bps)
-            if self.position_side == "BUY":
+            if entry_side == "BUY":
                 # SL is below entry, move it further down (subtract offset)
                 sl_price = sl_price - sl_offset
             else:
@@ -454,7 +734,7 @@ class ManageFlowFSM:
             # Apply offset to TP (move it AWAY from entry to be safer)
             tp_offset = TPSLValidationRules.add_safety_offset(
                 tp_price, tick_size, offset_bps)
-            if self.position_side == "BUY":
+            if entry_side == "BUY":
                 # TP is above entry, move it further up (add offset)
                 tp_price = tp_price + tp_offset
             else:
@@ -467,10 +747,8 @@ class ManageFlowFSM:
             self._metrics["fsm_bracket_offset_applied"] = self._metrics.get(
                 "fsm_bracket_offset_applied", 0) + 1
 
-            # Generate unique client order IDs
-            position_id = f"{msg.rid}_{int(self.position_open_ts)}"
-            sl_client_id = f"{position_id}_sl"
-            tp_client_id = f"{position_id}_tp"
+            # Generate unique client order IDs (≤36 chars)
+            _, sl_client_id, tp_client_id = self._build_sl_tp_client_ids(msg)
 
             # === EMISSION PHASE: Place validated bracket orders ===
             # Emit SL order
@@ -494,6 +772,8 @@ class ManageFlowFSM:
                 str(tp_price),
                 "TP bracket",
             )
+
+            self._queue_decision(tp_order)
 
             self._metrics["fsm_bracket_orders_placed"] += 2
             return sl_order  # Return first order, second will be handled separately
@@ -539,8 +819,19 @@ class ManageFlowFSM:
         if not self._prepare_for_bracket_placement():
             return None
 
+        agg_why = self._map_reason_to_agg_why(reason)
+        symbol = getattr(self, "symbol", None) or (msg.pld or {}).get("symbol")
+        agg_oco_logger.info(
+            "AGG_OCO_COMPUTE_BRACKETS_START",
+            extra={
+                "symbol": symbol,
+                "reason": agg_why,
+                "position_qty": str(self.position_qty),
+                "position_side": self.position_side,
+            },
+        )
         try:
-            levels = self._compute_aggregated_bracket_levels(reason=reason)
+            levels = self._compute_aggregated_bracket_levels(reason=agg_why)
         except AggregatedOcoError as exc:
             import logging
             LOG = logging.getLogger(__name__)
@@ -549,6 +840,29 @@ class ManageFlowFSM:
             self.state = ManageState.TRACKING
             self._metrics["fsm_errors_total"] += 1
             return None
+        except Exception:
+            agg_oco_logger.exception(
+                "AGG_OCO_COMPUTE_FAILED",
+                extra={
+                    "symbol": symbol,
+                    "position_qty": str(self.position_qty),
+                    "position_side": self.position_side,
+                    "reason": agg_why,
+                },
+            )
+            self.state = ManageState.TRACKING
+            self._metrics["fsm_errors_total"] += 1
+            return None
+
+        agg_oco_logger.info(
+            "AGG_OCO_COMPUTE_BRACKETS_DONE",
+            extra={
+                "symbol": symbol,
+                "reason": agg_why,
+                "sl_price": str(getattr(levels, "sl_price", "")),
+                "tp_price": str(getattr(levels, "tp_price", "")),
+            },
+        )
 
         return self._place_or_update_bracket_set_from_levels(msg, levels, reason)
 
@@ -558,10 +872,13 @@ class ManageFlowFSM:
         levels,
         reason: str,
     ) -> Optional[Message]:
-        if self.position_qty is None or self.position_side is None:
+        if self.position_qty is None:
             return None
 
-        agg_side = self._convert_position_side()
+        try:
+            agg_side = self._convert_position_side()
+        except AggregatedOcoError:
+            return None
         self._agg_side = agg_side
 
         sl_before = self.sl_price
@@ -589,16 +906,31 @@ class ManageFlowFSM:
             "rid": getattr(msg, "rid", None),
         }
 
-        position_id = getattr(msg, "rid", "agg") or "agg"
-        timestamp_suffix = str(int(time.time()))
-        base_client_id = f"{position_id}_{timestamp_suffix}"
-
-        sl_client_id = f"{base_client_id}_sl"
-        tp_client_id = f"{base_client_id}_tp"
-
+        base_client_id, sl_client_id, tp_client_id = self._build_sl_tp_client_ids(
+            msg)
         self._current_bracket_set_id = base_client_id
 
-        qty_str = str(self.position_qty)
+        symbol = getattr(self, "symbol", None) or (msg.pld or {}).get("symbol")
+        qty_value = self._coerce_abs_decimal(self.position_qty)
+        guard_price = self._select_guard_price(levels)
+        agg_oco_logger.info(
+            "AGG_OCO_BEFORE_QTY_GUARD",
+            extra={
+                "symbol": symbol,
+                "position_qty": str(qty_value),
+                "guard_price": str(guard_price) if guard_price is not None else None,
+                "reason": reason,
+            },
+        )
+        qty_str = self._normalize_reduce_only_qty(
+            symbol=symbol,
+            qty=qty_value,
+            price=guard_price,
+            context=reason or "aggregated_brackets",
+        )
+        if qty_str is None:
+            self.state = ManageState.TRACKING
+            return None
         opposite_side = self._get_opposite_side()
 
         sl_order = self._emit_place_order(
@@ -611,7 +943,7 @@ class ManageFlowFSM:
             levels.why,
         )
 
-        self._emit_place_order(
+        tp_order = self._emit_place_order(
             msg,
             tp_client_id,
             "LIMIT",
@@ -620,10 +952,85 @@ class ManageFlowFSM:
             str(levels.tp_price),
             levels.why,
         )
+        self._queue_decision(tp_order)
 
         self._metrics["fsm_bracket_orders_placed"] += 2
         self._aggregated_last_place_ts = int(time.time() * 1000)
         return sl_order
+
+    def _select_guard_price(self, levels) -> Optional[Decimal]:
+        if not levels:
+            return None
+        prices = []
+        for price in (getattr(levels, "sl_price", None), getattr(levels, "tp_price", None)):
+            if price is None:
+                continue
+            try:
+                prices.append(Decimal(str(price)))
+            except (InvalidOperation, ValueError, TypeError):
+                continue
+        if not prices:
+            return None
+        return min(prices)
+
+    def _normalize_reduce_only_qty(
+        self,
+        *,
+        symbol: Optional[str],
+        qty: Decimal,
+        price: Optional[Decimal],
+        context: str,
+    ) -> Optional[str]:
+        if not getattr(self, "_aggregated_only_mode", False):
+            return str(qty)
+        if not getattr(self, "_qty_guard", None):
+            return str(qty)
+
+        try:
+            qty_abs = abs(Decimal(str(qty)))
+        except (InvalidOperation, ValueError, TypeError):
+            qty_abs = Decimal("0")
+
+        try:
+            guard_result = self._qty_guard.evaluate(
+                symbol=symbol or "UNKNOWN",
+                qty=qty_abs,
+                price=price,
+            )
+        except Exception:
+            agg_oco_logger.warning(
+                "AGG_QTY_GUARD_ERROR",
+                extra={
+                    "symbol": symbol or "UNKNOWN",
+                    "raw_qty": str(qty),
+                    "context": context,
+                },
+            )
+            return str(qty_abs)
+
+        if not guard_result.allowed or not guard_result.qty_str():
+            agg_oco_logger.warning(
+                "AGG_SL_SKIPPED_MIN_QTY",
+                extra={
+                    "symbol": symbol or "UNKNOWN",
+                    "raw_qty": str(qty),
+                    "context": context,
+                    "guard_reason": guard_result.reason,
+                    "metadata": guard_result.metadata,
+                },
+            )
+            return None
+
+        return guard_result.qty_str()
+
+    @staticmethod
+    def _coerce_abs_decimal(value: Any) -> Decimal:
+        if value is None:
+            return Decimal("0")
+        try:
+            return abs(Decimal(str(value)))
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
 
     def _maybe_register_bracket_set(self) -> None:
         if not (self._order_guardian and self._is_aggregated_oco_enabled()):
@@ -640,16 +1047,25 @@ class ManageFlowFSM:
             return
 
         agg_side = self._agg_side
-        if not agg_side and side:
-            try:
-                agg_side = self._convert_position_side()
-            except AggregatedOcoError:
-                agg_side = None
+        if not agg_side:
+            canonical = self._resolve_canonical_position_side()
+            if canonical != PositionSide.FLAT:
+                agg_side = canonical.value
         if not agg_side:
             self._pending_bracket_log = None
             return
 
         bracket_set_id = self._current_bracket_set_id or self._build_fallback_bracket_set_id()
+        register_extra = {
+            "event_type": "AGG_OCO_REGISTER_BRACKET_SET_ATTEMPT",
+            "symbol": symbol,
+            "side": agg_side,
+            "bracket_set_id": bracket_set_id,
+            "sl_order_id": self.sl_order_id,
+            "tp_order_id": self.tp_order_id,
+            "has_pending_log": bool(self._pending_bracket_log),
+        }
+        agg_oco_logger.info("AGG_OCO_REGISTER_BRACKET_SET_ATTEMPT", extra=register_extra)
 
         try:
             meta = self._order_guardian.register_bracket_set(
@@ -661,10 +1077,31 @@ class ManageFlowFSM:
                 created_ts=time.time(),
             )
             self._current_bracket_meta = meta
+            agg_oco_logger.info(
+                "AGG_OCO_REGISTER_BRACKET_SET_DONE",
+                extra={
+                    "symbol": symbol,
+                    "side": agg_side,
+                    "bracket_set_id": getattr(meta, "bracket_set_id", bracket_set_id),
+                    "version": getattr(meta, "version", None),
+                    "sl_order_id": getattr(meta, "sl_order_id", self.sl_order_id),
+                    "tp_order_id": getattr(meta, "tp_order_id", self.tp_order_id),
+                },
+            )
             self._log_bracket_set_event(meta, self._pending_bracket_log)
         except Exception as exc:
             logging.getLogger(__name__).warning(
                 "[BRK][agg] failed to register bracket set", exc_info=exc
+            )
+            agg_oco_logger.exception(
+                "AGG_OCO_REGISTER_BRACKET_SET_FAILED",
+                extra={
+                    "symbol": symbol,
+                    "side": agg_side,
+                    "bracket_set_id": bracket_set_id,
+                    "sl_order_id": self.sl_order_id,
+                    "tp_order_id": self.tp_order_id,
+                },
             )
             self._pending_bracket_log = None
 
@@ -700,6 +1137,23 @@ class ManageFlowFSM:
         if not reason:
             return "create"
         return mapping.get(reason, reason)
+
+    @staticmethod
+    def _map_reason_to_agg_why(reason: Optional[str]) -> str:
+        normalized = (reason or "").strip()
+        mapping = {
+            "entry_fill": "agg_first_entry",
+            "scale_in_fill": "agg_recalc_scale_in",
+            "partial_close_fill": "agg_recalc_partial_close",
+            "partial_close_unprotected": "agg_recalc_partial_close",
+            "snapshot_entry_fill": "agg_first_entry",
+            "snapshot_scale_in": "agg_recalc_scale_in",
+            "snapshot_partial_close": "agg_recalc_partial_close",
+            "snapshot_recalc": "agg_recalc_partial_close",
+        }
+        if not normalized:
+            return "agg_unknown"
+        return mapping.get(normalized, normalized)
 
     @staticmethod
     def _clip_why(value: Optional[Any]) -> Optional[str]:
@@ -833,14 +1287,42 @@ class ManageFlowFSM:
         except (InvalidOperation, ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _normalize_order_side(raw_side: Optional[str]) -> Optional[str]:
+        if raw_side is None:
+            return None
+        normalized = str(raw_side).strip().upper()
+        if normalized in {"BUY", "SELL"}:
+            return normalized
+        canonical = canonicalize_position_side(normalized)
+        if canonical == PositionSide.LONG:
+            return "BUY"
+        if canonical == PositionSide.SHORT:
+            return "SELL"
+        return None
+
+    def _resolve_canonical_position_side(self) -> PositionSide:
+        """Determine canonical position side using agg hints, side strings, or qty."""
+
+        if self._agg_side:
+            agg_canonical = canonicalize_position_side(self._agg_side)
+            if agg_canonical:
+                return agg_canonical
+
+        if self.position_side:
+            canonical = canonicalize_position_side(self.position_side)
+            if canonical:
+                return canonical
+
+        return canonicalize_position_side_from_qty(self.position_qty)
+
     def _convert_position_side(self) -> str:
-        if self.position_side == "BUY":
-            return "LONG"
-        if self.position_side == "SELL":
-            return "SHORT"
-        raise AggregatedOcoError(
-            f"Unsupported position side for aggregated OCO: {self.position_side}"
-        )
+        canonical = self._resolve_canonical_position_side()
+        if canonical == PositionSide.FLAT:
+            raise AggregatedOcoError(
+                "Cannot compute aggregated brackets while flat"
+            )
+        return canonical.value
 
     def _is_aggregated_oco_enabled(self) -> bool:
         try:
@@ -851,6 +1333,7 @@ class ManageFlowFSM:
     def _handle_aggregated_fill_event(self, msg: Message) -> Optional[Message]:
         agg_cfg = self._manage_config().brackets.aggregated_oco
         pld = msg.pld or {}
+        symbol = pld.get("symbol") or getattr(self, "symbol", None)
 
         qty_value = (
             pld.get("qty")
@@ -884,6 +1367,40 @@ class ManageFlowFSM:
         is_exit_fill = order_type in {
             "TAKE_PROFIT_MARKET", "STOP_MARKET"} or close_position or reduce_only
 
+        agg_oco_logger.info(
+            "AGG_OCO_HANDLE_FILL",
+            extra={
+                "symbol": symbol,
+                "fill_qty": str(fill_qty),
+                "fill_price": str(pld.get("price") or pld.get("avg_price") or ""),
+                "is_exit_fill": is_exit_fill,
+                "source": pld.get("source") or msg.src,
+            },
+        )
+
+        if self._aggregated_only_mode:
+            return self._handle_aggregated_fill_event_aggregated_only(
+                msg=msg,
+                agg_cfg=agg_cfg,
+                fill_qty=fill_qty,
+                is_exit_fill=is_exit_fill,
+            )
+
+        return self._handle_aggregated_fill_event_default(
+            msg=msg,
+            agg_cfg=agg_cfg,
+            fill_qty=fill_qty,
+            is_exit_fill=is_exit_fill,
+        )
+
+    def _handle_aggregated_fill_event_default(
+        self,
+        *,
+        msg: Message,
+        agg_cfg: AggregatedOcoConfig,
+        fill_qty: Decimal,
+        is_exit_fill: bool,
+    ) -> Optional[Message]:
         if is_exit_fill:
             remaining = self._apply_exit_fill(fill_qty)
             if remaining is None:
@@ -905,6 +1422,121 @@ class ManageFlowFSM:
         if was_open and agg_cfg.recalc_on_scale_in:
             return self._recalc_aggregated_brackets(msg, reason="scale_in_fill")
         return None
+
+    def _handle_aggregated_fill_event_aggregated_only(
+        self,
+        *,
+        msg: Message,
+        agg_cfg: AggregatedOcoConfig,
+        fill_qty: Decimal,
+        is_exit_fill: bool,
+    ) -> Optional[Message]:
+        snapshot = self._get_live_position_state()
+        if snapshot is None:
+            agg_oco_logger.error(
+                "[BRK][agg] live snapshot missing; falling back to local state",
+                extra={
+                    "event_type": "AGG_OCO_LIVE_SNAPSHOT_MISSING",
+                    "symbol": getattr(self, "symbol", None),
+                    "reason": "missing_live_snapshot",
+                },
+            )
+            return self._handle_aggregated_fill_event_default(
+                msg=msg,
+                agg_cfg=agg_cfg,
+                fill_qty=fill_qty,
+                is_exit_fill=is_exit_fill,
+            )
+
+        raw_qty = snapshot.get("qty") or snapshot.get("position_amt")
+        try:
+            live_qty = Decimal(str(raw_qty))
+        except (InvalidOperation, ValueError, TypeError):
+            agg_oco_logger.error(
+                "[BRK][agg] live snapshot qty unparsable",
+                extra={
+                    "event_type": "AGG_OCO_LIVE_SNAPSHOT_INVALID",
+                    "symbol": snapshot.get("symbol") or getattr(self, "symbol", None),
+                    "raw_qty": raw_qty,
+                },
+            )
+            return self._handle_aggregated_fill_event_default(
+                msg=msg,
+                agg_cfg=agg_cfg,
+                fill_qty=fill_qty,
+                is_exit_fill=is_exit_fill,
+            )
+
+        abs_live_qty = abs(live_qty)
+        symbol = snapshot.get("symbol") or getattr(self, "symbol", None)
+        if symbol:
+            self.symbol = symbol
+
+        prev_qty = self.position_qty if self.position_qty is not None else Decimal(
+            "0")
+        try:
+            prev_qty = Decimal(prev_qty)
+        except (InvalidOperation, ValueError, TypeError):
+            prev_qty = Decimal("0")
+
+        avg_price_raw = snapshot.get("avg_price")
+        avg_price = None
+        if avg_price_raw is not None:
+            try:
+                avg_price = Decimal(str(avg_price_raw))
+            except (InvalidOperation, ValueError, TypeError):
+                avg_price = None
+
+        snapshot_side = snapshot.get("side")
+        canonical_snapshot_side = canonicalize_position_side(snapshot_side)
+        if canonical_snapshot_side is None:
+            canonical_snapshot_side = (
+                PositionSide.LONG if live_qty >= 0 else PositionSide.SHORT
+            )
+        order_side = "BUY" if canonical_snapshot_side == PositionSide.LONG else "SELL"
+
+        if abs_live_qty == 0:
+            agg_oco_logger.info(
+                "[BRK][agg] live snapshot reports flat position",
+                extra={
+                    "event_type": "AGG_OCO_LIVE_SNAPSHOT_FLAT",
+                    "symbol": symbol,
+                    "prev_qty": str(prev_qty),
+                    "fill_qty": str(fill_qty),
+                    "is_exit_fill": is_exit_fill,
+                },
+            )
+            self._clear_position_state()
+            return None
+
+        self.position_qty = abs_live_qty
+        if avg_price is not None:
+            self.position_entry_price = avg_price
+        self.position_side = order_side
+        self._agg_side = canonical_snapshot_side.value
+
+        reason = "snapshot_recalc"
+        if prev_qty == 0:
+            reason = "snapshot_entry_fill"
+        elif abs_live_qty > abs(prev_qty):
+            reason = "snapshot_scale_in"
+        elif abs_live_qty < abs(prev_qty):
+            reason = "snapshot_partial_close"
+
+        agg_oco_logger.info(
+            "[BRK][agg] live snapshot recalc",
+            extra={
+                "event_type": "AGG_OCO_LIVE_SNAPSHOT_RECALC",
+                "symbol": symbol,
+                "reason": reason,
+                "prev_qty": str(prev_qty),
+                "new_qty": str(abs_live_qty),
+                "snapshot_source": snapshot.get("source"),
+                "snapshot_ts": snapshot.get("updated_ts"),
+            },
+        )
+
+        return self._recalc_aggregated_brackets(msg, reason=reason)
 
     def _needs_bracket_recalc_after_partial_close(self, agg_cfg) -> bool:
         if agg_cfg.allow_unprotected_position:
@@ -928,13 +1560,8 @@ class ManageFlowFSM:
 
     def _clear_position_state(self) -> None:
         symbol = getattr(self, "symbol", None)
-        prev_side = self.position_side
-        agg_side = self._agg_side
-        if not agg_side and prev_side:
-            if prev_side == "BUY":
-                agg_side = "LONG"
-            elif prev_side == "SELL":
-                agg_side = "SHORT"
+        canonical = self._resolve_canonical_position_side()
+        agg_side = canonical.value if canonical != PositionSide.FLAT else None
         cleanup_context = {
             "action": "cleanup_full_close",
             "position_qty_before": str(self.position_qty) if self.position_qty is not None else None,
@@ -1073,7 +1700,13 @@ class ManageFlowFSM:
 
     def _get_opposite_side(self) -> str:
         """Get opposite side for closing position."""
-        return "SELL" if self.position_side == "BUY" else "BUY"
+        canonical = self._resolve_canonical_position_side()
+        if canonical == PositionSide.SHORT:
+            return "BUY"
+        if canonical == PositionSide.LONG:
+            return "SELL"
+        current = str(self.position_side or "").upper()
+        return "SELL" if current == "BUY" else "BUY"
 
     def _emit_place_order(
         self,
@@ -1124,6 +1757,20 @@ class ManageFlowFSM:
             pld=payload,
             data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
         )
+
+    def _queue_decision(self, decision: Optional[Message]) -> None:
+        """Buffer secondary decisions so ExecPosFSM can drain them later."""
+        if decision is None:
+            return
+        self._pending_decisions.append(decision)
+
+    def consume_pending_decisions(self) -> List[Message]:
+        """Return and clear buffered DEC messages emitted in the same handle pass."""
+        if not self._pending_decisions:
+            return []
+        buffered = list(self._pending_decisions)
+        self._pending_decisions.clear()
+        return buffered
 
     def _on_bracket_placed(self, msg: Message) -> Optional[Message]:
         """Handle bracket order placement confirmation."""
@@ -1212,9 +1859,6 @@ class ManageFlowFSM:
         Returns:
             DEC:PLACE_ORDER, DEC:CANCEL_ORDER, or DEC:ADJUST if rule triggers, None otherwise.
         """
-        if self.position_qty is None or self.position_entry_price is None:
-            return None
-
         if (
             self._is_aggregated_oco_enabled()
             and msg.op == "EVT"
@@ -1223,6 +1867,9 @@ class ManageFlowFSM:
             agg_decision = self._handle_aggregated_fill_event(msg)
             if agg_decision:
                 return agg_decision
+
+        if self.position_qty is None or self.position_entry_price is None:
+            return None
 
         # PRIORITY: Quick profit rule (highest priority)
         try:
@@ -1268,9 +1915,15 @@ class ManageFlowFSM:
                         self.state = ManageState.WAIT_MODE
                         new_sl = (self.position_entry_price * (Decimal("1") - sl_em_bps / Decimal("10000"))) if self.position_side == "BUY" else (
                             self.position_entry_price * (Decimal("1") + sl_em_bps / Decimal("10000")))
+                        emergency_seed = self._generate_client_seed(
+                            msg, extra="emergency"
+                        )
+                        _, emergency_client_id = self._compose_client_order_id(
+                            emergency_seed, "emergency_sl"
+                        )
                         return self._emit_place_order(
                             msg,
-                            client_id=f"{getattr(msg,'rid','')}_emergency_sl",
+                            client_id=emergency_client_id,
                             order_type="STOP_MARKET",
                             side=self.position_side or "",
                             qty=str(self.position_qty),
@@ -1453,8 +2106,11 @@ class ManageFlowFSM:
             msg, self.sl_order_id or "", "trailing_adjust")
 
         # Place new SL (will be handled by next message)
-        position_id = f"{msg.rid}_{int(self.position_open_ts)}"
-        new_client_id = f"{position_id}_sl_trail_{int(time.time())}"
+        trail_suffix = f"sl_trail_{int(time.time())}"
+        trail_seed = self._generate_client_seed(msg, extra=trail_suffix)
+        _, new_client_id = self._compose_client_order_id(
+            trail_seed, trail_suffix
+        )
 
         new_sl_msg = self._emit_place_order(
             msg,
@@ -1465,6 +2121,7 @@ class ManageFlowFSM:
             str(new_sl_price),
             "trailing_stop_adjust",
         )
+        self._queue_decision(new_sl_msg)
 
         # For simplicity, return cancel first - new order will be placed on next cycle
         return cancel_msg
@@ -1488,9 +2145,26 @@ class ManageFlowFSM:
         )
 
     def _emit_adjust(self, msg: Message, why: str, details: Dict[str, Any]) -> Message:
-        """Generate DEC:ADJUST with stub rules."""
+        """Generate DEC:ADJUST with guaranteed symbol in payload."""
         self.state = ManageState.EMIT_DEC_ADJUST
         self._metrics["fsm_adjust_decisions_total"] += 1
+
+        symbol = (msg.pld or {}).get("symbol") or getattr(self, "symbol", None)
+        payload: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": self.position_side,
+        }
+        payload.update(details)
+
+        if "qty" not in payload:
+            qty_value = self.position_qty
+            if qty_value is not None:
+                try:
+                    payload["qty"] = str(abs(Decimal(str(qty_value))))
+                except Exception:
+                    payload["qty"] = str(qty_value)
+            else:
+                payload["qty"] = "0"
 
         dec = Message(
             op="DEC",
@@ -1500,7 +2174,7 @@ class ManageFlowFSM:
             rid=msg.rid,
             why=why[:80],
             idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
-            pld=details,
+            pld=payload,
             data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
         )
 
@@ -1518,6 +2192,12 @@ class ManageFlowFSM:
             "fsm_adjust_decisions_total", 0) + 1
 
         symbol = (msg.pld or {}).get("symbol") or getattr(self, 'symbol', None)
+        payload: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": self.position_side,
+            "reduce_only": True,
+        }
+        payload.update(details)
 
         dec = Message(
             op="DEC",
@@ -1527,11 +2207,7 @@ class ManageFlowFSM:
             rid=msg.rid,
             why=why[:80],
             idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
-            pld={
-                "reduce_only": True,
-                **({"symbol": symbol} if symbol else {}),
-                **details,
-            },
+            pld=payload,
             data_ref=msg.data_ref.copy() if msg.data_ref else [],
         )
 
@@ -1560,7 +2236,9 @@ class ManageFlowFSM:
                 str(state_data.get("qty", state_data.get("quantity", 0)))) if state_data.get("qty") or state_data.get("quantity") else None
             self.position_entry_price = Decimal(str(state_data.get(
                 "entry_price", 0))) if state_data.get("entry_price") else None
-            self.position_side = state_data.get("side")
+            self.position_side = self._normalize_order_side(
+                state_data.get("side")
+            )
             self.position_open_ts = float(state_data.get("open_ts", 0))
 
             # Restore bracket data

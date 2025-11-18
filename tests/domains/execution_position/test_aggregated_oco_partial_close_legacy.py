@@ -49,7 +49,7 @@ def test_partial_close_with_aggregated_oco_keeps_full_sl_coverage():
         symbol,
         aggregated_oco_enabled=True,
         recalc_on_scale_in=True,
-        recalc_on_partial_close=False,
+        recalc_on_partial_close=True,
         allow_unprotected_position=False,
     )
 

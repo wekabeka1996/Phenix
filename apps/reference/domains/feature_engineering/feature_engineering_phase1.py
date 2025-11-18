@@ -42,10 +42,10 @@ class FeatureEngineering:
                 self.enable_new_metrics = True
         except (AttributeError, TypeError):
             self.enable_new_metrics = True
-        self.ema_config = self.self.config.trading.feature_engineering.ema
-        self.volume_config = self.self.config.trading.feature_engineering.volume
-        self.volatility_config = self.self.config.trading.feature_engineering.volatility
-        self.liquidity_config = self.self.config.trading.feature_engineering.liquidity
+        self.ema_config = self.config.trading.feature_engineering.ema
+        self.volume_config = self.config.trading.feature_engineering.volume
+        self.volatility_config = self.config.trading.feature_engineering.volatility
+        self.liquidity_config = self.config.trading.feature_engineering.liquidity
 
         # Macro sync config
         self.macro_sync_config = self.config.trading.market_data.macro_sync
@@ -57,7 +57,7 @@ class FeatureEngineering:
                 self.anchor_symbols = ["BTCUSDT", "ETHUSDT"]
         except (AttributeError, TypeError):
             self.anchor_symbols = ["BTCUSDT", "ETHUSDT"]
-        self.macro_window = self.self.config.trading.market_data.macro_sync.window
+        self.macro_window = self.config.trading.market_data.macro_sync.window
 
         # Anchor price buffers for macro_sync
         self.anchor_prices: Dict[str, deque] = {anchor: deque(maxlen=self.macro_window)
@@ -67,22 +67,37 @@ class FeatureEngineering:
 
     def _init_symbol_state(self, symbol: str) -> None:
         """Initialize state for a new symbol."""
-        ema_short = self.config.trading.feature_engineering.ema.period_short
         try:
-            if hasattr(self.ema_config, 'period_long'):
+            if hasattr(self.ema_config, 'period_short') and isinstance(self.ema_config.period_short, int):
+                ema_short = self.ema_config.period_short
+            else:
+                ema_short = 3
+        except (AttributeError, TypeError):
+            ema_short = 3
+
+        try:
+            if hasattr(self.ema_config, 'period_long') and isinstance(self.ema_config.period_long, int):
                 ema_long = self.ema_config.period_long
             else:
                 ema_long = 7
         except (AttributeError, TypeError):
             ema_long = 7
+
         try:
-            if hasattr(self.volume_config, 'sma_length'):
+            if hasattr(self.volume_config, 'sma_length') and isinstance(self.volume_config.sma_length, int):
                 vol_sma_len = self.volume_config.sma_length
             else:
                 vol_sma_len = 5
         except (AttributeError, TypeError):
             vol_sma_len = 5
-        vol_range_sma_len = self.self.config.trading.feature_engineering.volatility.sma_length
+
+        try:
+            if hasattr(self.volatility_config, 'sma_length') and isinstance(self.volatility_config.sma_length, int):
+                vol_range_sma_len = self.volatility_config.sma_length
+            else:
+                vol_range_sma_len = 10
+        except (AttributeError, TypeError):
+            vol_range_sma_len = 10
 
         self.symbol_state[symbol] = {
             # EMA state
@@ -135,7 +150,14 @@ class FeatureEngineering:
         """Update volume window and compute spike."""
         state = self.symbol_state[symbol]
         current_ts = current_tick["ts"]
-        window_ms = self.self.config.trading.feature_engineering.volume.window_sec * 1000
+        try:
+            if hasattr(self.volume_config, 'window_sec') and isinstance(self.volume_config.window_sec, (int, float)):
+                window_sec = self.volume_config.window_sec
+            else:
+                window_sec = 60
+        except (AttributeError, TypeError):
+            window_sec = 60
+        window_ms = window_sec * 1000
 
         # Initialize or reset window if needed
         if state["vol_window_start_ts"] is None:
@@ -229,7 +251,7 @@ class FeatureEngineering:
         """Compute depth imbalance from bid/ask sizes."""
         try:
             depth_half = decimal.Decimal(
-                str(self.self.config.trading.feature_engineering.liquidity.depth_half))
+                str(self.config.trading.feature_engineering.liquidity.depth_half))
         except Exception:
             depth_half = decimal.Decimal("1000")
 
@@ -368,7 +390,7 @@ class FeatureEngineering:
 
             # Liquidity kappa
             depth_half = decimal.Decimal(
-                str(self.self.config.trading.feature_engineering.liquidity.depth_half))
+                str(self.config.trading.feature_engineering.liquidity.depth_half))
             liq_ratio = (depth / (depth + depth_half)) if (depth +
                                                            depth_half) > 0 else decimal.Decimal("0")
             liq_ratio = max(decimal.Decimal("0"), min(

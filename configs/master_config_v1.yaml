@@ -4,6 +4,7 @@ ops:
 
 execution:
   manage:
+    mode: aggregated_only
     auto: true
 
 # Bracket orders configuration for position management
@@ -14,6 +15,17 @@ brackets:
     fixed_bps: 50  # Stop loss in basis points (0.5%)
   tp:
     fixed_bps: 100  # Take profit in basis points (1%)
+  aggregated_oco:
+    enabled: true
+    aggregated_only_mode: true
+    recalc_on_scale_in: true
+    recalc_on_partial_close: true
+    ttl_protect_new_bracket_ms: 3000
+    allow_unprotected_position: false
+    watchdog:
+      enabled: true
+      interval_sec: 5
+      auto_heal_orphans: true
 
 ##############################
 # New structured config (additive-only)
@@ -22,6 +34,7 @@ brackets:
 trading:
   execution:
     manage:
+      mode: aggregated_only
       # Bracket orders configuration (mirrors legacy top-level `brackets` for backward compatibility)
       brackets:
         enable: true                 # Enable bracket management (SL/TP)
@@ -30,6 +43,17 @@ trading:
           fixed_bps: 50              # Stop Loss distance in basis points (0.5%)
         tp:
           fixed_bps: 100             # Take Profit distance in basis points (1.0%)
+        aggregated_oco:
+          enabled: true              # Require Guardian-managed TP/SL per symbol
+          aggregated_only_mode: true # Clean entry/exit payloads without inline TP/SL
+          recalc_on_scale_in: true
+          recalc_on_partial_close: true
+          ttl_protect_new_bracket_ms: 3000
+          allow_unprotected_position: false
+          watchdog:
+            enabled: true
+            interval_sec: 5
+            auto_heal_orphans: true
 
       # Orphaned bracket monitor (periodic/self-cleaning of reduceOnly/closePosition orders when no position exists)
       orphan_monitor:

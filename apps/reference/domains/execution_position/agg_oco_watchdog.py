@@ -9,37 +9,42 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from apps.reference.services.order_guardian import BracketSetMeta
 
 
-class WatchdogViolationKind(str, Enum):
-    """Supported invariant violation types."""
+class AggOcoViolationKind(str, Enum):
+    """Supported aggregated OCO invariant violation types."""
 
     NO_SL_FOR_OPEN_POSITION = "NO_SL_FOR_OPEN_POSITION"
     ORPHAN_SL_FOR_ZERO_POSITION = "ORPHAN_SL_FOR_ZERO_POSITION"
     MULTIPLE_META_SETS = "MULTIPLE_META_SETS"
-    STALE_META_FOR_ZERO_POSITION = "STALE_META_FOR_ZERO_POSITION"
 
 
 @dataclass(frozen=True)
-class WatchdogViolation:
-    """Single watchdog violation record."""
+class AggOcoViolation:
+    """Structured violation record for aggregated OCO watchdog."""
 
     symbol: str
     side: str
-    kind: WatchdogViolationKind
-    details: str
+    kind: AggOcoViolationKind
+    why: str
+    details: Dict[str, Any]
+
+
+# Backward-compatible aliases for legacy imports
+WatchdogViolationKind = AggOcoViolationKind
+WatchdogViolation = AggOcoViolation
 
 
 @dataclass(frozen=True)
 class AggOcoValidationResult:
-    """Result of aggregated OCO invariant validation."""
+    """Legacy helper for callers expecting tuple results."""
 
-    violations: Tuple[WatchdogViolation, ...] = ()
+    violations: Tuple[AggOcoViolation, ...] = ()
 
     @property
     def ok(self) -> bool:
         return not self.violations
 
-    def by_kind(self) -> Dict[WatchdogViolationKind, List[WatchdogViolation]]:
-        grouped: Dict[WatchdogViolationKind, List[WatchdogViolation]] = {}
+    def by_kind(self) -> Dict[AggOcoViolationKind, List[AggOcoViolation]]:
+        grouped: Dict[AggOcoViolationKind, List[AggOcoViolation]] = {}
         for violation in self.violations:
             grouped.setdefault(violation.kind, []).append(violation)
         return grouped
@@ -68,10 +73,8 @@ def validate_agg_oco_invariants(
     open_orders: Sequence[Any],
     bracket_metas: Sequence[BracketSetMeta],
     now_ts: float,
-) -> AggOcoValidationResult:
-    """Validate Aggregated OCO invariants for provided state snapshots."""
-
-    del now_ts  # Reserved for future TTL-sensitive checks
+) -> List[AggOcoViolation]:
+    """Validate Aggregated OCO invariants and return structured violations."""
 
     normalized_positions = _normalize_positions(positions)
     normalized_orders = _normalize_orders(open_orders)
@@ -82,59 +85,90 @@ def validate_agg_oco_invariants(
     }
     orders_map = _group_orders(normalized_orders)
 
-    violations: List[WatchdogViolation] = []
+    observed_keys = set(positions_map.keys()) | set(
+        orders_map.keys()) | set(meta_map.keys())
+    violations: List[AggOcoViolation] = []
 
-    for key, position in positions_map.items():
+    for key in observed_keys:
+        symbol, side = key
+        position = positions_map.get(key)
+        qty = position.quantity if position else 0.0
         orders_for_key = orders_map.get(key, [])
         metas_for_key = meta_map.get(key, [])
-        if position.quantity > 0 and not any(order.is_sl for order in orders_for_key):
-            violations.append(
-                WatchdogViolation(
-                    symbol=position.symbol,
-                    side=position.side,
-                    kind=WatchdogViolationKind.NO_SL_FOR_OPEN_POSITION,
-                    details=f"orders={len(orders_for_key)}",
-                )
-            )
-        if len(metas_for_key) > 1:
-            violations.append(
-                WatchdogViolation(
-                    symbol=position.symbol,
-                    side=position.side,
-                    kind=WatchdogViolationKind.MULTIPLE_META_SETS,
-                    details=f"meta_count={len(metas_for_key)}",
-                )
-            )
+        sl_count = sum(1 for order in orders_for_key if order.is_sl)
+        meta_count = len(metas_for_key)
 
-    for key, orders_for_key in orders_map.items():
-        if key in positions_map:
-            continue
-        if not orders_for_key:
-            continue
-        violations.append(
-            WatchdogViolation(
-                symbol=key[0],
-                side=key[1],
-                kind=WatchdogViolationKind.ORPHAN_SL_FOR_ZERO_POSITION,
-                details=f"orders={len(orders_for_key)}",
+        if qty > 0:
+            if sl_count == 0:
+                violations.append(
+                    AggOcoViolation(
+                        symbol=symbol,
+                        side=side,
+                        kind=AggOcoViolationKind.NO_SL_FOR_OPEN_POSITION,
+                        why="no_sl_for_open_position",
+                        details={
+                            "position_amt": qty,
+                            "sl_count": sl_count,
+                            "meta_count": meta_count,
+                            "ts": now_ts,
+                        },
+                    )
+                )
+            if meta_count > 1:
+                violations.append(
+                    AggOcoViolation(
+                        symbol=symbol,
+                        side=side,
+                        kind=AggOcoViolationKind.MULTIPLE_META_SETS,
+                        why="multiple_meta_sets",
+                        details={
+                            "position_amt": qty,
+                            "sl_count": sl_count,
+                            "meta_count": meta_count,
+                            "ts": now_ts,
+                        },
+                    )
+                )
+        else:
+            if orders_for_key:
+                violations.append(
+                    AggOcoViolation(
+                        symbol=symbol,
+                        side=side,
+                        kind=AggOcoViolationKind.ORPHAN_SL_FOR_ZERO_POSITION,
+                        why="orphan_sl_for_zero_position",
+                        details={
+                            "position_amt": qty,
+                            "sl_count": sl_count,
+                            "meta_count": meta_count,
+                            "orders": len(orders_for_key),
+                            "ts": now_ts,
+                        },
+                    )
+                )
+
+    return violations
+
+
+def validate_agg_oco_invariants_result(
+    *,
+    positions: Sequence[Any],
+    open_orders: Sequence[Any],
+    bracket_metas: Sequence[BracketSetMeta],
+    now_ts: float,
+) -> AggOcoValidationResult:
+    """Legacy helper returning AggOcoValidationResult for existing call sites."""
+
+    return AggOcoValidationResult(
+        violations=tuple(
+            validate_agg_oco_invariants(
+                positions=positions,
+                open_orders=open_orders,
+                bracket_metas=bracket_metas,
+                now_ts=now_ts,
             )
         )
-
-    for key, metas in meta_map.items():
-        if key in positions_map:
-            continue
-        if not metas:
-            continue
-        violations.append(
-            WatchdogViolation(
-                symbol=key[0],
-                side=key[1],
-                kind=WatchdogViolationKind.STALE_META_FOR_ZERO_POSITION,
-                details=f"meta_count={len(metas)}",
-            )
-        )
-
-    return AggOcoValidationResult(violations=tuple(violations))
+    )
 
 
 def _normalize_positions(raw_positions: Sequence[Any]) -> List[WatchdogPosition]:
@@ -220,6 +254,18 @@ def _group_metas(metas: Sequence[BracketSetMeta]) -> Dict[Tuple[str, str], List[
             continue
         grouped.setdefault((symbol, side), []).append(meta)
     return grouped
+
+
+def normalize_positions_for_watchdog(raw_positions: Sequence[Any]) -> List[WatchdogPosition]:
+    """Public helper exposing normalization logic for ExecPosFSM state assembly."""
+
+    return _normalize_positions(raw_positions)
+
+
+def normalize_orders_for_watchdog(raw_orders: Sequence[Any]) -> List[WatchdogOrder]:
+    """Public helper exposing normalization logic for ExecPosFSM state assembly."""
+
+    return _normalize_orders(raw_orders)
 
 
 def _normalize_symbol(value: Any) -> str:

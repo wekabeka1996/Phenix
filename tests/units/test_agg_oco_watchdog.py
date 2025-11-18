@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 
 from apps.reference.domains.execution_position.agg_oco_watchdog import (
+    AggOcoViolationKind,
     WatchdogOrder,
     WatchdogPosition,
-    WatchdogViolationKind,
     validate_agg_oco_invariants,
 )
 from apps.reference.services.order_guardian import BracketSetMeta
@@ -48,7 +48,7 @@ def test_watchdog_passes_when_sl_present():
 
     result = _run_validator(positions, orders, metas)
 
-    assert result.ok
+    assert result == []
 
 
 def test_watchdog_flags_missing_sl_for_active_position():
@@ -68,9 +68,9 @@ def test_watchdog_flags_missing_sl_for_active_position():
 
     result = _run_validator(positions, orders, metas)
 
-    assert not result.ok
+    assert result
     assert any(
-        v.kind == WatchdogViolationKind.NO_SL_FOR_OPEN_POSITION for v in result.violations)
+        v.kind == AggOcoViolationKind.NO_SL_FOR_OPEN_POSITION for v in result)
 
 
 def test_watchdog_flags_orphan_sl_when_position_zero():
@@ -89,9 +89,9 @@ def test_watchdog_flags_orphan_sl_when_position_zero():
 
     result = _run_validator(positions, orders, metas)
 
-    assert not result.ok
+    assert result
     assert any(
-        v.kind == WatchdogViolationKind.ORPHAN_SL_FOR_ZERO_POSITION for v in result.violations)
+        v.kind == AggOcoViolationKind.ORPHAN_SL_FOR_ZERO_POSITION for v in result)
 
 
 def test_watchdog_flags_multiple_meta_sets_for_same_side():
@@ -111,21 +111,9 @@ def test_watchdog_flags_multiple_meta_sets_for_same_side():
 
     result = _run_validator(positions, orders, metas)
 
-    assert not result.ok
+    assert result
     assert any(
-        v.kind == WatchdogViolationKind.MULTIPLE_META_SETS for v in result.violations)
-
-
-def test_watchdog_flags_stale_meta_without_position():
-    positions = []
-    orders = []
-    metas = [_make_meta(symbol="SOLUSDT", side="SHORT", version=0)]
-
-    result = _run_validator(positions, orders, metas)
-
-    assert not result.ok
-    assert any(
-        v.kind == WatchdogViolationKind.STALE_META_FOR_ZERO_POSITION for v in result.violations)
+        v.kind == AggOcoViolationKind.MULTIPLE_META_SETS for v in result)
 
 
 def test_watchdog_accepts_dict_payloads_from_adapter():
@@ -151,4 +139,4 @@ def test_watchdog_accepts_dict_payloads_from_adapter():
 
     result = _run_validator(positions, orders, metas)
 
-    assert result.ok
+    assert result == []

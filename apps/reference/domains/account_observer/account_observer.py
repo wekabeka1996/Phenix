@@ -314,4 +314,5 @@ class AccountObserver:
             "fees": fees,
             "venue": venue,
             "orderId": str(trade.get("orderId", "")),
+            "source": "account_observer",
         }
