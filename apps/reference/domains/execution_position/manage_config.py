@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Execution manage configuration resolver.
 
 Centralises reads of ``trading.execution.manage.*`` so runtime code avoids
