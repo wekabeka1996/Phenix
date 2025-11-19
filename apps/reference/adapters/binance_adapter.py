@@ -513,6 +513,11 @@ class BinanceAdapter(AbstractExchangeAdapter):
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[ExchangeOrderResponse]:
         """
         Get open orders.
+
+        EP-STAB-ADAPT-ORD-META: Returns full Binance metadata including
+        type, reduceOnly, closePosition, stopPrice, workingType, positionSide
+        to support unified ExitOrderKind classification.
+
         Implements AbstractExchangeAdapter.get_open_orders()
         """
         path = "/fapi/v1/openOrders"
@@ -523,6 +528,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         result = await self._request("GET", path, params)
         orders = []
         for order in result:
+            # EP-STAB-ADAPT-ORD-META: Extract all metadata fields for exit-order classification
             orders.append(ExchangeOrderResponse(
                 order_id=str(order.get("orderId", "")),
                 client_order_id=order.get("clientOrderId"),
@@ -533,6 +539,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 price=order.get("price"),
                 status=order.get("status", ""),
                 timestamp_ms=int(order.get("time", 0) or 0),
+                # EP-STAB-ADAPT-ORD-META: New fields for classification
+                order_type=order.get("type") or order.get("origType"),
+                reduce_only=order.get("reduceOnly", False),
+                close_position=order.get("closePosition", False),
+                stop_price=order.get("stopPrice"),
+                working_type=order.get("workingType"),
+                position_side=order.get("positionSide"),
             ))
         return orders
 

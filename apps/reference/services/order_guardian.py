@@ -32,6 +32,17 @@ except ImportError:
     # Fallback if vfoundation not available
     ExchangePosition = None  # type: ignore[misc,assignment]
 
+# EP-STAB-ADAPT-ORD-META-WIRE: Import unified classifier for SL/TP distinction
+try:
+    from apps.reference.domains.execution_position.contracts import (
+        classify_exit_order,
+        ExitOrderKind,
+    )
+except ImportError:
+    # Fallback if module not available
+    classify_exit_order = None  # type: ignore[assignment]
+    ExitOrderKind = None  # type: ignore[assignment]
+
 # Define PositionType based on availability
 if ExchangePosition is not None:
     PositionType = Union[Dict[str, Any],
@@ -508,37 +519,14 @@ class OrderGuardian:
         if not candidates:
             return 0
 
-        now = now_ts if now_ts is not None else self.clock.time()
-        if cfg.ttl_protect_new_bracket_ms > 0:
-            age_ms = max(0.0, (now - meta.created_ts) * 1000.0)
-            if age_ms < cfg.ttl_protect_new_bracket_ms:
-                LOG.debug(
-                    "[GUARD] Aggregated TTL guard skipping cleanup",
-                    extra={
-                        "event_type": "agg_oco_ttl_guard",
-                        "symbol": symbol,
-                        "side": norm_side,
-                        "age_ms": age_ms,
-                        "ttl_ms": cfg.ttl_protect_new_bracket_ms,
-                    },
-                )
-                self._emit_guard_event(
-                    symbol=symbol,
-                    side=norm_side,
-                    meta=meta,
-                    position_amt=position_amt,
-                    decision="ttl_skip",
-                    extra_cancelled=0,
-                    has_sl_after=bool(meta.sl_order_id),
-                    why=f"age_ms={int(age_ms)} ttl_ms={cfg.ttl_protect_new_bracket_ms}",
-                )
-                return 0
+        # Build protected IDs set (current bracket set orders)
+        protected_ids = set()
+        if meta.sl_order_id:
+            protected_ids.add(str(meta.sl_order_id))
+        if meta.tp_order_id:
+            protected_ids.add(str(meta.tp_order_id))
 
-        protected_ids = {
-            str(meta.sl_order_id) if meta.sl_order_id else None,
-            str(meta.tp_order_id) if meta.tp_order_id else None,
-        }
-
+        # Identify orders to cancel (all candidates NOT in protected_ids)
         to_cancel: List[Tuple[Any, Dict[str, Any]]] = []
         for raw_order, normalized in candidates:
             order_id = normalized.get("orderId")
@@ -548,6 +536,50 @@ class OrderGuardian:
             if order_id_str in protected_ids:
                 continue
             to_cancel.append((raw_order, normalized))
+
+        # TTL guard: protect only NEW orders (protected_ids), allow cleanup of old
+        now = now_ts if now_ts is not None else self.clock.time()
+        if cfg.ttl_protect_new_bracket_ms > 0:
+            age_ms = max(0.0, (now - meta.created_ts) * 1000.0)
+            if age_ms < cfg.ttl_protect_new_bracket_ms:
+                # TTL is active
+                if not to_cancel:
+                    # Nothing to cancel except protected orders → full skip
+                    LOG.debug(
+                        "[GUARD] Aggregated TTL guard full skip (no old orders)",
+                        extra={
+                            "event_type": "agg_oco_ttl_guard",
+                            "symbol": symbol,
+                            "side": norm_side,
+                            "age_ms": age_ms,
+                            "ttl_ms": cfg.ttl_protect_new_bracket_ms,
+                        },
+                    )
+                    self._emit_guard_event(
+                        symbol=symbol,
+                        side=norm_side,
+                        meta=meta,
+                        position_amt=position_amt,
+                        decision="ttl_skip",
+                        extra_cancelled=0,
+                        has_sl_after=bool(meta.sl_order_id),
+                        why=f"age_ms={int(age_ms)} ttl_ms={cfg.ttl_protect_new_bracket_ms}",
+                    )
+                    return 0
+                else:
+                    # TTL active BUT we have old orders to cancel → partial cleanup
+                    LOG.debug(
+                        "[GUARD] Aggregated TTL guard partial cleanup (old orders exist)",
+                        extra={
+                            "event_type": "agg_oco_ttl_partial",
+                            "symbol": symbol,
+                            "side": norm_side,
+                            "age_ms": age_ms,
+                            "ttl_ms": cfg.ttl_protect_new_bracket_ms,
+                            "to_cancel_count": len(to_cancel),
+                        },
+                    )
+                    # Continue to cleanup logic below
 
         if not to_cancel:
             return 0
@@ -675,6 +707,20 @@ class OrderGuardian:
         return True
 
     def _is_sl_order(self, normalized_order: Dict[str, Any]) -> bool:
+        """
+        EP-STAB-ADAPT-ORD-META-WIRE: Check if order is a STOP_LOSS order.
+
+        Uses unified classify_exit_order() if available, falls back to legacy heuristic.
+        """
+        if classify_exit_order is not None and ExitOrderKind is not None:
+            try:
+                exit_kind = classify_exit_order(normalized_order)
+                return exit_kind == ExitOrderKind.STOP_LOSS
+            except Exception:
+                # Fall through to legacy logic
+                pass
+
+        # Legacy fallback (if classify_exit_order not available)
         kind = str(normalized_order.get("kind") or "").upper()
         order_type = str(normalized_order.get("type") or "").upper()
         if kind in {"SL", "STOP", "STOP_MARKET", "STOP_LOSS"}:

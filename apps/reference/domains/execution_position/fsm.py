@@ -12,12 +12,14 @@ import asyncio
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Coroutine
 
-from vfoundation.core.fsm_emit_compat import Message, emit_compat
+import vfoundation.core.fsm_emit_compat as fsm_emit_compat
+from vfoundation.core.fsm_emit_compat import Message
 from vfoundation.dr import wal
 from vfoundation.obs.correlation import CorrelationStore
 from apps.reference.adapters.binance_adapter import BinanceAdapter, BinanceAPIError
@@ -29,7 +31,7 @@ from vfoundation.services.price_service import PriceService, PriceServiceSync
 
 from .brackets_config import resolve_brackets_config
 from .fsm_open import OpenFlowFSM
-from .fsm_manage import ManageFlowFSM
+from .fsm_manage import ManageFlowFSM, ManageState
 from .fsm_close import CloseFlowFSM, CloseState
 from .exposure_guard import ExposureGuard
 from .manage_config import (
@@ -56,7 +58,7 @@ from .utils import (
     opposite_side,
 )
 from .watchdog import OrderTimeoutWatchdog
-from .contracts import canonicalize_position_side
+from .contracts import canonicalize_position_side, is_exit_order, PositionSnapshot, PositionSide
 
 try:
     from apps.reference.telemetry.alerts import AlertManager
@@ -75,17 +77,6 @@ except ImportError:  # pragma: no cover
 
 LOG = logging.getLogger(__name__)
 agg_oco_logger = logging.getLogger("agg_oco")
-
-
-@dataclass(frozen=True)
-class PositionSnapshot:
-    """Lightweight snapshot of a position sourced from WS streams."""
-
-    symbol: str
-    side: str
-    position_amt: float
-    avg_price: float
-    updated_ts: float
 
 
 def _parse_hhmm(value: str) -> Optional[int]:
@@ -168,8 +159,15 @@ class ExecPosFSM:
         self._latest_portfolio_state: Dict[str, Any] = {}
         # EXP-FIX: Shadow check counter
         self._shadow_check_counter: int = 0
-        # ALERT-FIX: Execution error tracking for circuit breaker
-        self._exec_error_counts: Dict[str, int] = {}
+        # EP-STAB-CIRCUIT-WINDOW: Time-window based execution error tracking for circuit breaker
+        # Window duration for error tracking (10 minutes)
+        self._EXEC_ERROR_WINDOW_SEC = 600
+        # Track error timestamps per symbol: {"exec_error_<symbol>": deque([ts1, ts2, ...])}
+        self._exec_error_history: Dict[str, deque] = {}
+        # AUTOHEAL-FIX: Retry tracking for infinite loop prevention
+        self._autoheal_retry_counts: Dict[str, Tuple[int, float]] = {}
+        # EP-STAB-LIVEPOS-FIX: REST backoff tracking per symbol to avoid spam on degraded conditions
+        self._livepos_rest_backoff_until: Dict[str, float] = {}
 
         self.correlation_store = CorrelationStore()
         # Track SL/TP bracket orders per symbol for atomic cleanup on close
@@ -211,6 +209,14 @@ class ExecPosFSM:
         self._orphan_rate_window_start: float = 0.0
         self._orphan_rate_count: int = 0
 
+        # EP-STAB-LIVEPOS-FIX-DOCS+OBS: Live position resolution metrics
+        self._livepos_metrics: Dict[str, int] = {
+            "rest_timeouts": 0,
+            "rest_backoff_suppressed": 0,
+            "portfolio_stale_data": 0,
+            "rest_fallback_success": 0,
+        }
+
         self._positions_cfg: PositionsConfig = getattr(
             manage_cfg, "positions", PositionsConfig()
         )
@@ -226,6 +232,13 @@ class ExecPosFSM:
         self._ws_snapshot_rest_fallback_enabled: bool = bool(
             getattr(self._ws_snapshot_cfg, "rest_fallback_enabled", True)
         )
+        self.REST_FALLBACK_TIMEOUT_SEC: float = float(
+            getattr(self._ws_snapshot_cfg, "rest_timeout_sec", 15.0)
+        )
+        self._rest_fallback_backoff_sec: float = float(
+            getattr(self._ws_snapshot_cfg, "rest_backoff_sec", 20.0)
+        )
+        self._rest_backoff_force_threshold: int = 2
         self._ws_position_cache: Dict[Tuple[str, str], PositionSnapshot] = {}
 
         agg_cfg = getattr(getattr(manage_cfg, "brackets",
@@ -429,18 +442,18 @@ class ExecPosFSM:
         remove_opposite: bool,
         source: str,
     ) -> None:
-        key = self._ws_cache_key(snapshot.symbol, snapshot.side)
+        key = self._ws_cache_key(snapshot.symbol, snapshot.side.value)
         self._ws_position_cache[key] = snapshot
         if remove_opposite:
-            other_side = "SHORT" if snapshot.side == "LONG" else "LONG"
+            other_side = "SHORT" if snapshot.side == PositionSide.LONG else "LONG"
             self._ws_position_cache.pop(
                 self._ws_cache_key(snapshot.symbol, other_side), None
             )
         self.logger.debug(
-            "[WS_CACHE] update symbol=%s side=%s amt=%.6f source=%s",
+            "[WS_CACHE] update symbol=%s side=%s amt=%s source=%s",
             snapshot.symbol,
-            snapshot.side,
-            snapshot.position_amt,
+            snapshot.side.value,
+            snapshot.qty,
             source,
         )
 
@@ -491,10 +504,10 @@ class ExecPosFSM:
 
         snapshot = self._get_ws_snapshot(symbol_upper, None)
         if snapshot:
-            qty = _as_decimal(snapshot.position_amt)
+            qty = snapshot.qty
             if qty is not None:
-                signed_qty = qty if snapshot.side.upper() == "LONG" else -qty
-                avg_price = _as_decimal(snapshot.avg_price)
+                signed_qty = qty if snapshot.side == PositionSide.LONG else -qty
+                avg_price = snapshot.avg_price
                 return {
                     "symbol": symbol_upper,
                     "qty": signed_qty,
@@ -534,6 +547,21 @@ class ExecPosFSM:
                 or mapping.get("avgPrice")
                 or mapping.get("avg_price")
             )
+            # EP-STAB-LIVEPOS-FIX: Detect stale portfolio data (position not yet updated after fill)
+            if qty == 0 and (avg_price is None or avg_price == 0):
+                # EP-STAB-LIVEPOS-FIX-DOCS+OBS: Track portfolio stale data detection
+                self._livepos_metrics["portfolio_stale_data"] += 1
+                logging.getLogger(__name__).warning(
+                    "[BRK] portfolio snapshot stale (position_amt=0, entry_price=0)",
+                    extra={
+                        "symbol": symbol_upper,
+                        "position_amt": str(qty),
+                        "entry_price": str(avg_price) if avg_price is not None else "None",
+                        "event_type": "PORTFOLIO_STALE_DATA",
+                    }
+                )
+                # Don't return stale snapshot; let REST fallback attempt or return None
+                break  # Exit loop, proceed to REST fallback
             updated_ts = mapping.get("updateTime") or mapping.get(
                 "ts") or latest_state.get("positions_last_ts_ms")
             try:
@@ -549,6 +577,126 @@ class ExecPosFSM:
                 "source": "portfolio_state",
                 "updated_ts": updated_ts_val,
             }
+
+        logging.getLogger(__name__).warning(
+            "[BRK] Portfolio state fallback failed for symbol",
+            extra={
+                "symbol": symbol_upper,
+                "positions_count": len(positions_payload),
+                "event_type": "PORTFOLIO_FALLBACK_FAILED",
+            }
+        )
+
+        # Final fallback: synchronous REST API call using existing _fetch_rest_position_snapshot
+        # This handles race condition where position opened but portfolio state not yet updated
+        # EP-STAB-LIVEPOS-FIX: Check REST backoff window before attempting REST call
+        if self._ws_snapshot_rest_fallback_enabled and self.adapter:
+            now = time.time()
+            backoff_until = self._livepos_rest_backoff_until.get(
+                symbol_upper, 0.0)
+            if now < backoff_until:
+                backoff_remaining = backoff_until - now
+                # EP-STAB-LIVEPOS-FIX-DOCS+OBS: Track REST backoff suppression
+                self._livepos_metrics["rest_backoff_suppressed"] += 1
+                self._log_livepos_metric(
+                    "rest_backoff_suppressed",
+                    symbol_upper,
+                    backoff_remaining_sec=round(backoff_remaining, 2),
+                )
+                logging.getLogger(__name__).info(
+                    "[BRK] REST fallback suppressed by backoff",
+                    extra={
+                        "symbol": symbol_upper,
+                        "backoff_remaining_sec": round(backoff_remaining, 2),
+                        "event_type": "REST_FALLBACK_SUPPRESSED",
+                    }
+                )
+                return None  # Skip REST call, data unavailable
+
+            try:
+                import asyncio
+                loop = self._get_async_loop()
+                if loop and loop.is_running():
+                    # EP-STAB-LIVEPOS-FIX: Use configurable REST_FALLBACK_TIMEOUT_SEC instead of hardcoded 2.0s
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._fetch_rest_position_snapshot(symbol_upper, None),
+                        loop
+                    )
+                    rest_snapshot = future.result(
+                        timeout=self.REST_FALLBACK_TIMEOUT_SEC)
+
+                    if rest_snapshot and rest_snapshot.position_amt > 1e-10:
+                        # Convert PositionSnapshot to dict format expected by ManageFlowFSM
+                        qty_val = rest_snapshot.position_amt
+                        signed_qty = qty_val if rest_snapshot.side.upper() == "LONG" else -qty_val
+                        signed_qty_decimal = _as_decimal(signed_qty)
+                        avg_price = _as_decimal(rest_snapshot.avg_price)
+
+                        # EP-STAB-LIVEPOS-FIX-DOCS+OBS: Track successful REST fallback
+                        self._livepos_metrics["rest_fallback_success"] += 1
+                        self._log_livepos_metric(
+                            "rest_fallback_success",
+                            symbol_upper,
+                            qty=str(signed_qty_decimal),
+                        )
+                        logging.getLogger(__name__).info(
+                            "[BRK] REST API fallback succeeded",
+                            extra={
+                                "symbol": symbol_upper,
+                                "qty": str(signed_qty_decimal),
+                                "source": "rest_api_emergency_fallback"
+                            }
+                        )
+
+                        return {
+                            "symbol": symbol_upper,
+                            "qty": signed_qty_decimal,
+                            "avg_price": avg_price,
+                            "side": "BUY" if signed_qty_decimal >= 0 else "SELL",
+                            "source": "rest_api_fallback",
+                            "updated_ts": rest_snapshot.updated_ts,
+                        }
+            except asyncio.TimeoutError:
+                # EP-STAB-LIVEPOS-FIX: Set backoff window on timeout to avoid spam
+                backoff_sec = self._rest_fallback_backoff_sec
+                self._livepos_rest_backoff_until[symbol_upper] = now + backoff_sec
+                # EP-STAB-LIVEPOS-FIX-DOCS+OBS: Track REST API timeouts
+                self._livepos_metrics["rest_timeouts"] += 1
+                self._log_livepos_metric(
+                    "rest_timeout",
+                    symbol_upper,
+                    timeout_sec=self.REST_FALLBACK_TIMEOUT_SEC,
+                    backoff_sec=backoff_sec,
+                )
+                logging.getLogger(__name__).warning(
+                    "[BRK] REST API fallback timeout, entering backoff",
+                    extra={
+                        "symbol": symbol_upper,
+                        "timeout_sec": self.REST_FALLBACK_TIMEOUT_SEC,
+                        "backoff_sec": backoff_sec,
+                        "event_type": "REST_API_FALLBACK_TIMEOUT",
+                    }
+                )
+            except Exception as e:
+                # EP-STAB-LIVEPOS-FIX: Set backoff window on hard errors to avoid spam
+                backoff_sec = self._rest_fallback_backoff_sec
+                self._livepos_rest_backoff_until[symbol_upper] = now + backoff_sec
+                self._log_livepos_metric(
+                    "rest_fallback_failed",
+                    symbol_upper,
+                    backoff_sec=backoff_sec,
+                    error=str(e),
+                )
+                logging.getLogger(__name__).warning(
+                    "[BRK] REST API fallback failed, entering backoff",
+                    extra={
+                        "symbol": symbol_upper,
+                        "error": str(e),
+                        "backoff_sec": backoff_sec,
+                        "event_type": "REST_API_FALLBACK_FAILED"
+                    },
+                    exc_info=False  # Reduced noise: don't log full traceback on every failure
+                )
 
         return None
 
@@ -582,6 +730,16 @@ class ExecPosFSM:
         if not self._ws_snapshot_enabled:
             return
         side = self._derive_snapshot_side(side_hint, net_qty)
+        if side is None:
+            logging.getLogger(__name__).warning(
+                "[WS] Derived side is None, skipping cache update",
+                extra={
+                    "symbol": symbol,
+                    "net_qty": net_qty,
+                    "side_hint": side_hint,
+                    "source": source,
+                }
+            )
         if side is None or abs(net_qty) < 1e-10:
             self._clear_ws_snapshot(symbol, side)
             return
@@ -590,11 +748,16 @@ class ExecPosFSM:
         except (TypeError, ValueError):
             ts_val = time.time()
         updated_ts = ts_val / 1000.0 if ts_val > 1e10 else ts_val
+
+        # Convert side string to Enum
+        side_enum = PositionSide.LONG if side == "LONG" else PositionSide.SHORT
+
         snapshot = PositionSnapshot(
             symbol=symbol.upper(),
-            side=side,
-            position_amt=abs(float(net_qty)),
-            avg_price=float(avg_price) if avg_price is not None else 0.0,
+            side=side_enum,
+            qty=Decimal(str(abs(float(net_qty)))),
+            avg_price=Decimal(
+                str(avg_price)) if avg_price is not None else Decimal("0"),
             updated_ts=updated_ts,
         )
         remove_opposite = not side_hint or str(
@@ -768,9 +931,9 @@ class ExecPosFSM:
 
         snapshot = PositionSnapshot(
             symbol=symbol_upper,
-            side=resolved_side,
-            position_amt=abs(net_qty),
-            avg_price=avg_price_val,
+            side=PositionSide.LONG if resolved_side == "LONG" else PositionSide.SHORT,
+            qty=Decimal(str(abs(net_qty))),
+            avg_price=Decimal(str(avg_price_val)),
             updated_ts=time.time(),
         )
         return snapshot
@@ -996,7 +1159,7 @@ class ExecPosFSM:
                 if isinstance(bus, LocalBus):
                     bus.emit(event_name, msg)
                 else:
-                    await emit_compat(bus, msg, logger=LOG)
+                    await fsm_emit_compat.emit_compat(bus, msg, logger=LOG)
             except Exception:
                 self.logger.exception(
                     "WATCHDOG_EMIT_FAILED_BUS", extra=log_meta)
@@ -1596,11 +1759,161 @@ class ExecPosFSM:
             },
         )
 
+    async def _heal_too_many_sl_for_open_position(self, violation: AggOcoViolation) -> None:
+        guardian = getattr(self, "order_guardian", None)
+        if not guardian:
+            return
+        rid = f"agg_watchdog_{int(time.time() * 1000)}"
+
+        # Get current position and open orders
+        position_amt = violation.details.get("position_amt", 0.0)
+        adapter = getattr(self, "adapter", None)
+        if not adapter:
+            self.logger.warning("No adapter available for TOO_MANY_SL healing")
+            return
+
+        try:
+            # Fetch fresh open orders
+            open_orders_raw = await adapter.get_open_orders(symbol=violation.symbol)
+            open_orders = list(open_orders_raw or [])
+
+            # Call ensure_single_bracket_set_for_position to cleanup extras
+            ensure_fn = getattr(
+                guardian, "ensure_single_bracket_set_for_position", None)
+            if callable(ensure_fn):
+                cancelled_count = ensure_fn(
+                    symbol=violation.symbol,
+                    side=violation.side,
+                    position_amt=position_amt,
+                    open_orders=open_orders,
+                    now_ts=time.time(),
+                )
+                self.logger.info(
+                    "AGG_OCO_WATCHDOG_AUTOHEAL",
+                    extra={
+                        "event_type": "AGG_OCO_WATCHDOG_AUTOHEAL",
+                        "symbol": violation.symbol,
+                        "side": violation.side,
+                        "kind": violation.kind.value,
+                        "why": "agg_watchdog_auto_heal_too_many_sl",
+                        "cancelled_count": cancelled_count,
+                        "rid": rid,
+                    },
+                )
+        except Exception as exc:
+            self.logger.warning(
+                "Aggregated OCO watchdog TOO_MANY_SL cleanup failed for %s/%s: %s",
+                violation.symbol,
+                violation.side,
+                exc,
+                exc_info=True,
+            )
+
     async def _auto_heal_watchdog_violation(self, violation: AggOcoViolation) -> None:
         if not self._agg_watchdog_auto_heal or not self.order_guardian:
             return
         if violation.kind == AggOcoViolationKind.ORPHAN_SL_FOR_ZERO_POSITION:
             await self._heal_orphan_sl_for_zero_position(violation)
+        elif violation.kind == AggOcoViolationKind.TOO_MANY_SL_FOR_OPEN_POSITION:
+            await self._heal_too_many_sl_for_open_position(violation)
+        elif violation.kind == AggOcoViolationKind.NO_SL_FOR_OPEN_POSITION:
+            await self._heal_no_sl_for_open_position(violation)
+
+    async def _heal_no_sl_for_open_position(self, violation: AggOcoViolation) -> None:
+        symbol = violation.symbol
+
+        # AUTOHEAL-FIX: Circuit breaker to prevent infinite loops
+        retry_key = f"autoheal_{symbol}"
+        now = time.time()
+        count, last_ts = self._autoheal_retry_counts.get(retry_key, (0, 0.0))
+
+        # Reset counter if last attempt was > 60s ago
+        if now - last_ts > 60.0:
+            count = 0
+
+        if count >= 5:
+            self.logger.critical(
+                "AGG_OCO_AUTOHEAL_ABORTED_LOOP_DETECTED",
+                extra={
+                    "symbol": symbol,
+                    "retry_count": count,
+                    "window_sec": 60,
+                    "reason": "too_many_retries",
+                },
+            )
+            return
+
+        next_count = count + 1
+        if next_count >= self._rest_backoff_force_threshold:
+            forced_symbol = symbol.upper()
+            if self._livepos_rest_backoff_until.pop(forced_symbol, None) is not None:
+                self.logger.info(
+                    "LIVEPOS_FORCE_REST_FALLBACK",
+                    extra={
+                        "event_type": "LIVEPOS_FORCE_REST_FALLBACK",
+                        "symbol": forced_symbol,
+                        "retry_count": next_count,
+                    },
+                )
+                self._log_livepos_metric(
+                    "force_rest_fallback",
+                    forced_symbol,
+                    retry_count=next_count,
+                )
+
+        self._autoheal_retry_counts[retry_key] = (next_count, now)
+
+        manage_flow = self.manage_flows.get(symbol)
+        if not manage_flow:
+            return
+
+        self.logger.info(
+            "AGG_OCO_WATCHDOG_AUTOHEAL",
+            extra={
+                "event_type": "AGG_OCO_WATCHDOG_AUTOHEAL",
+                "symbol": symbol,
+                "kind": violation.kind.value,
+                "why": "agg_watchdog_auto_heal_no_sl",
+                "rid": f"autoheal_{int(time.time()*1000)}",
+                "retry_count": next_count,
+            }
+        )
+
+        # Force state reset if stuck in BRACKETS_PENDING
+        if manage_flow.state == ManageState.BRACKETS_PENDING:
+            self.logger.warning(
+                f"Force-resetting ManageFlowFSM state from BRACKETS_PENDING to TRACKING for {symbol} during auto-heal"
+            )
+            manage_flow.state = ManageState.TRACKING
+
+        # Construct a fake message to trigger recalc
+        msg = Message(
+            op="EVT",
+            verb="TRADE_EXECUTED",
+            src="execution_position.watchdog",
+            dst="execution_position",
+            rid=f"autoheal_{int(time.time()*1000)}",
+            pld={
+                "symbol": symbol,
+                "qty": str(violation.details.get("position_amt", 0)),
+                "source": "watchdog_autoheal"
+            },
+            why="watchdog_autoheal_no_sl"
+        )
+
+        # Route to ManageFlowFSM
+        result = manage_flow.handle(msg)
+        if result and result.op == "DEC":
+            self._dispatch_decision(result, symbol)
+
+        # Collect pending decisions
+        try:
+            decisions = manage_flow.consume_pending_decisions()
+            for dec in decisions:
+                self._dispatch_decision(dec, symbol)
+        except Exception as e:
+            self.logger.error(
+                f"Failed to consume pending decisions during auto-heal: {e}")
 
     @staticmethod
     def _format_decimal_value(value: Any) -> Optional[str]:
@@ -1801,17 +2114,32 @@ class ExecPosFSM:
 
     @staticmethod
     def _is_cancel_success_response(result: Any) -> bool:
-        """Treat standard cancel success and -2011 idempotent paths uniformly."""
-        if isinstance(result, dict):
-            status = str(result.get("status", "")).upper()
-            if status == "CANCELED":
-                return True
-            code = result.get("code")
-            if code == -2011:
-                return True
-            msg = str(result.get("msg", "")).lower()
-            if "unknown order" in msg:
-                return True
+        """
+        Treat standard cancel success and -2011 idempotent paths uniformly.
+
+        Supports both raw dict payloads and ExchangeOrderResponse dataclasses.
+        """
+        if result is None:
+            return False
+
+        # Helper to read attributes from dict/dataclass
+        def _read(field: str, default: Any = None) -> Any:
+            if isinstance(result, dict):
+                return result.get(field, default)
+            return getattr(result, field, default)
+
+        status = str(_read("status", "") or "").upper()
+        if status in {"CANCELED", "CANCELLED", "PENDING_CANCEL"}:
+            return True
+
+        code = _read("code")
+        if code == -2011:
+            return True
+
+        msg = str(_read("msg", "") or "")
+        if msg.lower().find("unknown order") >= 0:
+            return True
+
         return False
 
     @staticmethod
@@ -1821,6 +2149,15 @@ class ExecPosFSM:
             return True
         message = str(error).lower()
         return "unknown order" in message
+
+    def _log_livepos_metric(self, kind: str, symbol: str, **extra: Any) -> None:
+        payload = {
+            "event_type": f"LIVEPOS_{kind.upper()}",
+            "symbol": symbol,
+            "metrics": dict(self._livepos_metrics),
+        }
+        payload.update(extra or {})
+        self.logger.info("[LIVEPOS] %s", kind, extra=payload)
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """
@@ -1865,7 +2202,8 @@ class ExecPosFSM:
             loop = self._get_async_loop()
             if loop:
                 self._submit_async(
-                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
+                    fsm_emit_compat.emit_compat(
+                        self.fsm, exposure_msg, logger=LOG), loop
                 )
         except Exception as e:
             self.logger.debug(f"Failed to emit exposure summary update: {e}")
@@ -1937,7 +2275,7 @@ class ExecPosFSM:
             loop = self._get_async_loop()
             if loop:
                 self._submit_async(
-                    emit_compat(
+                    fsm_emit_compat.emit_compat(
                         self.fsm,
                         expired_msg,
                         logger=getattr(self, "logger", None),
@@ -1970,6 +2308,7 @@ class ExecPosFSM:
         self._processed_events.add(event_key)
 
         self.logger.debug(
+
             f"[ACK] Processing ACK for {symbol} order {order_id} (rid={rid})")
 
         # Release pre-fill hold from exposure guard
@@ -2224,7 +2563,7 @@ class ExecPosFSM:
             loop = self._get_async_loop()
             # Only emit asynchronously when реальний asyncio loop доступний (із call_soon_threadsafe)
             if loop and hasattr(loop, "call_soon_threadsafe"):
-                self._submit_async(emit_compat(
+                self._submit_async(fsm_emit_compat.emit_compat(
                     self.fsm, exposure_msg, logger=LOG), loop)
             else:
                 self.logger.debug(
@@ -2539,13 +2878,7 @@ class ExecPosFSM:
 
         if msg.op == "EVT" and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL", "FILL"):
             payload = msg.pld or {}
-            order_type = str(payload.get("order_type")
-                             or payload.get("type") or "").upper()
-            close_flag = str(payload.get("closePosition", "")
-                             ).lower() == "true"
-            reduce_only = str(payload.get("reduceOnly", "")).lower() == "true"
-            is_exit = order_type in {"TAKE_PROFIT_MARKET",
-                                     "STOP_MARKET"} or close_flag or reduce_only
+            is_exit = is_exit_order(payload)
             qty_value = payload.get("qty") or payload.get(
                 "filled_qty") or payload.get("quantity")
             try:
@@ -2596,6 +2929,21 @@ class ExecPosFSM:
 
         # Route to the correct FSM based on the message verb
         if msg.verb == "OPEN":
+            # CIRCUIT BREAKER: Prevent new entries if unprotected position exists
+            if self._has_unprotected_position(symbol):
+                self.logger.warning(
+                    f"CIRCUIT_BREAKER: Blocking OPEN for {symbol} due to unprotected position"
+                )
+                return Message(
+                    op="ERR",
+                    verb="OPEN",
+                    src="execution_position",
+                    dst=msg.src,
+                    rid=msg.rid,
+                    why="circuit_breaker_unprotected_position",
+                    pld={"error": "Unprotected position detected (NO_SL)"}
+                )
+
             # EXP-FIX: Fail-closed exposure check before processing CMD:OPEN
             if self._check_exposure_fail_closed(msg):
                 return None  # Error already emitted
@@ -2803,7 +3151,7 @@ class ExecPosFSM:
                     pld={"reason": "Testnet mode with live execution URL"},
                     why="Testnet mode with live execution URL",
                 )
-                await emit_compat(self.fsm, fatal_msg, logger=LOG)
+                await fsm_emit_compat.emit_compat(self.fsm, fatal_msg, logger=LOG)
                 return
             else:
                 self.logger.info(
@@ -2914,11 +3262,15 @@ class ExecPosFSM:
                                 close_side = "SELL" if entry_side.upper() == "BUY" else "BUY"
                             else:
                                 # Fallback to current positions if we don't have entry side
+                                from .contracts import PositionSnapshot
                                 try:
-                                    pos = next((p for p in (await self._call_adapter_fn(self.adapter.get_open_positions)) if p.get("symbol") == symbol), None)
-                                    pos_amt = float(
-                                        pos.get("positionAmt", 0)) if pos else 0
-                                    close_side = "SELL" if pos_amt > 0 else "BUY"
+                                    positions = await self._call_adapter_fn(self.adapter.get_open_positions)
+                                    snapshot = PositionSnapshot.from_rest_list(
+                                        positions, symbol)
+                                    if snapshot:
+                                        close_side = "SELL" if snapshot.side.value == "LONG" else "BUY"
+                                    else:
+                                        close_side = "SELL"
                                 except Exception:
                                     close_side = "SELL"
 
@@ -3017,31 +3369,22 @@ class ExecPosFSM:
                                     "timestamp": int(time.time() * 1000)
                                 })
 
-                # Determine side/qty from current positions
+                # Determine side/qty from current positions using PositionSnapshot
+                from .contracts import PositionSnapshot
                 try:
                     positions = await self._call_adapter_fn(self.adapter.get_open_positions)
-                    # Convert positions to dict if they're objects
-                    positions_list = [
-                        p.to_dict() if hasattr(p, 'to_dict') else (
-                            p.__dict__ if not isinstance(p, dict) else p)
-                        for p in positions
-                    ]
-                    pos = next(
-                        (p for p in positions_list if p.get("symbol") == symbol), None)
+                    snapshot = PositionSnapshot.from_rest_list(
+                        positions, symbol)
                 except Exception:
-                    pos = None
-                amt = 0.0
-                if pos is not None:
-                    try:
-                        amt = float(pos.get("positionAmt", 0))
-                    except Exception:
-                        amt = 0.0
-                if abs(amt) < 1e-10:
+                    snapshot = None
+
+                if snapshot is None:
                     self.logger.info(f"No open position to close for {symbol}")
                     self._symbol_brackets.pop(symbol, None)
                     return
-                close_side = "SELL" if amt > 0 else "BUY"
-                close_qty = str(abs(Decimal(str(amt))))
+
+                close_side = "SELL" if snapshot.side.value == "LONG" else "BUY"
+                close_qty = str(snapshot.qty)
                 close_id = generate_client_order_id("CLOSE", symbol)
                 close_resp = await self._call_reduce_only_order(
                     self.adapter.place_market_reduce_only,
@@ -3066,84 +3409,65 @@ class ExecPosFSM:
                 do_symbol_reconcile = bool(
                     self._manage_cfg().brackets.keep_single_bracket_set
                 )
+                # EP-STAB-GUARDIAN-CLOSE-CLEANUP: Delegate SL/TP cleanup to OrderGuardian
+                # instead of manual get_open_orders + cancel_order loops.
                 # If we were invoked for DEC:CLOSE by specific entry, skip symbol-wide reconcile
                 if pld_parent_id:
                     do_symbol_reconcile = False
-                if do_symbol_reconcile:
+
+                if do_symbol_reconcile and self.order_guardian:
                     self.logger.info(
-                        f"🔄 [DEC:CLOSE RECONCILE] Starting sync cleanup for {symbol} (single-set mode)")
+                        f"🔄 [DEC:CLOSE RECONCILE] Delegating cleanup to OrderGuardian for {symbol} (hard mode)")
                     try:
-                        open_orders = await self._call_adapter_fn(self.adapter.get_open_orders, symbol)
-                        open_orders_list = [
-                            o.to_dict() if hasattr(o, 'to_dict') else (
-                                o.__dict__ if not isinstance(o, dict) else o)
-                            for o in open_orders
-                        ]
+                        # EP-STAB-GUARDIAN-CLOSE-CLEANUP: Use Guardian's cleanup_orphans with hard=True
+                        # to cancel all reduceOnly/closePosition brackets for the symbol.
+                        # This is single source of truth for bracket cleanup logic.
+                        cancelled_count = await self.order_guardian.cleanup_orphans(
+                            symbol=symbol,
+                            hard=True  # Hard mode: cancel all brackets regardless of position state
+                        )
 
-                        cancel_tasks = []
-                        for o in open_orders_list:
-                            otype = (o.get("type") or "").upper()
-                            reduce_only = str(
-                                o.get("reduceOnly", "")).lower() == "true"
-                            close_pos = str(
-                                o.get("closePosition", "")).lower() == "true"
-                            if otype in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "LIMIT") and (reduce_only or close_pos):
-                                oid = o.get("orderId")
-                                cancel_tasks.append(
-                                    (otype, oid, self.adapter.cancel_order(symbol, oid)))
+                        self._orphan_metrics["reconcile_cancelled"] = self._orphan_metrics.get(
+                            "reconcile_cancelled", 0) + cancelled_count
 
-                        if cancel_tasks:
-                            results = await asyncio.gather(*[task[2] for task in cancel_tasks], return_exceptions=True)
-                            for (otype, oid, _), result in zip(cancel_tasks, results):
-                                if isinstance(result, Exception):
-                                    if self._is_unknown_order_error(result):
-                                        self.logger.info(
-                                            f"ℹ️ [DEC:CLOSE RECONCILE] {otype} {oid} already gone for {symbol} (-2011)")
-                                    else:
-                                        self.logger.warning(
-                                            f"❌ [DEC:CLOSE RECONCILE] Failed to cancel {otype} {oid} for {symbol}: {result}")
-                                        self._orphan_metrics["errors"] += 1
-                                else:
-                                    if self._is_cancel_success_response(result):
-                                        self.logger.info(
-                                            f"✅ [DEC:CLOSE RECONCILE] Cancelled {otype} {oid} for {symbol}")
-                                        self._orphan_metrics["reconcile_cancelled"] = self._orphan_metrics.get(
-                                            "reconcile_cancelled", 0) + 1
-                                    else:
-                                        status = str(result.get(
-                                            "status", "")).upper()
-                                        self.logger.warning(
-                                            f"❌ [DEC:CLOSE RECONCILE] Cancel response unexpected for {otype} {oid} (status={status})")
-                                        self._orphan_metrics["errors"] += 1
+                        self.logger.info(
+                            f"✅ [DEC:CLOSE RECONCILE] OrderGuardian cleaned up {cancelled_count} brackets for {symbol}")
 
-                            self.logger.info(
-                                f"✅ [DEC:CLOSE RECONCILE] Completed for {symbol}: cancelled {len(cancel_tasks)} orders")
+                        if cancelled_count > 0:
                             self._emit_observability_event("RECONCILE_CANCELLED", {
                                 "symbol": symbol,
-                                "order_count": len(cancel_tasks),
-                                "metric": self._orphan_metrics["reconcile_cancelled"]
+                                "order_count": cancelled_count,
+                                "metric": self._orphan_metrics["reconcile_cancelled"],
+                                "via": "order_guardian"
                             })
-                        else:
-                            self.logger.info(
-                                f"✅ [DEC:CLOSE RECONCILE] No orphaned brackets found for {symbol}")
                     except Exception as e:
                         self.logger.warning(
-                            f"⚠️ [DEC:CLOSE RECONCILE] Error during cleanup for {symbol}: {e}")
+                            f"⚠️ [DEC:CLOSE RECONCILE] OrderGuardian cleanup error for {symbol}: {e}")
                         self._orphan_metrics["errors"] += 1
-                else:
+                elif not do_symbol_reconcile:
                     self.logger.info(
                         f"🛑 [DEC:CLOSE RECONCILE] Skipped symbol-wide cleanup for {symbol} (multi-entry mode)")
-
-                # Запуск повної чистки орфанів не виконується у multi-entry режимі (щоб не чіпати інші entry)
-                if do_symbol_reconcile:
-                    if self.order_guardian:
-                        await self.order_guardian.cleanup_orphans()
-                    self.logger.info(
-                        f"✅ Cleanup after manual CLOSE for {symbol} completed")
+                elif not self.order_guardian:
+                    # EP-STAB-GUARDIAN-CLOSE-CLEANUP: Fallback for legacy non-Guardian configurations
+                    # This path should only execute if OrderGuardian is disabled in config.
+                    # In production, OrderGuardian should always be enabled for aggregated OCO.
+                    self.logger.warning(
+                        f"⚠️ [DEC:CLOSE RECONCILE] OrderGuardian not available, cleanup delegated to reconcile_symbol")
 
                 # [GUARD] Reconcile orphaned brackets for closed position
                 if self.order_guardian:
                     await self.order_guardian.reconcile_symbol(symbol, decision.rid)
+
+                # EP-STAB-GUARDIAN-CLOSE-CLEANUP: Clear BracketSetMeta for closed position
+                # Position is now FLAT, so remove bracket tracking for both LONG and SHORT sides
+                if self.order_guardian and snapshot:
+                    closed_side = snapshot.side.value  # LONG or SHORT that was just closed
+                    self.order_guardian.clear_bracket_set_for_position(
+                        symbol=symbol,
+                        side=closed_side
+                    )
+                    self.logger.info(
+                        f"✅ [DEC:CLOSE] Cleared BracketSetMeta for {symbol}/{closed_side} via OrderGuardian")
 
                 # PHASE A2: Clear closing flag - position close complete
                 manage = self.manage_flows.get(symbol)
@@ -3532,22 +3856,36 @@ class ExecPosFSM:
                 exc_info=True,
             )
 
-            # Alert on execution failures (circuit breaker trigger)
+            # EP-STAB-CIRCUIT-WINDOW: Alert on execution failures (circuit breaker trigger)
             if self.alert_manager:
                 try:
                     symbol = decision.pld.get('symbol', 'unknown')
                     error_key = f"exec_error_{symbol}"
-                    if not hasattr(self, '_exec_error_counts'):
-                        self._exec_error_counts = {}
-                    self._exec_error_counts[error_key] = self._exec_error_counts.get(
-                        error_key, 0) + 1
 
-                    # Alert if 2+ execution errors in last 10 minutes for same symbol
-                    if self._exec_error_counts[error_key] >= 2:
+                    # Initialize deque for this symbol if not exists
+                    if not hasattr(self, '_exec_error_history'):
+                        self._exec_error_history = {}
+                    if error_key not in self._exec_error_history:
+                        self._exec_error_history[error_key] = deque()
+
+                    # Add current timestamp to error history
+                    now_ts = time.time()
+                    self._exec_error_history[error_key].append(now_ts)
+
+                    # Remove timestamps outside the time window (10 minutes)
+                    window_sec = getattr(self, '_EXEC_ERROR_WINDOW_SEC', 600)
+                    cutoff_ts = now_ts - window_sec
+                    while (self._exec_error_history[error_key] and
+                           self._exec_error_history[error_key][0] < cutoff_ts):
+                        self._exec_error_history[error_key].popleft()
+
+                    # Alert if 2+ execution errors within time window for same symbol
+                    if len(self._exec_error_history[error_key]) >= 2:
                         self.alert_manager.check_circuit_breaker(
                             True, 600)  # 10 minutes active
                         self.logger.warning(
-                            f"Circuit breaker alert triggered for {symbol} due to repeated execution errors")
+                            f"Circuit breaker alert triggered for {symbol}: "
+                            f"{len(self._exec_error_history[error_key])} errors in {window_sec}s window")
                 except Exception as alert_e:
                     self.logger.error(
                         f"Error triggering execution error alert: {alert_e}")
@@ -3576,7 +3914,7 @@ class ExecPosFSM:
                     e), "original_decision": decision.model_dump()},
                 why="Execution failed due to adapter error",
             )
-            await emit_compat(self.fsm, exec_failed_msg, logger=LOG)
+            await fsm_emit_compat.emit_compat(self.fsm, exec_failed_msg, logger=LOG)
 
     async def _handle_place_order_decision(self, decision: Message) -> None:
         """Execute DEC:PLACE_ORDER emitted by ManageFlow aggregated brackets.
@@ -3603,14 +3941,11 @@ class ExecPosFSM:
         qty_str = str(qty_value) if qty_value is not None else None
         position_side = payload.get(
             "position_side") or payload.get("positionSide")
-        reduce_only = self._truthy_flag(
-            payload.get("reduceOnly") or payload.get("reduce_only"))
-        close_position = self._truthy_flag(
-            payload.get("closePosition") or payload.get("close_position"))
         client_order_id = payload.get(
             "newClientOrderId") or payload.get("clientOrderId")
 
-        if not reduce_only and not close_position:
+        # Validate this is an EXIT order (TP/SL/reduce)
+        if not is_exit_order(payload):
             self._log_place_order_failure(
                 decision, "agg_place_order_not_reduce_only", order_type=order_type)
             return
@@ -3788,6 +4123,27 @@ class ExecPosFSM:
                     sl_order_id=entry.get("sl"),
                     tp_order_id=entry.get("tp"),
                 )
+
+            # ✅ NEW: Explicitly register with OrderGuardian to prevent Watchdog race
+            if self.order_guardian:
+                try:
+                    # Ensure side is valid (LONG/SHORT)
+                    p_side = entry.get("position_side")
+                    if not p_side or p_side not in ("LONG", "SHORT"):
+                        # Fallback if position_side is missing or BOTH
+                        p_side = "LONG"
+
+                    self.order_guardian.register_bracket_set(
+                        bracket_set_id=base_key,
+                        symbol=symbol,
+                        side=p_side,
+                        sl_order_id=entry.get("sl"),
+                        tp_order_id=entry.get("tp"),
+                        created_ts=time.time(),
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to register bracket set with OrderGuardian: {e}")
 
             bucket.pop(base_key, None)
             if not bucket:
@@ -4091,9 +4447,64 @@ class ExecPosFSM:
         )
 
         try:
-            await emit_compat(self.fsm, timeout_msg, logger=getattr(self, "logger", None))
+            await fsm_emit_compat.emit_compat(self.fsm, timeout_msg, logger=getattr(self, "logger", None))
         except Exception as e:
             self.logger.error(f"Failed to emit timeout event: {e}")
+
+    async def _update_portfolio_after_timeout_cancellation(self, symbol: str) -> None:
+        """
+        Reset cached portfolio state after timeout-driven cancellation and notify consumers.
+        """
+        now_ms = int(time.time() * 1000)
+        zero_state = {
+            "symbol": symbol,
+            "positions_count": 0,
+            "open_positions_usd": "0",
+            "last_updated": now_ms,
+        }
+
+        self._latest_portfolio_state = dict(zero_state)
+        try:
+            self.exposure_guard.on_portfolio(self._latest_portfolio_state)
+        except Exception as exc:
+            self.logger.debug(
+                "Exposure guard update failed after timeout cancellation for %s: %s",
+                symbol,
+                exc,
+            )
+
+        msg = Message(
+            op="EVT",
+            verb="PORTFOLIO_STATE_UPDATED",
+            src="execution_position",
+            dst="decision_making",
+            rid=f"timeout_cancel_{symbol}_{now_ms}",
+            pld={
+                "symbol": symbol,
+                "reason": "timeout_cancellation",
+                "portfolio_state": dict(zero_state),
+            },
+        )
+
+        try:
+            await fsm_emit_compat.emit_compat(self.fsm, msg, logger=LOG)
+        except Exception as exc:
+            self.logger.warning(
+                "Failed to emit portfolio reset after timeout cancellation for %s: %s",
+                symbol,
+                exc,
+            )
+
+        guardian = getattr(self, "order_guardian", None)
+        if guardian:
+            try:
+                await guardian.cleanup_orphans(symbol=symbol, hard=True)
+            except Exception as exc:
+                self.logger.debug(
+                    "OrderGuardian cleanup after timeout cancellation failed for %s: %s",
+                    symbol,
+                    exc,
+                )
 
     def open_flow(self, symbol: str) -> OpenFlowFSM:
         """Get or create OpenFlowFSM for the given symbol."""
@@ -4109,6 +4520,18 @@ class ExecPosFSM:
         """Get or create CloseFlowFSM for the given symbol."""
         _, _, close_f = self._get_or_create_flows(symbol)
         return close_f
+
+    def _has_unprotected_position(self, symbol: str) -> bool:
+        """Check if there is an open position without SL protection."""
+        symbol_upper = symbol.upper()
+        for side in ["LONG", "SHORT"]:
+            key = (symbol_upper, side)
+            status_entry = self._agg_watchdog_status.get(key)
+            if status_entry:
+                status = status_entry.get("status")
+                if status == AggOcoViolationKind.NO_SL_FOR_OPEN_POSITION.value:
+                    return True
+        return False
 
     def _check_exposure_fail_closed(self, msg: Message) -> bool:
         """
@@ -4193,9 +4616,8 @@ class ExecPosFSM:
     async def _emit_error_async(self, msg: Message) -> None:
         """Asynchronously emit an error message."""
         try:
-            await emit_compat(self.fsm, msg, logger=getattr(self, "logger", None))
+            await fsm_emit_compat.emit_compat(self.fsm, msg, logger=getattr(self, "logger", None))
         except Exception as e:
-            # Не даємо Task впасти "unretrieved" — лог і поглинання
             self.logger.exception(
                 "Failed to emit error message via emit_compat: %r", e)
 
@@ -4257,12 +4679,12 @@ class ExecPosFSM:
                 verb="EXPOSURE_SUMMARY_UPDATED",
                 src="execution_position",
                 dst="decision_making",
-                rid=pld.get("rid") or msg.rid or f"fill_{reserve_key}",
+                rid=rid or f"fill_{order_id}",
                 pld={
                     "exposure_summary": exposure_summary,
-                    "fill_order_id": pld.get("order_id"),
-                    "fill_symbol": pld.get("symbol"),
-                    "fill_quantity": qty,
+                    "fill_order_id": order_id,
+                    "fill_symbol": symbol,
+                    "fill_quantity": filled_qty,
                     "timestamp_ms": int(time.time() * 1000)
                 },
                 why="exposure_summary_updated_after_fill",
@@ -4270,18 +4692,12 @@ class ExecPosFSM:
             loop = self._get_async_loop()
             if loop:
                 self._submit_async(
-                    emit_compat(self.fsm, exposure_msg, logger=LOG), loop
+                    fsm_emit_compat.emit_compat(
+                        self.fsm, exposure_msg, logger=LOG), loop
                 )
         except Exception as e:
             self.logger.debug(
                 f"Failed to emit exposure summary update after fill: {e}")
-
-        # Notify watchdog of order fill
-        order_id = pld.get("order_id")
-        if order_id:
-            # Safe late-start if loop is ready
-            self.watchdog.ensure_started(loop=self._get_async_loop())
-            self.watchdog.on_order_fill(order_id)
 
     def _handle_cancel_event(self, msg: Message) -> None:
         """
@@ -4391,7 +4807,7 @@ class ExecPosFSM:
                     },
                     why="shadow_notional_mismatch",
                 )
-                await emit_compat(self.fsm, mismatch_msg, logger=LOG)
+                await fsm_emit_compat.emit_compat(self.fsm, mismatch_msg, logger=LOG)
             else:
                 self.logger.debug(
                     f"SHADOW_CHECK_OK: portfolio={portfolio_notional}, shadow={shadow_notional}"
@@ -4492,40 +4908,22 @@ class ExecPosFSM:
     async def _preflight_position_check_nonzero(self, symbol: str) -> bool:
         """Alternative pre-flight: allow any non-zero positionAmt (BOTH/LONG/SHORT)."""
         try:
+            from .contracts import PositionSnapshot
+
             positions = await self._call_adapter_fn(self.adapter.get_open_positions, symbol)
-            positions_list = [
-                p.to_dict() if hasattr(p, 'to_dict') else (
-                    p.__dict__ if not isinstance(p, dict) else p)
-                for p in positions
-            ]
 
-            sym_positions = [
-                p for p in positions_list if p.get("symbol") == symbol]
-            if not sym_positions:
-                self.logger.warning(
-                    f"dYs� [PHASE A3] PRE-FLIGHT FAILED: No position data for {symbol}")
-                return False
+            # Use PositionSnapshot for unified position parsing
+            snapshot = PositionSnapshot.from_rest_list(positions, symbol)
 
-            pos_nonzero = None
-            for _p in sym_positions:
-                try:
-                    _amt = float(_p.get("positionAmt", 0))
-                    if abs(_amt) >= 1e-8:
-                        pos_nonzero = _p
-                        break
-                except Exception:
-                    continue
-
-            if pos_nonzero is None:
+            if snapshot is None:
                 self.logger.warning(
                     f"dYs� [PHASE A3] PRE-FLIGHT SKIPPED: Position is 0 for {symbol} (TP_SL_SKIPPED_NO_POSITION)")
                 self._orphan_metrics["tp_sl_skipped_no_position"] = self._orphan_metrics.get(
                     "tp_sl_skipped_no_position", 0) + 1
                 return False
 
-            position_amt = float(pos_nonzero.get("positionAmt", 0))
             self.logger.debug(
-                f"�o. [PHASE A3] PRE-FLIGHT OK: Position {position_amt} for {symbol}")
+                f"�o. [PHASE A3] PRE-FLIGHT OK: Position {snapshot.qty} {snapshot.side} for {symbol}")
             return True
 
         except Exception as e:
@@ -4548,6 +4946,76 @@ class ExecPosFSM:
             except Exception as e:
                 self.logger.debug(f"cleanup loop error: {e}")
                 self._orphan_metrics["errors"] += 1
+
+    async def _ensure_brackets_for_existing_positions(self, positions: List[Dict[str, Any]]) -> None:
+        """Check all open positions and trigger bracket placement if missing."""
+        from .contracts import PositionSnapshot
+
+        if not self.order_guardian:
+            return
+
+        # Extract unique symbols from positions
+        symbols = {pos.get("symbol") for pos in positions if pos.get("symbol")}
+
+        for symbol in symbols:
+            # Use PositionSnapshot for unified position parsing
+            snapshot = PositionSnapshot.from_rest_list(positions, symbol)
+            if snapshot is None:
+                continue
+
+            side = snapshot.side.value  # LONG or SHORT
+            qty = float(snapshot.qty)
+
+            # Get bracket set from guardian
+            meta = self.order_guardian.get_bracket_set(symbol, side)
+            sl_id = getattr(meta, "sl_order_id", None)
+            tp_id = getattr(meta, "tp_order_id", None)
+
+            # Get manage flow
+            _, manage_flow, _ = self._get_or_create_flows(symbol)
+
+            # Extract entry price from positions (need to find the position dict)
+            entry_price = 0
+            for p in positions:
+                p_dict = p.to_dict() if hasattr(p, 'to_dict') else (
+                    p.__dict__ if not isinstance(p, dict) else p)
+                if p_dict.get("symbol") == symbol:
+                    entry_price = p_dict.get("entryPrice", 0)
+                    break
+
+            # Hydrate manage flow
+            hydrate_data = {
+                "symbol": symbol,
+                "qty": qty,
+                "entry_price": entry_price,
+                "side": side,
+                "sl_order_id": sl_id,
+                "tp_order_id": tp_id,
+            }
+            manage_flow.hydrate(hydrate_data)
+
+            # Check if unprotected
+            if not sl_id or not tp_id:
+                self.logger.info(
+                    f"Startup: Position {symbol} {qty} is unprotected. Triggering bracket placement.")
+
+                dummy_msg = Message(
+                    op="EVT",
+                    verb="STARTUP_RECONCILE",
+                    src="execution_position",
+                    dst="execution_position",
+                    rid=f"startup_{symbol}_{int(time.time())}",
+                    pld={"symbol": symbol, "qty": qty, "side": side}
+                )
+
+                decision = manage_flow._recalc_aggregated_brackets(
+                    dummy_msg, reason="startup_missing_brackets")
+                if decision:
+                    self._dispatch_decision(decision, symbol)
+
+                pending = manage_flow.consume_pending_decisions()
+                for d in pending:
+                    self._dispatch_decision(d, symbol)
 
     async def _startup_order_guardian_reconcile(self) -> None:
         """
@@ -4600,11 +5068,6 @@ class ExecPosFSM:
                     symbols_with_positions.update(
                         self._collect_guardian_symbols())
 
-                    self._rehydrate_aggregated_brackets_on_startup(
-                        positions=positions_list,
-                        orders=orders_list,
-                    )
-
                     # Link existing orders for each symbol
                     if self.order_guardian:
                         for symbol in symbols_with_positions:
@@ -4614,6 +5077,9 @@ class ExecPosFSM:
 
                     self.logger.info(
                         f"✅ Linked existing orders for {len(symbols_with_positions)} symbols")
+
+                    # NEW: Check for unprotected positions and trigger bracket placement
+                    await self._ensure_brackets_for_existing_positions(positions_list)
 
                 except Exception as e:
                     self.logger.warning(
@@ -4626,249 +5092,3 @@ class ExecPosFSM:
                 f"❌ OrderGuardian startup reconciliation failed: {e}")
         finally:
             self._startup_reconcile_running = False
-        """
-        Synchronize open orders and positions with Binance at startup.
-
-        This ensures the system state matches reality after manual interventions
-        or restarts. Cancels orphaned orders and reconciles positions.
-        """
-        if not self.adapter:
-            self.logger.warning(
-                "Adapter not initialized, skipping order/position sync")
-            return
-
-        try:
-            # 🧹 STARTUP: Clear stale pending_exposure from previous run
-            self.exposure_guard.cleanup_all_pending()
-
-            self.logger.info("🔄 Starting synchronization with Binance...")
-
-            # 1. Get all open orders from Binance
-            all_open_orders = await self.adapter.get_open_orders()
-            self.logger.info(
-                f"📋 Found {len(all_open_orders)} open orders on Binance")
-
-            # Group orders by symbol
-            orders_by_symbol = {}
-            # Convert orders to dict if needed
-            orders_list = [
-                o.to_dict() if hasattr(o, 'to_dict') else (
-                    o.__dict__ if not isinstance(o, dict) else o)
-                for o in all_open_orders
-            ]
-
-            # 🔍 Diagnostic: Log TP/SL and bracket orders separately
-            tp_sl_orders = [o for o in orders_list if o.get(
-                "type") in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]]
-            entry_orders = [o for o in orders_list if o.get("type") in [
-                "MARKET", "LIMIT"]]
-            if tp_sl_orders:
-                self.logger.warning(
-                    f"⚠️  ORPHANED_TP_SL_CHECK: {len(tp_sl_orders)} TP/SL orders still open:")
-                for o in tp_sl_orders:
-                    self.logger.warning(f"   📌 {o.get('symbol')} {o.get('clientOrderId')}: "
-                                        f"{o.get('type')} @{o.get('stopPrice')} "
-                                        f"(status={o.get('status')}, closePosition={o.get('closePosition')})")
-            if entry_orders:
-                self.logger.info(
-                    f"📍 {len(entry_orders)} entry orders (MARKET/LIMIT)")
-
-            for order in orders_list:
-                symbol = order.get("symbol")
-                if symbol not in orders_by_symbol:
-                    orders_by_symbol[symbol] = []
-                orders_by_symbol[symbol].append(order)
-
-            # 2. Get all positions from Binance
-            positions = await self.adapter.get_open_positions()
-            self.logger.info(f"📊 Found {len(positions)} positions on Binance")
-
-            # Convert positions to dict if needed
-            positions_list = [
-                p.to_dict() if hasattr(p, 'to_dict') else (
-                    p.__dict__ if not isinstance(p, dict) else p)
-                for p in positions
-            ]
-
-            # ✅ NEW: Use order_guardian.cleanup_orphans() for centralized cleanup
-            # This ensures consistent orphan detection across startup and runtime
-            self.logger.info("🧹 Running orphan cleanup on startup...")
-            if self.order_guardian:
-                await self.order_guardian.cleanup_orphans()  # Scans ALL symbols exactly once
-            self.logger.info("✅ Startup orphan cleanup completed")
-
-            # 3. For each position, check if we have matching FSM state
-            for pos in positions_list:
-                symbol = pos.get("symbol")
-                position_amt = float(pos.get("positionAmt", 0))
-
-                if abs(position_amt) >= 0.0001:
-                    # Position exists - check if we have FSM state
-                    self.logger.info(
-                        f"📈 {symbol}: Position {position_amt}, checking FSM state...")
-
-                    # Ensure we have FSMs created (thread-safe via _get_or_create_flows)
-                    _, manage_flow, _ = self._get_or_create_flows(symbol)
-                    self.logger.info(
-                        f"✅ {symbol}: FSMs ready, manage flow initialized")
-
-            self.logger.info("✅ Synchronization complete")
-
-        except Exception as e:
-            self.logger.error(
-                f"❌ Error during order/position sync: {e}", exc_info=True)
-
-    async def _update_portfolio_after_timeout_cancellation(self, symbol: str) -> None:
-        """
-        ✅ FIX: Update portfolio state after successful timeout cancellation.
-
-        This ensures decision_making knows the position was never opened,
-        allowing new position attempts for the same symbol.
-
-        Args:
-            symbol: Trading pair that had the timed-out order
-        """
-        try:
-            from vfoundation.core.fsm_emit_compat import emit_compat, Message
-
-            # Get current portfolio state and update positions_count to 0 for this symbol
-            current_state = self._latest_portfolio_state.copy()
-            # Reset to allow new positions
-            current_state["positions_count"] = 0
-            current_state["open_positions_usd"] = "0"  # No open positions
-            current_state["last_updated"] = int(time.time() * 1000)
-
-            # Emit EVT:PORTFOLIO_STATE_UPDATED to notify decision_making
-            portfolio_msg = Message(
-                op="EVT",
-                verb="PORTFOLIO_STATE_UPDATED",
-                src="execution_position",
-                dst="decision_making",
-                rid=f"timeout_cancel_{symbol}_{int(time.time())}",
-                pld={
-                    "portfolio_state": current_state,
-                    "symbol": symbol,
-                    "reason": "timeout_cancellation",
-                    "timestamp_ms": int(time.time() * 1000)
-                },
-                why="portfolio_state_reset_after_timeout_cancellation",
-            )
-
-            await emit_compat(self.fsm, portfolio_msg, logger=LOG)
-            self.logger.info(
-                f"✅ Portfolio state reset after timeout cancellation for {symbol}")
-
-        except Exception as e:
-            self.logger.error(
-                f"❌ Failed to update portfolio state after timeout cancellation for {symbol}: {e}")
-
-    def _rehydrate_aggregated_brackets_on_startup(
-        self,
-        *,
-        positions: Sequence[dict[str, Any]],
-        orders: Sequence[dict[str, Any]],
-    ) -> None:
-        guardian = getattr(self, "order_guardian", None)
-        if not guardian:
-            return
-
-        try:
-            agg_cfg = self._manage_cfg().brackets.aggregated_oco
-            aggregated_enabled = bool(getattr(agg_cfg, "enabled", False))
-        except Exception:
-            aggregated_enabled = False
-
-        if not aggregated_enabled:
-            return
-
-        now_ts = time.time()
-
-        positions_by_key: dict[tuple[str, str], float] = {}
-        for raw in positions:
-            symbol = str(raw.get("symbol") or "").upper()
-            if not symbol:
-                continue
-            qty = self._extract_position_amount(raw)
-            if abs(qty) <= 0:
-                continue
-            side = self._resolve_position_side(raw, qty)
-            if not side:
-                continue
-            positions_by_key[(symbol, side)] = qty
-
-        if not positions_by_key:
-            return
-
-        orders_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        for order in orders:
-            symbol = str(order.get("symbol") or "").upper()
-            if not symbol:
-                continue
-            side = self._resolve_order_side(order)
-            if not side:
-                continue
-            orders_by_key.setdefault((symbol, side), []).append(order)
-
-        for (symbol, side), qty in positions_by_key.items():
-            matching_orders = orders_by_key.get((symbol, side))
-            if not matching_orders:
-                continue
-            try:
-                guardian.rehydrate_bracket_set_for_position(
-                    symbol=symbol,
-                    side=side,
-                    position_amt=qty,
-                    open_orders=matching_orders,
-                    now_ts=now_ts,
-                )
-            except Exception as exc:
-                self.logger.warning(
-                    "[DR] Failed to rehydrate aggregated brackets for %s/%s: %s",
-                    symbol,
-                    side,
-                    exc,
-                )
-
-    @staticmethod
-    def _extract_position_amount(pos: dict[str, Any]) -> float:
-        for key in ("position_amount", "positionAmt", "qty", "quantity"):
-            value = pos.get(key)
-            if value is None:
-                continue
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                continue
-        return 0.0
-
-    @staticmethod
-    def _resolve_position_side(pos: dict[str, Any], qty: float) -> Optional[str]:
-        side = pos.get("positionSide") or pos.get(
-            "position_side") or pos.get("side")
-        if isinstance(side, str) and side.strip():
-            normalized = side.strip().upper()
-            if normalized in {"LONG", "SHORT"}:
-                return normalized
-            if normalized in {"BUY", "SELL"}:
-                return "LONG" if normalized == "BUY" else "SHORT"
-        if qty > 0:
-            return "LONG"
-        if qty < 0:
-            return "SHORT"
-        return None
-
-    @staticmethod
-    def _resolve_order_side(order: dict[str, Any]) -> Optional[str]:
-        side = order.get("positionSide") or order.get("position_side")
-        if isinstance(side, str) and side.strip():
-            normalized = side.strip().upper()
-            if normalized in {"LONG", "SHORT"}:
-                return normalized
-        order_side = order.get("side")
-        if isinstance(order_side, str) and order_side.strip():
-            normalized = order_side.strip().upper()
-            if normalized == "SELL":
-                return "LONG"
-            if normalized == "BUY":
-                return "SHORT"
-        return None

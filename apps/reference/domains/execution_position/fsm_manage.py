@@ -34,8 +34,10 @@ from vfoundation.apps.reference.domains.execution_position.bracket_aggregator im
 from apps.reference.domains.execution_position.contracts import (
     TPSLValidationRules,
     PositionSide,
+    PositionSnapshot,
     canonicalize_position_side,
     canonicalize_position_side_from_qty,
+    build_dec_close,
 )
 from apps.reference.domains.execution_position.manage_config import (
     AggregatedOcoConfig,
@@ -188,6 +190,7 @@ class ManageFlowFSM:
             "fsm_bracket_orders_placed": 0,
             "fsm_trailing_adjustments": 0,
             "fsm_errors_total": 0,
+            "agg_entry_price_not_ready": 0,  # EP-STAB-LIVEPOS-FIX-DOCS+OBS
         }
         self._aggregated_only_mode = self._resolve_aggregated_only_mode_flag(
             aggregated_meta
@@ -364,8 +367,13 @@ class ManageFlowFSM:
         try:
             snapshot = provider()
         except Exception:
-            logging.getLogger(__name__).debug(
-                "[BRK][agg] live position provider raised", exc_info=True
+            logging.getLogger(__name__).error(
+                "[BRK][agg] live position provider raised exception",
+                extra={
+                    "symbol": getattr(self, "symbol", None),
+                    "event_type": "LIVE_PROVIDER_EXCEPTION"
+                },
+                exc_info=True
             )
             return None
         if not snapshot:
@@ -503,21 +511,16 @@ class ManageFlowFSM:
             # 🔍 CRITICAL FIX: Distinguish between ENTRY and EXIT fills
             # If this is an EXIT order (TP/SL), position is CLOSING, not opening!
             pld = msg.pld or {}
-            order_type = pld.get("order_type") or pld.get("type", "")
-            close_position = str(pld.get("closePosition", "")).lower() == "true" or \
-                str(pld.get("cp", "")).lower() == "true"
-            is_reduce_only = str(pld.get("reduceOnly", "")).lower() == "true"
+            from .contracts import is_exit_order
+            is_exit = is_exit_order(pld)
 
             # 🔍 DIAGNOSTIC: Log all FILL events in FLAT state
+            order_type = pld.get("order_type") or pld.get("type", "")
             print(f"[ManageFlowFSM] 📋 FILL event in FLAT: verb={msg.verb}, "
-                  f"type={order_type}, closePos={close_position}, reduceOnly={is_reduce_only}, "
+                  f"type={order_type}, is_exit={is_exit}, "
                   f"pld_keys={list(pld.keys())}")
 
-            # EXIT orders: TAKE_PROFIT_MARKET, STOP_MARKET, or LIMIT with closePosition=true
-            is_exit_order = (order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]) or \
-                (close_position or is_reduce_only)
-
-            if is_exit_order:
+            if is_exit:
                 # ⚠️ Position is CLOSING via TP/SL - do NOT create new TP/SL!
                 print(
                     f"[ManageFlowFSM] ⚠️ EXIT fill detected ({order_type}), position closing, NOT placing brackets")
@@ -574,7 +577,8 @@ class ManageFlowFSM:
             if price <= 0 and self.price_service and getattr(self, 'symbol', None):
                 try:
                     quote = self.price_service.get_current(self.symbol)
-                    fallback = getattr(quote, 'mark', None) or getattr(quote, 'last', None)
+                    fallback = getattr(quote, 'mark', None) or getattr(
+                        quote, 'last', None)
                     if fallback:
                         price = Decimal(str(fallback))
                         import logging
@@ -854,6 +858,12 @@ class ManageFlowFSM:
             self._metrics["fsm_errors_total"] += 1
             return None
 
+        # EP-STAB-LIVEPOS-FIX-AGG: Handle None from _compute_aggregated_bracket_levels
+        # (returned when entry_price not ready instead of raising AggregatedOcoError)
+        if levels is None:
+            self.state = ManageState.TRACKING
+            return None
+
         agg_oco_logger.info(
             "AGG_OCO_COMPUTE_BRACKETS_DONE",
             extra={
@@ -873,11 +883,13 @@ class ManageFlowFSM:
         reason: str,
     ) -> Optional[Message]:
         if self.position_qty is None:
+            self.state = ManageState.TRACKING
             return None
 
         try:
             agg_side = self._convert_position_side()
         except AggregatedOcoError:
+            self.state = ManageState.TRACKING
             return None
         self._agg_side = agg_side
 
@@ -1065,7 +1077,8 @@ class ManageFlowFSM:
             "tp_order_id": self.tp_order_id,
             "has_pending_log": bool(self._pending_bracket_log),
         }
-        agg_oco_logger.info("AGG_OCO_REGISTER_BRACKET_SET_ATTEMPT", extra=register_extra)
+        agg_oco_logger.info(
+            "AGG_OCO_REGISTER_BRACKET_SET_ATTEMPT", extra=register_extra)
 
         try:
             meta = self._order_guardian.register_bracket_set(
@@ -1193,11 +1206,28 @@ class ManageFlowFSM:
         self._pending_bracket_log = None
 
     def _compute_aggregated_bracket_levels(self, *, reason: str):
-        if (
-            self.position_qty is None
-            or self.position_entry_price is None
-            or self.position_side is None
-        ):
+        # EP-STAB-LIVEPOS-FIX-AGG: Guard against invalid entry_price before calling aggregator
+        # If entry_price is None or <= 0, aggregator will fail with "avg_entry_price must be > 0"
+        # Instead, log warning and return None to avoid DECISION_EXECUTION_FAILED
+        if self.position_entry_price is None or self.position_entry_price <= 0:
+            symbol = getattr(self, "symbol", None)
+            # EP-STAB-LIVEPOS-FIX-DOCS+OBS: Track entry_price not ready events
+            self._metrics["agg_entry_price_not_ready"] += 1
+            agg_oco_logger.warning(
+                "AGG_OCO_ENTRY_PRICE_NOT_READY",
+                extra={
+                    "symbol": symbol,
+                    "qty": str(self.position_qty) if self.position_qty else None,
+                    "entry_price": str(self.position_entry_price) if self.position_entry_price is not None else None,
+                    "side": self.position_side,
+                    "reason": reason,
+                    "event_type": "AGG_OCO_ENTRY_PRICE_NOT_READY",
+                }
+            )
+            # Return None instead of raising error - caller will handle gracefully
+            return None
+
+        if self.position_qty is None or self.position_side is None:
             raise AggregatedOcoError("position snapshot is incomplete")
 
         resolved = resolve_brackets_config(
@@ -1351,21 +1381,20 @@ class ManageFlowFSM:
         if fill_qty <= 0:
             return None
 
-        order_type = str(pld.get("order_type") or pld.get("type") or "")
-        close_position = (
-            str(pld.get("closePosition") or pld.get("cp") or "")
-            .strip()
-            .lower()
-            == "true"
+        from .contracts import is_exit_order
+        is_exit_fill = is_exit_order(pld)
+
+        agg_oco_logger.info(
+            "🎯 AGG_FILL_EVENT_ENTRY",
+            extra={
+                "symbol": getattr(self, "symbol", None),
+                "verb": msg.verb,
+                "position_qty": str(self.position_qty) if self.position_qty is not None else None,
+                "aggregated_only_mode": self._aggregated_only_mode,
+                "fill_qty": str(fill_qty),
+                "is_exit_fill": is_exit_fill,
+            }
         )
-        reduce_only = (
-            str(pld.get("reduceOnly") or "")
-            .strip()
-            .lower()
-            == "true"
-        )
-        is_exit_fill = order_type in {
-            "TAKE_PROFIT_MARKET", "STOP_MARKET"} or close_position or reduce_only
 
         agg_oco_logger.info(
             "AGG_OCO_HANDLE_FILL",
@@ -1405,9 +1434,18 @@ class ManageFlowFSM:
             remaining = self._apply_exit_fill(fill_qty)
             if remaining is None:
                 return None
+
+            symbol = getattr(self, "symbol", None)
+            canonical = self._resolve_canonical_position_side()
+            agg_side = canonical.value if canonical != PositionSide.FLAT else None
+
             if remaining == 0:
                 self._clear_position_state()
                 return None
+
+            # Partial close: clear old bracket set metadata before recalc
+            self._clear_guardian_bracket_set(symbol, agg_side)
+
             if agg_cfg.recalc_on_partial_close:
                 return self._recalc_aggregated_brackets(msg, reason="partial_close_fill")
             if self._needs_bracket_recalc_after_partial_close(agg_cfg):
@@ -1420,6 +1458,11 @@ class ManageFlowFSM:
         was_open = self.position_qty is not None
         self._on_fill(msg)
         if was_open and agg_cfg.recalc_on_scale_in:
+            # Scale-in: clear old bracket set metadata before recalc
+            symbol = getattr(self, "symbol", None)
+            canonical = self._resolve_canonical_position_side()
+            agg_side = canonical.value if canonical != PositionSide.FLAT else None
+            self._clear_guardian_bracket_set(symbol, agg_side)
             return self._recalc_aggregated_brackets(msg, reason="scale_in_fill")
         return None
 
@@ -1431,8 +1474,17 @@ class ManageFlowFSM:
         fill_qty: Decimal,
         is_exit_fill: bool,
     ) -> Optional[Message]:
-        snapshot = self._get_live_position_state()
-        if snapshot is None:
+        agg_oco_logger.info(
+            "🎯 AGG_ONLY_HANDLER_ENTRY",
+            extra={
+                "symbol": getattr(self, "symbol", None),
+                "fill_qty": str(fill_qty),
+                "is_exit_fill": is_exit_fill,
+            }
+        )
+
+        raw_snapshot = self._get_live_position_state()
+        if raw_snapshot is None:
             agg_oco_logger.error(
                 "[BRK][agg] live snapshot missing; falling back to local state",
                 extra={
@@ -1448,60 +1500,69 @@ class ManageFlowFSM:
                 is_exit_fill=is_exit_fill,
             )
 
-        raw_qty = snapshot.get("qty") or snapshot.get("position_amt")
-        try:
-            live_qty = Decimal(str(raw_qty))
-        except (InvalidOperation, ValueError, TypeError):
-            agg_oco_logger.error(
-                "[BRK][agg] live snapshot qty unparsable",
-                extra={
-                    "event_type": "AGG_OCO_LIVE_SNAPSHOT_INVALID",
-                    "symbol": snapshot.get("symbol") or getattr(self, "symbol", None),
-                    "raw_qty": raw_qty,
-                },
-            )
-            return self._handle_aggregated_fill_event_default(
-                msg=msg,
-                agg_cfg=agg_cfg,
-                fill_qty=fill_qty,
-                is_exit_fill=is_exit_fill,
-            )
+        # Attempt to parse as active position using unified contract
+        snapshot = PositionSnapshot.from_generic_payload(raw_snapshot)
 
-        abs_live_qty = abs(live_qty)
-        symbol = snapshot.get("symbol") or getattr(self, "symbol", None)
+        # Check for zero quantity (FLAT) manually if snapshot is None
+        # because PositionSnapshot returns None for zero qty.
+        is_flat = False
+        if snapshot is None:
+            # Check if it's actually zero qty
+            q = raw_snapshot.get("qty") or raw_snapshot.get(
+                "position_amt") or raw_snapshot.get("position_amount")
+            try:
+                if q is not None and abs(float(q)) < 1e-8:
+                    is_flat = True
+            except Exception:
+                pass
+
+            if not is_flat:
+                # It's invalid or missing data, not just flat
+                agg_oco_logger.error(
+                    "[BRK][agg] live snapshot unparsable",
+                    extra={
+                        "event_type": "AGG_OCO_LIVE_SNAPSHOT_INVALID",
+                        "symbol": raw_snapshot.get("symbol"),
+                        "raw_snapshot": str(raw_snapshot)[:200],
+                    },
+                )
+                return self._handle_aggregated_fill_event_default(
+                    msg=msg,
+                    agg_cfg=agg_cfg,
+                    fill_qty=fill_qty,
+                    is_exit_fill=is_exit_fill,
+                )
+
+        symbol = raw_snapshot.get("symbol") or getattr(self, "symbol", None)
         if symbol:
             self.symbol = symbol
 
-        prev_qty = self.position_qty if self.position_qty is not None else Decimal(
-            "0")
-        try:
-            prev_qty = Decimal(prev_qty)
-        except (InvalidOperation, ValueError, TypeError):
-            prev_qty = Decimal("0")
+        # Handle FLAT case
+        if is_flat:
+            # CRITICAL FIX: If we just got an ENTRY fill, but snapshot says 0,
+            # it means snapshot is stale or racing. Do NOT exit silently.
+            if not is_exit_fill and fill_qty > 0:
+                agg_oco_logger.warning(
+                    "[BRK][agg] live snapshot reports flat position BUT entry fill received; forcing fallback",
+                    extra={
+                        "event_type": "AGG_OCO_SNAPSHOT_STALE_RACE",
+                        "symbol": symbol,
+                        "fill_qty": str(fill_qty),
+                        "snapshot_qty": "0",
+                    },
+                )
+                return self._handle_aggregated_fill_event_default(
+                    msg=msg,
+                    agg_cfg=agg_cfg,
+                    fill_qty=fill_qty,
+                    is_exit_fill=is_exit_fill,
+                )
 
-        avg_price_raw = snapshot.get("avg_price")
-        avg_price = None
-        if avg_price_raw is not None:
-            try:
-                avg_price = Decimal(str(avg_price_raw))
-            except (InvalidOperation, ValueError, TypeError):
-                avg_price = None
-
-        snapshot_side = snapshot.get("side")
-        canonical_snapshot_side = canonicalize_position_side(snapshot_side)
-        if canonical_snapshot_side is None:
-            canonical_snapshot_side = (
-                PositionSide.LONG if live_qty >= 0 else PositionSide.SHORT
-            )
-        order_side = "BUY" if canonical_snapshot_side == PositionSide.LONG else "SELL"
-
-        if abs_live_qty == 0:
             agg_oco_logger.info(
                 "[BRK][agg] live snapshot reports flat position",
                 extra={
                     "event_type": "AGG_OCO_LIVE_SNAPSHOT_FLAT",
                     "symbol": symbol,
-                    "prev_qty": str(prev_qty),
                     "fill_qty": str(fill_qty),
                     "is_exit_fill": is_exit_fill,
                 },
@@ -1509,18 +1570,31 @@ class ManageFlowFSM:
             self._clear_position_state()
             return None
 
-        self.position_qty = abs_live_qty
-        if avg_price is not None:
-            self.position_entry_price = avg_price
-        self.position_side = order_side
-        self._agg_side = canonical_snapshot_side.value
+        # Handle ACTIVE case (snapshot is valid)
+        prev_qty = self.position_qty if self.position_qty is not None else Decimal(
+            "0")
 
+        self.position_qty = snapshot.qty
+        # Try to get avg_price from payload if available, else keep existing or None
+        avg_price_raw = raw_snapshot.get(
+            "avg_price") or raw_snapshot.get("entryPrice")
+        if avg_price_raw:
+            try:
+                self.position_entry_price = Decimal(str(avg_price_raw))
+            except:
+                pass
+
+        # Map PositionSide to "BUY"/"SELL" string for FSM compatibility
+        self.position_side = "BUY" if snapshot.side == PositionSide.LONG else "SELL"
+        self._agg_side = snapshot.side.value
+
+        # Determine reason
         reason = "snapshot_recalc"
-        if prev_qty == 0:
+        if abs(prev_qty) < 1e-8:
             reason = "snapshot_entry_fill"
-        elif abs_live_qty > abs(prev_qty):
+        elif snapshot.qty > abs(prev_qty):
             reason = "snapshot_scale_in"
-        elif abs_live_qty < abs(prev_qty):
+        elif snapshot.qty < abs(prev_qty):
             reason = "snapshot_partial_close"
 
         agg_oco_logger.info(
@@ -1530,12 +1604,20 @@ class ManageFlowFSM:
                 "symbol": symbol,
                 "reason": reason,
                 "prev_qty": str(prev_qty),
-                "new_qty": str(abs_live_qty),
-                "snapshot_source": snapshot.get("source"),
-                "snapshot_ts": snapshot.get("updated_ts"),
+                "new_qty": str(snapshot.qty),
+                "snapshot_source": raw_snapshot.get("source"),
+                "snapshot_ts": raw_snapshot.get("updated_ts"),
             },
         )
 
+        agg_oco_logger.info(
+            "✅ CALLING _compute_aggregated_brackets",
+            extra={
+                "symbol": symbol,
+                "live_qty": str(snapshot.qty),
+                "order_side": self.position_side,
+            }
+        )
         return self._recalc_aggregated_brackets(msg, reason=reason)
 
     def _needs_bracket_recalc_after_partial_close(self, agg_cfg) -> bool:
@@ -1592,12 +1674,45 @@ class ManageFlowFSM:
         self.state = ManageState.FLAT
         self._clear_guardian_bracket_set(symbol, agg_side)
 
+    def _cancel_active_brackets(self, msg: Message, reason: str) -> None:
+        """Cancel currently active SL/TP brackets."""
+        if self.sl_order_id:
+            self._queue_decision(Message(
+                op="DEC",
+                verb="CANCEL_ORDER",
+                src="execution_position",
+                dst="execution_position",
+                rid=msg.rid,
+                pld={"symbol": getattr(self, "symbol", None),
+                     "orderId": self.sl_order_id},
+                why=f"{reason}_cancel_sl",
+            ))
+        if self.tp_order_id:
+            self._queue_decision(Message(
+                op="DEC",
+                verb="CANCEL_ORDER",
+                src="execution_position",
+                dst="execution_position",
+                rid=msg.rid,
+                pld={"symbol": getattr(self, "symbol", None),
+                     "orderId": self.tp_order_id},
+                why=f"{reason}_cancel_tp",
+            ))
+        # Clear IDs immediately to avoid race conditions in logic
+        self.sl_order_id = None
+        self.tp_order_id = None
+
     def _recalc_aggregated_brackets(self, msg: Message, *, reason: str) -> Optional[Message]:
         agg_cfg = self._manage_config().brackets.aggregated_oco
         now_ms = int(time.time() * 1000)
         ttl_ms = max(int(agg_cfg.ttl_protect_new_bracket_ms or 0), 0)
 
-        if self._aggregated_last_place_ts and ttl_ms > 0:
+        # FIX: Detect auto-heal context to bypass TTL
+        # Auto-heal sends why="watchdog_autoheal_no_sl"
+        is_auto_heal = (msg.why == "watchdog_autoheal_no_sl") or (
+            "autoheal" in reason)
+
+        if not is_auto_heal and self._aggregated_last_place_ts and ttl_ms > 0:
             elapsed = now_ms - self._aggregated_last_place_ts
             if elapsed < ttl_ms:
                 if agg_cfg.allow_unprotected_position or (
@@ -1613,6 +1728,10 @@ class ManageFlowFSM:
                         ttl_ms,
                     )
                     return None
+
+        # FIX: Cancel existing brackets before placing new ones to avoid duplication
+        if self.sl_order_id or self.tp_order_id:
+            self._cancel_active_brackets(msg, reason)
 
         return self._place_brackets_aggregated(msg, reason=reason)
 
@@ -1867,6 +1986,27 @@ class ManageFlowFSM:
             agg_decision = self._handle_aggregated_fill_event(msg)
             if agg_decision:
                 return agg_decision
+
+        # FIX: Handle legacy close fills (non-aggregated mode) to ensure state reset
+        if (
+            not self._is_aggregated_oco_enabled()
+            and msg.op == "EVT"
+            and msg.verb in ("PARTIAL_FILL", "FILL", "TRADE_EXECUTED")
+        ):
+            pld = msg.pld or {}
+            from .contracts import is_exit_order
+            if is_exit_order(pld):
+                qty_value = pld.get("qty") if pld.get("qty") is not None else pld.get("quantity")
+                if qty_value:
+                    try:
+                        fill_qty = Decimal(str(qty_value))
+                        remaining = self._apply_exit_fill(fill_qty)
+                        if remaining is not None and remaining <= 0:
+                            print(f"[ManageFlowFSM] 📉 Legacy close fill detected, clearing position state")
+                            self._clear_position_state()
+                            return None
+                    except Exception:
+                        pass
 
         if self.position_qty is None or self.position_entry_price is None:
             return None
@@ -2196,20 +2336,10 @@ class ManageFlowFSM:
             "symbol": symbol,
             "side": self.position_side,
             "reduce_only": True,
+            **details,
         }
-        payload.update(details)
 
-        dec = Message(
-            op="DEC",
-            verb="CLOSE",
-            src=msg.dst,
-            dst="execution_position",
-            rid=msg.rid,
-            why=why[:80],
-            idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
-            pld=payload,
-            data_ref=msg.data_ref.copy() if msg.data_ref else [],
-        )
+        dec = build_dec_close(msg, why, payload=payload)
 
         self.state = ManageState.TRACKING
         return dec

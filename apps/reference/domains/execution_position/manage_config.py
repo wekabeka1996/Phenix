@@ -139,6 +139,19 @@ def _coerce_decimal(value: Any, default: Decimal) -> Decimal:
     return default
 
 
+def _coerce_float(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _coerce_sequence(values: Any) -> Tuple[int, ...]:
     if values is None:
         return ()
@@ -240,6 +253,8 @@ class WsSnapshotConfig:
     enabled: bool = False
     max_age_ms: int = 1500
     rest_fallback_enabled: bool = True
+    rest_timeout_sec: float = 15.0
+    rest_backoff_sec: float = 20.0
 
 
 @dataclass(frozen=True)
@@ -516,6 +531,12 @@ def _resolve_ws_snapshot(node: Any) -> WsSnapshotConfig:
         max_age_ms=_coerce_int(_pluck(ws_node, "max_age_ms"), 1500),
         rest_fallback_enabled=_coerce_bool(
             _pluck(ws_node, "rest_fallback_enabled"), True
+        ),
+        rest_timeout_sec=_coerce_float(
+            _pluck(ws_node, "rest_timeout_sec"), 10.0
+        ),
+        rest_backoff_sec=_coerce_float(
+            _pluck(ws_node, "rest_backoff_sec"), 10.0
         ),
     )
 

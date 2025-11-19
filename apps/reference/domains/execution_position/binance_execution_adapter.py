@@ -780,6 +780,93 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     return True, data
             return False, None
 
+        elif error_code == -4024:
+            # EP-STAB-PERCENT-PRICE: PERCENT_PRICE filter violation
+            # stopPrice is outside allowed price band (typically ±10% for futures)
+            # Strategy: fetch current mark price and validate stopPrice against it
+            logger.info(
+                f"[BinanceAdapter] -4024 PERCENT_PRICE violation: {error_msg}")
+
+            symbol = params.get("symbol", "")
+            stop_price_str = params.get("stopPrice")
+
+            if not symbol or not stop_price_str:
+                logger.error(
+                    "[BinanceAdapter] -4024: Missing symbol or stopPrice in params")
+                return False, None
+
+            try:
+                from decimal import Decimal
+
+                # Fetch current mark price from exchange
+                mark_price = await self._get_mark_price_async(symbol)
+                if mark_price is None:
+                    logger.error(
+                        f"[BinanceAdapter] -4024: Could not fetch mark price for {symbol}")
+                    return False, None
+
+                # Calculate allowed price band (±10% for futures, conservative)
+                # Binance uses dynamic bands based on liquidity, we use conservative estimate
+                band_pct = Decimal("0.10")  # 10%
+                min_allowed = mark_price * (Decimal("1") - band_pct)
+                max_allowed = mark_price * (Decimal("1") + band_pct)
+
+                stop_price = Decimal(str(stop_price_str))
+
+                logger.info(
+                    f"[BinanceAdapter] -4024: mark={mark_price}, stopPrice={stop_price}, "
+                    f"band=[{min_allowed}, {max_allowed}]"
+                )
+
+                # Check if stopPrice is outside band
+                if stop_price < min_allowed or stop_price > max_allowed:
+                    logger.warning(
+                        f"[BinanceAdapter] -4024: stopPrice {stop_price} outside band, "
+                        f"clamping to safe range"
+                    )
+                    # Clamp to 8% band (safer than 10%)
+                    safe_band = Decimal("0.08")
+                    if stop_price < mark_price:
+                        # SL for LONG - ensure it's not too far below mark
+                        adjusted = mark_price * (Decimal("1") - safe_band)
+                    else:
+                        # SL for SHORT - ensure it's not too far above mark
+                        adjusted = mark_price * (Decimal("1") + safe_band)
+
+                    params["stopPrice"] = str(adjusted)
+                    logger.info(
+                        f"[BinanceAdapter] -4024: Adjusted stopPrice to {adjusted}")
+
+                # Retry with adjusted/validated stopPrice
+                # Brief delay for exchange to stabilize
+                await asyncio.sleep(0.3)
+                signed_params = self._get_signed_params(params)
+                query_string = "&".join(
+                    f"{k}={v}" for k, v in signed_params.items())
+                full_url = f"{url}?{query_string}"
+
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(full_url, headers=headers, timeout=10)
+                    try:
+                        data = resp.json()
+                    except:
+                        data = {"raw": resp.text}
+
+                    if resp.is_success:
+                        logger.info(
+                            "[BinanceAdapter] -4024: Recovery successful")
+                        return True, data
+                    else:
+                        logger.warning(
+                            f"[BinanceAdapter] -4024: Retry failed with {data.get('code')}: {data.get('msg')}"
+                        )
+                        return False, None
+
+            except Exception as e:
+                logger.error(
+                    f"[BinanceAdapter] -4024: Recovery error: {e}", exc_info=True)
+                return False, None
+
         elif error_code == -429:
             logger.info(
                 "[BinanceAdapter] -429: Applying exponential backoff...")
@@ -862,6 +949,71 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
     def _get_fallback_policy(self):
         """Resolve fallback policy using centralized exposure configuration."""
         return resolve_exposure_policy(self.config).fallback
+
+    async def _get_mark_price_async(self, symbol: str) -> Optional[Any]:
+        """
+        Fetch current mark price from Binance for PERCENT_PRICE validation.
+
+        EP-STAB-PERCENT-PRICE: Used to validate stopPrice against exchange price bands
+        before retrying -4024 errors.
+
+        Args:
+            symbol: Trading symbol (e.g., "ETHUSDT")
+
+        Returns:
+            Decimal mark price or None if fetch fails
+        """
+        try:
+            from decimal import Decimal
+
+            if self.shadow_mode:
+                # Shadow mode: return mock mark price
+                logger.info(
+                    f"[BinanceAdapter] Shadow mode: mock mark price for {symbol}")
+                return Decimal("3000.0")  # Mock value for testing
+
+            # Sync time with server
+            self._sync_time_with_server()
+
+            # Build request to /fapi/v1/premiumIndex (mark price endpoint)
+            base_url = BASE_URL
+            endpoint = "/fapi/v1/premiumIndex"
+
+            params = {
+                "symbol": symbol,
+                "timestamp": int(time.time() * 1000)
+            }
+            signed_params = self._get_signed_params(params)
+
+            headers = {"X-MBX-APIKEY": self.api_key}
+            url = f"{base_url}{endpoint}"
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=signed_params, headers=headers, timeout=5)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    mark_price_str = data.get("markPrice")
+
+                    if mark_price_str:
+                        mark_price = Decimal(str(mark_price_str))
+                        logger.debug(
+                            f"[BinanceAdapter] Mark price for {symbol}: {mark_price}")
+                        return mark_price
+                    else:
+                        logger.warning(
+                            f"[BinanceAdapter] No markPrice in response for {symbol}")
+                        return None
+                else:
+                    logger.error(
+                        f"[BinanceAdapter] Failed to fetch mark price: HTTP {response.status_code} {response.text}"
+                    )
+                    return None
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceAdapter] Error fetching mark price for {symbol}: {e}", exc_info=True)
+            return None
 
     async def get_open_positions(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -1714,6 +1866,20 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     else:
                         raise RuntimeError(
                             f"Bracket order -4164: Could not recover (qty increase + retry failed)"
+                        )
+
+                elif error_code == -4024:
+                    # EP-STAB-PERCENT-PRICE: PERCENT_PRICE filter violation
+                    # "Limit price can't be lower/higher than X" - stopPrice outside allowed price band
+                    success, response = await self._handle_bracket_error(
+                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
+                    )
+                    if success and response:
+                        data = response
+                        # Continue to success block
+                    else:
+                        raise RuntimeError(
+                            f"Bracket order -4024: Could not recover (PERCENT_PRICE violation, price band check failed)"
                         )
 
                 elif error_code == -429:

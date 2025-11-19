@@ -4,6 +4,7 @@ import types
 import pytest
 
 from apps.reference.domains.execution_position import fsm as fsm_mod
+from vfoundation.core.adapters.base import ExchangeOrderResponse
 
 
 class DummyFlow:
@@ -155,3 +156,19 @@ async def test_update_portfolio_after_timeout_cancellation():
         assert msg_arg.pld["reason"] == "timeout_cancellation"
         assert msg_arg.pld["portfolio_state"]["positions_count"] == 0
         assert msg_arg.pld["portfolio_state"]["open_positions_usd"] == "0"
+
+
+def test_cancel_success_response_handles_exchange_order_response():
+    """Ensure ExchangeOrderResponse is treated as successful cancel payload."""
+    response = ExchangeOrderResponse(
+        order_id="1",
+        client_order_id="cid",
+        symbol="BTCUSDT",
+        side="SELL",
+        quantity="0.1",
+        filled_qty="0",
+        price="0",
+        status="CANCELED",
+        timestamp_ms=0,
+    )
+    assert fsm_mod.ExecPosFSM._is_cancel_success_response(response) is True

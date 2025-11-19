@@ -36,7 +36,11 @@ class ExchangeOrderParams:
 
 @dataclass
 class ExchangeOrderResponse:
-    """Normalized exchange order response"""
+    """Normalized exchange order response
+
+    EP-STAB-ADAPT-ORD-META: Extended with Binance-specific metadata to support
+    unified exit-order classification (ExitOrderKind) without heuristics.
+    """
     order_id: str
     client_order_id: Optional[str]
     symbol: str
@@ -47,6 +51,14 @@ class ExchangeOrderResponse:
     status: str  # ACCEPTED, REJECTED, FILLED, PARTIAL_FILL, CANCELED
     timestamp_ms: int
     reason: Optional[str] = None
+    # EP-STAB-ADAPT-ORD-META: New fields for exit-order classification
+    # MARKET, LIMIT, STOP_MARKET, TAKE_PROFIT_MARKET, etc.
+    order_type: Optional[str] = None
+    reduce_only: bool = False  # reduceOnly flag from Binance
+    close_position: bool = False  # closePosition flag from Binance
+    stop_price: Optional[str] = None  # stopPrice for stop/TP orders
+    working_type: Optional[str] = None  # MARK_PRICE or CONTRACT_PRICE
+    position_side: Optional[str] = None  # BOTH/LONG/SHORT from Binance
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for compatibility."""
@@ -61,6 +73,14 @@ class ExchangeOrderResponse:
             "status": self.status,
             "time": self.timestamp_ms,
             "reason": self.reason,
+            # EP-STAB-ADAPT-ORD-META: Include new metadata fields
+            "type": self.order_type,
+            "origType": self.order_type,
+            "reduceOnly": self.reduce_only,
+            "closePosition": self.close_position,
+            "stopPrice": self.stop_price,
+            "workingType": self.working_type,
+            "positionSide": self.position_side,
         }
 
 

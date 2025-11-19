@@ -8,6 +8,8 @@ from apps.reference.domains.execution_position.agg_oco_watchdog import (
     WatchdogPosition,
     validate_agg_oco_invariants,
 )
+# EP-STAB-ADAPT-ORD-META-WIRE: Import ExitOrderKind for test fixtures
+from apps.reference.domains.execution_position.contracts import ExitOrderKind
 from apps.reference.services.order_guardian import BracketSetMeta
 
 
@@ -42,6 +44,8 @@ def test_watchdog_passes_when_sl_present():
             reduce_only=True,
             close_position=False,
             is_sl=True,
+            # EP-STAB-ADAPT-ORD-META-WIRE: Set exit_kind for classifier
+            exit_kind=ExitOrderKind.STOP_LOSS,
         )
     ]
     metas = [_make_meta()]
@@ -52,8 +56,12 @@ def test_watchdog_passes_when_sl_present():
 
 
 def test_watchdog_flags_missing_sl_for_active_position():
+    """
+    Position without SL protection and without FLAT_CLOSE should trigger NO_SL_FOR_OPEN_POSITION.
+    EP-STAB-ADAPT-ORD-META-WIRE: Use TAKE_PROFIT instead of FLAT_CLOSE to test real SL absence.
+    """
     positions = [WatchdogPosition(symbol="BTCUSDT", side="LONG", quantity=2.0)]
-    # reduceOnly order exists but not marked as SL
+    # TP order exists but not SL
     orders = [
         WatchdogOrder(
             symbol="BTCUSDT",
@@ -62,6 +70,8 @@ def test_watchdog_flags_missing_sl_for_active_position():
             reduce_only=True,
             close_position=False,
             is_sl=False,
+            # EP-STAB-ADAPT-ORD-META-WIRE: This is TP, not SL
+            exit_kind=ExitOrderKind.TAKE_PROFIT,
         )
     ]
     metas = [_make_meta()]
@@ -104,6 +114,8 @@ def test_watchdog_flags_multiple_meta_sets_for_same_side():
             reduce_only=True,
             close_position=False,
             is_sl=True,
+            # EP-STAB-ADAPT-ORD-META-WIRE: Set exit_kind for classifier
+            exit_kind=ExitOrderKind.STOP_LOSS,
         )
     ]
     metas = [_make_meta(symbol="ARBUSDT", side="LONG", version=0), _make_meta(

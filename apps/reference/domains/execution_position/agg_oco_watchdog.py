@@ -7,6 +7,11 @@ from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from apps.reference.services.order_guardian import BracketSetMeta
+# EP-STAB-SL-CLASS-FIX: Import unified classifier
+from apps.reference.domains.execution_position.contracts import (
+    classify_exit_order,
+    ExitOrderKind,
+)
 
 
 class AggOcoViolationKind(str, Enum):
@@ -15,6 +20,7 @@ class AggOcoViolationKind(str, Enum):
     NO_SL_FOR_OPEN_POSITION = "NO_SL_FOR_OPEN_POSITION"
     ORPHAN_SL_FOR_ZERO_POSITION = "ORPHAN_SL_FOR_ZERO_POSITION"
     MULTIPLE_META_SETS = "MULTIPLE_META_SETS"
+    TOO_MANY_SL_FOR_OPEN_POSITION = "TOO_MANY_SL_FOR_OPEN_POSITION"
 
 
 @dataclass(frozen=True)
@@ -64,7 +70,19 @@ class WatchdogOrder:
     order_id: str
     reduce_only: bool
     close_position: bool
-    is_sl: bool
+    is_sl: bool  # Deprecated: use exit_kind instead
+    # EP-STAB-SL-CLASS-FIX-B: Unified exit classification
+    exit_kind: Optional[ExitOrderKind] = None
+
+    @property
+    def is_flat_close(self) -> bool:
+        """True if this is a position close without SL/TP context."""
+        return self.exit_kind == ExitOrderKind.FLAT_CLOSE
+
+    @property
+    def is_take_profit(self) -> bool:
+        """True if this is a TP bracket."""
+        return self.exit_kind == ExitOrderKind.TAKE_PROFIT
 
 
 def validate_agg_oco_invariants(
@@ -95,17 +113,44 @@ def validate_agg_oco_invariants(
         qty = position.quantity if position else 0.0
         orders_for_key = orders_map.get(key, [])
         metas_for_key = meta_map.get(key, [])
-        sl_count = sum(1 for order in orders_for_key if order.is_sl)
+        # EP-STAB-SL-CLASS-FIX-B: Use unified classifier, count STOP_LOSS only
+        sl_count = sum(
+            1 for order in orders_for_key if order.exit_kind == ExitOrderKind.STOP_LOSS)
+        tp_count = sum(
+            1 for order in orders_for_key if order.exit_kind == ExitOrderKind.TAKE_PROFIT)
+        flat_close_count = sum(
+            1 for order in orders_for_key if order.exit_kind == ExitOrderKind.FLAT_CLOSE)
         meta_count = len(metas_for_key)
 
         if qty > 0:
-            if sl_count == 0:
+            # EP-STAB-SL-CLASS-FIX-B: NO_SL_FOR_OPEN_POSITION should NOT trigger if FLAT_CLOSE is active
+            # (position is being explicitly closed without SL/TP bracket context)
+            has_flat_close_exit = flat_close_count > 0
+
+            if sl_count == 0 and not has_flat_close_exit:
                 violations.append(
                     AggOcoViolation(
                         symbol=symbol,
                         side=side,
                         kind=AggOcoViolationKind.NO_SL_FOR_OPEN_POSITION,
                         why="no_sl_for_open_position",
+                        details={
+                            "position_amt": qty,
+                            "sl_count": sl_count,
+                            "tp_count": tp_count,
+                            "flat_close_count": flat_close_count,
+                            "meta_count": meta_count,
+                            "ts": now_ts,
+                        },
+                    )
+                )
+            if sl_count > 1:
+                violations.append(
+                    AggOcoViolation(
+                        symbol=symbol,
+                        side=side,
+                        kind=AggOcoViolationKind.TOO_MANY_SL_FOR_OPEN_POSITION,
+                        why="too_many_sl_for_open_position",
                         details={
                             "position_amt": qty,
                             "sl_count": sl_count,
@@ -172,67 +217,110 @@ def validate_agg_oco_invariants_result(
 
 
 def _normalize_positions(raw_positions: Sequence[Any]) -> List[WatchdogPosition]:
+    """
+    Normalize positions using PositionSnapshot for unified parsing.
+
+    Handles both raw REST payloads and pre-normalized WatchdogPosition objects
+    (useful for tests and internal calls).
+
+    **Refs**: EP-STAB-POS-SNAPSHOT
+    """
+    from apps.reference.domains.execution_position.contracts import PositionSnapshot
+
     normalized: List[WatchdogPosition] = []
+    rest_payloads = []
+
+    # Separate pre-normalized WatchdogPosition objects from raw payloads
     for raw in raw_positions or []:
-        mapping = _as_mapping(raw)
-        if not mapping:
-            continue
-        symbol = _normalize_symbol(mapping.get("symbol"))
-        if not symbol:
-            continue
-        amt = _extract_float(
-            mapping,
-            (
-                "positionAmt",
-                "position_amount",
-                "position_amt",
-                "qty",
-                "quantity",
-            ),
-        )
-        if amt is None:
-            continue
-        side = _resolve_position_side(mapping.get(
-            "positionSide") or mapping.get("position_side"), amt)
-        if not side:
-            continue
-        quantity = abs(amt)
-        if quantity <= 0:
-            continue
-        normalized.append(WatchdogPosition(
-            symbol=symbol, side=side, quantity=quantity))
+        if isinstance(raw, WatchdogPosition):
+            # Already normalized, pass through
+            normalized.append(raw)
+        else:
+            # Raw payload, collect for PositionSnapshot processing
+            rest_payloads.append(raw)
+
+    # Process raw payloads via PositionSnapshot
+    if rest_payloads:
+        # Extract unique symbols
+        symbols = set()
+        for raw in rest_payloads:
+            mapping = _as_mapping(raw)
+            if mapping and mapping.get("symbol"):
+                symbols.add(str(mapping.get("symbol")))
+
+        # Use PositionSnapshot for each symbol
+        for symbol in symbols:
+            try:
+                snapshot = PositionSnapshot.from_rest_list(
+                    list(rest_payloads), symbol)
+                if snapshot:
+                    normalized.append(WatchdogPosition(
+                        symbol=snapshot.symbol,
+                        side=snapshot.side.value,  # LONG or SHORT
+                        quantity=float(snapshot.qty)
+                    ))
+            except Exception:
+                continue
+
     return normalized
 
 
 def _normalize_orders(raw_orders: Sequence[Any]) -> List[WatchdogOrder]:
+    """
+    EP-STAB-ADAPT-ORD-META-WIRE: Normalize open orders for watchdog invariant checks.
+
+    Uses unified classify_exit_order() to identify EXIT orders (STOP_LOSS, TAKE_PROFIT, FLAT_CLOSE).
+    Only tracks exit orders; ENTRY orders (classify_exit_order returns None) are skipped.
+
+    If raw_order is already a WatchdogOrder (pre-normalized), passes through if exit_kind is set.
+    If raw_order is a dict/mapping, classifies via classify_exit_order.
+    """
     normalized: List[WatchdogOrder] = []
     for raw in raw_orders or []:
+        # Handle pre-normalized WatchdogOrder objects (from tests or internal calls)
+        if isinstance(raw, WatchdogOrder):
+            # Already a WatchdogOrder: include if exit_kind is set or if it has legacy is_sl flag
+            if raw.exit_kind is not None or raw.is_sl:
+                normalized.append(raw)
+            continue
+
         mapping = _as_mapping(raw)
         if not mapping:
             continue
+
+        symbol = _normalize_symbol(mapping.get("symbol"))
+        if not symbol:
+            continue
+
+        side = _resolve_order_side(mapping)
+        if not side:
+            continue
+
+        order_id_raw = mapping.get("orderId") or mapping.get("order_id")
+        if not order_id_raw:
+            continue
+
+        order_id = str(order_id_raw)
+
+        # EP-STAB-ADAPT-ORD-META-WIRE: Use unified classifier as filter
+        # Only include orders that are classified as EXIT (non-None exit_kind)
+        exit_kind = classify_exit_order(mapping)
+        if exit_kind is None:
+            continue  # Skip ENTRY orders; watchdog only tracks exit/close orders
+
         reduce_only = _boolish(mapping.get("reduceOnly")
                                or mapping.get("reduce_only"))
         close_position = _boolish(mapping.get(
             "closePosition") or mapping.get("close_position"))
-        if not (reduce_only or close_position):
-            continue
-        symbol = _normalize_symbol(mapping.get("symbol"))
-        if not symbol:
-            continue
-        side = _resolve_order_side(mapping)
-        if not side:
-            continue
-        order_id_raw = mapping.get("orderId") or mapping.get("order_id")
-        if not order_id_raw:
-            continue
-        order_id = str(order_id_raw)
+
         order = WatchdogOrder(
             symbol=symbol,
             side=side,
             order_id=order_id,
             reduce_only=reduce_only,
             close_position=close_position,
-            is_sl=_is_sl_order(mapping),
+            is_sl=_is_sl_order(mapping),  # For backward compatibility
+            exit_kind=exit_kind,
         )
         normalized.append(order)
     return normalized
@@ -323,33 +411,8 @@ def _resolve_order_side(mapping: Dict[str, Any]) -> Optional[str]:
 
 
 def _is_sl_order(mapping: Dict[str, Any]) -> bool:
-    explicit_flag = mapping.get("is_sl")
-    if isinstance(explicit_flag, bool):
-        if explicit_flag:
-            return True
-    elif isinstance(explicit_flag, str):
-        if explicit_flag.strip().lower() in {"1", "true", "yes", "on", "sl"}:
-            return True
-    order_type = str(
-        mapping.get("type")
-        or mapping.get("origType")
-        or mapping.get("kind")
-        or ""
-    ).upper()
-    working_type = str(mapping.get("workingType") or "").upper()
-    client_order_id = str(mapping.get("clientOrderId") or "").lower()
-    stop_price = mapping.get("stopPrice") or mapping.get("activatePrice")
-    if "STOP" in order_type or working_type.startswith("STOP"):
-        return True
-    if client_order_id.endswith("_sl"):
-        return True
-    if stop_price is not None:
-        try:
-            if abs(float(stop_price)) > 0:
-                return True
-        except (TypeError, ValueError):
-            pass
-    return False
+    # EP-STAB-SL-CLASS-FIX: Delegate to unified classifier
+    return classify_exit_order(mapping) == ExitOrderKind.STOP_LOSS
 
 
 def _boolish(value: Any) -> bool:

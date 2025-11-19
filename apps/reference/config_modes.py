@@ -44,12 +44,23 @@ def compute_effective_trading_modes(cfg: Any) -> EffectiveTradingModes:
     if v2_cfg is not None:
         try:
             # Get profile from legacy to use in v2
-            trading_section = getattr(cfg, 'trading', {}) if hasattr(
-                cfg, 'trading') else cfg.get('trading', {})
-            profile = _canonicalize_profile(
-                trading_section.get('mode', cfg.get(
-                    'trading_mode', 'full_testnet'))
-            )
+            # Use getattr for both dict and Pydantic objects
+            trading_section = getattr(cfg, 'trading', None)
+            if trading_section is None:
+                trading_section = cfg.get(
+                    'trading', {}) if isinstance(cfg, dict) else {}
+
+            # Extract mode using attribute access (works for both dict and Pydantic)
+            mode_value = getattr(trading_section, 'mode',
+                                 None) if trading_section else None
+            if mode_value is None and isinstance(trading_section, dict):
+                mode_value = trading_section.get('mode')
+            if mode_value is None:
+                mode_value = getattr(cfg, 'trading_mode', None)
+                if mode_value is None and isinstance(cfg, dict):
+                    mode_value = cfg.get('trading_mode', 'full_testnet')
+
+            profile = _canonicalize_profile(mode_value or 'full_testnet')
             legacy_like_cfg = build_legacy_mode_mapping_from_v2(
                 v2_cfg, profile)
             result = compute_effective_trading_modes_from_legacy_like(

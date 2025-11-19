@@ -5,10 +5,14 @@ Defines domain-specific enums, constants, and validation rules.
 Uses Pydantic V2 field_validator and model_validator.
 """
 
+import time
+from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Any, Optional
 from decimal import Decimal, ROUND_DOWN, InvalidOperation
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+
+from vfoundation.core.protocol import Message
 
 
 class Side(str, Enum):
@@ -41,6 +45,211 @@ def canonicalize_position_side(value: Optional[str]) -> Optional[PositionSide]:
     if normalized == "FLAT":
         return PositionSide.FLAT
     return None
+
+
+@dataclass
+class PositionSnapshot:
+    """
+    Contract-first position snapshot for unified REST/WS position parsing.
+
+    Single source of truth for extracting symbol/side/qty from exchange position data,
+    handling all variations: positionSide=BOTH/LONG/SHORT, positionAmt as string/float.
+
+    **Refs**: EP-STAB-POS-SNAPSHOT
+    """
+    symbol: str
+    side: PositionSide | str  # Allow legacy string inputs for compatibility
+    qty: Optional[Decimal] = None  # Always positive, absolute position quantity
+    avg_price: Optional[Decimal] = None
+    updated_ts: Optional[float] = None
+    position_amt: Optional[float] = None  # Legacy attribute (float) for callers expecting raw amt
+
+    def __post_init__(self) -> None:
+        """Normalize side/qty so legacy callers (tests) keep working."""
+        # Normalize side into PositionSide enum
+        if not isinstance(self.side, PositionSide):
+            normalized = canonicalize_position_side(self.side)
+            if normalized is None:
+                raise ValueError(f"Invalid position side: {self.side!r}")
+            self.side = normalized
+
+        # Determine qty source (qty field wins, fallback to position_amt)
+        qty_source: Optional[Decimal]
+        if self.qty is not None:
+            qty_source = self.qty if isinstance(
+                self.qty, Decimal) else Decimal(str(self.qty))
+        elif self.position_amt is not None:
+            qty_source = Decimal(str(self.position_amt))
+        else:
+            raise ValueError("PositionSnapshot requires qty or position_amt")
+
+        qty_decimal = qty_source.copy_abs()
+        self.qty = qty_decimal
+        # Keep float mirror for legacy access patterns
+        self.position_amt = float(qty_decimal)
+
+    @classmethod
+    def from_generic_payload(cls, payload: Dict[str, Any]) -> Optional["PositionSnapshot"]:
+        """
+        Extract position snapshot from a generic payload (e.g. live position state).
+
+        Handles various keys for qty/side to unify parsing across FSMs.
+        """
+        if not payload:
+            return None
+
+        symbol = payload.get("symbol")
+        if not symbol:
+            return None
+
+        # Try various qty keys
+        qty_raw = payload.get("qty") or payload.get("position_amt") or payload.get(
+            "position_amount") or payload.get("quantity")
+        if qty_raw is None:
+            return None
+
+        try:
+            qty_val = float(qty_raw)
+            # Note: We allow 0 here if the caller needs to detect flat position,
+            # but typically PositionSnapshot implies active position.
+            # However, from_rest_list returns None for 0.
+            # Let's match that behavior: return None if effectively zero.
+            if abs(qty_val) < 1e-8:
+                return None
+            qty = Decimal(str(abs(qty_val)))
+        except (ValueError, TypeError, InvalidOperation):
+            return None
+
+        # Try side keys
+        side_raw = payload.get("side") or payload.get(
+            "positionSide") or payload.get("position_side")
+
+        # If side is explicit, use it
+        if side_raw and str(side_raw).upper() in {"LONG", "SHORT", "BUY", "SELL"}:
+            norm = str(side_raw).upper()
+            if norm in {"LONG", "BUY"}:
+                side = PositionSide.LONG
+            else:
+                side = PositionSide.SHORT
+        else:
+            # Infer from sign of qty_val
+            side = PositionSide.LONG if qty_val > 0 else PositionSide.SHORT
+
+        # Try avg_price
+        avg_price = None
+        price_raw = payload.get("avg_price") or payload.get(
+            "entryPrice") or payload.get("avgPrice")
+        if price_raw is not None:
+            try:
+                avg_price = Decimal(str(price_raw))
+            except:
+                pass
+
+        # Try updated_ts
+        updated_ts = payload.get("updated_ts") or payload.get(
+            "updateTime") or payload.get("ts")
+        if updated_ts is not None:
+            try:
+                updated_ts = float(updated_ts)
+            except:
+                updated_ts = None
+
+        return cls(symbol=str(symbol).upper(), side=side, qty=qty, avg_price=avg_price, updated_ts=updated_ts)
+
+    @classmethod
+    def from_rest_list(
+        cls,
+        positions: list,
+        symbol: str
+    ) -> Optional["PositionSnapshot"]:
+        """
+        Extract position snapshot from REST/WS position list.
+
+        Contract-first logic matching ManageFlowFSM's most stable implementation:
+        - Filters by symbol
+        - Handles positionSide: BOTH/LONG/SHORT
+        - Parses positionAmt as string/float
+        - Returns None if position is zero or missing
+
+        Args:
+            positions: List of position dicts from REST API or WebSocket
+            symbol: Target symbol to filter (e.g., "BTCUSDT")
+
+        Returns:
+            PositionSnapshot if non-zero position found, else None
+
+        **Refs**: EP-STAB-POS-SNAPSHOT
+        """
+        if not positions:
+            return None
+
+        # Convert to dicts if needed (handle Pydantic models, dataclasses)
+        positions_list = [
+            p.to_dict() if hasattr(p, 'to_dict') else (
+                p.__dict__ if not isinstance(p, dict) else p
+            )
+            for p in positions
+        ]
+
+        # Filter by symbol
+        sym_positions = [
+            p for p in positions_list if p.get("symbol") == symbol]
+        if not sym_positions:
+            return None
+
+        # Find first non-zero position (handles BOTH/LONG/SHORT)
+        for pos in sym_positions:
+            try:
+                # Extract positionAmt (various field names)
+                amt_raw = pos.get("positionAmt") or pos.get(
+                    "position_amt") or pos.get("position_amount")
+                if amt_raw is None:
+                    continue
+
+                amt = float(amt_raw)
+                if abs(amt) < 1e-8:  # Effectively zero
+                    continue
+
+                # Determine side from positionSide field or infer from sign
+                position_side_raw = pos.get(
+                    "positionSide") or pos.get("position_side")
+
+                if position_side_raw and str(position_side_raw).upper() in {"LONG", "SHORT"}:
+                    # Explicit LONG/SHORT from hedge mode
+                    side = PositionSide.LONG if str(
+                        position_side_raw).upper() == "LONG" else PositionSide.SHORT
+                else:
+                    # BOTH mode or missing positionSide → infer from sign
+                    side = PositionSide.LONG if amt > 0 else PositionSide.SHORT
+
+                qty = Decimal(str(abs(amt)))
+
+                # Extract avg_price
+                avg_price = None
+                price_raw = pos.get("entryPrice") or pos.get(
+                    "avgPrice") or pos.get("avgEntryPrice")
+                if price_raw is not None:
+                    try:
+                        avg_price = Decimal(str(price_raw))
+                    except:
+                        pass
+
+                # Extract updated_ts
+                updated_ts = None
+                ts_raw = pos.get("updateTime") or pos.get(
+                    "eventTime") or pos.get("ts")
+                if ts_raw is not None:
+                    try:
+                        updated_ts = float(ts_raw)
+                    except:
+                        pass
+
+                return cls(symbol=symbol, side=side, qty=qty, avg_price=avg_price, updated_ts=updated_ts)
+
+            except (ValueError, TypeError, InvalidOperation):
+                continue
+
+        return None
 
 
 def canonicalize_position_side_from_qty(position_qty: Optional[Decimal]) -> PositionSide:
@@ -109,6 +318,109 @@ class BracketErrorCode(str, Enum):
     DUPLICATE_CLIENT_ORDER_ID = "-4116"   # newClientOrderId already used
     QUANTITY_NOT_ALLOWED = "-4137"        # Quantity passed with closePosition=true
     MIN_NOTIONAL_NOT_MET = "-4164"        # Order notional too low
+
+
+# EP-STAB-SL-CLASS-FIX: Unified EXIT/SL classification contract
+class ExitOrderKind(str, Enum):
+    """
+    Canonical classification of exit/close orders.
+
+    Used by watchdog, ManageFlowFSM, and all invariant checks to consistently
+    identify SL/TP/FLAT_CLOSE without duplicate heuristics.
+
+    **Refs**: EP-STAB-SL-CLASS-FIX-A
+    """
+    STOP_LOSS = "stop_loss"          # SL bracket (STOP_MARKET, STOP_LIMIT, STOP, reduce-only STOP)
+    # TP bracket (TAKE_PROFIT_MARKET, TAKE_PROFIT_LIMIT)
+    TAKE_PROFIT = "take_profit"
+    # Position close without SL/TP context (LIMIT/MARKET + reduceOnly/closePosition)
+    FLAT_CLOSE = "flat_close"
+    # EXIT by flag but type/pattern unclear (fallback)
+    UNKNOWN_EXIT = "unknown_exit"
+
+
+def classify_exit_order(pld: dict) -> Optional[ExitOrderKind]:
+    """
+    Unified classifier for EXIT order kind.
+
+    Single source of truth for SL/TP/FLAT_CLOSE/UNKNOWN_EXIT classification,
+    consumed by watchdog, ManageFlowFSM, and invariant checks.
+
+    Considers:
+    - order type (STOP_MARKET, TAKE_PROFIT_MARKET, STOP_LIMIT, LIMIT, MARKET, etc.)
+    - reduceOnly / closePosition flags
+    - stopPrice / activatePrice fields
+    - clientOrderId pattern (_sl, _tp suffixes)
+    - workingType (MARK_PRICE, CONTRACT_PRICE, STOP_PRICE)
+
+    Args:
+        pld: Order payload dict (from exchange API or internal structures)
+
+    Returns:
+        ExitOrderKind if this is an exit/close order, None if this is ENTRY
+
+    **Refs**: EP-STAB-SL-CLASS-FIX-A
+    """
+    order_type = str(pld.get("order_type") or pld.get("type") or "").upper()
+    orig_type = str(pld.get("origType") or "").upper()
+    working_type = str(pld.get("workingType") or "").upper()
+    client_order_id = str(pld.get("clientOrderId") or "").lower()
+    has_sl_pattern = client_order_id.endswith("_sl") or client_order_id.startswith("sl-")
+    has_tp_pattern = client_order_id.endswith("_tp") or client_order_id.startswith("tp-")
+    stop_price = pld.get("stopPrice") or pld.get("activatePrice")
+
+    reduce_only = str(
+        pld.get("reduceOnly") or pld.get("reduce_only") or ""
+    ).lower() == "true"
+
+    close_position = str(
+        pld.get("closePosition") or pld.get(
+            "close_position") or pld.get("cp") or ""
+    ).lower() == "true"
+
+    # Check for explicit EXIT type indicators (STOP_*, TAKE_PROFIT_*)
+    # These override the gate and always mark as EXIT
+    is_explicit_stop = (
+        order_type in {"STOP_MARKET", "STOP_LIMIT", "STOP"}
+        or orig_type in {"STOP_MARKET", "STOP_LIMIT", "STOP"}
+        or "STOP" in working_type
+        or has_sl_pattern
+    )
+
+    is_explicit_tp = (
+        order_type in {"TAKE_PROFIT_MARKET",
+                       "TAKE_PROFIT_LIMIT", "TAKE_PROFIT"}
+        or orig_type in {"TAKE_PROFIT_MARKET", "TAKE_PROFIT_LIMIT", "TAKE_PROFIT"}
+        or has_tp_pattern
+    )
+
+    # TAKE_PROFIT classification (check BEFORE STOP_LOSS to handle priority):
+    # - Any explicit TAKE_PROFIT type
+    if is_explicit_tp:
+        return ExitOrderKind.TAKE_PROFIT
+
+    # STOP_LOSS classification:
+    # - Any explicit STOP type
+    if is_explicit_stop:
+        return ExitOrderKind.STOP_LOSS
+
+    # - reduceOnly + stopPrice present → SL (e.g., OCO bracket, LIMIT SL)
+    # This logic also catches TP if stopPrice is present, but is_explicit_tp above takes priority
+    if reduce_only and stop_price is not None:
+        return ExitOrderKind.STOP_LOSS
+
+    # Gate: order must have exit flags to be classified further
+    # If no EXIT type and no exit flags, it's ENTRY
+    if not (reduce_only or close_position):
+        return None  # ENTRY order
+
+    # FLAT_CLOSE classification:
+    # - LIMIT or MARKET type with reduceOnly/closePosition
+    # - No STOP/TP pattern already checked above
+    if (reduce_only or close_position):
+        return ExitOrderKind.FLAT_CLOSE
+
+    return None  # Should not reach here
 
 
 # Domain constraints (as Decimal for precision)
@@ -423,3 +735,54 @@ def validate_order_command(pld: Dict[str, Any]) -> bool:
         return True
     except Exception:
         return False
+
+
+def is_exit_order(pld: dict) -> bool:
+    """
+    Contract-first classifier for EXIT vs ENTRY.
+
+    EXIT = any condition where the order reduces or closes the position:
+      - order_type in {STOP_MARKET, TAKE_PROFIT_MARKET}
+      - reduceOnly == True
+      - closePosition / cp == True
+
+    **Now delegates to unified classify_exit_order for consistency.**
+
+    This is the single source of truth for ENTRY/EXIT classification across
+    ExecPosFSM, ManageFlowFSM, and all aggregated OCO paths.
+
+    Args:
+        pld: Order payload dict with keys: order_type, reduceOnly, closePosition, etc.
+
+    Returns:
+        True if this is an EXIT order (TP/SL/reduce), False if ENTRY
+
+    **Refs**: EP-STAB-ENTRYEXIT-HELPER, EP-STAB-SL-CLASS-FIX-A
+    """
+    # EP-STAB-SL-CLASS-FIX: Delegate to unified classifier
+    kind = classify_exit_order(pld)
+    return kind is not None
+
+
+def build_dec_close(
+    msg: Message,
+    why: str,
+    payload: Dict[str, Any],
+    *,
+    idempotent_key: Optional[str] = None,
+) -> Message:
+    """Construct DEC:CLOSE with reduce_only enforced and shared metadata."""
+    final_payload = payload.copy()
+    final_payload.setdefault("reduce_only", True)
+
+    return Message(
+        op="DEC",
+        verb="CLOSE",
+        src=msg.dst,
+        dst="execution_position",
+        rid=msg.rid,
+        why=why[:80],
+        idempotent_key=idempotent_key or f"{msg.rid}_{why}_{int(time.time())}",
+        pld=final_payload,
+        data_ref=msg.data_ref.copy() if msg.data_ref else [],
+    )

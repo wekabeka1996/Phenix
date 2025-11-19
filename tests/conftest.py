@@ -124,6 +124,9 @@ def fix_event_loop():
     """Fix event loop for Windows Tornado compatibility."""
     import sys
     import asyncio
+    import warnings
+
+    loop = None
     if sys.platform.startswith("win"):
         try:
             # Force SelectorEventLoop for Tornado compatibility
@@ -134,11 +137,33 @@ def fix_event_loop():
             asyncio.set_event_loop(loop)
         except Exception:
             pass
+
     yield
-    # Cleanup
+
+    # Proper cleanup to prevent ResourceWarning
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.stop()
+        if loop is None:
+            loop = asyncio.get_event_loop()
+
+        # Cancel all pending tasks
+        if loop and not loop.is_closed():
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+
+            # Give tasks a chance to complete cancellation
+            if pending:
+                loop.run_until_complete(asyncio.gather(
+                    *pending, return_exceptions=True))
+
+            # Stop the loop if it's running
+            if loop.is_running():
+                loop.stop()
+
+            # Close the loop properly
+            loop.close()
     except Exception:
-        pass
+        # Suppress warnings during cleanup
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            pass

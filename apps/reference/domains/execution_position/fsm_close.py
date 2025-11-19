@@ -16,6 +16,8 @@ from typing import Dict, Any, Optional
 
 from vfoundation.core.protocol import Message
 
+from apps.reference.domains.execution_position.contracts import build_dec_close
+
 
 class CloseState(str, Enum):
     """FSM states for close flow."""
@@ -161,21 +163,12 @@ class CloseFlowFSM:
 
         symbol = (msg.pld or {}).get("symbol")
 
-        dec = Message(
-            op="DEC",
-            verb="CLOSE",
-            src=msg.dst,
-            dst="execution_position",
-            rid=msg.rid,
-            why=why[:80],
-            idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
-            pld={
-                "reduce_only": True,
-                **({"symbol": symbol} if symbol else {}),
-                **details,
-            },
-            data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
-        )
+        payload = {
+            "reduce_only": True,
+            **({"symbol": symbol} if symbol else {}),
+            **details,
+        }
+        dec = build_dec_close(msg, why, payload=payload)
 
         # Update state
         self.state = CloseState.DONE
