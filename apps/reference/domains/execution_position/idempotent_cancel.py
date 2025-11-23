@@ -11,6 +11,10 @@ from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import logging
+from apps.reference.domains.execution_position.utils import (
+    ClientOrderIntent,
+    make_execpos_client_order_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,47 +77,22 @@ class IdempotentCancelHelper:
         counter: int = 0
     ) -> str:
         """
-        Generate deterministic clientOrderId for idempotency.
+        Generate deterministic clientOrderId via canonical ExecPos builder.
 
-        Format: AUR-{symbol}-{side}-{notional}-{timestamp_or_counter}
-
-        Example:
-          AUR-BTCUSDT-BUY-1000-1730944323456
-          AUR-ETHUSDT-SELL-500-0
-
-        Args:
-            symbol: Trading symbol (e.g., BTCUSDT)
-            side: BUY or SELL
-            notional_usdt: Order notional in USD
-            session_prefix: Custom prefix (default: AUR)
-            use_timestamp: If True, use millisecond timestamp; else use counter
-            counter: Counter value (used if use_timestamp=False)
-
-        Returns:
-            Deterministic clientOrderId string (max 36 chars)
+        Wrapped over make_execpos_client_order_id; kept for backward compatibility.
         """
-        # Hash notional to get compact representation (avoid precision issues)
-        notional_hash = hashlib.md5(
-            str(notional_usdt).encode()).hexdigest()[:6]
+        notional_hash = hashlib.md5(str(notional_usdt).encode()).hexdigest()[:6]
+        ts_ms = int(time.time() * 1000) if use_timestamp else int(counter)
 
-        if use_timestamp:
-            # Last 6 digits of ms timestamp
-            time_component = int(time.time() * 1000) % 1_000_000
-        else:
-            time_component = counter % 1_000_000
-
-        # Format: AUR-SYMBOL-SIDE-NOTIONAL_HASH-TIME_COMPONENT
-        client_order_id = f"{session_prefix}-{symbol}-{side}-{notional_hash}-{time_component}"
-
-        # Binance limit: max 36 chars
-        if len(client_order_id) > 36:
-            # Truncate symbol if needed
-            max_symbol_len = 36 - \
-                len(f"{session_prefix}---{notional_hash}-{time_component}")
-            symbol_trunc = symbol[:max_symbol_len]
-            client_order_id = f"{session_prefix}-{symbol_trunc}-{side}-{notional_hash}-{time_component}"
-
-        return client_order_id
+        meta = make_execpos_client_order_id(
+            intent=ClientOrderIntent.ADJUST,
+            symbol=symbol,
+            seed=f"{session_prefix}-{symbol}-{side}-{notional_hash}",
+            extra=side,
+            ts_ms=ts_ms,
+            max_len=36,
+        )
+        return meta.raw
 
     async def get_order_before_cancel(
         self,

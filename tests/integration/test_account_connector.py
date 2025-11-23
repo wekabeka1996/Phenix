@@ -45,7 +45,7 @@ def test_account_connector_initialization(test_config, test_fsm_core):
             "testnet": {
                 "api_key": "fake_key",
                 "api_secret": "fake_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
     }
@@ -69,7 +69,7 @@ def test_account_connector_polling_and_event_emission(test_config, test_fsm_core
             "testnet": {
                 "api_key": "fake_key",
                 "api_secret": "fake_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
     }
@@ -129,7 +129,7 @@ def test_account_connector_error_handling(test_config, test_fsm_core):
             "testnet": {
                 "api_key": "fake_key",
                 "api_secret": "fake_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
     }
@@ -180,7 +180,7 @@ def test_account_connector_graceful_shutdown(test_config, test_fsm_core):
             "testnet": {
                 "api_key": "fake_key",
                 "api_secret": "fake_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
     }
@@ -223,7 +223,7 @@ def test_account_connector_config_defaults(test_fsm_core):
             "testnet": {
                 "api_key": "fake_key",
                 "api_secret": "fake_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
     }

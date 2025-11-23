@@ -1,5 +1,15 @@
 # 🔍 Аналіз рекомендацій аудитора (в контексті кодової бази)
 
+---
+**HISTORICAL NOTE (2025-11-21 - EP-LEGACY-PURGE-S1)**
+
+This document was written before legacy ExecPosFSM was removed.
+ExecPosRuntimeV2 is now the only active execution runtime.
+This document is preserved for historical context.
+
+See: `docs/EXEC_POS_RUNTIME_STATE.md` for current state.
+---
+
 **Дата**: 12 листопада 2025
 **Контекст**: Відповідь аудитора на AUDIT_VALIDATION_REPORT.md
 **Мета**: Перевірити застосовність рекомендацій через code inspection

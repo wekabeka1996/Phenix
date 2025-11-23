@@ -23,7 +23,7 @@ class TestBinanceFuturesOrderMetadata:
         return BinanceAdapter(
             api_key="test_key",
             api_secret="test_secret",
-            base_url="https://testnet.binancefuture.com",
+            base_url="https://demo-fapi.binance.com",
         )
 
     @pytest.mark.asyncio

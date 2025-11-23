@@ -5,6 +5,28 @@ Centralises reads of ``trading.execution.manage.*`` so runtime code avoids
 navigating raw config structures. Mirrors the approach used by
 ``brackets_config`` for TP/SL values, but focuses on manage metadata
 (orphan monitor, quick profit, trailing, emergency, brackets flags, etc.).
+
+**Hybrid Adapter Role (V2 + Legacy):**
+This module serves as a hybrid adapter during the migration from legacy
+dict-based config to V2 Pydantic models (ExecutionPositionConfig):
+
+1. **V2 Path (Primary):** If ``cfg.config_v2.domains["execution"]["manage"]``
+   exists, the resolver uses ``_build_manage_from_v2()`` and specialized
+   ``_resolve_*_from_v2()`` functions that read directly from V2 structures.
+
+2. **Legacy Path (Fallback):** If V2 config is absent or fails parsing,
+   the resolver falls back to ``_build_manage_from_legacy()`` and generic
+   ``_resolve_*()`` functions that navigate nested dicts via ``_pluck()``
+   and coerce types manually (``_coerce_bool``, ``_coerce_int``, etc.).
+
+3. **Priority Order:** V2 is always attempted first in ``resolve_execution_manage_config()``.
+   Legacy is used only when V2 returns ``None`` or raises an exception
+   during parsing. This ensures new configs benefit from strict Pydantic
+   validation while old configs continue functioning unchanged.
+
+**Migration Context:** This hybrid behavior is intentional and temporary.
+Once all configs migrate to V2 (Phase 5), legacy code paths will be removed.
+See ``docs/EXECUTION_POSITION_CONFIG_MAP.md`` for full migration timeline.
 """
 
 from __future__ import annotations
@@ -24,8 +46,23 @@ _ALLOWED_MANAGE_MODES = {"legacy", "aggregated_only"}
 
 def _get_v2_execution_manage_cfg(cfg: Any) -> Optional[Dict[str, Any]]:
     """
-    Повертає manage-конфіг із cfg.config_v2.domains["execution"]["manage"], якщо він існує і не порожній.
-    Інакше повертає None.
+    V2 config detector: returns manage-config from cfg.config_v2.domains["execution"]["manage"] if present.
+
+    This function is the primary entry point for V2 config detection in the hybrid adapter.
+    It safely navigates the nested structure (cfg → config_v2 → domains → execution → manage)
+    and returns a dict if V2 manage config exists and is non-empty. Otherwise returns None,
+    signaling the resolver to fall back to legacy dict navigation.
+
+    Args:
+        cfg: Configuration object (AuroraConfig or dict-like) that may contain config_v2.
+
+    Returns:
+        Dict[str, Any] if V2 manage config exists and is populated, None otherwise.
+
+    Notes:
+        - Handles both object attributes (cfg.config_v2.domains.execution) and dict keys
+        - Automatically converts Pydantic models via model_dump() if needed
+        - Returning None triggers legacy path in resolve_execution_manage_config()
     """
     # Check if cfg is AuroraConfig with config_v2
     config_v2 = None
@@ -169,6 +206,28 @@ def _coerce_sequence(values: Any) -> Tuple[int, ...]:
         return ()
 
 
+def _coerce_str_tuple(values: Any) -> Tuple[str, ...]:
+    if values is None:
+        return ()
+    if isinstance(values, (str, bytes)):
+        cleaned = str(values).strip()
+        return (cleaned,) if cleaned else ()
+    if isinstance(values, Sequence):
+        result = []
+        for item in values:
+            if item is None:
+                continue
+            candidate = str(item).strip()
+            if candidate:
+                result.append(candidate)
+        return tuple(result)
+    try:
+        candidate = str(values).strip()
+    except Exception:
+        return ()
+    return (candidate,) if candidate else ()
+
+
 def _extract_manage_node(config: Any) -> Any:
     node = _pluck(config, "trading", "execution", "manage")
     if node is not None:
@@ -214,10 +273,20 @@ class EmergencyConfig:
 
 
 @dataclass(frozen=True)
+class AggregatedOcoWatchdogGraceConfig:
+    enabled: bool = False
+    period_sec: float = 0.0
+    kinds: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class AggregatedOcoWatchdogConfig:
     enabled: bool = False
     interval_sec: int = 5
     auto_heal_orphans: bool = True
+    grace: AggregatedOcoWatchdogGraceConfig = field(
+        default_factory=AggregatedOcoWatchdogGraceConfig
+    )
 
 
 @dataclass(frozen=True)
@@ -272,11 +341,21 @@ class GuardianConfig:
 
 
 @dataclass(frozen=True)
+class WatchdogTimeoutsConfig:
+    ack_ttl_ms: int = 8000
+    fill_ttl_ms: int = 30000
+    check_interval_ms: int = 1000
+    source: str = "execution.watchdog"
+
+
+@dataclass(frozen=True)
 class WatchdogConfig:
     ack_ttl_ms: int = 8000
     fill_ttl_ms: int = 30000
     check_interval_ms: int = 1000
     source: str = "execution.watchdog"
+    timeouts: WatchdogTimeoutsConfig = field(
+        default_factory=WatchdogTimeoutsConfig)
 
 
 @dataclass(frozen=True)
@@ -295,6 +374,7 @@ class ExecutionManageConfig:
 
 
 def _resolve_orphan_monitor(node: Any) -> OrphanMonitorConfig:
+    """Legacy resolver for orphan_monitor (uses _pluck for dict navigation)."""
     cfg = _pluck(node, "orphan_monitor") or {}
     return OrphanMonitorConfig(
         enabled=_coerce_bool(_pluck(cfg, "enabled"), True),
@@ -308,6 +388,7 @@ def _resolve_orphan_monitor(node: Any) -> OrphanMonitorConfig:
 
 
 def _resolve_quick_profit(node: Any) -> QuickProfitConfig:
+    """Legacy resolver for quick_profit (uses _pluck with brackets.quick_profit fallback)."""
     qp_node = _pluck(node, "quick_profit")
     if qp_node is None:
         qp_node = _pluck(node, "brackets", "quick_profit")
@@ -327,6 +408,7 @@ def _resolve_quick_profit(node: Any) -> QuickProfitConfig:
 
 
 def _resolve_trailing(node: Any) -> TrailingConfig:
+    """Legacy resolver for trailing (uses _pluck for dict navigation)."""
     trailing_node = _pluck(node, "trailing") or {}
     return TrailingConfig(
         enabled=_coerce_bool(_pluck(trailing_node, "enable"), False),
@@ -339,6 +421,7 @@ def _resolve_trailing(node: Any) -> TrailingConfig:
 
 
 def _resolve_emergency(node: Any) -> EmergencyConfig:
+    """Legacy resolver for emergency (uses _pluck for dict navigation)."""
     emergency_node = _pluck(node, "emergency") or {}
     return EmergencyConfig(
         enabled=_coerce_bool(_pluck(emergency_node, "enable"), False),
@@ -420,6 +503,21 @@ def _resolve_aggregated_watchdog(node: Any) -> AggregatedOcoWatchdogConfig:
         auto_heal_orphans=_coerce_bool(
             _pluck(watch_node, "auto_heal_orphans"), True
         ),
+        grace=_resolve_watchdog_grace(watch_node),
+    )
+
+
+def _resolve_watchdog_grace(node: Any) -> AggregatedOcoWatchdogGraceConfig:
+    grace_node = _pluck(node, "grace") if node else None
+    if grace_node is None and node:
+        grace_node = getattr(node, "grace", None)
+    grace_node = grace_node or {}
+    kinds = tuple(kind.upper() for kind in _coerce_str_tuple(
+        _pluck(grace_node, "kinds")) if kind)
+    return AggregatedOcoWatchdogGraceConfig(
+        enabled=_coerce_bool(_pluck(grace_node, "enabled"), False),
+        period_sec=_coerce_float(_pluck(grace_node, "period_sec"), 0.0),
+        kinds=kinds,
     )
 
 
@@ -487,6 +585,17 @@ def _resolve_watchdog(config: Any, manage_node: Any) -> WatchdogConfig:
     fill_ttl_ms = _coerce_int(_pluck(node, "fill_ttl_ms"), 30000)
     check_interval_ms = _coerce_int(
         _pluck(node, "check_interval_ms"), 1000)
+    resolved_source = source
+
+    timeouts_node = _pluck(node, "timeouts") if node else None
+    if timeouts_node:
+        ack_ttl_ms = _coerce_int(_pluck(timeouts_node, "ack_ttl_ms"),
+                                 ack_ttl_ms)
+        fill_ttl_ms = _coerce_int(_pluck(timeouts_node, "fill_ttl_ms"),
+                                  fill_ttl_ms)
+        check_interval_ms = _coerce_int(
+            _pluck(timeouts_node, "check_interval_ms"), check_interval_ms)
+        resolved_source = f"{source}.timeouts"
 
     # Optional override from trading.orders.default_ttl_seconds (Balanced profile)
     orders_cfg = _pluck(config, "trading", "orders")
@@ -505,16 +614,24 @@ def _resolve_watchdog(config: Any, manage_node: Any) -> WatchdogConfig:
         try:
             fill_ttl_ms = _coerce_int(
                 int(default_ttl_seconds) * 1000, fill_ttl_ms)
-            source = "trading.orders.default_ttl_seconds"
+            resolved_source = "trading.orders.default_ttl_seconds"
         except Exception:
             LOG.debug(
                 "Failed to coerce default_ttl_seconds override", exc_info=True)
+
+    timeouts_cfg = WatchdogTimeoutsConfig(
+        ack_ttl_ms=ack_ttl_ms,
+        fill_ttl_ms=fill_ttl_ms,
+        check_interval_ms=check_interval_ms,
+        source=resolved_source,
+    )
 
     return WatchdogConfig(
         ack_ttl_ms=ack_ttl_ms,
         fill_ttl_ms=fill_ttl_ms,
         check_interval_ms=check_interval_ms,
-        source=source,
+        source=resolved_source,
+        timeouts=timeouts_cfg,
     )
 
 
@@ -608,6 +725,28 @@ def _validate_manage_mode(mode: str, agg_cfg: AggregatedOcoConfig) -> None:
 
 
 def _build_manage_from_legacy(config: Any) -> ExecutionManageConfig:
+    """
+    Legacy path builder: constructs ExecutionManageConfig from old dict-based config structures.
+
+    Navigates nested dicts via ``_pluck()`` and uses manual type coercion
+    (``_coerce_bool``, ``_coerce_int``, etc.). Calls generic ``_resolve_*()`` functions
+    (without _from_v2 suffix) that handle legacy dict navigation.
+
+    Args:
+        config: Legacy config object (dict-like) with trading.execution.manage.* structure.
+
+    Returns:
+        ExecutionManageConfig with source="legacy".
+
+    Raises:
+        ConfigError: On validation failures (invalid mode, constraint violations).
+
+    Notes:
+        - Uses _extract_manage_node() to find trading.execution.manage or execution.manage
+        - All sub-configs use generic _resolve_* variants (e.g., _resolve_quick_profit)
+        - This path is fallback for old configs; V2 is primary for new configs
+        - Planned for removal in Phase 5 after all configs migrate to V2
+    """
     manage_node = _extract_manage_node(config)
 
     brackets_meta = _resolve_brackets_meta(config, manage_node)
@@ -630,6 +769,29 @@ def _build_manage_from_legacy(config: Any) -> ExecutionManageConfig:
 
 
 def _build_manage_from_v2(v2_cfg: Dict[str, Any], cfg: Any) -> ExecutionManageConfig:
+    """
+    V2 path builder: constructs ExecutionManageConfig from V2 Pydantic-based config dict.
+
+    Calls specialized ``_resolve_*_from_v2()`` functions that read directly from
+    v2_cfg structure (config_v2.domains["execution"]["manage"]). Uses strict parsing
+    with Pydantic validation and raises exceptions on invalid data.
+
+    Args:
+        v2_cfg: V2 manage config dict (from _get_v2_execution_manage_cfg).
+        cfg: Full config object (for watchdog's trading.orders fallback).
+
+    Returns:
+        ExecutionManageConfig with source="config_v2".
+
+    Raises:
+        ConfigError: On validation failures (invalid mode, constraint violations).
+        Exception: On parsing errors (triggers legacy fallback in resolver).
+
+    Notes:
+        - All sub-configs use _from_v2 variants (e.g., _resolve_quick_profit_from_v2)
+        - Missing fields use Pydantic model defaults (strict validation)
+        - This is the primary path for new V2 configs; legacy is fallback only
+    """
     # Для v2, читаємо безпосередньо з v2_cfg
     # Якщо поле відсутнє, використовуємо дефолти з моделей або кидаємо виняток для критичних
     try:
@@ -645,7 +807,7 @@ def _build_manage_from_v2(v2_cfg: Dict[str, Any], cfg: Any) -> ExecutionManageCo
             emergency=_resolve_emergency(v2_cfg),
             brackets=brackets_meta,
             guardian=_resolve_guardian_from_v2(v2_cfg),
-            watchdog=_resolve_watchdog_from_v2(v2_cfg),
+            watchdog=_resolve_watchdog_from_v2(v2_cfg, cfg),
             positions=_resolve_positions_from_v2(v2_cfg),
             source="config_v2",
             mode=mode,
@@ -657,6 +819,7 @@ def _build_manage_from_v2(v2_cfg: Dict[str, Any], cfg: Any) -> ExecutionManageCo
 
 
 def _resolve_quick_profit_from_v2(v2_cfg: Dict[str, Any]) -> QuickProfitConfig:
+    """V2-specific resolver for quick_profit config (reads from v2_cfg['quick_profit'])."""
     qp_node = v2_cfg.get("quick_profit", {})
     enabled = _coerce_bool(qp_node.get("enabled"), False)
     mode = str(qp_node.get("mode") or "fixed_usd")
@@ -677,6 +840,7 @@ def _resolve_quick_profit_from_v2(v2_cfg: Dict[str, Any]) -> QuickProfitConfig:
 
 
 def _resolve_brackets_meta_from_v2(v2_cfg: Dict[str, Any]) -> BracketsMetaConfig:
+    """V2-specific resolver for brackets metadata (reads from v2_cfg['brackets'])."""
     brackets_node = v2_cfg.get("brackets", {})
 
     retry_node = brackets_node.get("retry", {})
@@ -704,6 +868,7 @@ def _resolve_brackets_meta_from_v2(v2_cfg: Dict[str, Any]) -> BracketsMetaConfig
 
 
 def _resolve_aggregated_oco_from_v2(brackets_node: Dict[str, Any]) -> AggregatedOcoConfig:
+    """V2-specific resolver for aggregated_oco config (reads from brackets_node['aggregated_oco'])."""
     agg_node = brackets_node.get("aggregated_oco", {})
     return AggregatedOcoConfig(
         enabled=_coerce_bool(agg_node.get("enabled"), False),
@@ -727,6 +892,7 @@ def _resolve_aggregated_oco_from_v2(brackets_node: Dict[str, Any]) -> Aggregated
 
 
 def _resolve_guardian_from_v2(v2_cfg: Dict[str, Any]) -> GuardianConfig:
+    """V2-specific resolver for guardian config (reads from v2_cfg['guardian'])."""
     guardian_node = v2_cfg.get("guardian", {})
     return GuardianConfig(
         unified=_coerce_bool(guardian_node.get("unified"), True),
@@ -740,18 +906,93 @@ def _resolve_guardian_from_v2(v2_cfg: Dict[str, Any]) -> GuardianConfig:
     )
 
 
-def _resolve_watchdog_from_v2(v2_cfg: Dict[str, Any]) -> WatchdogConfig:
+def _resolve_watchdog_from_v2(v2_cfg: Dict[str, Any], cfg: Any = None) -> WatchdogConfig:
+    """V2-specific resolver for watchdog config (reads from v2_cfg['watchdog'] + trading.orders fallback)."""
     watchdog_node = v2_cfg.get("watchdog", {})
+    source = "config_v2"
+    resolved_source = source
+
+    ack_ttl_ms = _coerce_int(watchdog_node.get("ack_ttl_ms"), 8000)
+    fill_ttl_ms = _coerce_int(watchdog_node.get("fill_ttl_ms"), 30000)
+    check_interval_ms = _coerce_int(
+        watchdog_node.get("check_interval_ms"), 1000)
+
+    timeouts_node = watchdog_node.get("timeouts")
+    if timeouts_node:
+        ack_ttl_ms = _coerce_int(timeouts_node.get(
+            "ack_ttl_ms"), ack_ttl_ms)
+        fill_ttl_ms = _coerce_int(timeouts_node.get(
+            "fill_ttl_ms"), fill_ttl_ms)
+        check_interval_ms = _coerce_int(
+            timeouts_node.get("check_interval_ms"), check_interval_ms)
+        resolved_source = f"{source}.watchdog.timeouts"
+
+    if cfg is not None:
+        orders_cfg = _pluck(cfg, "trading", "orders")
+        if orders_cfg is None:
+            orders_cfg = _pluck(cfg, "orders")
+        default_ttl_seconds = None
+        if isinstance(orders_cfg, dict):
+            default_ttl_seconds = orders_cfg.get("default_ttl_seconds")
+        else:
+            try:
+                default_ttl_seconds = getattr(
+                    orders_cfg, "default_ttl_seconds", None)
+            except Exception:
+                default_ttl_seconds = None
+        if default_ttl_seconds is not None:
+            try:
+                fill_ttl_ms = _coerce_int(
+                    int(default_ttl_seconds) * 1000, fill_ttl_ms)
+                resolved_source = "trading.orders.default_ttl_seconds"
+            except Exception:
+                LOG.debug(
+                    "Failed to coerce default_ttl_seconds override (v2)",
+                    exc_info=True,
+                )
+
+    timeouts_cfg = WatchdogTimeoutsConfig(
+        ack_ttl_ms=ack_ttl_ms,
+        fill_ttl_ms=fill_ttl_ms,
+        check_interval_ms=check_interval_ms,
+        source=resolved_source,
+    )
+
     return WatchdogConfig(
-        ack_ttl_ms=_coerce_int(watchdog_node.get("ack_ttl_ms"), 8000),
-        fill_ttl_ms=_coerce_int(watchdog_node.get("fill_ttl_ms"), 30000),
-        check_interval_ms=_coerce_int(
-            watchdog_node.get("check_interval_ms"), 1000),
-        source="config_v2",
+        ack_ttl_ms=ack_ttl_ms,
+        fill_ttl_ms=fill_ttl_ms,
+        check_interval_ms=check_interval_ms,
+        source=resolved_source,
+        timeouts=timeouts_cfg,
     )
 
 
 def resolve_execution_manage_config(config: Any) -> ExecutionManageConfig:
+    """
+    Main entry point for execution manage config resolution with dual-path (V2 → legacy fallback).
+
+    **Hybrid Adapter Behavior:**
+    1. **V2 Path (Priority):** Calls ``_get_v2_execution_manage_cfg()`` to detect V2 config.
+       If found, attempts ``_build_manage_from_v2()`` which uses strict Pydantic validation.
+    2. **Legacy Fallback:** If V2 returns None OR V2 parsing raises exception (except ConfigError),
+       falls back to ``_build_manage_from_legacy()`` for backward compatibility.
+    3. **ConfigError Propagation:** Critical config errors are not caught; they bubble up immediately.
+
+    Args:
+        config: Configuration object (AuroraConfig or dict-like) containing manage settings.
+
+    Returns:
+        ExecutionManageConfig: Fully resolved manage config with source="config_v2" or "legacy".
+
+    Raises:
+        ConfigError: On critical config issues (invalid manage mode, constraint violations).
+
+    Notes:
+        - Uses object id() caching to avoid redundant resolution for same config object
+        - V2 → legacy fallback is intentional migration strategy (not a bug)
+        - source field in result indicates which path was used: "config_v2" or "legacy"
+        - See module docstring for full hybrid adapter explanation
+    """
     cache_key = id(config)
     cached = _MANAGE_CACHE.get(cache_key)
     if cached is not None:

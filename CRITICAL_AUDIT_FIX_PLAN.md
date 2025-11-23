@@ -1,5 +1,15 @@
 # 🔴 КРИТИЧНИЙ АУДИТ FIX_PLAN: Виявлені Ризики та Блокери
 
+---
+**HISTORICAL NOTE (2025-11-21 - EP-LEGACY-PURGE-S1)**
+
+This document was written before legacy ExecPosFSM was removed.
+ExecPosRuntimeV2 is now the only active execution runtime.
+This document is preserved for historical context.
+
+See: `docs/EXEC_POS_RUNTIME_STATE.md` for current state.
+---
+
 **Дата**: 2025-11-19
 **Scope**: Аналіз FIX_PLAN_EXECUTION_POSITION_FSM.md перед імплементацією
 **Мета**: Виявити потенційні помилки, які можуть з'явитися після застосування плану виправлень

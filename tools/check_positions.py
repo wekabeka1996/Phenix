@@ -34,7 +34,7 @@ async def check_testnet_positions():
     adapter = BinanceAdapter(
         api_key=api_key,
         api_secret=api_secret,
-        base_url="https://testnet.binancefuture.com"
+        base_url="https://demo-fapi.binance.com"
     )
 
     try:

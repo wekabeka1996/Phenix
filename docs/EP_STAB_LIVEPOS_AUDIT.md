@@ -7,6 +7,10 @@
 
 ---
 
+> **2025-11-20 Update:** `ExecPosFSM._heal_no_sl_for_open_position` (auto-heal path referenced throughout this audit) has been removed. Watchdog NO_SL detections now operate in observe-only mode; sections below are kept for historical context.
+
+---
+
 ## 1. Problem Description
 
 ### Background

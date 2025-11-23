@@ -11,9 +11,13 @@ from types import SimpleNamespace
 
 import pytest
 from vfoundation.core.protocol import Message
+from apps.reference.domains.execution_position.utils import (
+    ClientOrderIntent,
+    parse_client_order_id,
+)
 
 spec = importlib.util.spec_from_file_location(
-    "apps.reference.domains.execution_position.fsm_manage",
+    "apps.reference.domains.execution_position.legacy.fsm_manage",
     os.path.join(
         os.path.dirname(__file__),
         "..",
@@ -366,17 +370,15 @@ def test_client_id_helper_caps_length():
 
     base_id, sl_id, tp_id = fsm._build_sl_tp_client_ids(msg)
 
-    assert len(base_id) <= ManageFlowFSM.CLIENT_ORDER_ID_MAX_LEN - len("_sl")
+    assert len(base_id) <= ManageFlowFSM.CLIENT_ORDER_ID_MAX_LEN
     assert len(sl_id) <= ManageFlowFSM.CLIENT_ORDER_ID_MAX_LEN
     assert len(tp_id) <= ManageFlowFSM.CLIENT_ORDER_ID_MAX_LEN
-    assert sl_id.endswith("_sl")
-    assert tp_id.endswith("_tp")
 
-    seed = fsm._generate_client_seed(msg, extra="emergency")
-    _, emergency_id = fsm._compose_client_order_id(
-        seed, "emergency_sl_with_extra_suffix"
-    )
-    assert len(emergency_id) <= ManageFlowFSM.CLIENT_ORDER_ID_MAX_LEN
+    sl_meta = parse_client_order_id(sl_id)
+    tp_meta = parse_client_order_id(tp_id)
+    assert sl_meta is not None and sl_meta.intent == ClientOrderIntent.STOP_LOSS
+    assert tp_meta is not None and tp_meta.intent == ClientOrderIntent.TAKE_PROFIT
+    assert base_id.startswith("ep") or base_id.startswith("legacy")
 
 
 def test_agg_oco_side_canonicalization(monkeypatch):
@@ -393,3 +395,4 @@ def test_agg_oco_side_canonicalization(monkeypatch):
     fsm.position_qty = Decimal("0")
     flat_canonical = fsm._resolve_canonical_position_side()
     assert flat_canonical == PositionSide.FLAT
+

@@ -1,0 +1,80 @@
+# Execution Position Config - AGGRESSIVE Profile
+#
+# High-risk settings for experienced traders:
+# - Tight stop-loss (1%) to maximize position size / minimize drawdown per trade
+# - High risk-reward (3.0x) for asymmetric payoff
+# - Wide trailing (150 bps) to let winners run
+# - Aggressive recalculation (on scale-in AND partial close)
+#
+# Use case: High conviction trades, trending markets, experienced risk management
+
+manage:
+  brackets:
+    aggregated_oco:
+      enabled: true
+      aggregated_only_mode: false
+
+      # Tight stop-loss: 1% from entry (max position size, min loss per trade)
+      sl_pct: 0.01
+
+      # High risk-reward: 3.0x (1% SL → 3% TP)
+      tp_rr: 3.0
+
+      # Recalculation policy: aggressive (adjust on both scale-in AND partial close)
+      recalc_on_scale_in: true
+      recalc_on_partial_close: true
+
+      # Protection: Fast bracket placement (2 sec TTL)
+      ttl_protect_new_bracket_ms: 2000
+
+      # Allow brief unprotected window (ultra-fast execution)
+      allow_unprotected_position: false
+
+      # Aggressive: Max 3 SL legs, 5 TP legs (full ladder)
+      max_sl_legs: 3
+      max_tp_legs: 5
+
+      # Watchdog: Aggressive monitoring (short intervals)
+      watchdog:
+        enabled: true
+        interval_sec: 5
+        auto_heal_orphans: true
+        grace:
+          enabled: true
+          period_sec: 2.0
+          kinds:
+            - NO_SL_FOR_OPEN_POSITION
+            - ORPHAN_SL
+            - TOO_MANY_SL
+            - STALE_LEVELS
+
+  trailing:
+    enabled: true
+
+    # Wide trailing stop: 150 bps (1.5%) to let winners run
+    trail_distance_bps: 150.0
+
+    # Activate early: after 30 bps profit (0.3%)
+    activate_after_bps: 30.0
+
+    # Move to breakeven after 1.5x risk-reward
+    breakeven_rr: 1.5
+
+    # Long time exit: 6 hours (21600 sec) - let trends develop
+    hard_time_exit_sec: 21600.0
+
+    # Aggressive trailing params
+    activation_profit_atr_k: 0.8
+    cooldown_sec: 5.0
+    step_bps: 3.0
+
+  close:
+    # Long max hold time: 12 hours (43200 sec) for trend trades
+    max_hold_time_sec: 43200
+
+    # Permissive close policy: allow discretionary exits
+    reason_policy: permissive
+
+    # Allow both time and profit exits
+    allow_time_exit: true
+    allow_profit_exit: true

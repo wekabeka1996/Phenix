@@ -47,7 +47,7 @@ async def test_decimal_precision_is_preserved_on_response():
         adapter = BinanceAdapter(
             api_key="test_key",
             api_secret="test_secret",
-            rest_url="https://testnet.binancefuture.com",
+            rest_url="https://demo-fapi.binance.com",
         )
 
         # Mock _sync_time to avoid time sync issues

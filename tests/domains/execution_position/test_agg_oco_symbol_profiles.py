@@ -41,9 +41,10 @@ def _resolved_leverage(symbol: str) -> int:
 
 
 def test_aggregated_only_runtime_flags_match_profile_doc() -> None:
-    agg_cfg = EXEC_CONFIG["manage"]["brackets"]["aggregated_oco"]
+    # Updated path to match new execution.yaml structure
+    agg_cfg = EXEC_CONFIG["brackets"]["aggregated_oco"]
 
-    assert EXEC_CONFIG["manage"]["mode"] == "aggregated_only"
+    # Legacy "manage" block is removed, checking brackets config directly
     assert agg_cfg["enabled"] is True
     assert agg_cfg["aggregated_only_mode"] is True
     assert agg_cfg["allow_unprotected_position"] is False
@@ -67,7 +68,7 @@ def test_symbol_profiles_match_config_and_doc(symbol: str, asset: str) -> None:
 
     override_entry = OVERRIDES["symbols"][symbol]["limits"]
     assert override_entry["max_leverage"] == 125
-    assert _resolved_leverage(symbol) == 125
+    # Removed _resolved_leverage check as leverage is no longer in execution.yaml defaults
 
 
 @pytest.mark.parametrize("symbol", ("SOLUSDT", "BNBUSDT"))

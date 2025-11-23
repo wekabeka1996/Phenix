@@ -446,6 +446,12 @@ class AuroraConfig(BaseModel):
     config_v2: Optional[ConfigV2] = Field(
         default=None, description="Config v2 structure")
 
+    # EP-CONFIG-INJECTION-S2: Typed config for execution_position domain
+    execution_position_cfg: Optional[Any] = Field(
+        default=None,
+        description="Typed ExecutionPositionConfig (Pydantic) built from config_v2.domains['execution']"
+    )
+
     def has_config_v2(self) -> bool:
         """Check if any config v2 files were loaded."""
         if self.config_v2 is None:

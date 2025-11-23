@@ -1,5 +1,15 @@
 # 🔍 Звіт валідації аудиту `fsm.py` (execution_position)
 
+---
+**HISTORICAL NOTE (2025-11-21 - EP-LEGACY-PURGE-S1)**
+
+This document was written before legacy ExecPosFSM was removed.
+ExecPosRuntimeV2 is now the only active execution runtime.
+This document is preserved for historical context.
+
+See: `docs/EXEC_POS_RUNTIME_STATE.md` for current state.
+---
+
 **Дата**: 12 листопада 2025
 **Файл**: `apps/reference/domains/execution_position/fsm.py`
 **Версія**: поточна (2582 рядки)

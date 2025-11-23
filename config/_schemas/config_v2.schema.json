@@ -13,16 +13,16 @@
       "description": "Optional symbol-level overrides that complement instruments."
     },
     "instruments": {
-      "type": "object",
-      "description": "Definitions of supported instruments (precision, limits, defaults)."
+      "type": ["object", "null"],
+      "description": "Definitions of supported instruments (precision, limits, defaults). Null means no custom instruments."
     },
     "overrides": {
-      "type": "object",
-      "description": "Explicit override blocks (symbols, domains, etc.)."
+      "type": ["object", "null"],
+      "description": "Explicit override blocks (symbols, domains, etc.). Null is equivalent to empty object."
     },
     "modes": {
-      "type": "object",
-      "description": "Trading mode profiles and domain mode maps.",
+      "type": ["object", "null"],
+      "description": "Trading mode profiles and domain mode maps. Null means default mode.",
       "properties": {
         "profiles": {
           "type": "object",
@@ -82,9 +82,6 @@
     }
   },
   "required": [
-    "instruments",
-    "overrides",
-    "modes",
     "domains"
   ],
   "additionalProperties": true

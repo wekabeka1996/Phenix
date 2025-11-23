@@ -26,7 +26,7 @@ async def test_place_minimal_bracket_orders():
     adapter = BinanceExecutionAdapter(
         api_key="test_key",
         api_secret="test_secret",
-        base_url="https://testnet.binancefuture.com",
+        base_url="https://demo-fapi.binance.com",
         shadow_mode=True  # Safe shadow mode - no real orders
     )
 
@@ -70,7 +70,7 @@ async def test_place_tp_bracket_order():
     adapter = BinanceExecutionAdapter(
         api_key="test_key",
         api_secret="test_secret",
-        base_url="https://testnet.binancefuture.com",
+        base_url="https://demo-fapi.binance.com",
         shadow_mode=True
     )
 
@@ -110,7 +110,7 @@ async def test_invalid_message_type_rejected():
     adapter = BinanceExecutionAdapter(
         api_key="test_key",
         api_secret="test_secret",
-        base_url="https://testnet.binancefuture.com",
+        base_url="https://demo-fapi.binance.com",
         shadow_mode=True
     )
 

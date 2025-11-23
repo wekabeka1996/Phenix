@@ -16,15 +16,6 @@ exposure:
   post_fill_hold_ttl_sec: 10         # Hold filled intents a bit longer to avoid churn
   positions_stale_ttl_sec: 5         # Consider reserved capacity stale quickly on testnet
   leverage_defaults:                 # Leverage per symbol - testnet high leverage
-    SOLUSDT: 125
-    ETHUSDT: 125
-    __default__: 125
-
-manage:
-  # from trading.execution.manage.*
-  mode: aggregated_only
-  auto: true                         # Enable automatic position management (take-profit, stop-loss)
-  brackets:
     enable: true                     # Enable bracket order management with atomic close and cancellation
     oco_emulation: true              # Enable OCO emulation: when SL or TP fills, cancel the counterpart
     stop_loss_bps: 50                # Fallback distance in bps, used by Kelly calculation
@@ -55,6 +46,12 @@ manage:
         enabled: true
         interval_sec: 5
         auto_heal_orphans: true
+        grace:
+          enabled: true
+          period_sec: 2.0
+          kinds:
+            - NO_SL_FOR_OPEN_POSITION
+            - ORPHAN_SL_FOR_ZERO_POSITION
   quick_profit:
     enabled: false                   # Quick profit (close when profit target reached) - default disabled
     mode: "fixed_usd"
@@ -75,6 +72,10 @@ manage:
     ack_ttl_ms: 8000
     fill_ttl_ms: 300000
     check_interval_ms: 1000
+    timeouts:
+      ack_ttl_ms: 8000
+      fill_ttl_ms: 300000
+      check_interval_ms: 1000
   orphan_monitor:
     enabled: true                    # Master switch for background monitor
     run_on_startup: true             # One-time sync on startup to cancel orphans immediately
@@ -122,3 +123,9 @@ brackets:
       enabled: true
       interval_sec: 5
       auto_heal_orphans: true
+      grace:
+        enabled: true
+        period_sec: 2.0
+        kinds:
+          - NO_SL_FOR_OPEN_POSITION
+          - ORPHAN_SL_FOR_ZERO_POSITION

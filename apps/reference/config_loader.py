@@ -19,6 +19,16 @@ from pydantic import ValidationError
 from .config_models import AuroraConfig as PydanticAuroraConfig, ConfigV2
 from .utils import compute_effective_trading_modes, get_domain_mode_from_mapping
 
+# EP-CONFIG-INJECTION-S2: Import typed config resolver for execution_position
+try:
+    from .config.execution_position import resolve_execution_position_config
+    from .domains.execution_position.config import ExecutionPositionConfig
+    HAS_EXECPOS_TYPED_CONFIG = True
+except ImportError:
+    resolve_execution_position_config = None
+    ExecutionPositionConfig = None
+    HAS_EXECPOS_TYPED_CONFIG = False
+
 LOG = logging.getLogger(__name__)
 
 
@@ -31,11 +41,16 @@ def _detect_project_root() -> Path:
             return candidate
 
     current = Path(__file__).resolve()
+    # Search for repo root (has .git or README.md + config/)
     for parent in current.parents:
-        if (parent / "config").exists():
+        # Prefer directory with .git (true repo root)
+        if (parent / ".git").exists() and (parent / "config").exists():
+            return parent
+        # Or directory with README.md + config/ (repo root without .git)
+        if (parent / "README.md").exists() and (parent / "config").exists():
             return parent
 
-    # Fallback: assume two levels up (repo/apps → repo)
+    # Fallback: assume two levels up (repo/apps/reference → repo)
     return Path(__file__).resolve().parents[2]
 
 
@@ -221,6 +236,8 @@ class ConfigLoader:
         relying on implicit overrides.
         """
         self.project_root = _detect_project_root()
+        print(
+            f"DEBUG: ConfigLoader project_root detected as: {self.project_root}")
         if config_dir is not None:
             self.config_dir = Path(config_dir)
         else:
@@ -245,8 +262,12 @@ class ConfigLoader:
             else:
                 self.config_dir = candidates[-1]
         env_path = self.project_root / ".env"
+        print(
+            f"DEBUG: Checking .env at {env_path}, exists={env_path.exists()}")
         if env_path.exists():
             load_dotenv(env_path)
+            print(
+                f"DEBUG: Loaded .env. BINANCE_TESTNET_API_KEY present: {'BINANCE_TESTNET_API_KEY' in os.environ}")
         self._raw_cache: Dict[str, Dict[str, Any]] = {}
 
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
@@ -545,6 +566,38 @@ class ConfigLoader:
             except Exception:
                 pass
             resolved_config['config_v2'] = config_v2
+
+            # EP-CONFIG-INJECTION-S2: Build typed ExecutionPositionConfig from config_v2
+            if HAS_EXECPOS_TYPED_CONFIG:
+                try:
+                    raw_execution_cfg = config_v2.domains.get(
+                        'execution') if config_v2 else None
+                    if raw_execution_cfg is not None:  # Allow empty dict {} for defaults
+                        ep_typed_cfg = resolve_execution_position_config(
+                            raw_execution_cfg
+                            # Uses default paths:
+                            # - aggregated_oco_path = ("manage", "brackets", "aggregated_oco")
+                            # - trailing_path = ("manage", "trailing")
+                            # - close_path = ("manage", "close")
+                        )
+                        resolved_config['execution_position_cfg'] = ep_typed_cfg
+                        LOG.info(
+                            f"✅ ExecutionPositionConfig built: "
+                            f"aggregated_oco.enabled={ep_typed_cfg.aggregated_oco.enabled}, "
+                            f"sl_pct={ep_typed_cfg.aggregated_oco.sl_pct}, "
+                            f"tp_rr={ep_typed_cfg.aggregated_oco.tp_rr}"
+                        )
+                    else:
+                        LOG.debug(
+                            "⚠️ No execution domain config found in config_v2, skipping ExecutionPositionConfig")
+                except Exception as e:
+                    LOG.warning(
+                        f"⚠️ Failed to build ExecutionPositionConfig: {e}", exc_info=True)
+                    # Non-fatal: system can still run with dict-based config
+            else:
+                LOG.debug(
+                    "⚠️ ExecutionPositionConfig resolver not available (HAS_EXECPOS_TYPED_CONFIG=False)")
+
             # Convert back to our legacy-compatible wrapper
             return AuroraConfig(**resolved_config)
         except ValidationError as e:
@@ -624,8 +677,20 @@ class ConfigLoader:
     def _default_trading_mode_from_v2(self, config_v2: ConfigV2) -> str:
         modes = getattr(config_v2, "modes", None) or {}
         profiles = modes.get("profiles", {}) if isinstance(modes, dict) else {}
+
+        # Check for explicit default_profile
+        default_profile_name = modes.get(
+            "default_profile") if isinstance(modes, dict) else None
+        if default_profile_name and default_profile_name in profiles:
+            default_profile = profiles[default_profile_name]
+            if isinstance(default_profile, dict):
+                return default_profile.get("trading_mode", "testnet")
+
+        # Fallback to shadow_live if exists (legacy behavior)
         if "shadow_live" in profiles:
             return profiles["shadow_live"].get("trading_mode", "testnet")
+
+        # Fallback to first profile
         if profiles:
             first_profile = next(iter(profiles.values()))
             if isinstance(first_profile, dict):

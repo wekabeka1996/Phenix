@@ -19,7 +19,8 @@ Set LOG_LEVEL environment variable to control logging:
 
 from apps.reference.bootstrap.preflight import check_hybrid_coherence, HybridIncoherenceError  # NEW IMPORT
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.execution_position.fsm import ExecPosFSM
+# Legacy ExecPosFSM import removed - use build_execution_runtime factory instead
+from apps.reference.domains.execution_position.runtime_factory import build_execution_runtime
 # from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
 #     SnapshotScheduler,
 # )
@@ -102,7 +103,7 @@ class AuroraBridge:
         # Configuration
         position_tracking_config = config.get("position_tracking", {})
         self._ttl_sec = int(position_tracking_config.get(
-            "positions_stale_ttl_sec", 5))
+            "positions_stale_ttl_sec", 35))  # Must be > portfolio update interval (~30s)
         self._retry_delay_sec = 0.5
         self._max_retries = 2
 
@@ -133,9 +134,10 @@ class AuroraBridge:
     async def on_portfolio_state_updated(self, event: Message) -> None:
         """Handle fresh portfolio updates and flush deferred intents."""
         self._last_portfolio = event.pld or {}
+        # Use current time if positions_last_ts_ms is missing/zero (no open positions)
+        positions_ts = self._last_portfolio.get("positions_last_ts_ms", 0)
         self._last_portfolio_ts = int(
-            self._last_portfolio.get("positions_last_ts_ms", 0)
-        ) or int(time.time() * 1000)
+            positions_ts) if positions_ts else int(time.time() * 1000)
 
         # Flush any deferred intents now that portfolio is fresh
         await self._flush_deferred_if_fresh()
@@ -604,15 +606,75 @@ def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: di
         alert_manager.check_circuit_breaker(True, 300)
 
     # Check risk gate (placeholder - would need actual risk metrics)
-    # This would typically come from risk_management domain
-    # alert_manager.check_risk_gate(current_risk_percent)
+        # This would typically come from risk_management domain
+        # alert_manager.check_risk_gate(current_risk_percent)
 
     LOG.debug(f"Alert checks completed: {alert_stats}")
 
 
+def _resolve_execpos_runtime_mode(config: Any) -> str:
+    """Extract execution_position.runtime_mode (defaults to v2)."""
+    try:
+        cfg_dict = config.to_dict() if hasattr(config, "to_dict") else config
+        if isinstance(cfg_dict, dict):
+            exec_cfg = cfg_dict.get("execution_position", cfg_dict)
+        else:
+            exec_cfg = {}
+        if isinstance(exec_cfg, dict):
+            runtime_mode = exec_cfg.get("runtime_mode", "v2")
+        else:
+            runtime_mode = getattr(exec_cfg, "runtime_mode", "v2")
+    except Exception:
+        runtime_mode = "v2"
+
+    if runtime_mode is None:
+        return "v2"
+    try:
+        return str(runtime_mode).lower()
+    except Exception:
+        return "v2"
+
+
+def _wire_guardian_loop_for_execpos(
+    execution_position: Any,
+    guardian_loop: asyncio.AbstractEventLoop,
+    logger: logging.Logger | None = None,
+) -> bool:
+    """
+    Wire Guardian loop for runtimes that support it (legacy ExecPosFSM).
+
+    Returns:
+        True if set_async_loop was invoked; False otherwise.
+    """
+    log = logger or LOG
+    runtime_name = type(
+        execution_position).__name__ if execution_position is not None else "None"
+
+    if execution_position is None:
+        log.warning(
+            "ExecutionPosition runtime is None; skipping Guardian loop wiring")
+        return False
+
+    set_loop = getattr(execution_position, "set_async_loop", None)
+    if callable(set_loop):
+        set_loop(guardian_loop)
+        log.info(
+            "ExecutionPosition runtime %s exposes set_async_loop; Guardian loop wired (legacy path)",
+            runtime_name,
+        )
+        return True
+
+    log.info(
+        "ExecutionPosition runtime %s has no set_async_loop; skipping Guardian loop wiring (expected for V2)",
+        runtime_name,
+    )
+    return False
+
+
 # Global FSM instance
 fsm: FSMCore | None = None
-execution_position: ExecPosFSM | None = None
+# Created via build_execution_runtime factory
+execution_position: Any | None = None
 
 # Create logs directory if it doesn't exist
 logs_dir = project_root / "logs"
@@ -761,8 +823,17 @@ def initialize_domains(config) -> FSMCore:
 
     # 2. Initialize EXECUTION POSITION FSM FIRST (before market_data triggers trade intents)
     # This ensures execution_position is ready when on_trade_intent_proposed is called
-    execution_position = ExecPosFSM(config=config, fsm=fsm)
-    LOG.info("✅ Execution position FSM initialized first")
+    # Use factory to build runtime based on config (legacy vs v2)
+    runtime_mode = _resolve_execpos_runtime_mode(config)
+    runtime_target = "ExecPosFSM (legacy)" if runtime_mode == "legacy" else "V2RuntimeFacade"
+    LOG.info("ExecutionPosition runtime_mode='%s' -> using %s",
+             runtime_mode, runtime_target)
+    execution_position = build_execution_runtime(
+        config=config,
+        fsm=fsm
+    )
+    LOG.info(
+        f"✅ Execution position runtime initialized first: {type(execution_position).__name__}")
 
     # 3. Initialize other domains
     # Note: This replay() function is legacy code, may need full config refactoring
@@ -1047,8 +1118,17 @@ def main() -> None:
 
     # Execution Position (handles order execution on testnet)
     global execution_position
-    execution_position = ExecPosFSM(config=config, fsm=fsm)
-    LOG.info("✅ Execution position FSM initialized")
+    # Use factory to build runtime based on config (legacy vs v2)
+    runtime_mode = _resolve_execpos_runtime_mode(config)
+    runtime_target = "ExecPosFSM (legacy)" if runtime_mode == "legacy" else "V2RuntimeFacade"
+    LOG.info("ExecutionPosition runtime_mode='%s' -> using %s",
+             runtime_mode, runtime_target)
+    execution_position = build_execution_runtime(
+        config=config,
+        fsm=fsm
+    )
+    LOG.info(
+        f"✅ Execution position runtime initialized: {type(execution_position).__name__}")
 
     try:
         debug_api.register_agg_oco_state_provider(
@@ -1173,7 +1253,13 @@ def main() -> None:
         name="AuroraAsyncLoop",
         daemon=True,
     )
-    execution_position.set_async_loop(guardian_loop)
+    runtime_name = type(
+        execution_position).__name__ if execution_position is not None else "None"
+    _wire_guardian_loop_for_execpos(
+        execution_position=execution_position,
+        guardian_loop=guardian_loop,
+        logger=LOG,
+    )
     guardian_loop_thread.start()
 
     try:
@@ -1190,18 +1276,30 @@ def main() -> None:
             sync_future.result()
         else:
             LOG.info(
-                "ExecutionPosition has no sync_open_orders_and_positions(); skipping initial sync"
+                "ExecutionPosition runtime %s has no sync_open_orders_and_positions(); skipping initial sync (expected for V2)",
+                runtime_name,
             )
 
-        LOG.info("Starting OrderGuardian...")
-        guardian_start_future = asyncio.run_coroutine_threadsafe(
-            execution_position.start_order_guardian(),
-            guardian_loop,
+        guardian_start_fn = getattr(
+            execution_position,
+            "start_order_guardian",
+            None,
         )
-        guardian_start_future.result()
+        if callable(guardian_start_fn):
+            LOG.info("Starting OrderGuardian...")
+            guardian_start_future = asyncio.run_coroutine_threadsafe(
+                guardian_start_fn(),
+                guardian_loop,
+            )
+            guardian_start_future.result()
+            LOG.info("✅ OrderGuardian started")
+        else:
+            LOG.info(
+                "ExecutionPosition runtime %s has no start_order_guardian(); skipping Guardian startup (expected for V2)",
+                runtime_name,
+            )
 
         LOG.info("✅ Order/Position synchronization complete")
-        LOG.info("✅ OrderGuardian started")
     except Exception as e:
         LOG.error(
             f"❌ Error during order/position sync or OrderGuardian startup: {e}")
@@ -1291,6 +1389,16 @@ def main() -> None:
 
     LOG.info("Starting decision making...")
     decision_making.start()
+
+    LOG.info("Starting execution position adapter (WebSocket)...")
+    if hasattr(execution_position, 'adapter') and execution_position.adapter:
+        if hasattr(execution_position.adapter, 'start'):
+            execution_position.adapter.start()
+            LOG.info("✅ Execution position WebSocket started")
+        else:
+            LOG.info("⚠️ Adapter has no start() method (shadow mode?)")
+    else:
+        LOG.info("⚠️ No adapter available for execution position")
 
     LOG.info("Starting snapshot scheduler (DR)...")
     # snapshot_scheduler.start()

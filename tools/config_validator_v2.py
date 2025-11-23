@@ -37,6 +37,8 @@ from apps.reference.domains.execution_position.brackets_config import (
     DEFAULT_TP_BPS,
     resolve_brackets_config,
 )
+from apps.reference.config.execution_position import resolve_execution_position_config
+from pydantic import ValidationError as PydanticValidationError
 from jsonschema import SchemaError, ValidationError, validate
 import os
 import sys
@@ -49,7 +51,8 @@ DEFAULT_PENDING_TTL_SEC = 90
 DEFAULT_POST_FILL_HOLD_TTL_SEC = 5
 DEFAULT_POSITIONS_STALE_TTL_SEC = 5
 
-_CONFIG_V2_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "config" / "_schemas" / "config_v2.schema.json"
+_CONFIG_V2_SCHEMA_PATH = Path(__file__).resolve(
+).parent.parent / "config" / "_schemas" / "config_v2.schema.json"
 try:
     with _CONFIG_V2_SCHEMA_PATH.open("r", encoding="utf-8") as schema_handle:
         _CONFIG_V2_SCHEMA = json.load(schema_handle)
@@ -105,7 +108,8 @@ def format_validation_summary(result: Dict[str, Any]) -> str:
 
     ordered_domains = list(domains.keys())
     if "schema" in domains:
-        ordered_domains = ["schema"] + [d for d in ordered_domains if d != "schema"]
+        ordered_domains = ["schema"] + \
+            [d for d in ordered_domains if d != "schema"]
 
     for domain_name in ordered_domains:
         domain = domains[domain_name]
@@ -163,7 +167,8 @@ def validate_config_v2(config_root: Optional[Path] = None) -> Dict[str, Any]:
 
         domains_report = {}
         overall_status = "ok"
-        schema_errors = validate_config_v2_schema(getattr(cfg, "config_v2", None))
+        schema_errors = validate_config_v2_schema(
+            getattr(cfg, "config_v2", None))
         schema_status = "error" if schema_errors else "ok"
         domains_report["schema"] = {
             "status": schema_status,
@@ -192,6 +197,36 @@ def validate_config_v2(config_root: Optional[Path] = None) -> Dict[str, Any]:
 
             errors = []
             warnings_execution: List[str] = []
+
+            # Check if ExecutionPositionConfig (V2 SSOT) is present
+            ep_cfg_v2_present = False
+            try:
+                # resolve_execution_position_config потребує Dict, не AuroraConfig
+                raw_exec_dict = cfg.model_dump().get("execution", {})
+                ep_cfg = resolve_execution_position_config(raw_exec_dict)
+                if ep_cfg is not None:
+                    ep_cfg_v2_present = True
+                    # Validate ExecutionPositionConfig invariants
+                    if not (0 < ep_cfg.aggregated_oco.sl_pct <= 1):
+                        errors.append(
+                            f"ExecutionPositionConfig.aggregated_oco.sl_pct {ep_cfg.aggregated_oco.sl_pct} out of range (0, 1]"
+                        )
+                    if ep_cfg.aggregated_oco.tp_rr <= 0:
+                        errors.append(
+                            f"ExecutionPositionConfig.aggregated_oco.tp_rr {ep_cfg.aggregated_oco.tp_rr} must be > 0"
+                        )
+                    if ep_cfg.aggregated_oco.max_sl_legs < 1 or ep_cfg.aggregated_oco.max_tp_legs < 1:
+                        errors.append(
+                            f"ExecutionPositionConfig.aggregated_oco max_sl_legs/max_tp_legs must be >= 1"
+                        )
+            except PydanticValidationError as pyd_exc:
+                errors.append(
+                    f"ExecutionPositionConfig validation failed: {pyd_exc}")
+            except Exception as ep_exc:
+                # If resolver fails, we'll treat it as V2 not present (fallback to legacy checks)
+                warnings_execution.append(
+                    f"resolve_execution_position_config failed (V2 config may be absent): {ep_exc}"
+                )
 
             # Invariants for exposure
             caps = exposure_policy.caps
@@ -224,11 +259,20 @@ def validate_config_v2(config_root: Optional[Path] = None) -> Dict[str, Any]:
                         "positions_stale_ttl_sec equals default 5s; consider setting explicit v2 value"
                     )
 
-            # Invariants for brackets (basic)
-            if getattr(brackets_config, 'source', 'legacy') != "config_v2":
-                errors.append(
-                    f"resolve_brackets_config returned source={brackets_config.source}, expected config_v2"
-                )
+            # Invariants for brackets
+            # If ExecutionPositionConfig V2 is present and valid, brackets_config.source=legacy is acceptable (hybrid mode)
+            if not ep_cfg_v2_present:
+                # V2 SSOT not present, brackets_config must be from config_v2
+                if getattr(brackets_config, 'source', 'legacy') != "config_v2":
+                    errors.append(
+                        f"resolve_brackets_config returned source={brackets_config.source}, expected config_v2 (ExecutionPositionConfig not present)"
+                    )
+            else:
+                # V2 SSOT present, brackets_config.source=legacy is OK (hybrid adapter mode)
+                if getattr(brackets_config, 'source', 'legacy') == "legacy":
+                    warnings_execution.append(
+                        "resolve_brackets_config returned source=legacy, but ExecutionPositionConfig V2 is present (hybrid mode)"
+                    )
             if getattr(brackets_config, 'tp_bps', DEFAULT_TP_BPS) <= 0:
                 errors.append(
                     f"tp.fixed_bps {brackets_config.tp_bps} must be > 0")

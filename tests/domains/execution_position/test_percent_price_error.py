@@ -88,7 +88,7 @@ async def test_percent_price_handler_adjusts_stop_price_outside_band(mock_config
                     params=params,
                     idempotent_key="test_sl",
                     client_order_id="test_sl",
-                    url="https://testnet.binancefuture.com/fapi/v1/order",
+                    url="https://demo-fapi.binance.com/fapi/v1/order",
                     headers={"X-MBX-APIKEY": "test_key"}
                 )
 
@@ -166,7 +166,7 @@ async def test_percent_price_handler_no_adjustment_needed(mock_config):
                     params=params,
                     idempotent_key="test_sl2",
                     client_order_id="test_sl2",
-                    url="https://testnet.binancefuture.com/fapi/v1/order",
+                    url="https://demo-fapi.binance.com/fapi/v1/order",
                     headers={"X-MBX-APIKEY": "test_key"}
                 )
 
@@ -209,7 +209,7 @@ async def test_percent_price_handler_mark_price_fetch_fails(mock_config):
             params=params,
             idempotent_key="test_sl3",
             client_order_id="test_sl3",
-            url="https://testnet.binancefuture.com/fapi/v1/order",
+            url="https://demo-fapi.binance.com/fapi/v1/order",
             headers={"X-MBX-APIKEY": "test_key"}
         )
 

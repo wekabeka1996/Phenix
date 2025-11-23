@@ -205,7 +205,7 @@ else:
             },
         }
 
-        # Merge ExecPosFSM and Guardian metrics (JSON)
+        # Merge ExecPosRuntimeV2 and Guardian metrics (JSON)
         try:
             from apps.reference.main import execution_position  # type: ignore
             if execution_position:
@@ -220,7 +220,8 @@ else:
                             "emit_tidy_event": True,
                         }
                     else:
-                        data["guardian"] = {"note": "guardian metrics not available"}
+                        data["guardian"] = {
+                            "note": "guardian metrics not available"}
                 except Exception:
                     data["guardian"] = {"note": "guardian metrics error"}
         except Exception:

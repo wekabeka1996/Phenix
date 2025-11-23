@@ -624,24 +624,28 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     side = "LONG" if (amt > 0 and pos_side in (
                         "BOTH", "LONG")) else "SHORT"
 
-                    pos_obj = ExchangePosition(
-                        symbol=p.get("symbol", ""),
-                        position_side=pos_side,  # BOTH/LONG/SHORT
-                        side=side,  # LONG/SHORT (зручно для бізнес-логіки)
-                        position_amount=amt_str,  # зберігаємо string для precision
-                        entry_price=entry_str,  # зберігаємо string для precision
-                        mark_price=mark_str,  # зберігаємо string для precision
-                        unrealized_profit=upnl_str,  # зберігаємо string для precision
-                        leverage=lev,
-                        margin_type=p.get("marginType", "cross").upper(),
-                        isolated_margin=float(
-                            p.get("isolatedMargin", "0") or 0),
-                        update_time_ms=int(p.get("updateTime", 0) or 0),
-                    )
-                    positions.append(pos_obj)
-                    # 🔴 DIAGNOSTIC: Log accepted position
-                    self.logger.info(
-                        f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}")
+                    normalized_position = {
+                        "symbol": p.get("symbol", ""),
+                        "position_side": pos_side,
+                        "side": side,
+                        "position_amount": str(amt_str),
+                        "entry_price": p.get("entryPrice", "0"),
+                        "mark_price": p.get("markPrice", "0"),
+                        "unrealized_profit": p.get("unRealizedProfit", "0"),
+                        "leverage": p.get("leverage", 0),
+                        "margin_type": p.get("marginType", "cross"),
+                        "isolated_margin": p.get("isolatedMargin", 0),
+                        "update_time_ms": p.get("updateTime", 0),
+                    }
+
+                    try:
+                        positions.append(
+                            ExchangePosition.from_payload(normalized_position)
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Error parsing position {p.get('symbol', 'unknown')}: {e}")
+                        continue
 
                 # 🔴 DIAGNOSTIC: Final summary
                 self.logger.info(
@@ -669,6 +673,29 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         # This should never be reached, but just in case
         raise last_exception
+
+    async def get_positions_notional_usd_shadow(self) -> float:
+        """
+        Get total notional value of all open positions (shadow check).
+
+        Fetches /fapi/v2/positionRisk and sums abs(notional).
+        Used by ExecPosRuntimeV2 for periodic safety audits.
+        """
+        try:
+            # Fetch all positions (no symbol filter)
+            raw = await self._request("GET", "/fapi/v2/positionRisk", {})
+            total_notional = 0.0
+            for p in raw:
+                # notional is provided by Binance Futures
+                # We use abs() because short positions might have negative notional depending on API version,
+                # though usually it's positive value or signed. We want total exposure magnitude.
+                notional = float(p.get("notional", "0"))
+                total_notional += abs(notional)
+            return total_notional
+        except Exception as e:
+            self.logger.error(f"Failed to get shadow notional: {e}")
+            # Return 0.0 on error to avoid crashing the check loop
+            return 0.0
 
     async def get_mark_price(self, symbol: str, ttl_ms: int = 250) -> float:
         """

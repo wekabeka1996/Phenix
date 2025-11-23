@@ -47,12 +47,17 @@ class OrderTimeoutWatchdog:
         ack_ttl_ms: int = 8000,  # 8 seconds for order acknowledgment
         fill_ttl_ms: int = 30000,  # 30 seconds for order fill
         check_interval_ms: int = 1000,  # Check every 1 second
-        on_timeout_callback: Optional[Callable[[OrderDeadline], Any]] = None
+        on_timeout_callback: Optional[Callable[[OrderDeadline], Any]] = None,
+        timeout_config: Optional[Any] = None,
     ):
-        self.ack_ttl_ms = ack_ttl_ms
-        self.fill_ttl_ms = fill_ttl_ms
-        self.check_interval_ms = check_interval_ms
+        self.ack_ttl_ms = int(ack_ttl_ms)
+        self.fill_ttl_ms = int(fill_ttl_ms)
+        self.check_interval_ms = int(check_interval_ms)
         self.on_timeout_callback = on_timeout_callback
+        self.timeout_source = "constructor_defaults"
+
+        if timeout_config is not None:
+            self.apply_timeout_config(timeout_config)
 
         # Track orders by order_id
         self.pending_orders: Dict[str, OrderDeadline] = {}
@@ -84,6 +89,85 @@ class OrderTimeoutWatchdog:
 
         # Metrics logging counter
         self._metrics_log_counter = 0
+
+    @staticmethod
+    def _read_timeout_field(source: Any, field_name: str) -> Any:
+        if source is None:
+            return None
+        if isinstance(source, dict):
+            return source.get(field_name)
+        return getattr(source, field_name, None)
+
+    @staticmethod
+    def _coerce_timeout_ms(value: Any, fallback: int) -> int:
+        if value is None:
+            return fallback
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return fallback
+
+    def apply_timeout_config(self, timeout_config: Any) -> None:
+        """Apply timeout values from a config dataclass or dict."""
+        if timeout_config is None:
+            return
+
+        updates: Dict[str, Any] = {}
+        ack_override = self._read_timeout_field(timeout_config, "ack_ttl_ms")
+        fill_override = self._read_timeout_field(timeout_config, "fill_ttl_ms")
+        check_override = self._read_timeout_field(
+            timeout_config, "check_interval_ms")
+        source_override = self._read_timeout_field(timeout_config, "source")
+
+        if ack_override is not None:
+            updates["ack_ttl_ms"] = self._coerce_timeout_ms(
+                ack_override, self.ack_ttl_ms)
+        if fill_override is not None:
+            updates["fill_ttl_ms"] = self._coerce_timeout_ms(
+                fill_override, self.fill_ttl_ms)
+        if check_override is not None:
+            updates["check_interval_ms"] = self._coerce_timeout_ms(
+                check_override, self.check_interval_ms)
+        if source_override:
+            updates["source"] = str(source_override)
+
+        if updates:
+            self.update_timeouts(**updates)
+
+    def update_timeouts(
+        self,
+        *,
+        ack_ttl_ms: Optional[int] = None,
+        fill_ttl_ms: Optional[int] = None,
+        check_interval_ms: Optional[int] = None,
+        source: Optional[str] = None,
+    ) -> None:
+        """Update timeout thresholds at runtime for adaptive tuning."""
+        changed = False
+        if ack_ttl_ms is not None:
+            self.ack_ttl_ms = int(ack_ttl_ms)
+            changed = True
+        if fill_ttl_ms is not None:
+            self.fill_ttl_ms = int(fill_ttl_ms)
+            changed = True
+        if check_interval_ms is not None:
+            self.check_interval_ms = int(check_interval_ms)
+            changed = True
+        if source is not None:
+            self.timeout_source = source
+            changed = True
+
+        if changed:
+            LOG.debug(
+                "OrderTimeoutWatchdog timeouts updated ack_ttl_ms=%s fill_ttl_ms=%s check_interval_ms=%s source=%s",
+                self.ack_ttl_ms,
+                self.fill_ttl_ms,
+                self.check_interval_ms,
+                self.timeout_source,
+            )
 
     def set_hooks(self, get_order_fn, emit_fn) -> None:
         """
@@ -252,6 +336,12 @@ class OrderTimeoutWatchdog:
                 if self._metrics_log_counter >= 100:
                     self._log_metrics()
                     self._metrics_log_counter = 0
+            except StopAsyncIteration:
+                LOG.warning(
+                    "Watchdog loop received StopAsyncIteration; shutting down task"
+                )
+                self._started = False
+                break
             except Exception as e:
                 LOG.error(f"Watchdog loop error: {e}", exc_info=True)
 
@@ -545,6 +635,7 @@ class OrderTimeoutWatchdog:
             "cancel_successes": self.cancel_success_count,
             "ack_ttl_ms": self.ack_ttl_ms,
             "fill_ttl_ms": self.fill_ttl_ms,
+            "timeout_source": self.timeout_source,
             # 🔧 POLLING FIX: REST polling metrics
             "rest_polls_total": self._rest_polls_total,
             "rest_detected_fills_total": self._rest_detected_fills_total,

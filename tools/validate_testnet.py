@@ -29,7 +29,7 @@ async def validate_testnet():
 
     # 1. База та ключі
     print("\n1️⃣ База та ключі")
-    base_url = "https://testnet.binancefuture.com"
+    base_url = "https://demo-fapi.binance.com"
     print(f"✅ base_url: {base_url}")
 
     # Инициализация адаптера с реальными ключами для testnet

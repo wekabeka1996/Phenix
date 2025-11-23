@@ -4,26 +4,285 @@
 **Priority**: CRITICAL
 **Target Completion**: 1-2 days
 **Owner**: Architecture WG
-**Document Version**: 1.1 (Code Validated)
-**Last Updated**: 2025-11-12
+**Document Version**: 1.2 (Timestamp Fix)
+**Last Updated**: 2025-11-23
 
 ---
 
 ## 📋 Executive Summary
+
+**NEW PRIORITY: EXEC-V2-P0-FIX-S2 (Duplicate Brackets Hotfix)**
+
+Following the live audit (RID: EXEC-V2-LIVE-AUDIT-S2), critical invariant violations identified in BNB testnet case:
+- **INV-1 BROKEN**: 2×SL + 2×TP (instead of 1×SL + 1×TP)
+- **INV-2 BROKEN**: No bracket blocking after ConnectTimeout
+- **INV-5 BROKEN**: ACCOUNT_UPDATE doesn't fetch orders (sl_count=0)
+- **INV-6 BROKEN**: Non-idempotent clientOrderId (timestamp-based)
+- **INV-8 BROKEN**: _has_equivalent_bracket() fails with empty mirror
+
+**Immediate TODO Items**:
+
+- [ ] **TODO: EXEC-V2-P0-FIX-S2** — Implement ConnectTimeout → force snapshot + block brackets
+  - **File**: `apps/reference/domains/execution_position/shadow_execpos/runtime.py::_apply_bracket_plan()`
+  - **Logic**: After `ExecutionResult.success=False` with `error_kind=ADAPTER_ERROR_TIMEOUT`:
+    1. Mark `_last_orders_snapshot_ts[symbol] = 0` (force stale)
+    2. Call `await self._request_orders_snapshot(symbol)`
+    3. Block further bracket actions until snapshot received
+  - **Test**: `tests/domains/execution_position/shadow_execpos/test_execpos_v2_connect_timeout_behavior.py` (5 tests → should pass after fix)
+
+- [ ] **TODO: EXEC-V2-P0-FIX-S2** — Verify ACCOUNT_UPDATE → fetch orders before POSITION_SYNC
+  - **File**: `apps/reference/domains/execution_position/runtime_factory.py::on_account_update()`
+  - **Logic**: Ensure `_sync_orders_and_trigger_brackets()` is called (fix from S21)
+  - **Validation**: Check if S21 fix already deployed; if not, implement
+  - **Test**: Verify ORDERS_SNAPSHOT event logged before POSITION_SYNC
+
+- [ ] **TODO: EXEC-V2-P0-FIX-S2** — Deterministic clientOrderId for idempotency
+  - **File**: `apps/reference/domains/execution_position/shadow_execpos/runtime.py::_apply_bracket_plan()`
+  - **OLD**: `client_order_id = f"{symbol}_{action.action_type}_{int(time.time() * 1000)}"`
+  - **NEW**: `client_order_id = f"{symbol}_{position.side}_{action.action_type}_{int(position.avg_entry_price * 100)}"`
+  - **Why**: Same position → same clientOrderId → Binance rejects duplicates
+  - **Test**: `tests/domains/execution_position/shadow_execpos/test_execpos_v2_duplicate_brackets_live_like.py::test_duplicate_brackets_when_orders_exist_but_mirror_empty`
+
+- [ ] **TODO: EXEC-V2-P0-FIX-S2** — Normalize qty/price in _has_equivalent_bracket()
+  - **File**: `apps/reference/domains/execution_position/shadow_execpos/bracket_service.py::_has_equivalent_bracket()`
+  - **Issue**: Decimal("10.0") vs Decimal("10") comparison fails
+  - **Fix**: Apply same normalization (step_size/tick_size) to both action.qty and leg.order.qty before comparison
+  - **Test**: `tests/domains/execution_position/shadow_execpos/test_execpos_v2_duplicate_brackets_live_like.py` (precision mismatch tests)
+
+- [ ] **TODO: EXEC-V2-P0-FIX-S2** — Add "unknown state" to snapshot freshness logic
+  - **File**: `apps/reference/domains/execution_position/shadow_execpos/runtime.py`
+  - **NEW STATE**: `_orders_snapshot_state: Dict[str, Literal["FRESH", "STALE", "UNKNOWN"]]`
+  - **Logic**:
+    - After ConnectTimeout: set state to "UNKNOWN"
+    - After successful ORDERS_SNAPSHOT: set state to "FRESH"
+    - Block `_evaluate_brackets()` if state != "FRESH"
+  - **Test**: `tests/domains/execution_position/shadow_execpos/test_execpos_v2_connect_timeout_behavior.py::test_timeout_should_block_subsequent_bracket_eval__audit`
+
+**Audit Artifacts**:
+- `docs/execution_position/EXEC_V2_LIVE_AUDIT_S2.md` (990 lines)
+- `tests/domains/execution_position/shadow_execpos/test_execpos_v2_connect_timeout_behavior.py` (420 lines, 5 tests)
+- `tests/domains/execution_position/shadow_execpos/test_execpos_v2_duplicate_brackets_live_like.py` (520 lines, 10 tests)
+
+**Target**: Zero duplicate SL/TP in testnet after fixes
+
+---
+
+## Planned Pack: OCO-STABILIZE-R2 (post-audit)
+
+> **PACK: OCO-STABILIZE-R2 — Implementation of tests and fixes from OCO-AUDIT-R1**
+>
+> - Implement Aggregated OCO test suite designed in `docs/audit/OCO_AUDIT_R1D_TESTPLAN.md`:
+>   - `tests/domains/execution_position/test_agg_oco_size_sync.py`
+>   - `tests/domains/execution_position/test_agg_oco_races_close_and_reopen.py`
+>   - `tests/domains/execution_position/test_agg_oco_timeout_and_snapshot_state.py`
+> - Enforce TP/SL size and lifecycle invariants (R1-B-INV-*) in `ExecPosRuntimeV2` + `BracketService`.
+> - Address race-condition patterns (R1-C-RISK-*) with explicit contracts and updated specs:
+>   - `apps/reference/domains/execution_position/docs/EXEC_POS_BRACKETS_CONTRACT.md`
+>   - `docs/EXEC_POS_V2_RUNTIME_SPEC.md`
+
+---
+
+**NEW PRIORITY: EXEC-V2-P0-FIX-NET-S3 (Async/Network Hotfix)**
+
+Following the async/network audit (RID: EXEC-V2-NET-ASYNC-AUDIT-S3), critical async architecture and network issues identified:
+- **Event loop conflicts**: asyncio.run() in callbacks → nested loops
+- **No retry logic**: PLACE_SL/TP fails on single timeout (40s latency for SL+TP sequential)
+- **Undefined variables**: 6 instances of `client_order_id` → NameError if error handlers triggered
+- **No connection pooling**: New SSL handshake per httpx request (~100ms overhead)
+
+**Immediate TODO Items**:
+
+**P0 (Critical Fixes)**:
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Fix undefined `client_order_id` in error handlers
+  - **File**: `apps/reference/domains/execution_position/binance_execution_adapter.py`
+  - **Locations**: L2138, L2151, L2164, L2177, L2191, L2204 (_handle_bracket_error method)
+  - **Logic**: Add `client_order_id = idempotent_key or params.get("newClientOrderId", "unknown")` before error handler blocks
+  - **Severity**: ❌ **CRITICAL** (NameError if bracket error handlers triggered)
+  - **Test**: Verify no NameError in error logs after bracket errors (-2021, -4024, etc.)
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Replace asyncio.run() with proper event loop scheduling
+  - **File**: `apps/reference/domains/execution_position/runtime_factory.py`
+  - **Locations**: L104, L143, L177, L238 (on_trade_executed, on_order_state_changed, on_account_update callbacks)
+  - **OLD**: `asyncio.run(self.runtime.handle(runtime_event))` → creates NEW event loop
+  - **NEW**: Option A: `asyncio.run_coroutine_threadsafe(coro, self.runtime.loop)` (if runtime has loop ref)
+  -         Option B: Queue events for main loop processing (event queue pattern)
+  - **Why**: Current pattern creates nested event loops → instability, potential deadlocks
+  - **Test**: Verify single event loop during runtime (no "RuntimeError: This event loop is already running")
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Add retry logic for PLACE_SL/TP orders
+  - **File**: `apps/reference/domains/execution_position/binance_execution_adapter.py::_place_binance_order_async()`
+  - **Pattern**: Similar to `get_open_orders()` retry @ L1344-1462
+  - **Logic**:
+    ```python
+    max_attempts = 3  # From config
+    backoff_delays = [200, 500, 1000]  # ms
+    for attempt in range(max_attempts):
+        try:
+            resp = await client.post(...)
+            return resp.json()
+        except (httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(backoff_delays[attempt] / 1000.0)
+                continue
+            else:
+                raise  # Final attempt failed
+    ```
+  - **Test**: `tests/domains/execution_position/adapters/test_binance_adapter_async_connect_timeout.py::test_place_order_no_retry_on_connect_timeout` (should PASS after fix, currently xfail)
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Refactor WebSocket to async task (not thread)
+  - **File**: `apps/reference/domains/execution_position/binance_execution_adapter.py`
+  - **OLD**: `_start_websocket()` creates thread @ L426-438, runs `_websocket_loop()` @ L440-460
+  - **NEW**: WebSocket as async task in main event loop:
+    ```python
+    async def _websocket_task_async(self):
+        while self.ws_running:
+            try:
+                await self._establish_websocket_connection_async()
+            except Exception as e:
+                await asyncio.sleep(self.ws_reconnect_delay)  # Async sleep
+    
+    def _start_websocket(self):
+        asyncio.create_task(self._websocket_task_async())
+    ```
+  - **Why**: Single event loop → no nested loops, proper async/await throughout
+  - **Test**: Verify WebSocket runs in main event loop (no threading.Thread.is_alive() check needed)
+
+**P1 (Medium Priority)**:
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Add httpx.AsyncClient connection pooling
+  - **File**: `apps/reference/domains/execution_position/binance_execution_adapter.py::__init__()`
+  - **Logic**:
+    ```python
+    # Create persistent client with connection pool
+    self._http_client = httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=30),
+        timeout=httpx.Timeout(self._rest_timeout),
+    )
+    
+    # In all REST methods: use self._http_client instead of async with httpx.AsyncClient()
+    resp = await self._http_client.post(url, ...)
+    
+    # Add cleanup in stop():
+    await self._http_client.aclose()
+    ```
+  - **Why**: Reuse SSL connections → reduce ~100ms handshake overhead per request
+  - **Test**: Measure latency reduction for sequential PLACE_SL + PLACE_TP
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Parallel bracket placement (asyncio.gather)
+  - **File**: `apps/reference/domains/execution_position/shadow_execpos/runtime.py::_apply_bracket_plan()`
+  - **OLD**: Sequential `await execute_command(sl)` then `await execute_command(tp)` → 40s if both timeout
+  - **NEW**:
+    ```python
+    place_tasks = []
+    for action in plan.actions:
+        if action.action_type in ("PLACE_SL", "PLACE_TP"):
+            task = self.exec_service.execute_command(cmd)
+            place_tasks.append(task)
+    
+    results = await asyncio.gather(*place_tasks, return_exceptions=True)
+    # → Both timeout in parallel (~20s instead of ~40s)
+    ```
+  - **Test**: `test_execpos_v2_connect_timeout_behavior.py::test_place_order_sequential_timeouts` (should reduce latency)
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Add exponential backoff for failed PLACE requests
+  - **File**: `apps/reference/domains/execution_position/shadow_execpos/runtime.py::_apply_bracket_plan()`
+  - **Logic**: After `ExecutionResult.success=False`, backoff before next action:
+    ```python
+    if result["success"] is False:
+        backoff_ms = min(200 * (2 ** consecutive_failures), 5000)
+        await asyncio.sleep(backoff_ms / 1000.0)
+    ```
+  - **Test**: Verify backoff delays increase after repeated failures
+
+**P2 (Low Priority / Cleanup)**:
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Fix 12 bare `except:` blocks
+  - **Files**: `binance_execution_adapter.py` (9 instances), others (3 instances)
+  - **Logic**: Replace `except:` with `except Exception:` or specific exception types
+  - **Why**: Bare except catches KeyboardInterrupt, SystemExit → prevents graceful shutdown
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Auto-fix 31 lint issues
+  - **Command**: `ruff check --fix apps/reference/domains/execution_position/binance_execution_adapter.py apps/reference/domains/execution_position/shadow_execpos/*.py`
+  - **Issues**: Unused imports (11), f-strings without placeholders (16), unused variables (3), module-level import (1)
+  - **Test**: `ruff check` should show fewer errors after auto-fix
+
+- [ ] **TODO: EXEC-V2-P0-FIX-NET-S3** — Add missing type hints and fix mypy errors
+  - **Files**: All execution_position files
+  - **Command**: `mypy apps/reference/domains/execution_position --install-types --non-interactive`
+  - **Expected**: Missing return types, Any types, Dict vs TypedDict issues
+
+**Audit Artifacts**:
+- `docs/execution_position/EXEC_V2_NET_ASYNC_AUDIT_S3.md` (2500+ lines)
+- `tests/domains/execution_position/adapters/test_binance_adapter_async_connect_timeout.py` (380 lines, 5 tests)
+- `tests/domains/execution_position/shadow_execpos/test_execution_service_connect_timeout_flow.py` (380 lines, 5 tests)
+- Ruff check baseline: 53 errors (6 critical, 12 medium, 35 low)
+
+**Success Metrics**:
+- Zero NameError exceptions from undefined variables
+- Single event loop confirmed (no nested asyncio.run())
+- <1s average latency for REST calls with connection pooling
+- <25s worst-case latency for SL+TP placement (parallel, with retry)
+
+---
 
 Wave 0 addresses **4 critical safety risks** identified in audit:
 1. **Price SSOT fragmentation** → Inconsistent PnL/margin calculations
 2. **Position tracking race conditions** → Data integrity violations
 3. **DR snapshot disabled** → Extended recovery time
 4. **Broad exception handling** → Silent error suppression
+5. **NEW**: Binance timestamp errors → TP/SL order rejection
 
 **Validated Against Code**: ✅ All issues confirmed in `apps/reference/` codebase
 
+- [x] **[EP-CONFIG-SSOT-S1]** Typed Config для execution_position (Pydantic/датакласи, не чіпати рантайм) — ✅ COMPLETE (2025-11-25)
+  - [x] Step 1: Discovery (manage_config.py dataclasses + execution.yaml)
+  - [x] Step 2: Pydantic models (ExecutionPositionConfig, AggregatedOcoConfig, TrailingConfig, CloseConfig)
+  - [x] Step 3: Resolver (resolve_execution_position_config, dual-path fallback)
+  - [x] Step 4: Tests (27/27 passing, 1.26s)
+  - [x] Step 5: Documentation (EP_CONFIG_SSOT_REPORT.md, JOURNAL.md entry)
+  - **Files**: config.py (270 lines), execution_position.py (250 lines), test_execution_position_config.py (460 lines), EP_CONFIG_SSOT_REPORT.md (866 lines)
+  - **Status**: Zero runtime changes, ready for Phase 2 (runtime integration)
+- [x] **[EP-V2-BRACKET-SPAM-FIX-S21]** Fix bracket spam (340 orders for 4 positions) — ✅ COMPLETE (2025-11-23)
+  - **Problem**: ExecPosV2 generated 340 TP/SL orders because sl_count/tp_count always 0 (didn't see existing orders)
+  - **Root Causes**: ACCOUNT_UPDATE triggered brackets but didn't fetch orders, no throttling, repeated spam
+  - **Solution**:
+    - TASK 1: Fetch orders via get_open_orders() + emit ORDERS_SNAPSHOT ✅
+    - TASK 2: BracketService already classifies SL/TP correctly ✅
+    - TASK 3: Add 3s throttle for account_update_sync ✅
+    - TASK 4: Integration tests (pending)
+  - **Files**: runtime_factory.py (2 methods), runtime.py (3 changes)
+  - **Status**: Runtime now sees existing orders and throttles repeated evaluations
+- [x] **[EP-ADAPTER-TIME-SYNC-FIX-S20]** Fix Binance -1021 timestamp errors — ✅ COMPLETE (2025-11-23)
+  - **Problem**: Binance rejected TP/SL orders with -1021 "Timestamp outside recvWindow", causing WATCHDOG_VIOLATION spam
+  - **Root Causes**: recvWindow=1500ms (too small), no startup time sync, broken retry logic, no periodic resync
+  - **Solution**: Increase recvWindow to 5000ms, add startup sync, fix retry, add periodic resync every 5 minutes
+  - **Files**: binance_execution_adapter.py (5 methods modified)
+  - **Status**: TP/SL orders should now pass Binance timestamp validation
+- [x] **[EP-CONFIG-EXECUTION-VALIDATOR-S8]** Fix execution validation to recognize ExecutionPositionConfig V2 — ✅ COMPLETE (2025-11-27)
+  - **Problem**: Validator reports "execution: error – resolve_brackets_config returned source=legacy" despite ExecutionPositionConfig being valid
+  - **Solution**: Update `tools/config_validator_v2.py` to check ExecutionPositionConfig first; downgrade brackets_config.source=legacy to warning (not error) when V2 present
+  - **Files**: config_validator_v2.py (+40 lines), test_execution_validator_v2_simple.py (2 tests)
+  - **Tests**: 58/58 execution tests passing (0.78s)
+  - **Constraint**: Zero changes to domain code (apps/reference/domains/execution_position/**)
+  - **Status**: Validator recognizes ExecutionPositionConfig V2 SSOT, execution: ok when V2 present
+- [x] **[EP-CONFIG-FEATURES-OVERRIDES-S9]** Fix config v2 schema validation (overrides + features domain) — ✅ COMPLETE (2025-11-27)
+  - **Problem 1**: Schema error "None is not of type 'object'" for overrides/modes/instruments (ConfigV2 has Optional[Dict]=None but schema required object)
+  - **Problem 2**: Features error "domains['features'] is missing or empty" (features.yaml exists but loader searches wrong path)
+  - **Solution 1**: Allow null in schema for overrides/modes/instruments (type: ["object", "null"]), remove from required fields
+  - **Solution 2**: Copy config/domains/*.yaml → apps/reference/config/domains/ (7 domain configs including features.yaml)
+  - **Files**: config_v2.schema.json (+6 lines), test_config_v2_overrides_normalization.py (6 tests, 143 lines), test_features_config_v2_minimal.py (6 tests, 130 lines)
+  - **Tests**: 146/146 config tests passing (1.75s), overrides: 6/6, features: 6/6
+  - **Constraint**: Zero changes to execution_position/shadow_execpos domains
+  - **Status**: schema: ok, features: ok, execution: ok — Config validator status: ok 🎯
 - [ ] **TASK-04**: Centralize execution exposure & fallback via `resolve_exposure_policy`; refactor guards/adapters accordingly — PR TBD
 - [ ] **TASK-06**: Freeze SSOT config contract (schema/map/validation/CI) — PR TBD
 - [ ] **TASK-07.2**: Execution_position F1 (brackets resolver) + F2 (exposure TTL) validation hardening — PR TBD
 - [ ] **TASK WAL-1.1**: JSON-safe WAL for position_tracking (sanitize rid/Mock + regression tests) — PR TBD
 - [ ] **TASK WAL-1.2**: AlertManager config hardening for position_tracking (reject mocks, add config tests) — PR TBD
+- [ ] [EP-IDEMPOTENCY-STORE-CLEANUP-B] Evaluate merging `_processed_events` and `_seen_fills` into a unified IdempotencyStore with shared TTL + metrics (follow-up to EP-IDEMPOTENCY-STORE-CLEANUP-A).
+- [ ] [EP-MANAGE-CLOSING-FLAG-RACE-A] Harden ManageFlow closing flag release so delayed ENTRY fills cannot resurrect brackets during CLOSE (PR TBD).
+- [ ] [EP-ORDERS-CONTRACTS-CLIENTID-A] Unify clientOrderId builder/parser + exit classification, adapt ManageFlow/ExecPos/Guardian, add regression tests/docs (PR TBD).
 
 ### Aggregated OCO Track (Wave 0 extension)
 
@@ -91,7 +350,13 @@ Wave 0 addresses **4 critical safety risks** identified in audit:
 - [x] [OCO-11.2] Тести aggregated-only режиму (entry/exit payloads без inline TP/SL, open/scale/partial/full/flip сценарії, baseline watchdog smoke) — ✅ `tests/domains/execution_position/test_contract_aggregated_orders_mode.py`, `tests/units/test_agg_oco_invariants_checker.py`.
 - [x] [OCO-11.3] Aggregated-only mode flag + жорстке вимкнення legacy inline TP/SL (entry payload validation, config gates, XAI warnings при legacy payloads, regression suite updates) — ✅ runtime flag wired + `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_contract_aggregated_orders_mode.py tests/units/test_agg_oco_invariants_checker.py tests/domains/execution_position/test_aggregated_oco_multi_entry_flow.py tests/domains/execution_position/test_aggregated_oco_partial_close_legacy.py tests/domains/execution_position/test_aggregated_oco_scale_in_legacy.py tests/domains/execution_position/test_order_guardian_aggregated_cleanup.py -v`.
 - [x] [OCO-11.4] Watchdog інваріантів (`agg_oco_watchdog.py`, NO_SL/ORPHAN_SL/MULTIPLE_META auto-heal + alerts, integration with ExecPos/Guardian) — ✅ runtime watchdog loop + auto-heal, config gates + `.venv/Scripts/Activate.ps1; pytest tests/units/test_agg_oco_invariants_checker.py tests/units/test_agg_oco_watchdog.py -v` + `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_watchdog_runtime.py -v`.
+- [x] [EP-WATCHDOG-GRACE-PERIOD-A] Add grace-period suspicion map + config/test coverage for aggregated watchdog (ExecPosFSM state machine, runtime grace tests, config manifests) — PR TBD.
 - [x] [OCO-11.6] Restore watchdog-driven `EVT:TRADE_EXECUTED` delivery to ExecPosFSM (RID OCO-11.6_TRADE_EXECUTED_EMIT_FIX) — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_watchdog_emit_trade_executed.py tests/domains/execution_position/test_agg_oco_watchdog_runtime.py -v`.
+- [ ] [EP-FIX-NO-SL-AUTOHEAL-REMOVE] Clean up deprecated `_heal_no_sl_for_open_position` after monitor-only rollout (follow-up to EP-FIX-NO-SL-AUTOHEAL-KILL).
+- [ ] [EP-FIX-ENTRY-PRICE-FALLBACK-B / EVENT ENRICHMENT] Ensure TRADE_EXECUTED events always carry entry_price and are idempotent by orderId; extend enrichment/idempotency guards to reduce missing-price brackets.
+- [ ] [EP-FIX-TRADE-EXECUTED-IDEMPOTENT-B] Enforce idempotency for TRADE_EXECUTED by orderId/cumQty to avoid duplicate FSM effects.
+- [ ] [EP-FIX-TRADE-EXECUTED-IDEMPOTENT-C] Expand idempotency key to (symbol, side, orderId, tradeId) and purge `_seen_fills` on per-symbol resets; consider dedicated IdempotencyStore.
+- [x] [EP-ASYNC-CLEANUP-SHUTDOWN-B] Add `_shutdown_background_tasks` helper + lifecycle wiring so ExecPosFSM cancels/awaits `_bg_tasks` during shutdown; regression: `tests/domains/execution_position/test_execpos_async_submit.py` (new shutdown coverage) — PR TBD
 - [x] [OCO-11.12A] Жорстка валідація execution/manage режимів (explicit `mode`, aggregated-only safeguards, config manifests, regression tests) — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_manage_config_aggregated_modes.py -v`; повторна валідація 2025-11-18 (auto mode inference + recalc guard).
 - [x] [OCO-11.12B] Observability/state dump: `ExecPosFSM.get_agg_oco_state_snapshot()` regression (`test_agg_oco_state_dump.py`) гарантує, що WS qty, ManageFlow SL/TP, Guardian metadata й watchdog статус зливаються у CLI/WHY snapshot — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_state_dump.py -v`.
 - [x] [OCO-11.12C] Production profile freeze: `docs/PROFILE_aggregated_oco_production.md` + контрактні тести `test_agg_oco_symbol_profiles.py` для SOLUSDT/BNBUSDT (min qty, step size, max position, leverage overrides, watchdog gates, exposure caps) — `.venv/Scripts/Activate.ps1; pytest tests/domains/execution_position/test_agg_oco_symbol_profiles.py -v`.
@@ -1226,7 +1491,7 @@ cp config/aurora/trading.yaml.backup.20251112 config/aurora/trading.yaml
   - [ ] JOURNAL.md: RID entries for each patch
   - [ ] AUDIT_VERIFICATION_LOG.md: Status → RESOLVED
   - [ ] WAVE_0_IMPLEMENTATION_PLAN.md: Final status
-  - [ ] README.md: Wave 0 changes documented
+  - [ ] README.md: Wave 0 changes документed
 
 - [ ] **Runbook created**:
   - [ ] Deployment procedures
@@ -1457,3 +1722,67 @@ cp config/aurora/trading.yaml.backup.20251112 config/aurora/trading.yaml
 ## [Phase 1] Detail mapping for all risk/decision/execution keys in specification.md
 
 Після створення специфікації config v2, деталізувати мапінг для всіх ключів у risk, decision та execution доменах. Доповнити таблицю в `docs/config_v2/specification.md` повним набором прикладів, включаючи edge cases та overrides.
+
+---
+
+##  COMPLETED P0 TASKS (S23-S27)
+
+### EXEC-V2-P0-FIX-LOOP-S5  Event Loop Management Fix
+**Status**:  COMPLETED (2025-11-23 16:10)  
+**Priority**: P0  
+**RID**: EXEC-V2-P0-FIX-LOOP-S5
+
+**Fixed Issues**:
+-  S23: ORDERS_SNAPSHOT timing for bracket evaluation (runtime_factory.py:219-233)
+-  S24: RuntimeEvent dataclass logging (runtime_factory.py:98-115)
+-  S25: Portfolio freshness when positions_last_ts_ms=0 (main.py:134-142)
+-  S26: Portfolio TTL 5s35s (main.py:106)
+-  S27: Event loop lazy attachment with _ensure_loop() (runtime_factory.py:77-145)
+
+**Validation**:
+```
+16:10:21 - attached to running loop <ProactorEventLoop running=True> 
+16:10:01 - [ExecPosV2-S5] ENTRY_INTENT received 
+```
+
+**Tests**: 4/4 passed (test_execpos_v2_facade_loop.py)
+
+---
+
+##  NEW P0 BLOCKER: S28  DecisionMaking Equity Calculation
+
+### TODO: EXEC-V2-P0-FIX-S28  Fix equity=$0 in DecisionMaking position sizing
+**Status**:  TO DO  
+**Priority**: P0 (blocker  all intents rejected)  
+**Assigned**: UNASSIGNED  
+**Estimated**: 1 hour
+
+**Problem**:
+```
+16:10:21 - Portfolio: Equity: 1806.09763780, Positions: 1 
+16:10:21 - Cached equity_free_usdt: 1806.09763780 
+BUT:
+16:10:16 - POSITION_SIZE_CALC: equity=$0, 10%=$0.0 
+16:10:16 - REJECT: position size 0.0 is below minimum 10.0 
+```
+
+DecisionMaking shows **equity=$0** in `POSITION_SIZE_CALC` but portfolio has **$1806.10**. All trade intents rejected due to insufficient size.
+
+**Investigation Plan**:
+- [ ] Step 1: Read decision_making.py around `POSITION_SIZE_CALC` logging
+- [ ] Step 2: Trace equity variable in `_make_decision_for_symbol()` position sizing logic
+- [ ] Step 3: Check if `cached equity_free_usdt: 1806.09763780` is accessed correctly
+- [ ] Step 4: Identify where equity becomes 0 before size calculation
+- [ ] Step 5: Fix equity retrieval/calculation logic
+
+**Acceptance Criteria**:
+- [ ] DecisionMaking uses correct equity ($1806) in POSITION_SIZE_CALC
+- [ ] Trade intents pass minimum size check (>$10)
+- [ ] Orders sent to Binance testnet (verify in logs/WebSocket)
+
+**Links**:
+- File: `apps/reference/domains/decision_making/decision_making.py`
+- Related: S23-S27 (execution pipeline now working, waiting for valid intents)
+- Why-chain: RID=`EXEC-V2-P0-FIX-S28`
+
+---

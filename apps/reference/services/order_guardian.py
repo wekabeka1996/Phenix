@@ -22,6 +22,11 @@ from dataclasses import dataclass, asdict, is_dataclass
 from typing import Dict, Any, List, Optional, Protocol, Union, TypeAlias, Iterable, Set, Sequence, Tuple
 
 from apps.reference.adapters.binance_adapter import BinanceAPIError
+from apps.reference.domains.execution_position.utils import (
+    ClientOrderIntent,
+    ClientOrderIdMeta,
+    parse_client_order_id,
+)
 from decimal import Decimal
 import threading
 
@@ -149,6 +154,9 @@ class AggregatedOcoGuardianConfig:
     enabled: bool = False
     ttl_protect_new_bracket_ms: int = 0
     allow_unprotected_position: bool = False
+    # V2 compatibility mode: disables auto-heal methods (cleanup_orphans, etc.)
+    # Set to True when using with ExecPosRuntimeV2 (observe-only philosophy)
+    v2_compat_mode: bool = False
 
 
 class OrderGuardian:
@@ -315,7 +323,13 @@ class OrderGuardian:
         grouped: Dict[str, Dict[str, Any]] = {}
         for _raw_order, normalized in candidates:
             client_id = normalized.get("clientOrderId") or ""
-            base_id = self._extract_bracket_base_from_client_id(client_id)
+            meta = None
+            try:
+                meta = parse_client_order_id(client_id)
+            except Exception:
+                meta = None
+            base_id = self._extract_bracket_base_from_client_meta(
+                meta, client_id)
             if not base_id:
                 continue
 
@@ -324,10 +338,9 @@ class OrderGuardian:
                 {"base_id": base_id, "sl": None, "tp": None, "ts": 0.0},
             )
 
-            client_id_lower = str(client_id).lower()
-            if client_id_lower.endswith("_sl"):
+            if meta and meta.intent == ClientOrderIntent.STOP_LOSS:
                 entry["sl"] = normalized
-            elif client_id_lower.endswith("_tp"):
+            elif meta and meta.intent == ClientOrderIntent.TAKE_PROFIT:
                 entry["tp"] = normalized
             else:
                 continue
@@ -411,7 +424,14 @@ class OrderGuardian:
         agg_oco_logger.info("Aggregated OCO guardian decision", extra=extra)
 
     @staticmethod
-    def _extract_bracket_base_from_client_id(client_order_id: Optional[str]) -> Optional[str]:
+    def _extract_bracket_base_from_client_meta(
+        client_meta: Optional[ClientOrderIdMeta],
+        client_order_id: Optional[str],
+    ) -> Optional[str]:
+        if client_meta:
+            bundle = client_meta.bundle_key()
+            if bundle:
+                return bundle
         if not client_order_id:
             return None
         cid = str(client_order_id)
@@ -449,11 +469,29 @@ class OrderGuardian:
         open_orders: Sequence[Any],
         now_ts: Optional[float] = None,
     ) -> int:
-        """Perform aggregated cleanup ensuring a single bracket set per (symbol, side)."""
+        """
+        DEPRECATED: Auto-heal method, not compatible with V2 runtime.
+
+        Perform aggregated cleanup ensuring a single bracket set per (symbol, side).
+
+        WARNING: This method autonomously cancels brackets, which conflicts with
+        ExecPosRuntimeV2's observe-only philosophy. V2 uses BracketService.evaluate()
+        to recommend actions, which runtime explicitly executes.
+
+        Status: LEGACY_ONLY (for old FSM compatibility).
+        Use v2_compat_mode=True to disable this method.
+        """
 
         cfg = self._aggregated_oco_cfg
         if not cfg.enabled:
             return 0
+
+        # V2 compatibility guard
+        if cfg.v2_compat_mode:
+            raise RuntimeError(
+                "ensure_single_bracket_set_for_position() disabled in V2 compat mode. "
+                "Use BracketService.evaluate() for bracket planning instead."
+            )
 
         norm_side = self._normalize_side(side)
         key = self._symbol_side_key(symbol, norm_side)
@@ -736,7 +774,15 @@ class OrderGuardian:
         reason: str,
         normalized: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Best-effort cancellation helper that tolerates missing adapter/state."""
+        """
+        INTERNAL HELPER: Used by auto-heal methods (DEPRECATED in V2).
+
+        Best-effort cancellation helper that tolerates missing adapter/state.
+
+        NOTE: This helper is called by cleanup_orphans(), cleanup_before_close(), etc.,
+        which are all deprecated auto-heal methods. In V2 runtime, cancellations
+        should be recommended by services (CloseFlowService) and executed by runtime.
+        """
 
         normalized_payload = normalized or self._normalize_order_payload(order)
         if not normalized_payload:
@@ -1408,13 +1454,29 @@ class OrderGuardian:
         parent_order_id: Optional[str] = None
     ) -> int:
         """
+        DEPRECATED: Auto-heal method, not compatible with V2 runtime.
+
         Cancel only our brackets tied to entry or all ours for symbol.
+
+        WARNING: This method autonomously cancels brackets without runtime approval,
+        which conflicts with ExecPosRuntimeV2's observe-only philosophy.
+        V2 uses CloseFlowService.evaluate_close() to recommend CANCEL actions.
+
+        Status: LEGACY_ONLY (for old FSM compatibility).
+        Use v2_compat_mode=True to disable this method.
 
         Returns count of cancelled orders.
         """
         if not self.adapter:
             LOG.debug("No adapter available, skipping cleanup_before_close")
             return 0
+
+        # V2 compatibility guard
+        if self._aggregated_oco_cfg.v2_compat_mode:
+            raise RuntimeError(
+                "cleanup_before_close() disabled in V2 compat mode. "
+                "Use CloseFlowService.evaluate_close() for close planning instead."
+            )
 
         cancelled_count = 0
 
@@ -1521,7 +1583,15 @@ class OrderGuardian:
         batch_limit: int = 50
     ) -> int:
         """
+        DEPRECATED: Auto-heal method, not compatible with V2 runtime.
+
         Cancel our bracket orders when positionAmt==0 or parent missing.
+
+        WARNING: This method autonomously cancels brackets based on position state,
+        which conflicts with ExecPosRuntimeV2's observe-only philosophy.
+
+        Status: LEGACY_ONLY (for old FSM compatibility).
+        Use v2_compat_mode=True to disable this method.
 
         hard=True cancels all our reduceOnly/closePosition brackets regardless.
         Returns count of cancelled orders.
@@ -1529,6 +1599,13 @@ class OrderGuardian:
         if not self.adapter:
             LOG.debug("No adapter available, skipping cleanup_orphans")
             return 0
+
+        # V2 compatibility guard
+        if self._aggregated_oco_cfg.v2_compat_mode:
+            raise RuntimeError(
+                "cleanup_orphans() disabled in V2 compat mode. "
+                "Use BracketService.evaluate() for bracket planning instead."
+            )
 
         cancelled_count = 0
         cycle_symbol = (symbol or "ALL").upper()
@@ -1738,8 +1815,16 @@ class OrderGuardian:
         batch_limit: int = 50,
     ) -> int:
         """
+        DEPRECATED: Auto-heal method, not compatible with V2 runtime.
+
         Cancel our bracket orders for a symbol that are tied to a different
         parent entry than the currently active one (keep_parent_order_id).
+
+        WARNING: This method autonomously cancels brackets, which conflicts
+        with ExecPosRuntimeV2's observe-only philosophy.
+
+        Status: LEGACY_ONLY (for old FSM compatibility).
+        Use v2_compat_mode=True to disable this method.
 
         Unlike cleanup_orphans(), this runs even when a position is open.
 
@@ -1749,6 +1834,13 @@ class OrderGuardian:
             LOG.debug(
                 "No adapter available, skipping cleanup_other_brackets_for_symbol")
             return 0
+
+        # V2 compatibility guard
+        if self._aggregated_oco_cfg.v2_compat_mode:
+            raise RuntimeError(
+                "cleanup_other_brackets_for_symbol() disabled in V2 compat mode. "
+                "Use BracketService.evaluate() for bracket planning instead."
+            )
 
         cancelled_count = 0
         cancelled_this_batch = 0
@@ -1916,13 +2008,29 @@ class OrderGuardian:
 
     async def reconcile_symbol(self, symbol: str, rid: Optional[str] = None) -> None:
         """
+        DEPRECATED: Auto-heal method, not compatible with V2 runtime.
+
         Reconcile orders for symbol: cancel orphaned brackets if no position.
+
+        WARNING: This method performs autonomous reconciliation and may cancel brackets,
+        which conflicts with ExecPosRuntimeV2's event-driven architecture.
+        V2 uses WAL replay + explicit runtime decisions instead.
+
+        Status: LEGACY_ONLY (for old FSM compatibility).
+        Use v2_compat_mode=True to disable this method.
 
         Called on DEC:CLOSE execution and FLAT state transitions.
         """
         if not self.adapter:
             LOG.debug("No adapter available, skipping reconcile_symbol")
             return
+
+        # V2 compatibility guard
+        if self._aggregated_oco_cfg.v2_compat_mode:
+            raise RuntimeError(
+                "reconcile_symbol() disabled in V2 compat mode. "
+                "Use WAL replay + BracketService.evaluate() instead."
+            )
 
         try:
             # Check if position exists
@@ -1990,7 +2098,24 @@ class OrderGuardian:
     # ---- Lifecycle ----
 
     async def start(self):
-        """Start background polling if enabled"""
+        """
+        DEPRECATED: Auto-heal background loop, not compatible with V2 runtime.
+
+        Start background polling if enabled.
+
+        WARNING: This spawns _poll_loop() which autonomously reconciles/cleans brackets,
+        conflicting with ExecPosRuntimeV2's event-driven architecture.
+        V2 uses explicit runtime decisions triggered by WAL events instead.
+
+        Status: LEGACY_ONLY (for old FSM compatibility).
+        Use v2_compat_mode=True to disable background polling.
+        """
+        # V2 compatibility guard
+        if self._aggregated_oco_cfg.v2_compat_mode:
+            LOG.info(
+                "[GUARD] start() disabled in V2 compat mode, skipping background poll loop")
+            return
+
         if self.poll_interval_ms > 0 and self._poller_task is None:
             await self._startup_relink_known_symbols()
 
@@ -2016,7 +2141,18 @@ class OrderGuardian:
                 pass
 
     async def _poll_loop(self):
-        """Background polling loop (if enabled)"""
+        """
+        DEPRECATED: Auto-heal background loop, not compatible with V2 runtime.
+
+        Background polling loop (if enabled).
+
+        WARNING: This loop autonomously calls cleanup_orphans() and reconcile_symbol(),
+        which conflicts with ExecPosRuntimeV2's event-driven philosophy.
+        V2 uses WAL events + runtime decisions instead of background polling.
+
+        Status: LEGACY_ONLY (for old FSM compatibility).
+        Should never run when v2_compat_mode=True (blocked by start()).
+        """
         LOG.info("[GUARD] OrderGuardian poll loop started", extra={
             "event_type": "poll_loop_start",
             "poll_interval_ms": self.poll_interval_ms

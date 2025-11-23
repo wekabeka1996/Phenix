@@ -1,10 +1,17 @@
 {
   "status": "ok",
   "domains": {
-    "execution": {
+    "schema": {
       "status": "ok",
       "errors": [],
       "warnings": []
+    },
+    "execution": {
+      "status": "ok",
+      "errors": [],
+      "warnings": [
+        "positions_stale_ttl_sec equals default 5s; consider setting explicit v2 value"
+      ]
     },
     "risk": {
       "status": "ok",
@@ -17,6 +24,11 @@
       "warnings": []
     },
     "decision": {
+      "status": "ok",
+      "errors": [],
+      "warnings": []
+    },
+    "features": {
       "status": "ok",
       "errors": [],
       "warnings": []

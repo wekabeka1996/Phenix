@@ -28,7 +28,7 @@ def mock_config():
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
         "account_observer": {"poll_interval": 0.1},
@@ -132,7 +132,7 @@ def test_init_missing_credentials(mock_fsm):
         "binance_api": {
             "testnet": {
                 # Missing api_key and api_secret
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
         "account_observer": {"poll_interval": 30},

@@ -1,0 +1,78 @@
+# Execution Position Config - SAFE Profile
+#
+# Conservative settings for risk-averse trading:
+# - Wider stop-loss (1.5%) to avoid premature exits
+# - Moderate take-profit (1.5x risk-reward)
+# - Tight trailing stop (80 bps) for protection
+# - Strict bracket enforcement (no unprotected positions)
+#
+# Use case: Capital preservation, low volatility markets, learning phase
+
+manage:
+  brackets:
+    aggregated_oco:
+      enabled: true
+      aggregated_only_mode: false
+
+      # Conservative stop-loss: 1.5% from entry
+      sl_pct: 0.015
+
+      # Moderate risk-reward: 1.5x (1.5% SL → 2.25% TP)
+      tp_rr: 1.5
+
+      # Recalculation policy: cautious (avoid changing brackets mid-trade)
+      recalc_on_scale_in: false
+      recalc_on_partial_close: false
+
+      # Protection: NEW bracket must be placed within 5 seconds
+      ttl_protect_new_bracket_ms: 5000
+
+      # Strict: Never allow positions without brackets
+      allow_unprotected_position: false
+
+      # Conservative: Max 1 SL leg, 1 TP leg (no ladder)
+      max_sl_legs: 1
+      max_tp_legs: 1
+
+      # Watchdog: Strict monitoring
+      watchdog:
+        enabled: true
+        interval_sec: 15
+        auto_heal_orphans: true
+        grace:
+          enabled: true
+          period_sec: 5.0
+          kinds:
+            - NO_SL_FOR_OPEN_POSITION
+            - ORPHAN_SL
+
+  trailing:
+    enabled: true
+
+    # Tight trailing stop: 80 bps (0.8%)
+    trail_distance_bps: 80.0
+
+    # Activate after 100 bps profit (1.0%)
+    activate_after_bps: 100.0
+
+    # Move to breakeven after 1x risk-reward
+    breakeven_rr: 1.0
+
+    # Moderate time exit: 2 hours (7200 sec)
+    hard_time_exit_sec: 7200.0
+
+    # Conservative trailing params
+    activation_profit_atr_k: 1.5
+    cooldown_sec: 30.0
+    step_bps: 10.0
+
+  close:
+    # Moderate max hold time: 4 hours (14400 sec)
+    max_hold_time_sec: 14400
+
+    # Strict close policy: require explicit reason
+    reason_policy: strict
+
+    # Allow both time and profit exits
+    allow_time_exit: true
+    allow_profit_exit: true

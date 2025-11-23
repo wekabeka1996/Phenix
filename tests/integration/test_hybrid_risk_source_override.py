@@ -87,8 +87,8 @@ binance_api:
   testnet:
     api_key: "${BINANCE_TESTNET_API_KEY}"
     api_secret: "${BINANCE_TESTNET_API_SECRET}"
-    rest_url: "https://testnet.binancefuture.com"
-    ws_url: "wss://stream.testnet.binancefuture.com"
+    rest_url: "https://demo-fapi.binance.com"
+    ws_url: "wss://stream.demo-fapi.binance.com"
 """
     config = config_loader_with_mock_env(env_vars, trading_yaml_content)
 
@@ -130,8 +130,8 @@ binance_api:
   testnet:
     api_key: "${BINANCE_TESTNET_API_KEY}"
     api_secret: "${BINANCE_TESTNET_API_SECRET}"
-    rest_url: "https://testnet.binancefuture.com"
-    ws_url: "wss://stream.testnet.binancefuture.com"
+    rest_url: "https://demo-fapi.binance.com"
+    ws_url: "wss://stream.demo-fapi.binance.com"
 """
     with caplog.at_level(logging.WARNING):
         config = config_loader_with_mock_env(env_vars, trading_yaml_content)
@@ -181,8 +181,8 @@ binance_api:
   testnet:
     api_key: "${BINANCE_TESTNET_API_KEY}"
     api_secret: "${BINANCE_TESTNET_API_SECRET}"
-    rest_url: "https://testnet.binancefuture.com"
-    ws_url: "wss://stream.testnet.binancefuture.com"
+    rest_url: "https://demo-fapi.binance.com"
+    ws_url: "wss://stream.demo-fapi.binance.com"
 """
     with caplog.at_level(logging.WARNING):
         config = config_loader_with_mock_env(env_vars, trading_yaml_content)

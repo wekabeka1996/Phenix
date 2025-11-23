@@ -116,6 +116,86 @@ class ExchangePosition:
             "updateTime": self.update_time_ms,
         }
 
+    @classmethod
+    def from_payload(cls, payload: Dict[str, Any]) -> "ExchangePosition":
+        """Create ExchangePosition from heterogeneous adapter payloads with alias handling."""
+
+        data = dict(payload or {})
+
+        def pick(*keys: str, default: Any = None) -> Any:
+            for key in keys:
+                if key in data and data[key] is not None:
+                    return data[key]
+            return default
+
+        def as_str(value: Any, fallback: str = "0") -> str:
+            if value is None:
+                return fallback
+            return str(value)
+
+        def as_int(value: Any, fallback: int = 0) -> int:
+            try:
+                return int(float(value))
+            except Exception:
+                return fallback
+
+        def as_float(value: Any, fallback: float = 0.0) -> float:
+            try:
+                return float(value)
+            except Exception:
+                return fallback
+
+        symbol = as_str(pick("symbol"), "")
+        position_side = as_str(pick("position_side", "positionSide"), "BOTH")
+        position_amount = as_str(
+            pick(
+                "position_amount",
+                "positionAmt",
+                "quantity",
+                "qty",
+                "amount",
+            ),
+            "0",
+        )
+        side = pick("side")
+        if not side:
+            try:
+                amt_val = float(position_amount)
+                if amt_val > 0:
+                    side = "LONG"
+                elif amt_val < 0:
+                    side = "SHORT"
+                else:
+                    side = "LONG" if position_side.upper() != "SHORT" else "SHORT"
+            except Exception:
+                side = "LONG" if position_side.upper() != "SHORT" else "SHORT"
+        side = str(side or "LONG").upper()
+
+        entry_price = as_str(pick("entry_price", "entryPrice"), "0")
+        mark_price = as_str(pick("mark_price", "markPrice"), "0")
+        unrealized_profit = as_str(
+            pick("unrealized_profit", "unRealizedProfit", "unrealizedPnl"),
+            "0",
+        )
+        leverage = as_int(pick("leverage"), 0)
+        margin_type = as_str(pick("margin_type", "marginType"), "cross")
+        isolated_margin = as_float(pick("isolated_margin", "isolatedMargin"), 0.0)
+        update_time_ms = as_int(pick("update_time_ms", "updateTime", "update_time"), 0)
+
+        return cls(
+            symbol=symbol,
+            position_side=position_side,
+            side=side,
+            position_amount=position_amount,
+            entry_price=entry_price,
+            mark_price=mark_price,
+            unrealized_profit=unrealized_profit,
+            leverage=leverage,
+            margin_type=margin_type,
+            isolated_margin=isolated_margin,
+            update_time_ms=update_time_ms,
+        )
+
 
 class AbstractExchangeAdapter(ABC):
     """

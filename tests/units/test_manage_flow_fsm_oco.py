@@ -19,7 +19,7 @@ import os
 
 # Load module directly to avoid ambiguous imports
 spec = importlib.util.spec_from_file_location(
-    "apps.reference.domains.execution_position.fsm_manage",
+    "apps.reference.domains.execution_position.legacy.fsm_manage",
     os.path.join(
         os.path.dirname(__file__),
         "..",
@@ -383,3 +383,4 @@ if __name__ == "__main__":
     print("✓ Test 7 passed: Integration scenario")
 
     print("\n✅ All OCO tests passed!")
+

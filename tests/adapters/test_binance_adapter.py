@@ -9,7 +9,7 @@ class TestBinanceAdapterQuantizeQuantity:
     def adapter(self):
         # Mock adapter without real session
         adapter = BinanceAdapter(
-            "key", "secret", "https://testnet.binancefuture.com")
+            "key", "secret", "https://demo-fapi.binance.com")
         adapter._get_session = AsyncMock()
         adapter.get_exchange_info = AsyncMock()
         adapter.get_mark_price = AsyncMock()
@@ -134,7 +134,7 @@ class TestBinanceAdapterRequest:
 
         with patch("httpx.AsyncClient", return_value=mock_session):
             adapter = BinanceAdapter(
-                "key", "secret", "https://testnet.binancefuture.com"
+                "key", "secret", "https://demo-fapi.binance.com"
             )
             # Override session with our isolated mock
             adapter.session = mock_session

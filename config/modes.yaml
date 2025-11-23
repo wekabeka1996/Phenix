@@ -22,16 +22,6 @@ profiles:
       execution_position: live
       audit_trail: live
 
-      full_testnet:
-    trading_mode: full_testnet
-    domains:
-      market_data: testnet
-      feature_engineering: testnet
-      decision_making: testnet
-      risk_management: testnet
-      execution_position: testnet
-      audit_trail: testnet
-
   full_testnet:
     trading_mode: full_testnet
     domains:
@@ -41,3 +31,6 @@ profiles:
       risk_management: testnet
       execution_position: testnet
       audit_trail: testnet
+
+# Active profile (used when AURORA_TRADING_MODE env var not set)
+default_profile: shadow_live

@@ -1,0 +1,79 @@
+# Execution Position Config - MODERATE Profile
+#
+# Balanced settings for typical trading:
+# - Standard stop-loss (2%) based on market volatility
+# - Good risk-reward (2.0x) for sustainable edge
+# - Moderate trailing (100 bps) balancing protection vs. profit capture
+# - Dynamic bracket recalculation on scale-in
+#
+# Use case: Standard production trading, balanced risk/reward, most instruments
+
+manage:
+  brackets:
+    aggregated_oco:
+      enabled: true
+      aggregated_only_mode: false
+
+      # Standard stop-loss: 2% from entry
+      sl_pct: 0.02
+
+      # Good risk-reward: 2.0x (2% SL → 4% TP)
+      tp_rr: 2.0
+
+      # Recalculation policy: dynamic on scale-in (adjust levels for new position size)
+      recalc_on_scale_in: true
+      recalc_on_partial_close: false
+
+      # Protection: NEW bracket must be placed within 3 seconds
+      ttl_protect_new_bracket_ms: 3000
+
+      # Allow brief unprotected window (for fast entries)
+      allow_unprotected_position: false
+
+      # Moderate: Max 2 SL legs, 3 TP legs (basic ladder)
+      max_sl_legs: 2
+      max_tp_legs: 3
+
+      # Watchdog: Balanced monitoring
+      watchdog:
+        enabled: true
+        interval_sec: 10
+        auto_heal_orphans: true
+        grace:
+          enabled: true
+          period_sec: 3.0
+          kinds:
+            - NO_SL_FOR_OPEN_POSITION
+            - ORPHAN_SL
+            - TOO_MANY_SL
+
+  trailing:
+    enabled: true
+
+    # Moderate trailing stop: 100 bps (1.0%)
+    trail_distance_bps: 100.0
+
+    # Activate after 50 bps profit (0.5%)
+    activate_after_bps: 50.0
+
+    # Move to breakeven after 1.2x risk-reward
+    breakeven_rr: 1.2
+
+    # Balanced time exit: 3 hours (10800 sec)
+    hard_time_exit_sec: 10800.0
+
+    # Moderate trailing params
+    activation_profit_atr_k: 1.0
+    cooldown_sec: 15.0
+    step_bps: 5.0
+
+  close:
+    # Standard max hold time: 6 hours (21600 sec)
+    max_hold_time_sec: 21600
+
+    # Default close policy: flexible
+    reason_policy: default
+
+    # Allow both time and profit exits
+    allow_time_exit: true
+    allow_profit_exit: true

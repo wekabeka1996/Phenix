@@ -131,6 +131,8 @@ class TestExecutionManageV2:
         assert manage_cfg.watchdog.ack_ttl_ms == 123
         assert manage_cfg.watchdog.fill_ttl_ms == 999
         assert manage_cfg.watchdog.source == "config_v2"
+        assert manage_cfg.watchdog.timeouts.ack_ttl_ms == 123
+        assert manage_cfg.watchdog.timeouts.source == "config_v2"
 
     def test_v2_fallback_on_error(self):
         """Test fallback to legacy when v2 config is invalid."""

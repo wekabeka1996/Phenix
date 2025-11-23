@@ -19,7 +19,7 @@ class TestAccountObserver:
                 "testnet": {
                     "api_key": "test_key",
                     "api_secret": "test_secret",
-                    "rest_url": "https://testnet.binancefuture.com",
+                    "rest_url": "https://demo-fapi.binance.com",
                 }
             },
             "account_observer": {"poll_interval": 5, "symbols": ["BTCUSDT", "ETHUSDT"]},
@@ -43,7 +43,7 @@ class TestAccountObserver:
             "binance_api": {
                 "testnet": {
                     "api_secret": "secret",
-                    "rest_url": "https://testnet.binancefuture.com",
+                    "rest_url": "https://demo-fapi.binance.com",
                     # Missing api_key
                 }
             },
@@ -72,7 +72,7 @@ def mock_config_extended():
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
         "account_observer": {"poll_interval": 0.1},

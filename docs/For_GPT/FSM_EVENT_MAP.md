@@ -13,20 +13,40 @@
 ======================================================================
 2) ПОЛНЫЙ ПЕРЕЧЕНЬ ВСЕХ EVENT-TYPES
 ======================================================================
-**Входные (input):**
-- `EVT:FEATURES_CALCULATED`
-- `EVT:DECISION_SIGNAL`
-- `EVT:RISK_ASSESSMENT_COMPLETED`
+**Входные (input) - Listeners in `fsm.py`:**
+- `EVT:PORTFOLIO_STATE_UPDATED` (Portfolio/Exposure updates)
+- `EVT:ORDER_ACK` (Order acknowledgement)
+- `EVT:TRADE_EXECUTED` (Unified fill event)
+- `EVT:ORDER_FILL` (Legacy fill event)
+- `EVT:FILL` (Legacy fill event)
+- `EVT:ORDER_STATE_CHANGED` (Watchdog/Adapter updates)
+- `EVT:ORDER_CANCELLED`
+- `EVT:ORDER_REJECTED`
+- `EVT:SYMBOL_TIDY`
+- `EVT:ACCOUNT_UPDATE_RECEIVED`
 - `CMD:OPEN`
-- `ACK`
-- `FILL`
-- `EVT:TP_FILLED`
-- `EVT:SL_FILLED`
-
-**Выходные (output):**
-- `EVT:POSITION_OPENED`
 - `CMD:CLOSE`
-- `EVT:CLOSED`
+
+**Входные (input) - Handled in `fsm_manage.py` (via router):**
+- `EVT:PARTIAL_FILL`
+- `EVT:ORDER_UPDATED`
+- `UPD:POSITION_STATE`
+
+**Выходные (output) - Emitted by FSM:**
+- `DEC:PLACE_ORDER`
+- `DEC:CANCEL_ORDER`
+- `DEC:CLOSE`
+- `DEC:OPEN` (via Adapter)
+- `EVT:EXPOSURE_SUMMARY_UPDATED`
+- `EVT:PENDING_EXPOSURE_EXPIRED`
+- `ERR:OPEN`
+- `ERR:FATAL_CONFIG_MISMATCH`
+
+**Logical/Derived Events (Internal Logic):**
+- `EVT:TP_FILLED` (Derived from `EVT:TRADE_EXECUTED` / `EVT:ORDER_UPDATED`)
+- `EVT:SL_FILLED` (Derived from `EVT:TRADE_EXECUTED` / `EVT:ORDER_UPDATED`)
+- `EVT:POSITION_OPENED` (State transition to MANAGING)
+- `EVT:CLOSED` (State transition to CLOSED)
 
 ======================================================================
 3) ТАБЛИЦА ПЕРЕХОДОВ FSM (ОСНОВНОЙ РАЗДЕЛ)
@@ -34,54 +54,53 @@
 ##### OPENING
 | STATE   | INPUT EVENT | ACTIONS / OUTPUT EVENTS                | NEXT STATE |
 |---------|-------------|----------------------------------------|------------|
-| OPENING | CMD:OPEN    | отправить `CMD:OPEN` на биржу          | OPENING    |
-| OPENING | ACK         | зафиксировать подтверждение            | OPENING    |
-| OPENING | FILL        | `EVT:POSITION_OPENED`                  | OPENED     |
+| OPENING | CMD:OPEN    | отправить `DEC:OPEN` (via Adapter)     | OPENING    |
+| OPENING | EVT:ORDER_ACK | зафиксировать подтверждение          | OPENING    |
+| OPENING | EVT:TRADE_EXECUTED | `EVT:POSITION_OPENED` (logical) | OPENED     |
 
 ##### OPENED
 | STATE  | INPUT EVENT | ACTIONS / OUTPUT EVENTS | NEXT STATE |
 |--------|-------------|-------------------------|------------|
-| OPENED | ACK         | фиксировать состояние   | OPENED     |
-| OPENED | FILL        | переход к MANAGING      | MANAGING   |
+| OPENED | EVT:ORDER_ACK | фиксировать состояние | OPENED     |
+| OPENED | EVT:TRADE_EXECUTED | переход к MANAGING | MANAGING   |
 
 ##### MANAGING
 | STATE    | INPUT EVENT                   | ACTIONS / OUTPUT EVENTS              | NEXT STATE         |
 |----------|-------------------------------|--------------------------------------|--------------------|
-| MANAGING  | EVT:FEATURES_CALCULATED       | обновить состояние позиции           | MANAGING           |
-| MANAGING  | EVT:DECISION_SIGNAL           | выполнить проверку exit intent       | MANAGING / CLOSING  |
-| MANAGING  | EVT:RISK_ASSESSMENT_COMPLETED | выполнить контроль risk veto         | MANAGING           |
-| MANAGING  | EVT:TP_FILLED                 | инициировать `CMD:CLOSE` и переход  | CLOSING            |
-| MANAGING  | EVT:SL_FILLED                 | инициировать `CMD:CLOSE` и переход  | CLOSING            |
+| MANAGING  | EVT:PORTFOLIO_STATE_UPDATED   | обновить состояние позиции           | MANAGING           |
+| MANAGING  | EVT:TRADE_EXECUTED            | update position, check TP/SL logic   | MANAGING / CLOSING |
+| MANAGING  | EVT:ORDER_UPDATED             | update bracket status                | MANAGING           |
+| MANAGING  | EVT:TP_FILLED (logical)       | инициировать `DEC:CLOSE` и переход   | CLOSING            |
+| MANAGING  | EVT:SL_FILLED (logical)       | инициировать `DEC:CLOSE` и переход   | CLOSING            |
 
 ##### CLOSING
 | STATE   | INPUT EVENT | ACTIONS / OUTPUT EVENTS               | NEXT STATE |
 |---------|-------------|---------------------------------------|------------|
-| CLOSING | ACK         | подтверждение закрывающих ордеров    | CLOSING    |
-| CLOSING | FILL        | `EVT:CLOSED`                          | CLOSED     |
+| CLOSING | EVT:ORDER_ACK | подтверждение закрывающих ордеров   | CLOSING    |
+| CLOSING | EVT:TRADE_EXECUTED | `EVT:CLOSED` (logical)       | CLOSED     |
 
 ##### CLOSED
 | STATE   | INPUT EVENT           | ACTIONS / OUTPUT EVENTS      | NEXT STATE |
 |---------|-----------------------|------------------------------|------------|
-| CLOSED  | EVT:FEATURES_CALCULATED | готовность к новому циклу    | CLOSED     |
-| CLOSED  | EVT:DECISION_SIGNAL     | старт нового OPENING         | OPENING    |
+| CLOSED  | CMD:OPEN              | старт нового OPENING         | OPENING    |
 
 ======================================================================
 4) КОНТРАКТ ЦЕПОЧКИ СОБЫТИЙ (CANONICAL EVENT FLOW)
 ======================================================================
 - TICK
-- `EVT:FEATURES_CALCULATED`
-- `EVT:DECISION_SIGNAL`
+- `EVT:FEATURES_CALCULATED` (Upstream)
+- `EVT:DECISION_SIGNAL` (Upstream)
 - INTENT_OPEN
-- `EVT:RISK_ASSESSMENT_COMPLETED`
+- `EVT:RISK_ASSESSMENT_COMPLETED` (Upstream)
 - `CMD:OPEN`
-- `ACK`
-- `FILL`
+- `EVT:ORDER_ACK`
+- `EVT:TRADE_EXECUTED`
 - FSM:OPENING → FSM:OPENED
 - FSM:MANAGING
-- `EVT:TP_FILLED` / `EVT:SL_FILLED`
-- `CMD:CLOSE`
+- `EVT:TP_FILLED` / `EVT:SL_FILLED` (Logical)
+- `DEC:CLOSE`
 - FSM:CLOSING
-- `EVT:CLOSED`
+- `EVT:CLOSED` (Logical)
 - FSM:CLOSED
 - SUMMARY
 

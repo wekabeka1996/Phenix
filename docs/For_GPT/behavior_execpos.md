@@ -1,3 +1,8 @@
+# ExecPos execution_position behavior (historical summary)
+
+> Canonical, current runtime behavior is defined in docs/EXEC_POS_V2_RUNTIME_SPEC.md.  
+> This file retains the older split-FSM description for historical context; it is not authoritative for ExecPosRuntimeV2.
+
 # ExecPos поведенческий контракт
 
 ## Обзор машины состояний
@@ -17,7 +22,7 @@ ExecPosFSM объединяет три потоковых FSM: OpenFlowFSM, Mana
 - OpenFlowFSM устанавливает `state = PROCESSING`, проверяет min_qty, min_notional, шаги, cooldown, idempotency и, при успехе, публикует `DEC:OPEN` с параметрами (side, qty, price, tif). После этого `state = DONE`, метрики увеличиваются, последний таймстемп обновляется. Любой guard-fail возвращает `ERR:OPEN` (`state = IDLE` на cooldown, `ERROR` в других случаях).
 
 ### 2. Fill Phase
-- После `DEC:OPEN` ExecPosFSM получает `EVT:PARTIAL_FILL`, `EVT:FILL` или `EVT:TRADE_EXECUTED` и маршрутизирует их в ManageFlowFSM (CloseFlowFSM не используется для этих событий).
+- После `DEC:OPEN` ExecPosFSM получает `EVT:TRADE_EXECUTED` (canonical) или `EVT:PARTIAL_FILL`/`EVT:FILL` (legacy) и маршрутизирует их в ManageFlowFSM (CloseFlowFSM не используется для этих событий).
 - В состоянии `FLAT` событие входного заполнения:
   * проверяет, не является ли оно выходным (`closePosition`, reduceOnly, тип order_type).
   * при ENTRY-позиции вызывает `_on_fill`, устанавливает `position_qty`, `position_entry_price`, `position_side`, сохраняет timestamp и переводит `state = BRACKETS_PENDING`.
@@ -84,6 +89,8 @@ ExecPosFSM объединяет три потоковых FSM: OpenFlowFSM, Mana
 - **Single bracket per `(symbol, side)`** — у `aggregated_oco.enabled=true` ManageFlowFSM працює з агрегованою позицією, генерує рівні через `bracket_aggregator.py` і реєструє `BracketSetMeta` (через `OrderGuardian.register_bracket_set`). Усі взаємодії з OrderGuardian відбуваються в канонічних side (`LONG`/`SHORT`), тому сирі `BUY/SELL` конвертуються ще у FSM.
 - **Scale-in / partial-close / flip** — `_recalc_aggregated_brackets` запускається для перших fill'ів, scale-in і partial-close за прапорцем `recalc_on_partial_close`; при flip попередній сет очищається, новий створюється на протилежний side.
 - **Fail-closed cleanup** — OrderGuardian тримає `_bracket_sets[(symbol, side)]`, біжить `ensure_single_bracket_set_for_position`, застосовує TTL (`ttl_protect_new_bracket_ms`) і не видаляє останній SL, коли `position_amt>0` та `allow_unprotected_position=false`. Коли `position_amt` падає до нуля, Guardian одразу дропає BracketSetMeta, щоб не залишалось stale DR-сетів.
+- **NO_SL Auto-heal** — **REMOVED**. The system no longer automatically places SL if missing (to avoid infinite loops). It only logs `AGG_OCO_NO_SL_DETECTED_NO_AUTOHEAL`.
 - **DR / restart** — ExecPos стартує `_rehydrate_aggregated_brackets_on_startup`, до cleanup викликає `guardian.rehydrate_bracket_set_for_position`; smoke-тест `tests/domains/execution_position/test_aggregated_oco_dr_restart.py` перевіряє, що SL зберігається.
 - **Observability** — ManageFlowFSM емитить `AGG_OCO_BRACKET_SET_CHANGED` (why ≤ 80 символів), Guardian емитить `AGG_OCO_BRACKET_GUARD` (decision, why, has_sl_after). Повний контракт: `apps/reference/domains/execution_position/Readme/CONTRACT_aggregated_oco_v1.md`.
+
 

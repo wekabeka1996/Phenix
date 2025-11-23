@@ -67,7 +67,7 @@ def mock_config():
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com",
+                "rest_url": "https://demo-fapi.binance.com",
             }
         },
         "system": {"trading": {"symbols_to_track": ["BTCUSDT"]}},
@@ -97,7 +97,7 @@ class TestMarketDataConnectorIsolation:
             mock_adapter_class.assert_called_once_with(
                 api_key="test_key",
                 api_secret="test_secret",
-                rest_url="https://testnet.binancefuture.com",
+                rest_url="https://demo-fapi.binance.com",
             )
 
             # Verify the adapter is assigned

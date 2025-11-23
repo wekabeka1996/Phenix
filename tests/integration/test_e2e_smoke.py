@@ -131,8 +131,8 @@ binance_api:
   testnet:
     api_key: "test_key"
     api_secret: "test_secret"
-    rest_url: "https://testnet.binancefuture.com"
-    ws_url: "wss://stream.testnet.binancefuture.com"
+    rest_url: "https://demo-fapi.binance.com"
+    ws_url: "wss://stream.demo-fapi.binance.com"
 """)
 
     # Create .env file
@@ -215,8 +215,8 @@ def e2e_system(e2e_config, testnet_exchangeinfo):
             "testnet": {
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "rest_url": "https://testnet.binancefuture.com",
-                "ws_url": "wss://stream.testnet.binancefuture.com"
+                "rest_url": "https://demo-fapi.binance.com",
+                "ws_url": "wss://stream.demo-fapi.binance.com"
             }
         }
     }

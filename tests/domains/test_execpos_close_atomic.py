@@ -50,7 +50,7 @@ async def test_close_cancels_brackets_then_places_reduce_only():
     fsm = ExecPosFSM(config=cfg, fsm=Bus(), shadow_mode=True)
     # Inject stub adapter
     stub = StubAdapter()
-    stub.base_url = "https://testnet.binancefuture.com"
+    stub.base_url = "https://demo-fapi.binance.com"
     fsm.adapter = stub
     # Pre-populate bracket tracking for symbol
     fsm._symbol_brackets["ETHUSDT"] = {"sl_order_id": "sl123", "tp_order_id": "tp456"}

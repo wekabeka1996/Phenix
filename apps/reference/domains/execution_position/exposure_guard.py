@@ -21,8 +21,6 @@ from apps.reference.config_risk import resolve_risk_soft_limits
 from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.domains.execution_position.soft_clip import SoftClipEngine as SoftClipEngineImpl
 from apps.reference.domains.execution_position.metrics_aggregator import metrics_logger
-
-
 @dataclass
 class SoftLimitConfig:
     """Soft-limit clipping configuration (PHASE 2)."""

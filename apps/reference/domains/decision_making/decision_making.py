@@ -1680,7 +1680,26 @@ class DecisionMaking:
     ) -> tuple[Optional[decimal.Decimal], str]:
         why_chain = []
         portfolio = context["portfolio"]
-        equity = decimal.Decimal(str(portfolio.get("equity", "0")))
+
+        # EXEC-V2-P0-FIX-S28: Use cached equity_free_usdt instead of portfolio.get("equity", "0")
+        # The portfolio object may not have "equity" key, causing equity=0 bug
+        equity_value = self._cached_equity_free_usdt
+        if not equity_value or equity_value in ("0", "0.0"):
+            # Fallback to portfolio dict if cache is empty (should not happen in normal flow)
+            if isinstance(portfolio, dict):
+                equity_value = portfolio.get(
+                    "equity_free_usdt") or portfolio.get("equity", "0")
+            elif hasattr(portfolio, "equity_free_usdt"):
+                equity_value = portfolio.equity_free_usdt
+            else:
+                equity_value = "0"
+
+        equity = decimal.Decimal(str(equity_value))
+
+        # Log actual equity source for debugging
+        self.logger.debug(
+            f"[{symbol}] Using equity for decision: {equity} (from cached: {bool(self._cached_equity_free_usdt)})"
+        )
 
         # Prefer SL_bps-based sizing when risk_fraction_q is configured
         try:
@@ -1865,6 +1884,8 @@ class DecisionMaking:
         why_chain: list[str],
         rid: str,
     ) -> None:
+        self.logger.info(
+            f"🚀 _propose_trade_intent() called for {symbol} {side} qty={qty} price={price}")
         trade_intent = {
             "instrument": symbol,
             "side": side,
@@ -1896,9 +1917,23 @@ class DecisionMaking:
         # Record accepted intent for risk gate monitoring
         self._record_accepted_intent(symbol)
 
+        # TRADE_INTENT_PROPOSED payload shape (emitted to FSM):
+        # {
+        #   "symbol": symbol,
+        #   "side": side,
+        #   "quantity": qty,
+        #   "price": price,
+        #   "metadata": {"idempotent_key": trade_intent["idempotent_key"]},
+        #   "rid": rid,
+        #   ... (risk/tracking metadata)
+        # }
+        self.logger.info(
+            f"📤 Emitting EVT:TRADE_INTENT_PROPOSED for {symbol} with idempotent_key={trade_intent['idempotent_key']}")
         self.fsm.emit(
             "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent", data_ref=why_chain
         )
+        self.logger.info(
+            f"✅ EVT:TRADE_INTENT_PROPOSED emitted successfully for {symbol}")
 
         # Log to OrderLoggerV1
         order_logger.write({

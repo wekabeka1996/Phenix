@@ -27,7 +27,7 @@ async def test_polling_detects_fill_and_triggers_brackets():
     adapter = BinanceAdapter(
         api_key="test_key",
         api_secret="test_secret",
-        base_url="https://testnet.binancefuture.com"
+        base_url="https://demo-fapi.binance.com"
     )
     adapter.fsm_core = mock_fsm
     adapter.exec_fsm = mock_fsm  # Set exec_fsm for polling to call handle
@@ -106,7 +106,7 @@ async def test_polling_handles_cancelled_orders():
     adapter = BinanceAdapter(
         api_key="test_key",
         api_secret="test_secret",
-        base_url="https://testnet.binancefuture.com"
+        base_url="https://demo-fapi.binance.com"
     )
     adapter.fsm_core = mock_fsm
     adapter.exec_fsm = mock_fsm  # Set exec_fsm for polling
@@ -166,7 +166,7 @@ async def test_polling_cancels_brackets_on_entry_cancelled():
     adapter = BinanceAdapter(
         api_key="test_key",
         api_secret="test_secret",
-        base_url="https://testnet.binancefuture.com"
+        base_url="https://demo-fapi.binance.com"
     )
     adapter.fsm_core = mock_fsm
     adapter.exec_fsm = mock_fsm  # Set exec_fsm for polling

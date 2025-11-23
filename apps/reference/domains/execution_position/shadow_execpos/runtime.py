@@ -1,0 +1,1579 @@
+"""
+Shadow ExecPos Runtime V2
+=========================
+
+The main entry point and orchestrator for the modular Execution Position domain.
+This class composes all the sub-services into a coherent runtime.
+"""
+from typing import Any, Dict, Optional, List, Callable, Awaitable
+import asyncio
+import hashlib
+import logging
+import time
+from decimal import Decimal
+
+from apps.reference.domains.execution_position.config import ExecutionPositionConfig, SnapshotConfig
+from .async_manager import ExecPosAsyncManager
+from .execution_service import ExecutionService
+from .watchdog import AggOcoWatchdogService
+from .gatekeeper import ExecPosGatekeeper
+from .price_enricher import PriceEnricher
+from .idempotency import FillIdempotency, EventIdempotency
+from .wal_writer import ExecPosWALWriter
+from .exposure_bridge import ExposureBridge
+from .types import RuntimeEvent, ExecutionCommand, WatchdogAction
+from . import logging_v2
+from .position_model import PositionState, apply_fill
+from .close_flow import CloseFlowService, CloseContext, CloseConfig
+from .trailing import TrailingStopService, TrailingState, TrailingConfig
+from .bracket_service import (
+    BracketService,
+    BracketRulesConfig,
+    BracketPlan,
+    PositionView as BracketPositionView,
+    OrderView as BracketOrderView,
+)
+from vfoundation.apps.reference.domains.execution_position import bracket_aggregator
+
+# Import WAL infrastructure
+from vfoundation.dr import wal
+
+logger = logging.getLogger(__name__)
+
+
+class ExecPosRuntimeV2:
+    """
+    The modular runtime for Execution Position management.
+
+    This class replaces the monolithic `ExecPosFSM`.
+    It is responsible for:
+    - Wiring together dependencies.
+    - Routing events to appropriate handlers.
+    - Managing the lifecycle of the domain (start, stop, hydrate).
+    """
+
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        adapter: Any,
+        price_service: Any,
+        emit_fn: Optional[Any] = None,
+        clock: Optional[Any] = None,  # EP-RUNTIME-CONCURRENCY-SAFETY-S1
+        guardian: Optional[Any] = None,
+        ep_config: Optional[ExecutionPositionConfig] = None,
+    ):
+        self.config = config
+        self.clock = clock  # For deterministic testing
+        self._ep_cfg: Optional[ExecutionPositionConfig] = ep_config
+
+        # Core Infrastructure
+        self.async_manager = ExecPosAsyncManager()
+
+        # Services
+        self.execution_service = ExecutionService(adapter)
+        self.gatekeeper = ExecPosGatekeeper(config)
+        self.price_enricher = PriceEnricher()
+        self.close_flow_service = CloseFlowService()
+        self.trailing_service = TrailingStopService()
+        self.bracket_service = BracketService(
+            aggregator=bracket_aggregator,
+            guardian=guardian,
+            watchdog=None,
+        )
+        self.guardian = guardian
+
+        # State & Logic
+        self.fill_idempotency = FillIdempotency()
+        self.event_idempotency = EventIdempotency()
+
+        # Watchdogs
+        self.watchdog = AggOcoWatchdogService()
+
+        # WAL & Exposure (EP-RUNTIME-WAL-EXPOSURE-S1)
+        self.wal_writer = ExecPosWALWriter(wal_append_fn=wal.append)
+        self.exposure_bridge = ExposureBridge(
+            emit_fn=emit_fn or self._default_emit)
+
+        # Runtime state
+        self._positions_by_symbol: Dict[str, PositionState] = {}
+        self._open_orders_by_symbol: Dict[str, list] = {}
+        # "UNKNOWN" | "STALE" | "FRESH"
+        self._orders_snapshot_state: Dict[str, str] = {}
+        self._trailing_state_by_symbol: Dict[str, TrailingState] = {}
+        self._recovery_completed = False
+        self._last_orders_snapshot_ts: Dict[str, float] = {}
+        self._last_position_snapshot_ts: Dict[str, float] = {}
+        self._brackets_suppressed: Dict[str, float] = {}
+        self._snapshot_request_hook: Optional[Callable[[
+            str], Awaitable[None]]] = None
+
+        # TASK 3: Throttling state for bracket spam prevention
+        self._last_brackets_apply_ts: Dict[str, float] = {}
+        # Minimum seconds between bracket evaluations per symbol
+        self._bracket_throttle_sec = 3.0
+        self._bracket_suppression_sec = 30.0
+        self._snapshot_request_interval_sec = 5.0
+
+        # Guard loop state
+        self._guard_loop_interval_sec = 1.0
+        self._guard_recovery_interval_sec = 5.0
+        self._guard_loop_running = False
+        self._guard_loop_task: Optional[asyncio.Task] = None
+        self._last_guard_recovery_ts: Dict[str, float] = {}
+        self._last_snapshot_request_ts: Dict[str, float] = {}
+
+        # Metrics
+        self._metrics = {
+            "events_total": 0,
+            "events_by_kind": {},
+            "gatekeeper_allowed": 0,
+            "gatekeeper_rejected": 0,
+            "execution_success": 0,
+            "execution_failed": 0,
+            "fills_processed": 0,
+            "fills_duplicate": 0,
+            "watchdog_violations": 0,
+            "watchdog_violations_by_kind": {},
+            "wal_trades_written": 0,
+            "wal_positions_written": 0,
+            "exposure_updates_emitted": 0,
+            "trailing_evaluations": 0,
+            "trailing_exit_signals": 0,
+            "brackets_evaluated": 0,
+            "brackets_alerts": 0,
+            "brackets_throttled": 0,
+        }
+
+    def hydrate(self, snapshot: Dict[str, Any]) -> None:
+        """Restore state from a snapshot (WAL or DB)."""
+        if "positions" in snapshot:
+            for pos in snapshot["positions"]:
+                symbol = pos.get("symbol")
+                if symbol:
+                    self._positions_by_symbol[symbol] = PositionState(
+                        symbol=symbol,
+                        qty=float(pos.get("qty", 0.0)),
+                        avg_entry_price=float(
+                            pos.get("avg_entry_price") or pos.get("entry_price") or 0.0),
+                        realized_pnl=float(pos.get("realized_pnl", 0.0)),
+                        unrealized_pnl=float(pos.get("unrealized_pnl", 0.0)),
+                        open_time=pos.get("open_time"),
+                        last_update_time=pos.get("last_update_time"),
+                        scale_in_count=int(pos.get("scale_in_count", 0)),
+                        scale_out_count=int(pos.get("scale_out_count", 0)),
+                    )
+
+        if "orders" in snapshot:
+            for order in snapshot["orders"]:
+                symbol = order.get("symbol")
+                if symbol:
+                    if symbol not in self._open_orders_by_symbol:
+                        self._open_orders_by_symbol[symbol] = []
+                    self._open_orders_by_symbol[symbol].append(order)
+
+    def get_metrics_snapshot(self) -> Dict[str, Any]:
+        """Get a complete snapshot of V2 runtime metrics."""
+        return self.get_metrics()
+
+    async def shutdown(self) -> None:
+        """Gracefully shutdown the runtime."""
+        logger.info("Shutting down ExecPosRuntimeV2...")
+        # Close any resources if needed
+        pass
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get runtime metrics.
+
+        Returns:
+            Dictionary of metrics
+        """
+        metrics = dict(self._metrics)
+
+        # Add dynamic metrics
+        metrics["positions_tracked"] = len(self._positions_by_symbol)
+        metrics["symbols_active"] = list(self._positions_by_symbol.keys())
+        metrics["open_orders_tracked"] = sum(
+            len(orders) for orders in self._open_orders_by_symbol.values())
+        metrics["status"] = "healthy"
+
+        # Merge component metrics
+        if self.exposure_bridge:
+            metrics.update(self.exposure_bridge.get_metrics())
+
+        return metrics
+
+    def _default_emit(self, event_kind: str, payload: Dict[str, Any]) -> None:
+        """No-op event emitter for testing."""
+        logger.debug(f"Event: {event_kind}")
+
+    def set_snapshot_refresh_hook(self, hook: Callable[[str], Awaitable[None]]) -> None:
+        """Register hook to request fresh ORDERS_SNAPSHOT (facade/adapter-backed)."""
+        self._snapshot_request_hook = hook
+
+    def _get_snapshot_cfg(self) -> SnapshotConfig:
+        """
+        Resolve snapshot TTL configuration with typed config preferred.
+        """
+        if self._ep_cfg and isinstance(self._ep_cfg, ExecutionPositionConfig):
+            return getattr(self._ep_cfg, "snapshot", SnapshotConfig())
+
+        cfg_root = self.config.get("execution_position", self.config) if isinstance(
+            self.config, dict) else {}
+        snapshot_cfg = cfg_root.get("snapshot", {}) if isinstance(
+            cfg_root, dict) else {}
+        try:
+            return SnapshotConfig(
+                orders_ttl_sec=float(snapshot_cfg.get("orders_ttl_sec", 10.0)),
+                position_ttl_sec=float(
+                    snapshot_cfg.get("position_ttl_sec", 10.0)),
+            )
+        except Exception:
+            return SnapshotConfig()
+
+    def _is_orders_snapshot_fresh(self, symbol: str) -> bool:
+        """
+        Check if we have a recent ORDERS_SNAPSHOT for the symbol.
+        """
+        ts = self._last_orders_snapshot_ts.get(symbol)
+        if ts is None:
+            return False
+        ttl = self._get_snapshot_cfg().orders_ttl_sec
+        return (time.monotonic() - ts) <= ttl
+
+    def _is_position_snapshot_fresh(self, symbol: str) -> bool:
+        """
+        Check if we have a recent POSITION_SNAPSHOT/POSITION_SYNC for the symbol.
+        """
+        ts = self._last_position_snapshot_ts.get(symbol)
+        if ts is None:
+            return False
+        ttl = self._get_snapshot_cfg().position_ttl_sec
+        return (time.monotonic() - ts) <= ttl
+
+    def _mark_orders_snapshot(self, symbol: str, ts: Optional[float] = None) -> None:
+        self._last_orders_snapshot_ts[symbol] = ts or time.monotonic()
+        self._orders_snapshot_state[symbol] = "FRESH"
+
+    def _mark_position_snapshot(self, symbol: str, ts: Optional[float] = None) -> None:
+        self._last_position_snapshot_ts[symbol] = ts or time.monotonic()
+
+    async def _request_orders_snapshot(self, symbol: str, *, force: bool = False) -> None:
+        """Invoke hook to refresh orders snapshot with per-symbol throttle."""
+        if not self._snapshot_request_hook:
+            return
+        now = time.monotonic()
+        last = self._last_snapshot_request_ts.get(symbol, 0.0)
+        if not force and now - last < self._snapshot_request_interval_sec:
+            logger.debug(
+                f"[ExecPosV2] FORCE_SNAPSHOT_THROTTLED symbol={symbol} "
+                f"elapsed={now - last:.2f}s < interval={self._snapshot_request_interval_sec}s"
+            )
+            return
+
+        self._last_snapshot_request_ts[symbol] = now
+        reason = "force" if force else "watchdog"
+        logger.info(
+            "[ExecPosV2] FORCE_SNAPSHOT_REQUEST",
+            extra={"symbol": symbol, "reason": reason},
+        )
+        try:
+            await self._snapshot_request_hook(symbol)
+        except Exception:
+            logger.error(
+                "[ExecPosV2] FORCE_SNAPSHOT_REQUEST_FAILED",
+                exc_info=True,
+                extra={"symbol": symbol},
+            )
+
+    async def handle(self, event):
+        """Main event dispatcher. Accepts dict or RuntimeEvent."""
+        self._metrics["events_total"] += 1
+
+        # Support both dict and RuntimeEvent
+        if isinstance(event, dict):
+            kind = event.get("kind")
+            symbol = event.get("symbol")
+            payload = event.get("payload", event)
+        else:
+            kind = event.kind
+            symbol = event.symbol
+            payload = event.payload
+
+        self._metrics["events_by_kind"][kind] = \
+            self._metrics["events_by_kind"].get(kind, 0) + 1
+
+        try:
+            if kind == "ENTRY_INTENT":
+                await self._handle_entry_intent(symbol, payload)
+            elif kind == "CANCEL_INTENT":
+                await self._handle_cancel_intent(symbol, payload)
+            elif kind == "CLOSE_INTENT":
+                await self._handle_close_intent(symbol, payload)
+            elif kind == "TRADE_EXECUTED":
+                await self._handle_trade_executed(symbol, payload)
+            elif kind == "POSITION_SYNC":
+                await self._handle_position_sync(symbol, payload)
+            elif kind == "POSITION_SNAPSHOT":
+                await self._handle_position_snapshot(payload)
+            elif kind == "ORDERS_SNAPSHOT":
+                await self._handle_orders_snapshot(payload)
+            else:
+                logger.warning(f"Unknown event kind: {kind}")
+
+        except Exception as e:
+            logger.error(f"Error handling event {kind}: {e}", exc_info=True)
+
+    async def _handle_entry_intent(self, symbol: str, payload: Dict[str, Any]):
+        """Handle entry request through gatekeeper -> execution service."""
+        # Canonical ENTRY_INTENT payload expected by runtime:
+        # {
+        #   "symbol": str,
+        #   "side": "BUY" | "SELL",
+        #   "quantity": float | str,
+        #   "price": Optional[float|str],
+        #   "source": Optional[str],
+        #   "rid": Optional[str],
+        #   "idempotent_key": Optional[str],
+        # }
+        logger.info(
+            "[ExecPosV2-S5] ENTRY_INTENT received: symbol=%s side=%s qty=%s",
+            payload.get("symbol"),
+            payload.get("side"),
+            payload.get("qty") or payload.get("quantity"),
+        )
+        side = payload.get("side")
+        quantity = payload.get("quantity")
+        price = payload.get("price")
+        order_type = payload.get("order_type", "MARKET")
+
+        # Guard check
+        gate_decision = self.gatekeeper.check_entry(
+            symbol=symbol,
+            side=side,
+            quantity=quantity,
+            price=price,
+            order_type=order_type
+        )
+
+        if not gate_decision["allowed"]:
+            self._metrics["gatekeeper_rejected"] += 1
+            logger.info(
+                f"SHADOW_ENTRY_REJECTED",
+                extra={"symbol": symbol, "reason": gate_decision["reason"]}
+            )
+            # Structured logging
+            logging_v2.log_runtime_event(
+                event_kind="ENTRY_INTENT",
+                symbol=symbol,
+                action="rejected",
+                result="blocked",
+                why=gate_decision["reason"],
+                extra={"side": side, "quantity": str(
+                    quantity), "order_type": order_type}
+            )
+            return
+
+        self._metrics["gatekeeper_allowed"] += 1
+
+        # Use adjusted params from gatekeeper
+        adjusted_qty = gate_decision["modified_params"].get(
+            "quantity", quantity)
+        adjusted_price = gate_decision["modified_params"].get("price", price)
+
+        # Execute via ExecutionService
+        result = await self.execution_service.place_order(
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=adjusted_qty,
+            price=adjusted_price,
+            client_order_id=payload.get("client_order_id")
+        )
+
+        if result["success"]:
+            self._metrics["execution_success"] += 1
+            # Add to open orders
+            if symbol not in self._open_orders_by_symbol:
+                self._open_orders_by_symbol[symbol] = []
+            self._open_orders_by_symbol[symbol].append({
+                "order_id": result["order_id"],
+                "symbol": symbol,
+                "side": side,
+                "quantity": adjusted_qty,
+                "price": adjusted_price,
+                "type": order_type
+            })
+            # Structured logging
+            logging_v2.log_runtime_event(
+                event_kind="ENTRY_INTENT",
+                symbol=symbol,
+                action="executed",
+                result="success",
+                why="order_placed",
+                extra={
+                    "order_id": result["order_id"],
+                    "side": side,
+                    "quantity": str(adjusted_qty),
+                    "price": str(adjusted_price) if adjusted_price else None,
+                    "order_type": order_type
+                }
+            )
+        else:
+            self._metrics["execution_failed"] += 1
+            # Log failure
+            logging_v2.log_runtime_event(
+                event_kind="ENTRY_INTENT",
+                symbol=symbol,
+                action="executed",
+                result="failed",
+                why=result.get("error", "unknown_error"),
+                extra={"side": side, "quantity": str(adjusted_qty)}
+            )
+
+    async def _handle_cancel_intent(self, symbol: str, payload: Dict[str, Any]):
+        """Handle cancel request."""
+        order_id = payload.get("order_id")
+
+        result = await self.execution_service.cancel_order(
+            symbol=symbol,
+            order_id=order_id
+        )
+
+        if result["success"]:
+            self._metrics["execution_success"] += 1
+            # Remove from open orders
+            if symbol in self._open_orders_by_symbol:
+                self._open_orders_by_symbol[symbol] = [
+                    o for o in self._open_orders_by_symbol[symbol]
+                    if o.get("order_id") != order_id
+                ]
+        else:
+            self._metrics["execution_failed"] += 1
+
+    async def _handle_close_intent(self, symbol: str, payload: Dict[str, Any]):
+        """Handle close position request via CloseFlowService."""
+        position = self._positions_by_symbol.get(
+            symbol, PositionState(symbol=symbol))
+        ctx = CloseContext(
+            reason=payload.get("reason", "MANUAL"),
+            requested_qty=payload.get("quantity"),
+            price=payload.get("price"),
+            timestamp=payload.get("timestamp") or payload.get("ts"),
+        )
+        try:
+            decision = self.close_flow_service.plan_close(
+                position, ctx, self._get_close_config())
+        except Exception as exc:
+            logger.warning(
+                "CloseFlowService error, ignoring close intent", exc_info=True)
+            decision = None
+
+        if not decision or decision.action in ("NOOP", "IGNORE"):
+            logging_v2.log_runtime_event(
+                event_kind="CLOSE_INTENT",
+                symbol=symbol,
+                action="ignored",
+                result="noop",
+                why=getattr(decision, "reason_code", "NO_DECISION"),
+                extra={"requested_qty": payload.get("quantity")},
+            )
+            return
+
+        raw_target = payload.get("quantity", decision.target_qty)
+        if raw_target is None:
+            raw_target = decision.target_qty
+        target_qty = raw_target if isinstance(
+            raw_target, str) else float(raw_target or 0.0)
+        close_side = "SELL" if position.qty > 0 else (
+            "BUY" if position.qty < 0 else None)
+
+        result = await self.execution_service.close_position(
+            symbol=symbol,
+            quantity=target_qty,
+            side=close_side
+        )
+
+        if result["success"]:
+            self._metrics["execution_success"] += 1
+            # For full close, clear position state
+            if decision.action == "CLOSE_FULL":
+                self._positions_by_symbol[symbol] = PositionState(
+                    symbol=symbol)
+        else:
+            self._metrics["execution_failed"] += 1
+
+    async def _handle_trade_executed(self, symbol: str, payload: Dict[str, Any]):
+        """
+        Handle fill/trade event.
+
+        Ordering (EP-RUNTIME-WAL-EXPOSURE-S1):
+        1. Idempotency check
+        2. Price enrichment
+        3. Update internal position state (CRITICAL: do this first)
+        4. Write WAL (EXEC_TRADE + EXEC_POSITION)
+        5. Emit exposure update
+        6. Trigger watchdog
+        """
+        # 1. Check idempotency
+        if not self.fill_idempotency.should_process_fill(payload, symbol=symbol):
+            self._metrics["fills_duplicate"] += 1
+            return
+
+        self._metrics["fills_processed"] += 1
+
+        # 2. Enrich price if needed
+        enriched = self.price_enricher.enrich_trade(
+            trade_payload=payload,
+            position_entry_price=None,  # Could fetch from position
+            current_price_quote=None
+        )
+
+        # 3. Update position state (CRITICAL: do this before WAL/exposure)
+        qty = float(payload.get("quantity", 0) or payload.get("qty", 0))
+        qty = abs(qty)
+        side = payload.get("side", "").upper()
+
+        if side not in ("BUY", "SELL"):
+            logger.warning("TRADE_EXECUTED missing/invalid side; skipping fill",
+                           extra={"symbol": symbol, "payload": payload})
+            return
+        if qty == 0:
+            logger.warning("TRADE_EXECUTED zero quantity; skipping fill",
+                           extra={"symbol": symbol, "payload": payload})
+            return
+
+        current_state = self._positions_by_symbol.get(
+            symbol) or PositionState(symbol=symbol)
+        is_new_position = abs(current_state.qty) < 0.0001
+
+        # Apply fill via PositionState
+        new_state = apply_fill(
+            current_state,
+            side=side,
+            quantity=qty,
+            price=float(payload.get("price", 0)
+                        or payload.get("last_price", 0) or 0.0),
+            ts=payload.get("timestamp") or payload.get("ts"),
+        )
+        self._positions_by_symbol[symbol] = new_state
+        self._mark_position_snapshot(symbol)
+        self._ensure_guard_loop_running()
+
+        # 4. Write WAL records (fail-closed)
+        # EXEC_TRADE record
+        position_ctx = {
+            "position_id": f"{symbol}_{int(time.time())}",
+            "is_new_position": is_new_position,
+            "realized_pnl": new_state.realized_pnl,
+            "fee": 0,  # TODO: extract from payload
+        }
+        if self.wal_writer.write_trade_wal(payload, position_ctx):
+            self._metrics["wal_trades_written"] += 1
+
+        # EXEC_POSITION record (if position changed)
+        if self.wal_writer.write_position_wal(self._position_to_dict(new_state)):
+            self._metrics["wal_positions_written"] += 1
+
+        # 5. Emit exposure update (fail-closed)
+        if self.exposure_bridge.emit_exposure_update(self._position_to_dict(new_state)):
+            self._metrics["exposure_updates_emitted"] += 1
+
+        # 6. Trigger watchdog after all state/WAL/exposure updates
+        await self._run_watchdog_analysis()
+        # 7. Evaluate trailing (log-only for now)
+        self._evaluate_trailing(symbol, new_state, float(
+            payload.get("price", 0) or payload.get("last_price", 0) or 0.0))
+        # 8. Evaluate brackets (execute BracketPlan actions)
+        await self._evaluate_brackets(symbol, new_state, reason="trade_executed")
+        self._maybe_stop_guard_loop()
+
+    async def _handle_position_sync(self, symbol: str, payload: Dict[str, Any]):
+        """
+        Handle POSITION_SYNC event from ACCOUNT_UPDATE.
+        Triggers bracket evaluation for positions that may have been filled
+        but didn't emit proper TRADE_EXECUTED events.
+        """
+        positions = payload.get("positions", [])
+
+        for pos in positions:
+            pos_symbol = pos.get("symbol")
+            if not pos_symbol or pos_symbol != symbol:
+                continue
+
+            # Update position state
+            await self._handle_single_position_update(pos)
+
+            # Get current state and evaluate brackets
+            current_state = self._positions_by_symbol.get(pos_symbol)
+            if current_state and abs(current_state.qty) > 0.0001:
+                logger.info(
+                    f"📊 POSITION_SYNC: Evaluating brackets for {pos_symbol} qty={current_state.qty}")
+                await self._evaluate_brackets(pos_symbol, current_state, reason="account_update_sync")
+
+    async def _handle_position_snapshot(self, payload: Dict[str, Any]):
+        """Handle position snapshot from exchange."""
+        # Handle list of positions (e.g. from REST snapshot)
+        if "positions" in payload:
+            for pos in payload["positions"]:
+                await self._handle_single_position_update(pos)
+            return
+
+        # Handle single position (e.g. from WS update)
+        await self._handle_single_position_update(payload)
+
+    async def _handle_single_position_update(self, payload: Dict[str, Any]):
+        """Update state for a single position."""
+        symbol = payload.get("symbol")
+        if not symbol:
+            return
+
+        # Map fields from various sources (REST vs WS)
+        qty_val = payload.get("qty") or payload.get(
+            "position_size") or payload.get("positionAmt") or 0
+        entry_val = payload.get(
+            "entry_price") or payload.get("entryPrice") or 0
+        qty = float(qty_val or 0)
+        entry_price = float(entry_val or 0)
+
+        self._positions_by_symbol[symbol] = PositionState(
+            symbol=symbol,
+            qty=qty,
+            avg_entry_price=entry_price,
+            realized_pnl=float(payload.get("realized_pnl") or 0.0),
+            unrealized_pnl=float(payload.get("unrealized_pnl") or 0.0),
+            open_time=payload.get("open_time"),
+            last_update_time=payload.get("update_time") or payload.get("ts"),
+            scale_in_count=0,
+            scale_out_count=0,
+        )
+        self._mark_position_snapshot(symbol)
+        self._ensure_guard_loop_running()
+
+        # Trigger watchdog
+        await self._run_watchdog_analysis()
+        self._maybe_stop_guard_loop()
+
+    async def _handle_orders_snapshot(self, payload: Dict[str, Any]):
+        """Handle orders snapshot from exchange."""
+        orders = payload.get("orders", [])
+
+        # Do not clear state on empty snapshot to avoid losing SL/TP visibility
+        if not orders:
+            logging_v2.log_runtime_event(
+                event_kind="ORDERS_SNAPSHOT",
+                symbol="*",
+                action="apply",
+                result="empty",
+                why="empty_orders_snapshot",
+            )
+            # Mark snapshot as FRESH for all symbols with positions (entry filled → brackets can be placed)
+            for sym in self._positions_by_symbol.keys():
+                if sym not in self._orders_snapshot_state or self._orders_snapshot_state[sym] == "UNKNOWN":
+                    self._orders_snapshot_state[sym] = "FRESH"
+                    self._mark_orders_snapshot(sym)
+            # Stale existing FRESH states
+            for sym, state in list(self._orders_snapshot_state.items()):
+                if state == "FRESH" and sym not in self._positions_by_symbol:
+                    self._orders_snapshot_state[sym] = "STALE"
+            return
+
+        now = time.monotonic()
+
+        for order in orders:
+            symbol = order.get("symbol")
+            if not symbol:
+                continue
+            if symbol not in self._open_orders_by_symbol:
+                self._open_orders_by_symbol[symbol] = []
+            # Replace per-symbol list to avoid partial duplication
+            # (build fresh list for each symbol)
+        # Build new mapping per symbol
+        new_mapping: Dict[str, list] = {}
+        for order in orders:
+            sym = order.get("symbol")
+            if not sym:
+                continue
+            new_mapping.setdefault(sym, []).append(order)
+
+        for sym, sym_orders in new_mapping.items():
+            self._open_orders_by_symbol[sym] = sym_orders
+            self._mark_orders_snapshot(sym, now)
+            self._orders_snapshot_state[sym] = "FRESH"
+
+        # Trigger watchdog
+        await self._run_watchdog_analysis()
+        if not self._recovery_completed:
+            await self._run_bracket_recovery_pass()
+
+    async def _run_watchdog_analysis(self):
+        """Run watchdog to detect and heal invariant violations."""
+        # Collect all positions and orders
+        all_positions = [self._position_to_dict(
+            p) for p in self._positions_by_symbol.values()]
+        all_orders = []
+        for orders in self._open_orders_by_symbol.values():
+            all_orders.extend(orders)
+
+        # Call watchdog with correct API
+        recommendations = self.watchdog.analyze(
+            open_orders=all_orders,
+            positions=all_positions
+        )
+
+        # Track violations
+        if recommendations:
+            for rec in recommendations:
+                kind = rec.kind  # Changed from rec.violation_kind to rec.kind
+                self._metrics["watchdog_violations"] += 1
+                self._metrics["watchdog_violations_by_kind"][kind] = \
+                    self._metrics["watchdog_violations_by_kind"].get(
+                        kind, 0) + 1
+
+                logger.warning(
+                    f"WATCHDOG_VIOLATION_DETECTED",
+                    extra={"symbol": rec.symbol,
+                           "kind": kind, "recommendation": rec}
+                )
+
+                # Apply runtime-level actions based on watchdog recommendation
+                action = getattr(rec, "action", None)
+                now = time.monotonic()
+
+                # HOTFIX: Disable SUPPRESS_BRACKETS - it's too aggressive
+                # Instead, allow brackets to be created to FIX the violation
+                if action == WatchdogAction.SUPPRESS_BRACKETS:
+                    logger.warning(
+                        "[ExecPosV2] WATCHDOG_VIOLATION_DETECTED (suppression disabled)",
+                        extra={"symbol": rec.symbol, "kind": kind,
+                               "note": "Brackets will be created to heal violation"}
+                    )
+                    # Force snapshot refresh to ensure we have current state
+                    await self._request_orders_snapshot(rec.symbol)
+                elif action == WatchdogAction.FORCE_SNAPSHOT:
+                    logger.info(
+                        "[ExecPosV2] WATCHDOG_REQUEST_SNAPSHOT_REFRESH",
+                        extra={"symbol": rec.symbol}
+                    )
+                    await self._request_orders_snapshot(rec.symbol)
+
+    def _position_to_dict(self, pos: PositionState) -> Dict[str, Any]:
+        return {
+            "symbol": pos.symbol,
+            "qty": pos.qty,
+            "side": pos.side,
+            "position_size": pos.qty,
+            "direction": pos.side,
+            "entry_price": pos.avg_entry_price,
+            "avg_entry_price": pos.avg_entry_price,
+            "realized_pnl": pos.realized_pnl,
+            "unrealized_pnl": pos.unrealized_pnl,
+            "open_time": pos.open_time,
+            "last_update_time": pos.last_update_time,
+        }
+
+    def _is_brackets_suppressed(self, symbol: str) -> bool:
+        # HOTFIX: Always return False - suppression disabled
+        # Watchdog violations should trigger bracket CREATION, not suppression
+        return False
+
+        # Old logic kept for reference:
+        # expires_at = self._brackets_suppressed.get(symbol)
+        # if expires_at is None:
+        #     return False
+        # if time.monotonic() > expires_at:
+        #     self._brackets_suppressed.pop(symbol, None)
+        #     return False
+        # return True
+
+    def _ensure_guard_loop_running(self) -> None:
+        """Start guard loop when we have any non-flat positions."""
+        if self._guard_loop_running:
+            return
+        if not any(abs(p.qty) > 0 for p in self._positions_by_symbol.values()):
+            return
+        self._guard_loop_running = True
+        loop = self.async_manager.get_async_loop()
+        coro = self._guard_loop()
+        if loop:
+            try:
+                self._guard_loop_task = loop.create_task(coro)
+            except Exception:
+                self._guard_loop_task = None
+        else:
+            self._guard_loop_task = asyncio.create_task(coro)
+
+    def _maybe_stop_guard_loop(self) -> None:
+        """Stop guard loop when all positions are flat."""
+        if any(abs(p.qty) > 0 for p in self._positions_by_symbol.values()):
+            return
+        self._guard_loop_running = False
+        if self._guard_loop_task and not self._guard_loop_task.done():
+            self._guard_loop_task.cancel()
+        self._guard_loop_task = None
+
+    async def _guard_loop(self) -> None:
+        """Periodic invariant checks without hitting REST."""
+        while self._guard_loop_running:
+            try:
+                await self._run_guard_iteration()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.warning("ExecPosV2 guard loop iteration error",
+                               exc_info=True)
+            await asyncio.sleep(self._guard_loop_interval_sec)
+
+    async def _run_guard_iteration(self) -> None:
+        active_positions = {
+            sym: pos for sym, pos in self._positions_by_symbol.items() if abs(pos.qty) > 0
+        }
+        if not active_positions:
+            self._guard_loop_running = False
+            return
+
+        for symbol, pos in active_positions.items():
+            if not self._is_orders_snapshot_fresh(symbol):
+                logger.debug(
+                    f"[ExecPosV2] GUARD_LOOP_SKIP_NO_FRESH_ORDERS symbol={symbol}")
+                continue
+
+            last_ts = self._last_guard_recovery_ts.get(symbol, 0.0)
+            now = time.monotonic()
+            if now - last_ts < self._guard_recovery_interval_sec:
+                continue
+
+            await self._evaluate_brackets(symbol, pos, reason="guard_loop")
+            self._last_guard_recovery_ts[symbol] = time.monotonic()
+
+    def _build_position_id(self, symbol: str, position: PositionState) -> str:
+        """
+        Build deterministic position fingerprint for bracket clientOrderId.
+        """
+        qty_tag = f"{abs(position.qty):.4f}"
+        price_tag = f"{position.avg_entry_price:.2f}" if position.avg_entry_price else "0"
+        return f"{qty_tag}-{price_tag}"
+
+    def _make_bracket_client_order_id(
+        self,
+        symbol: str,
+        action_type: str,
+        exit_side: Optional[str],
+        qty: float,
+        price: Optional[Decimal],
+        position: Optional[PositionState] = None,
+    ) -> str:
+        """
+        Generate deterministic clientOrderId for bracket orders to improve idempotency.
+        """
+        if position is not None:
+            position_id = self._build_position_id(symbol, position)
+            base = f"AUR-BRK-{symbol}-{position.side}-{action_type}-{position_id}"
+            return base[:32]
+        seed = f"{symbol}|{action_type}|{exit_side}|{qty}|{price}"
+        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:20]
+        return f"AUR-BRK-{digest}"
+
+    def _has_equivalent_bracket(self, symbol: str, exit_side: Optional[str], action: Any) -> bool:
+        """
+        Check if an equivalent reduce-only SL/TP already exists locally.
+        """
+        if not exit_side:
+            return False
+
+        target_qty = float(action.qty) if getattr(
+            action, "qty", None) is not None else None
+        target_price = getattr(action, "price", None)
+
+        for order in self._open_orders_by_symbol.get(symbol, []):
+            reduce_only = bool(order.get("reduce_only") or order.get(
+                "reduceOnly", False) or order.get("close_position") or order.get("closePosition"))
+            if not reduce_only:
+                continue
+
+            order_side = str(order.get("side") or "").upper()
+            if order_side != exit_side:
+                continue
+
+            order_type = str(order.get("type") or order.get(
+                "order_type") or "").upper()
+            if action.action_type == "PLACE_SL" and order_type not in ("STOP_MARKET", "STOP"):
+                continue
+            if action.action_type == "PLACE_TP" and order_type not in ("TAKE_PROFIT_MARKET", "TAKE_PROFIT"):
+                continue
+
+            order_qty_raw = order.get("quantity") or order.get(
+                "origQty") or order.get("qty")
+            order_price_raw = order.get("stop_price") or order.get(
+                "stopPrice") or order.get("price")
+
+            try:
+                if target_qty is not None and order_qty_raw is not None:
+                    order_qty = Decimal(str(order_qty_raw))
+                    desired_qty = Decimal(str(target_qty))
+                    qty_diff = abs(order_qty - desired_qty)
+                    qty_ref = max(desired_qty.copy_abs(),
+                                  Decimal("0.00000001"))
+                    if qty_diff / qty_ref > Decimal("0.05"):
+                        continue
+                if target_price is not None and order_price_raw is not None:
+                    order_price = Decimal(str(order_price_raw))
+                    desired_price = Decimal(str(target_price))
+                    price_diff = abs(order_price - desired_price)
+                    price_ref = max(desired_price.copy_abs(),
+                                    Decimal("0.00000001"))
+                    price_tolerance = max(
+                        price_ref * Decimal("0.001"), Decimal("0.0001"))
+                    if price_diff > price_tolerance:
+                        continue
+            except Exception:
+                continue
+
+            return True
+
+        return False
+
+    def _evaluate_trailing(self, symbol: str, position: PositionState, price: float) -> None:
+        """
+        Invoke trailing evaluation (log-only). No side effects on adapter.
+        """
+        if price <= 0:
+            return
+        state = self._trailing_state_by_symbol.get(symbol, TrailingState())
+        try:
+            decision = self.trailing_service.eval_trailing(
+                position=position,
+                price=price,
+                trail_state=state,
+                cfg=self._get_trailing_config(),
+                now=self.clock.now() if self.clock else None,
+            )
+        except Exception:
+            logger.warning(
+                "TrailingStopService error; skipping trailing evaluation", exc_info=True)
+            return
+
+        self._trailing_state_by_symbol[symbol] = decision.trail_state
+        self._metrics["trailing_evaluations"] += 1
+
+        if decision.exit:
+            self._metrics["trailing_exit_signals"] += 1
+            logging_v2.log_runtime_event(
+                event_kind="TRAILING",
+                symbol=symbol,
+                action="exit_signal",
+                result="signal",
+                why=decision.reason_code,
+                extra={"sl_price": decision.sl_price,
+                       "trail_status": decision.trail_state.status},
+            )
+        else:
+            logging_v2.log_runtime_event(
+                event_kind="TRAILING",
+                symbol=symbol,
+                action="updated",
+                result="ok",
+                why=decision.reason_code,
+                extra={"sl_price": decision.sl_price,
+                       "trail_status": decision.trail_state.status},
+            )
+
+    async def _evaluate_brackets(self, symbol: str, position: PositionState, *, reason: str = "runtime_eval") -> None:
+        """
+        Invoke BracketService in observe-only mode. No adapter/guardian mutations.
+        """
+        if self._is_brackets_suppressed(symbol):
+            logger.warning(
+                f"[ExecPosV2] BRACKETS_SUPPRESSED symbol={symbol} reason=watchdog")
+            return
+
+        snapshot_state = self._orders_snapshot_state.get(symbol, "UNKNOWN")
+        if snapshot_state == "FRESH" and not self._is_orders_snapshot_fresh(symbol):
+            snapshot_state = "STALE"
+            self._orders_snapshot_state[symbol] = "STALE"
+
+        if reason in ("account_update_sync", "guard_loop") and snapshot_state != "FRESH":
+            logging_v2.log_runtime_event(
+                event_kind="BRACKETS",
+                symbol=symbol,
+                action="skip",
+                result="snapshot_blocked",
+                why=f"snapshot_state={snapshot_state}",
+                extra={"reason": reason},
+            )
+            return
+
+        if reason == "trade_executed" and snapshot_state == "UNKNOWN":
+            logging_v2.log_runtime_event(
+                event_kind="BRACKETS",
+                symbol=symbol,
+                action="skip",
+                result="snapshot_blocked",
+                why=f"snapshot_state={snapshot_state}",
+                extra={"reason": reason},
+            )
+            return
+
+        # TASK 3: Throttle repeated bracket evaluations from account_update_sync
+        if reason == "account_update_sync":
+            last_ts = self._last_brackets_apply_ts.get(symbol, 0)
+            now = time.time()
+            elapsed = now - last_ts
+
+            if elapsed < self._bracket_throttle_sec:
+                self._metrics["brackets_throttled"] += 1
+                logger.debug(
+                    f"[ExecPosV2] BRACKETS_THROTTLED symbol={symbol} reason={reason} "
+                    f"elapsed={elapsed:.1f}s < throttle={self._bracket_throttle_sec}s"
+                )
+                return
+
+        cfg = self._get_bracket_cfg()
+        if not cfg.enabled:
+            return
+
+        if position.side not in ("LONG", "SHORT"):
+            return
+
+        # Build PositionView
+        pos_view = BracketPositionView(
+            symbol=symbol,
+            side=position.side,
+            qty=Decimal(abs(position.qty)),
+            avg_entry_price=Decimal(position.avg_entry_price or 0),
+            realized_pnl=Decimal(position.realized_pnl or 0),
+            unrealized_pnl=Decimal(position.unrealized_pnl or 0),
+            update_ts=position.last_update_time or time.time(),
+        )
+
+        # Map open orders to OrderView
+        order_views: List[BracketOrderView] = []
+        for order in self._open_orders_by_symbol.get(symbol, []):
+            try:
+                order_views.append(
+                    BracketOrderView(
+                        order_id=str(order.get("order_id")
+                                     or order.get("orderId") or ""),
+                        client_order_id=str(
+                            order.get("client_order_id") or order.get("clientOrderId") or ""),
+                        symbol=order.get("symbol", symbol),
+                        side=str(order.get("side") or "").upper() or "BUY",
+                        order_type=order.get("type") or order.get(
+                            "order_type") or "LIMIT",
+                        qty=Decimal(str(order.get("quantity") or order.get(
+                            "origQty") or order.get("qty") or 0)),
+                        price=Decimal(str(order.get("price"))) if order.get(
+                            "price") not in (None, "") else None,
+                        stop_price=Decimal(str(order.get("stop_price") or order.get(
+                            "stopPrice"))) if order.get("stop_price") or order.get("stopPrice") else None,
+                        reduce_only=bool(order.get("reduce_only")
+                                         or order.get("reduceOnly", False)),
+                        close_position=bool(
+                            order.get("close_position") or order.get("closePosition", False)),
+                        status=str(order.get("status") or "NEW"),
+                        created_ts=float(order.get("created_ts")
+                                         or order.get("time") or time.time()),
+                        update_ts=float(order.get("update_ts") or order.get(
+                            "updateTime") or time.time()),
+                    )
+                )
+            except Exception as exc:
+                logger.debug("Skipping order for bracket evaluation", extra={
+                             "symbol": symbol, "error": str(exc), "order": order})
+                continue
+
+        try:
+            state_map = self.bracket_service.build_state(
+                positions=[pos_view],
+                orders=order_views,
+                symbol=symbol,
+                side=position.side,
+            )
+            state = state_map.get((symbol, position.side))
+            if not state:
+                return
+            plan = self.bracket_service.evaluate(state, cfg)
+        except Exception:
+            logger.warning("BracketService evaluation failed",
+                           exc_info=True, extra={"symbol": symbol})
+            return
+
+        self._metrics["brackets_evaluated"] += 1
+        if plan.severity in ("WARN", "ALERT"):
+            self._metrics["brackets_alerts"] += 1
+
+        actions = [a.action_type for a in plan.actions]
+        logging_v2.log_runtime_event(
+            event_kind="BRACKETS",
+            symbol=symbol,
+            action="plan",
+            result=plan.severity.lower(),
+            why=plan.why,
+            extra={"actions": actions},
+        )
+
+        # Execute plan (fail-closed)
+        try:
+            await self._apply_bracket_plan(symbol, position, plan, reason=reason)
+            # TASK 3: Update throttle timestamp after successful bracket application
+            self._last_brackets_apply_ts[symbol] = time.time()
+        except Exception:
+            logger.error("Bracket plan application failed", exc_info=True, extra={
+                         "symbol": symbol, "reason": reason})
+
+    async def _apply_bracket_plan(
+        self,
+        symbol: str,
+        position: PositionState,
+        plan: BracketPlan,
+        reason: str,
+    ) -> None:
+        """
+        Execute BracketPlan actions via ExecutionService (no auto-heal loops).
+        """
+        # DIAGNOSTIC: Log full bracket plan details
+        logger.info(
+            f"[ExecPosV2] APPLY_BRACKETS symbol={symbol} reason={reason} "
+            f"actions_count={len(plan.actions)} "
+            f"actions={[(a.action_type, getattr(a, 'price', None)) for a in plan.actions]}"
+        )
+
+        actions_summary = []
+        side = position.side
+        exit_side = "SELL" if side == "LONG" else (
+            "BUY" if side == "SHORT" else None)
+
+        logger.info(
+            f"[ExecPosV2] APPLY_BRACKETS position_side={side} exit_side={exit_side} qty={position.qty}"
+        )
+
+        placed_orders = []
+
+        for action in plan.actions:
+            actions_summary.append(action.action_type)
+
+            # DIAGNOSTIC: Log each action processing
+            logger.info(
+                f"[ExecPosV2] BRK_ACTION symbol={symbol} action_type={action.action_type} "
+                f"price={getattr(action, 'price', None)} qty={getattr(action, 'qty', None)}"
+            )
+
+            if action.action_type == "CANCEL":
+                await self.execution_service.cancel_order(
+                    symbol=symbol,
+                    order_id=action.order_id,
+                    client_order_id=action.client_order_id,
+                )
+            elif action.action_type in ("PLACE_SL", "PLACE_TP") and exit_side:
+                order_type = "STOP_MARKET" if action.action_type == "PLACE_SL" else "TAKE_PROFIT_MARKET"
+                qty = float(action.qty) if action.qty is not None else abs(
+                    position.qty)
+                if self._has_equivalent_bracket(symbol, exit_side, action):
+                    logger.info(
+                        f"[ExecPosV2] SKIP_PLACE_DUPLICATE_BRACKET symbol={symbol} action={action.action_type} side={exit_side} qty={qty} price={action.price}"
+                    )
+                    continue
+                client_order_id = self._make_bracket_client_order_id(
+                    symbol, action.action_type, exit_side, qty, action.price, position=position)
+
+                # DIAGNOSTIC: Log before execution
+                logger.info(
+                    f"[ExecPosV2] EXEC_BRACKET symbol={symbol} action_type={action.action_type} "
+                    f"order_type={order_type} side={exit_side} qty={qty} "
+                    f"stop_price={action.price}"
+                )
+                result = await self.execution_service.place_order(
+                    symbol=symbol,
+                    side=exit_side,
+                    order_type=order_type,
+                    quantity=qty,
+                    stop_price=str(
+                        action.price) if action.price is not None else None,
+                    client_order_id=client_order_id,
+                    reduce_only=True,
+                )
+                if isinstance(result, dict) and result.get("success") is False and result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
+                    logger.warning(
+                        "[ExecPosV2] Timeout placing bracket for %s, forcing ORDERS_SNAPSHOT", symbol)
+                    self._orders_snapshot_state[symbol] = "UNKNOWN"
+                    self._last_orders_snapshot_ts[symbol] = 0.0
+                    await self._request_orders_snapshot(symbol, force=True)
+                    return
+                if isinstance(result, dict) and result.get("success") is False:
+                    continue
+                placed_orders.append(
+                    {
+                        "order_id": result.get("order_id") if isinstance(result, dict) else None,
+                        "client_order_id": result.get("client_order_id") if isinstance(result, dict) else client_order_id,
+                        "order_type": order_type,
+                        "side": exit_side,
+                        "qty": qty,
+                        "price": float(action.price) if action.price is not None else None,
+                        "reduce_only": True,
+                    }
+                )
+            elif action.action_type == "ADJUST" and exit_side:
+                if action.order_id:
+                    await self.execution_service.cancel_order(symbol=symbol, order_id=action.order_id)
+                order_type = "STOP_MARKET" if action.reason_code in (
+                    "MISSING_SL", "STALE_LEVELS") else "TAKE_PROFIT_MARKET"
+                qty = float(action.qty) if action.qty is not None else abs(
+                    position.qty)
+                client_order_id = self._make_bracket_client_order_id(
+                    symbol, action.action_type, exit_side, qty, action.price, position=position)
+                result = await self.execution_service.place_order(
+                    symbol=symbol,
+                    side=exit_side,
+                    order_type=order_type,
+                    quantity=qty,
+                    stop_price=str(
+                        action.price) if action.price is not None else None,
+                    client_order_id=client_order_id,
+                    reduce_only=True,
+                )
+                if isinstance(result, dict) and result.get("success") is False and result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
+                    logger.warning(
+                        "[ExecPosV2] Timeout placing bracket for %s, forcing ORDERS_SNAPSHOT", symbol)
+                    self._orders_snapshot_state[symbol] = "UNKNOWN"
+                    self._last_orders_snapshot_ts[symbol] = 0.0
+                    await self._request_orders_snapshot(symbol, force=True)
+                    return
+                if isinstance(result, dict) and result.get("success") is False:
+                    continue
+                placed_orders.append(
+                    {
+                        "order_id": result.get("order_id") if isinstance(result, dict) else None,
+                        "client_order_id": result.get("client_order_id") if isinstance(result, dict) else client_order_id,
+                        "order_type": order_type,
+                        "side": exit_side,
+                        "qty": qty,
+                        "price": float(action.price) if action.price is not None else None,
+                        "reduce_only": True,
+                    }
+                )
+
+        logging_v2.log_runtime_event(
+            event_kind="BRACKETS_EXEC",
+            symbol=symbol,
+            action="apply",
+            result=plan.severity.lower(),
+            why=f"brackets_{reason}"[:80],
+            extra={"actions": actions_summary, "rid": plan.rid},
+        )
+
+        # Guardian metadata update (query-only)
+        if self.guardian:
+            guardian_side = side if side in ("LONG", "SHORT") else "FLAT"
+            if placed_orders:
+                register = getattr(self.guardian, "register_bracket_set", None)
+                if callable(register):
+                    res = register(
+                        symbol=symbol, side=guardian_side, orders=placed_orders)
+                    if hasattr(res, "__await__"):
+                        await res
+            else:
+                clear_fn = getattr(self.guardian, "clear_bracket_set", None)
+                if callable(clear_fn):
+                    res = clear_fn(symbol=symbol, side=guardian_side)
+                    if hasattr(res, "__await__"):
+                        await res
+
+    async def _run_bracket_recovery_pass(self) -> None:
+        """
+        Single-shot DR/rehydrate recovery using BracketService plans (no loops).
+        """
+        if self._recovery_completed:
+            return
+
+        cfg = self._get_bracket_cfg()
+        if not cfg.enabled:
+            self._recovery_completed = True
+            return
+
+        # Build PositionView list (only non-flat)
+        pos_views: List[BracketPositionView] = []
+        for pos in self._positions_by_symbol.values():
+            if abs(pos.qty) < 1e-9:
+                continue
+            if pos.side not in ("LONG", "SHORT"):
+                continue
+            try:
+                pos_views.append(
+                    BracketPositionView(
+                        symbol=pos.symbol,
+                        side=pos.side,
+                        qty=Decimal(abs(pos.qty)),
+                        avg_entry_price=Decimal(pos.avg_entry_price or 0),
+                        realized_pnl=Decimal(pos.realized_pnl or 0),
+                        unrealized_pnl=Decimal(pos.unrealized_pnl or 0),
+                        update_ts=pos.last_update_time or time.time(),
+                    )
+                )
+            except Exception:
+                continue
+
+        # Map open orders to OrderView
+        order_views: List[BracketOrderView] = []
+        for sym, orders in self._open_orders_by_symbol.items():
+            for order in orders:
+                try:
+                    order_views.append(
+                        BracketOrderView(
+                            order_id=str(order.get("order_id")
+                                         or order.get("orderId") or ""),
+                            client_order_id=str(
+                                order.get("client_order_id") or order.get("clientOrderId") or ""),
+                            symbol=order.get("symbol", sym),
+                            side=str(order.get("side") or "").upper() or "BUY",
+                            order_type=order.get("type") or order.get(
+                                "order_type") or "LIMIT",
+                            qty=Decimal(str(order.get("quantity") or order.get(
+                                "origQty") or order.get("qty") or 0)),
+                            price=Decimal(str(order.get("price"))) if order.get(
+                                "price") not in (None, "") else None,
+                            stop_price=Decimal(str(order.get("stop_price") or order.get(
+                                "stopPrice"))) if order.get("stop_price") or order.get("stopPrice") else None,
+                            reduce_only=bool(
+                                order.get("reduce_only") or order.get("reduceOnly", False)),
+                            close_position=bool(
+                                order.get("close_position") or order.get("closePosition", False)),
+                            status=str(order.get("status") or "NEW"),
+                            created_ts=float(order.get("created_ts") or order.get(
+                                "time") or time.time()),
+                            update_ts=float(order.get("update_ts") or order.get(
+                                "updateTime") or time.time()),
+                        )
+                    )
+                except Exception:
+                    continue
+
+        try:
+            bf = getattr(self.bracket_service,
+                         "evaluate_all_for_recovery", None)
+            plans = None
+            if callable(bf):
+                plans = bf(positions=pos_views, orders=order_views, cfg=cfg)
+            else:
+                plans = self.bracket_service.evaluate_all(
+                    positions=pos_views, orders=order_views, cfg=cfg)
+            if hasattr(plans, "__await__"):
+                plans = await plans  # type: ignore
+        except Exception:
+            logger.error("Bracket recovery evaluation failed", exc_info=True)
+            self._recovery_completed = True
+            return
+
+        for plan in plans or []:
+            reason = "brackets_recovery"
+            if any(a.action_type == "ADJUST" for a in plan.actions):
+                reason = "brackets_recovery_adjust_mismatch"
+            elif any(a.action_type in ("PLACE_SL", "PLACE_TP") for a in plan.actions):
+                reason = "brackets_recovery_seed_protection"
+            elif plan.state.is_flat and plan.actions:
+                reason = "brackets_recovery_orphan_cleanup"
+
+            logging_v2.log_runtime_event(
+                event_kind="BRACKETS_RECOVERY_PLAN",
+                symbol=plan.symbol,
+                action="plan",
+                result=plan.severity.lower(),
+                why=reason[:80],
+                extra={"actions": [
+                    a.action_type for a in plan.actions], "rid": plan.rid},
+            )
+
+            try:
+                pos_state = self._positions_by_symbol.get(
+                    plan.symbol) or PositionState(symbol=plan.symbol)
+                await self._apply_bracket_plan(plan.symbol, pos_state, plan, reason=reason)
+            except Exception:
+                logger.error("Bracket recovery application failed",
+                             exc_info=True, extra={"symbol": plan.symbol})
+
+        self._recovery_completed = True
+
+    def _get_trailing_config(self) -> TrailingConfig:
+        """
+        Retrieve trailing config, preferring typed ExecutionPositionConfig when available.
+        Falls back to legacy dict-based config (defaults preserved).
+        """
+        if self._ep_cfg and getattr(self._ep_cfg, "trailing", None):
+            trailing_cfg = self._ep_cfg.trailing
+            try:
+                return TrailingConfig(
+                    trail_distance_bps=self._coerce_float(
+                        getattr(trailing_cfg, "trail_distance_bps", None), 100.0),
+                    activate_after_bps=self._coerce_float(
+                        getattr(trailing_cfg, "activate_after_bps", None), 0.0),
+                    breakeven_rr=self._coerce_float(
+                        getattr(trailing_cfg, "breakeven_rr", None), 0.0),
+                    hard_time_exit_sec=self._coerce_optional_float(
+                        getattr(trailing_cfg, "hard_time_exit_sec", None),
+                        None,
+                    ),
+                )
+            except Exception:
+                # fall through to legacy path on any unexpected structure issues
+                pass
+
+        cfg_root = self.config.get("execution_position", self.config) if isinstance(
+            self.config, dict) else {}
+        trailing_node = {}
+        if isinstance(cfg_root, dict):
+            manage = cfg_root.get("manage", {})
+            if isinstance(manage, dict):
+                trailing_node = manage.get("trailing", {}) or {}
+            trailing_node = trailing_node or cfg_root.get("trailing", {}) or {}
+
+        return TrailingConfig(
+            trail_distance_bps=self._coerce_float(self._pluck(
+                trailing_node, "trail_distance_bps"), 100.0),
+            activate_after_bps=self._coerce_float(
+                self._pluck(trailing_node, "activate_after_bps"), 0.0),
+            breakeven_rr=self._coerce_float(
+                self._pluck(trailing_node, "breakeven_rr"), 0.0),
+            hard_time_exit_sec=self._coerce_optional_float(
+                self._pluck(trailing_node, "hard_time_exit_sec"), None),
+        )
+
+    def _get_close_config(self) -> CloseConfig:
+        """
+        Retrieve close config, preferring typed ExecutionPositionConfig when available.
+        Legacy dict path remains as fallback with defaults preserved.
+        """
+        if self._ep_cfg and getattr(self._ep_cfg, "close", None):
+            close_cfg = self._ep_cfg.close
+            try:
+                return CloseConfig(
+                    allow_partial=self._coerce_bool(
+                        getattr(close_cfg, "allow_partial", None), True),
+                    min_close_qty=self._coerce_float(
+                        getattr(close_cfg, "min_close_qty", None), 0.0),
+                    max_hold_time_sec=self._coerce_optional_float(
+                        getattr(close_cfg, "max_hold_time_sec", None), None),
+                    reason_policy=str(
+                        getattr(close_cfg, "reason_policy", "default") or "default"),
+                    allow_time_exit=self._coerce_bool(
+                        getattr(close_cfg, "allow_time_exit", None), True),
+                    allow_profit_exit=self._coerce_bool(
+                        getattr(close_cfg, "allow_profit_exit", None), True),
+                )
+            except Exception:
+                pass
+
+        cfg_root = self.config.get("execution_position", self.config) if isinstance(
+            self.config, dict) else {}
+        close_node = {}
+        if isinstance(cfg_root, dict):
+            manage = cfg_root.get("manage", {})
+            if isinstance(manage, dict):
+                close_node = manage.get("close", {}) or {}
+            close_node = close_node or cfg_root.get("close", {}) or {}
+
+        return CloseConfig(
+            allow_partial=self._coerce_bool(
+                self._pluck(close_node, "allow_partial"), True),
+            min_close_qty=self._coerce_float(
+                self._pluck(close_node, "min_close_qty"), 0.0),
+            max_hold_time_sec=self._coerce_optional_float(
+                self._pluck(close_node, "max_hold_time_sec"), None),
+            reason_policy=str(self._pluck(
+                close_node, "reason_policy") or "default"),
+            allow_time_exit=self._coerce_bool(
+                self._pluck(close_node, "allow_time_exit"), True),
+            allow_profit_exit=self._coerce_bool(
+                self._pluck(close_node, "allow_profit_exit"), True),
+        )
+
+    @staticmethod
+    def _coerce_float(val: Any, default: float) -> float:
+        try:
+            if val is None:
+                return default
+            return float(val)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _coerce_optional_float(val: Any, default: Optional[float]) -> Optional[float]:
+        try:
+            if val is None:
+                return default
+            return float(val)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _coerce_bool(val: Any, default: bool) -> bool:
+        if val is None:
+            return default
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            lowered = val.strip().lower()
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+        try:
+            return bool(val)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _pluck(obj: Any, *path: str) -> Any:
+        current = obj
+        for key in path:
+            if current is None:
+                return None
+            if isinstance(current, dict):
+                current = current.get(key)
+                continue
+            try:
+                current = getattr(current, key)
+            except Exception:
+                return None
+        return current
+
+    def _get_bracket_cfg(self) -> BracketRulesConfig:
+        # Preferred typed config path
+        if self._ep_cfg and getattr(self._ep_cfg, "aggregated_oco", None):
+            agg = self._ep_cfg.aggregated_oco
+            try:
+                return BracketRulesConfig(
+                    enabled=agg.enabled,
+                    allow_unprotected_position=agg.allow_unprotected_position,
+                    recalc_on_partial_close=agg.recalc_on_partial_close,
+                    recalc_on_scale_in=agg.recalc_on_scale_in,
+                    ttl_protect_new_bracket_ms=agg.ttl_protect_new_bracket_ms,
+                    max_tp_legs=agg.max_tp_legs,
+                    max_sl_legs=agg.max_sl_legs,
+                    sl_pct=agg.sl_pct,
+                    tp_rr=agg.tp_rr,
+                )
+            except Exception:
+                # Fail-closed to legacy path below
+                pass
+
+        # Legacy dict path (unchanged defaults)
+        cfg_root = self.config.get("execution_position", self.config) if isinstance(
+            self.config, dict) else {}
+        agg_cfg = cfg_root.get("aggregated_oco", {}) if isinstance(
+            cfg_root, dict) else {}
+        try:
+            return BracketRulesConfig(
+                enabled=agg_cfg.get("enabled", True),
+                allow_unprotected_position=agg_cfg.get(
+                    "allow_unprotected_position", False),
+                recalc_on_partial_close=agg_cfg.get(
+                    "recalc_on_partial_close", True),
+                recalc_on_scale_in=agg_cfg.get("recalc_on_scale_in", True),
+                ttl_protect_new_bracket_ms=agg_cfg.get(
+                    "ttl_protect_new_bracket_ms", 5000),
+                max_tp_legs=agg_cfg.get("max_tp_legs", 1),
+                max_sl_legs=agg_cfg.get("max_sl_legs", 1),
+                sl_pct=agg_cfg.get("sl_pct", 0.02),
+                tp_rr=agg_cfg.get("tp_rr", 2.0),
+            )
+        except Exception:
+            return BracketRulesConfig()

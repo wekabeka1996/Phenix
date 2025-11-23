@@ -1,42 +1,31 @@
-- TICK
-- EVT:FEATURES_CALCULATED
-- EVT:DECISION_SIGNAL
-- INTENT_OPEN
-- EVT:RISK_ASSESSMENT_COMPLETED
-- CMD:OPEN
-- ACK
-- FILL
-- FSM:OPENING → FSM:OPENED (перехід станів OPENING→OPENED)
-- BRACKETS_SET (TP/SL встановлені)
-- FSM:MANAGING (перехід станів OPENED→MANAGING)
-- EVT:TP_FILLED або EVT:SL_FILLED
-- CMD:CLOSE
-- FSM:CLOSING (перехід станів MANAGING→CLOSING)
-- EVT:CLOSED
-- FSM:CLOSED (перехід станів CLOSING→CLOSED)
-- SUMMARY
+# ExecPos Event Flow (Runtime V2)
 
+> Canonical behavior is defined in `docs/EXEC_POS_V2_RUNTIME_SPEC.md`.  
+> This file gives a concise flow view for ExecPosRuntimeV2 (legacy dual-runtime language is historical).
 
-## Aggregated OCO v1 flow (entry → scale-in → partial-close → full-close → restart)
+1) **INTENT → ENTRY**
+- Legacy `CMD:OPEN` → `RuntimeEvent(kind="ENTRY_INTENT")` via `MessageToRuntimeEventAdapter`.
+- Gatekeeper validates (qty/notional/steps/cooldown) → allow/deny.
+- On allow: `ExecutionService.place_order` → open_orders cache updated; structured log + metrics.
+- No TP/SL/bracket placement occurs in V2.
 
-1. **First entry**
-	- `EVT:ENTRY_FILLED` triggers `_recalc_aggregated_brackets(reason="first_entry")`.
-	- ManageFlowFSM places TP/SL pair, logs `AGG_OCO_BRACKET_SET_CHANGED(action="first_entry")`.
-	- OrderGuardian registers `BracketSetMeta(symbol, side)`.
-2. **Scale-in**
-	- `EVT:SCALE_IN_FILLED` updates position qty.
-	- FSM recomputes TP/SL (`DEC:AGG_OCO_RECALC(scale_in)`), new `bracket_set_id` replaces old one.
-	- Guardian ensures only one pair remains, cancelling stale brackets via `ensure_single_bracket_set_for_position`.
-3. **Partial-close**
-	- `EVT:PARTIAL_CLOSE_FILLED` fires.
-	- If `aggregated_oco.recalc_on_partial_close=true`, FSM recalculates; otherwise it keeps prior set but still checks for SL gaps.
-	- When SL is cancelled manually, FSM issues `DEC:AGG_OCO_RECALC(partial_close_unprotected)` to restore coverage.
-4. **Full close / flip**
-	- `EVT:POSITION_CLOSED` (or side flip) invokes `_cleanup_aggregated_brackets()`.
-	- Guardian clears metadata and cancels remaining reduce-only orders.
-5. **Restart / DR**
-	- On startup, ExecPos fetches live positions + open orders.
-	- `_rehydrate_aggregated_brackets_on_startup` groups data per `(symbol, side)` and calls `OrderGuardian.rehydrate_bracket_set_for_position`.
-	- Guardian may log `AGG_OCO_BRACKET_SET_CHANGED(action="rehydrate")` and only then runs cleanup to avoid deleting valid SL.
+2) **INTENT → CANCEL**
+- `CMD:CANCEL`/`CMD:CANCEL_ORDER` → `CANCEL_INTENT`.
+- `ExecutionService.cancel_order`; success prunes `_open_orders_by_symbol`; metrics/log only.
 
-**Invariant reminder:** For any phase where `position_amt > 0` and `allow_unprotected_position=false`, aggregated OCO keeps at least one active SL after each FSM/Guardian action.
+3) **INTENT → CLOSE**
+- `CMD:CLOSE`/`CMD:FORCE_CLOSE` → `CLOSE_INTENT`.
+- `ExecutionService.close_position`; on success position state is zeroed. No bracket cleanup (close FSM not ported).
+
+4) **TRADE_EXECUTED**
+- Idempotency (cumulative qty) → enrichment (price) → state update (qty/direction, entry_price on first open).
+- WAL writes: EXEC_TRADE then EXEC_POSITION (if state changed).
+- ExposureBridge emits `EVT:EXEC_POS_EXPOSURE_UPDATED`.
+- Watchdog analyzes for SL/orphan violations; recommends only (no auto-heal).
+
+5) **SNAPSHOTS**
+- `POSITION_SNAPSHOT`: rebuilds `_positions_by_symbol` then watchdog.
+- `ORDERS_SNAPSHOT`: rebuilds `_open_orders_by_symbol` then watchdog.
+
+6) **Aggregated OCO / Trailing**
+- Aggregated OCO computation, trailing stops, and close FSM are **not implemented** in Runtime V2. Watchdog is detect-only.

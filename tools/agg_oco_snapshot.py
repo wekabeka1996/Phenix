@@ -30,7 +30,7 @@ from apps.reference.services.order_guardian import BracketSetMeta
 LOGGER = logging.getLogger("agg_oco_snapshot")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BINANCE_MAINNET_URL = "https://fapi.binance.com"
-BINANCE_TESTNET_URL = "https://testnet.binancefuture.com"
+BINANCE_TESTNET_URL = "https://demo-fapi.binance.com"
 
 
 def boolish(value: Any) -> bool:
@@ -149,7 +149,8 @@ def normalize_position(raw: Any) -> Optional[NormalizedPosition]:
         or data.get("avgPrice")
     )
     try:
-        avg_price = float(avg_price_raw) if avg_price_raw not in (None, "") else None
+        avg_price = float(avg_price_raw) if avg_price_raw not in (
+            None, "") else None
     except (TypeError, ValueError):
         avg_price = None
 

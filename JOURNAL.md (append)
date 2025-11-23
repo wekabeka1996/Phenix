@@ -1,0 +1,24 @@
+
+## 2025-11-21 | RID: EP-OCO-V2-INTEG-TESTS-S8
+
+**Status**: ✅ COMPLETED (Tests only; no runtime changes)
+
+### Objective
+Strengthen integration coverage for ExecPosRuntimeV2 + OCO flows without modifying business logic.
+
+### Key Changes
+
+- `tests/domains/execution_position/shadow_execpos/test_oco_scenarios_v2_full.py`
+  - Baseline open flow asserts bracket placements invoke ExecutionService with STOP/TP order types.
+  - Scale-in flow verifies aggregated position arithmetic and guards against excessive bracket placements.
+  - Partial-close scenario exercises watchdog analysis with existing brackets.
+  - DR recovery scenario hydrates snapshot and ensures recovery pass completes once.
+
+### Tests
+```bash
+pytest tests/domains/execution_position/shadow_execpos/test_oco_scenarios_v2_full.py -q
+pytest tests/domains/execution_position/shadow_execpos -q
+```
+
+### Notes
+- No production code touched; tests reflect current runtime/bracket behavior. Any observed behavior changes would surface as test deltas.

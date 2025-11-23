@@ -19,8 +19,9 @@ import logging
 import os
 import threading
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Dict, List, Mapping, Optional
+from urllib.parse import urlencode
 
 import httpx
 from vfoundation.core.protocol import Message
@@ -30,6 +31,8 @@ from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult, C
 from apps.reference.telemetry.audit_logger import audit_logger
 from .metrics_aggregator import metrics_logger
 from apps.reference.config_exposure_policy import resolve_exposure_policy
+from apps.reference.config_symbols import resolve_instrument_profile
+from apps.reference.config_models import InstrumentProfile
 
 
 try:
@@ -68,8 +71,14 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Binance Futures API configuration
+# Default to testnet.binancefuture.com for USDT-M Futures (/fapi endpoints)
 BASE_URL = os.environ.get("BINANCE_FUTURES_BASE_URL",
                           "https://testnet.binancefuture.com")
+
+
+class BinanceValidationError(Exception):
+    """Raised when order parameters fail Binance exchange filters validation."""
+    pass
 
 
 class BinanceExecutionAdapter(AbstractExecutionAdapter):
@@ -80,7 +89,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
     Handles DEC:OPEN messages and executes market orders with guards.
     """
 
-    def __init__(self, fsm=None, config=None, shadow_mode: bool = False, **kwargs):
+    def __init__(self, fsm=None, config=None, shadow_mode: bool = False, rest_timeout_sec: float = 20.0, **kwargs):
         """
         Initialize Binance adapter.
 
@@ -88,15 +97,20 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             fsm: FSM instance for event emission
             config: Configuration dict
             shadow_mode: If True, no live API calls (for testing)
+            rest_timeout_sec: HTTP request timeout in seconds (default: 20.0)
             **kwargs: Additional arguments (e.g., fsm_core for testing)
         """
         super().__init__(fsm, config)
         self.shadow_mode = shadow_mode
+        self._rest_timeout = float(rest_timeout_sec)
         # Support both fsm and fsm_core parameter names (for testing)
         # For emitting EVT:* events
         self.fsm_core = kwargs.get('fsm_core', fsm)
         self._last_status_check = 0.0
         self._status_cache = "unknown"
+
+        # Instrument profiles cache for precision/filter validation
+        self._instrument_profiles: Dict[str, InstrumentProfile] = {}
 
         # WebSocket related attributes
         self.ws_listen_key: Optional[str] = None
@@ -209,14 +223,29 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             logger.warning(
                 f"[BinanceAdapter] Failed to read slippage_cap_bps: {e}")
 
+        # Log REST base URL and timeout for visibility (especially for testnet → demo-fapi migration)
         logger.info(
-            f"[BinanceAdapter] Initialized with shadow_mode={self.shadow_mode}, testnet={self.use_testnet}, ws_enabled={fsm is not None}"
+            f"[BinanceAdapter] Using REST base_url='{BASE_URL}' "
+            f"(shadow_mode={self.shadow_mode}, testnet={self.use_testnet}, ws_enabled={fsm is not None})"
+        )
+        logger.info(
+            f"[BinanceAdapter] REST timeout configured: {self._rest_timeout:.1f}s"
         )
 
     def start(self) -> None:
         """
         Start the adapter, including WebSocket connection if FSM core is available.
         """
+        # FIXED: Synchronize time with Binance server on startup
+        if not self.shadow_mode:
+            logger.info(
+                "[BinanceAdapter] Synchronizing time with Binance server...")
+            try:
+                self._sync_time_with_server_blocking()
+            except Exception as e:
+                logger.warning(
+                    f"[BinanceAdapter] Initial time sync failed: {e}, will retry on first -1021")
+
         if self.fsm_core is not None and not self.shadow_mode:
             logger.info(
                 "[BinanceAdapter] Starting WebSocket connection to USER_DATA_STREAM")
@@ -239,6 +268,160 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     "[BinanceAdapter] WebSocket thread did not stop gracefully")
 
         logger.info("[BinanceAdapter] Adapter stopped")
+
+    def _get_instrument_profile(self, symbol: str) -> InstrumentProfile:
+        """
+        Get instrument profile for symbol with lazy caching.
+
+        Args:
+            symbol: Trading symbol (e.g., 'SOLUSDT')
+
+        Returns:
+            InstrumentProfile with filters and precision
+
+        Raises:
+            BinanceValidationError: If symbol not configured
+        """
+        if symbol not in self._instrument_profiles:
+            try:
+                profile = resolve_instrument_profile(self.config, symbol)
+                self._instrument_profiles[symbol] = profile
+                logger.debug(
+                    f"[BinanceAdapter] Loaded instrument profile for {symbol}: "
+                    f"step_size={profile.step_size}, tick_size={profile.tick_size}, "
+                    f"qty_precision={profile.precision_quantity}, price_precision={profile.precision_price}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[BinanceAdapter] Failed to resolve instrument profile for {symbol}: {e}"
+                )
+                raise BinanceValidationError(
+                    f"Symbol {symbol} not configured or invalid: {e}"
+                ) from e
+        return self._instrument_profiles[symbol]
+
+    def _quantize_qty(self, symbol: str, raw_qty: Decimal | float | str) -> Decimal:
+        """
+        Normalize quantity to exchange step_size and validate min_qty.
+
+        Args:
+            symbol: Trading symbol
+            raw_qty: Raw quantity value
+
+        Returns:
+            Normalized quantity (floored to step_size)
+
+        Raises:
+            BinanceValidationError: If qty < min_qty after normalization
+        """
+        profile = self._get_instrument_profile(symbol)
+
+        # Convert to Decimal
+        try:
+            qty = Decimal(str(raw_qty))
+        except (InvalidOperation, ValueError) as e:
+            raise BinanceValidationError(
+                f"Invalid quantity format for {symbol}: {raw_qty}"
+            ) from e
+
+        # Floor to step_size
+        step_size = Decimal(str(profile.step_size))
+        if step_size > 0:
+            qty = (qty / step_size).quantize(Decimal('1'),
+                                             rounding=ROUND_DOWN) * step_size
+
+        # Quantize to precision_quantity decimal places
+        precision_str = f"0.{'0' * profile.precision_quantity}"
+        qty = qty.quantize(Decimal(precision_str), rounding=ROUND_DOWN)
+
+        # Validate min_qty
+        min_qty = Decimal(str(profile.min_qty))
+        if qty < min_qty:
+            raise BinanceValidationError(
+                f"Quantity {qty} below min_qty {min_qty} for {symbol} "
+                f"(raw_qty={raw_qty}, step_size={step_size})"
+            )
+
+        logger.debug(
+            f"[BinanceAdapter] Normalized qty for {symbol}: {raw_qty} → {qty} "
+            f"(step_size={step_size}, min_qty={min_qty})"
+        )
+        return qty
+
+    def _quantize_price(self, symbol: str, raw_price: Decimal | float | str) -> Decimal:
+        """
+        Normalize price to exchange tick_size.
+
+        Args:
+            symbol: Trading symbol
+            raw_price: Raw price value
+
+        Returns:
+            Normalized price (floored to tick_size)
+
+        Raises:
+            BinanceValidationError: If price invalid
+        """
+        profile = self._get_instrument_profile(symbol)
+
+        # Convert to Decimal
+        try:
+            price = Decimal(str(raw_price))
+        except (InvalidOperation, ValueError) as e:
+            raise BinanceValidationError(
+                f"Invalid price format for {symbol}: {raw_price}"
+            ) from e
+
+        # Floor to tick_size
+        tick_size = Decimal(str(profile.tick_size))
+        if tick_size > 0:
+            price = (price / tick_size).quantize(Decimal('1'),
+                                                 rounding=ROUND_DOWN) * tick_size
+
+        # Quantize to precision_price decimal places
+        precision_str = f"0.{'0' * profile.precision_price}"
+        price = price.quantize(Decimal(precision_str), rounding=ROUND_DOWN)
+
+        # Validate min_price
+        min_price = Decimal(str(profile.min_price))
+        if price < min_price:
+            raise BinanceValidationError(
+                f"Price {price} below min_price {min_price} for {symbol} "
+                f"(raw_price={raw_price}, tick_size={tick_size})"
+            )
+
+        logger.debug(
+            f"[BinanceAdapter] Normalized price for {symbol}: {raw_price} → {price} "
+            f"(tick_size={tick_size}, min_price={min_price})"
+        )
+        return price
+
+    def _validate_min_notional(self, symbol: str, qty: Decimal, price: Decimal) -> None:
+        """
+        Validate that qty * price >= min_notional.
+
+        Args:
+            symbol: Trading symbol
+            qty: Order quantity
+            price: Order price
+
+        Raises:
+            BinanceValidationError: If notional < min_notional
+        """
+        profile = self._get_instrument_profile(symbol)
+        notional = qty * price
+        min_notional = Decimal(str(profile.min_notional))
+
+        if notional < min_notional:
+            raise BinanceValidationError(
+                f"Notional {notional} USDT below min_notional {min_notional} USDT for {symbol} "
+                f"(qty={qty}, price={price})"
+            )
+
+        logger.debug(
+            f"[BinanceAdapter] Validated min_notional for {symbol}: "
+            f"qty={qty} * price={price} = {notional} USDT >= {min_notional} USDT"
+        )
 
     def _start_websocket(self) -> None:
         """
@@ -306,6 +489,9 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                         logger.info(
                             "[BinanceAdapter] WebSocket connected successfully")
 
+                        # FIXED: Track last time sync for periodic resync
+                        last_resync = time.time()
+
                         while self.ws_running:
                             try:
                                 # Receive message with timeout
@@ -313,9 +499,19 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                 msg_data = json.loads(message)
                                 self._handle_ws_message(msg_data)
 
+                                # FIXED: Periodic time resync every 5 minutes
+                                if time.time() - last_resync > 300:
+                                    await self._sync_time_with_server()
+                                    last_resync = time.time()
+
                             except asyncio.TimeoutError:
                                 # Send ping to keep connection alive
                                 await websocket.ping()
+
+                                # FIXED: Also resync time on ping (connection still alive)
+                                if time.time() - last_resync > 300:
+                                    await self._sync_time_with_server()
+                                    last_resync = time.time()
 
                             except websockets.exceptions.ConnectionClosed:
                                 logger.warning(
@@ -344,7 +540,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         # Use httpx for async compatibility
         import requests
-        resp = requests.post(url, headers=headers, timeout=10)
+        resp = requests.post(url, headers=headers, timeout=self._rest_timeout)
         if resp.ok:
             data = resp.json()
             self.ws_listen_key = data.get("listenKey")
@@ -367,7 +563,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         params = {"listenKey": self.ws_listen_key}
 
         import requests
-        resp = requests.put(url, headers=headers, params=params, timeout=10)
+        resp = requests.put(url, headers=headers,
+                            params=params, timeout=self._rest_timeout)
         if resp.ok:
             self.listen_key_last_refresh = time.time()
             logger.debug("[BinanceAdapter] Listen key refreshed")
@@ -589,24 +786,43 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             or order_data.get("p")
             or "0"
         )
+        # For FILLED orders, prioritize cumulative filled qty ("z") over last fill ("l")
+        # because "l" may be 0 for orders filled in multiple parts
         quantity_raw = (
-            order_data.get("l")
-            or order_data.get("z")
-            or order_data.get("q")
+            order_data.get("z")  # Cumulative filled quantity (most reliable)
+            or order_data.get("l")  # Last fill quantity
+            or order_data.get("q")  # Original order quantity (fallback)
             or "0"
         )
+        last_raw = order_data.get("l", "0")
+        cum_raw = order_data.get("z", "0")
+        orig_raw = order_data.get("q", "0")
 
         try:
             qty_decimal = Decimal(str(quantity_raw))
+            last_decimal = Decimal(str(last_raw))
+            cum_decimal = Decimal(str(cum_raw))
+            orig_decimal = Decimal(str(orig_raw))
         except (InvalidOperation, ValueError, TypeError):
+            logger.warning(
+                f"[BinanceAdapter] _build_trade_executed_payload: Invalid quantity_raw={quantity_raw} for {symbol}"
+            )
             return None
 
-        if qty_decimal == 0:
-            return None
+        last_abs = last_decimal.copy_abs()
+        cum_abs = cum_decimal.copy_abs()
+        orig_abs = orig_decimal.copy_abs()
 
-        signed_qty = qty_decimal.copy_abs()
-        if side == "sell":
-            signed_qty = -signed_qty
+        qty_abs = qty_decimal.copy_abs()
+        if qty_abs == 0:
+            qty_abs = cum_abs if cum_abs != 0 else (
+                last_abs if last_abs != 0 else orig_abs)
+
+        if qty_abs == 0:
+            logger.warning(
+                f"[BinanceAdapter] _build_trade_executed_payload: Zero quantity for {symbol} (z={order_data.get('z')}, l={order_data.get('l')}, q={order_data.get('q')})"
+            )
+            return None
 
         fees = str(order_data.get("n", "0"))
         venue = "binance_ws_testnet" if self.use_testnet else "binance_ws"
@@ -615,8 +831,13 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             "symbol": symbol,
             "side": side,
             "price": str(price_raw),
-            "quantity": str(signed_qty),
-            "qty": str(signed_qty),
+            "quantity": str(qty_abs),
+            "qty": str(qty_abs),
+            "last_fill_qty": str(last_abs),
+            "cum_qty": str(cum_abs),
+            "raw_last_qty": str(last_decimal),
+            "raw_cum_qty": str(cum_decimal),
+            "raw_orig_qty": str(orig_decimal),
             "ts": int(event_ts),
             "fees": fees,
             "venue": venue,
@@ -701,7 +922,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"{k}={v}" for k, v in signed_params.items())
             full_url = f"{url}?{query_string}"
             async with httpx.AsyncClient() as client:
-                resp = await client.post(full_url, headers=headers, timeout=10)
+                resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
                 try:
                     data = resp.json()
                 except:
@@ -728,7 +949,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"{k}={v}" for k, v in signed_params.items())
             full_url = f"{url}?{query_string}"
             async with httpx.AsyncClient() as client:
-                resp = await client.post(full_url, headers=headers, timeout=10)
+                resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
                 try:
                     data = resp.json()
                 except:
@@ -749,7 +970,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"{k}={v}" for k, v in signed_params.items())
             full_url = f"{url}?{query_string}"
             async with httpx.AsyncClient() as client:
-                resp = await client.post(full_url, headers=headers, timeout=10)
+                resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
                 try:
                     data = resp.json()
                 except:
@@ -770,7 +991,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"{k}={v}" for k, v in signed_params.items())
             full_url = f"{url}?{query_string}"
             async with httpx.AsyncClient() as client:
-                resp = await client.post(full_url, headers=headers, timeout=10)
+                resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
                 try:
                     data = resp.json()
                 except:
@@ -796,8 +1017,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 return False, None
 
             try:
-                from decimal import Decimal
-
                 # Fetch current mark price from exchange
                 mark_price = await self._get_mark_price_async(symbol)
                 if mark_price is None:
@@ -846,7 +1065,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 full_url = f"{url}?{query_string}"
 
                 async with httpx.AsyncClient() as client:
-                    resp = await client.post(full_url, headers=headers, timeout=10)
+                    resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
                     try:
                         data = resp.json()
                     except:
@@ -882,7 +1101,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     f"{k}={v}" for k, v in signed_params.items())
                 full_url = f"{url}?{query_string}"
                 async with httpx.AsyncClient() as client:
-                    resp = await client.post(full_url, headers=headers, timeout=10)
+                    resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
                     try:
                         data = resp.json()
                     except:
@@ -964,8 +1183,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             Decimal mark price or None if fetch fails
         """
         try:
-            from decimal import Decimal
-
             if self.shadow_mode:
                 # Shadow mode: return mock mark price
                 logger.info(
@@ -973,7 +1190,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 return Decimal("3000.0")  # Mock value for testing
 
             # Sync time with server
-            self._sync_time_with_server()
+            await self._sync_time_with_server()
 
             # Build request to /fapi/v1/premiumIndex (mark price endpoint)
             base_url = BASE_URL
@@ -983,7 +1200,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 "symbol": symbol,
                 "timestamp": int(time.time() * 1000)
             }
-            signed_params = self._get_signed_params(params)
+            signed_params, _, _, _ = self._build_signed_request(
+                params, body=None, log_ctx="GET_MARK_PRICE")
 
             headers = {"X-MBX-APIKEY": self.api_key}
             url = f"{base_url}{endpoint}"
@@ -1045,20 +1263,21 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 attempt += 1
                 try:
                     # Sync time with server
-                    self._sync_time_with_server()
+                    await self._sync_time_with_server()
 
                     # Build signed request
                     base_url = BASE_URL
                     endpoint = "/fapi/v2/positionRisk"
 
                     params = {"timestamp": int(time.time() * 1000)}
-                    signed_params = self._get_signed_params(params)
+                    signed_params, _, _, _ = self._build_signed_request(
+                        params, body=None, log_ctx="GET_OPEN_POSITIONS")
 
                     headers = {"X-MBX-APIKEY": self.api_key}
 
                     url = f"{base_url}{endpoint}"
                     async with httpx.AsyncClient() as client:
-                        response = await client.get(url, params=signed_params, headers=headers, timeout=10)
+                        response = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
 
                         if response.status_code == 200:
                             positions = response.json()
@@ -1163,7 +1382,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 attempt += 1
                 try:
                     # Sync time with server
-                    self._sync_time_with_server()
+                    await self._sync_time_with_server()
 
                     # Build signed request
                     base_url = BASE_URL
@@ -1173,12 +1392,13 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     if symbol:
                         params["symbol"] = symbol
 
-                    signed_params = self._get_signed_params(params)
+                    signed_params, _, _, _ = self._build_signed_request(
+                        params, body=None, log_ctx="GET_OPEN_ORDERS")
                     headers = {"X-MBX-APIKEY": self.api_key}
 
                     url = f"{base_url}{endpoint}"
                     async with httpx.AsyncClient() as client:
-                        response = await client.get(url, params=signed_params, headers=headers, timeout=10)
+                        response = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
 
                         if response.status_code == 200:
                             orders = response.json()
@@ -1253,25 +1473,34 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             logger.error(f"[BinanceAdapter] get_open_orders fatal error: {e}")
             return []
 
-    def _sync_time_with_server(self) -> None:
+    async def _sync_time_with_server(self) -> None:
         """
-        Synchronize local time with Binance server time.
+        Synchronize local time with Binance server time using async HTTP.
         """
         try:
             url = f"{BASE_URL}/fapi/v1/time"
-            import requests
-            resp = requests.get(url, timeout=5)
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=5)
 
-            if resp.ok:
+            if resp.is_success:
                 server_time = resp.json().get("serverTime", 0)
                 local_time = int(time.time() * 1000)
+                old_offset = self.server_time_offset
                 self.server_time_offset = server_time - local_time
                 self.last_time_sync = time.time()
 
                 drift_ms = abs(self.server_time_offset)
+                offset_change = abs(self.server_time_offset - old_offset)
+
                 if drift_ms > 500:  # More than 500ms drift
                     logger.warning(
-                        f"[BinanceAdapter] Time drift detected: {drift_ms:.1f}ms")
+                        f"[BinanceAdapter] Time drift detected: {drift_ms:.1f}ms "
+                        f"(server={server_time}, local={local_time}, offset_change={offset_change:.1f}ms)"
+                    )
+                elif offset_change > 100:  # Offset changed significantly
+                    logger.info(
+                        f"[BinanceAdapter] Time offset adjusted: {old_offset:.1f}ms -> {self.server_time_offset:.1f}ms"
+                    )
                 else:
                     logger.debug(
                         f"[BinanceAdapter] Time sync completed, offset: {self.server_time_offset:.1f}ms"
@@ -1284,32 +1513,74 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         except Exception as e:
             logger.error(f"[BinanceAdapter] Time sync error: {e}")
 
+    def _sync_time_with_server_blocking(self) -> None:
+        """
+        Synchronous wrapper for contexts that are not async-aware.
+        """
+        asyncio.run(self._sync_time_with_server())
+
     def _get_signed_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Add signature and required fields to API parameters.
-
-        Args:
-            params: Base parameters
-
-        Returns:
-            Parameters with signature and timestamp
+        Add required fields (timestamp/recvWindow) to API parameters (unsigned).
         """
-        # Add timestamp and recvWindow
-        signed_params = params.copy()
-        signed_params["timestamp"] = str(
+        unsigned_params = params.copy()
+        unsigned_params["timestamp"] = str(
             int(time.time() * 1000) + int(self.server_time_offset))
-        signed_params["recvWindow"] = "1500"  # 1.5 seconds as per CONFIG_PATCH
+        # FIXED: Increase recvWindow to 5000ms (Binance recommendation for futures)
+        unsigned_params["recvWindow"] = "5000"
+        return unsigned_params
 
-        # Create signature
-        query_string = "&".join(
-            f"{k}={v}" for k, v in sorted(signed_params.items()))
-        signature = hmac.new(
-            self.api_secret.encode(
-                "utf-8"), query_string.encode("utf-8"), hashlib.sha256
-        ).hexdigest()
+    async def place_order_v2(
+        self,
+        symbol: str,
+        side: Optional[str],
+        order_type: Optional[str],
+        quantity: Optional[Union[str, float, int]],
+        price: Optional[Union[str, float, int]] = None,
+        client_order_id: Optional[str] = None,
+        reduce_only: bool = False,
+        stop_price: Optional[Union[str, float, int]] = None,
+        tif: Optional[str] = "GTC",
+        **kwargs,
+    ) -> Dict[str, object]:
+        """
+        V2-friendly place_order wrapper used by ExecPosRuntimeV2 ExecutionService.
 
-        signed_params["signature"] = signature
-        return signed_params
+        Normalizes V2 kwargs into legacy DEC:PLACE_ORDER Message and delegates to place_order().
+        """
+        logger.info(
+            "[BinanceAdapter-S5] place_order_v2 called: symbol=%s side=%s type=%s qty=%s stop_price=%s reduce_only=%s",
+            symbol,
+            side,
+            order_type,
+            quantity,
+            stop_price,
+            reduce_only,
+        )
+        try:
+            payload = {
+                "symbol": symbol,
+                "side": side,
+                "qty": quantity,
+                "order_type": order_type,
+                "price": price,
+                "stopPrice": stop_price or kwargs.get("stopPrice") or kwargs.get("stop_price"),
+                "reduceOnly": reduce_only,
+                "tif": tif or "GTC",
+                "newClientOrderId": client_order_id,
+            }
+            msg = Message(
+                op="DEC",
+                verb="PLACE_ORDER",
+                src="execpos_v2",
+                dst="execution_adapter",
+                pld=payload,
+                why=kwargs.get("why", "execpos_v2"),
+            )
+            return await self.place_order(msg)
+        except Exception as exc:
+            logger.error(f"[BinanceAdapter] V2 place_order error: {exc}")
+            raise
 
     async def place_order(self, dec_msg: Message) -> Dict[str, object]:
         """
@@ -1372,7 +1643,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         # Apply slippage cap for MARKET orders if anchor price provided
         if self.slippage_cap_bps is not None and order_type == "MARKET":
             try:
-                from decimal import Decimal
                 anchor_price = payload.get("anchor_price") or payload.get(
                     "ref_price") or payload.get("expected_price")
                 if anchor_price is not None:
@@ -1428,8 +1698,11 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 )
 
         except Exception as e:
-            logger.error(f"[BinanceAdapter] Order execution failed: {e}")
-            return self._create_error_feedback(symbol, str(e))
+            logger.error(
+                f"[BinanceAdapter] Order execution failed: {type(e).__name__}: {e}",
+                exc_info=True  # Full traceback for debugging
+            )
+            return self._create_error_feedback(symbol, f"{type(e).__name__}: {e}")
 
     async def cancel_order(self, dec_msg: Message) -> Dict[str, object]:
         """
@@ -1552,7 +1825,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 logger.warning("Missing Binance API credentials for getOrder")
                 return None
 
-            self._sync_time_with_server()
+            await self._sync_time_with_server()
 
             base_url = BASE_URL
             endpoint = "/fapi/v1/order"
@@ -1564,7 +1837,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 "recvWindow": 1500,
             }
 
-            signed_params = self._get_signed_params(params)
+            signed_params, _, _, _ = self._build_signed_request(
+                params, body=None, log_ctx="GET_ORDER")
             headers = {"X-MBX-APIKEY": api_key}
 
             url = f"{base_url}{endpoint}"
@@ -1602,7 +1876,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 raise ValueError("Missing Binance API credentials")
 
             # Sync time with server
-            self._sync_time_with_server()
+            await self._sync_time_with_server()
 
             # Build signed request
             base_url = BASE_URL
@@ -1615,7 +1889,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 "recvWindow": 1500,
             }
 
-            signed_params = self._get_signed_params(params)
+            signed_params, _, _, _ = self._build_signed_request(
+                params, body=None, log_ctx="CANCEL_ORDER")
             headers = {"X-MBX-APIKEY": api_key}
 
             url = f"{base_url}{endpoint}"
@@ -1658,7 +1933,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         if now - self._last_status_check > 30.0:
             try:
                 # Simple connectivity check via time sync
-                self._sync_time_with_server()
+                self._sync_time_with_server_blocking()
                 self._status_cache = "connected"
             except Exception:
                 self._status_cache = "error"
@@ -1684,8 +1959,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         FIXED BUG-P1-002: Preserve Decimal precision by avoiding float conversion.
         Use Decimal for normalization to remove trailing zeros while maintaining precision.
         """
-        from decimal import Decimal
-
         # Parse as Decimal, normalize to remove trailing zeros, return as string
         # normalize() removes insignificant trailing zeros without precision loss
         return str(Decimal(qty).normalize())
@@ -1707,6 +1980,10 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             "order_id": None,
             "why_codes": ["EXEC_GUARD_PASS", "EXEC_VOLATILITY_PASS", "EXEC_POSITION_PASS"],
         }
+
+    def _format_decimal(self, value: Decimal, precision: int) -> str:
+        """Format Decimal to string with fixed precision, avoiding scientific notation."""
+        return f"{value:.{precision}f}"
 
     async def _place_binance_order_async(
         self,
@@ -1733,24 +2010,60 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             reduce_only: Whether order should be reduce-only
             idempotent_key: Optional key for newClientOrderId
         """
-        logger.info(
-            f"[BinanceAdapter] Placing {order_type} order: {symbol} {side} {quantity}")
+        # Normalize quantity and price to exchange filters BEFORE API call
+        try:
+            normalized_qty = self._quantize_qty(symbol, quantity)
+            profile = self._get_instrument_profile(symbol)
+            # Use fixed-point formatting to avoid scientific notation and ensure correct precision
+            qty_str = self._format_decimal(
+                normalized_qty, profile.precision_quantity)
 
-        # Prepare request parameters
+            price_str = None
+            if order_type == "LIMIT" and price:
+                normalized_price = self._quantize_price(symbol, price)
+                # Validate min_notional for LIMIT orders
+                self._validate_min_notional(
+                    symbol, normalized_qty, normalized_price)
+                price_str = self._format_decimal(
+                    normalized_price, profile.precision_price)
+
+            stop_price_str = None
+            if stop_price:
+                # Quantize stop price same as price
+                normalized_stop_price = self._quantize_price(
+                    symbol, stop_price)
+                stop_price_str = self._format_decimal(
+                    normalized_stop_price, profile.precision_price)
+
+            logger.info(
+                f"[BinanceAdapter] Placing {order_type} order: {symbol} {side} "
+                f"qty={quantity}→{qty_str}" +
+                (f", price={price}→{price_str}" if price_str else "") +
+                (f", stopPrice={stop_price}→{stop_price_str}" if stop_price_str else "")
+            )
+        except BinanceValidationError as e:
+            # Log validation error and re-raise
+            logger.error(
+                f"[BinanceAdapter] Order validation failed for {symbol}: {e}"
+            )
+            raise
+
+        # Prepare request parameters with normalized values
         params: Dict[str, str] = {
             "symbol": symbol,
             "side": side,
             "type": order_type,
-            "quantity": str(quantity),
+            "quantity": qty_str,
         }
 
         # Add order-specific parameters
-        if order_type == "LIMIT" and price:
-            params["price"] = price
+        if order_type == "LIMIT" and price_str:
+            params["price"] = price_str
             params["timeInForce"] = time_in_force  # GTC/IOC/FOK
 
-        if "STOP" in order_type and stop_price:
-            params["stopPrice"] = stop_price
+        # Both STOP_MARKET and TAKE_PROFIT_MARKET require stopPrice parameter
+        if order_type in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "STOP", "TAKE_PROFIT") and stop_price_str:
+            params["stopPrice"] = stop_price_str
 
         if reduce_only:
             params["reduceOnly"] = "true"
@@ -1763,179 +2076,223 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         # Get signed parameters with proper timestamp and recvWindow
         signed_params = self._get_signed_params(params)
+        signed_params, body_dict, pre_sign, sig = self._build_signed_request(
+            signed_params,
+            body=None,
+            log_ctx="PLACE_ORDER",
+        )
+        client_order_id = (
+            idempotent_key
+            or params.get("newClientOrderId")
+            or (body_dict.get("newClientOrderId") if isinstance(body_dict, dict) else None)
+            or "unknown_client_order_id"
+        )
 
         # Make async API request
         url = f"{BASE_URL}/fapi/v1/order"
-        query_string = "&".join(f"{k}={v}" for k, v in signed_params.items())
-        full_url = f"{url}?{query_string}"
         headers = {"X-MBX-APIKEY": self.api_key}
 
         logger.info(f"[BinanceAdapter] POST {BASE_URL}/fapi/v1/order")
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(full_url, headers=headers, timeout=10)
+        logger.debug(
+            "[BinanceAdapter] PLACE_ORDER params=%s body=%s pre_sign=%s signature=%s",
+            signed_params,
+            body_dict,
+            pre_sign,
+            sig,
+        )
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, params=signed_params, data=body_dict or None, headers=headers, timeout=self._rest_timeout)
 
-            # Parse response
-            try:
-                data = resp.json()
-            except:
-                data = {"raw": resp.text}
+                # Parse response
+                try:
+                    data = resp.json()
+                except:
+                    data = {"raw": resp.text}
 
-            # Handle API errors with specific error codes
-            if not resp.is_success:
-                error_code = data.get("code")
-                error_msg = data.get("msg", str(data))
+                # Handle API errors with specific error codes
+                if not resp.is_success:
+                    error_code = data.get("code")
+                    error_msg = data.get("msg", str(data))
 
-                if error_code == -1021:
-                    # Timestamp error - retry once after time sync
-                    logger.warning(
-                        f"[BinanceAdapter] Timestamp error (-1021), syncing time and retrying: {error_msg}"
-                    )
-                    self._sync_time_with_server()
-                    # Retry with updated timestamp
-                    signed_params = self._get_signed_params(params)
-                    query_string = "&".join(
-                        f"{k}={v}" for k, v in signed_params.items())
-                    full_url = f"{url}?{query_string}"
-                    resp = await client.post(full_url, headers=headers, timeout=10)
-                    try:
-                        data = resp.json()
-                    except:
-                        data = {"raw": resp.text}
+                    if error_code == -1021:
+                        # Timestamp error - retry once after time sync
+                        logger.warning(
+                            f"[BinanceAdapter] Timestamp error (-1021), syncing time and retrying: {error_msg}"
+                        )
+                        logger.warning(
+                            f"[BinanceAdapter] Previous timestamp: {signed_params.get('timestamp')}, "
+                            f"server_time_offset: {self.server_time_offset}ms, recvWindow: {signed_params.get('recvWindow')}"
+                        )
+                        await self._sync_time_with_server()
+                        # FIXED: Rebuild request with fresh timestamp and signature
+                        signed_params = self._get_signed_params(params)
+                        signed_params, body_dict, pre_sign, sig = self._build_signed_request(
+                            signed_params,
+                            body=None,
+                            log_ctx="RETRY_AFTER_-1021",
+                        )
+                        logger.info(
+                            f"[BinanceAdapter] Retry with new timestamp: {signed_params.get('timestamp')}, "
+                            f"new offset: {self.server_time_offset}ms"
+                        )
+                        # FIXED: Use params= instead of query string in URL
+                        resp = await client.post(url, params=signed_params, data=body_dict or None, headers=headers, timeout=self._rest_timeout)
+                        try:
+                            data = resp.json()
+                        except:
+                            data = {"raw": resp.text}
 
-                    if not resp.is_success:
+                        if not resp.is_success:
+                            logger.error(
+                                f"[BinanceAdapter] Order still failed after retry: HTTP {resp.status_code} {data}"
+                            )
+                            raise RuntimeError(
+                                f"Binance order failed after retry: HTTP {resp.status_code} {data}"
+                            )
+
+                    elif error_code == -2010:
+                        # Insufficient balance
                         logger.error(
-                            f"[BinanceAdapter] Order still failed after retry: HTTP {resp.status_code} {data}"
-                        )
+                            f"[BinanceAdapter] Insufficient balance (-2010): {error_msg}")
                         raise RuntimeError(
-                            f"Binance order failed after retry: HTTP {resp.status_code} {data}"
+                            f"Insufficient balance: {error_msg}")
+
+                    elif error_code == -2021:
+                        # Order would immediately trigger - retry with recovery strategy
+                        success, response = await self._handle_bracket_error(
+                            error_code, error_msg, params, idempotent_key, client_order_id, url, headers
                         )
+                        if success and response:
+                            data = response
+                            # Continue to success block
+                        else:
+                            raise RuntimeError(
+                                f"Bracket order -2021: Could not recover (offset increase + retry failed)"
+                            )
 
-                elif error_code == -2010:
-                    # Insufficient balance
-                    logger.error(
-                        f"[BinanceAdapter] Insufficient balance (-2010): {error_msg}")
-                    raise RuntimeError(f"Insufficient balance: {error_msg}")
+                    elif error_code == -4116:
+                        # Duplicate ClientOrderId - retry with new ID
+                        success, response = await self._handle_bracket_error(
+                            error_code, error_msg, params, idempotent_key, client_order_id, url, headers
+                        )
+                        if success and response:
+                            data = response
+                            # Continue to success block
+                        else:
+                            raise RuntimeError(
+                                f"Bracket order -4116: Could not recover (new ID + retry failed)"
+                            )
 
-                elif error_code == -2021:
-                    # Order would immediately trigger - retry with recovery strategy
-                    success, response = await self._handle_bracket_error(
-                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
-                    )
-                    if success and response:
-                        data = response
-                        # Continue to success block
+                    elif error_code == -4137:
+                        # Quantity not allowed - retry with reduced qty
+                        success, response = await self._handle_bracket_error(
+                            error_code, error_msg, params, idempotent_key, client_order_id, url, headers
+                        )
+                        if success and response:
+                            data = response
+                            # Continue to success block
+                        else:
+                            raise RuntimeError(
+                                f"Bracket order -4137: Could not recover (qty reduction + retry failed)"
+                            )
+
+                    elif error_code == -4164:
+                        # MIN_NOTIONAL not satisfied - retry with increased qty
+                        success, response = await self._handle_bracket_error(
+                            error_code, error_msg, params, idempotent_key, client_order_id, url, headers
+                        )
+                        if success and response:
+                            data = response
+                            # Continue to success block
+                        else:
+                            raise RuntimeError(
+                                f"Bracket order -4164: Could not recover (qty increase + retry failed)"
+                            )
+
+                    elif error_code == -4024:
+                        # EP-STAB-PERCENT-PRICE: PERCENT_PRICE filter violation
+                        # "Limit price can't be lower/higher than X" - stopPrice outside allowed price band
+                        success, response = await self._handle_bracket_error(
+                            error_code, error_msg, params, idempotent_key, client_order_id, url, headers
+                        )
+                        if success and response:
+                            data = response
+                            # Continue to success block
+                        else:
+                            raise RuntimeError(
+                                f"Bracket order -4024: Could not recover (PERCENT_PRICE violation, price band check failed)"
+                            )
+
+                    elif error_code == -429:
+                        # Rate limit exceeded - retry with exponential backoff
+                        success, response = await self._handle_bracket_error(
+                            error_code, error_msg, params, idempotent_key, client_order_id, url, headers
+                        )
+                        if success and response:
+                            data = response
+                            # Continue to success block
+                        else:
+                            raise RuntimeError(
+                                f"Bracket order -429: Could not recover (exhausted backoff retries)"
+                            )
+
                     else:
+                        logger.error(
+                            f"[BinanceAdapter] Order FAILED: HTTP {resp.status_code} {data}")
                         raise RuntimeError(
-                            f"Bracket order -2021: Could not recover (offset increase + retry failed)"
-                        )
+                            f"Binance order failed: HTTP {resp.status_code} {data}")
 
-                elif error_code == -4116:
-                    # Duplicate ClientOrderId - retry with new ID
-                    success, response = await self._handle_bracket_error(
-                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
-                    )
-                    if success and response:
-                        data = response
-                        # Continue to success block
-                    else:
-                        raise RuntimeError(
-                            f"Bracket order -4116: Could not recover (new ID + retry failed)"
-                        )
-
-                elif error_code == -4137:
-                    # Quantity not allowed - retry with reduced qty
-                    success, response = await self._handle_bracket_error(
-                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
-                    )
-                    if success and response:
-                        data = response
-                        # Continue to success block
-                    else:
-                        raise RuntimeError(
-                            f"Bracket order -4137: Could not recover (qty reduction + retry failed)"
-                        )
-
-                elif error_code == -4164:
-                    # MIN_NOTIONAL not satisfied - retry with increased qty
-                    success, response = await self._handle_bracket_error(
-                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
-                    )
-                    if success and response:
-                        data = response
-                        # Continue to success block
-                    else:
-                        raise RuntimeError(
-                            f"Bracket order -4164: Could not recover (qty increase + retry failed)"
-                        )
-
-                elif error_code == -4024:
-                    # EP-STAB-PERCENT-PRICE: PERCENT_PRICE filter violation
-                    # "Limit price can't be lower/higher than X" - stopPrice outside allowed price band
-                    success, response = await self._handle_bracket_error(
-                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
-                    )
-                    if success and response:
-                        data = response
-                        # Continue to success block
-                    else:
-                        raise RuntimeError(
-                            f"Bracket order -4024: Could not recover (PERCENT_PRICE violation, price band check failed)"
-                        )
-
-                elif error_code == -429:
-                    # Rate limit exceeded - retry with exponential backoff
-                    success, response = await self._handle_bracket_error(
-                        error_code, error_msg, params, idempotent_key, client_order_id, url, headers
-                    )
-                    if success and response:
-                        data = response
-                        # Continue to success block
-                    else:
-                        raise RuntimeError(
-                            f"Bracket order -429: Could not recover (exhausted backoff retries)"
-                        )
-
-                else:
-                    logger.error(
-                        f"[BinanceAdapter] Order FAILED: HTTP {resp.status_code} {data}")
-                    raise RuntimeError(
-                        f"Binance order failed: HTTP {resp.status_code} {data}")
-
-            # Success
-            order_id = data.get("orderId", "?")
-            status = data.get("status", "?")
-            logger.info(
-                f"[BinanceAdapter] Order placed successfully: orderId={order_id} status={status}"
-            )
-
-            # ✅ Log to aurora_events.jsonl (even without WebSocket)
-            client_order_id = data.get(
-                "clientOrderId", idempotent_key or "unknown")
-            try:
-                audit_logger.log_order_state_changed(
-                    rid="",  # RID would come from FSM context if available
-                    idempotent_key=idempotent_key,
-                    clientOrderId=client_order_id,
-                    exchangeOrderId=str(order_id),
-                    symbol=symbol,
-                    status=status,
-                    qty=quantity,
-                    filled_qty="0",  # Not filled yet, just placed
-                    avg_fill_price="0",
-                    why="direct_placement",
-                    ts_ms=int(time.time() * 1000),
+                # Success
+                order_id = data.get("orderId", "?")
+                status = data.get("status", "?")
+                logger.info(
+                    f"[BinanceAdapter] Order placed successfully: orderId={order_id} status={status}"
                 )
-            except Exception as e:
-                logger.error(
-                    f"[BinanceAdapter] Failed to log order state: {e}")
 
-            return data
+                # ✅ Log to aurora_events.jsonl (even without WebSocket)
+                client_order_id = data.get(
+                    "clientOrderId", idempotent_key or "unknown")
+                try:
+                    audit_logger.log_order_state_changed(
+                        rid="",  # RID would come from FSM context if available
+                        idempotent_key=idempotent_key,
+                        clientOrderId=client_order_id,
+                        exchangeOrderId=str(order_id),
+                        symbol=symbol,
+                        status=status,
+                        qty=quantity,
+                        filled_qty="0",  # Not filled yet, just placed
+                        avg_fill_price="0",
+                        why="direct_placement",
+                        ts_ms=int(time.time() * 1000),
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"[BinanceAdapter] Failed to log order state: {e}")
+
+                return data
+        except Exception as exc:
+            if httpx and isinstance(exc, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
+                logger.error("[BinanceAdapter] Order execution failed: ConnectTimeout", exc_info=True,
+                             extra={"client_order_id": client_order_id, "symbol": symbol})
+                return {
+                    "success": False,
+                    "error": str(exc),
+                    "error_kind": "ADAPTER_ERROR_TIMEOUT",
+                    "clientOrderId": client_order_id,
+                    "lifecycle": "rejected",
+                    "is_timeout": True,
+                    "should_retry": False,
+                }
+            raise
 
     def _create_success_feedback(
         self, instrument: str, order_id: str, client_order_id: str, why_codes: list[str]
     ) -> Dict[str, object]:
         """Create success feedback dict conforming to exec_feedback schema."""
         return {
+            "success": True,  # CRITICAL: ExecutionService checks this field
             "instrument": instrument,
             "order_id": str(order_id),
             "clientOrderId": client_order_id,
@@ -1960,6 +2317,9 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
     ) -> Dict[str, object]:
         """Create rejection feedback dict."""
         return {
+            "success": False,  # CRITICAL: ExecutionService checks this field
+            # CRITICAL: ExecutionService checks this field
+            "error": f"Rejected: {why_codes}",
             "instrument": instrument,
             "order_id": str(order_id),
             "lifecycle": "rejected",
@@ -1981,6 +2341,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
     def _create_error_feedback(self, instrument: str, error_msg: str) -> Dict[str, object]:
         """Create error feedback dict."""
         return {
+            "success": False,  # CRITICAL: ExecutionService checks this field
+            "error": error_msg,  # CRITICAL: ExecutionService checks this field
             "instrument": instrument,
             "order_id": f"error-{int(time.time())}",
             "lifecycle": "rejected",
@@ -2051,6 +2413,61 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             query_string.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
+
+    def _build_query_string(self, params: Dict[str, Any]) -> str:
+        """Return canonical query string for signing and HTTP requests."""
+        return urlencode(params, doseq=True)
+
+    def _sign_params(
+        self,
+        params: Dict[str, Any],
+        body: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, str, Dict[str, str], Dict[str, str]]:
+        """
+        Build deterministic pre-sign string and signature for signed endpoints.
+
+        Returns:
+            signature, pre_sign_string, normalized_params, normalized_body
+        """
+        norm_params = {k: str(v) for k, v in params.items() if v is not None}
+        norm_body = {k: str(v)
+                     for k, v in (body or {}).items() if v is not None}
+
+        query_str = urlencode(sorted(norm_params.items()))
+        body_str = urlencode(sorted(norm_body.items())) if norm_body else ""
+        pre_sign_string = query_str + (f"&{body_str}" if body_str else "")
+
+        signature = hmac.new(
+            self.api_secret.encode("utf-8"),
+            pre_sign_string.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        return signature, pre_sign_string, norm_params, norm_body
+
+    def _build_signed_request(
+        self,
+        params: Dict[str, Any],
+        body: Optional[Dict[str, Any]] = None,
+        log_ctx: str = "",
+    ) -> tuple[Dict[str, str], Dict[str, str], str, str]:
+        signature, pre_sign_string, norm_params, norm_body = self._sign_params(
+            params, body)
+
+        # Ensure params are sorted to match signature calculation
+        # httpx respects insertion order for dicts, so we must sort them
+        signed_params = dict(sorted(norm_params.items()))
+        signed_params["signature"] = signature
+
+        logger.debug(
+            "[BinanceAdapter] SIGN %s pre_sign_string=%s signature=%s params=%s body=%s",
+            log_ctx,
+            pre_sign_string,
+            signature,
+            norm_params,
+            norm_body,
+        )
+        return signed_params, norm_body, pre_sign_string, signature
 
     def _normalize_order_event(self, raw_event: Dict[str, Any]) -> Dict[str, Any]:
         """
