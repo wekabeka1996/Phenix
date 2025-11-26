@@ -1,0 +1,402 @@
+{
+  "rest": [
+    {
+      "method": "POST",
+      "path": "/fapi/v1/algoOrder",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py"
+      ],
+      "triggered_by": [
+        "DEC:PLACE_BRACKETS",
+        "DEC:PLACE_SLTP"
+      ],
+      "payload_keys": [
+        "symbol",
+        "side",
+        "workingType",
+        "activationPrice",
+        "quantity",
+        "reduceOnly",
+        "timeInForce"
+      ],
+      "notes": "Conditional orders via Binance Algo Service (feature-flagged)."
+    },
+    {
+      "method": "DELETE",
+      "path": "/fapi/v1/algoOrder",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py"
+      ],
+      "triggered_by": [
+        "DEC:CANCEL_ORDER (Conditional)"
+      ],
+      "payload_keys": [
+        "symbol",
+        "algoId",
+        "clientAlgoOrderId"
+      ],
+      "notes": "Cancel conditional order via Algo Service."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/openAlgoOrders",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py"
+      ],
+      "triggered_by": [
+        "Startup (Snapshot)"
+      ],
+      "payload_keys": [
+        "symbol"
+      ],
+      "notes": "Fetch open Algo Orders for state hydration."
+    },
+    {
+      "method": "POST",
+      "path": "/fapi/v1/order",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py",
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "DEC:OPEN",
+        "DEC:CLOSE",
+        "DEC:PLACE_ORDER"
+      ],
+      "payload_keys": [
+        "symbol",
+        "side",
+        "type",
+        "quantity",
+        "price",
+        "stopPrice",
+        "reduceOnly",
+        "timeInForce",
+        "newClientOrderId"
+      ],
+      "notes": "Primary execution endpoint for futures orders."
+    },
+    {
+      "method": "DELETE",
+      "path": "/fapi/v1/order",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py",
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "DEC:CANCEL_ORDER"
+      ],
+      "payload_keys": [
+        "symbol",
+        "orderId",
+        "origClientOrderId"
+      ],
+      "notes": "Idempotent cancellation logic handles -2011 (Unknown Order) as success."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/order",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py",
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "DEC:CANCEL_ORDER (pre-check)",
+        "Idempotency checks"
+      ],
+      "payload_keys": [
+        "symbol",
+        "orderId",
+        "origClientOrderId"
+      ],
+      "notes": "Used to verify order status before cancellation or to recover from -4116."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/openOrders",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py",
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "CMD:SYNC_ORDERS",
+        "Startup checks"
+      ],
+      "payload_keys": [
+        "symbol"
+      ],
+      "notes": "Returns list of active orders."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v2/positionRisk",
+      "domains": [
+        "execution_position",
+        "account_balance",
+        "position_tracking"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py",
+        "apps/reference/adapters/binance_adapter.py",
+        "apps/reference/domains/account_balance/account_connector.py"
+      ],
+      "triggered_by": [
+        "EVT:PORTFOLIO_STATE_UPDATED",
+        "Periodic Polling"
+      ],
+      "payload_keys": [
+        "symbol"
+      ],
+      "notes": "Critical source of truth for open positions."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v2/balance",
+      "domains": [
+        "account_balance"
+      ],
+      "modules": [
+        "apps/reference/adapters/binance_adapter.py",
+        "apps/reference/domains/account_balance/account_connector.py"
+      ],
+      "triggered_by": [
+        "Periodic Polling"
+      ],
+      "payload_keys": [],
+      "notes": "Fetches wallet balance, crossWalletBalance, and unrealizedPnL."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/premiumIndex",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py",
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "DEC:OPEN (Guard checks)"
+      ],
+      "payload_keys": [
+        "symbol"
+      ],
+      "notes": "Fetches Mark Price."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/ticker/bookTicker",
+      "domains": [
+        "market_data"
+      ],
+      "modules": [
+        "apps/reference/adapters/binance_adapter.py",
+        "apps/reference/domains/market_data/market_data_connector.py"
+      ],
+      "triggered_by": [
+        "Periodic Polling (Market Data)"
+      ],
+      "payload_keys": [
+        "symbol"
+      ],
+      "notes": "Fetches Best Bid/Ask Price & Qty (OBI)."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/trades",
+      "domains": [
+        "market_data"
+      ],
+      "modules": [
+        "apps/reference/adapters/binance_adapter.py",
+        "apps/reference/domains/market_data/market_data_connector.py"
+      ],
+      "triggered_by": [
+        "Periodic Polling (Market Data)"
+      ],
+      "payload_keys": [
+        "symbol",
+        "limit"
+      ],
+      "notes": "Fetches recent trades (TFI)."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/klines",
+      "domains": [
+        "market_data"
+      ],
+      "modules": [
+        "apps/reference/adapters/binance_adapter.py",
+        "apps/reference/domains/market_data/market_data_connector.py"
+      ],
+      "triggered_by": [
+        "Periodic Polling (Market Data)"
+      ],
+      "payload_keys": [
+        "symbol",
+        "interval",
+        "limit"
+      ],
+      "notes": "Used for delta_price feature calculation."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/ticker/price",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "Fallback logic"
+      ],
+      "payload_keys": [
+        "symbol"
+      ],
+      "notes": "Fallback for Last Price."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/exchangeInfo",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "Startup",
+        "Lazy Load"
+      ],
+      "payload_keys": [
+        "symbol"
+      ],
+      "notes": "Fetches filters (LOT_SIZE, PRICE_FILTER, MIN_NOTIONAL)."
+    },
+    {
+      "method": "GET",
+      "path": "/fapi/v1/time",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py",
+        "apps/reference/adapters/binance_adapter.py"
+      ],
+      "triggered_by": [
+        "Time Sync"
+      ],
+      "payload_keys": [],
+      "notes": "Synchronizes local time with server."
+    },
+    {
+      "method": "POST",
+      "path": "/fapi/v1/listenKey",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py"
+      ],
+      "triggered_by": [
+        "Startup (WS Connection)"
+      ],
+      "payload_keys": [],
+      "notes": "Generates listenKey for User Data Stream."
+    },
+    {
+      "method": "PUT",
+      "path": "/fapi/v1/listenKey",
+      "domains": [
+        "execution_position"
+      ],
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py"
+      ],
+      "triggered_by": [
+        "Periodic Keep-alive"
+      ],
+      "payload_keys": [
+        "listenKey"
+      ],
+      "notes": "Extends validity of listenKey."
+    }
+  ],
+  "websocket_user": [
+    {
+      "url": "wss://fstream.binance.com/ws/{listenKey}",
+      "modules": [
+        "apps/reference/domains/execution_position/binance_execution_adapter.py"
+      ],
+      "domains": [
+        "execution_position",
+        "account_balance"
+      ],
+      "events": [
+        "ORDER_TRADE_UPDATE",
+        "ACCOUNT_UPDATE",
+        "ALGO_UPDATE"
+      ],
+      "used_for": [
+        "order lifecycle updates",
+        "real-time position & balance updates"
+      ]
+    }
+  ],
+  "websocket_market": [
+    {
+      "url": "wss://fstream.binance.com/stream",
+      "streams": [
+        "<symbol>@bookTicker",
+        "<symbol>@aggTrade"
+      ],
+      "modules": [
+        "apps/reference/domains/market_data/market_ws_client.py"
+      ],
+      "domains": [
+        "market_data"
+      ],
+      "used_for": [
+        "best bid/ask (OBI)",
+        "recent trades (TFI)",
+        "low-latency features"
+      ]
+    }
+  ],
+  "tech_debt": {
+    "algo_service": {
+      "required_endpoints": [
+        "POST /fapi/v1/algoOrder",
+        "DELETE /fapi/v1/algoOrder",
+        "DELETE /fapi/v1/algoOpenOrders",
+        "GET /fapi/v1/openAlgoOrders",
+        "GET /fapi/v1/allAlgoOrders"
+      ],
+      "status": "partial",
+      "description": "Required for full support of advanced conditional orders (STOP, TAKE_PROFIT, TRAILING_STOP)."
+    }
+  }
+}

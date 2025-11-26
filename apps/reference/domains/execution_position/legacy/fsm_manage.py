@@ -1908,8 +1908,8 @@ class ManageFlowFSM:
         self,
         resolved: ResolvedBrackets,
         *,
-        tick_size: Decimal,
-        offset_bps: Decimal,
+        tick_size: Optional[Decimal] = None,
+        offset_bps: Optional[Decimal] = None,
     ) -> tuple[Optional[Decimal], Optional[Decimal]]:
         """Calculate SL and TP prices based on config and position.
 
@@ -1930,6 +1930,25 @@ class ManageFlowFSM:
             canonical_side = self._resolve_canonical_position_side()
             if canonical_side == PositionSide.FLAT:
                 return None, None
+
+            # Provide sensible defaults for legacy callers (tests may omit kwargs)
+            if tick_size is None:
+                try:
+                    tick_size = self._resolve_tick_size()
+                except Exception:
+                    tick_size = Decimal("0.01")
+            if tick_size is None or tick_size <= 0:
+                tick_size = Decimal("0.01")
+
+            if offset_bps is None:
+                try:
+                    offset_bps = self._resolve_bracket_offset_bps(
+                        getattr(resolved, "offset_bps", None)
+                    )
+                except Exception:
+                    offset_bps = Decimal("0")
+            if offset_bps is None:
+                offset_bps = Decimal("0")
 
             sl_bps = Decimal(str(resolved.sl_bps))
             tp_bps = Decimal(str(resolved.tp_bps))

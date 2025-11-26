@@ -50,3 +50,4 @@ class OrchestratorConfig(BaseModel):
     circuit_breaker_threshold: int = 5  # errors per hour
     enable_signing: bool = True
     signing_key_path: Optional[str] = None
+    enable_trade_intent_listener: bool = False

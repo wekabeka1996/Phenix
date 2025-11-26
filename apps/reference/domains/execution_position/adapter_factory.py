@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover - optional dependency
     SimulatedExecutionAdapter = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+CANONICAL_EXECUTION_ADAPTER = BinanceExecutionAdapter
 
 
 def _extract_trading_mode(config: Any) -> str:
@@ -71,7 +72,13 @@ def build_execution_adapter(config: Any, fsm: Any | None = None) -> Any | None:
             logger.debug(
                 f"Failed to read rest_timeout_sec from config, using default 20.0s: {e}")
 
-        return BinanceExecutionAdapter(
+        adapter_cls = CANONICAL_EXECUTION_ADAPTER
+        logger.info(
+            "ExecPosRuntimeV2 using canonical adapter %s (mode=%s)",
+            adapter_cls.__name__,
+            mode,
+        )
+        return adapter_cls(
             fsm=fsm,
             config=config,
             shadow_mode=False,

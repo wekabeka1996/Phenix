@@ -8,9 +8,16 @@ Uses Pydantic V2 field_validator and model_validator.
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional, Union, Literal
 from decimal import Decimal, ROUND_DOWN, InvalidOperation
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    AliasChoices,
+    field_validator,
+    model_validator,
+)
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.utils import (
@@ -18,6 +25,171 @@ from apps.reference.domains.execution_position.utils import (
     ClientOrderIdMeta,
     parse_client_order_id,
 )
+
+
+# === Cross-domain boundary contracts (DecisionMaking → Bridge → ExecPos → Adapter) ===
+
+
+def _as_decimal(value: Any) -> Optional[Decimal]:
+    """Safe Decimal converter that accepts str/float/int and returns None on blanks."""
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def resolve_order_defaults(
+    price: Optional[Decimal],
+    order_type: Optional[str],
+    time_in_force: Optional[str],
+) -> tuple[str, Optional[str]]:
+    """
+    Unified fallback policy for order_type/time_in_force along the execution path.
+
+    Rules:
+    - If order_type is missing:
+        - price is None -> MARKET
+        - price is set -> LIMIT
+    - If order_type == LIMIT and time_in_force missing -> GTC
+    """
+    resolved_type = order_type
+    resolved_tif = time_in_force
+
+    if not resolved_type:
+        resolved_type = "LIMIT" if price is not None else "MARKET"
+
+    if resolved_type == "LIMIT" and resolved_tif is None:
+        resolved_tif = "GTC"
+
+    return resolved_type, resolved_tif
+
+
+class TradeIntentPayload(BaseModel):
+    """
+    Canonical DTO for EVT:TRADE_INTENT_PROPOSED (DecisionMaking → Bridge).
+
+    Accepts legacy aliases (instrument/qty/idempotency_key) but normalizes to canonical
+    fields for downstream mapping into CMD:OPEN.
+    """
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    symbol: str = Field(validation_alias=AliasChoices("symbol", "instrument"))
+    side: Literal["BUY", "SELL"]
+    quantity: Decimal = Field(
+        validation_alias=AliasChoices("quantity", "qty"),
+        description="Order quantity in base asset",
+    )
+    price: Optional[Decimal] = Field(default=None)
+    price_ref: Optional[Decimal] = Field(default=None)
+    order_type: Optional[str] = Field(default=None)
+    time_in_force: Optional[str] = Field(
+        default=None, serialization_alias="tif", validation_alias=AliasChoices("tif", "time_in_force")
+    )
+
+    rid: Optional[str] = None
+    strategy_id: Optional[str] = None
+    idempotent_key: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("idempotent_key", "idempotency_key")
+    )
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    why: Optional[Union[str, list[str]]] = None
+
+    @field_validator("quantity", "price", "price_ref", mode="before")
+    @classmethod
+    def _coerce_decimal(cls, value: Any) -> Optional[Decimal]:
+        coerced = _as_decimal(value)
+        if coerced is None:
+            return None
+        return coerced
+
+    @field_validator("side", mode="before")
+    @classmethod
+    def _upper_side(cls, value: Any) -> str:
+        return str(value).upper() if value is not None else value
+
+
+class OpenCommandPayload(BaseModel):
+    """
+    CMD:OPEN payload (Bridge/Orchestrator → ExecPosRuntimeV2).
+
+    Maintains backward compatibility with legacy keys (qty/tif) via aliases.
+    """
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    quantity: Decimal = Field(
+        validation_alias=AliasChoices("quantity", "qty"),
+        serialization_alias="qty",
+    )
+    price: Optional[Decimal] = None
+    price_ref: Optional[Decimal] = None
+    order_type: str = Field(default="LIMIT")
+    time_in_force: Optional[str] = Field(
+        default="GTC", serialization_alias="tif", validation_alias=AliasChoices("tif", "time_in_force")
+    )
+
+    rid: Optional[str] = None
+    strategy_id: Optional[str] = None
+    idempotent_key: Optional[str] = None
+    client_order_id: Optional[str] = None
+    why: Optional[str] = None
+
+    @field_validator("quantity", "price", "price_ref", mode="before")
+    @classmethod
+    def _coerce_decimal(cls, value: Any) -> Optional[Decimal]:
+        return _as_decimal(value)
+
+    @field_validator("side", mode="before")
+    @classmethod
+    def _upper_side(cls, value: Any) -> str:
+        return str(value).upper() if value is not None else value
+
+
+class ExecutionRequest(BaseModel):
+    """
+    Canonical execution request (ExecPosRuntimeV2 → BinanceExecutionAdapter).
+
+    Used to validate and normalize adapter inputs before forwarding.
+    """
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    quantity: Decimal = Field(validation_alias=AliasChoices("quantity", "qty"))
+    order_type: str
+    time_in_force: Optional[str] = Field(
+        default=None, serialization_alias="tif", validation_alias=AliasChoices("tif", "time_in_force")
+    )
+
+    price: Optional[Decimal] = None
+    stop_price: Optional[Decimal] = Field(default=None, validation_alias=AliasChoices("stop_price", "stopPrice"))
+    reduce_only: Optional[bool] = None
+    position_side: Optional[str] = None
+    client_order_id: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("client_order_id", "newClientOrderId")
+    )
+
+    raw_payload: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("quantity", "price", "stop_price", mode="before")
+    @classmethod
+    def _coerce_decimal(cls, value: Any) -> Optional[Decimal]:
+        return _as_decimal(value)
+
+    @field_validator("side", mode="before")
+    @classmethod
+    def _upper_side(cls, value: Any) -> str:
+        return str(value).upper() if value is not None else value
 
 
 class Side(str, Enum):

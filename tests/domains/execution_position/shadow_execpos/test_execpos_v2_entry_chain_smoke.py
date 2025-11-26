@@ -39,4 +39,4 @@ async def test_entry_chain_reaches_adapter_place_order():
     call = adapter.place_calls[0]
     assert call["symbol"] == "BTCUSDT"
     assert call["side"] == "BUY"
-    assert call["quantity"] == "0.001"
+    assert str(call["quantity"]) == "0.001"

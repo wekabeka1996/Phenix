@@ -27,6 +27,8 @@ class PositionState:
     last_update_time: Optional[float] = None
     scale_in_count: int = 0
     scale_out_count: int = 0
+    # R2-D: Position cycle identifier (increments on new position or reverse)
+    cycle_id: int = 0
 
     @property
     def side(self) -> str:
@@ -53,6 +55,7 @@ class PositionState:
             "unrealized_pnl": self.unrealized_pnl,
             "open_time": self.open_time,
             "last_update_time": self.last_update_time,
+            "cycle_id": self.cycle_id,
         }
         return mapping.get(key, default)
 
@@ -74,11 +77,19 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
     Args:
         state: current position state
         side: "BUY" or "SELL"
-        quantity: absolute filled quantity
+        quantity: filled quantity (can be signed or unsigned; normalized to abs internally)
         price: fill price
         ts: optional timestamp for bookkeeping
+
+    Notes:
+        - R2-F: quantity is normalized to abs() to handle signed WS/adapter payloads
+        - Sign/direction is determined by side parameter (BUY/SELL)
+        - Zero fills are ignored (qty == 0 after abs normalization)
     """
-    if quantity <= 0:
+    # R2-F: Normalize quantity to absolute value (handle signed payloads)
+    quantity = abs(quantity)
+
+    if quantity == 0:
         return replace(state, last_update_time=_now_ts(ts))
 
     signed_fill = quantity if side.upper() == "BUY" else -quantity

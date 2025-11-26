@@ -1,11 +1,261 @@
 ﻿# TODO: Wave 0 Implementation — Safety Hotfixes
 
 **Status**: In Progress
-**Priority**: CRITICAL
+**Priority**: CRITICAL (+ P1 TDD framework complete)
 **Target Completion**: 1-2 days
 **Owner**: Architecture WG
-**Document Version**: 1.2 (Timestamp Fix)
-**Last Updated**: 2025-11-23
+**Document Version**: 1.3 (R2-A Test Framework)
+**Last Updated**: 2025-01-XX
+
+---
+
+## ✅ COMPLETED: TASK 1-10 — OCO Stabilization + Fill Metrics + Config Hygiene + Adapter Idempotency
+
+**Recent Completions**:
+
+### TASK R3 — Observability Snapshots ✅ COMPLETE (2025-01-XX)
+
+**RID**: `OCO-R3-A1-BRACKET-EVAL-SNAPSHOT` & `OCO-R3-A2-STARTUP-SNAPSHOT`
+
+- [x] **R3-A1**: Implement `BRACKET_EVAL_SNAPSHOT` logging in `_evaluate_brackets`
+- [x] **R3-A2**: Implement `start()` method with `STARTUP_POSITIONS_SNAPSHOT` and `STARTUP_ORDERS_SNAPSHOT`
+- [x] **R3-A2**: Implement `STARTUP_BRACKET_CLASSIFICATION` (orphan/attached logic)
+- [x] **R3-A2**: Update `V2RuntimeFacade` to delegate `start()`/`stop()`
+- [x] Update JOURNAL.md with RIDs
+
+**Deliverables**:
+- `BRACKET_EVAL_SNAPSHOT`: "x-ray" log for every bracket evaluation (JSON payload)
+- `STARTUP_SNAPSHOTS`: Initial state logs + orphan classification on startup
+- Files: `runtime.py`, `runtime_factory.py`
+
+**References**: `JOURNAL.md` entries
+
+### TASK R3-B1 — OCO Log Replay Extractor ✅ COMPLETE (2025-01-XX)
+
+**RID**: `OCO-R3-B1-LOG-REPLAY-EXTRACTOR`
+
+- [x] Create `tools/oco_log_to_replay.py`
+- [x] Create `tests/tools/test_oco_log_to_replay.py`
+- [x] Verify extraction from JSONL logs
+- [x] Update JOURNAL.md
+
+**Deliverables**:
+- CLI tool to convert `BRACKET_EVAL_SNAPSHOT` logs to `OCO_REPLAY_*.json` frames
+- Unit tests ensuring valid parsing and output format
+
+**References**: `JOURNAL.md` entry
+
+### TASK R3-B2 — OCO Replay Invariant Test ✅ COMPLETE (2025-01-XX)
+
+**RID**: `OCO-R3-B2-REPLAY-TEST`
+
+- [x] Create `docs/OCO_REPLAY_SAMPLE.json` (synthetic sample)
+- [x] Create `tests/domains/execution_position/test_agg_oco_replay_long_run.py`
+- [x] Implement invariant checks (INV-1, INV-2, INV-3)
+- [x] Verify test fails on invalid frames (RED state confirmed)
+- [x] Update JOURNAL.md
+
+**Deliverables**:
+- Integration test for validating OCO invariants on replay data
+- Sample replay file
+
+**References**: `JOURNAL.md` entry
+
+### TASK R3-C1 — Real Replay Invariants Analysis ✅ COMPLETE (2025-11-26)
+
+**RID**: `OCO-R3-C1-REAL-REPLAY-ANALYSIS`
+
+- [x] Attempt extraction from production logs (found 0 BRACKET_EVAL_SNAPSHOT frames)
+- [x] Create synthetic realistic sample `docs/OCO_REPLAY_REAL_SAMPLE.json`
+- [x] Add `test_agg_oco_real_replay_invariants` test
+- [x] Run analysis and collect violations (2 found)
+- [x] Create comprehensive report `docs/OCO_R3_C1_REAL_REPLAY_INVARIANTS_REPORT.md`
+- [x] Update JOURNAL.md and TODO.md
+
+**Deliverables**:
+- Detailed violation analysis for ETHUSDT (duplicate TP) and SOLUSDT (size mismatch)
+- [x] Rewrite -4116 handler: check order existence → NO new ID generation (prevents duplicate TP/SL)
+- [x] Harden -1021 handler: structured error with timestamp/offset/recvWindow diagnostics
+- [x] Verify recvWindow = 5000ms (already correct from EP-ADAPTER-TIME-SYNC-FIX-S20)
+- [x] Create duplicate idempotency tests (4/4 PASS)
+- [x] Create time sync tests (3/3 PASS)
+- [x] Regression tests: 52/52 PASS (ExecPos metrics, OCO, symbol profiles)
+- [x] Update JOURNAL.md with RID EXEC-R2-J-BINANCE-IDEMPOTENCY-TIMESYNC
+- [x] Create TASK10_EXEC_R2J_IMPLEMENTATION_REPORT.md
+
+**Problem Solved**:
+- **-4116 Duplicate ClientOrderId**: OLD behavior generated NEW clientOrderId → retry → created 2nd TP/SL on exchange (duplicate brackets → E-008/E-009 errors)
+- **NEW behavior**: Check order existence via `get_order_by_client_id()` → if found with NEW/PARTIALLY_FILLED → idempotent success (NO new ID, NO retry)
+- **-1021 Timestamp Error**: Added structured diagnostics (timestamp, offset, recvWindow) for time sync troubleshooting
+
+**Deliverables**:
+- `get_order_by_client_id()` method (lines 1870-1959, ~90 lines)
+- Rewritten -4116 handler (lines 946-989, idempotent check, NO new ID)
+- Hardened -1021 error (lines 2260-2281, structured diagnostics)
+- Test files: `test_binance_adapter_duplicate_idempotency.py` (245 lines, 4 tests), `test_binance_adapter_time_sync.py` (215 lines, 3 tests)
+
+**Test Results**: ✅ 59/59 tests PASSED — 7 new (4 duplicate + 3 time sync) + 52 regression (6 R2-G + 7 R2-F + 5 R2-H + 21 OCO + 13 other)
+
+**Production Impact**: -4116 no longer creates duplicate TP/SL (idempotent behavior prevents E-008/E-009 escalation), -1021 provides diagnostics for time sync issues
+
+**References**: `TASK10_EXEC_R2J_IMPLEMENTATION_REPORT.md`, `JOURNAL.md` entry RID EXEC-R2-J-BINANCE-IDEMPOTENCY-TIMESYNC
+
+### TASK R3-D1 — Guard-loop vs Trade-executed Anti-Double-Apply ✅ COMPLETE (2025-11-26)
+
+**RID**: `OCO-R3-D1-GUARD-LOOP-ANTI-DOUBLE-APPLY`
+
+- [x] Create BracketStatus dataclass (last_reason, last_started_ts, in_flight, awaiting_snapshot)
+- [x] Add _bracket_status dict to ExecPosRuntimeV2
+- [x] Implement guard-loop protection in _apply_bracket_plan (skip if in_flight OR awaiting_snapshot)
+- [x] Add awaiting_snapshot clearing in _handle_orders_snapshot
+- [x] Create 3 smoke tests (test_agg_oco_races_guard_loop_vs_trade.py)
+- [x] Validate tests GREEN (3/3 PASS)
+- [x] Run regression tests (29/31 OCO tests PASS, 2 pre-existing failures)
+- [x] Update JOURNAL.md and TODO.md
+
+**Deliverables**:
+- **BracketStatus dataclass** (runtime.py lines 42-48): Per-symbol state tracking (4 fields)
+- **Guard-loop protection** (runtime.py lines 1420-1436): Skip guard_loop if in_flight OR awaiting_snapshot → prevents double PLACE_SL/TP race
+- **State flow**: `in_flight=True` (start) → `awaiting_snapshot=True` (end) → cleared after snapshot → next guard_loop allowed
+- **Metric**: `brackets_skipped_guard_loop_in_flight` tracks skip rate for alerting
+- **Smoke tests**: tests/domains/execution_position/test_agg_oco_races_guard_loop_vs_trade.py (3 tests)
+
+**Test Results**: ✅ 3/3 smoke tests PASSED, ✅ 29/31 OCO regression PASSED (2 pre-existing failures in replay invariants NOT caused by R3-D1)
+
+**Production Impact**: Prevents scenario from logs: "reason=trade_executed → PLACE_SL/TP через 200ms reason=guard_loop → duplicate PLACE_SL/TP" (now guard_loop skipped until snapshot confirms first brackets). Non-blocking: account_update_sync, position_update_sync, trade_executed always execute (only guard_loop is rate-limited).
+
+**Before R3-D1**: trade_executed → PLACE_SL/TP → guard_loop 220ms later → duplicate PLACE_SL/TP → adapter rejects 2nd set → ERROR logs
+
+**After R3-D1**: trade_executed → PLACE_SL/TP (awaiting_snapshot=True) → guard_loop skipped [GUARD_LOOP_IN_FLIGHT] → snapshot clears awaiting_snapshot → guard_loop normal operation
+
+**References**: `JOURNAL.md` entry RID OCO-R3-D1-GUARD-LOOP-ANTI-DOUBLE-APPLY
+
+---
+
+### TASK R3-C2 — OCO Snapshot Logging Wire-Up ✅ COMPLETE (2025-11-26)
+
+**RID**: `OCO-R3-C2-OCO-SNAPSHOT-LOGGING`
+
+- [x] Verify BRACKET_EVAL_SNAPSHOT logging infrastructure (logging_v2.py + runtime.py)
+- [x] Update tools/oco_log_to_replay.py parser for V2 format (event_kind field)
+- [x] Create smoke tests (3/3 PASS)
+- [x] Extract real replay frames from production logs (72 frames)
+- [x] Update JOURNAL.md and TODO.md
+
+**Deliverables**:
+- **Discovery**: Logging infrastructure already complete (logging_v2.py lines 156-213, runtime.py lines 1258-1267)
+- **Parser update**: tools/oco_log_to_replay.py now supports V2 format (checks event_kind=BRACKET_EVAL_SNAPSHOT before legacy message field)
+- **Smoke tests**: tests/domains/execution_position/test_oco_snapshot_logging.py (3 tests: JSONL writing, V2 parsing, fail-closed behavior)
+- **Real validation**: Extracted 72 frames from 108KB production log → docs/OCO_REPLAY_SMOKE.json
+- **Production workflow**: Run system 5-15min → extract frames → analyze bracket_plan/orders offline → map ts to code path → targeted fix
+
+**Test Results**: ✅ 3/3 smoke tests PASSED (test_bracket_eval_snapshot_writes_to_jsonl, test_oco_log_to_replay_parses_v2_format, test_logging_v2_fails_gracefully_on_error)
+
+**Production Impact**: Can now debug OCO race conditions (e.g., BNB mirror-update) by replaying exact BracketService.evaluate() inputs from production logs. Enables targeted fixes by mapping ts to exact bracket_plan generation context.
+
+**References**: `JOURNAL.md` entry RID OCO-R3-C2-OCO-SNAPSHOT-LOGGING, `docs/OCO_REPLAY_SMOKE.json` (72 real frames)
+
+---
+
+### TASK 8 — CONFIG-R2-H: SOLUSDT Profile Alignment ✅ COMPLETE (2025-11-23)
+
+**RID**: `CONFIG-R2-H-SOLUSDT-MINQTY`
+
+- [x] Identify SSOT mismatch (test expects 0.01, config has 1.0)
+- [x] Verify canonical value (Binance API: min_qty=0.01, step_size=0.01)
+- [x] Update config/instruments.yaml (SOLUSDT: min_qty 1.0→0.01, step_size 1.0→0.01)
+- [x] Run symbol profile tests: 5/5 PASS (was 1 FAIL)
+- [x] Regression tests: 18/18 PASS (symbol profiles + R2-G + R2-F)
+- [x] Update JOURNAL.md with RID CONFIG-R2-H-SOLUSDT-MINQTY
+- [x] Create TASK8_CONFIG_R2H_IMPLEMENTATION_REPORT.md
+
+**Deliverables**:
+- Config aligned: `min_qty: 0.01`, `step_size: 0.01` (matches Binance SOLUSDT filters)
+- Files: `config/instruments.yaml` (2 lines changed with CONFIG-R2-H comments)
+- SSOT verified: Config + Test + Doc all show 0.01 values
+
+**Test Results**: ✅ 18/18 tests PASSED (2.97s) — 5 symbol profiles + 6 fill metrics (R2-G) + 7 qty normalization (R2-F)
+
+**References**: `TASK8_CONFIG_R2H_IMPLEMENTATION_REPORT.md`, `JOURNAL.md` entry RID CONFIG-R2-H-SOLUSDT-MINQTY
+
+---
+
+### TASK 7 — R2-G: Fill Metrics & Telemetry ✅ COMPLETE (2025-01-XX)
+
+**RID**: `EXEC-R2-G-FILL-METRICS`
+
+- [x] Add 4 metrics to ExecPosRuntimeV2 (fills_total, normalized, zero_ignored, signed_qty_seen)
+- [x] Integrate metric tracking in _handle_trade_executed (lines 562-580)
+- [x] Create test_execpos_metrics_fills.py (6 tests, exceeds minimum 3)
+- [x] Run all tests: 6/6 new tests PASS, 7/7 R2-F tests GREEN, 26/28 OCO tests GREEN
+- [x] Update JOURNAL.md with RID EXEC-R2-G-FILL-METRICS
+- [x] Create TASK7_R2G_IMPLEMENTATION_REPORT.md
+
+**Deliverables**:
+- Metrics: fills_total, fills_abs_normalized_total, fills_zero_ignored_total, fills_signed_qty_seen_total
+- Files: runtime.py (metrics dict + tracking), test_execpos_metrics_fills.py (484 lines, 6 tests)
+- Non-invasive: Pure observability, zero business logic changes
+
+**Test Results**: ✅ 6/6 new tests PASSED (0.90s), 7/7 R2-F tests GREEN (0.79s), 26/28 OCO tests GREEN (1 SKIPPED, 1 FAILED unrelated SOLUSDT config)
+
+**References**: `TASK7_R2G_IMPLEMENTATION_REPORT.md`, `JOURNAL.md` entry RID EXEC-R2-G-FILL-METRICS
+
+---
+
+### TASK 6 — R2-F: TRADE_EXECUTED Qty Normalization ✅ COMPLETE (2025-01-XX)
+
+**RID**: `EXEC-R2-F-TRADE-EXECUTED-QTY-NORMALIZATION`
+
+- [x] Fix apply_fill() to normalize negative qty (BNB SHORT -0.07 case)
+- [x] Document TRADE_EXECUTED contract in BinanceAdapter
+- [x] Add defense-in-depth comment in runtime
+- [x] Create test_trade_executed_qty_normalization.py (7 tests)
+- [x] All tests GREEN (7/7 new, 21/22 OCO)
+
+**Issue Fixed**: Negative qty fills (e.g., `quantity="-0.07"`) were ignored by `qty <= 0` guard, causing position desync (exchange shows SHORT, internal FLAT, no brackets → unprotected).
+
+**Solution**: `quantity = abs(quantity)` before guard, changed guard to `qty == 0`.
+
+**References**: `TASK6_R2F_IMPLEMENTATION_REPORT.md`, `JOURNAL.md` entry
+
+---
+
+### TASK 5 — R2-E: Missing Brackets Semantics ✅ COMPLETE (2025-01-XX)
+
+**RID**: `OCO-STABILIZE-R2-E-MISSING-BRACKETS-SEMANTICS`
+
+- [x] Add recreate_missing_brackets config (fail-closed by default)
+- [x] Implement detection + recreate/alert policy
+- [x] Create 4 tests (missing SL/TP, config ON/OFF)
+- [x] All tests GREEN (4/4 new, 21/22 OCO)
+
+**References**: `JOURNAL.md` entry
+
+---
+
+### TASK 1 — R2-A: Test Framework ✅ COMPLETE
+
+**RID**: `OCO-AUDIT-R2-A-TEST-FRAMEWORK`
+
+- [x] Create 3 test files covering size-sync, races, timeout/snapshot scenarios
+- [x] Implement real TDD tests (not stubs) based on TEST-OCO-R1-XXX specs
+- [x] Run pytest validation: 3 FAIL (expected), 11 PASS, 1 SKIP
+- [x] Update JOURNAL.md with completion record
+- [x] Create summary report (`TASK1_R2A_TEST_FRAMEWORK_REPORT.md`)
+
+**Test Files Created**:
+1. `tests/domains/execution_position/test_agg_oco_size_sync.py` (515 lines)
+2. `tests/domains/execution_position/test_agg_oco_races_close_and_reopen.py` (467 lines)
+3. `tests/domains/execution_position/test_agg_oco_timeout_and_snapshot_state.py` (303 lines)
+
+**Expected Failures** (TDD red phase):
+- R1-B-INV-1: Partial close → bracket qty exceeds position qty
+- R1-B-INV-3: Partial TP fill → remaining SL oversized
+- R1-B-INV-4: Reverse LONG→SHORT → old brackets not cancelled
+
+**Next**: TASK 2 — R2-B/C/D implementation to make tests green.
+
+**References**: See `TASK1_R2A_TEST_FRAMEWORK_REPORT.md` for full details.
 
 ---
 
@@ -141,7 +391,7 @@ Following the async/network audit (RID: EXEC-V2-NET-ASYNC-AUDIT-S3), critical as
                 await self._establish_websocket_connection_async()
             except Exception as e:
                 await asyncio.sleep(self.ws_reconnect_delay)  # Async sleep
-    
+
     def _start_websocket(self):
         asyncio.create_task(self._websocket_task_async())
     ```
@@ -159,10 +409,10 @@ Following the async/network audit (RID: EXEC-V2-NET-ASYNC-AUDIT-S3), critical as
         limits=httpx.Limits(max_keepalive_connections=20, max_connections=30),
         timeout=httpx.Timeout(self._rest_timeout),
     )
-    
+
     # In all REST methods: use self._http_client instead of async with httpx.AsyncClient()
     resp = await self._http_client.post(url, ...)
-    
+
     # Add cleanup in stop():
     await self._http_client.aclose()
     ```
@@ -179,7 +429,7 @@ Following the async/network audit (RID: EXEC-V2-NET-ASYNC-AUDIT-S3), critical as
         if action.action_type in ("PLACE_SL", "PLACE_TP"):
             task = self.exec_service.execute_command(cmd)
             place_tasks.append(task)
-    
+
     results = await asyncio.gather(*place_tasks, return_exceptions=True)
     # → Both timeout in parallel (~20s instead of ~40s)
     ```
@@ -675,7 +925,7 @@ Phase 6: Deployment (2-4h)
   **DoD**: p99 <100ms for cache misses (adapter call)
 
 - [ ] **PRICE-030**: Performance test: concurrent load
-  ```python
+  ```bash
   # 100 concurrent calls to same symbol
   ```
   **DoD**: No deadlocks, cache hit rate >90%
@@ -1110,7 +1360,7 @@ Phase 6: Deployment (2-4h)
 - [ ] **ERR-010**: Integration test: error metrics
   ```bash
   # Check logs for error classification
-  grep "AdapterTransientError\|AdapterRateLimitError" logs/*.log
+  grep "AdapterTransientError\|AdapterRateLimitError\|AdapterFatalError" logs/*.log
   ```
   **DoD**: Errors logged with class names
 
@@ -1555,7 +1805,6 @@ cp config/aurora/trading.yaml.backup.20251112 config/aurora/trading.yaml
 - ✅ Додано asyncio.Lock для атомарних оновлень позицій
 - ✅ Реалізовано _atomic_update context manager з rollback
 - ✅ Додано update_position метод з перевіркою балансу
-- ✅ Unit тест test_position_tracking_rollback проходить
 - ✅ WAL логування працює для позиційних оновлень
 
 ### P0.2: WHY-chain автопрокидання
@@ -1574,199 +1823,24 @@ cp config/aurora/trading.yaml.backup.20251112 config/aurora/trading.yaml
 
 ---
 
-## P1: Configuration & Schema Fixes
-
-### P1.1: Fix YAML configuration duplicates, type errors, and hotreload issues
-
-**Status**: Completed
-**Priority**: HIGH
-**Target**: Fix config duplicates and type errors
-
-**Tasks**:
-- [x] **P1.1.1**: Remove duplicate `binance_api` section in `trading.yaml`
-- [x] **P1.1.2**: Remove duplicate `instruments` section in `trading.yaml`
-- [x] **P1.1.3**: Fix type errors (string numbers should be numbers) - strings are intentional for precision
-- [x] **P1.1.4**: Validate YAML syntax and structure
-- [x] **P1.1.5**: Test hotreload functionality
-- [x] **P1.1.6**: Update schema validation if needed
-- [x] **P1.1.7**: Self-audit and unit tests for config loading
-
-**DoD**:
-- No duplicate keys in YAML ✅
-- All type errors fixed ✅ (strings intentional)
-- Hotreload works without errors ✅
-- Config loads successfully ✅
-- Unit tests pass ✅
-
-### P1.2: Fix sizing_modifiers type (strings to numbers)
-
-**Status**: Completed
-**Priority**: HIGH
-**Target**: Convert sizing_modifiers from strings to numbers
-
-**Tasks**:
-- [x] **P1.2.1**: Change sizing_modifiers values from strings to floats in trading.yaml
-- [x] **P1.2.2**: Test that Pydantic parses them as numbers
-- [x] **P1.2.3**: Verify sizing calculations work correctly
-- [x] **P1.2.4**: Self-audit and unit tests
-
-**DoD**:
-- sizing_modifiers parsed as float/dict
-- Sizing calculations use numeric values
-- No type conversion errors
-
-### P1.3: Consolidate Kelly config (remove duplicates)
-
-**Status**: Completed
-**Priority**: HIGH
-**Target**: Remove Kelly duplicates and sync payoff_ratio_r
-
-**Tasks**:
-- [x] **P1.3.1**: Remove kelly section from system.yaml
-- [x] **P1.3.2**: Keep Kelly only in trading.yaml
-- [x] **P1.3.3**: Sync payoff_ratio_r to 2.0 (100bps/50bps)
-- [x] **P1.3.4**: Update base_probability to 0.55
-- [x] **P1.3.5**: Test config loads correctly
-
-**DoD**:
-- No Kelly duplicates in config files ✅
-- payoff_ratio_r = 2.0 ✅
-- Config loads without errors ✅
-
-### P1.4: Fix hotreload whitelist (change_conf_min → confidence_threshold)
-
-**Status**: Completed
-**Priority**: HIGH
-**Target**: Fix invalid hotreload whitelist key
-
-**Tasks**:
-- [x] **P1.4.1**: Replace hmm.change_conf_min with hmm.confidence_threshold in regime.yaml
-- [x] **P1.4.2**: Test config loads without errors
-- [x] **P1.4.3**: Verify hotreload can access valid keys
-
-**DoD**:
-- hotreload_whitelist contains only valid keys ✅
-- Config loads successfully ✅
-- No invalid key references ✅
-
-## P2: Log Cleanup & Startup Fixes
-
-### P2.1: Standardize log messages (CLEANUP_PENDING → STALE_ORDER_CLEANUP)
-
-**Status**: Completed
-**Priority**: MEDIUM
-**Target**: Replace outdated log terminology
-
-**Tasks**:
-- [x] **P2.1.1**: Find all CLEANUP_PENDING references in codebase
-- [x] **P2.1.2**: Replace with STALE_ORDER_CLEANUP in exposure_guard.py
-- [x] **P2.1.3**: Verify no remaining CLEANUP_PENDING in code
-- [x] **P2.1.4**: Self-audit log standardization
-
-**DoD**:
-- No CLEANUP_PENDING in Python code ✅
-- Log messages standardized ✅
-- Grep shows no matches in code ✅
-
-### P2.2: Implement SYMBOL_TIDY startup emission to prevent first-trade blocking
-
-**Status**: Completed
-**Priority**: HIGH
-**Target**: Emit SYMBOL_TIDY on OrderGuardian startup
-
-**Tasks**:
-- [x] **P2.2.1**: Add EVT:SYMBOL_TIDY emission in OrderGuardian.start()
-- [x] **P2.2.2**: Emit for all known symbols on startup
-- [x] **P2.2.3**: Test startup emission works
-- [x] **P2.2.4**: Verify first trades not blocked
-
-**DoD**:
-- SYMBOL_TIDY emitted on startup ✅
-- All known symbols covered ✅
-- First-trade blocking prevented ✅
-
-### P2.3: Fix feature_engineering config nesting in trading.yaml
-
-**Status**: Completed
-**Priority**: MEDIUM
-**Target**: Ensure feature_engineering config properly nested
-
-**Tasks**:
-- [x] **P2.3.1**: Verify feature_engineering under trading section
-- [x] **P2.3.2**: Confirm ConfigLoader reads correctly
-- [x] **P2.3.3**: Test feature engineering works with config
-
-**DoD**:
-- feature_engineering properly nested ✅
-- ConfigLoader loads successfully ✅
-- Feature engineering functions correctly ✅
-
----
-
-## Фаза 1: Розширення inventory до прив’язки ключ → resolver → домен
-
-Після завершення базового inventory (TASK 0.2), розширити `tools/config_inventory.py` для автоматичного мапінгу плоских ключів до:
-- Який resolver/модуль їх використовує (наприклад, `ConfigLoader`, `ExposureGuard`).
-- Який домен споживає (наприклад, `execution_position`, `risk_management`).
-- Чи є дублікати або конфлікти між файлами.
-
-Додати функцію `build_resolver_mapping()` і оновити JSON-артефакт з додатковими полями.
-
----
-
-## OCO-11.x
-
-- [ ] OCO-11.11: Впровадити рекомендації з розділу 8 аудиту aggregated-only OCO (`docs/audit/OCO_aggregated_only_full_audit.md`) після затвердження оператором.
-- [ ] OCO-11.11: review live logs for AGG_SL_SKIPPED_MIN_QTY and refine strategy min position size if needed.
-
-## [Phase 1] Detail mapping for all risk/decision/execution keys in specification.md
-
-Після створення специфікації config v2, деталізувати мапінг для всіх ключів у risk, decision та execution доменах. Доповнити таблицю в `docs/config_v2/specification.md` повним набором прикладів, включаючи edge cases та overrides.
-
----
-
-##  COMPLETED P0 TASKS (S23-S27)
-
-### EXEC-V2-P0-FIX-LOOP-S5  Event Loop Management Fix
-**Status**:  COMPLETED (2025-11-23 16:10)  
-**Priority**: P0  
-**RID**: EXEC-V2-P0-FIX-LOOP-S5
-
-**Fixed Issues**:
--  S23: ORDERS_SNAPSHOT timing for bracket evaluation (runtime_factory.py:219-233)
--  S24: RuntimeEvent dataclass logging (runtime_factory.py:98-115)
--  S25: Portfolio freshness when positions_last_ts_ms=0 (main.py:134-142)
--  S26: Portfolio TTL 5s35s (main.py:106)
--  S27: Event loop lazy attachment with _ensure_loop() (runtime_factory.py:77-145)
-
-**Validation**:
-```
-16:10:21 - attached to running loop <ProactorEventLoop running=True> 
-16:10:01 - [ExecPosV2-S5] ENTRY_INTENT received 
-```
-
-**Tests**: 4/4 passed (test_execpos_v2_facade_loop.py)
-
----
-
 ##  NEW P0 BLOCKER: S28  DecisionMaking Equity Calculation
 
 ### TODO: EXEC-V2-P0-FIX-S28  Fix equity=$0 in DecisionMaking position sizing
-**Status**:  TO DO  
-**Priority**: P0 (blocker  all intents rejected)  
-**Assigned**: UNASSIGNED  
+**Status**:  TO DO
+**Priority**: P0 (blocker  all intents rejected)
+**Assigned**: UNASSIGNED
 **Estimated**: 1 hour
 
 **Problem**:
 ```
-16:10:21 - Portfolio: Equity: 1806.09763780, Positions: 1 
-16:10:21 - Cached equity_free_usdt: 1806.09763780 
+16:10:21 - Portfolio: Equity: 1806.09763780, Positions: 1
+16:10:21 - Cached equity_free_usdt: 1806.09763780
 BUT:
-16:10:16 - POSITION_SIZE_CALC: equity=$0, 10%=$0.0 
-16:10:16 - REJECT: position size 0.0 is below minimum 10.0 
+16:10:16 - POSITION_SIZE_CALC: equity=$0, 10%=$0.0
+16:10:16 - REJECT: position size 0.0 is below minimum 10.0
 ```
 
-DecisionMaking shows **equity=$0** in `POSITION_SIZE_CALC` but portfolio has **$1806.10**. All trade intents rejected due to insufficient size.
+DecisionMaking shows **equity=$0** in `POSITION_SIZE_CALC` але портфель має **$1806.10**. Усі торгові наміри відхилені через недостатній розмір.
 
 **Investigation Plan**:
 - [ ] Step 1: Read decision_making.py around `POSITION_SIZE_CALC` logging
@@ -1786,3 +1860,26 @@ DecisionMaking shows **equity=$0** in `POSITION_SIZE_CALC` but portfolio has **$
 - Why-chain: RID=`EXEC-V2-P0-FIX-S28`
 
 ---
+
+## Documentation & Maintenance
+- [ ] Keep BINANCE_ENDPOINTS_MAP.{md,json} in sync whenever Binance adapter calls are added/changed.
+
+## [TECH DEBT] Implement Binance Algo Service
+
+**RID**: `TECH-DEBT-ALGO-SERVICE`
+**Priority**: P2 (Required for advanced order types)
+**Status**: TO DO
+
+**Description**:
+The current implementation lacks support for Binance Futures Algo Service endpoints (`/fapi/v1/algoOrder`). This prevents the use of server-side conditional orders like `STOP`, `TAKE_PROFIT`, and `TRAILING_STOP` via the API. Currently, the system relies on `STOP_MARKET` or local emulation, which is suboptimal for latency and reliability.
+
+**Tasks**:
+- [ ] Implement `POST /fapi/v1/algoOrder` in `BinanceExecutionAdapter`.
+- [ ] Implement `DELETE /fapi/v1/algoOrder` and `DELETE /fapi/v1/algoOpenOrders`.
+- [ ] Implement `GET /fapi/v1/openAlgoOrders` and `GET /fapi/v1/allAlgoOrders`.
+- [ ] Update `ExecutionService` to support `AlgoOrderPayload`.
+- [ ] Add unit tests for Algo Service interaction.
+
+**References**:
+- `docs/BINANCE_ENDPOINTS_MAP.md` (Tech Debt section)
+- Binance Futures API Docs: Algo Service

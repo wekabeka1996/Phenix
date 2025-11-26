@@ -64,5 +64,6 @@ async def test_trade_intent_proposed_triggers_entry_place():
     call = adapter.place_order_calls[0]
     assert call["symbol"] == "SOLUSDT"
     assert call["side"] == "BUY"
-    assert call["order_type"] == "MARKET"
-    assert call["quantity"] == "1.3"
+    assert call["order_type"] == "LIMIT"
+    assert str(call["quantity"]) == "1.3"
+    assert call["kwargs"].get("tif") == "GTC"

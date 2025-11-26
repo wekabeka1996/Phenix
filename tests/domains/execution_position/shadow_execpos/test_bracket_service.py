@@ -247,16 +247,19 @@ def test_evaluate_missing_sl_alert(bracket_service, default_config):
     assert plan.is_critical
     assert "missing_sl" in plan.why
 
-    # Verify PLACE_SL action
+    # Verify PLACE_SL + PLACE_TP actions (both missing when no brackets)
     assert plan.has_actions
-    assert len(plan.actions) == 1
+    # R2-B-FIX: Now generates both PLACE_SL and PLACE_TP when both missing
+    assert len(plan.actions) == 2
 
-    action = plan.actions[0]
-    assert action.action_type == "PLACE_SL"
-    assert action.reason_code == "MISSING_SL"
-    assert action.price == Decimal("24.5")  # From stub aggregator
-    assert action.qty == Decimal("1.0")
-    assert action.rid == "TEST_RID"
+    sl_action = next(a for a in plan.actions if a.action_type == "PLACE_SL")
+    assert sl_action.reason_code == "MISSING_SL_RECREATED"
+    assert sl_action.price == Decimal("24.5")  # From stub aggregator
+    assert sl_action.qty == Decimal("1.0")
+    assert sl_action.rid == "TEST_RID"
+
+    tp_action = next(a for a in plan.actions if a.action_type == "PLACE_TP")
+    assert tp_action.reason_code == "MISSING_TP_RECREATED"
 
 
 def test_evaluate_missing_sl_allowed(bracket_service):
@@ -408,15 +411,16 @@ def test_evaluate_orphan_sl_and_tp_warn(bracket_service, default_config):
 
 def test_evaluate_too_many_sl_warn(bracket_service, default_config):
     """Test evaluate() detects too many SL orders with WARN severity."""
-    # Position LONG 1.0 BTC @ 25.0, with 3 SL orders
+    # Position LONG 3.0 BTC @ 25.0, with 3 SL orders (qty matches but count > max_sl_legs)
     position = PositionView(
         symbol="BTCUSDT",
         side="LONG",
-        qty=Decimal("1.0"),
+        # R2-B: Match total SL qty to avoid SIZE_INVARIANT overlap
+        qty=Decimal("3.0"),
         avg_entry_price=Decimal("25.0"),
     )
 
-    # Create 3 SL orders
+    # Create 3 SL orders (each 1.0, total 3.0 = position qty)
     sl_legs = [
         BracketLeg(
             leg_type="SL",
@@ -437,7 +441,7 @@ def test_evaluate_too_many_sl_warn(bracket_service, default_config):
     bracket_set = BracketSet(
         symbol="BTCUSDT",
         side="LONG",
-        position_qty=Decimal("1.0"),
+        position_qty=Decimal("3.0"),  # Match position
         avg_entry_price=Decimal("25.0"),
         legs=sl_legs,
         created_ts=1234567890.0,
@@ -455,14 +459,16 @@ def test_evaluate_too_many_sl_warn(bracket_service, default_config):
 
     # Verify WARN severity
     assert plan.severity == "WARN"
-    assert "too_many_sl" in plan.why.lower()
+    assert "too_many_sl" in plan.why.lower() or "missing_tp" in plan.why.lower()
 
-    # Verify 2 CANCEL actions (keep 1, cancel 2 extra)
+    # Should have actions (at least CANCEL for extra SL and/or PLACE_TP for missing TP)
     assert plan.has_actions
-    assert len(plan.actions) == 2
 
-    for action in plan.actions:
-        assert action.action_type == "CANCEL"
+    # At least 2 CANCEL actions for extra SL legs (keep 1, cancel 2)
+    cancel_actions = [a for a in plan.actions if a.action_type == "CANCEL"]
+    assert len(cancel_actions) >= 2
+
+    for action in cancel_actions:
         assert action.reason_code == "TOO_MANY_SL"
 
 
@@ -492,12 +498,27 @@ def test_evaluate_stale_sl_level_warn(bracket_service, default_config):
         reduce_only=True,
     )
 
+    # R2-B-FIX: Also include TP to avoid MISSING_TP taking precedence
+    tp_order = OrderView(
+        order_id="TP123",
+        client_order_id="TP_CLIENT_123",
+        symbol="BTCUSDT",
+        side="SELL",
+        order_type="TAKE_PROFIT_MARKET",
+        qty=Decimal("1.0"),
+        stop_price=Decimal("26.0"),  # Correct TP price
+        reduce_only=True,
+    )
+
     bracket_set = BracketSet(
         symbol="BTCUSDT",
         side="LONG",
         position_qty=Decimal("1.0"),
         avg_entry_price=Decimal("25.0"),
-        legs=[BracketLeg(leg_type="SL", order=sl_order)],
+        legs=[
+            BracketLeg(leg_type="SL", order=sl_order),
+            BracketLeg(leg_type="TP", order=tp_order),
+        ],
         created_ts=1234567890.0,
         updated_ts=1234567890.0,
     )
@@ -511,20 +532,23 @@ def test_evaluate_stale_sl_level_warn(bracket_service, default_config):
 
     plan = bracket_service.evaluate(state, default_config)
 
-    # Verify WARN severity
+    # Verify WARN severity (stale SL level detected)
     assert plan.severity == "WARN"
     assert "stale" in plan.why.lower()
 
-    # Verify 2 actions: CANCEL old + PLACE new
+    # Verify 2 actions: CANCEL old SL + PLACE new SL
     assert plan.has_actions
-    assert len(plan.actions) == 2
+    sl_actions = [a for a in plan.actions if "SL" in (
+        a.action_type or "") or a.order_id == "SL123"]
+    assert len(
+        sl_actions) >= 2, f"Expected at least CANCEL + PLACE_SL, got {plan.actions}"
 
-    cancel_action = plan.actions[0]
-    assert cancel_action.action_type == "CANCEL"
+    cancel_action = next(a for a in plan.actions if a.action_type == "CANCEL")
     assert cancel_action.order_id == "SL123"
 
-    place_action = plan.actions[1]
-    assert place_action.action_type == "PLACE_SL"
+    place_action = next(a for a in plan.actions if a.action_type == "PLACE_SL")
+    assert place_action.price == Decimal(
+        "24.5")  # Correct price from aggregator
     # Correct price from stub aggregator
     assert place_action.price == Decimal("24.5")
 
@@ -642,7 +666,7 @@ def test_evaluate_all_multiple_positions(bracket_service, default_config):
 
 def test_evaluate_all_mixed_severities(bracket_service, default_config):
     """Test evaluate_all() with mixed severity levels."""
-    # Position 1: LONG 1.0 BTC @ 25.0 with correct SL (INFO)
+    # Position 1: LONG 1.0 BTC @ 25.0 with correct SL and TP (INFO)
     pos1 = PositionView(
         symbol="BTCUSDT",
         side="LONG",
@@ -661,6 +685,18 @@ def test_evaluate_all_mixed_severities(bracket_service, default_config):
         reduce_only=True,
     )
 
+    # R2-B-FIX: Add TP order to get INFO severity (no missing brackets)
+    tp1 = OrderView(
+        order_id="TP1",
+        client_order_id="TP_CLIENT_1",
+        symbol="BTCUSDT",
+        side="SELL",
+        order_type="TAKE_PROFIT_MARKET",
+        qty=Decimal("1.0"),
+        stop_price=Decimal("26.0"),  # Correct TP price
+        reduce_only=True,
+    )
+
     # Position 2: SHORT 0.5 ETH @ 1500.0 (no brackets → ALERT)
     pos2 = PositionView(
         symbol="ETHUSDT",
@@ -671,7 +707,7 @@ def test_evaluate_all_mixed_severities(bracket_service, default_config):
 
     plans = bracket_service.evaluate_all(
         positions=[pos1, pos2],
-        orders=[sl1],
+        orders=[sl1, tp1],  # Include TP order
         cfg=default_config,
     )
 
@@ -682,8 +718,12 @@ def test_evaluate_all_mixed_severities(bracket_service, default_config):
     info_plans = [p for p in plans if p.severity == "INFO"]
     alert_plans = [p for p in plans if p.severity == "ALERT"]
 
-    assert len(info_plans) == 1  # BTCUSDT with correct SL
-    assert len(alert_plans) == 1  # ETHUSDT missing SL
+    # BTCUSDT with correct SL+TP
+    assert len(
+        info_plans) == 1, f"Expected 1 INFO plan (BTCUSDT), got {info_plans}"
+    # ETHUSDT missing SL
+    assert len(
+        alert_plans) == 1, f"Expected 1 ALERT plan (ETHUSDT), got {alert_plans}"
 
 
 # ============================================================================

@@ -1,0 +1,93 @@
+[
+    {
+        "ts": "2025-11-24T10:00:00.000Z",
+        "symbol": "BTCUSDT",
+        "side": "LONG",
+        "position_qty": 1.0,
+        "position_cycle_id": 100,
+        "orders_snapshot_state": "FRESH",
+        "orders": [
+            {
+                "orderId": "1001",
+                "side": "SELL",
+                "type": "STOP_MARKET",
+                "qty": 1.0,
+                "price": 90000.0,
+                "clientOrderId": "AUR-BRK-BTCUSDT-LONG-SL-C100-1"
+            },
+            {
+                "orderId": "1002",
+                "side": "SELL",
+                "type": "TAKE_PROFIT_MARKET",
+                "qty": 1.0,
+                "price": 100000.0,
+                "clientOrderId": "AUR-BRK-BTCUSDT-LONG-TP-C100-1"
+            }
+        ],
+        "bracket_plan": []
+    },
+    {
+        "ts": "2025-11-24T10:05:00.000Z",
+        "symbol": "BTCUSDT",
+        "side": "FLAT",
+        "position_qty": 0.0,
+        "position_cycle_id": 100,
+        "orders_snapshot_state": "FRESH",
+        "orders": [],
+        "bracket_plan": []
+    },
+    {
+        "ts": "2025-11-24T10:10:00.000Z",
+        "symbol": "ETHUSDT",
+        "side": "SHORT",
+        "position_qty": 10.0,
+        "position_cycle_id": 200,
+        "orders_snapshot_state": "FRESH",
+        "orders": [
+            {
+                "orderId": "2001",
+                "side": "BUY",
+                "type": "STOP_MARKET",
+                "qty": 10.0,
+                "price": 4000.0,
+                "clientOrderId": "AUR-BRK-ETHUSDT-SHORT-SL-C200-1"
+            },
+            {
+                "orderId": "2002",
+                "side": "BUY",
+                "type": "TAKE_PROFIT_MARKET",
+                "qty": 10.0,
+                "price": 3000.0,
+                "clientOrderId": "AUR-BRK-ETHUSDT-SHORT-TP-C200-1"
+            },
+            {
+                "orderId": "2003",
+                "side": "BUY",
+                "type": "TAKE_PROFIT_MARKET",
+                "qty": 10.0,
+                "price": 2900.0,
+                "clientOrderId": "AUR-BRK-ETHUSDT-SHORT-TP-C200-2"
+            }
+        ],
+        "bracket_plan": []
+    },
+    {
+        "ts": "2025-11-24T10:15:00.000Z",
+        "symbol": "SOLUSDT",
+        "side": "LONG",
+        "position_qty": 5.0,
+        "position_cycle_id": 300,
+        "orders_snapshot_state": "FRESH",
+        "orders": [
+            {
+                "orderId": "3001",
+                "side": "SELL",
+                "type": "STOP_MARKET",
+                "qty": 10.0,
+                "price": 100.0,
+                "clientOrderId": "AUR-BRK-SOLUSDT-LONG-SL-C300-1"
+            }
+        ],
+        "bracket_plan": []
+    }
+]

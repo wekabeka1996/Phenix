@@ -16,6 +16,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from apps.reference.adapters.binance_adapter import BinanceAdapter
 from apps.reference.utils import get_domain_mode_from_mapping
 from .websocket_aggregator import WebSocketAggregator
+from .market_ws_client import MarketWSClient
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -116,6 +117,32 @@ class MarketDataConnector:
             pass
         self.poll_interval_sec = poll_interval_sec
         self.websocket_streams = websocket_streams
+
+        # Configure WebSocket Market Data (FSMP-P2)
+        self.use_ws_market_data = False
+        try:
+            if hasattr(trading_section, "market_data"):
+                md = trading_section.market_data
+                self.use_ws_market_data = getattr(
+                    md, "use_ws_market_data", False)
+            elif isinstance(trading_section, dict):
+                md = trading_section.get("market_data", {})
+                self.use_ws_market_data = md.get("use_ws_market_data", False)
+        except Exception:
+            pass
+
+        self.ws_client: Optional[MarketWSClient] = None
+        if self.use_ws_market_data:
+            # Include anchors in WS subscription
+            ws_symbols = list(set(self.symbols + self.anchors))
+            self.ws_client = MarketWSClient(
+                symbols=ws_symbols,
+                on_book_ticker=self._on_ws_book_ticker,
+                on_trade=self._on_ws_trade,
+                reconnect_interval_sec=5
+            )
+            LOG.info(
+                f"✅ MarketWSClient initialized for {len(ws_symbols)} symbols")
 
         # Initialize the BinanceAdapter based on the domain-level trading_mode
         mode = "live"  # Default for market_data domain
@@ -219,6 +246,75 @@ class MarketDataConnector:
         if self.feature_engineering:
             self.feature_engineering.update_anchor_price(anchor, price)
 
+    def _on_ws_book_ticker(self, payload: dict[str, Any]) -> None:
+        """Callback for WebSocket bookTicker updates."""
+        try:
+            symbol = payload.get("s")
+            if not symbol:
+                return
+
+            bid_price = payload.get("b", "0")
+            bid_qty = payload.get("B", "0")
+            ask_price = payload.get("a", "0")
+            ask_qty = payload.get("A", "0")
+            # T = transaction time, E = event time
+            ts = payload.get("T") or payload.get(
+                "E") or int(time.time() * 1000)
+
+            self.aggregator.on_book_ticker(
+                symbol, bid_price, bid_qty, ask_price, ask_qty, ts
+            )
+
+            # Handle anchors
+            if symbol in self.anchors:
+                mid_price = (float(bid_price) + float(ask_price)) / 2.0
+                # We need to call async callback from sync context?
+                # _on_anchor_update is async.
+                # But this callback is called from WS loop which is async.
+                # Wait, MarketWSClient calls this callback synchronously?
+                # MarketWSClient._handle_message calls self.on_book_ticker(payload)
+                # And _handle_message is called from async _run_loop.
+                # So we are in async context, but the callback is defined as sync in type hint?
+                # In MarketWSClient: on_book_ticker: Callable[[Dict[str, Any]], None]
+                # So it expects a sync function.
+                # If I want to await something, I should make it async or use create_task.
+                # Since I'm in the loop, I can use asyncio.create_task if I have the loop.
+                # Or I can just fire and forget if it's just updating internal state.
+                # feature_engineering.update_anchor_price is likely sync?
+                # Let's check.
+                pass
+                # For now, I'll assume update_anchor_price is sync or I'll fix it later.
+                # Actually _on_anchor_update is async in MarketDataConnector.
+                # So I should schedule it.
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._on_anchor_update(
+                        symbol, str(mid_price)))
+                except RuntimeError:
+                    pass
+
+        except Exception as e:
+            LOG.error(f"Error in WS bookTicker callback: {e}")
+
+    def _on_ws_trade(self, payload: dict[str, Any]) -> None:
+        """Callback for WebSocket aggTrade updates."""
+        try:
+            symbol = payload.get("s")
+            if not symbol:
+                return
+
+            price = payload.get("p", "0")
+            qty = payload.get("q", "0")
+            is_buyer_maker = payload.get("m", False)
+            ts = payload.get("T") or payload.get(
+                "E") or int(time.time() * 1000)
+
+            self.aggregator.on_trade(
+                symbol, price, qty, is_buyer_maker, ts
+            )
+        except Exception as e:
+            LOG.error(f"Error in WS trade callback: {e}")
+
     def start(self) -> None:
         """Start the data polling in a background thread."""
         if self.running:
@@ -261,12 +357,23 @@ class MarketDataConnector:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            while self.running:
-                loop.run_until_complete(self._fetch_and_emit_data())
-                time.sleep(self.poll_interval_sec)
+            loop.run_until_complete(self._async_poll_loop())
         finally:
             loop.close()
             LOG.info("Polling loop has ended.")
+
+    async def _async_poll_loop(self) -> None:
+        """Async loop for polling and WS management."""
+        if self.ws_client:
+            # Start WS client as a background task in this loop
+            self.ws_client.start()
+
+        while self.running:
+            await self._fetch_and_emit_data()
+            await asyncio.sleep(self.poll_interval_sec)
+
+        if self.ws_client:
+            await self.ws_client.stop()
 
     async def _fetch_and_emit_data(self) -> None:
         """
@@ -280,41 +387,43 @@ class MarketDataConnector:
             try:
                 LOG.debug(f"📡 Fetching data for {symbol}")
 
-                # Fetch REAL bid/ask sizes from bookTicker
-                book_data = await self.adapter.get_book_ticker(symbol=symbol)
-                if book_data:
-                    LOG.debug(f"📗 BookTicker for {symbol}: {book_data}")
-                    bid_price = book_data.get("bidPrice", "0")
-                    bid_size = book_data.get("bidQty", "0")
-                    ask_price = book_data.get("askPrice", "0")
-                    ask_size = book_data.get("askQty", "0")
-                    ts = int(time.time() * 1000)
+                if not self.use_ws_market_data:
+                    # Fetch REAL bid/ask sizes from bookTicker
+                    book_data = await self.adapter.get_book_ticker(symbol=symbol)
+                    if book_data:
+                        LOG.debug(f"📗 BookTicker for {symbol}: {book_data}")
+                        bid_price = book_data.get("bidPrice", "0")
+                        bid_size = book_data.get("bidQty", "0")
+                        ask_price = book_data.get("askPrice", "0")
+                        ask_size = book_data.get("askQty", "0")
+                        ts = int(time.time() * 1000)
 
-                    # Feed data to aggregator
-                    self.aggregator.on_book_ticker(
-                        symbol, bid_price, bid_size, ask_price, ask_size, ts
-                    )
-                else:
-                    LOG.warning(f"❌ No bookTicker data for {symbol}")
-
-                # Fetch REAL recent trades
-                trades_data = await self.adapter.get_recent_trades(
-                    symbol=symbol, limit=50
-                )
-                if trades_data:
-                    LOG.debug(f"📈 Got {len(trades_data)} trades for {symbol}")
-                    for trade in trades_data:
-                        self.aggregator.on_trade(
-                            symbol,
-                            price=trade.get("price", "0"),
-                            quantity=trade.get("qty", "0"),
-                            is_buyer_maker=trade.get(
-                                "m", True
-                            ),  # m=True means buyer is maker (sell)
-                            ts=trade.get("time", int(time.time() * 1000)),
+                        # Feed data to aggregator
+                        self.aggregator.on_book_ticker(
+                            symbol, bid_price, bid_size, ask_price, ask_size, ts
                         )
-                else:
-                    LOG.warning(f"❌ No trades data for {symbol}")
+                    else:
+                        LOG.warning(f"❌ No bookTicker data for {symbol}")
+
+                    # Fetch REAL recent trades
+                    trades_data = await self.adapter.get_recent_trades(
+                        symbol=symbol, limit=50
+                    )
+                    if trades_data:
+                        LOG.debug(
+                            f"📈 Got {len(trades_data)} trades for {symbol}")
+                        for trade in trades_data:
+                            self.aggregator.on_trade(
+                                symbol,
+                                price=trade.get("price", "0"),
+                                quantity=trade.get("qty", "0"),
+                                is_buyer_maker=trade.get(
+                                    "m", True
+                                ),  # m=True means buyer is maker (sell)
+                                ts=trade.get("time", int(time.time() * 1000)),
+                            )
+                    else:
+                        LOG.warning(f"❌ No trades data for {symbol}")
 
                 # Fetch klines for delta_price calculation
                 klines = await self.adapter.get_klines(
@@ -349,7 +458,7 @@ class MarketDataConnector:
                     f"❌ Failed to fetch data for {symbol}: {e}", exc_info=True)
 
         # 🆕 FIX #1: Fetch anchor prices (non-blocking, parallel with main symbols)
-        if self.anchors:
+        if self.anchors and not self.use_ws_market_data:
             LOG.debug(f"📌 Fetching anchor prices: {self.anchors}")
             for anchor in self.anchors:
                 try:

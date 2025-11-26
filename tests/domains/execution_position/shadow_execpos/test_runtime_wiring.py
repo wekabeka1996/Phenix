@@ -90,7 +90,7 @@ def test_adapter_entry_intent():
     assert event.kind == "ENTRY_INTENT"
     assert event.symbol == "BTCUSDT"
     assert event.payload["side"] == "BUY"
-    assert event.payload["quantity"] == "1.0"
+    assert str(event.payload["quantity"]) == "1.0"
 
 def test_adapter_cancel_intent():
     adapter = MessageToRuntimeEventAdapter()

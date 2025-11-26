@@ -1,5 +1,7 @@
 # Config Contract Map — SSOT v1.0
 
+> **STATUS UPDATE (2025-11-26):** Pydantic migration is in progress (Phase 2). `ConfigLoader` uses Pydantic for validation, but many consumers still use legacy resolvers. New code should prefer Pydantic models (`config.trading.execution...`) over resolvers where possible.
+
 > TASK 7.7 (2025-11-15): runtime й тести читають **лише** config v2 (`config/domains/*.yaml`, `instruments.yaml`, `overrides.yaml`, `modes.yaml`). Legacy `config/aurora/{trading,system}.yaml` тепер зберігаються в `config/archive/v1/` і не підключаються резольверами (залишаються fallbackами лише для повної сумісності).
 
 ## Config Loader Pipeline (post-migration)

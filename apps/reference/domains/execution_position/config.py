@@ -119,6 +119,8 @@ class AggregatedOcoConfig(BaseModel):
     allow_unprotected_position: bool = False
     max_sl_legs: int = Field(default=1, ge=1)
     max_tp_legs: int = Field(default=1, ge=1)
+    recreate_missing_brackets: bool = Field(
+        default=True, description="Recreate SL/TP if missing during open position (fail-closed)")
     watchdog: AggregatedOcoWatchdogConfig = Field(
         default_factory=AggregatedOcoWatchdogConfig
     )

@@ -1,0 +1,5 @@
+# v2 config for market_data domain
+# See docs/config_v2/specification.md
+
+use_ws_market_data: false
+poll_interval_sec: 5

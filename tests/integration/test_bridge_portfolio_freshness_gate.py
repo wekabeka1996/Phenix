@@ -112,8 +112,9 @@ async def test_intent_deferred_until_portfolio_fresh(monkeypatch):
     open_cmd = next(msg for msg in fsm.emitted if msg.verb == "OPEN")
     assert open_cmd.op == "CMD"
     assert open_cmd.pld["symbol"] == "BTCUSDT"
-    assert open_cmd.pld["side"] == "buy"
-    assert open_cmd.pld["qty"] == "0.001"
+    # OpenCommandPayload normalizes to uppercase
+    assert open_cmd.pld["side"] == "BUY"
+    assert str(open_cmd.pld["qty"]) == "0.001"  # qty may be Decimal
 
 
 @pytest.mark.asyncio

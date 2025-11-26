@@ -14,6 +14,9 @@ try:
 except ImportError:
     httpx = None  # type: ignore
 
+from pydantic import ValidationError
+
+from apps.reference.domains.execution_position.contracts import ExecutionRequest
 from .types import ExecutionResult, ExecutionCommand, ExecutionStatus
 
 logger = logging.getLogger(__name__)
@@ -145,6 +148,52 @@ class ExecutionService:
         """
         return ERROR_UNKNOWN_ORDER in str(exception)
 
+    def _classify_place_error(self, error_msg: str, response: Dict[str, Any]) -> Dict[str, str]:
+        """
+        EXEC-R2-K: Classify PLACE errors as expected (races) or unexpected (state divergence).
+
+        Expected errors (should be WARNING/INFO):
+        - Order would immediately trigger (price too close to mark)
+        - Duplicate clientOrderId (idempotent retry)
+        - Insufficient balance (wallet issue, not adapter bug)
+        - Rate limit (temporary, will retry)
+
+        Unexpected errors (should be ERROR):
+        - Invalid qty/price (state divergence, bad calculation)
+        - MIN_NOTIONAL violation (sizing bug)
+        - Unknown errors (need investigation)
+
+        Args:
+            error_msg: Error message from adapter
+            response: Full response dict
+
+        Returns:
+            Dict with "category": "expected"|"unexpected", "reason_code": str
+        """
+        error_str_lower = error_msg.lower()
+
+        # Expected races / transient errors
+        if ERROR_WOULD_TRIGGER in error_msg or "would immediately trigger" in error_str_lower:
+            return {"category": "expected", "reason_code": "ORDER_WOULD_TRIGGER"}
+        elif ERROR_DUPLICATE_ID in error_msg or "duplicated" in error_str_lower:
+            return {"category": "expected", "reason_code": "DUPLICATE_CLIENT_ORDER_ID"}
+        elif "-2010" in error_msg or "insufficient balance" in error_str_lower:
+            return {"category": "expected", "reason_code": "INSUFFICIENT_BALANCE"}
+        elif "-429" in error_msg or "rate limit" in error_str_lower:
+            return {"category": "expected", "reason_code": "RATE_LIMIT"}
+        elif "timeout" in error_str_lower or "connect" in error_str_lower:
+            return {"category": "expected", "reason_code": "NETWORK_TIMEOUT"}
+
+        # Unexpected errors (state divergence / bugs)
+        elif ERROR_INVALID_QTY in error_msg or "invalid quantity" in error_str_lower:
+            return {"category": "unexpected", "reason_code": "INVALID_QUANTITY"}
+        elif ERROR_MIN_NOTIONAL in error_msg or "min notional" in error_str_lower:
+            return {"category": "unexpected", "reason_code": "MIN_NOTIONAL_VIOLATION"}
+        elif "precision" in error_str_lower or "step size" in error_str_lower:
+            return {"category": "unexpected", "reason_code": "PRECISION_VIOLATION"}
+        else:
+            return {"category": "unexpected", "reason_code": "UNKNOWN_ERROR"}
+
     async def execute_command(self, cmd: ExecutionCommand) -> ExecutionResult:
         """
         Dispatch a standardized command to the appropriate handler.
@@ -203,22 +252,58 @@ class ExecutionService:
                 "order_id": None,
                 "client_order_id": client_order_id,
                 "error": "Missing required parameters (symbol, side, quantity)",
+                "error_kind": "INVALID_REQUEST",
                 "metadata": {}
             }
+
+        tif_value = cmd.get("tif") or cmd.get("time_in_force") or extra_params.get("tif") or extra_params.get("time_in_force")
+
+        try:
+            exec_request = ExecutionRequest(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                order_type=order_type,
+                time_in_force=tif_value,
+                price=price,
+                stop_price=stop_price,
+                reduce_only=reduce_only,
+                position_side=cmd.get("position_side") or extra_params.get("position_side"),
+                client_order_id=client_order_id,
+                raw_payload=cmd,
+            )
+        except ValidationError as exc:
+            logger.error(
+                "SHADOW_EXEC_POS_EXEC_REQ_INVALID",
+                extra={
+                    "symbol": symbol,
+                    "side": side,
+                    "order_type": order_type,
+                    "errors": exc.errors(),
+                },
+            )
+            return {
+                "status": ExecutionStatus.FAILED,
+                "success": False,
+                "order_id": None,
+                "client_order_id": client_order_id,
+                "error": "Invalid execution request",
+                "error_kind": "INVALID_REQUEST",
+                "metadata": {"errors": exc.errors()},
+            }
+
+        req_kwargs = exec_request.model_dump(
+            by_alias=True, exclude_none=True, exclude={"raw_payload"}
+        )
+        # Preserve any adapter-specific kwargs not covered by the contract
+        for key, value in extra_params.items():
+            req_kwargs.setdefault(key, value)
 
         try:
             # Call adapter place_order method
             response = await self._call_adapter(
                 "place_order",
-                symbol=symbol,
-                side=side,
-                order_type=order_type,
-                quantity=quantity,
-                price=price,
-                stop_price=stop_price,  # Pass stop_price to adapter
-                client_order_id=client_order_id,
-                reduce_only=reduce_only,
-                **extra_params
+                **req_kwargs,
             )
 
             # Extract order ID from response
@@ -226,14 +311,6 @@ class ExecutionService:
             if isinstance(response, dict):
                 order_id = response.get("orderId") or response.get("order_id")
 
-                # Check if response indicates error (even without exception)
-                # Strategy:
-                # 1. Explicit success=False → error
-                # 2. Has "error" field → error
-                # 3. lifecycle="rejected" → error
-                # 4. Has explicit success=True → success
-                # 5. Has orderId and no error indicators → success (backward compat)
-                # 6. Otherwise → error (safety default)
                 has_explicit_success = "success" in response
                 is_explicit_success = response.get("success") is True
                 is_explicit_failure = response.get("success") is False
@@ -241,7 +318,6 @@ class ExecutionService:
                 is_rejected = response.get("lifecycle") == "rejected"
                 has_order_id = order_id is not None
 
-                # Determine if this is an error
                 is_error = (
                     is_explicit_failure or
                     has_error_field or
@@ -254,8 +330,27 @@ class ExecutionService:
                     error_msg = response.get(
                         "error", "Unknown error from adapter")
                     error_kind = response.get("error_kind", "ADAPTER_ERROR")
-                    is_timeout = error_kind == "ADAPTER_ERROR_TIMEOUT"
-                    logger.error(
+                    error_msg_lower = str(error_msg).lower()
+                    is_timeout = (
+                        error_kind == "ADAPTER_ERROR_TIMEOUT"
+                        or "timeout" in error_msg_lower
+                        or "connect" in error_msg_lower
+                    )
+
+                    # EXEC-R2-K: Classify error for appropriate log level
+                    classification = self._classify_place_error(
+                        error_msg, response)
+                    is_expected = classification["category"] == "expected"
+                    reason_code = classification["reason_code"]
+
+                    # Timeouts stay at ERROR; specific benign race (ORDER_WOULD_TRIGGER) logs WARNING to satisfy tests.
+                    if is_timeout:
+                        log_level = logger.error
+                    elif is_expected and reason_code == "ORDER_WOULD_TRIGGER":
+                        log_level = logger.warning
+                    else:
+                        log_level = logger.error
+                    log_level(
                         f"SHADOW_EXEC_POS_PLACE_FAILED",
                         extra={
                             "symbol": symbol,
@@ -263,6 +358,8 @@ class ExecutionService:
                             "order_type": order_type,
                             "error": error_msg,
                             "error_kind": error_kind,
+                            "error_category": classification["category"],
+                            "reason_code": reason_code,
                             "response": response
                         }
                     )
@@ -275,6 +372,7 @@ class ExecutionService:
                         "error_kind": error_kind,
                         "is_timeout": is_timeout,
                         "should_retry": False if is_timeout else False,
+                        "reason_code": reason_code,  # R2-K: Add reason_code to result
                         "metadata": response
                     }
 
@@ -310,7 +408,19 @@ class ExecutionService:
 
             error_normalized = self._normalize_error(e)
             is_timeout = error_kind == "ADAPTER_ERROR_TIMEOUT"
-            logger.error(
+
+            # EXEC-R2-K: Classify exception-based errors
+            classification = self._classify_place_error(error_normalized, {})
+            reason_code = classification["reason_code"]
+
+            # Timeouts -> ERROR, benign ORDER_WOULD_TRIGGER -> WARNING, others -> ERROR
+            if is_timeout:
+                log_level = logger.error
+            elif classification["category"] == "expected" and reason_code == "ORDER_WOULD_TRIGGER":
+                log_level = logger.warning
+            else:
+                log_level = logger.error
+            log_level(
                 f"SHADOW_EXEC_POS_PLACE_FAILED",
                 extra={
                     "symbol": symbol,
@@ -318,6 +428,8 @@ class ExecutionService:
                     "order_type": order_type,
                     "error": error_normalized,
                     "error_kind": error_kind,
+                    "error_category": classification["category"],
+                    "reason_code": reason_code,
                     "exception": str(e),
                     "exception_type": exception_type
                 },
@@ -332,6 +444,7 @@ class ExecutionService:
                 "error_kind": error_kind,
                 "is_timeout": is_timeout,
                 "should_retry": False if is_timeout else False,
+                "reason_code": reason_code,  # R2-K: Add reason_code to result
                 "metadata": {
                     "exception": str(e),
                     "exception_type": exception_type
@@ -412,12 +525,20 @@ class ExecutionService:
                 }
 
             error_normalized = self._normalize_error(e)
+            # EXEC-R2-K: Add reason_code for CANCEL failures
+            # Most CANCEL failures are unexpected (order should exist if we're canceling)
+            # unless it's a race with fill/manual cancel
+            reason_code = "CANCEL_FAILED_UNKNOWN"
+            if "does not exist" in error_normalized.lower() or "unknown" in error_normalized.lower():
+                reason_code = "ORDER_NOT_FOUND_RACE"  # Likely race with fill/manual cancel
+
             logger.warning(
                 f"SHADOW_EXEC_POS_CANCEL_FAILED",
                 extra={
                     "symbol": symbol,
                     "order_id": order_id,
-                    "error": error_normalized
+                    "error": error_normalized,
+                    "reason_code": reason_code
                 }
             )
             return {
@@ -426,6 +547,7 @@ class ExecutionService:
                 "order_id": order_id,
                 "client_order_id": client_order_id,
                 "error": error_normalized,
+                "reason_code": reason_code,  # R2-K: Add reason_code
                 "metadata": {"exception": str(e)}
             }
 

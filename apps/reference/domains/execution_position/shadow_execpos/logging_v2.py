@@ -140,3 +140,73 @@ def log_watchdog_action(
                 record[k] = str(v) if not isinstance(v, (str, int, float, bool)) else v
     
     _write_jsonl(record)
+
+
+def log_bracket_eval_snapshot(
+    symbol: str,
+    side: str,
+    position_qty: float,
+    position_cycle_id: int,
+    snapshot_state: str,
+    open_brackets: list,
+    bracket_plan: list
+) -> None:
+    """
+    Log a BRACKET_EVAL_SNAPSHOT event for replay analysis.
+    
+    This function writes structured snapshots of bracket evaluations
+    to enable offline replay and invariant testing.
+    
+    Args:
+        symbol: Trading symbol
+        side: Position side (LONG/SHORT/FLAT)
+        position_qty: Position quantity
+        position_cycle_id: Cycle ID for position lifecycle tracking
+        snapshot_state: Orders snapshot state (UNKNOWN/STALE/FRESH)
+        open_brackets: List of open bracket orders (dicts with orderId, side, type, qty, price, clientOrderId)
+        bracket_plan: List of planned actions (dicts with action_type, qty, price, why)
+    
+    Example output:
+        {
+          "ts": "2025-11-26T00:15:00.123Z",
+          "runtime": "ExecPosRuntimeV2",
+          "event_kind": "BRACKET_EVAL_SNAPSHOT",
+          "symbol": "BTCUSDT",
+          "side": "LONG",
+          "position_qty": 1.0,
+          "position_cycle_id": 42,
+          "orders_snapshot_state": "FRESH",
+          "snapshot": "{...json...}"
+        }
+    """
+    try:
+        # Build the snapshot payload
+        snapshot = {
+            "symbol": symbol,
+            "side": side,
+            "position_qty": position_qty,
+            "position_cycle_id": position_cycle_id,
+            "orders_snapshot_state": snapshot_state,
+            "open_brackets": open_brackets,
+            "bracket_plan": bracket_plan
+        }
+        
+        # Serialize to JSON string for the 'snapshot' field
+        snapshot_json = json.dumps(snapshot, default=str)
+        
+        # Create log record
+        record = {
+            "ts": datetime.utcnow().isoformat() + "Z",
+            "runtime": "ExecPosRuntimeV2",
+            "event_kind": "BRACKET_EVAL_SNAPSHOT",
+            "symbol": symbol,
+            "side": side,
+            "position_qty": position_qty,
+            "snapshot": snapshot_json
+        }
+        
+        _write_jsonl(record)
+        
+    except Exception as e:
+        # Fail-closed: never crash on logging errors
+        logger.warning(f"Failed to log BRACKET_EVAL_SNAPSHOT: {e}", exc_info=False)

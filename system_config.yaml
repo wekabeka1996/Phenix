@@ -65,6 +65,12 @@ exposure:
     ETHUSDT: 125
     __default__: 125
 
+entry_orders:
+  # Entry order configuration
+  order_type: "LIMIT"           # Entry order type: LIMIT or MARKET
+  time_in_force: "GTC"           # Time in force for LIMIT orders: GTC, IOC, FOK
+  price_offset_bps: 0            # Price offset from current price in basis points (0 = at current price)
+
 manage:
   # from trading.execution.manage.*
   mode: aggregated_only

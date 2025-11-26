@@ -7,6 +7,9 @@ import asyncio
 from apps.reference.domains.execution_position.shadow_execpos.runtime import ExecPosRuntimeV2
 from apps.reference.domains.execution_position.shadow_execpos.event_adapter import MessageToRuntimeEventAdapter
 from apps.reference.domains.execution_position.adapter_factory import build_execution_adapter
+from apps.reference.domains.execution_position.contracts import TradeIntentPayload, OpenCommandPayload, resolve_order_defaults
+from apps.reference.domains.execution_position.internal_types import RuntimeEntryIntent
+from pydantic import ValidationError
 
 LOG = logging.getLogger(__name__)
 
@@ -62,10 +65,17 @@ def build_execution_runtime(
     if fsm:
         fsm.listen("EVT:TRADE_EXECUTED", facade.on_trade_executed)
         fsm.listen("EVT:ACCOUNT_UPDATE_RECEIVED", facade.on_account_update)
-        fsm.listen("EVT:TRADE_INTENT_PROPOSED",
-                   facade.on_trade_intent_proposed)
-        LOG.info(
-            "✅ V2RuntimeFacade subscribed to EVT:TRADE_EXECUTED and EVT:ACCOUNT_UPDATE_RECEIVED")
+
+        enable_direct_intents = exec_cfg.get(
+            "enable_direct_trade_intent_listener", False)
+        if enable_direct_intents:
+            fsm.listen("EVT:TRADE_INTENT_PROPOSED",
+                       facade.on_trade_intent_proposed)
+            LOG.info(
+                "✅ V2RuntimeFacade subscribed to EVT:TRADE_INTENT_PROPOSED (direct intent path enabled)")
+        else:
+            LOG.info(
+                "V2RuntimeFacade direct TRADE_INTENT_PROPOSED listener disabled (Bridge is gatekeeper)")
 
     return facade
 
@@ -230,38 +240,92 @@ class V2RuntimeFacade:
         """
         trade_intent = getattr(message, "pld", None) or getattr(
             message, "payload", None) or message
-        symbol = trade_intent.get("symbol")
-        side = str(trade_intent.get("side", "")).upper()
-        quantity = trade_intent.get("quantity") or trade_intent.get("qty")
-        price = trade_intent.get("price") or trade_intent.get("limit_price")
-        rid = trade_intent.get("rid") or trade_intent.get("request_id")
-        metadata = trade_intent.get("metadata") or {}
-        idempotent_key = trade_intent.get(
-            "idempotent_key") or metadata.get("idempotent_key")
+        order = trade_intent.get("order") or {}
+        metadata = trade_intent.get("metadata") or trade_intent.get("meta") or {}
+        mapped_payload = {
+            "symbol": trade_intent.get("symbol") or trade_intent.get("instrument"),
+            "side": trade_intent.get("side"),
+            "quantity": trade_intent.get("quantity") or trade_intent.get("qty") or order.get("qty"),
+            "price": trade_intent.get("price") or trade_intent.get("limit_price") or order.get("price"),
+            "price_ref": trade_intent.get("price_ref") or order.get("price_ref"),
+            "order_type": trade_intent.get("order_type") or order.get("order_type") or order.get("type"),
+            "time_in_force": trade_intent.get("time_in_force") or trade_intent.get("tif") or order.get("time_in_force") or order.get("tif"),
+            "rid": trade_intent.get("rid") or trade_intent.get("request_id"),
+            "strategy_id": trade_intent.get("strategy_id") or metadata.get("strategy_id"),
+            "idempotent_key": trade_intent.get("idempotent_key") or metadata.get("idempotent_key"),
+            "metadata": metadata,
+            "why": trade_intent.get("why"),
+        }
 
-        if not symbol or not side or quantity in (None, ""):
+        try:
+            intent_model = TradeIntentPayload(**mapped_payload)
+        except ValidationError as exc:
             self.logger.warning(
-                "[RuntimeFacade-S4] Missing required fields in TRADE_INTENT_PROPOSED; skipping",
-                extra={"symbol": symbol, "side": side, "quantity": quantity},
+                "[RuntimeFacade-S4] Invalid TRADE_INTENT_PROPOSED; skipping",
+                extra={"errors": exc.errors()},
             )
             return None
 
+        try:
+            resolved_order_type, resolved_tif = resolve_order_defaults(
+                intent_model.price, intent_model.order_type, intent_model.time_in_force
+            )
+            open_cmd = OpenCommandPayload(
+                rid=intent_model.rid,
+                symbol=intent_model.symbol,
+                side=intent_model.side,
+                quantity=intent_model.quantity,
+                price=intent_model.price,
+                price_ref=intent_model.price_ref,
+                order_type=resolved_order_type,
+                time_in_force=resolved_tif,
+                idempotent_key=intent_model.idempotent_key,
+                strategy_id=intent_model.strategy_id,
+                why=intent_model.why if isinstance(intent_model.why, str) else None,
+            )
+        except ValidationError as exc:
+            self.logger.warning(
+                "[RuntimeFacade-S4] Failed to build OpenCommandPayload; skipping",
+                extra={"errors": exc.errors()},
+            )
+            return None
+
+        entry_intent = RuntimeEntryIntent(
+            symbol=open_cmd.symbol,
+            side=open_cmd.side,
+            quantity=open_cmd.quantity,
+            price=open_cmd.price,
+            price_ref=open_cmd.price_ref,
+            order_type=resolved_order_type,
+            time_in_force=resolved_tif,
+            rid=open_cmd.rid,
+            strategy_id=open_cmd.strategy_id,
+            idempotent_key=open_cmd.idempotent_key,
+            client_order_id=open_cmd.client_order_id,
+            why=open_cmd.why,
+        )
+
         runtime_event = {
             "kind": "ENTRY_INTENT",
-            "symbol": symbol,
+            "symbol": entry_intent.symbol,
             "payload": {
-                "symbol": symbol,
-                "side": side,
-                "quantity": quantity,
-                "price": price,
+                "symbol": entry_intent.symbol,
+                "side": entry_intent.side,
+                "quantity": entry_intent.quantity,
+                "price": entry_intent.price,
+                "price_ref": entry_intent.price_ref,
+                "order_type": entry_intent.order_type,
+                "tif": entry_intent.time_in_force,
                 "source": "DecisionMaking",
-                "rid": rid,
-                "idempotent_key": idempotent_key,
+                "rid": entry_intent.rid,
+                "idempotent_key": entry_intent.idempotent_key,
+                "client_order_id": entry_intent.client_order_id,
+                "why": entry_intent.why,
             },
         }
 
         self.logger.info("[RuntimeFacade-S4] scheduling event: kind=ENTRY_INTENT source=decision symbol=%s",
-                         symbol)
+                         entry_intent.symbol)
         return self._submit_to_loop(self.runtime.handle(runtime_event), source="decision_intent")
 
     async def _sync_orders_and_handle_trade(self, symbol: str, runtime_event: Dict[str, Any]) -> None:
@@ -348,3 +412,18 @@ class V2RuntimeFacade:
         await self.runtime.handle(orders_event)
         self.logger.info(
             f"[ExecPosV2] FORCE_SNAPSHOT_APPLIED symbol={symbol} orders={len(orders)}")
+
+    def start(self) -> None:
+        """
+        Start the runtime.
+        """
+        self.logger.info("Starting V2RuntimeFacade...")
+        # Schedule runtime.start() on the loop
+        self._submit_to_loop(self.runtime.start(), source="facade_start")
+
+    def stop(self) -> None:
+        """
+        Stop the runtime.
+        """
+        self.logger.info("Stopping V2RuntimeFacade...")
+        self._submit_to_loop(self.runtime.shutdown(), source="facade_stop")

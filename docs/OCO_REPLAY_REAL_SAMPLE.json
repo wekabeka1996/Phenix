@@ -1,0 +1,147 @@
+[
+  {
+    "ts": "2025-11-24T12:00:00Z",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "position_qty": 1.0,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 1.0
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 1.0
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-24T12:01:00Z",
+    "symbol": "BTCUSDT",
+    "side": "LONG",
+    "position_qty": 1.0,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "clientOrderId": "AUR-SL-1",
+        "type": "STOP_MARKET",
+        "qty": 1.0,
+        "side": "SELL"
+      },
+      {
+        "clientOrderId": "AUR-TP-1",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 1.0,
+        "side": "SELL"
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-24T12:10:00Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": 10.0,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "clientOrderId": "AUR-SL-2",
+        "type": "STOP_MARKET",
+        "qty": 10.0,
+        "side": "BUY"
+      },
+      {
+        "clientOrderId": "AUR-TP-2",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 10.0,
+        "side": "BUY"
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-24T12:11:00Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": 10.0,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "clientOrderId": "AUR-SL-2",
+        "type": "STOP_MARKET",
+        "qty": 10.0,
+        "side": "BUY"
+      },
+      {
+        "clientOrderId": "AUR-TP-2",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 10.0,
+        "side": "BUY"
+      },
+      {
+        "clientOrderId": "AUR-TP-3",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 10.0,
+        "side": "BUY"
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-24T12:20:00Z",
+    "symbol": "SOLUSDT",
+    "side": "LONG",
+    "position_qty": 50.0,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "clientOrderId": "AUR-SL-4",
+        "type": "STOP_MARKET",
+        "qty": 50.0,
+        "side": "SELL"
+      },
+      {
+        "clientOrderId": "AUR-TP-4",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 50.0,
+        "side": "SELL"
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-24T12:21:00Z",
+    "symbol": "SOLUSDT",
+    "side": "LONG",
+    "position_qty": 25.0,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "clientOrderId": "AUR-SL-4",
+        "type": "STOP_MARKET",
+        "qty": 50.0,
+        "side": "SELL"
+      },
+      {
+        "clientOrderId": "AUR-TP-4",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 50.0,
+        "side": "SELL"
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL_SL",
+        "qty": 25.0
+      }
+    ]
+  }
+]

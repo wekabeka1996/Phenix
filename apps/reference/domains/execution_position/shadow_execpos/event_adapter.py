@@ -4,6 +4,10 @@ Event adapter for bridging legacy vFoundation Messages to ExecPosRuntimeV2 Runti
 import logging
 from typing import Any, Dict, Optional
 
+from pydantic import ValidationError
+
+from apps.reference.domains.execution_position.contracts import OpenCommandPayload, resolve_order_defaults
+from apps.reference.domains.execution_position.internal_types import RuntimeEntryIntent
 from .types import RuntimeEvent
 
 LOG = logging.getLogger(__name__)
@@ -28,19 +32,52 @@ class MessageToRuntimeEventAdapter:
             
             # 1. Entry Intent (CMD:OPEN)
             if op == "CMD" and verb == "OPEN":
+                try:
+                    ocp = OpenCommandPayload.model_validate(payload)
+                except ValidationError as exc:
+                    LOG.warning(
+                        "RuntimeEventAdapter: invalid CMD:OPEN payload; skipping",
+                        extra={"errors": exc.errors(), "payload": payload},
+                    )
+                    return None
+
+                resolved_order_type, resolved_tif = resolve_order_defaults(
+                    ocp.price, ocp.order_type, ocp.time_in_force
+                )
+
+                rid = getattr(msg, "rid", None) or ocp.rid
+                entry_intent = RuntimeEntryIntent(
+                    symbol=ocp.symbol,
+                    side=ocp.side,
+                    quantity=ocp.quantity,
+                    price=ocp.price,
+                    price_ref=ocp.price_ref,
+                    order_type=resolved_order_type,
+                    time_in_force=resolved_tif,
+                    rid=rid,
+                    strategy_id=ocp.strategy_id,
+                    idempotent_key=ocp.idempotent_key,
+                    client_order_id=ocp.client_order_id,
+                    why=ocp.why,
+                )
+
                 return RuntimeEvent(
                     kind="ENTRY_INTENT",
-                    symbol=payload.get("symbol"),
+                    symbol=entry_intent.symbol,
                     timestamp=timestamp,
                     payload={
-                        "side": payload.get("side"),
-                        "quantity": payload.get("qty"),
-                        "price": payload.get("price"),
-                        "order_type": payload.get("order_type", "MARKET"),
-                        "tif": payload.get("tif"),
-                        "idempotent_key": payload.get("idempotent_key"),
-                        "strategy_id": payload.get("strategy_id"),
-                        "client_order_id": payload.get("client_order_id"),
+                        "symbol": entry_intent.symbol,
+                        "side": entry_intent.side,
+                        "quantity": entry_intent.quantity,
+                        "price": entry_intent.price,
+                        "price_ref": entry_intent.price_ref,
+                        "order_type": entry_intent.order_type,
+                        "tif": entry_intent.time_in_force,
+                        "idempotent_key": entry_intent.idempotent_key,
+                        "strategy_id": entry_intent.strategy_id,
+                        "client_order_id": entry_intent.client_order_id,
+                        "rid": rid,
+                        "why": entry_intent.why,
                     }
                 )
                 

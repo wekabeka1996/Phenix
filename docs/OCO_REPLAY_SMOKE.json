@@ -1,0 +1,2937 @@
+[
+  {
+    "ts": "2025-11-25T21:41:11.326504Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.11,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.11,
+        "price": 874.38,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.11,
+        "price": 822.95,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:41:11.529432Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.11,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.11,
+        "price": 874.38,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.11,
+        "price": 822.95,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:41:11.991995Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.28,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.28,
+        "price": 874.38,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.28,
+        "price": 822.95,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:41:17.936885Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.17000000000000004,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:41:19.333583Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.06000000000000004,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "size_sync|sl_overshoot_0.11>0.06000000000000003941291737419"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "size_sync|tp_overshoot_0.11>0.06000000000000003941291737419"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:41:20.504342Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.05,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "size_sync|sl_overshoot_0.11>0.05000000000000000277555756156"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "size_sync|tp_overshoot_0.11>0.05000000000000000277555756156"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:41:20.652889Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.06000000000000004,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.06000000000000004,
+        "price": 874.38,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.06000000000000004,
+        "price": 822.95,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:41:21.402350Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.26000000000000006,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.26000000000000006,
+        "price": 874.38,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.26000000000000006,
+        "price": 822.95,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:41:30.487129Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.2,
+        "price": 874.38,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.2,
+        "price": 822.95,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:42:00.428478Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:42:05.052021Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:42:10.090011Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:42:29.269205Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:42:34.405349Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:42:39.502861Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:43:03.767375Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:43:08.855563Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:43:13.920821Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:43:34.076191Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:43:39.116897Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:43:44.165306Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:44:05.337451Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:44:10.408123Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:44:15.445990Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:44:36.623675Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:44:41.681749Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:44:46.877314Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:45:08.023577Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:13.110805Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:25.351090Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:28.255246Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.116,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.116,
+        "price": 1499.14,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.116,
+        "price": 1410.96,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:30.456837Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.2,
+        "price": 874.38,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.2,
+        "price": 822.95,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:31.662389Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.116,
+    "position_cycle_id": 1,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.116,
+        "price": 1499.14,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:36.704162Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:39.960604Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.058,
+        "price": 2998.29,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.058,
+        "price": 2821.92,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:40.742053Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [],
+    "bracket_plan": [
+      {
+        "action_type": "PLACE_SL",
+        "qty": 0.058,
+        "price": 2998.29,
+        "why": "missing_sl_recreated|recreate_missing_brackets=true"
+      },
+      {
+        "action_type": "PLACE_TP",
+        "qty": 0.058,
+        "price": 2821.92,
+        "why": "missing_tp_recreated|recreate_missing_brackets=true"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:40.875357Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:45:43.092383Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:45:48.124050Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:46:11.365577Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:46:13.596124Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:46:16.954032Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:46:17.077128Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:46:22.133645Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:46:42.376213Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:46:42.562421Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:46:47.703235Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:46:47.747713Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:46:52.818824Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:46:52.840719Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:47:14.026556Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:14.082408Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:19.999910Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:20.043436Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:25.109103Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:47:45.277138Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:45.315053Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:50.398303Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:50.449562Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:47:55.530576Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:47:55.548831Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:48:15.692202Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:48:15.704495Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:48:20.784669Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:48:20.798403Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:48:25.830369Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:48:46.981390Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:48:46.997093Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:48:52.055294Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306253",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.11,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C1-0."
+      },
+      {
+        "orderId": "1035306254",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.11,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      },
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:48:52.083002Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414461",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.116,
+        "price": 1410.96,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C1-0."
+      },
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": [
+      {
+        "action_type": "CANCEL",
+        "qty": null,
+        "price": null,
+        "why": "orphan_cycle|leg_cycle=1_pos_cycle=0"
+      }
+    ]
+  },
+  {
+    "ts": "2025-11-25T21:48:57.136233Z",
+    "symbol": "BNBUSDT",
+    "side": "SHORT",
+    "position_qty": -0.2,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "1035306300",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.2,
+        "price": 874.38,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "1035306307",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.2,
+        "price": 822.95,
+        "clientOrderId": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  },
+  {
+    "ts": "2025-11-25T21:48:57.143622Z",
+    "symbol": "ETHUSDT",
+    "side": "SHORT",
+    "position_qty": -0.058,
+    "position_cycle_id": 0,
+    "orders_snapshot_state": "FRESH",
+    "orders": [
+      {
+        "orderId": "7601414482",
+        "side": "BUY",
+        "type": "STOP_MARKET",
+        "qty": 0.058,
+        "price": 2998.29,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_SL-C0-0."
+      },
+      {
+        "orderId": "7601414489",
+        "side": "BUY",
+        "type": "TAKE_PROFIT_MARKET",
+        "qty": 0.058,
+        "price": 2821.92,
+        "clientOrderId": "AUR-ETHUSDT-SHORT-PLACE_TP-C0-0."
+      }
+    ],
+    "bracket_plan": []
+  }
+]

@@ -20,6 +20,8 @@ from .deferred_scheduler import DeferredIntentScheduler
 from .dm_log_adapter import (
     DecisionLog,
 )
+from .portfolio_provider import PortfolioProvider
+from .contracts import PortfolioSnapshot
 from apps.reference.telemetry.metrics import inc_decision_deferred
 from apps.reference.config_decision import resolve_decision_policy
 from apps.reference.domains.execution_position.brackets_config import (
@@ -82,12 +84,10 @@ class DecisionMaking:
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
             lambda: {"features": None, "risk": None}
         )
-        self.latest_portfolio: Optional[Dict[str, Any]] = None
+        self.portfolio_provider = PortfolioProvider(
+            self.logger.getChild("portfolio"))
+        self.latest_portfolio: Optional[PortfolioSnapshot] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
-
-        # Cache for equity values to prevent zero-overwrite
-        self._cached_equity_free_usdt: Optional[str] = None
-        self._cached_equity_cross_usdt: Optional[str] = None
 
         # Risk gate metrics for AlertManager
         self.intents_seen_total: int = 0  # Total intents evaluated
@@ -739,10 +739,13 @@ class DecisionMaking:
         try:
             state = self.symbol_states[symbol]
             if state.get("features") and state.get("risk"):
+                portfolio_snapshot = self.portfolio_provider.get_snapshot(
+                    prefer_nonzero=True)
                 decision_context = {
                     "features": state["features"],
                     "risk_params": state["risk"],
-                    "portfolio": self.latest_portfolio,
+                    "portfolio": portfolio_snapshot.model_dump(),
+                    "portfolio_snapshot": portfolio_snapshot,
                     "regime": self.latest_regime,
                 }
                 rid = str(uuid.uuid4())
@@ -800,49 +803,24 @@ class DecisionMaking:
             "✅ on_portfolio() called - portfolio state received!")
         portfolio_data = event.pld
 
-        # Cache equity_free_usdt if present, but don't overwrite with zero/null
-        try:
-            if hasattr(portfolio_data, 'equity_free_usdt'):
-                equity_free_usdt = portfolio_data.equity_free_usdt
-            elif isinstance(portfolio_data, dict):
-                equity_free_usdt = portfolio_data.get("equity_free_usdt")
-            else:
-                equity_free_usdt = None
-        except (AttributeError, TypeError):
-            equity_free_usdt = None
-
-        if equity_free_usdt and equity_free_usdt not in ("0", "0.0"):
-            self._cached_equity_free_usdt = equity_free_usdt
-            self.logger.info(f"   Cached equity_free_usdt: {equity_free_usdt}")
-
-        # Also cache equity_cross_usdt if present
-        try:
-            if hasattr(portfolio_data, 'equity_cross_usdt'):
-                equity_cross_usdt = portfolio_data.equity_cross_usdt
-            elif isinstance(portfolio_data, dict):
-                equity_cross_usdt = portfolio_data.get("equity_cross_usdt")
-            else:
-                equity_cross_usdt = None
-        except (AttributeError, TypeError):
-            equity_cross_usdt = None
-
-        if equity_cross_usdt and equity_cross_usdt not in ("0", "0.0"):
-            self._cached_equity_cross_usdt = equity_cross_usdt
-
-        self.latest_portfolio = portfolio_data
+        snapshot = self.portfolio_provider.ingest_snapshot(portfolio_data)
+        self.latest_portfolio = snapshot
+        positions_count = 0
+        if isinstance(portfolio_data, dict):
+            try:
+                positions_count = len(portfolio_data.get("positions", []))
+            except Exception:
+                positions_count = 0
         self.logger.info(
-            f"   Equity: {portfolio_data.get('equity')}, Positions: {len(portfolio_data.get('positions', []))}"
+            f"   Equity_free_usdt: {snapshot.equity_free_usdt}, Equity_total_usdt: {snapshot.equity_total_usdt}"
         )
 
         self.dlog.write(
             "PORTFOLIO_RX",
             getattr(event, "rid", None),
             {
-                "equity": str(
-                    self._cached_equity_free_usdt
-                    or portfolio_data.get("equity_free_usdt", "0")
-                ),
-                "positions_count": len(portfolio_data.get("positions", [])),
+                "equity": str(snapshot.equity_free_usdt),
+                "positions_count": positions_count,
             },
         )
 
@@ -881,7 +859,7 @@ class DecisionMaking:
         return is_ready
 
     def _check_and_trigger_decision_for_symbol(self, symbol: str) -> None:
-        if not self.latest_portfolio:
+        if not self.portfolio_provider.has_snapshot:
             self.logger.debug(
                 f"[{symbol}] Decision deferred: global portfolio state not yet available."
             )
@@ -928,10 +906,13 @@ class DecisionMaking:
                     self._last_bar_index[symbol] = bar_index
             self.logger.info(
                 f"[{symbol}] ✅ All data ready! Triggering decision...")
+            portfolio_snapshot = self.portfolio_provider.get_snapshot(
+                prefer_nonzero=True)
             decision_context = {
                 "features": state["features"],
                 "risk_params": state["risk"],
-                "portfolio": self.latest_portfolio,
+                "portfolio": portfolio_snapshot.model_dump(),
+                "portfolio_snapshot": portfolio_snapshot,
                 "regime": self.latest_regime,
             }
             rid = str(uuid.uuid4())
@@ -952,10 +933,13 @@ class DecisionMaking:
                         f"[{symbol}] ✅ Using cached risk assessment from "
                         f"{current_time - risk_assessment_time:.1f}s ago")
                     state["risk"] = cached_risk
+                    portfolio_snapshot = self.portfolio_provider.get_snapshot(
+                        prefer_nonzero=True)
                     decision_context = {
                         "features": state["features"],
                         "risk_params": state["risk"],
-                        "portfolio": self.latest_portfolio,
+                        "portfolio": portfolio_snapshot.model_dump(),
+                        "portfolio_snapshot": portfolio_snapshot,
                         "regime": self.latest_regime,
                     }
                     rid = str(uuid.uuid4())
@@ -1003,7 +987,9 @@ class DecisionMaking:
         why_chain = []
         features_data = context["features"]["features"]
         risk_params = context["risk_params"]["risk_parameters"]
-        portfolio = context["portfolio"]
+        portfolio_snapshot: PortfolioSnapshot = context.get(
+            "portfolio_snapshot") or self.portfolio_provider.get_snapshot(prefer_nonzero=True)
+        portfolio = context.get("portfolio") or portfolio_snapshot.model_dump()
 
         # QoS check (PACK EXP-4) - check rate limits and cooldowns
         qos_allowed, qos_reject_reason = self._qos_allow(
@@ -1110,16 +1096,10 @@ class DecisionMaking:
                 self.clear_internal_state_for_symbol(symbol)
                 return
 
-        # Use cached equity_free_usdt instead of portfolio equity to prevent zero-overwrite
-        equity_str = (
-            self._cached_equity_free_usdt
-            or portfolio.get("equity_free_usdt")
-            or portfolio.get("equity", "0")
-        )
-        equity = decimal.Decimal(str(equity_str))
+        equity = decimal.Decimal(str(portfolio_snapshot.equity_free_usdt))
 
         self.logger.info(
-            f"[{symbol}] Using equity for decision: {equity} (from cached: {self._cached_equity_free_usdt is not None})"
+            f"[{symbol}] Using equity for decision: {equity} (source=portfolio_snapshot, prefer_nonzero=True)"
         )
 
         if equity <= 0:
@@ -1679,27 +1659,13 @@ class DecisionMaking:
         self, symbol: str, price: decimal.Decimal, side: str, context: dict
     ) -> tuple[Optional[decimal.Decimal], str]:
         why_chain = []
-        portfolio = context["portfolio"]
+        portfolio_snapshot: PortfolioSnapshot = context.get(
+            "portfolio_snapshot") or self.portfolio_provider.get_snapshot(prefer_nonzero=True)
 
-        # EXEC-V2-P0-FIX-S28: Use cached equity_free_usdt instead of portfolio.get("equity", "0")
-        # The portfolio object may not have "equity" key, causing equity=0 bug
-        equity_value = self._cached_equity_free_usdt
-        if not equity_value or equity_value in ("0", "0.0"):
-            # Fallback to portfolio dict if cache is empty (should not happen in normal flow)
-            if isinstance(portfolio, dict):
-                equity_value = portfolio.get(
-                    "equity_free_usdt") or portfolio.get("equity", "0")
-            elif hasattr(portfolio, "equity_free_usdt"):
-                equity_value = portfolio.equity_free_usdt
-            else:
-                equity_value = "0"
+        equity = decimal.Decimal(str(portfolio_snapshot.equity_free_usdt))
 
-        equity = decimal.Decimal(str(equity_value))
-
-        # Log actual equity source for debugging
-        self.logger.debug(
-            f"[{symbol}] Using equity for decision: {equity} (from cached: {bool(self._cached_equity_free_usdt)})"
-        )
+        if equity <= 0:
+            return None, "equity_non_positive"
 
         # Prefer SL_bps-based sizing when risk_fraction_q is configured
         try:
@@ -1886,9 +1852,17 @@ class DecisionMaking:
     ) -> None:
         self.logger.info(
             f"🚀 _propose_trade_intent() called for {symbol} {side} qty={qty} price={price}")
+        idem_key = str(uuid.uuid4())
         trade_intent = {
-            "instrument": symbol,
+            "symbol": symbol,
             "side": side,
+            "quantity": str(qty),
+            "price": str(price),
+            "order_type": None,
+            "time_in_force": None,
+            "rid": rid,
+            "idempotent_key": idem_key,
+            "instrument": symbol,
             "order": {
                 "qty": str(qty),
                 "price": str(price),
@@ -1911,7 +1885,12 @@ class DecisionMaking:
             "why": why_chain,
             "dto_version": "1.0.0",
             "schema_ref": "...",
-            "idempotent_key": str(uuid.uuid4()),
+            "metadata": {
+                "idempotent_key": idem_key,
+            },
+            "metadata": {
+                "idempotent_key": idem_key,
+            },
         }
 
         # Record accepted intent for risk gate monitoring

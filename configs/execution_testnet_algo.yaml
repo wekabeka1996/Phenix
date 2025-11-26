@@ -1,0 +1,31 @@
+# Testnet configuration for Algo Service Rollout (Phase 3)
+# Extends/Overrides master_config_v1.yaml defaults
+
+trading:
+  trading_env: "test"
+
+  execution:
+    # FEATURE FLAG: Enable Algo Service for conditional orders (SL/TP)
+    use_algo_service_for_conditionals: true
+
+    manage:
+      mode: aggregated_only
+      brackets:
+        enable: true
+        oco_emulation: true
+        sl:
+          fixed_bps: 50
+        tp:
+          fixed_bps: 100
+        aggregated_oco:
+          enabled: true
+          aggregated_only_mode: true
+
+# Limit symbols for testnet rollout
+symbols:
+  allow_list:
+    - "BTCUSDT"
+    - "ETHUSDT"
+
+ops:
+  metrics_url: "http://127.0.0.1:8000/metrics"

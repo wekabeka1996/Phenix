@@ -34,6 +34,11 @@ from apps.reference.domains.feature_engineering.feature_engineering import (
 )
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
 from apps.reference.data.feature_store import FeatureStore
+from apps.reference.domains.execution_position.contracts import (
+    TradeIntentPayload,
+    OpenCommandPayload,
+    resolve_order_defaults,
+)
 from vfoundation.dr import wal
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
@@ -59,6 +64,7 @@ from logging.handlers import RotatingFileHandler
 import asyncio
 import threading
 from vfoundation.obs import debug_api
+from pydantic import ValidationError
 
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -114,6 +120,36 @@ class AuroraBridge:
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
                         on_portfolio_state_updated)
         self.fsm.listen("EVT:INTENT_DEFERRED", on_intent_deferred)
+
+    def _build_trade_intent_model(self, intent_msg: Message) -> TradeIntentPayload | None:
+        """Normalize raw intent payload into TradeIntentPayload."""
+        payload = intent_msg.pld or {}
+        order = payload.get("order") or {}
+        metadata = payload.get("metadata") or payload.get("meta") or {}
+
+        mapped_payload = {
+            "symbol": payload.get("symbol") or payload.get("instrument"),
+            "side": payload.get("side"),
+            "quantity": payload.get("quantity") or order.get("qty"),
+            "price": payload.get("price") or order.get("price"),
+            "price_ref": payload.get("price_ref") or order.get("price_ref"),
+            "order_type": payload.get("order_type") or order.get("order_type") or order.get("type"),
+            "time_in_force": payload.get("time_in_force") or payload.get("tif") or order.get("time_in_force") or order.get("tif"),
+            "rid": payload.get("rid") or intent_msg.rid,
+            "strategy_id": payload.get("strategy_id") or metadata.get("strategy_id"),
+            "idempotent_key": payload.get("idempotent_key") or metadata.get("idempotent_key") or metadata.get("idempotency_key"),
+            "metadata": metadata,
+            "why": payload.get("why"),
+        }
+
+        try:
+            return TradeIntentPayload(**mapped_payload)
+        except ValidationError as exc:
+            self.logger.error(
+                "BRIDGE: Invalid TRADE_INTENT_PROPOSED payload",
+                extra={"rid": intent_msg.rid, "errors": exc.errors()},
+            )
+            return None
 
     def _is_portfolio_fresh(self) -> bool:
         """Check if portfolio data is fresh (within TTL)."""
@@ -214,21 +250,41 @@ class AuroraBridge:
         If portfolio stale → defer intent
         If both OK → convert immediately to CMD:OPEN
         """
-        symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
+        intent_model = self._build_trade_intent_model(event)
+        if intent_model is None:
+            return
 
-        # Check for forbidden LIMIT entry
-        order_details = event.pld.get("order", {})
-        if order_details.get("order_type") == "LIMIT":
+        symbol = intent_model.symbol or ""
+
+        # Resolve order type from config (entry_orders.order_type) with fallback to price-based detection
+        entry_orders_cfg = self.config.get("entry_orders", {})
+        config_order_type = entry_orders_cfg.get(
+            "order_type")  # LIMIT or MARKET from config
+        config_tif = entry_orders_cfg.get("time_in_force", "GTC")
+
+        # If config specifies order type, use it; otherwise fall back to price-based detection
+        if config_order_type:
+            resolved_order_type = config_order_type.upper()
+            resolved_tif = config_tif if resolved_order_type == "LIMIT" else None
+            self.logger.info(
+                f"BRIDGE: Using order_type from config: {resolved_order_type} (tif={resolved_tif})")
+        else:
+            resolved_order_type, resolved_tif = resolve_order_defaults(
+                intent_model.price, intent_model.order_type, intent_model.time_in_force
+            )
+
+        # For LIMIT orders, ensure price is provided
+        if resolved_order_type == "LIMIT" and not intent_model.price:
             self.logger.error(
-                "BRIDGE: LIMIT entry forbidden. Only MARKET entry allowed."
+                f"BRIDGE: LIMIT order requested but no price provided for {symbol}. "
+                f"Intent had price={intent_model.price}"
             )
             return
 
         # Check QoS first
         if not self._is_qos_allowed(symbol):
             # QoS blocked - defer the intent
-            key = event.pld.get(
-                "idempotent_key") or event.rid or str(time.time())
+            key = intent_model.idempotent_key or event.rid or str(time.time())
             self._deferred[key] = event
             self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
 
@@ -242,7 +298,7 @@ class AuroraBridge:
                 pld={
                     "reason": "QOS_COOLDOWN",
                     "symbol": symbol,
-                    "idempotent_key": event.pld.get("idempotent_key"),
+                    "idempotent_key": intent_model.idempotent_key,
                 },
                 why="bridge_qoS_blocked",
             )
@@ -270,11 +326,11 @@ class AuroraBridge:
 
         # QoS OK - check portfolio freshness
         if self._is_portfolio_fresh():
-            self._dispatch_open(event)
+            self._dispatch_open(event, intent_model=intent_model)
             return
 
         # Portfolio stale - defer the intent
-        key = event.pld.get("idempotent_key") or event.rid or str(time.time())
+        key = intent_model.idempotent_key or event.rid or str(time.time())
         self._deferred[key] = event
         self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
 
@@ -288,7 +344,7 @@ class AuroraBridge:
             pld={
                 "reason": "PORTFOLIO_STALE",
                 "symbol": symbol,
-                "idempotent_key": event.pld.get("idempotent_key"),
+                "idempotent_key": intent_model.idempotent_key,
             },
             why="bridge_waits_fresh_portfolio",
         )
@@ -392,35 +448,51 @@ class AuroraBridge:
                 f"BRIDGE: Flushed deferred intents - processed: {processed_count}, dropped: {dropped_count}"
             )
 
-    def _dispatch_open(self, intent_msg: Message) -> None:
+    def _dispatch_open(self, intent_msg: Message, intent_model: TradeIntentPayload | None = None) -> None:
         """Convert TRADE_INTENT_PROPOSED to CMD:OPEN and dispatch."""
+        trade_intent = intent_model or self._build_trade_intent_model(
+            intent_msg)
+        if trade_intent is None:
+            return
+
+        raw_symbol = trade_intent.symbol or "unknown"
         self.logger.info(
-            f"BRIDGE: Converting TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {intent_msg.pld.get('instrument', 'unknown')} to CMD:OPEN"
+            f"BRIDGE: Converting TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {raw_symbol} to CMD:OPEN"
         )
 
-        # Extract order details from nested structure
-        order_details = intent_msg.pld.get("order", {})
+        if raw_symbol == "unknown":
+            self.logger.error(
+                f"BRIDGE: CRITICAL - Missing symbol in TRADE_INTENT_PROPOSED payload, rid={intent_msg.rid}. "
+                f"Available keys: {list(intent_msg.pld.keys())}"
+            )
 
-        command_payload = {
-            # Pass through request ID for tracing
-            "rid": intent_msg.pld.get("rid"),
-            # Map 'instrument' to 'symbol'
-            "symbol": intent_msg.pld.get("instrument"),
-            "side": intent_msg.pld.get("side"),
-            # Get qty from order.qty (as string)
-            "qty": order_details.get("qty"),
-            "price": order_details.get(
-                "price"
-            ),  # Get price from order.price (as string)
-            "order_type": "LIMIT",  # Use LIMIT orders with specified price
-            "tif": "GTC",  # Good-Till-Cancel
-            "idempotent_key": intent_msg.pld.get(
-                "idempotent_key"
-            ),  # Pass through for deduplication
-            "price_ref": order_details.get(
-                "price_ref"
-            ),  # Pass current market price for min_notional checks
-        }
+        resolved_order_type, resolved_tif = resolve_order_defaults(
+            trade_intent.price, trade_intent.order_type, trade_intent.time_in_force
+        )
+        try:
+            open_cmd = OpenCommandPayload(
+                rid=trade_intent.rid or intent_msg.pld.get("rid"),
+                symbol=trade_intent.symbol,
+                side=trade_intent.side,
+                quantity=trade_intent.quantity,
+                price=trade_intent.price,
+                price_ref=trade_intent.price_ref,
+                order_type=resolved_order_type,
+                time_in_force=resolved_tif,
+                idempotent_key=trade_intent.idempotent_key,
+                strategy_id=trade_intent.strategy_id,
+                client_order_id=intent_msg.pld.get("client_order_id"),
+                why=trade_intent.why if isinstance(
+                    trade_intent.why, str) else None,
+            )
+        except ValidationError as exc:
+            self.logger.error(
+                "BRIDGE: Failed to build OpenCommandPayload",
+                extra={"rid": intent_msg.rid, "errors": exc.errors()},
+            )
+            return
+
+        command_payload = open_cmd.model_dump(by_alias=True, exclude_none=True)
 
         # XAI instrumentation: exec_open_enter
         from vfoundation.core.why_codes import WhyCode, format_why_with_details

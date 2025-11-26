@@ -24,6 +24,7 @@ from .exposure_bridge import ExposureBridge
 from .types import RuntimeEvent, ExecutionCommand, WatchdogAction
 from . import logging_v2
 from .position_model import PositionState, apply_fill
+from dataclasses import replace, dataclass
 from .close_flow import CloseFlowService, CloseContext, CloseConfig
 from .trailing import TrailingStopService, TrailingState, TrailingConfig
 from .bracket_service import (
@@ -39,6 +40,16 @@ from vfoundation.apps.reference.domains.execution_position import bracket_aggreg
 from vfoundation.dr import wal
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BracketStatus:
+    """Per-symbol state to prevent double-apply of guard_loop vs trade_executed."""
+    last_reason: str = ""  # "trade_executed", "guard_loop", etc.
+    last_started_ts: float = 0.0  # When _apply_bracket_plan started
+    in_flight: bool = False  # True during _apply_bracket_plan execution
+    # True after plan applied, False after snapshot confirms orders
+    awaiting_snapshot: bool = False
 
 
 class ExecPosRuntimeV2:
@@ -96,6 +107,8 @@ class ExecPosRuntimeV2:
 
         # Runtime state
         self._positions_by_symbol: Dict[str, PositionState] = {}
+        # R2-B: Track previous side for reverse detection
+        self._prev_positions_by_symbol: Dict[str, PositionState] = {}
         self._open_orders_by_symbol: Dict[str, list] = {}
         # "UNKNOWN" | "STALE" | "FRESH"
         self._orders_snapshot_state: Dict[str, str] = {}
@@ -106,6 +119,15 @@ class ExecPosRuntimeV2:
         self._brackets_suppressed: Dict[str, float] = {}
         self._snapshot_request_hook: Optional[Callable[[
             str], Awaitable[None]]] = None
+
+        # R3-D1: Per-symbol bracket status to prevent double-apply
+        self._bracket_status: Dict[str, BracketStatus] = {}
+
+        # E-004: Watchdog log throttling to prevent spam
+        # Key: (symbol, kind) -> last_log_ts
+        self._watchdog_log_throttle: Dict[tuple, float] = {}
+        # Don't log same violation twice within 30s
+        self._watchdog_log_throttle_sec = 30.0
 
         # TASK 3: Throttling state for bracket spam prevention
         self._last_brackets_apply_ts: Dict[str, float] = {}
@@ -132,6 +154,13 @@ class ExecPosRuntimeV2:
             "execution_failed": 0,
             "fills_processed": 0,
             "fills_duplicate": 0,
+            # R2-G: Total fills seen (including zero/duplicate)
+            "fills_total": 0,
+            # R2-G: Fills where qty was normalized from negative
+            "fills_abs_normalized_total": 0,
+            # R2-G: Fills with zero qty (ignored)
+            "fills_zero_ignored_total": 0,
+            "fills_signed_qty_seen_total": 0,  # R2-G: Fills with negative raw qty
             "watchdog_violations": 0,
             "watchdog_violations_by_kind": {},
             "wal_trades_written": 0,
@@ -174,6 +203,20 @@ class ExecPosRuntimeV2:
     def get_metrics_snapshot(self) -> Dict[str, Any]:
         """Get a complete snapshot of V2 runtime metrics."""
         return self.get_metrics()
+
+    async def start(self) -> None:
+        """
+        Start the runtime.
+        """
+        logger.info("Starting ExecPosRuntimeV2...")
+
+        # Phase 2: Load Algo Orders Snapshot
+        if hasattr(self.execution_service.adapter, "load_open_algo_orders_snapshot"):
+            try:
+                await self.execution_service.adapter.load_open_algo_orders_snapshot()
+            except Exception as e:
+                logger.error(
+                    f"Failed to load Algo Orders snapshot: {e}", exc_info=True)
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the runtime."""
@@ -258,6 +301,29 @@ class ExecPosRuntimeV2:
     def _mark_position_snapshot(self, symbol: str, ts: Optional[float] = None) -> None:
         self._last_position_snapshot_ts[symbol] = ts or time.monotonic()
 
+    def _remove_order_from_mirror(self, symbol: str, order_id: str) -> None:
+        """
+        R2-B: Remove order from local mirror after CANCEL action.
+
+        This ensures tests checking _open_orders_by_symbol see updated state
+        without waiting for next ORDERS_SNAPSHOT.
+
+        Args:
+            symbol: Trading symbol
+            order_id: Exchange order ID to remove
+        """
+        orders = self._open_orders_by_symbol.get(symbol, [])
+        updated_orders = [
+            o for o in orders
+            if str(o.get("orderId") or o.get("order_id") or "") != str(order_id)
+        ]
+        self._open_orders_by_symbol[symbol] = updated_orders
+
+        logger.debug(
+            f"[ExecPosV2] MIRROR_UPDATE symbol={symbol} "
+            f"removed_order={order_id} remaining_orders={len(updated_orders)}"
+        )
+
     async def _request_orders_snapshot(self, symbol: str, *, force: bool = False) -> None:
         """Invoke hook to refresh orders snapshot with per-symbol throttle."""
         if not self._snapshot_request_hook:
@@ -318,6 +384,8 @@ class ExecPosRuntimeV2:
                 await self._handle_position_snapshot(payload)
             elif kind == "ORDERS_SNAPSHOT":
                 await self._handle_orders_snapshot(payload)
+            elif kind == "EVT:ALGO_ORDER_UPDATED":
+                await self._handle_algo_order_updated(payload)
             else:
                 logger.warning(f"Unknown event kind: {kind}")
 
@@ -388,7 +456,8 @@ class ExecPosRuntimeV2:
             order_type=order_type,
             quantity=adjusted_qty,
             price=adjusted_price,
-            client_order_id=payload.get("client_order_id")
+            client_order_id=payload.get("client_order_id"),
+            time_in_force=payload.get("tif") or payload.get("time_in_force"),
         )
 
         if result["success"]:
@@ -530,15 +599,25 @@ class ExecPosRuntimeV2:
         )
 
         # 3. Update position state (CRITICAL: do this before WAL/exposure)
-        qty = float(payload.get("quantity", 0) or payload.get("qty", 0))
-        qty = abs(qty)
+        raw_qty = float(payload.get("quantity", 0) or payload.get("qty", 0))
+        # R2-F: Normalize to abs (adapter should already do this, but defense-in-depth)
+        qty = abs(raw_qty)
         side = payload.get("side", "").upper()
+
+        # R2-G: Track fill metrics
+        self._metrics["fills_total"] += 1
+        if raw_qty < 0:
+            self._metrics["fills_signed_qty_seen_total"] += 1
+        if qty != raw_qty:
+            self._metrics["fills_abs_normalized_total"] += 1
 
         if side not in ("BUY", "SELL"):
             logger.warning("TRADE_EXECUTED missing/invalid side; skipping fill",
                            extra={"symbol": symbol, "payload": payload})
             return
         if qty == 0:
+            # R2-G: Track zero fills
+            self._metrics["fills_zero_ignored_total"] += 1
             logger.warning("TRADE_EXECUTED zero quantity; skipping fill",
                            extra={"symbol": symbol, "payload": payload})
             return
@@ -546,6 +625,10 @@ class ExecPosRuntimeV2:
         current_state = self._positions_by_symbol.get(
             symbol) or PositionState(symbol=symbol)
         is_new_position = abs(current_state.qty) < 0.0001
+
+        # R2-B: Save previous position state for reverse detection
+        if abs(current_state.qty) > 0.0001:
+            self._prev_positions_by_symbol[symbol] = current_state
 
         # Apply fill via PositionState
         new_state = apply_fill(
@@ -556,6 +639,36 @@ class ExecPosRuntimeV2:
                         or payload.get("last_price", 0) or 0.0),
             ts=payload.get("timestamp") or payload.get("ts"),
         )
+
+        # R2-D: Increment cycle_id on new position or reverse
+        prev_side = current_state.side
+        new_side = new_state.side
+
+        is_prev_flat = abs(current_state.qty) < 0.0001
+        is_new_flat = abs(new_state.qty) < 0.0001
+
+        if is_prev_flat and not is_new_flat:
+            # New position opened from FLAT
+            new_cycle_id = current_state.cycle_id + 1
+            new_state = replace(new_state, cycle_id=new_cycle_id)
+            logger.debug(
+                f"[ExecPosV2] POSITION_CYCLE_NEW: {symbol} cycle_id {current_state.cycle_id} → {new_cycle_id}",
+                extra={"symbol": symbol, "prev_side": prev_side,
+                       "new_side": new_side}
+            )
+        elif not is_prev_flat and not is_new_flat and prev_side != new_side:
+            # Reverse LONG↔SHORT without intermediate FLAT
+            new_cycle_id = current_state.cycle_id + 1
+            new_state = replace(new_state, cycle_id=new_cycle_id)
+            logger.debug(
+                f"[ExecPosV2] POSITION_CYCLE_REVERSE: {symbol} cycle_id {current_state.cycle_id} → {new_cycle_id}",
+                extra={"symbol": symbol, "prev_side": prev_side,
+                       "new_side": new_side}
+            )
+        else:
+            # Same cycle, carry over cycle_id
+            new_state = replace(new_state, cycle_id=current_state.cycle_id)
+
         self._positions_by_symbol[symbol] = new_state
         self._mark_position_snapshot(symbol)
         self._ensure_guard_loop_running()
@@ -584,6 +697,10 @@ class ExecPosRuntimeV2:
         # 7. Evaluate trailing (log-only for now)
         self._evaluate_trailing(symbol, new_state, float(
             payload.get("price", 0) or payload.get("last_price", 0) or 0.0))
+
+        # R2-B: Detect reverse (LONG→SHORT or SHORT→LONG) and cleanup old side brackets
+        await self._handle_reverse_cleanup(symbol, new_state)
+
         # 8. Evaluate brackets (execute BracketPlan actions)
         await self._evaluate_brackets(symbol, new_state, reason="trade_executed")
         self._maybe_stop_guard_loop()
@@ -624,17 +741,28 @@ class ExecPosRuntimeV2:
 
     async def _handle_single_position_update(self, payload: Dict[str, Any]):
         """Update state for a single position."""
-        symbol = payload.get("symbol")
+        # E-004 FIX: Support both WS normalized keys (symbol, positionAmt, entryPrice)
+        # and REST keys (symbol, qty, entry_price)
+        symbol = payload.get("symbol") or payload.get("s")
         if not symbol:
             return
 
-        # Map fields from various sources (REST vs WS)
+        # Map fields from various sources (REST vs WS normalized vs legacy)
+        # Priority: REST fields → WS normalized → legacy
         qty_val = payload.get("qty") or payload.get(
-            "position_size") or payload.get("positionAmt") or 0
+            "positionAmt") or payload.get("position_size") or payload.get("pa") or 0
         entry_val = payload.get(
-            "entry_price") or payload.get("entryPrice") or 0
+            "entry_price") or payload.get("entryPrice") or payload.get("ep") or 0
         qty = float(qty_val or 0)
         entry_price = float(entry_val or 0)
+
+        # E-004: Log if we have qty but no entry price (contract violation from adapter)
+        if abs(qty) > 0.0001 and entry_price <= 0:
+            logger.warning(
+                f"[ExecPosV2] POSITION_UPDATE_MISSING_ENTRY_PRICE: {symbol} qty={qty}, "
+                f"entryPrice={entry_price}. Payload keys: {list(payload.keys())}. "
+                "Watchdog may trigger REST snapshot recovery."
+            )
 
         self._positions_by_symbol[symbol] = PositionState(
             symbol=symbol,
@@ -658,21 +786,28 @@ class ExecPosRuntimeV2:
         """Handle orders snapshot from exchange."""
         orders = payload.get("orders", [])
 
-        # Do not clear state on empty snapshot to avoid losing SL/TP visibility
+        # R2-C fix: Empty snapshot is single source of truth
+        # If exchange says "no orders", clear mirror for all symbols
         if not orders:
             logging_v2.log_runtime_event(
                 event_kind="ORDERS_SNAPSHOT",
                 symbol="*",
                 action="apply",
-                result="empty",
-                why="empty_orders_snapshot",
+                result="empty_snapshot_clears_mirror",
+                why="r2c_empty_snapshot_truth",
             )
-            # Mark snapshot as FRESH for all symbols with positions (entry filled → brackets can be placed)
+
+            # Clear mirror for all symbols with positions (exchange truth: no orders)
             for sym in self._positions_by_symbol.keys():
-                if sym not in self._orders_snapshot_state or self._orders_snapshot_state[sym] == "UNKNOWN":
-                    self._orders_snapshot_state[sym] = "FRESH"
-                    self._mark_orders_snapshot(sym)
-            # Stale existing FRESH states
+                self._open_orders_by_symbol[sym] = []
+                self._orders_snapshot_state[sym] = "FRESH"
+                self._mark_orders_snapshot(sym)
+                logger.debug(
+                    f"[ExecPosV2] EMPTY_ORDERS_SNAPSHOT cleared mirror for {sym}",
+                    extra={"symbol": sym, "snapshot_state": "FRESH"}
+                )
+
+            # Stale existing FRESH states for symbols without positions
             for sym, state in list(self._orders_snapshot_state.items()):
                 if state == "FRESH" and sym not in self._positions_by_symbol:
                     self._orders_snapshot_state[sym] = "STALE"
@@ -701,6 +836,10 @@ class ExecPosRuntimeV2:
             self._mark_orders_snapshot(sym, now)
             self._orders_snapshot_state[sym] = "FRESH"
 
+            # R3-D1: Clear awaiting_snapshot after orders confirmed
+            if sym in self._bracket_status:
+                self._bracket_status[sym].awaiting_snapshot = False
+
         # Trigger watchdog
         await self._run_watchdog_analysis()
         if not self._recovery_completed:
@@ -723,39 +862,52 @@ class ExecPosRuntimeV2:
 
         # Track violations
         if recommendations:
+            now = time.monotonic()
             for rec in recommendations:
                 kind = rec.kind  # Changed from rec.violation_kind to rec.kind
+                symbol = rec.symbol
                 self._metrics["watchdog_violations"] += 1
                 self._metrics["watchdog_violations_by_kind"][kind] = \
                     self._metrics["watchdog_violations_by_kind"].get(
                         kind, 0) + 1
 
-                logger.warning(
-                    f"WATCHDOG_VIOLATION_DETECTED",
-                    extra={"symbol": rec.symbol,
-                           "kind": kind, "recommendation": rec}
-                )
+                # E-004: Throttle watchdog logs to prevent spam
+                # Same (symbol, kind) violation should not log more than once per 30s
+                throttle_key = (symbol, kind)
+                last_log = self._watchdog_log_throttle.get(throttle_key, 0)
+                should_log = (
+                    now - last_log) >= self._watchdog_log_throttle_sec
+
+                if should_log:
+                    self._watchdog_log_throttle[throttle_key] = now
+                    logger.warning(
+                        f"WATCHDOG_VIOLATION_DETECTED",
+                        extra={"symbol": symbol,
+                               "kind": kind, "recommendation": rec}
+                    )
 
                 # Apply runtime-level actions based on watchdog recommendation
                 action = getattr(rec, "action", None)
-                now = time.monotonic()
 
                 # HOTFIX: Disable SUPPRESS_BRACKETS - it's too aggressive
                 # Instead, allow brackets to be created to FIX the violation
                 if action == WatchdogAction.SUPPRESS_BRACKETS:
-                    logger.warning(
-                        "[ExecPosV2] WATCHDOG_VIOLATION_DETECTED (suppression disabled)",
-                        extra={"symbol": rec.symbol, "kind": kind,
-                               "note": "Brackets will be created to heal violation"}
-                    )
+                    # E-004: Only log if not throttled
+                    if should_log:
+                        logger.warning(
+                            "[ExecPosV2] WATCHDOG_VIOLATION_DETECTED (suppression disabled)",
+                            extra={"symbol": symbol, "kind": kind,
+                                   "note": "Brackets will be created to heal violation"}
+                        )
                     # Force snapshot refresh to ensure we have current state
-                    await self._request_orders_snapshot(rec.symbol)
+                    await self._request_orders_snapshot(symbol)
                 elif action == WatchdogAction.FORCE_SNAPSHOT:
-                    logger.info(
-                        "[ExecPosV2] WATCHDOG_REQUEST_SNAPSHOT_REFRESH",
-                        extra={"symbol": rec.symbol}
-                    )
-                    await self._request_orders_snapshot(rec.symbol)
+                    if should_log:
+                        logger.info(
+                            "[ExecPosV2] WATCHDOG_REQUEST_SNAPSHOT_REFRESH",
+                            extra={"symbol": symbol}
+                        )
+                    await self._request_orders_snapshot(symbol)
 
     def _position_to_dict(self, pos: PositionState) -> Dict[str, Any]:
         return {
@@ -865,11 +1017,27 @@ class ExecPosRuntimeV2:
     ) -> str:
         """
         Generate deterministic clientOrderId for bracket orders to improve idempotency.
+        R2-D: Includes cycle_id suffix for position lifecycle separation.
         """
         if position is not None:
+            # R2-D: Include cycle_id in clientOrderId
+            cycle_suffix = f"C{position.cycle_id}"
             position_id = self._build_position_id(symbol, position)
-            base = f"AUR-BRK-{symbol}-{position.side}-{action_type}-{position_id}"
-            return base[:32]
+            base = f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-{position_id}"
+
+            # Binance limit: 32 chars
+            if len(base) > 32:
+                # Truncate position_id to fit
+                max_pos_id_len = 32 - \
+                    len(f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-")
+                if max_pos_id_len > 0:
+                    position_id = position_id[:max_pos_id_len]
+                    base = f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-{position_id}"
+                else:
+                    # Extreme case: truncate symbol if needed
+                    base = base[:32]
+
+            return base
         seed = f"{symbol}|{action_type}|{exit_side}|{qty}|{price}"
         digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:20]
         return f"AUR-BRK-{digest}"
@@ -988,9 +1156,14 @@ class ExecPosRuntimeV2:
             return
 
         snapshot_state = self._orders_snapshot_state.get(symbol, "UNKNOWN")
+        has_snapshot_ts = symbol in self._last_orders_snapshot_ts
         if snapshot_state == "FRESH" and not self._is_orders_snapshot_fresh(symbol):
             snapshot_state = "STALE"
             self._orders_snapshot_state[symbol] = "STALE"
+
+        if reason == "trade_executed" and snapshot_state == "UNKNOWN" and not has_snapshot_ts:
+            # Allow bracket evaluation immediately after first fill even without snapshot
+            snapshot_state = "FRESH"
 
         if reason in ("account_update_sync", "guard_loop") and snapshot_state != "FRESH":
             logging_v2.log_runtime_event(
@@ -1003,7 +1176,12 @@ class ExecPosRuntimeV2:
             )
             return
 
-        if reason == "trade_executed" and snapshot_state == "UNKNOWN":
+        should_block_unknown = snapshot_state == "UNKNOWN" and reason in (
+            "trade_executed",
+            "account_update_sync",
+            "guard_loop",
+        )
+        if should_block_unknown:
             logging_v2.log_runtime_event(
                 event_kind="BRACKETS",
                 symbol=symbol,
@@ -1035,27 +1213,59 @@ class ExecPosRuntimeV2:
         if position.side not in ("LONG", "SHORT"):
             return
 
+        # EXEC-R2-K: Validate avg_entry_price before creating PositionView
+        # E-004 invariant: qty > 0 requires avg_entry_price > 0
+        entry_price_raw = position.avg_entry_price or 0
+        if abs(position.qty) > 0.0001 and entry_price_raw <= 0:
+            # Fail-closed: log WARNING, skip bracket evaluation this cycle
+            # Watchdog/next TRADE_EXECUTED/snapshot may recover
+            logger.warning(
+                f"BRACKETS_SKIPPED_NO_VALID_ENTRY_PRICE: {symbol} qty={position.qty:.4f}, "
+                f"avg_entry_price={entry_price_raw}. Cannot create PositionView. "
+                f"Skipping bracket evaluation this cycle (watchdog may recover).",
+                extra={
+                    "symbol": symbol,
+                    "qty": position.qty,
+                    "avg_entry_price": entry_price_raw,
+                    "side": position.side,
+                    "reason": reason,
+                    "error_code": "E-004"
+                }
+            )
+            self._metrics.setdefault("brackets_skipped_no_entry_price", 0)
+            self._metrics["brackets_skipped_no_entry_price"] += 1
+            # Do NOT raise exception - allow runtime to continue
+            # Watchdog/snapshot/next fill may provide valid entry_price
+            return
+
         # Build PositionView
         pos_view = BracketPositionView(
             symbol=symbol,
             side=position.side,
             qty=Decimal(abs(position.qty)),
-            avg_entry_price=Decimal(position.avg_entry_price or 0),
+            avg_entry_price=Decimal(entry_price_raw),  # Now guaranteed > 0
             realized_pnl=Decimal(position.realized_pnl or 0),
             unrealized_pnl=Decimal(position.unrealized_pnl or 0),
             update_ts=position.last_update_time or time.time(),
+            cycle_id=position.cycle_id,  # R2-D: Include cycle_id for bracket filtering
         )
 
         # Map open orders to OrderView
         order_views: List[BracketOrderView] = []
         for order in self._open_orders_by_symbol.get(symbol, []):
             try:
+                client_order_id_str = str(
+                    order.get("client_order_id") or order.get("clientOrderId") or "")
+                # R2-D: Parse cycle_id from clientOrderId
+                from .bracket_service import parse_cycle_id_from_client_order_id
+                cycle_id_parsed = parse_cycle_id_from_client_order_id(
+                    client_order_id_str)
+
                 order_views.append(
                     BracketOrderView(
                         order_id=str(order.get("order_id")
                                      or order.get("orderId") or ""),
-                        client_order_id=str(
-                            order.get("client_order_id") or order.get("clientOrderId") or ""),
+                        client_order_id=client_order_id_str,
                         symbol=order.get("symbol", symbol),
                         side=str(order.get("side") or "").upper() or "BUY",
                         order_type=order.get("type") or order.get(
@@ -1075,6 +1285,7 @@ class ExecPosRuntimeV2:
                                          or order.get("time") or time.time()),
                         update_ts=float(order.get("update_ts") or order.get(
                             "updateTime") or time.time()),
+                        cycle_id=cycle_id_parsed,
                     )
                 )
             except Exception as exc:
@@ -1093,6 +1304,43 @@ class ExecPosRuntimeV2:
             if not state:
                 return
             plan = self.bracket_service.evaluate(state, cfg)
+
+            # R3-C2: Log BRACKET_EVAL_SNAPSHOT for replay analysis
+            try:
+                open_brackets_list = [
+                    {
+                        "orderId": o.order_id,
+                        "side": o.side,
+                        "type": o.order_type,
+                        "qty": float(o.qty),
+                        "price": float(o.price) if o.price else (float(o.stop_price) if o.stop_price else 0.0),
+                        "clientOrderId": o.client_order_id
+                    }
+                    for o in order_views
+                ]
+
+                bracket_plan_list = [
+                    {
+                        "action_type": a.action_type,
+                        "qty": float(a.qty) if a.qty is not None else None,
+                        "price": float(a.price) if a.price is not None else None,
+                        "why": a.why
+                    }
+                    for a in plan.actions
+                ]
+
+                logging_v2.log_bracket_eval_snapshot(
+                    symbol=symbol,
+                    side=position.side,
+                    position_qty=float(position.qty),
+                    position_cycle_id=position.cycle_id or 0,
+                    snapshot_state=snapshot_state,
+                    open_brackets=open_brackets_list,
+                    bracket_plan=bracket_plan_list
+                )
+            except Exception as e:
+                logger.debug(f"Failed to log BRACKET_EVAL_SNAPSHOT: {e}")
+
         except Exception:
             logger.warning("BracketService evaluation failed",
                            exc_info=True, extra={"symbol": symbol})
@@ -1120,6 +1368,102 @@ class ExecPosRuntimeV2:
         except Exception:
             logger.error("Bracket plan application failed", exc_info=True, extra={
                          "symbol": symbol, "reason": reason})
+            # R3-D1: Clear in_flight on exception
+            if symbol in self._bracket_status:
+                self._bracket_status[symbol].in_flight = False
+
+    async def _handle_reverse_cleanup(self, symbol: str, new_state: PositionState) -> None:
+        """
+        R2-B: Detect side flip (LONG→SHORT or SHORT→LONG) and cancel old side brackets.
+
+        This is a minimal, fail-closed implementation for TEST-OCO-R1-003.
+        Full position_id versioning will be added in R2-C.
+
+        Args:
+            symbol: Trading symbol
+            new_state: New position state after fill
+
+        Behavior:
+            - Checks if prev_side != new_side (and both are LONG/SHORT)
+            - If reverse detected, cancels all brackets from old side
+            - Uses _open_orders_by_symbol mirror to find old brackets
+            - Logs reverse detection for audit
+
+        Example:
+            - prev: LONG qty=2.0 with SL/TP (SELL reduceOnly)
+            - new: SHORT qty=2.0 after SELL 4.0 fill
+            - Action: CANCEL all SELL reduceOnly orders (old LONG brackets)
+        """
+        prev_state = self._prev_positions_by_symbol.get(symbol)
+
+        # Only proceed if we have prev state and both are LONG/SHORT
+        if not prev_state:
+            return
+
+        if prev_state.side not in ("LONG", "SHORT") or new_state.side not in ("LONG", "SHORT"):
+            return
+
+        # Detect reverse: side changed
+        if prev_state.side == new_state.side:
+            return
+
+        # Reverse detected!
+        logger.info(
+            f"[ExecPosV2] REVERSE_DETECTED symbol={symbol} "
+            f"prev_side={prev_state.side} new_side={new_state.side} "
+            f"prev_qty={prev_state.qty} new_qty={new_state.qty}"
+        )
+
+        # Determine old side exit orders (brackets to cancel)
+        # LONG position → SL/TP are SELL reduceOnly
+        # SHORT position → SL/TP are BUY reduceOnly
+        old_exit_side = "SELL" if prev_state.side == "LONG" else "BUY"
+
+        # Find and cancel all old side brackets
+        old_orders = self._open_orders_by_symbol.get(symbol, [])
+        cancelled_count = 0
+
+        for order in old_orders:
+            order_side = order.get("side", "").upper()
+            reduce_only = order.get("reduceOnly") or order.get("reduce_only")
+            order_type = order.get("type", "")
+
+            # Match old exit side brackets (SL/TP)
+            if (order_side == old_exit_side and
+                reduce_only and
+                    order_type in ("STOP_MARKET", "TAKE_PROFIT_MARKET", "STOP", "TAKE_PROFIT")):
+
+                order_id = order.get("orderId") or order.get("order_id")
+                client_order_id = order.get(
+                    "clientOrderId") or order.get("client_order_id")
+
+                logger.info(
+                    f"[ExecPosV2] CANCEL_OLD_BRACKET symbol={symbol} "
+                    f"reverse={prev_state.side}→{new_state.side} "
+                    f"order_id={order_id} type={order_type} side={order_side}"
+                )
+
+                try:
+                    await self.execution_service.cancel_order(
+                        symbol=symbol,
+                        order_id=str(order_id),
+                        client_order_id=str(
+                            client_order_id) if client_order_id else None,
+                    )
+                    cancelled_count += 1
+                except Exception as exc:
+                    logger.warning(
+                        f"[ExecPosV2] Failed to cancel old bracket during reverse: {exc}",
+                        extra={"symbol": symbol, "order_id": order_id}
+                    )
+
+        if cancelled_count > 0:
+            logger.info(
+                f"[ExecPosV2] REVERSE_CLEANUP_COMPLETE symbol={symbol} "
+                f"cancelled_brackets={cancelled_count}"
+            )
+            # Force snapshot refresh to sync mirror with exchange
+            await self._request_orders_snapshot(symbol, force=True)
 
     async def _apply_bracket_plan(
         self,
@@ -1131,6 +1475,32 @@ class ExecPosRuntimeV2:
         """
         Execute BracketPlan actions via ExecutionService (no auto-heal loops).
         """
+        # R3-D1: Guard-loop anti-double-apply protection
+        status = self._bracket_status.get(symbol)
+        if not status:
+            status = BracketStatus()
+            self._bracket_status[symbol] = status
+
+        # R3-D1 FIX: Block guard_loop AND account_update_sync when awaiting_snapshot
+        # Only trade_executed and brackets_recovery can proceed when awaiting confirmation
+        low_priority_reasons = ("guard_loop", "account_update_sync")
+        if (status.in_flight or status.awaiting_snapshot) and reason in low_priority_reasons:
+            elapsed = time.time() - status.last_started_ts
+            logger.info(
+                f"[ExecPosV2] SKIP_BRACKETS_LOW_PRIORITY symbol={symbol} "
+                f"blocked_reason={reason} in_flight_reason={status.last_reason} dt={elapsed:.3f}s "
+                f"in_flight={status.in_flight} awaiting_snapshot={status.awaiting_snapshot}"
+            )
+            self._metrics.setdefault(
+                "brackets_skipped_guard_loop_in_flight", 0)
+            self._metrics["brackets_skipped_guard_loop_in_flight"] += 1
+            return
+
+        # Mark in_flight, record reason and timestamp
+        status.in_flight = True
+        status.last_reason = reason
+        status.last_started_ts = time.time()
+
         # DIAGNOSTIC: Log full bracket plan details
         logger.info(
             f"[ExecPosV2] APPLY_BRACKETS symbol={symbol} reason={reason} "
@@ -1164,6 +1534,8 @@ class ExecPosRuntimeV2:
                     order_id=action.order_id,
                     client_order_id=action.client_order_id,
                 )
+                # R2-B: Update local mirror after CANCEL to reflect exchange state
+                self._remove_order_from_mirror(symbol, action.order_id)
             elif action.action_type in ("PLACE_SL", "PLACE_TP") and exit_side:
                 order_type = "STOP_MARKET" if action.action_type == "PLACE_SL" else "TAKE_PROFIT_MARKET"
                 qty = float(action.qty) if action.qty is not None else abs(
@@ -1278,6 +1650,12 @@ class ExecPosRuntimeV2:
                     if hasattr(res, "__await__"):
                         await res
 
+        # R3-D1: Mark in_flight=False, awaiting_snapshot=True after plan applied
+        status = self._bracket_status.get(symbol)
+        if status:
+            status.in_flight = False
+            status.awaiting_snapshot = True
+
     async def _run_bracket_recovery_pass(self) -> None:
         """
         Single-shot DR/rehydrate recovery using BracketService plans (no loops).
@@ -1307,6 +1685,7 @@ class ExecPosRuntimeV2:
                         realized_pnl=Decimal(pos.realized_pnl or 0),
                         unrealized_pnl=Decimal(pos.unrealized_pnl or 0),
                         update_ts=pos.last_update_time or time.time(),
+                        cycle_id=pos.cycle_id,  # R2-D: Include cycle_id for bracket filtering
                     )
                 )
             except Exception:
@@ -1317,12 +1696,18 @@ class ExecPosRuntimeV2:
         for sym, orders in self._open_orders_by_symbol.items():
             for order in orders:
                 try:
+                    client_order_id_str = str(
+                        order.get("client_order_id") or order.get("clientOrderId") or "")
+                    # R2-D: Parse cycle_id from clientOrderId
+                    from .bracket_service import parse_cycle_id_from_client_order_id
+                    cycle_id_parsed = parse_cycle_id_from_client_order_id(
+                        client_order_id_str)
+
                     order_views.append(
                         BracketOrderView(
                             order_id=str(order.get("order_id")
                                          or order.get("orderId") or ""),
-                            client_order_id=str(
-                                order.get("client_order_id") or order.get("clientOrderId") or ""),
+                            client_order_id=client_order_id_str,
                             symbol=order.get("symbol", sym),
                             side=str(order.get("side") or "").upper() or "BUY",
                             order_type=order.get("type") or order.get(
@@ -1342,6 +1727,7 @@ class ExecPosRuntimeV2:
                                 "time") or time.time()),
                             update_ts=float(order.get("update_ts") or order.get(
                                 "updateTime") or time.time()),
+                            cycle_id=cycle_id_parsed,
                         )
                     )
                 except Exception:
@@ -1550,6 +1936,7 @@ class ExecPosRuntimeV2:
                     max_sl_legs=agg.max_sl_legs,
                     sl_pct=agg.sl_pct,
                     tp_rr=agg.tp_rr,
+                    recreate_missing_brackets=agg.recreate_missing_brackets,  # R2-E
                 )
             except Exception:
                 # Fail-closed to legacy path below
@@ -1574,6 +1961,8 @@ class ExecPosRuntimeV2:
                 max_sl_legs=agg_cfg.get("max_sl_legs", 1),
                 sl_pct=agg_cfg.get("sl_pct", 0.02),
                 tp_rr=agg_cfg.get("tp_rr", 2.0),
+                recreate_missing_brackets=agg_cfg.get(
+                    "recreate_missing_brackets", True),  # R2-E (default=True, fail-closed)
             )
         except Exception:
             return BracketRulesConfig()

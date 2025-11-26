@@ -653,8 +653,13 @@ class ConfigLoader:
             if fe_cfg:
                 trading_cfg["feature_engineering"] = fe_cfg
 
-        # Market data macro sync needs to exist at both trading.market_data and root.market_data
+        # Market data (v2 domain)
         market_data = trading_cfg.setdefault("market_data", {})
+        md_v2 = self._build_market_data_from_v2(config_v2)
+        if md_v2:
+            deep_merge(md_v2, market_data)
+
+        # Market data macro sync needs to exist at both trading.market_data and root.market_data
         if not market_data.get("macro_sync"):
             macro_sync = self._build_macro_sync_from_v2(config_v2)
             if macro_sync:
@@ -793,6 +798,13 @@ class ConfigLoader:
             result.setdefault("liquidity", {}).update(liquidity)
 
         return result or None
+
+    def _build_market_data_from_v2(self, config_v2: ConfigV2) -> Optional[Dict[str, Any]]:
+        md_cfg = config_v2.domains.get(
+            "market_data") if config_v2.domains else None
+        if isinstance(md_cfg, dict):
+            return md_cfg
+        return None
 
     def _build_macro_sync_from_v2(self, config_v2: ConfigV2) -> Optional[Dict[str, Any]]:
         features_cfg = config_v2.domains.get(

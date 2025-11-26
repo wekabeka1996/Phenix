@@ -39,7 +39,7 @@ class ExecutionManagement:
         pass
 
     def on_trade_intent(self, event: Message) -> None:
-        """Handle EVT:TRADE_INTENT_PROPOSED event."""
+        """Handle EVT:TRADE_INTENT_PROPOSED event (observability-only, no execution side-effects)."""
         rid = str(uuid.uuid4())
         chain_logger.info(
             "Event received",

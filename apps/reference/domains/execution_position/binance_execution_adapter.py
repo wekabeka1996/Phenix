@@ -24,10 +24,12 @@ from typing import Any, Dict, List, Mapping, Optional
 from urllib.parse import urlencode
 
 import httpx
+
 from vfoundation.core.protocol import Message
 
 from .execution_adapter import AbstractExecutionAdapter
 from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult, ClientOrderIdConfig
+from .algo_order_index import AlgoOrderIndex, AlgoOrderUpdate
 from apps.reference.telemetry.audit_logger import audit_logger
 from .metrics_aggregator import metrics_logger
 from apps.reference.config_exposure_policy import resolve_exposure_policy
@@ -69,6 +71,20 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["BinanceExecutionAdapter"]
+
+# Time synchronization constants
+TIME_SYNC_INTERVAL_SEC = 30  # Re-sync every 30 seconds for Futures stability
+TIME_DRIFT_INFO_THRESHOLD_MS = 500
+TIME_DRIFT_WARN_CHANGE_THRESHOLD_MS = 5_000
+TIME_DRIFT_HARD_LIMIT_MS = 60_000
+
+GET_OPEN_ORDERS_MAX_ATTEMPTS = 3
+GET_OPEN_ORDERS_BACKOFF_MS = (200, 500)
+GET_OPEN_ORDERS_FALLBACK_REASON = "API_ORDERS_FAILED"
+
+LISTEN_KEY_KEEPALIVE_SECONDS = 45 * 60  # 45 minutes
 
 # Binance Futures API configuration
 # Default to testnet.binancefuture.com for USDT-M Futures (/fapi endpoints)
@@ -119,10 +135,15 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         self.ws_reconnect_delay = 1.0  # Start with 1 second, exponential backoff
         self.ws_max_reconnect_delay = 60.0  # Max 1 minute
         self.listen_key_last_refresh = 0.0
+        self._last_listen_key_keepalive_at = 0.0
 
         # Time sync attributes
         self.server_time_offset = 0.0  # Offset between local and server time
         self.last_time_sync = 0.0
+        self._time_sync_initialized = False
+        self._last_drift_warning_bucket: Optional[int] = None
+        # Background time sync task
+        self._time_sync_task: Optional[asyncio.Task] = None
 
         # Read API credentials from environment or config
         try:
@@ -197,6 +218,27 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             "cancel_-2011_absorbed": 0,
         }
 
+        # Feature Flag: Algo Service for conditionals
+        self.use_algo_service_for_conditionals = False
+        try:
+            if hasattr(config, "execution") and config.execution:
+                self.use_algo_service_for_conditionals = getattr(
+                    config.execution, "use_algo_service_for_conditionals", False
+                )
+            elif isinstance(config, dict):
+                exec_cfg = config.get("execution", {})
+                self.use_algo_service_for_conditionals = exec_cfg.get(
+                    "use_algo_service_for_conditionals", False
+                )
+        except Exception:
+            self.use_algo_service_for_conditionals = False
+
+        # Initialize AlgoOrderIndex for Phase 1
+        self.algo_order_index = AlgoOrderIndex()
+
+        logger.info(
+            f"[BinanceAdapter] Algo Service for conditionals: {self.use_algo_service_for_conditionals}")
+
         # Optional: read slippage cap from config (trading.orders.market.slippage_cap_bps)
         self.slippage_cap_bps: Optional[int] = None
         try:
@@ -223,9 +265,12 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             logger.warning(
                 f"[BinanceAdapter] Failed to read slippage_cap_bps: {e}")
 
+        # Set REST base URL for API calls (WebSocket listen key, etc.)
+        self.rest_url = BASE_URL
+
         # Log REST base URL and timeout for visibility (especially for testnet → demo-fapi migration)
         logger.info(
-            f"[BinanceAdapter] Using REST base_url='{BASE_URL}' "
+            f"[BinanceAdapter] Using REST base_url='{self.rest_url}' "
             f"(shadow_mode={self.shadow_mode}, testnet={self.use_testnet}, ws_enabled={fsm is not None})"
         )
         logger.info(
@@ -246,6 +291,18 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 logger.warning(
                     f"[BinanceAdapter] Initial time sync failed: {e}, will retry on first -1021")
 
+            # Start background time sync task
+            try:
+                loop = asyncio.get_running_loop()
+                self._time_sync_task = loop.create_task(
+                    self._background_time_sync_loop())
+                logger.info(
+                    "[BinanceAdapter] Background time sync task started")
+            except RuntimeError:
+                # No running loop yet, will be started later
+                logger.debug(
+                    "[BinanceAdapter] No event loop yet, background sync will start on first async call")
+
         if self.fsm_core is not None and not self.shadow_mode:
             logger.info(
                 "[BinanceAdapter] Starting WebSocket connection to USER_DATA_STREAM")
@@ -260,6 +317,11 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         """
         logger.info("[BinanceAdapter] Stopping adapter...")
         self.ws_running = False
+
+        # Cancel background time sync task
+        if self._time_sync_task and not self._time_sync_task.done():
+            self._time_sync_task.cancel()
+            logger.info("[BinanceAdapter] Background time sync task cancelled")
 
         if self.ws_thread and self.ws_thread.is_alive():
             self.ws_thread.join(timeout=5.0)
@@ -439,25 +501,16 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
     def _websocket_loop(self) -> None:
         """
-        Main WebSocket connection loop with reconnection logic.
+        Main loop for WebSocket connection management.
         """
         while self.ws_running:
             try:
                 self._establish_websocket_connection()
-                # Reset reconnect delay on successful connection
-                self.ws_reconnect_delay = 1.0
             except Exception as e:
                 logger.error(
                     f"[BinanceAdapter] WebSocket connection failed: {e}")
-                if self.ws_running:
-                    logger.info(
-                        f"[BinanceAdapter] Retrying WebSocket connection in {self.ws_reconnect_delay}s"
-                    )
-                    time.sleep(self.ws_reconnect_delay)
-                    # Exponential backoff
-                    self.ws_reconnect_delay = min(
-                        self.ws_reconnect_delay * 2, self.ws_max_reconnect_delay
-                    )
+                # Backoff before reconnect
+                time.sleep(5)
 
     def _establish_websocket_connection(self) -> None:
         """
@@ -504,6 +557,14 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                     await self._sync_time_with_server()
                                     last_resync = time.time()
 
+                                # FIXED: Periodic listen key keepalive
+                                if time.time() - self._last_listen_key_keepalive_at > LISTEN_KEY_KEEPALIVE_SECONDS:
+                                    success = await self._refresh_listen_key()
+                                    if not success:
+                                        logger.warning(
+                                            "[BinanceAdapter] Listen key invalid, triggering reconnect")
+                                        break
+
                             except asyncio.TimeoutError:
                                 # Send ping to keep connection alive
                                 await websocket.ping()
@@ -513,11 +574,18 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                     await self._sync_time_with_server()
                                     last_resync = time.time()
 
+                                # FIXED: Periodic listen key keepalive on timeout too
+                                if time.time() - self._last_listen_key_keepalive_at > LISTEN_KEY_KEEPALIVE_SECONDS:
+                                    success = await self._refresh_listen_key()
+                                    if not success:
+                                        logger.warning(
+                                            "[BinanceAdapter] Listen key invalid, triggering reconnect")
+                                        break
+
                             except websockets.exceptions.ConnectionClosed:
                                 logger.warning(
                                     "[BinanceAdapter] WebSocket connection closed")
                                 break
-
                 except Exception as e:
                     logger.error(
                         f"[BinanceAdapter] WebSocket handler error: {e}")
@@ -525,6 +593,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
             # Run WebSocket handler
             loop.run_until_complete(ws_handler())
+            loop.close()
 
         except Exception as e:
             logger.error(
@@ -535,7 +604,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         """
         Get listen key for USER_DATA_STREAM.
         """
-        url = f"{BASE_URL}/fapi/v1/listenKey"
+        url = f"{self.rest_url}/fapi/v1/listenKey"
         headers = {"X-MBX-APIKEY": self.api_key}
 
         # Use httpx for async compatibility
@@ -545,33 +614,60 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             data = resp.json()
             self.ws_listen_key = data.get("listenKey")
             self.listen_key_last_refresh = time.time()
+            self._last_listen_key_keepalive_at = time.time()
             logger.info(
                 f"[BinanceAdapter] Obtained listen key: {self.ws_listen_key[:10]}...")
         else:
             raise RuntimeError(
                 f"Failed to get listen key: HTTP {resp.status_code} {resp.text}")
 
-    def _refresh_listen_key(self) -> None:
+    async def _refresh_listen_key(self) -> bool:
         """
         Refresh listen key to keep USER_DATA_STREAM alive.
+        Returns True if successful, False if failed (e.g. -1125).
         """
         if not self.ws_listen_key:
-            return
+            return False
 
-        url = f"{BASE_URL}/fapi/v1/listenKey"
+        url = f"{self.rest_url}/fapi/v1/listenKey"
         headers = {"X-MBX-APIKEY": self.api_key}
         params = {"listenKey": self.ws_listen_key}
 
-        import requests
-        resp = requests.put(url, headers=headers,
-                            params=params, timeout=self._rest_timeout)
-        if resp.ok:
-            self.listen_key_last_refresh = time.time()
-            logger.debug("[BinanceAdapter] Listen key refreshed")
-        else:
-            logger.warning(
-                f"[BinanceAdapter] Failed to refresh listen key: HTTP {resp.status_code}"
-            )
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.put(url, headers=headers, params=params, timeout=self._rest_timeout)
+
+            if resp.is_success:
+                self.listen_key_last_refresh = time.time()
+                self._last_listen_key_keepalive_at = time.time()
+                logger.info(
+                    "[BinanceAdapter] Listen key refreshed (keepalive)")
+                return True
+            else:
+                # Check for -1125 (ListenKey does not exist)
+                try:
+                    err_data = resp.json()
+                    code = err_data.get("code")
+                    msg = err_data.get("msg", "")
+                    if code == -1125:
+                        logger.warning(
+                            f"[BinanceAdapter] Listen key expired (-1125): {msg}")
+                        return False
+                except Exception:
+                    pass
+
+                logger.warning(
+                    f"[BinanceAdapter] Failed to refresh listen key: HTTP {resp.status_code} {resp.text}"
+                )
+                # For other errors, we return True to avoid immediate reconnect loop,
+                # assuming transient network issue. Next check will retry.
+                # But if it fails repeatedly, eventually we might want to reconnect.
+                # For now, let's return True to keep connection if it's just a network blip,
+                # unless it's -1125.
+                return True
+        except Exception as e:
+            logger.error(f"[BinanceAdapter] Error refreshing listen key: {e}")
+            return True  # Assume transient error, don't kill WS yet
 
     def _handle_ws_message(self, msg: Dict[str, Any]) -> None:
         """
@@ -588,6 +684,9 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 self._handle_order_trade_update(msg)
             elif event_type == "ACCOUNT_UPDATE":
                 self._handle_account_update(msg)
+            elif event_type == "ALGO_UPDATE":
+                # Phase 1: Handle Algo Order Updates
+                self._handle_algo_update(msg)
             else:
                 logger.debug(
                     f"[BinanceAdapter] Ignoring unknown event type: {event_type}")
@@ -627,6 +726,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     clientOrderId=client_order_id)
                 logger.debug(
                     f"[BinanceAdapter] get(clientOrderId={client_order_id}) returned: {order_ref}")
+
                 if not order_ref and exchange_order_id:
                     order_ref = self.fsm_core.order_index.get(
                         exchangeOrderId=exchange_order_id)
@@ -641,15 +741,15 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 logger.warning(
                     f"[BinanceAdapter] No correlation found for order {client_order_id}/{exchange_order_id}, emitting fallback fill"
                 )
-                self._emit_trade_event(
-                    order_data,
-                    client_order_id=client_order_id,
-                    exchange_order_id=exchange_order_id,
-                    order_ref=None,
-                    event_ts=event_ts,
-                    reason="ws_fill_unmatched_order_index",
-                )
-                return
+
+            trade_emitted = self._emit_trade_event(
+                order_data,
+                client_order_id=client_order_id,
+                exchange_order_id=exchange_order_id,
+                order_ref=order_ref,
+                event_ts=event_ts,
+                reason=f"WS_ORDER_UPDATE_{order_status}",
+            )
 
             # Map Binance status to standardized status
             status_mapping = {
@@ -667,21 +767,23 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             payload = {
                 "symbol": symbol,
                 "status": standardized_status,
-                "rid": order_ref.rid,
-                "idempotent_key": order_ref.idempotent_key,
+                "rid": order_ref.rid if order_ref else "",
+                "idempotent_key": order_ref.idempotent_key if order_ref else "",
                 "clientOrderId": client_order_id,
                 "exchangeOrderId": exchange_order_id,
                 "orderId": exchange_order_id,  # Alias for test compatibility
                 "side": side,
                 "order_type": order_type,
-                "qty": filled_qty,
+                "qty": order_data.get("q"),  # Original quantity
+                "filled_qty": filled_qty,
+                "avg_fill_price": str(order_data.get("p", "0")),
                 "ts_ms": msg.get("T", int(time.time() * 1000)),
             }
 
             # Log to audit
             audit_logger.log_order_state_changed(
-                rid=order_ref.rid,
-                idempotent_key=order_ref.idempotent_key,
+                rid=order_ref.rid if order_ref else "",
+                idempotent_key=order_ref.idempotent_key if order_ref else "",
                 clientOrderId=client_order_id,
                 exchangeOrderId=exchange_order_id,
                 symbol=symbol,
@@ -698,18 +800,10 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
             # For terminal states, mark as terminal and observe lifecycle
             if standardized_status in ["FILLED", "CANCELED", "REJECTED", "EXPIRED"]:
-                self.fsm_core.order_index.mark_terminal(order_ref)
-                duration_sec = time.time() - order_ref.created_ts
-                observe_order_lifecycle(duration_sec)
-
-            trade_emitted = self._emit_trade_event(
-                order_data,
-                client_order_id=client_order_id,
-                exchange_order_id=exchange_order_id,
-                order_ref=order_ref,
-                event_ts=event_ts,
-                reason=f"WS_ORDER_UPDATE_{standardized_status}",
-            )
+                if order_ref:
+                    self.fsm_core.order_index.mark_terminal(order_ref)
+                    duration_sec = time.time() - order_ref.created_ts
+                    observe_order_lifecycle(duration_sec)
 
             # Emit appropriate ORDER_STATE_CHANGED event for bookkeeping
             if self.fsm_core:
@@ -722,10 +816,9 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     logger.info(
                         f"[BinanceAdapter] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status} for {symbol} {client_order_id}"
                     )
-
-                self.fsm_core.emit(
-                    event_name, payload, f"WS_ORDER_UPDATE_{standardized_status}"
-                )
+                    self.fsm_core.emit(
+                        event_name, payload, f"WS_ORDER_UPDATE_{standardized_status}"
+                    )
 
         except Exception as e:
             logger.error(
@@ -745,26 +838,25 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         """Build and emit canonical EVT:TRADE_EXECUTED when fill quantity is present."""
         if not self.fsm_core:
             return False
-
-        payload = self._build_trade_executed_payload(
-            order_data,
-            client_order_id=client_order_id,
-            exchange_order_id=exchange_order_id,
-            order_ref=order_ref,
-            event_ts=event_ts,
-        )
-
-        if not payload:
-            return False
-
         try:
-            self.fsm_core.emit("EVT:TRADE_EXECUTED", payload, reason)
-            return True
-        except Exception as exc:  # pragma: no cover - defensive log
-            logger.error(
-                f"[BinanceAdapter] Failed to emit EVT:TRADE_EXECUTED for {payload.get('symbol')}: {exc}",
-                exc_info=True,
+            payload = self._build_trade_executed_payload(
+                order_data,
+                client_order_id=client_order_id,
+                exchange_order_id=exchange_order_id,
+                order_ref=order_ref,
+                event_ts=event_ts,
             )
+            if payload:
+                self.fsm_core.emit(
+                    event_name="EVT:TRADE_EXECUTED",
+                    payload=payload,
+                    why=reason
+                )
+                return True
+            return False
+        except Exception as exc:
+            logger.error(
+                f"[BinanceAdapter] Failed to emit EVT: TRADE_EXECUTED: {exc}")
             return False
 
     def _build_trade_executed_payload(
@@ -776,16 +868,29 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         order_ref: Optional[Any],
         event_ts: int,
     ) -> Optional[Dict[str, Any]]:
-        """Normalize Binance WS fill into canonical trade payload."""
+        """
+        Normalize Binance WS fill into canonical trade payload.
+
+        TRADE_EXECUTED Contract (R2-F):
+        - 'quantity'/'qty' fields: ALWAYS absolute value (non-negative)
+        - 'side' field: encodes direction (BUY/SELL)
+        - 'raw_*' fields: preserve original signed values for audit/debugging
+
+        Rationale: Binance WS can send signed deltas (e.g., cumQty="-0.07" for SHORT).
+        We normalize to abs() here so downstream (runtime, apply_fill) doesn't need
+        to handle negative qty edge cases.
+        """
         symbol = order_data.get("s")
         side_raw = str(order_data.get("S", "")).lower()
         side = "buy" if side_raw != "sell" else "sell"
+
         price_raw = (
             order_data.get("L")
             or order_data.get("ap")
             or order_data.get("p")
             or "0"
         )
+
         # For FILLED orders, prioritize cumulative filled qty ("z") over last fill ("l")
         # because "l" may be 0 for orders filled in multiple parts
         quantity_raw = (
@@ -794,6 +899,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             or order_data.get("q")  # Original order quantity (fallback)
             or "0"
         )
+
         last_raw = order_data.get("l", "0")
         cum_raw = order_data.get("z", "0")
         orig_raw = order_data.get("q", "0")
@@ -812,8 +918,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         last_abs = last_decimal.copy_abs()
         cum_abs = cum_decimal.copy_abs()
         orig_abs = orig_decimal.copy_abs()
-
         qty_abs = qty_decimal.copy_abs()
+
         if qty_abs == 0:
             qty_abs = cum_abs if cum_abs != 0 else (
                 last_abs if last_abs != 0 else orig_abs)
@@ -863,7 +969,31 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         try:
             account_data = msg.get("a", {})
             balances = account_data.get("B", [])
-            positions = account_data.get("P", [])
+            raw_positions = account_data.get("P", [])
+
+            # E-004 FIX: Normalize Binance WS short keys to standard long keys
+            # WS uses: s=symbol, pa=positionAmt, ep=entryPrice, up=unrealizedPnl, mt=marginType, iw=isolatedWallet, ps=positionSide
+            # Runtime expects: symbol, positionAmt/qty, entryPrice/entry_price, unrealized_pnl
+            positions = []
+            for p in raw_positions:
+                normalized = {
+                    "symbol": p.get("s") or p.get("symbol"),
+                    "positionAmt": p.get("pa") or p.get("positionAmt"),
+                    "entryPrice": p.get("ep") or p.get("entryPrice"),
+                    "unrealizedProfit": p.get("up") or p.get("unrealizedProfit"),
+                    "marginType": p.get("mt") or p.get("marginType"),
+                    "isolatedWallet": p.get("iw") or p.get("isolatedWallet"),
+                    "positionSide": p.get("ps") or p.get("positionSide"),
+                    # Keep raw for debugging
+                    "_raw": p,
+                }
+                positions.append(normalized)
+                # Log if position has non-zero qty and entry price for debugging E-004
+                if normalized["positionAmt"] and normalized["entryPrice"]:
+                    logger.debug(
+                        f"[BinanceAdapter] Position normalized: {normalized['symbol']} "
+                        f"qty={normalized['positionAmt']} entryPrice={normalized['entryPrice']}"
+                    )
 
             logger.info(
                 f"[BinanceAdapter] ACCOUNT_UPDATE: {len(balances)} balances, {len(positions)} positions"
@@ -883,10 +1013,80 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                    payload, "WS_ACCOUNT_UPDATE")
                 logger.info(
                     "[BinanceAdapter] Emitted EVT:ACCOUNT_UPDATE_RECEIVED")
-
         except Exception as e:
             logger.error(
                 f"[BinanceAdapter] Error processing ACCOUNT_UPDATE: {e}", exc_info=True)
+
+    def _handle_algo_update(self, msg: Dict[str, Any]) -> None:
+        """
+        Handle ALGO_UPDATE event from WebSocket (Phase 1).
+        Updates the internal AlgoOrderIndex state.
+        """
+        try:
+            # Extract fields based on Binance User Data Stream docs for ALGO_UPDATE
+            # e: "ALGO_UPDATE"
+            # s: symbol
+            # a: { ... algo order payload ... }
+            algo_payload = msg.get("a", {})
+
+            # Map fields to AlgoOrderUpdate DTO
+            # Note: Field names in 'a' might be short (e.g. 'c' for clientAlgoOrderId)
+            # We need to verify exact field mapping from Binance docs or empirical data.
+            # Assuming standard mapping:
+            # c: clientAlgoOrderId
+            # i: algoId
+            # s: status (e.g. NEW, FILLED)
+            # bc: current executed qty?
+
+            client_algo_id = algo_payload.get("c")
+            algo_id = str(algo_payload.get("i"))
+            # Symbol is usually in outer msg or 's' in payload?
+            symbol = msg.get("s")
+            status = algo_payload.get("s")  # Status
+
+            if not client_algo_id:
+                logger.warning(
+                    f"[BinanceAdapter] ALGO_UPDATE missing clientAlgoOrderId: {msg}")
+                return
+
+            update = AlgoOrderUpdate(
+                algo_order_id=algo_id,
+                client_algo_order_id=client_algo_id,
+                symbol=symbol,
+                side=algo_payload.get("S"),  # Side
+                algo_type=algo_payload.get("o"),  # Order Type
+                status=status,
+                last_executed_qty=Decimal(str(algo_payload.get("l", "0"))),
+                cumulative_filled_qty=Decimal(str(algo_payload.get("z", "0"))),
+                transaction_time=msg.get("E", int(time.time() * 1000)),
+                trigger_price=None  # Not always available in update
+            )
+
+            if self.algo_order_index:
+                self.algo_order_index.update_from_event(update)
+                logger.info(
+                    f"[BinanceAdapter] ALGO_UPDATE processed for {client_algo_id}: {status}")
+
+                # Emit EVT:ALGO_ORDER_UPDATED for Runtime/FSM
+                if self.fsm_core:
+                    payload = {
+                        "algo_order_id": update.algo_order_id,
+                        "client_algo_order_id": update.client_algo_order_id,
+                        "symbol": update.symbol,
+                        "side": update.side,
+                        "algo_type": update.algo_type,
+                        "status": update.status,
+                        "last_executed_qty": str(update.last_executed_qty),
+                        "cumulative_filled_qty": str(update.cumulative_filled_qty),
+                        "transaction_time": update.transaction_time,
+                        "trigger_price": str(update.trigger_price) if update.trigger_price else None
+                    }
+                    self.fsm_core.emit(
+                        "EVT:ALGO_ORDER_UPDATED", payload, "WS_ALGO_UPDATE")
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceAdapter] Error processing ALGO_UPDATE: {e}", exc_info=True)
 
     async def _handle_bracket_error(
         self,
@@ -902,11 +1102,11 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         Handle bracket-specific Binance error codes with retry/recovery strategies.
 
         Handles:
-        - -2021: Order would immediately trigger → increase offset, retry
-        - -4116: Duplicate ClientOrderId → generate new ID, retry
-        - -4137: Quantity not allowed → reduce qty, retry
-        - -4164: MIN_NOTIONAL → increase qty, retry
-        - -429: Rate limit → exponential backoff, retry
+        - -2021: Order would immediately trigger -> increase offset, retry
+        - -4116: Duplicate ClientOrderId -> generate new ID, retry
+        - -4137: Quantity not allowed -> reduce qty, retry
+        - -4164: MIN_NOTIONAL -> increase qty, retry
+        - -429: Rate limit -> exponential backoff, retry
 
         Returns: (success, response_data or None)
         """
@@ -933,31 +1133,47 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             return False, None
 
         elif error_code == -4116:
+            # EXEC-R2-J: Idempotent duplicate check
+            # DO NOT generate new ID -> creates duplicate TP/SL on exchange
+            # Instead: check if order already exists via get_order_by_client_id
+            idempotent_key = params.get(
+                "clientOrderId") or params.get("newClientOrderId")
+            symbol = params.get("symbol", "UNKNOWN")
+
             logger.info(
-                "[BinanceAdapter] -4116: Generating new clientOrderId...")
-            new_id = IdempotentCancelHelper.generate_deterministic_clientOrderId(
-                symbol=params.get("symbol", "UNKNOWN"),
-                side=params.get("side", "BUY"),
-                notional_usdt=Decimal(
-                    str(params.get("quantity", 0))) * Decimal(str(params.get("price", 1))),
-                use_timestamp=True
+                f"[BinanceAdapter] -4116 duplicate clientOrderId detected: {idempotent_key}. "
+                f"Checking if order already exists on exchange..."
             )
-            params["clientOrderId"] = new_id
-            await asyncio.sleep(0.2)
-            signed_params = self._get_signed_params(params)
-            query_string = "&".join(
-                f"{k}={v}" for k, v in signed_params.items())
-            full_url = f"{url}?{query_string}"
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
-                try:
-                    data = resp.json()
-                except:
-                    data = {"raw": resp.text}
-                if resp.is_success:
-                    logger.info("[BinanceAdapter] -4116: Recovery successful")
-                    return True, data
-            return False, None
+
+            # Query Binance for existing order by origClientOrderId
+            existing_order = await self.get_order_by_client_id(symbol, idempotent_key)
+
+            if existing_order:
+                status = existing_order.get("status")
+                order_id = existing_order.get("orderId")
+
+                # If order exists with active status -> idempotent success
+                if status in ["NEW", "PARTIALLY_FILLED"]:
+                    logger.info(
+                        f"[BinanceAdapter] -4116 IDEMPOTENT SUCCESS: "
+                        f"Found existing order orderId={order_id}, status={status}. "
+                        f"Returning success without retry."
+                    )
+                    return True, existing_order
+                else:
+                    logger.warning(
+                        f"[BinanceAdapter] -4116 duplicate but order status={status} (not active). "
+                        f"Cannot recover. orderId={order_id}"
+                    )
+                    return False, None
+            else:
+                # Order not found on exchange -> cannot recover
+                logger.warning(
+                    f"[BinanceAdapter] -4116 duplicate but order NOT FOUND on exchange. "
+                    f"clientOrderId={idempotent_key} may have expired or been canceled. "
+                    f"Cannot recover."
+                )
+                return False, None
 
         elif error_code == -4137:
             logger.info("[BinanceAdapter] -4137: Reducing quantity...")
@@ -1063,7 +1279,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 query_string = "&".join(
                     f"{k}={v}" for k, v in signed_params.items())
                 full_url = f"{url}?{query_string}"
-
                 async with httpx.AsyncClient() as client:
                     resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
                     try:
@@ -1161,13 +1376,30 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         backoff_ms = int(base_ms * jitter_factor)
 
         logger.debug(
-            f"[BinanceAdapter] Rate limit backoff: {base_ms}ms base × {jitter_factor:.2f} jitter = {backoff_ms}ms")
+            f"[BinanceAdapter] Rate limit backoff: {base_ms}ms base x {jitter_factor:.2f} jitter = {backoff_ms}ms")
 
         return backoff_ms
 
     def _get_fallback_policy(self):
         """Resolve fallback policy using centralized exposure configuration."""
         return resolve_exposure_policy(self.config).fallback
+
+    def _enter_orders_fallback_mode(self, reason: str = GET_OPEN_ORDERS_FALLBACK_REASON) -> None:
+        """Best-effort hook into ExposureGuard fallback mode when REST calls fail."""
+        guard = getattr(getattr(self, "fsm", None), "exposure_guard", None)
+        if not guard:
+            return
+        try:
+            guard.enter_fallback_mode(reason)
+            logger.warning(
+                "[BinanceAdapter] Entered fallback mode due to open orders failure",
+                extra={"reason": reason},
+            )
+        except Exception as exc:
+            logger.error(
+                "[BinanceAdapter] Failed to enter fallback mode after open orders error: %s",
+                exc,
+            )
 
     async def _get_mark_price_async(self, symbol: str) -> Optional[Any]:
         """
@@ -1198,7 +1430,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
             params = {
                 "symbol": symbol,
-                "timestamp": int(time.time() * 1000)
+                "timestamp": int(time.time() * 1000),
             }
             signed_params, _, _, _ = self._build_signed_request(
                 params, body=None, log_ctx="GET_MARK_PRICE")
@@ -1299,7 +1531,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                     f"[BinanceAdapter] get_open_positions success: {len(positions)} positions"
                                 )
                                 return positions
-
                         else:
                             error_msg = f"HTTP {response.status_code}: {response.text}"
                             logger.error(
@@ -1342,8 +1573,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                             )
                         except Exception as fb_e:
                             logger.error(
-                                f"[BinanceAdapter] Failed to enter fallback mode: {fb_e}"
-                            )
+                                f"[BinanceAdapter] Failed to enter fallback mode: {fb_e}")
 
                     # Return empty list as final fallback
                     return []
@@ -1372,106 +1602,146 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         try:
             fallback_policy = self._get_fallback_policy()
-            backoff_ms = list(fallback_policy.backoff_sequence())
-            if not backoff_ms:
-                backoff_ms = [200, 500, 1000]
-            max_attempts = max(fallback_policy.max_attempts, 1)
-            attempt = 0
+            delay_template = list(GET_OPEN_ORDERS_BACKOFF_MS)
+            configured = list(getattr(
+                fallback_policy, "backoff_sequence", lambda: ())()) if fallback_policy else []
+            if configured:
+                delay_template = list(
+                    configured[: max(1, GET_OPEN_ORDERS_MAX_ATTEMPTS - 1)])
+            while len(delay_template) < max(1, GET_OPEN_ORDERS_MAX_ATTEMPTS - 1):
+                delay_template.append(delay_template[-1])
 
-            while attempt < max_attempts:
-                attempt += 1
+            last_error: Optional[Exception] = None
+            for attempt in range(1, GET_OPEN_ORDERS_MAX_ATTEMPTS + 1):
                 try:
-                    # Sync time with server
                     await self._sync_time_with_server()
-
-                    # Build signed request
-                    base_url = BASE_URL
-                    endpoint = "/fapi/v1/openOrders"
 
                     params = {"timestamp": int(time.time() * 1000)}
                     if symbol:
                         params["symbol"] = symbol
 
                     signed_params, _, _, _ = self._build_signed_request(
-                        params, body=None, log_ctx="GET_OPEN_ORDERS")
+                        params, body=None, log_ctx="GET_OPEN_ORDERS"
+                    )
                     headers = {"X-MBX-APIKEY": self.api_key}
+                    url = f"{BASE_URL}/fapi/v1/openOrders"
 
-                    url = f"{base_url}{endpoint}"
                     async with httpx.AsyncClient() as client:
-                        response = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+                        response = await client.get(
+                            url,
+                            params=signed_params,
+                            headers=headers,
+                            timeout=self._rest_timeout,
+                        )
 
-                        if response.status_code == 200:
-                            orders = response.json()
+                    if response.status_code == 200:
+                        raw_orders = response.json() or []
+                        if symbol:
+                            raw_orders = [
+                                o for o in raw_orders if o.get("symbol") == symbol]
 
-                            # Filter by symbol if requested (additional filtering)
-                            if symbol:
-                                orders = [o for o in orders if o.get(
-                                    "symbol") == symbol]
-
-                            # Check for empty orders when we might expect data
-                            if not orders and attempt == 1:
-                                logger.warning(
-                                    f"[BinanceAdapter] get_open_orders returned empty list (attempt {attempt}/{max_attempts})"
-                                )
-                                # Continue to retry/backoff logic below
-                            else:
-                                # Success - return orders
-                                logger.debug(
-                                    f"[BinanceAdapter] get_open_orders success: {len(orders)} orders"
-                                )
-                                return orders
-
+                        if not raw_orders:
+                            log_level = logger.info if attempt == 1 else logger.warning
+                            log_level(
+                                "[BinanceAdapter] get_open_orders empty response",
+                                extra={"attempt": attempt, "symbol": symbol},
+                            )
                         else:
-                            error_msg = f"HTTP {response.status_code}: {response.text}"
-                            logger.error(
-                                f"[BinanceAdapter] get_open_orders failed: {error_msg}"
+                            logger.debug(
+                                "[BinanceAdapter] get_open_orders success",
+                                extra={"orders": len(
+                                    raw_orders), "symbol": symbol},
                             )
-                            # Don't retry on HTTP errors, just return empty
-                            return []
+                        return raw_orders
 
-                except Exception as e:
-                    logger.error(
-                        f"[BinanceAdapter] get_open_orders attempt {attempt} error: {e}"
+                    # Non-200 responses
+                    last_error = RuntimeError(
+                        f"HTTP {response.status_code}: {response.text[:256]}"
                     )
 
-                # If we got here, either empty response or error
-                if attempt < max_attempts:
-                    # Apply backoff before retry
-                    if backoff_ms:
-                        idx = min(attempt - 1, len(backoff_ms) - 1)
-                        delay_ms = backoff_ms[idx]
-                    else:
-                        delay_ms = 0
-                    logger.info(
-                        f"[BinanceAdapter] get_open_orders retrying in {delay_ms}ms (attempt {attempt + 1}/{max_attempts})"
-                    )
-                    if delay_ms > 0:
-                        await asyncio.sleep(delay_ms / 1000.0)
-                else:
-                    # Exhausted retries - enter fallback mode
-                    logger.error(
-                        f"[BinanceAdapter] get_open_orders exhausted {max_attempts} attempts, entering fallback mode"
-                    )
-
-                    # Enter fallback mode in ExposureGuard if available
-                    if hasattr(self, 'fsm') and self.fsm and hasattr(self.fsm, 'exposure_guard'):
+                    # Special handling for Binance -1021 timestamp/recvWindow errors
+                    handled_timestamp_error = False
+                    if response.status_code == 400:
+                        error_payload: Optional[Dict[str, Any]]
                         try:
-                            self.fsm.exposure_guard.enter_fallback_mode(
-                                "API_ORDERS_EMPTY")
-                            logger.warning(
-                                "[BinanceAdapter] Entered fallback mode due to empty orders API response"
-                            )
-                        except Exception as fb_e:
-                            logger.error(
-                                f"[BinanceAdapter] Failed to enter fallback mode: {fb_e}"
-                            )
+                            error_payload = response.json()
+                        except Exception:  # pragma: no cover - defensive
+                            error_payload = None
 
-                    # Return empty list as final fallback
-                    return []
+                        if isinstance(error_payload, dict):
+                            code_val = str(error_payload.get("code", ""))
+                            msg_val = str(error_payload.get("msg", "")).lower()
+                            if code_val == "-1021" or "recvwindow" in msg_val:
+                                handled_timestamp_error = True
+                                logger.warning(
+                                    "[BinanceAdapter] get_open_orders timestamp error (-1021)",
+                                    extra={
+                                        "attempt": attempt,
+                                        "symbol": symbol,
+                                    },
+                                )
+                                # On final attempt: enter fallback mode and return empty list
+                                if attempt >= GET_OPEN_ORDERS_MAX_ATTEMPTS:
+                                    self._enter_orders_fallback_mode(
+                                        reason="API_ORDERS_TIME_SYNC_FAILED"
+                                    )
+                                    logger.error(
+                                        "[BinanceAdapter] get_open_orders time sync failed after %s attempts",
+                                        GET_OPEN_ORDERS_MAX_ATTEMPTS,
+                                        extra={
+                                            "symbol": symbol,
+                                            "error": str(last_error),
+                                        },
+                                    )
+                                    return []
+
+                    if not handled_timestamp_error:
+                        logger.warning(
+                            "[BinanceAdapter] get_open_orders HTTP error",
+                            extra={
+                                "attempt": attempt,
+                                "status_code": response.status_code,
+                                "symbol": symbol,
+                            },
+                        )
+                except Exception as exc:  # pragma: no cover - defensive
+                    last_error = exc
+                    logger.warning(
+                        "[BinanceAdapter] get_open_orders attempt error",
+                        extra={"attempt": attempt,
+                               "symbol": symbol, "error": str(exc)},
+                    )
+
+                if attempt < GET_OPEN_ORDERS_MAX_ATTEMPTS:
+                    delay_ms = delay_template[min(
+                        attempt - 1, len(delay_template) - 1)]
+                    if delay_ms > 0:
+                        logger.info(
+                            "[BinanceAdapter] get_open_orders retrying",
+                            extra={
+                                "attempt": attempt + 1,
+                                "max_attempts": GET_OPEN_ORDERS_MAX_ATTEMPTS,
+                                "delay_ms": delay_ms,
+                                "symbol": symbol,
+                            },
+                        )
+                        await asyncio.sleep(delay_ms / 1000.0)
+                    continue
+                break
+
+            self._enter_orders_fallback_mode()
+            error_msg = f"get_open_orders failed after {GET_OPEN_ORDERS_MAX_ATTEMPTS} attempts"
+            logger.error(
+                f"[BinanceAdapter] {error_msg}",
+                extra={"symbol": symbol, "error": str(
+                    last_error) if last_error else None},
+            )
+            raise RuntimeError(
+                f"ADAPTER_GET_OPEN_ORDERS_FAILED: {error_msg}") from last_error
 
         except Exception as e:
             logger.error(f"[BinanceAdapter] get_open_orders fatal error: {e}")
-            return []
+            raise
 
     async def _sync_time_with_server(self) -> None:
         """
@@ -1489,22 +1759,62 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 self.server_time_offset = server_time - local_time
                 self.last_time_sync = time.time()
 
-                drift_ms = abs(self.server_time_offset)
-                offset_change = abs(self.server_time_offset - old_offset)
+                drift_ms = self.server_time_offset
+                abs_drift = abs(drift_ms)
+                offset_change = abs(drift_ms - old_offset)
 
-                if drift_ms > 500:  # More than 500ms drift
-                    logger.warning(
-                        f"[BinanceAdapter] Time drift detected: {drift_ms:.1f}ms "
-                        f"(server={server_time}, local={local_time}, offset_change={offset_change:.1f}ms)"
-                    )
-                elif offset_change > 100:  # Offset changed significantly
+                warn_by_change = offset_change >= TIME_DRIFT_WARN_CHANGE_THRESHOLD_MS
+                warn_by_abs = abs_drift >= TIME_DRIFT_HARD_LIMIT_MS
+
+                if not self._time_sync_initialized:
                     logger.info(
-                        f"[BinanceAdapter] Time offset adjusted: {old_offset:.1f}ms -> {self.server_time_offset:.1f}ms"
+                        "[BinanceAdapter] Time sync initialized",
+                        extra={"offset_ms": drift_ms},
+                    )
+                    self._time_sync_initialized = True
+                    self._last_drift_warning_bucket = None
+                elif warn_by_abs:
+                    bucket = int(abs_drift // 1000)
+                    if self._last_drift_warning_bucket != bucket:
+                        logger.warning(
+                            "[BinanceAdapter] Time drift exceeds hard limit",
+                            extra={
+                                "offset_ms": drift_ms,
+                                "offset_change_ms": offset_change,
+                                "server_time": server_time,
+                                "local_time": local_time,
+                            },
+                        )
+                        self._last_drift_warning_bucket = bucket
+                elif warn_by_change:
+                    logger.warning(
+                        "[BinanceAdapter] Time drift changed materially",
+                        extra={
+                            "offset_ms": drift_ms,
+                            "offset_change_ms": offset_change,
+                            "server_time": server_time,
+                            "local_time": local_time,
+                        },
+                    )
+                    self._last_drift_warning_bucket = None
+                elif offset_change >= TIME_DRIFT_INFO_THRESHOLD_MS:
+                    logger.info(
+                        "[BinanceAdapter] Time offset adjusted",
+                        extra={
+                            "previous_offset_ms": old_offset,
+                            "offset_ms": drift_ms,
+                            "offset_change_ms": offset_change,
+                        },
                     )
                 else:
                     logger.debug(
-                        f"[BinanceAdapter] Time sync completed, offset: {self.server_time_offset:.1f}ms"
+                        "[BinanceAdapter] Time sync stable",
+                        extra={"offset_ms": drift_ms,
+                               "offset_change_ms": offset_change},
                     )
+
+                if not warn_by_abs:
+                    self._last_drift_warning_bucket = None
             else:
                 logger.warning(
                     f"[BinanceAdapter] Failed to sync time with server: HTTP {resp.status_code}"
@@ -1513,16 +1823,46 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         except Exception as e:
             logger.error(f"[BinanceAdapter] Time sync error: {e}")
 
+    async def _background_time_sync_loop(self) -> None:
+        """
+        Background task that periodically syncs time with Binance server.
+        Non-blocking, runs in the async event loop.
+        """
+        logger.info(
+            f"[BinanceAdapter] Background time sync loop started (interval={TIME_SYNC_INTERVAL_SEC}s)")
+        while True:
+            try:
+                await asyncio.sleep(TIME_SYNC_INTERVAL_SEC)
+                await self._sync_time_with_server()
+            except asyncio.CancelledError:
+                logger.info(
+                    "[BinanceAdapter] Background time sync loop cancelled")
+                break
+            except Exception as e:
+                logger.warning(
+                    f"[BinanceAdapter] Background time sync error: {e}")
+                # Continue loop even on error
+
     def _sync_time_with_server_blocking(self) -> None:
         """
         Synchronous wrapper for contexts that are not async-aware.
+        Used only during startup, NOT in hot async paths.
         """
         asyncio.run(self._sync_time_with_server())
 
     def _get_signed_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Add required fields (timestamp/recvWindow) to API parameters (unsigned).
+        Time sync is handled by background task, not here (to avoid blocking).
         """
+        # NOTE: Time sync moved to _background_time_sync_loop() to avoid blocking async paths
+        # If time is very stale (>5min), log warning but don't block
+        time_since_sync = time.time() - self.last_time_sync
+        if time_since_sync > 300:  # 5 minutes without sync
+            logger.warning(
+                f"[BinanceAdapter] Time sync stale ({time_since_sync:.0f}s), requests may fail with -1021"
+            )
+
         unsigned_params = params.copy()
         unsigned_params["timestamp"] = str(
             int(time.time() * 1000) + int(self.server_time_offset))
@@ -1652,6 +1992,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                         limit_price = anchor * (Decimal("1") + cap)
                     else:
                         limit_price = anchor * (Decimal("1") - cap)
+
                     price = str(limit_price.quantize(Decimal("0.00000001")))
                     order_type = "LIMIT"
                     tif = "IOC"
@@ -1687,7 +2028,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     tif,
                 )
 
-                inc_order_placed()  # Increment order placed counter
+                # Increment order placed counter
+                inc_order_placed()
                 client_order_id = result.get(
                     "clientOrderId", idempotent_key or "unknown")
                 return self._create_success_feedback(
@@ -1700,7 +2042,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         except Exception as e:
             logger.error(
                 f"[BinanceAdapter] Order execution failed: {type(e).__name__}: {e}",
-                exc_info=True  # Full traceback for debugging
+                # Full traceback for debugging
+                exc_info=True
             )
             return self._create_error_feedback(symbol, f"{type(e).__name__}: {e}")
 
@@ -1714,7 +2057,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         - Detailed audit logging for compliance
 
         Args:
-            dec_msg: DEC:CANCEL_ORDER message with orderId and symbol
+            dec_msg: DEC: CANCEL_ORDER message with orderId and symbol
 
         Returns:
             Cancellation result dict with success/failure details
@@ -1722,92 +2065,80 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         try:
             pld = dec_msg.pld or {}
             order_id = pld.get("orderId")
-            # Default to BTCUSDT if not provided
-            symbol = pld.get("symbol", "BTCUSDT")
+            symbol = pld.get("symbol")
 
             if not order_id:
                 return self._create_error_feedback("unknown", "Missing orderId in cancel request")
+
+            if not symbol:
+                logger.error(
+                    "[BinanceAdapter] cancel_order called without symbol; refusing to call API"
+                )
+                return self._create_error_feedback("unknown", "Missing symbol in cancel request")
 
             if self.shadow_mode:
                 logger.info(
                     f"[BinanceAdapter] Shadow mode: would cancel order {order_id} on {symbol}")
                 return self._create_success_feedback(
-                    "cancelled", order_id, "unknown", "shadow_mode_cancel"
+                    symbol,
+                    order_id,
+                    "shadow-cancel",
+                    ["shadow_cancel"],
                 )
 
-            # PHASE 4: Use idempotent cancel helper
-            cancel_result = await self.cancel_helper.cancel_order_idempotent(
+            # Use IdempotentCancelHelper
+            cancel_helper = IdempotentCancelHelper(
                 symbol=symbol,
                 order_id=order_id,
                 cancel_func=self._cancel_binance_order_async,
                 get_order_func=self.get_order,
-                max_retries=2
             )
 
-            # Log result for audit trail
-            self.cancel_helper.log_cancel_result(cancel_result, order_id)
+            # Execute cancel with idempotency
+            cancel_result = await cancel_helper.execute()
 
-            # Phase 5: Metrics aggregation
-            if cancel_result.success:
-                metrics_logger.log_cancel_event(
-                    symbol=symbol,
-                    order_id=order_id,
-                    success=True,
-                    error_code=cancel_result.error_code,
-                    is_idempotent_success=cancel_result.is_idempotent_success,
-                    rid=f"cancel_{symbol}_{order_id}",
-                )
-            else:
-                metrics_logger.log_cancel_event(
-                    symbol=symbol,
-                    order_id=order_id,
-                    success=False,
-                    error_code=cancel_result.error_code,
-                    is_idempotent_success=False,
-                    rid=f"cancel_{symbol}_{order_id}",
-                )
+            # Log result
+            cancel_helper.log_cancel_result(cancel_result, order_id)
 
-            # Emit metrics
+            # Log audit event
+            metrics_logger.log_cancel_event(
+                symbol=symbol,
+                order_id=order_id,
+                success=cancel_result.success,
+                error_code=cancel_result.error_code,
+                is_idempotent_success=cancel_result.is_idempotent_success,
+                rid=f"cancel_{symbol}_{order_id}",
+            )
+
             if cancel_result.success:
-                self.metrics["cancel_idempotent_ok"] = self.metrics.get(
-                    "cancel_idempotent_ok", 0) + 1
+                if cancel_result.is_idempotent_success:
+                    self.metrics["cancel_idempotent_ok"] = self.metrics.get(
+                        "cancel_idempotent_ok", 0) + 1
                 if cancel_result.error_code == -2011:
                     self.metrics["cancel_-2011_absorbed"] = self.metrics.get(
                         "cancel_-2011_absorbed", 0) + 1
 
-            # Return result in standard format
-            if cancel_result.success:
                 return {
                     "allowed": True,
-                    "reason": "CANCEL_SUCCESS",
-                    "details": {
-                        "orderId": order_id,
-                        "symbol": symbol,
-                        "cancel_reason": cancel_result.reason,
-                        "idempotent_success": cancel_result.is_idempotent_success,
-                        "error_code": cancel_result.error_code,
-                    }
+                    "decision": "CANCEL_SUCCESS",
+                    "reason": cancel_result.reason,
+                    "success": True,
+                    "is_idempotent_success": cancel_result.is_idempotent_success,
+                    "error_code": cancel_result.error_code,
                 }
             else:
-                return {
-                    "allowed": False,
-                    "reason": f"CANCEL_FAILED: {cancel_result.reason}",
-                    "details": {
-                        "orderId": order_id,
-                        "symbol": symbol,
-                        "cancel_reason": cancel_result.reason,
-                        "error_code": cancel_result.error_code,
-                    }
-                }
+                return self._create_error_feedback(
+                    symbol,
+                    f"Cancel failed: {cancel_result.reason}",
+                )
 
         except Exception as e:
-            logger.error(f"[BinanceAdapter] Cancel order error: {e}")
-            return self._create_error_feedback("unknown", str(e))
+            logger.error(f"[BinanceAdapter] Cancel error: {e}", exc_info=True)
+            return self._create_error_feedback(symbol or "unknown", str(e))
 
     async def get_order(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
         """
         PHASE 4: Get order details from Binance API for pre-cancel check.
-
         Used by idempotent cancel to verify order status before attempting cancellation.
 
         Args:
@@ -1834,16 +2165,15 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 "symbol": symbol,
                 "orderId": order_id,
                 "timestamp": int(time.time() * 1000),
-                "recvWindow": 1500,
             }
-
             signed_params, _, _, _ = self._build_signed_request(
                 params, body=None, log_ctx="GET_ORDER")
-            headers = {"X-MBX-APIKEY": api_key}
 
+            headers = {"X-MBX-APIKEY": api_key}
             url = f"{base_url}{endpoint}"
+
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=signed_params, headers=headers)
+                response = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
 
                 if response.status_code == 200:
                     return response.json()
@@ -1854,6 +2184,103 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         except Exception as e:
             logger.warning(f"getOrder exception: {e}")
+            return None
+
+    async def get_order_by_client_id(
+        self, symbol: str, client_order_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        EXEC-R2-J: Get order details by origClientOrderId for idempotency check.
+
+        Used to verify if bracket order with duplicate clientOrderId already exists
+        on exchange before attempting to generate new ID and retry.
+
+        Args:
+            symbol: Trading symbol (e.g., BTCUSDT)
+            client_order_id: Client order ID to query (newClientOrderId from PLACE request)
+
+        Returns:
+            Order dict with status field, or None if not found
+
+        Example response:
+            {
+                "orderId": 123456789,
+                "symbol": "BTCUSDT",
+                # NEW, PARTIALLY_FILLED, FILLED, CANCELED, etc.
+                "status": "NEW",
+                "clientOrderId": "TP_BTCUSDT_LONG_12345",
+                "price": "50000.0",
+                "avgPrice": "0.0",
+                "origQty": "0.01",
+                "executedQty": "0.0",
+                ...
+            }
+        """
+        try:
+            api_key = self.api_key
+            api_secret = self.api_secret
+
+            if not api_key or not api_secret:
+                logger.warning(
+                    "Missing Binance API credentials for getOrder by clientOrderId"
+                )
+                return None
+
+            await self._sync_time_with_server()
+
+            base_url = BASE_URL
+            endpoint = "/fapi/v1/order"
+
+            # Binance API supports origClientOrderId parameter
+            params = {
+                "symbol": symbol,
+                "origClientOrderId": client_order_id,
+                "timestamp": int(time.time() * 1000),
+                "recvWindow": 5000,  # EXEC-R2-J: Use 5000ms recvWindow
+            }
+
+            signed_params, _, _, _ = self._build_signed_request(
+                params, body=None, log_ctx="GET_ORDER_BY_CLIENT_ID"
+            )
+
+            headers = {"X-MBX-APIKEY": api_key}
+            url = f"{base_url}{endpoint}"
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url, params=signed_params, headers=headers, timeout=self._rest_timeout
+                )
+
+                if response.status_code == 200:
+                    order_data = response.json()
+                    logger.info(
+                        f"[BinanceAdapter] Found existing order by clientOrderId: "
+                        f"orderId={order_data.get('orderId')}, status={order_data.get('status')}"
+                    )
+                    return order_data
+                elif response.status_code == -2013:
+                    # Order does not exist
+                    logger.debug(
+                        f"[BinanceAdapter] Order not found by clientOrderId: {client_order_id}"
+                    )
+                    return None
+                elif response.status_code == 400:
+                    # Binance returns 400 with -2013 if order not found
+                    # This is expected for idempotency check
+                    logger.debug(
+                        f"[BinanceAdapter] Order not found by clientOrderId: {client_order_id}"
+                    )
+                    return None
+                else:
+                    logger.warning(
+                        f"[BinanceAdapter] getOrder by clientOrderId failed: "
+                        f"HTTP {response.status_code}: {response.text}"
+                    )
+                    return None
+
+        except Exception as e:
+            logger.warning(
+                f"[BinanceAdapter] getOrder by clientOrderId exception: {e}")
             return None
 
     async def _cancel_binance_order_async(self, symbol: str, order_id: str) -> Dict[str, Any]:
@@ -1867,6 +2294,17 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         Returns:
             API response dict with status and optional error fields
         """
+        # Phase 2: Algo Service Cancel
+        if self.use_algo_service_for_conditionals and self.algo_order_index:
+            # Check if this is an Algo Order
+            # We need to look up by algoId (which is passed as order_id)
+            is_algo = self.algo_order_index.get_by_algo_id(order_id)
+            if is_algo:
+                try:
+                    return await self._cancel_conditional_via_algo_service(symbol, algo_order_id=order_id)
+                except Exception as e:
+                    return {"status": "error", "msg": str(e)}
+
         try:
             # Get API credentials
             api_key = self.api_key
@@ -1883,7 +2321,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             endpoint = "/fapi/v1/order"
 
             params = {
-                "symbol": symbol,  # PHASE 4: Use provided symbol parameter
+                # PHASE 4: Use provided symbol parameter
+                "symbol": symbol,
                 "orderId": order_id,
                 "timestamp": int(time.time() * 1000),
                 "recvWindow": 1500,
@@ -1891,9 +2330,10 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
             signed_params, _, _, _ = self._build_signed_request(
                 params, body=None, log_ctx="CANCEL_ORDER")
-            headers = {"X-MBX-APIKEY": api_key}
 
+            headers = {"X-MBX-APIKEY": api_key}
             url = f"{base_url}{endpoint}"
+
             async with httpx.AsyncClient() as client:
                 response = await client.delete(url, params=signed_params, headers=headers)
 
@@ -1938,7 +2378,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             except Exception:
                 self._status_cache = "error"
             self._last_status_check = now
-
         return self._status_cache
 
     def _adapt_symbol(self, symbol: str) -> str:
@@ -2037,9 +2476,9 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
             logger.info(
                 f"[BinanceAdapter] Placing {order_type} order: {symbol} {side} "
-                f"qty={quantity}→{qty_str}" +
-                (f", price={price}→{price_str}" if price_str else "") +
-                (f", stopPrice={stop_price}→{stop_price_str}" if stop_price_str else "")
+                f"qty={quantity}->{qty_str}" +
+                (f", price={price}->{price_str}" if price_str else "") +
+                (f", stopPrice={stop_price}->{stop_price_str}" if stop_price_str else "")
             )
         except BinanceValidationError as e:
             # Log validation error and re-raise
@@ -2047,6 +2486,15 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"[BinanceAdapter] Order validation failed for {symbol}: {e}"
             )
             raise
+
+        # BLUEPRINT: Algo Service Migration
+        # If enabled and order is conditional, route to Algo Service
+        is_conditional = order_type in (
+            "STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TRAILING_STOP_MARKET")
+        if is_conditional and self.use_algo_service_for_conditionals:
+            return await self._place_conditional_via_algo_service(
+                symbol, side, qty_str, order_type, stop_price_str, reduce_only, idempotent_key, time_in_force
+            )
 
         # Prepare request parameters with normalized values
         params: Dict[str, str] = {
@@ -2069,6 +2517,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             params["reduceOnly"] = "true"
 
         # Add newClientOrderId for idempotency
+        # Initialize client_order_id early for error handling (before try block)
+        client_order_id: str = idempotent_key or ""
         if idempotent_key:
             params["newClientOrderId"] = idempotent_key
             logger.info(
@@ -2080,12 +2530,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             signed_params,
             body=None,
             log_ctx="PLACE_ORDER",
-        )
-        client_order_id = (
-            idempotent_key
-            or params.get("newClientOrderId")
-            or (body_dict.get("newClientOrderId") if isinstance(body_dict, dict) else None)
-            or "unknown_client_order_id"
         )
 
         # Make async API request
@@ -2144,12 +2588,27 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                             data = {"raw": resp.text}
 
                         if not resp.is_success:
-                            logger.error(
-                                f"[BinanceAdapter] Order still failed after retry: HTTP {resp.status_code} {data}"
-                            )
-                            raise RuntimeError(
-                                f"Binance order failed after retry: HTTP {resp.status_code} {data}"
-                            )
+                            # EXEC-R2-J: Structured error for time sync failure
+                            retry_error_code = data.get("code")
+                            if retry_error_code == -1021:
+                                logger.error(
+                                    f"[BinanceAdapter] Time sync failed after retry. "
+                                    f"timestamp={signed_params.get('timestamp')}, "
+                                    f"offset={self.server_time_offset}ms, "
+                                    f"recvWindow={signed_params.get('recvWindow')}ms. "
+                                    f"Error: {data.get('msg')}"
+                                )
+                                raise RuntimeError(
+                                    f"Time sync failed after retry: timestamp={signed_params.get('timestamp')}, "
+                                    f"offset={self.server_time_offset}ms, recvWindow={signed_params.get('recvWindow')}ms"
+                                )
+                            else:
+                                logger.error(
+                                    f"[BinanceAdapter] Order still failed after retry: HTTP {resp.status_code} {data}"
+                                )
+                                raise RuntimeError(
+                                    f"Binance order failed after retry: HTTP {resp.status_code} {data}"
+                                )
 
                     elif error_code == -2010:
                         # Insufficient balance
@@ -2236,7 +2695,6 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                             raise RuntimeError(
                                 f"Bracket order -429: Could not recover (exhausted backoff retries)"
                             )
-
                     else:
                         logger.error(
                             f"[BinanceAdapter] Order FAILED: HTTP {resp.status_code} {data}")
@@ -2255,7 +2713,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     "clientOrderId", idempotent_key or "unknown")
                 try:
                     audit_logger.log_order_state_changed(
-                        rid="",  # RID would come from FSM context if available
+                        # RID would come from FSM context if available
+                        rid="",
                         idempotent_key=idempotent_key,
                         clientOrderId=client_order_id,
                         exchangeOrderId=str(order_id),
@@ -2272,12 +2731,15 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                         f"[BinanceAdapter] Failed to log order state: {e}")
 
                 return data
+
         except Exception as exc:
+            # Fail-closed: Return error structure that mimics standard error but with specific kind
             if httpx and isinstance(exc, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
                 logger.error("[BinanceAdapter] Order execution failed: ConnectTimeout", exc_info=True,
                              extra={"client_order_id": client_order_id, "symbol": symbol})
                 return {
                     "success": False,
+                    # Let's raise exception to ensure fail-closed.
                     "error": str(exc),
                     "error_kind": "ADAPTER_ERROR_TIMEOUT",
                     "clientOrderId": client_order_id,
@@ -2287,269 +2749,411 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 }
             raise
 
-    def _create_success_feedback(
-        self, instrument: str, order_id: str, client_order_id: str, why_codes: list[str]
-    ) -> Dict[str, object]:
-        """Create success feedback dict conforming to exec_feedback schema."""
-        return {
-            "success": True,  # CRITICAL: ExecutionService checks this field
-            "instrument": instrument,
-            "order_id": str(order_id),
-            "clientOrderId": client_order_id,
-            "lifecycle": "filled",
-            "fills": [],
-            "tca_realized": {
-                "fees_bps": 0,
-                "slip_in_bps": 0,
-                "slip_out_bps": 0,
-                "adverse_bps": 0,
-                "latency_ms": 0,
-                "rebates_bps": 0,
-            },
-            "breaches": [],
-            "why": why_codes,
-            "dto_version": "1.0.0",
-            "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json",
-        }
-
-    def _create_rejected_feedback(
-        self, instrument: str, order_id: str, why_codes: list[str]
-    ) -> Dict[str, object]:
-        """Create rejection feedback dict."""
-        return {
-            "success": False,  # CRITICAL: ExecutionService checks this field
-            # CRITICAL: ExecutionService checks this field
-            "error": f"Rejected: {why_codes}",
-            "instrument": instrument,
-            "order_id": str(order_id),
-            "lifecycle": "rejected",
-            "fills": [],
-            "tca_realized": {
-                "fees_bps": 0,
-                "slip_in_bps": 0,
-                "slip_out_bps": 0,
-                "adverse_bps": 0,
-                "latency_ms": 0,
-                "rebates_bps": 0,
-            },
-            "breaches": [],
-            "why": why_codes,
-            "dto_version": "1.0.0",
-            "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json",
-        }
-
-    def _create_error_feedback(self, instrument: str, error_msg: str) -> Dict[str, object]:
-        """Create error feedback dict."""
-        return {
-            "success": False,  # CRITICAL: ExecutionService checks this field
-            "error": error_msg,  # CRITICAL: ExecutionService checks this field
-            "instrument": instrument,
-            "order_id": f"error-{int(time.time())}",
-            "lifecycle": "rejected",
-            "fills": [],
-            "tca_realized": {
-                "fees_bps": 0,
-                "slip_in_bps": 0,
-                "slip_out_bps": 0,
-                "adverse_bps": 0,
-                "latency_ms": 0,
-                "rebates_bps": 0,
-            },
-            "breaches": [],
-            "why": ["EXEC_EXCEPTION", error_msg],
-            "dto_version": "1.0.0",
-            "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json",
-        }
-
-    async def get_positions_notional_usd_shadow(self) -> float:
+    async def _place_conditional_via_algo_service(
+        self,
+        symbol: str,
+        side: str,
+        quantity: str,
+        order_type: str,
+        stop_price: Optional[str],
+        reduce_only: bool,
+        idempotent_key: Optional[str],
+        time_in_force: str,
+    ) -> Mapping[str, object]:
         """
-        EXP-FIX: Get shadow notional from Binance API for safety auditing.
+        Place conditional order via Binance Algo Service (/fapi/v1/algoOrder).
 
-        Fetches current positions from /fapi/v2/positionRisk and calculates
-        total notional value. Used for safety comparison with portfolio data.
-
-        Returns:
-            Total notional value in USD, or 0.0 on error
+        Used when use_algo_service_for_conditionals is True.
         """
-        if self.shadow_mode:
-            return 0.0
+        logger.info(
+            f"[BinanceAdapter] Placing conditional via Algo Service: {symbol} {order_type}")
+
+        params: Dict[str, str] = {
+            "symbol": symbol,
+            "side": side,
+            "type": order_type,
+            "quantity": quantity,
+            "reduceOnly": "true" if reduce_only else "false",
+        }
+
+        if stop_price:
+            params["stopPrice"] = stop_price
+
+        if idempotent_key:
+            params["newClientAlgoOrderId"] = idempotent_key
+
+        # Algo service specific params if needed (e.g. workingType)
+        # For now assuming defaults or passed via kwargs if we extended signature
+
+        signed_params = self._get_signed_params(params)
+        signed_params, body_dict, pre_sign, sig = self._build_signed_request(
+            signed_params, body=None, log_ctx="PLACE_ALGO_ORDER"
+        )
+
+        url = f"{BASE_URL}/fapi/v1/algoOrder"
+        headers = {"X-MBX-APIKEY": self.api_key}
 
         try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+
+                try:
+                    data = resp.json()
+                except:
+                    data = {"raw": resp.text}
+
+                if not resp.is_success:
+                    error_code = data.get("code")
+                    error_msg = data.get("msg", str(data))
+                    logger.error(
+                        f"[BinanceAdapter] Algo Service failed: {error_code} {error_msg}")
+
+                    # Fail-closed: Return error structure that mimics standard error but with specific kind
+                    # We raise exception to be caught by caller or return dict?
+                    # _place_binance_order_async returns Mapping.
+                    # We should return a dict that indicates failure.
+                    # But place_order expects specific structure or raises exception.
+                    # Let's raise exception to ensure fail-closed.
+                    raise RuntimeError(
+                        f"ADAPTER_ERROR_ALGO_SERVICE: {error_code} {error_msg}")
+
+                # Success
+                # Algo order response structure might differ.
+                # Usually returns { "clientAlgoOrderId": "...", "code": 200, "msg": "success" }
+                # We need to map it to what place_order expects (orderId, clientOrderId)
+
+                algo_id = data.get("algoId")
+                client_algo_order_id = data.get(
+                    "clientAlgoOrderId", idempotent_key)
+
+                # Phase 1: Register in AlgoOrderIndex
+                if self.algo_order_index:
+                    self.algo_order_index.register_new_algo_order(
+                        client_algo_order_id=client_algo_order_id,
+                        algo_order_id=str(algo_id) if algo_id else "UNKNOWN",
+                        symbol=symbol,
+                        side=side,
+                        algo_type=order_type,
+                        quantity=Decimal(quantity),
+                        reduce_only=reduce_only,
+                        trigger_price=Decimal(
+                            stop_price) if stop_price else None
+                    )
+
+                return {
+                    # Algo service returns algoId
+                    "orderId": algo_id,
+                    "clientOrderId": client_algo_order_id,
+                    "status": "NEW",  # Assumed
+                    "executedQty": "0",
+                    "avgPrice": "0",
+                    "origQty": quantity,
+                    "type": order_type,
+                    "side": side,
+                    "algo_service": True
+                }
+
+        except Exception as e:
+            logger.error(f"[BinanceAdapter] Algo Service exception: {e}")
+            raise
+
+    async def _cancel_conditional_via_algo_service(
+        self,
+        symbol: str,
+        algo_order_id: Optional[str] = None,
+        client_algo_order_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Cancel conditional order via Binance Algo Service (/fapi/v1/algoOrder).
+        """
+        logger.info(
+            f"[BinanceAdapter] Canceling conditional via Algo Service: {symbol} {algo_order_id or client_algo_order_id}")
+
+        params = {"symbol": symbol}
+        if algo_order_id:
+            params["algoId"] = algo_order_id
+        if client_algo_order_id:
+            params["clientAlgoOrderId"] = client_algo_order_id
+
+        signed_params = self._get_signed_params(params)
+        signed_params, _, _, _ = self._build_signed_request(
+            signed_params, body=None, log_ctx="CANCEL_ALGO_ORDER"
+        )
+
+        url = f"{BASE_URL}/fapi/v1/algoOrder"
+        headers = {"X-MBX-APIKEY": self.api_key}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.delete(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+
+                try:
+                    data = resp.json()
+                except:
+                    data = {"raw": resp.text}
+
+                if not resp.is_success:
+                    error_code = data.get("code")
+                    error_msg = data.get("msg", str(data))
+
+                    # Idempotency: Treat -2011 (Unknown Order) as success
+                    if error_code == -2011:
+                        logger.info(
+                            f"[BinanceAdapter] Algo cancel idempotent success (-2011): {error_msg}")
+                        return {"status": "CANCELED", "msg": "Idempotent success", "code": 200}
+
+                    logger.error(
+                        f"[BinanceAdapter] Algo Service cancel failed: {error_code} {error_msg}")
+                    raise RuntimeError(
+                        f"ADAPTER_ERROR_ALGO_SERVICE_CANCEL: {error_code} {error_msg}")
+
+                # Success
+                return data
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceAdapter] Algo Service cancel exception: {e}")
+            raise
+
+    async def load_open_algo_orders_snapshot(self) -> List[Dict[str, Any]]:
+        """
+        Fetch open Algo Orders from Binance and populate AlgoOrderIndex.
+        """
+        if not self.use_algo_service_for_conditionals:
+            return []
+
+        logger.info("[BinanceAdapter] Loading open Algo Orders snapshot...")
+
+        try:
+            await self._sync_time_with_server()
+
             params = {"timestamp": int(time.time() * 1000)}
-            params["signature"] = self._generate_signature(params)
+            signed_params, _, _, _ = self._build_signed_request(
+                params, body=None, log_ctx="GET_OPEN_ALGO_ORDERS"
+            )
+
+            url = f"{BASE_URL}/fapi/v1/openAlgoOrders"
+            headers = {"X-MBX-APIKEY": self.api_key}
 
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{BASE_URL}/fapi/v2/positionRisk",
-                    params=params,
-                    headers={"X-MBX-APIKEY": self.api_key},
-                )
-                response.raise_for_status()
-                positions = response.json()
+                resp = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
 
-                total_notional = 0.0
-                for pos in positions:
-                    try:
-                        position_amt = abs(float(pos.get("positionAmt", 0)))
-                        mark_price = float(pos.get("markPrice", 0))
-                        if position_amt > 0 and mark_price > 0:
-                            total_notional += position_amt * mark_price
-                    except (ValueError, TypeError):
-                        continue
+                if not resp.is_success:
+                    logger.error(
+                        f"[BinanceAdapter] Failed to fetch open Algo Orders: {resp.status_code} {resp.text}")
+                    return []
 
-                return round(total_notional, 2)
+                data = resp.json()
+                orders = data.get("orders", [])
+
+                logger.info(
+                    f"[BinanceAdapter] Loaded {len(orders)} open Algo Orders")
+
+                # Populate AlgoOrderIndex
+                if self.algo_order_index:
+                    for order in orders:
+                        # Map fields
+                        # Binance returns: algoId, symbol, side, type, reduceOnly, executedQty, etc.
+                        self.algo_order_index.register_new_algo_order(
+                            client_algo_order_id=order.get(
+                                "clientAlgoOrderId", ""),
+                            algo_order_id=str(order.get("algoId")),
+                            symbol=order.get("symbol"),
+                            side=order.get("side"),
+                            algo_type=order.get("type"),
+                            quantity=Decimal(str(order.get("origQty", 0))),
+                            reduce_only=order.get("reduceOnly", False),
+                            trigger_price=Decimal(str(order.get("stopPrice"))) if order.get(
+                                "stopPrice") else None
+                        )
+
+                return orders
 
         except Exception as e:
-            logger.error(f"SHADOW_NOTIONAL_ERROR: {e}")
-            return 0.0
+            logger.error(
+                f"[BinanceAdapter] Error loading open Algo Orders: {e}", exc_info=True)
+            return []
 
-    def _generate_signature(self, params: Dict[str, Any]) -> str:
-        """Generate HMAC SHA256 signature for Binance API."""
-        query_string = "&".join(
-            [f"{key}={params[key]}" for key in sorted(params.keys())]
-        )
-        return hmac.new(
-            self.api_secret.encode("utf-8"),
-            query_string.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-
-    def _build_query_string(self, params: Dict[str, Any]) -> str:
-        """Return canonical query string for signing and HTTP requests."""
-        return urlencode(params, doseq=True)
-
-    def _sign_params(
-        self,
-        params: Dict[str, Any],
-        body: Optional[Dict[str, Any]] = None,
-    ) -> tuple[str, str, Dict[str, str], Dict[str, str]]:
+    async def audit_algo_orders_consistency(self, symbol: Optional[str] = None) -> Dict[str, Any]:
         """
-        Build deterministic pre-sign string and signature for signed endpoints.
+        PHASE 3: Audit consistency between local AlgoOrderIndex and Binance openAlgoOrders.
 
         Returns:
-            signature, pre_sign_string, normalized_params, normalized_body
+            Dict with:
+            - is_consistent: bool
+            - missing_local: List[str] (Algo IDs on Binance but not local)
+            - missing_remote: List[str] (Algo IDs local but not on Binance)
+            - details: List[Dict]
         """
-        norm_params = {k: str(v) for k, v in params.items() if v is not None}
-        norm_body = {k: str(v)
-                     for k, v in (body or {}).items() if v is not None}
+        if not self.use_algo_service_for_conditionals:
+            return {"is_consistent": True, "msg": "Algo Service disabled"}
 
-        query_str = urlencode(sorted(norm_params.items()))
-        body_str = urlencode(sorted(norm_body.items())) if norm_body else ""
-        pre_sign_string = query_str + (f"&{body_str}" if body_str else "")
+        logger.info(
+            f"[BinanceAdapter] Starting Algo Order consistency audit (symbol={symbol})...")
 
-        signature = hmac.new(
-            self.api_secret.encode("utf-8"),
-            pre_sign_string.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
+        try:
+            # 1. Fetch remote orders
+            await self._sync_time_with_server()
+            params = {"timestamp": int(time.time() * 1000)}
+            if symbol:
+                params["symbol"] = symbol
 
-        return signature, pre_sign_string, norm_params, norm_body
+            signed_params, _, _, _ = self._build_signed_request(
+                params, body=None, log_ctx="AUDIT_ALGO_ORDERS"
+            )
 
-    def _build_signed_request(
-        self,
-        params: Dict[str, Any],
-        body: Optional[Dict[str, Any]] = None,
-        log_ctx: str = "",
-    ) -> tuple[Dict[str, str], Dict[str, str], str, str]:
-        signature, pre_sign_string, norm_params, norm_body = self._sign_params(
-            params, body)
+            url = f"{BASE_URL}/fapi/v1/openAlgoOrders"
+            headers = {"X-MBX-APIKEY": self.api_key}
 
-        # Ensure params are sorted to match signature calculation
-        # httpx respects insertion order for dicts, so we must sort them
-        signed_params = dict(sorted(norm_params.items()))
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+                if not resp.is_success:
+                    return {
+                        "is_consistent": False,
+                        "error": f"API Error: {resp.status_code} {resp.text}"
+                    }
+
+                remote_orders = resp.json().get("orders", [])
+
+            # 2. Get local orders
+            if not self.algo_order_index:
+                local_orders = []
+            else:
+                local_orders = self.algo_order_index.get_active_orders(symbol)
+
+            # 3. Compare
+            remote_ids = {str(o.get("algoId")) for o in remote_orders}
+            local_ids = {str(o.algo_order_id) for o in local_orders}
+
+            missing_local = list(remote_ids - local_ids)
+            missing_remote = list(local_ids - remote_ids)
+
+            is_consistent = not missing_local and not missing_remote
+
+            if not is_consistent:
+                logger.warning(
+                    f"[BinanceAdapter] Algo Order Inconsistency! "
+                    f"Missing Local: {missing_local}, Missing Remote: {missing_remote}"
+                )
+                # Log detailed report
+                audit_logger.log_order_state_changed(
+                    rid="AUDIT_ALGO_CONSISTENCY",
+                    idempotent_key="AUDIT_ALGO_CONSISTENCY",
+                    symbol=symbol or "ALL",
+                    status="INCONSISTENT",
+                    why=f"missing_local={len(missing_local)},missing_remote={len(missing_remote)}",
+                    ts_ms=int(time.time() * 1000),
+                    clientOrderId="",
+                    exchangeOrderId="",
+                    qty="0",
+                    filled_qty="0",
+                    avg_fill_price="0"
+                )
+
+            return {
+                "is_consistent": is_consistent,
+                "missing_local": missing_local,
+                "missing_remote": missing_remote,
+                "remote_count": len(remote_ids),
+                "local_count": len(local_ids),
+                "details": {
+                    "remote_ids": list(remote_ids),
+                    "local_ids": list(local_ids)
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"[BinanceAdapter] Audit failed: {e}", exc_info=True)
+            return {"is_consistent": False, "error": str(e)}
+
+
+def _binance_adapter_create_success_feedback(
+    self,
+    symbol: str,
+    order_id: Optional[str],
+    client_order_id: Optional[str],
+    why_codes: Optional[List[str]] = None,
+) -> Dict[str, object]:
+    """Return a normalized success payload for ExecPos runtimes."""
+
+    feedback = {
+        "allowed": True,
+        "success": True,
+        "exchange": "binance",
+        "symbol": symbol,
+        "orderId": order_id,
+        "order_id": order_id,
+        "clientOrderId": client_order_id,
+        "client_order_id": client_order_id,
+        "why_codes": list(why_codes or []),
+        "ts_ms": int(time.time() * 1000),
+    }
+
+    return feedback
+
+
+def _binance_adapter_create_error_feedback(
+    self,
+    symbol: str,
+    error_message: str,
+    error_kind: str = "ADAPTER_ERROR",
+) -> Dict[str, object]:
+    """Return a structured error payload consumed by ExecPos runtimes."""
+
+    return {
+        "allowed": False,
+        "success": False,
+        "exchange": "binance",
+        "symbol": symbol,
+        "error": error_message,
+        "error_kind": error_kind,
+        "why_codes": [],
+        "ts_ms": int(time.time() * 1000),
+    }
+
+
+def _binance_adapter_build_signed_request(
+    self,
+    params: Dict[str, Any],
+    body: Optional[Dict[str, Any]] = None,
+    log_ctx: str = "API_CALL",
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, str]:
+    """Compose signed request payload compatible with Binance Futures API."""
+
+    unsigned_params = self._get_signed_params(params)
+    query_string = urlencode(unsigned_params, doseq=True)
+    body_payload = urlencode(body or {}, doseq=True) if body else ""
+    sign_target = "&".join(filter(None, (query_string, body_payload)))
+
+    secret_value = getattr(self, "api_secret", "") or ""
+    if isinstance(secret_value, bytes):
+        secret = secret_value
+    else:
+        secret = str(secret_value).encode("utf-8") if secret_value else b""
+    signature = (
+        hmac.new(secret, sign_target.encode(
+            "utf-8"), hashlib.sha256).hexdigest()
+        if secret
+        else ""
+    )
+
+    signed_params = dict(unsigned_params)
+    if signature:
         signed_params["signature"] = signature
 
-        logger.debug(
-            "[BinanceAdapter] SIGN %s pre_sign_string=%s signature=%s params=%s body=%s",
-            log_ctx,
-            pre_sign_string,
-            signature,
-            norm_params,
-            norm_body,
-        )
-        return signed_params, norm_body, pre_sign_string, signature
+    logger.debug(
+        "[BinanceAdapter] Built signed request",
+        extra={
+            "ctx": log_ctx,
+            "has_body": body is not None,
+            "has_signature": bool(signature),
+        },
+    )
 
-    def _normalize_order_event(self, raw_event: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Normalize Binance ORDER_TRADE_UPDATE WebSocket payload to flat structure.
+    return signed_params, (body or None), sign_target, signature
 
-        Converts nested {"o": {...}} structure to flat dict with top-level fields
-        for easy FSM consumption.
 
-        Args:
-            raw_event: Raw Binance WebSocket event
-
-        Returns:
-            Flat normalized event dict
-        """
-        try:
-            # If no nested "o", assume already flat (backward compatibility)
-            if "o" not in raw_event or not isinstance(raw_event.get("o"), dict):
-                return raw_event
-
-            # Extract nested order object
-            order_data = raw_event.get("o", {})
-
-            # Map Binance field names to normalized names
-            normalized = {
-                # IDs
-                "orderId": str(order_data.get("i", "")),  # Integer -> string
-                "clientOrderId": order_data.get("c", ""),
-                "symbol": order_data.get("s", ""),
-
-                # Status and type
-                "status": order_data.get("X", "").upper(),  # e.g., "FILLED"
-                # e.g., "TRADE"
-                "executionType": order_data.get("x", "").upper(),
-
-                # Side and order type (normalized to lowercase)
-                "side": (order_data.get("S", "").lower() if order_data.get("S") else ""),
-                "type": (order_data.get("o", "").lower().replace("_", "_") if order_data.get("o") else ""),
-
-                # Quantities and prices
-                "originalQty": order_data.get("q", ""),
-                "executedQty": order_data.get("z", ""),
-                # Average price * qty
-                "cumulativeQuoteAssetTransactedQty": order_data.get("ap", ""),
-                "avgPrice": order_data.get("ap", ""),  # Average price
-
-                # Last trade details
-                "lastExecutedQty": order_data.get("l", ""),
-                "lastExecutedPrice": order_data.get("L", ""),
-
-                # Timestamp
-                "timestamp": raw_event.get("T", raw_event.get("E", 0)),
-
-                # Bracket flags
-                "reduceOnly": order_data.get("R", False),
-                "closePosition": order_data.get("cp", False),
-
-                # Commission
-                "commission": order_data.get("n", "0"),
-                "commissionAsset": order_data.get("N", ""),
-
-                # Order details
-                "timeInForce": order_data.get("f", ""),
-                "stopPrice": order_data.get("sp", ""),
-                "activationPrice": order_data.get("ap", ""),
-
-                # Trade ID
-                "tradeId": order_data.get("t"),
-
-                # Event metadata
-                "eventTime": raw_event.get("E"),
-                "isMarker": order_data.get("m", False),
-
-                # Preserve raw event for debugging
-                "_raw_binance_event": raw_event
-            }
-
-            return normalized
-
-        except Exception as e:
-            logger.error(f"Error normalizing order event: {e}", exc_info=True)
-            return {
-                "orderId": "unknown",
-                "error": str(e),
-                "_raw_binance_event": raw_event
-            }
+# Attach helper implementations without mutating the existing class definition above.
+BinanceExecutionAdapter._create_success_feedback = _binance_adapter_create_success_feedback
+BinanceExecutionAdapter._create_error_feedback = _binance_adapter_create_error_feedback
+BinanceExecutionAdapter._build_signed_request = _binance_adapter_build_signed_request

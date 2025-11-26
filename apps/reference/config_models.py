@@ -306,6 +306,8 @@ class ExecutionConfig(BaseModel):
     manage: Optional[ManageConfig] = Field(default=None)
     exposure: Optional[ExposureConfig] = Field(default=None)
     watchdog: Dict[str, Any] = Field(default_factory=dict)
+    use_algo_service_for_conditionals: bool = Field(
+        default=False, description="Use Binance Algo Service for conditional orders")
 
 
 class MacroSyncConfig(BaseModel):
@@ -321,6 +323,8 @@ class MarketDataConfig(BaseModel):
     model_config = ConfigDict(extra='allow')
 
     poll_interval_sec: int = Field(default=5)
+    use_ws_market_data: bool = Field(
+        default=False, description="Use WebSocket for market data instead of REST polling")
     websocket_streams: List[str] = Field(default_factory=list)
     macro_sync: Optional[MacroSyncConfig] = Field(default=None)
 

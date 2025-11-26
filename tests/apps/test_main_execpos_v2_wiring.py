@@ -53,9 +53,18 @@ def _cfg(trading_mode: str = "testnet", runtime_mode: str = "v2"):
     return Cfg()
 
 
+class _DummyFSM:
+    def __init__(self):
+        self.listeners = {}
+
+    def listen(self, event_name, handler):
+        self.listeners.setdefault(event_name, []).append(handler)
+
+
 def test_v2_runtime_uses_binance_adapter_for_testnet():
     cfg = _cfg(trading_mode="testnet", runtime_mode="v2")
-    runtime = runtime_factory.build_execution_runtime(config=cfg, fsm=object())
+    runtime = runtime_factory.build_execution_runtime(
+        config=cfg, fsm=_DummyFSM())
     assert hasattr(runtime, "runtime")
     exec_runtime = runtime.runtime
     adapter = getattr(exec_runtime.execution_service, "adapter", None)
@@ -77,12 +86,16 @@ def test_main_runtime_v2_wiring_logs(caplog):
 
     runtime_mode = main._resolve_execpos_runtime_mode(cfg)
     runtime_target = "ExecPosFSM (legacy)" if runtime_mode == "legacy" else "V2RuntimeFacade"
-    main.LOG.info("ExecutionPosition runtime_mode='%s' -> using %s", runtime_mode, runtime_target)
+    main.LOG.info("ExecutionPosition runtime_mode='%s' -> using %s",
+                  runtime_mode, runtime_target)
 
-    execpos = runtime_factory.build_execution_runtime(config=cfg, fsm=object())
+    execpos = runtime_factory.build_execution_runtime(
+        config=cfg, fsm=_DummyFSM())
     assert execpos is not None
-    assert any("runtime_mode='v2'" in rec.getMessage() for rec in caplog.records)
-    assert not any("shadow adapter" in rec.getMessage().lower() for rec in caplog.records)
+    assert any("runtime_mode='v2'" in rec.getMessage()
+               for rec in caplog.records)
+    assert not any("shadow adapter" in rec.getMessage().lower()
+                   for rec in caplog.records)
 
 
 def test_v2_runtime_uses_binance_adapter_for_testnet():
@@ -93,33 +106,33 @@ def test_v2_runtime_uses_binance_adapter_for_testnet():
     from apps.reference.domains.execution_position.binance_execution_adapter import (
         BinanceExecutionAdapter,
     )
-    
+
     # Create config with testnet mode
     cfg = type("Cfg", (), {})()
     cfg.to_dict = lambda: {
         "execution_position": {"runtime_mode": "v2"},
         "trading": {"trading_mode": "testnet"},
     }
-    
-    fsm = object()
+
+    fsm = _DummyFSM()
     runtime = runtime_factory.build_execution_runtime(config=cfg, fsm=fsm)
-    
+
     # Verify runtime was created
     assert runtime is not None
     assert isinstance(runtime, runtime_factory.V2RuntimeFacade)
-    
+
     # Access internal V2 runtime
     assert hasattr(runtime, "runtime")
     v2_runtime = runtime.runtime
-    
+
     # Verify ExecutionService exists
     assert hasattr(v2_runtime, "execution_service")
     exec_service = v2_runtime.execution_service
-    
+
     # Verify adapter is BinanceExecutionAdapter
     assert hasattr(exec_service, "adapter")
     adapter = exec_service.adapter
-    
+
     assert adapter is not None, "Adapter should not be None for testnet mode"
     assert isinstance(adapter, BinanceExecutionAdapter), (
         f"Expected BinanceExecutionAdapter, got {type(adapter).__name__}"

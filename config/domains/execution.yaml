@@ -42,6 +42,7 @@ exposure:
       recalc_on_partial_close: true  # Rebuild brackets when position shrinks
       ttl_protect_new_bracket_ms: 3000
       allow_unprotected_position: false
+      recreate_missing_brackets: true  # R2-E: Recreate SL/TP if missing during open position (fail-closed mode)
       watchdog:
         enabled: true
         interval_sec: 5

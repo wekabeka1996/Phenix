@@ -142,49 +142,58 @@ apps/reference/
 │   │   └── TESTING.md
 │   ├── execution_position/
 │   │   ├── __init__.py
-│   │   ├── ANALYSIS_SUMMARY.md
-│   │   ├── API_DEPENDENCIES.md
+│   │   ├── adapter_factory.py
+│   │   ├── agg_oco_introspection.py
+│   │   ├── algo_order_index.py
 │   │   ├── aurora_log_adapter.py
 │   │   ├── binance_execution_adapter.py
 │   │   ├── brackets_config.py
-│   │   ├── CHANGELOG.md
+│   │   ├── config.py
 │   │   ├── contracts.py
-│   │   ├── DEPLOYMENT.md
 │   │   ├── drift_monitor.py
-│   │   ├── EVENTS.md
 │   │   ├── execution_adapter.py
-│   │   ├── EXECUTION_POSITION_COMPLETE_ANALYSIS.md
+│   │   ├── EXECUTION_POSITION_INVARIANTS.md
 │   │   ├── exposure_guard.py
-│   │   ├── fsm.py
 │   │   ├── fsm_close.py
 │   │   ├── fsm_manage.py
 │   │   ├── fsm_open.py
 │   │   ├── idempotent_cancel.py
+│   │   ├── internal_types.py
+│   │   ├── legacy/
 │   │   ├── manage_config.py
 │   │   ├── metrics_aggregator.py
 │   │   ├── metrics_collector.py
-│   │   ├── order_guardian.py
 │   │   ├── order_index.py
-│   │   ├── README.md
+│   │   ├── runtime_factory.py
+│   │   ├── shadow_execpos/
+│   │   │   ├── __init__.py
+│   │   │   ├── ab_replay.py
+│   │   │   ├── agg_oco_replay.py
+│   │   │   ├── async_manager.py
+│   │   │   ├── bracket_service.py
+│   │   │   ├── close_flow.py
+│   │   │   ├── event_adapter.py
+│   │   │   ├── execution_service.py
+│   │   │   ├── exposure_bridge.py
+│   │   │   ├── gatekeeper.py
+│   │   │   ├── idempotency.py
+│   │   │   ├── logging_v2.py
+│   │   │   ├── position_model.py
+│   │   │   ├── price_enricher.py
+│   │   │   ├── runtime.py
+│   │   │   ├── trailing.py
+│   │   │   ├── types.py
+│   │   │   ├── wal_writer.py
+│   │   │   └── watchdog.py
 │   │   ├── simulated_adapter.py
 │   │   ├── soft_clip.py
-│   │   ├── TESTING.md
-│   │   ├── test_binance_adapter_methods.py
-│   │   ├── test_order_index.py
-│   │   ├── TROUBLESHOOTING.md
 │   │   ├── utils.py
 │   │   ├── utils_event_bus.py
 │   │   ├── watchdog.py
-│   │   └── Readme/
-│   │       ├── ANALYSIS_SUMMARY.md
-│   │       ├── API_DEPENDENCIES.md
-│   │       ├── EVENTS.md
-│   │       ├── README.md
-│   │       └── TESTING.md
-│   │   # Aggregated OCO v1 landing zone:
-│   │   #   • fsm_manage.py — aggregated ManageFlowFSM (calls `compute_aggregated_brackets`, emits XAI logs, registers BracketSetMeta)
-│   │   #   • bracket_aggregator.py — pure helpers for TP/SL math (tick-size-aware)
-│   │   #   • services/order_guardian.py — BracketSetMeta store, aggregated cleanup, TTL/fail-closed guard, DR rehydrate
+│   │   └── docs/
+│   │       └── ...
+│   │   # ExecPosRuntimeV2 (shadow_execpos) is the default runtime.
+│   │   # Legacy FSMs (fsm_open/manage/close) are deprecated/historical.
 │   ├── feature_engineering/
 │   │   ├── __init__.py
 │   │   ├── ANALYSIS_SUMMARY.md

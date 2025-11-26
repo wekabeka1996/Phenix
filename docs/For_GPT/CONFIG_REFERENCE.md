@@ -1,6 +1,8 @@
 # CONFIG_REFERENCE.md
 Актуальний орієнтир по конфігураційній системі Aurora (після міграції на config v2). Вказані файли лежать у `config/` та споживаються резольверами з `apps/reference/config_*.py`.
 
+> **УВАГА (V2 Runtime):** Деякі секції конфігурації (зокрема `aggregated_oco`, `brackets`, `guardian`) описують функціонал, який **не реалізований** або працює в режимі **detect-only** у поточному `ExecPosRuntimeV2`. Див. `docs/EXEC_POS_V2_RUNTIME_SPEC.md` для деталей.
+
 ## 1. Профілі та режими (`config/modes.yaml`)
 - `profiles.<name>.trading_mode` — канонічні режими (`full_testnet`, `shadow_live`, `full_live`, custom).
 - `profiles.<name>.domains.<domain>` — доменні мапи (`market_data`, `execution_position`, `risk_management`, ...).

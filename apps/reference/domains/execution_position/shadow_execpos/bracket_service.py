@@ -20,10 +20,33 @@ All actions are recommendations; caller (FSM/adapter) executes them.
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, NamedTuple
+
+
+# ============================================================================
+# R2-D: Position Cycle ID Utilities
+# ============================================================================
+
+def parse_cycle_id_from_client_order_id(client_order_id: str) -> int:
+    """
+    Parse cycle_id from clientOrderId format: "AUR-{symbol}-{side}-{action}-C{cycle_id}-{fingerprint}"
+
+    Returns:
+        cycle_id (int): Parsed cycle_id, or 0 if not found (legacy orders).
+    """
+    if not client_order_id:
+        return 0
+
+    # Match pattern: "-C<digits>-" or "-C<digits>" at end
+    match = re.search(r'-C(\d+)(?:-|$)', client_order_id)
+    if match:
+        return int(match.group(1))
+
+    return 0  # Legacy order without cycle_id
 
 
 # ============================================================================
@@ -46,6 +69,7 @@ class PositionView:
     unrealized_pnl: Optional[Decimal] = None
     # Timestamp of last position update (seconds)
     update_ts: float = field(default_factory=time.time)
+    cycle_id: int = 0                   # R2-D: Position cycle identifier
 
     def __post_init__(self):
         """Validate invariants."""
@@ -83,6 +107,8 @@ class OrderView:
     created_ts: float = field(default_factory=time.time)
     # Last order update timestamp (seconds)
     update_ts: float = field(default_factory=time.time)
+    # R2-D: Position cycle identifier (parsed from clientOrderId)
+    cycle_id: int = 0
 
     def __post_init__(self):
         """Validate invariants."""
@@ -277,6 +303,8 @@ class BracketRulesConfig:
     max_sl_legs: int = 1                        # One SL per position
     sl_pct: float = 0.02                        # 2% SL distance from entry
     tp_rr: float = 2.0                          # 2:1 reward/risk ratio
+    # R2-E: Recreate SL/TP if missing (fail-closed)
+    recreate_missing_brackets: bool = True
 
 
 # ============================================================================
@@ -307,6 +335,8 @@ class BracketService:
         self._aggregator = aggregator
         self._guardian = guardian
         self._watchdog = watchdog
+        import logging
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def build_state(
         self,
@@ -555,6 +585,43 @@ class BracketService:
         severity: Literal["INFO", "WARN", "ALERT"] = "INFO"
         why = "brackets_ok|no_violations"
 
+        # R2-D: Filter brackets by cycle_id and CANCEL orphans from previous cycles
+        if state.bracket_set:
+            current_cycle = state.position_view.cycle_id if state.position_view else 0
+
+            # Separate current cycle brackets from old cycle orphans
+            current_cycle_legs: List[BracketLeg] = []
+            orphan_cycle_legs: List[BracketLeg] = []
+
+            for leg in state.bracket_set.legs:
+                if leg.order.cycle_id == current_cycle:
+                    current_cycle_legs.append(leg)
+                else:
+                    orphan_cycle_legs.append(leg)
+
+            # CANCEL orphan brackets from previous cycles
+            if orphan_cycle_legs:
+                severity = "WARN" if severity == "INFO" else severity
+                why = f"orphan_cycle_mismatch|current={current_cycle}"
+
+                for leg in orphan_cycle_legs:
+                    actions.append(BracketAction(
+                        action_type="CANCEL",
+                        order_id=leg.order_id,
+                        client_order_id=leg.order.client_order_id,
+                        reason_code="ORPHAN_CYCLE",
+                        why=f"orphan_cycle|leg_cycle={leg.order.cycle_id}_pos_cycle={current_cycle}",
+                        rid=rid,
+                    ))
+
+            # Rebuild bracket_set with only current cycle legs (filter by .legs field)
+            if current_cycle_legs != state.bracket_set.legs:
+                from dataclasses import replace as dc_replace
+                state = dc_replace(state, bracket_set=dc_replace(
+                    state.bracket_set,
+                    legs=current_cycle_legs,
+                ))
+
         # INVARIANT 1: Position FLAT → No Brackets (Orphan detection)
         if state.is_flat and state.has_brackets:
             severity = "WARN"
@@ -589,20 +656,32 @@ class BracketService:
             # Missing SL
             if sl_count == 0:
                 if not cfg.allow_unprotected_position:
-                    severity = "ALERT"
-                    why = f"missing_sl|pos>0_sl_count=0"
+                    # R2-E: Check if we should recreate missing brackets
+                    if cfg.recreate_missing_brackets:
+                        severity = "ALERT"
+                        why = f"missing_sl|pos>0_sl_count=0"
 
-                    # Compute desired SL level
-                    desired_levels = self._compute_desired_levels(state, cfg)
+                        # Compute desired SL level
+                        desired_levels = self._compute_desired_levels(
+                            state, cfg)
 
-                    actions.append(BracketAction(
-                        action_type="PLACE_SL",
-                        price=desired_levels["sl_price"],
-                        qty=state.position_view.qty,
-                        reason_code="MISSING_SL",
-                        why="missing_sl|pos>0_no_sl",
-                        rid=rid,
-                    ))
+                        actions.append(BracketAction(
+                            action_type="PLACE_SL",
+                            price=desired_levels["sl_price"],
+                            qty=state.position_view.qty,
+                            reason_code="MISSING_SL_RECREATED",
+                            why="missing_sl_recreated|recreate_missing_brackets=true",
+                            rid=rid,
+                        ))
+                    else:
+                        # Honor missing: do not recreate, but warn
+                        severity = "WARN"
+                        why = "missing_sl_honored|recreate_missing_brackets=false"
+                        self.logger.warning(
+                            "[BracketService] Missing SL for open position; honoring config recreate_missing_brackets=False",
+                            extra={
+                                "symbol": state.symbol, "cycle_id": state.position_view.cycle_id if state.position_view else 0, "rid": rid},
+                        )
                 else:
                     # Allowed unprotected position
                     severity = "INFO"
@@ -613,20 +692,33 @@ class BracketService:
                 # Only place TP if we have SL (or are placing one)
                 # This ensures we don't place TP without protection
                 if sl_count > 0 or any(a.action_type == "PLACE_SL" for a in actions):
-                    desired_levels = self._compute_desired_levels(state, cfg)
+                    # R2-E: Check if we should recreate missing TP
+                    if cfg.recreate_missing_brackets:
+                        desired_levels = self._compute_desired_levels(
+                            state, cfg)
 
-                    actions.append(BracketAction(
-                        action_type="PLACE_TP",
-                        price=desired_levels["tp_price"],
-                        qty=state.position_view.qty,
-                        reason_code="MISSING_TP",
-                        why="missing_tp|pos>0_no_tp",
-                        rid=rid,
-                    ))
+                        actions.append(BracketAction(
+                            action_type="PLACE_TP",
+                            price=desired_levels["tp_price"],
+                            qty=state.position_view.qty,
+                            reason_code="MISSING_TP_RECREATED",
+                            why="missing_tp_recreated|recreate_missing_brackets=true",
+                            rid=rid,
+                        ))
 
-                    if severity == "INFO":
-                        severity = "WARN"
-                        why = f"missing_tp|pos>0_tp_count=0"
+                        if severity == "INFO":
+                            severity = "WARN"
+                            why = f"missing_tp|pos>0_tp_count=0"
+                    else:
+                        # Honor missing: do not recreate, but warn
+                        if severity == "INFO":
+                            severity = "WARN"
+                            why = "missing_tp_honored|recreate_missing_brackets=false"
+                        self.logger.warning(
+                            "[BracketService] Missing TP for open position; honoring config recreate_missing_brackets=False",
+                            extra={
+                                "symbol": state.symbol, "cycle_id": state.position_view.cycle_id if state.position_view else 0, "rid": rid},
+                        )
 
             # Too many SL
             if sl_count > cfg.max_sl_legs:
@@ -710,6 +802,17 @@ class BracketService:
                             rid=rid,
                         ))
 
+        # INVARIANT R1-B: Size sync — sum(bracket_qty) <= abs(position_qty) per side
+        # This MUST run after all other invariant checks to ensure oversized brackets are cancelled
+        size_invariant_actions = self._enforce_size_invariants(
+            state, cfg, rid=rid)
+        if size_invariant_actions:
+            actions.extend(size_invariant_actions)
+            if severity == "INFO":
+                severity = "WARN"
+            if why == "brackets_ok|no_violations":
+                why = "size_invariant_violation|bracket_qty>position_qty"
+
         return BracketPlan(
             symbol=state.symbol,
             side=state.side,
@@ -791,6 +894,143 @@ class BracketService:
             "tp_price": tp_price,
         }
 
+    def _enforce_size_invariants(
+        self,
+        state: BracketState,
+        cfg: BracketRulesConfig,
+        *,
+        rid: Optional[str] = None,
+    ) -> List[BracketAction]:
+        """
+        Enforce R1-B size invariants: sum(bracket_qty) <= abs(position_qty) per side.
+
+        This method runs AFTER all other invariant checks to ensure that:
+        - sum(SL_qty) <= abs(position_qty)
+        - sum(TP_qty) <= abs(position_qty)
+
+        If violations detected:
+        - Generate CANCEL actions for oversized brackets
+        - Generate PLACE_SL/PLACE_TP with correct qty (if recalc_on_partial_close=True)
+
+        Args:
+            state: Current bracket state with position + bracket legs.
+            cfg: Bracket rules config (for reference).
+            rid: Optional request ID for tracing.
+
+        Returns:
+            List of BracketAction(CANCEL + PLACE) for resized brackets, or [] if no violations.
+
+        Behavior:
+            - FLAT position (qty≈0): Return [] (orphan cleanup handled separately)
+            - Calculate total_sl_qty and total_tp_qty from state.bracket_set
+            - If total exceeds position_qty:
+              1. CANCEL oversized bracket
+              2. PLACE new bracket with correct qty (if recalc_on_partial_close=True)
+        """
+        actions: List[BracketAction] = []
+
+        # Skip if position is FLAT (orphan cleanup handled by main evaluate logic)
+        if state.is_flat or not state.position_view:
+            return actions
+
+        position_qty = abs(state.position_view.qty)
+
+        # Compute desired levels for PLACE actions
+        desired_levels = self._compute_desired_levels(state, cfg)
+
+        # Track if we need to place new brackets after cancelling
+        need_place_sl = False
+        need_place_tp = False
+
+        # Check SL invariant: sum(SL_qty) <= position_qty
+        sl_legs = state.bracket_set.sl_legs if state.bracket_set else []
+        total_sl_qty = sum(leg.order.qty for leg in sl_legs if leg.order.qty)
+
+        if total_sl_qty > position_qty:
+            excess_sl = total_sl_qty - position_qty
+
+            # Sort SL legs by created_ts (oldest first) or confidence (lowest first)
+            sorted_sl_legs = sorted(
+                sl_legs,
+                key=lambda leg: (leg.confidence, leg.order.created_ts),
+            )
+
+            cancelled_qty = Decimal(0)
+            for leg in sorted_sl_legs:
+                if cancelled_qty >= excess_sl:
+                    break
+
+                actions.append(BracketAction(
+                    action_type="CANCEL",
+                    order_id=leg.order_id,
+                    client_order_id=leg.order.client_order_id,
+                    reason_code="SIZE_INVARIANT_SL",
+                    why=f"size_sync|sl_overshoot_{total_sl_qty}>{position_qty}",
+                    rid=rid,
+                ))
+
+                cancelled_qty += leg.order.qty
+
+            # R2-B-FIX: After cancelling oversized SL, place new SL with correct qty
+            if cfg.recalc_on_partial_close and position_qty > 0:
+                need_place_sl = True
+
+        # Check TP invariant: sum(TP_qty) <= position_qty
+        tp_legs = state.bracket_set.tp_legs if state.bracket_set else []
+        total_tp_qty = sum(leg.order.qty for leg in tp_legs if leg.order.qty)
+
+        if total_tp_qty > position_qty:
+            excess_tp = total_tp_qty - position_qty
+
+            # Sort TP legs similarly
+            sorted_tp_legs = sorted(
+                tp_legs,
+                key=lambda leg: (leg.confidence, leg.order.created_ts),
+            )
+
+            cancelled_qty = Decimal(0)
+            for leg in sorted_tp_legs:
+                if cancelled_qty >= excess_tp:
+                    break
+
+                actions.append(BracketAction(
+                    action_type="CANCEL",
+                    order_id=leg.order_id,
+                    client_order_id=leg.order.client_order_id,
+                    reason_code="SIZE_INVARIANT_TP",
+                    why=f"size_sync|tp_overshoot_{total_tp_qty}>{position_qty}",
+                    rid=rid,
+                ))
+
+                cancelled_qty += leg.order.qty
+
+            # R2-B-FIX: After cancelling oversized TP, place new TP with correct qty
+            if cfg.recalc_on_partial_close and position_qty > 0:
+                need_place_tp = True
+
+        # R2-B-FIX: Place resized brackets AFTER all CANCEL actions
+        if need_place_sl:
+            actions.append(BracketAction(
+                action_type="PLACE_SL",
+                price=desired_levels["sl_price"],
+                qty=position_qty,
+                reason_code="PARTIAL_CLOSE_RESIZE_SL",
+                why=f"size_sync|resize_sl_to_{position_qty}",
+                rid=rid,
+            ))
+
+        if need_place_tp:
+            actions.append(BracketAction(
+                action_type="PLACE_TP",
+                price=desired_levels["tp_price"],
+                qty=position_qty,
+                reason_code="PARTIAL_CLOSE_RESIZE_TP",
+                why=f"size_sync|resize_tp_to_{position_qty}",
+                rid=rid,
+            ))
+
+        return actions
+
     def evaluate_all(
         self,
         positions: Iterable[PositionView],
@@ -853,3 +1093,33 @@ class BracketService:
         Recovery pass wrapper: identical to evaluate_all, kept explicit for DR wiring.
         """
         return self.evaluate_all(positions=positions, orders=orders, cfg=cfg, guardian_meta=guardian_meta, rid=rid)
+
+    def on_algo_order_filled(
+        self,
+        update: Any,
+        state: BracketState,
+        cfg: BracketRulesConfig,
+        rid: Optional[str] = None,
+    ) -> BracketPlan:
+        """
+        React to ALGO_UPDATE event (e.g. conditional order filled).
+        Pure function: returns a BracketPlan based on the update and current state.
+
+        Args:
+            update: AlgoOrderUpdate object (or dict).
+            state: Current BracketState.
+            cfg: Bracket configuration.
+            rid: Request ID.
+
+        Returns:
+            BracketPlan recommending actions (if any).
+        """
+        # This method serves as the integration point for AlgoOrderIndex updates.
+        # Since this service is pure, we treat the update as a signal to re-evaluate
+        # the current state. The caller (Runtime) is responsible for ensuring
+        # 'state' reflects the latest world view (including the effects of the fill if applied).
+
+        # In the future, we can add specific logic here if Algo Orders carry
+        # information not present in standard Position/Order views.
+
+        return self.evaluate(state, cfg, rid=rid)

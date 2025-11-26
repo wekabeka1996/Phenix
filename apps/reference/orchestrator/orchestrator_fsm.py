@@ -100,8 +100,15 @@ class OrchestratorFSM:
         self._cleanup_task: Optional[asyncio.Task] = None
 
         # Register event listeners
-        self.bus.listen("EVT:TRADE_INTENT_PROPOSED",
-                        self._on_trade_intent_proposed)
+        if self.config.enable_trade_intent_listener:
+            self.bus.listen("EVT:TRADE_INTENT_PROPOSED",
+                            self._on_trade_intent_proposed)
+            self.logger.info(
+                "OrchestratorFSM TRADE_INTENT listener enabled (legacy path)")
+        else:
+            self.logger.info(
+                "OrchestratorFSM TRADE_INTENT listener disabled (Bridge gatekeeper)")
+
         self.bus.listen("EVT:ORDER_EXECUTED", self._on_order_executed)
         self.bus.listen("EVT:POSITION_CLOSED", self._on_position_closed)
         self.bus.listen("EVT:ORDER_TIMEOUT", self._on_timeout)

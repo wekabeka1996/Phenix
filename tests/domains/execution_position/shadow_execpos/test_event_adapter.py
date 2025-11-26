@@ -31,8 +31,8 @@ def test_entry_intent(adapter):
     assert event.kind == "ENTRY_INTENT"
     assert event.symbol == "BTCUSDT"
     assert event.payload["side"] == "BUY"
-    assert event.payload["quantity"] == "1.5"
-    assert event.payload["price"] == "50000"
+    assert str(event.payload["quantity"]) == "1.5"
+    assert str(event.payload["price"]) == "50000"
     assert event.payload["order_type"] == "LIMIT"
 
 def test_cancel_intent(adapter):
