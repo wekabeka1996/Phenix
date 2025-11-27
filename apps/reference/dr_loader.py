@@ -125,6 +125,8 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
     replayed_count = 0
     skipped_count = 0
     error_count = 0
+    no_timestamp_count = 0  # Aggregate counter to reduce log spam
+    invalid_timestamp_count = 0  # Aggregate counter for invalid timestamps
 
     for file_path in wal_files:
         logger.debug(f"Scanning WAL file: {file_path.name}")
@@ -145,17 +147,15 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
                             timestamp_raw = msg_dict.get("pld", {}).get("ts")
 
                         if timestamp_raw is None:
-                            logger.warning(
-                                f"No timestamp found in {file_path.name}:{line_num}, skipping"
-                            )
+                            # Aggregate instead of logging each line
+                            no_timestamp_count += 1
                             skipped_count += 1
                             continue
 
                         timestamp_us = _coerce_timestamp_us(timestamp_raw)
                         if timestamp_us is None:
-                            logger.warning(
-                                f"Invalid timestamp value '{timestamp_raw}' in {file_path.name}:{line_num}, skipping"
-                            )
+                            # Aggregate instead of logging each line
+                            invalid_timestamp_count += 1
                             skipped_count += 1
                             continue
 
@@ -208,6 +208,14 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
             logger.error(f"Failed to read WAL file {file_path.name}: {e}")
             error_count += 1
             continue
+
+    # Log aggregated timestamp issues only if there are any
+    if no_timestamp_count > 0:
+        logger.debug(
+            f"WAL entries without timestamp: {no_timestamp_count} (skipped)")
+    if invalid_timestamp_count > 0:
+        logger.debug(
+            f"WAL entries with invalid timestamp: {invalid_timestamp_count} (skipped)")
 
     logger.info(
         f"WAL Replay Summary: {replayed_count} replayed, {skipped_count} skipped (before snapshot), {error_count} errors"

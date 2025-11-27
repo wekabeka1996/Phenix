@@ -174,16 +174,21 @@ async def test_time_sync_retry_failure_structured_error(adapter):
 
 
 @pytest.mark.asyncio
-async def test_recvwindow_is_5000ms(adapter):
+async def test_recvwindow_is_appropriate_for_env(adapter):
     """
-    EXEC-R2-J: Verify recvWindow is 5000ms (conservative, from EP-ADAPTER-TIME-SYNC-FIX-S20).
+    EXEC-R2-J / TASK-3: Verify recvWindow is appropriate for environment.
+
+    - Testnet (demo-fapi, testnet.binancefuture): recvWindow = 20000ms (higher latency)
+    - Mainnet (fapi.binance): recvWindow = 5000ms (per Binance recommendation)
 
     Scenario:
-    1. Inspect _get_signed_params to ensure recvWindow = 5000
+    1. Inspect _get_signed_params to ensure recvWindow is set correctly
     2. Place mock order to verify recvWindow in request params
 
-    Expected: recvWindow = 5000ms in all signed requests
+    Expected: recvWindow = 20000ms for testnet, 5000ms for mainnet
     """
+    from apps.reference.domains.execution_position.binance_execution_adapter import BASE_URL
+
     # Mock HTTP client to capture params
     captured_params = []
 
@@ -218,7 +223,13 @@ async def test_recvwindow_is_5000ms(adapter):
     assert len(captured_params) > 0, "Expected at least one HTTP call"
     params = captured_params[0]
     assert "recvWindow" in params, "Expected recvWindow in params"
-    assert params["recvWindow"] == "5000", f"Expected recvWindow=5000, got {params['recvWindow']}"
+
+    # Determine expected value based on BASE_URL
+    is_testnet = "demo-fapi" in BASE_URL or "testnet" in BASE_URL
+    expected_recv_window = "20000" if is_testnet else "5000"
+
+    assert params["recvWindow"] == expected_recv_window, \
+        f"Expected recvWindow={expected_recv_window} for {'testnet' if is_testnet else 'mainnet'}, got {params['recvWindow']}"
 
 
 @pytest.mark.asyncio
@@ -252,9 +263,10 @@ async def test_time_sync_warnings_only_on_material_change(monkeypatch, caplog, a
     )
 
     caplog.set_level(logging.WARNING)
-    await adapter._sync_time_with_server()
-    await adapter._sync_time_with_server()
-    await adapter._sync_time_with_server()
+    # Use force=True to bypass caching and actually hit the server mock each time
+    await adapter._sync_time_with_server(force=True)
+    await adapter._sync_time_with_server(force=True)
+    await adapter._sync_time_with_server(force=True)
 
     warnings = [
         rec for rec in caplog.records if "Time drift" in rec.getMessage()]
@@ -393,4 +405,5 @@ async def test_get_open_orders_timesync_1021_enters_fallback_and_returns_empty(m
 
     assert orders == []
     assert call_counter["count"] == GET_OPEN_ORDERS_MAX_ATTEMPTS
-    assert adapter.fsm.exposure_guard.reasons == ["API_ORDERS_TIME_SYNC_FAILED"]
+    assert adapter.fsm.exposure_guard.reasons == [
+        "API_ORDERS_TIME_SYNC_FAILED"]

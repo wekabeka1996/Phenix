@@ -86,15 +86,15 @@ class WebSocketAggregator:
         ts: int,
     ) -> None:
         """
-        Process bookTicker stream update.
+        Process bookTicker stream update. O(1) non-blocking update.
 
         Args:
-            symbol: Trading symbol
-            bid_price: Bid price
-            bid_size: Bid size (quantity)
-            ask_price: Ask price
-            ask_size: Ask size (quantity)
-            ts: Timestamp
+            symbol: Trading symbol.
+            bid_price: Bid price (string for precision).
+            bid_size: Bid size quantity (string).
+            ask_price: Ask price (string).
+            ask_size: Ask size quantity (string).
+            ts: Timestamp in milliseconds.
         """
         if symbol not in self.state:
             return
@@ -115,14 +115,14 @@ class WebSocketAggregator:
         self, symbol: str, price: str, quantity: str, is_buyer_maker: bool, ts: int
     ) -> None:
         """
-        Process trade stream update.
+        Process trade stream update. O(1) amortized non-blocking update.
 
         Args:
-            symbol: Trading symbol
-            price: Trade price
-            quantity: Trade quantity
-            is_buyer_maker: True if buyer is maker (sell), False if seller is maker (buy)
-            ts: Timestamp in milliseconds
+            symbol: Trading symbol.
+            price: Trade price (string for precision).
+            quantity: Trade quantity (string).
+            is_buyer_maker: True if buyer is maker (sell), False if seller is maker (buy).
+            ts: Timestamp in milliseconds.
         """
         if symbol not in self.state:
             return
@@ -134,7 +134,7 @@ class WebSocketAggregator:
         if state["window_start_time"] is None:
             state["window_start_time"] = current_time
 
-        # Clean up old trades outside window
+        # Clean up old trades outside window (amortized O(1) per call)
         window_cutoff = current_time - timedelta(seconds=self.window_seconds)
         while state["trades_window"] and state["trades_window"][0][0] < window_cutoff:
             old_is_seller_maker = state["trades_window"].popleft()[1]
@@ -143,24 +143,16 @@ class WebSocketAggregator:
             else:
                 state["buy_trades"] = max(0, state["buy_trades"] - 1)
 
-        # Add new trade
+        # Add new trade to window and update counters
         state["trades_window"].append((current_time, is_buyer_maker))
         if is_buyer_maker:
             state["sell_trades"] += 1
         else:
             state["buy_trades"] += 1
 
-        # Update price
+        # Update price (Decimal for precision)
         state["latest_price"] = decimal.Decimal(price)
         state["prices"].append(decimal.Decimal(price))
-
-        # Trigger anchor update callback if this is an anchor
-        if symbol in self.anchors and self.on_anchor_update_callback:
-            try:
-                # We'll call it asynchronously later (from async context)
-                pass  # Async callback will be handled in periodic_emit
-            except Exception as e:
-                LOG.error(f"Error in anchor callback for {symbol}: {e}")
 
         LOG.debug(
             f"Trade {symbol}: price={price}, qty={quantity}, "
@@ -172,11 +164,14 @@ class WebSocketAggregator:
         """
         Get current market tick with calculated features.
 
+        All numeric fields are returned as strings for JSON serialization.
+        Schema: { ts, symbol, price, bid, ask, mid, bid_size, ask_size, buy_volume, sell_volume, features, data_source, bid_ask_count, trade_count }
+
         Args:
-            symbol: Trading symbol
+            symbol: Trading symbol.
 
         Returns:
-            Dictionary with market data and calculated features, or None
+            Dictionary with market data and calculated features (all numeric as strings), or None if insufficient data.
         """
         if symbol not in self.state:
             return None
@@ -187,18 +182,18 @@ class WebSocketAggregator:
         if state["bid_ask_time"] is None or not state["prices"]:
             return None
 
-        # Calculate features
+        # Calculate features using Decimal for precision
         bid_size = state["bid_size"]
         ask_size = state["ask_size"]
         buy_trades = state["buy_trades"]
         sell_trades = state["sell_trades"]
 
-        # OBI: Order Book Imbalance
+        # OBI: Order Book Imbalance (Decimal -> string for JSON)
         depth = bid_size + ask_size
         obi = (bid_size - ask_size) / \
             depth if depth > 0 else decimal.Decimal(0)
 
-        # TFI: Trade Flow Imbalance
+        # TFI: Trade Flow Imbalance (Decimal -> string for JSON)
         total_trades = buy_trades + sell_trades
         tfi = (
             decimal.Decimal(buy_trades - sell_trades) /
@@ -207,7 +202,7 @@ class WebSocketAggregator:
             else decimal.Decimal(0)
         )
 
-        # delta_price
+        # delta_price: Price change (Decimal -> string for JSON)
         if len(state["prices"]) >= 2:
             prev_price = state["prices"][-2]
             delta_price = (
@@ -218,51 +213,74 @@ class WebSocketAggregator:
         else:
             delta_price = decimal.Decimal(0)
 
+        # Return tick with all numeric fields as strings (JSON-safe)
         return {
-            "ts": state["bid_ask_time"],
+            "ts": str(state["bid_ask_time"]),
             "symbol": symbol,
             "price": str(state["latest_price"]),
             "bid": str(state["bid_price"]),
             "ask": str(state["ask_price"]),
             "mid": str((state["bid_price"] + state["ask_price"]) / 2),
-            "bid_size": str(bid_size),  # NOW REAL!
-            "ask_size": str(ask_size),  # NOW REAL!
-            "buy_volume": str(buy_trades),  # Real trade count
-            "sell_volume": str(sell_trades),  # Real trade count
+            "bid_size": str(bid_size),  # String for JSON serialization
+            "ask_size": str(ask_size),  # String for JSON serialization
+            "buy_volume": str(buy_trades),  # String (real trade count)
+            "sell_volume": str(sell_trades),  # String (real trade count)
             "features": {
                 "obi": str(obi),
                 "tfi": str(tfi),
                 "delta_price": str(delta_price),
                 "absorption": "0.0",
             },
-            "data_source": "websocket_live",
+            "data_source": "websocket_live",  # Will be dynamic in Phase 2
             "bid_ask_count": f"{int(bid_size)}/{int(ask_size)}",
             "trade_count": f"BUY:{buy_trades} SELL:{sell_trades}",
         }
 
     async def periodic_emit(self, interval_seconds: float = 1.0) -> None:
         """
-        Periodically emit market ticks for all symbols.
+        Periodically emit market ticks for all symbols and anchors.
+
+        Exception handling is per-callback to ensure one failing callback does not crash the loop.
 
         Args:
-            interval_seconds: How often to emit ticks
+            interval_seconds: Emission interval in seconds.
         """
         while True:
             try:
-                # Emit trading symbols
+                # Emit trading symbol ticks
                 for symbol in self.symbols:
-                    tick = self.get_market_tick(symbol)
-                    if tick and self.on_tick_callback:
-                        await self.on_tick_callback(symbol, tick)
+                    try:
+                        tick = self.get_market_tick(symbol)
+                        if tick and self.on_tick_callback:
+                            LOG.debug(f"📤 Emitting MARKET_TICK for {symbol}")
+                            await self.on_tick_callback(symbol, tick)
+                        elif not tick:
+                            LOG.debug(f"⚠️ No tick data for {symbol}")
+                    except Exception as e:
+                        LOG.error(
+                            f"Error emitting tick for {symbol}: {e}", exc_info=True)
+
+                # Log tick summary every 30 iterations (every ~2.5 min at 5s interval)
+                # This provides visibility without spam
 
                 # Emit anchor price updates
                 for anchor in self.anchors:
-                    if anchor in self.state:
-                        price = self.state[anchor]["latest_price"]
-                        if price and self.on_anchor_update_callback:
-                            await self.on_anchor_update_callback(anchor, str(price))
+                    try:
+                        if anchor in self.state:
+                            price = self.state[anchor]["latest_price"]
+                            if price and self.on_anchor_update_callback:
+                                LOG.debug(
+                                    f"📤 Emitting anchor update for {anchor}: {price}")
+                                await self.on_anchor_update_callback(anchor, str(price))
+                    except Exception as e:
+                        LOG.error(
+                            f"Error emitting anchor update for {anchor}: {e}", exc_info=True)
 
                 await asyncio.sleep(interval_seconds)
+            except asyncio.CancelledError:
+                LOG.info("periodic_emit cancelled")
+                break
             except Exception as e:
-                LOG.error(f"Error in periodic_emit: {e}", exc_info=True)
+                LOG.error(
+                    f"Unexpected error in periodic_emit: {e}", exc_info=True)
                 await asyncio.sleep(interval_seconds)

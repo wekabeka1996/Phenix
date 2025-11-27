@@ -229,13 +229,13 @@ class TestRestTimeout:
     """Test REST timeout configuration (EP-ADAPTER-TIMEOUT-CONFIG-S20)."""
 
     def test_default_timeout_20_seconds(self, mock_config):
-        """Default REST timeout is 20.0 seconds."""
+        """Default REST timeout is 60.0 seconds (updated from 20)."""
         adapter = BinanceExecutionAdapter(
             fsm=None,
             config=mock_config,
             shadow_mode=True
         )
-        assert adapter._rest_timeout == 20.0
+        assert adapter._rest_timeout == 60.0
 
     def test_custom_timeout_from_init(self, mock_config):
         """Custom REST timeout from __init__ parameter."""

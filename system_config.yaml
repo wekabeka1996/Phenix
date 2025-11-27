@@ -337,7 +337,7 @@ instruments:
       quantity: 2  # from trading.instruments.SOLUSDT.step_size "0.01"
       price: 2     # from trading.instruments.SOLUSDT.tick_size "0.01"
     limits:
-      min_notional: 10.0  # from trading.instruments.SOLUSDT.min_notional "10"
+      min_notional: 5.0   # UPDATED 2025-11-27: Binance Futures SOLUSDT requires 5 USDT min notional
       min_qty: 0.01       # inferred from Binance LOT_SIZE filter
       min_price: 0.01     # inferred from Binance PRICE_FILTER
       step_size: 0.01     # from trading.instruments.SOLUSDT.step_size "0.01"
@@ -352,7 +352,7 @@ instruments:
       quantity: 3  # from trading.instruments.ETHUSDT.step_size "0.001"
       price: 2     # from trading.instruments.ETHUSDT.tick_size "0.01"
     limits:
-      min_notional: 10.0  # from trading.instruments.ETHUSDT.min_notional "10"
+      min_notional: 20.0  # UPDATED 2025-11-27: Binance Futures ETHUSDT requires 20 USDT min notional
       min_qty: 0.001
       min_price: 0.01
       step_size: 0.001    # from trading.instruments.ETHUSDT.step_size "0.001"
@@ -368,7 +368,7 @@ instruments:
       price: 2     # from trading.instruments.BTCUSDT.tick_size "0.10" -> 2 decimals? Wait, "0.10" is 1 decimal, but typically 2 for price
       # Actually, tick_size "0.10" means 1 decimal place, but for BTC it's usually 2. But follow legacy.
     limits:
-      min_notional: 10.0  # from trading.instruments.BTCUSDT.min_notional "10"
+      min_notional: 100.0  # UPDATED 2025-11-27: Binance Futures BTCUSDT requires 100 USDT min notional
       min_qty: 0.001
       min_price: 0.10
       step_size: 0.001    # from trading.instruments.BTCUSDT.step_size "0.001"
@@ -383,7 +383,7 @@ instruments:
       quantity: 2  # from trading.instruments.BNBUSDT.step_size "0.01"
       price: 2     # from trading.instruments.BNBUSDT.tick_size "0.01"
     limits:
-      min_notional: 10.0  # from trading.instruments.BNBUSDT.min_notional "10"
+      min_notional: 20.0  # UPDATED 2025-11-27: Binance Futures BNBUSDT requires 20 USDT min notional
       min_qty: 0.01
       min_price: 0.01
       step_size: 0.01     # from trading.instruments.BNBUSDT.step_size "0.01"

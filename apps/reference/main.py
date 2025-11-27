@@ -835,6 +835,20 @@ em_handler.addFilter(
 domain_handlers["execution_management"] = em_handler
 root_logger.addHandler(em_handler)
 
+# Market Data domain logs (separate file for high-frequency data)
+md_log_file = logs_dir / "domain_market_data.log"
+md_handler = RotatingFileHandler(
+    md_log_file, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
+md_handler.setLevel(logging.DEBUG)
+md_handler.setFormatter(file_formatter)
+md_handler.addFilter(
+    lambda record: record.name.startswith(
+        "apps.reference.domains.market_data")
+)
+domain_handlers["market_data"] = md_handler
+root_logger.addHandler(md_handler)
+
 # Event Chain structured logs (JSON format)
 chain_log_file = logs_dir / "event_chain.log"
 chain_handler = RotatingFileHandler(
@@ -1085,8 +1099,8 @@ def main() -> None:
         fsm=fsm, config=config.to_dict(), environment=risk_portfolio_source)
 
     # Market Data Connector (source of market ticks)
-    # Pass full config dict to access both system.yaml (trading section) and use_testnet
-    market_data = MarketDataConnector(fsm=fsm, config=config.to_dict())
+    # Pass full config object to access trading section attributes
+    market_data = MarketDataConnector(fsm=fsm, config=config)
 
     # Feature Store (stores historical features for backtesting)
     def _init_feature_store(path: Path) -> FeatureStore:
@@ -1448,7 +1462,20 @@ def main() -> None:
     account_observer.start()
 
     LOG.info("Starting market data connector...")
-    market_data.start()
+    # MarketDataConnector requires async loop - use guardian_loop
+    if guardian_loop is not None and guardian_loop.is_running():
+        try:
+            market_data_future = asyncio.run_coroutine_threadsafe(
+                market_data.start_async(),
+                guardian_loop,
+            )
+            market_data_future.result(timeout=10)  # Wait up to 10s for startup
+            LOG.info("✅ MarketDataConnector started via async loop")
+        except Exception as e:
+            LOG.error(f"Failed to start MarketDataConnector: {e}")
+    else:
+        LOG.warning(
+            "⚠️ No async loop available for MarketDataConnector - market data will not be available")
 
     LOG.info("Starting feature engineering...")
     feature_engineering.start()
@@ -1524,6 +1551,23 @@ def main() -> None:
                     guardian_loop.close()
                 except Exception:
                     pass
+
+        # Stop async resources in execution_position adapter (http client cleanup)
+        if 'execution_position' in locals() and execution_position is not None:
+            try:
+                adapter = getattr(execution_position, 'adapter', None)
+                if adapter is not None and hasattr(adapter, 'stop_async'):
+                    # Run async cleanup
+                    try:
+                        loop = asyncio.new_event_loop()
+                        loop.run_until_complete(adapter.stop_async())
+                        loop.close()
+                        LOG.info(
+                            "Execution position adapter HTTP client closed.")
+                    except Exception as async_e:
+                        LOG.warning(f"Error during async cleanup: {async_e}")
+            except Exception as e:
+                LOG.debug(f"Could not cleanup execution adapter: {e}")
 
         # Helper to stop components safely if they exist
         for name in [

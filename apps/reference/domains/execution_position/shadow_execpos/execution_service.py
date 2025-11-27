@@ -486,6 +486,47 @@ class ExecutionService:
                 order_id=order_id
             )
 
+            # Handle structured timeout response from adapter
+            if isinstance(response, dict) and response.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
+                logger.warning(
+                    f"SHADOW_EXEC_POS_CANCEL_TIMEOUT",
+                    extra={
+                        "symbol": symbol,
+                        "order_id": order_id,
+                        "client_order_id": client_order_id
+                    }
+                )
+                return {
+                    "status": ExecutionStatus.FAILED,
+                    "success": False,
+                    "order_id": order_id,
+                    "client_order_id": client_order_id,
+                    "error": response.get("error", "Cancel timeout"),
+                    "error_kind": "ADAPTER_ERROR_TIMEOUT",
+                    "is_timeout": True,
+                    "metadata": response
+                }
+
+            # Handle structured error response (non-timeout)
+            if isinstance(response, dict) and response.get("success") is False:
+                error_msg = response.get("msg") or response.get("error") or "Cancel failed"
+                logger.warning(
+                    f"SHADOW_EXEC_POS_CANCEL_FAILED",
+                    extra={
+                        "symbol": symbol,
+                        "order_id": order_id,
+                        "error": error_msg
+                    }
+                )
+                return {
+                    "status": ExecutionStatus.FAILED,
+                    "success": False,
+                    "order_id": order_id,
+                    "client_order_id": client_order_id,
+                    "error": error_msg,
+                    "metadata": response
+                }
+
             logger.info(
                 f"SHADOW_EXEC_POS_CANCEL_SUCCESS",
                 extra={
@@ -522,6 +563,27 @@ class ExecutionService:
                     "client_order_id": client_order_id,
                     "error": "UNKNOWN_ORDER",
                     "metadata": {"idempotent": True, "exception": str(e)}
+                }
+
+            # Handle httpx timeout exceptions
+            if httpx and isinstance(e, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
+                logger.warning(
+                    f"SHADOW_EXEC_POS_CANCEL_TIMEOUT_EXCEPTION",
+                    extra={
+                        "symbol": symbol,
+                        "order_id": order_id,
+                        "error": str(e)
+                    }
+                )
+                return {
+                    "status": ExecutionStatus.FAILED,
+                    "success": False,
+                    "order_id": order_id,
+                    "client_order_id": client_order_id,
+                    "error": str(e),
+                    "error_kind": "ADAPTER_ERROR_TIMEOUT",
+                    "is_timeout": True,
+                    "metadata": {"exception": str(e)}
                 }
 
             error_normalized = self._normalize_error(e)

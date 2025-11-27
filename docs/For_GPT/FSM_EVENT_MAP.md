@@ -25,6 +25,7 @@ These actions are performed by `ExecutionService` or emitted as events.
 | `ExecutionService.close_position` | `CLOSE_INTENT` | Sends market close order. |
 | `EVT:EXEC_POS_EXPOSURE_UPDATED` | `TRADE_EXECUTED` | Emitted via `ExposureBridge` to notify risk/portfolio. |
 | `WAL Write` | `TRADE_EXECUTED` | Persists `EXEC_TRADE` and `EXEC_POSITION` to disk. |
+| `BRACKETS_EXEC` | `TRADE_EXECUTED` / `Guard Loop` | Logs bracket plan execution (PLACE_SL, PLACE_TP, CANCEL). |
 
 ## 3. State Transitions
 State is managed in `_positions_by_symbol` and `_open_orders_by_symbol`.
@@ -33,6 +34,7 @@ State is managed in `_positions_by_symbol` and `_open_orders_by_symbol`.
 - **On `TRADE_EXECUTED`:**
     - Update `_positions_by_symbol` (qty += fill_qty, entry_price set on first open).
     - Remove from `_open_orders_by_symbol` (if fully filled).
+    - **Trigger Brackets:** Evaluate and apply TP/SL orders via `BracketService`.
 - **On `CLOSE_INTENT` (Success):** Set `_positions_by_symbol[symbol]` to zero/flat.
 
 ## 4. Legacy/Deprecated Events

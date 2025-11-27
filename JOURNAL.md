@@ -1,4 +1,54 @@
 ﻿---
+**RID**: `ADAPTER-HARDENING-4FIXES`
+**Date**: 2025-11-27
+**Task**: Binance Adapter Hardening - 4 Critical Fixes from Log Analysis
+**Priority**: P0 (Production-blocking issues)
+**Why**: Log analysis revealed -4164 MIN_NOTIONAL rejection, ConnectTimeout mishandling, -1021 time sync issues
+
+**Changes Made**:
+
+1. **TASK 1: MIN_NOTIONAL Config Updates**
+   - `system_config.yaml` + `config/instruments.yaml`:
+     - BTCUSDT: 10.0 → 100.0 USDT
+     - ETHUSDT: 10.0 → 20.0 USDT
+     - BNBUSDT: 10.0 → 20.0 USDT
+     - SOLUSDT: 10.0 → 5.0 USDT
+   - Enhanced `-4164` error logging with symbol, qty, price, notional, deficit
+   - New test file: `test_min_notional_validation.py` (12 tests)
+
+2. **TASK 2: Timeout Logging Invariant**
+   - Verified `execution_service.py` correctly logs FAILED (not SUCCESS) on timeout
+   - New test file: `test_execution_service_timeout_invariant.py` (7 tests)
+   - Tests confirm: timeout → FAILED log, never SUCCESS
+
+3. **TASK 3: Testnet Stability**
+   - BASE_URL changed: `testnet.binancefuture.com` → `demo-fapi.binance.com`
+   - recvWindow: 5000ms → 20000ms for testnet (auto-detected)
+   - Updated test: `test_recvwindow_is_appropriate_for_env`
+
+4. **TASK 4: Telemetry** (deferred)
+   - Bracket error telemetry to `logs/bracket_errors.jsonl` — future work
+
+**Test Results**:
+- `test_min_notional_validation.py`: 12/12 PASSED
+- `test_execution_service_timeout_invariant.py`: 7/7 PASSED
+- `test_binance_adapter_time_sync.py`: 7/7 PASSED
+- Total execution_position: 618 passed, 11 skipped, 2 xfailed
+
+**Files Modified**:
+- `apps/reference/domains/execution_position/binance_execution_adapter.py`
+- `system_config.yaml`
+- `config/instruments.yaml`
+- `tests/domains/execution_position/test_binance_adapter_time_sync.py`
+
+**Files Created**:
+- `tests/domains/execution_position/test_min_notional_validation.py`
+- `tests/domains/execution_position/shadow_execpos/test_execution_service_timeout_invariant.py`
+- `TASK_ADAPTER_HARDENING_4_FIXES.md`
+
+**Links**: Log `logs/aurora_core.log` 2025-11-27 00:41-00:42
+
+---
 **RID**: `EXEC-AUDIT-V2-FULL`
 **Date**: 2025-11-26
 **Task**: Forensic Audit of execution_position Domain (ExecPosRuntimeV2 + BinanceExecutionAdapterV2)

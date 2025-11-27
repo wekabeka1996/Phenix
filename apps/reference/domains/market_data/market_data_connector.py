@@ -7,29 +7,23 @@ Emits EVT:MARKET_TICK_RECEIVED with accurate feature data.
 """
 
 import asyncio
-import decimal
+import json
 import logging
-import threading
 import time
 from typing import Any, Optional, TYPE_CHECKING
+
+import aiohttp
 
 from apps.reference.adapters.binance_adapter import BinanceAdapter
 from apps.reference.utils import get_domain_mode_from_mapping
 from .websocket_aggregator import WebSocketAggregator
-from .market_ws_client import MarketWSClient
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
 
+from apps.reference.config_models import AuroraConfig
+
 LOG = logging.getLogger(__name__)
-
-# Check if unicorn_binance_websocket_api is available (for backward compatibility testing)
-try:
-    import unicorn_binance_websocket_api
-
-    HAS_UNICORN = True
-except ImportError:
-    HAS_UNICORN = False
 
 
 class MarketDataConnector:
@@ -44,184 +38,80 @@ class MarketDataConnector:
     Results in REAL features, not constants!
     """
 
-    def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
+    # WebSocket URLs for live and testnet
+    WS_URL_LIVE = "wss://stream.binance.com:9443/ws"
+    WS_URL_TESTNET = "wss://stream.testnet.binance.vision/ws"
+
+    def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         """
-        Initialize the connector.
+        Initialize the connector with validated Config V2 object.
 
         Args:
             fsm: FSM core instance for event emission.
-            config: Full configuration dictionary.
+            config: AuroraConfig V2 object (validated on load).
+
+        Raises:
+            ValueError: If required config keys are missing.
         """
         self.fsm = fsm
         self.config = config
-        self.thread: Optional[threading.Thread] = None
         self.running = False
-        self.data_source_tag = "testnet"
-        # Will be set after init
         self.feature_engineering: Optional[Any] = None
 
-        # 🆕 FIX: Read trading config directly (not from system.trading)
-        # Config structure: merged_config = {trading: {...}, system: {...}}
-        if hasattr(self.config, "trading"):
-            trading_section = self.config.trading
-        elif isinstance(self.config, dict):
-            trading_section = self.config.get("trading", {})
-        else:
-            trading_section = {}
+        # Background tasks
+        self._ws_task: Optional[asyncio.Task] = None
+        self._emit_task: Optional[asyncio.Task] = None
 
-        # Get symbols from config.instruments (SOLUSDT, ETHUSDT), NOT hardcoded defaults
-        try:
-            if hasattr(trading_section, "instruments"):
-                instruments = trading_section.instruments or {}
-            elif isinstance(trading_section, dict):
-                instruments = trading_section.get("instruments", {})
-            else:
-                instruments = {}
-        except Exception:
-            instruments = {}
-        self.symbols = list(instruments.keys()) if instruments else [
-            "SOLUSDT", "ETHUSDT"]
+        # WebSocket client session and connection
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
 
-        # Get anchor symbols from config.market_data.macro_sync.anchors
-        macro_sync_config = trading_section.get(
-            "market_data", {}).get("macro_sync", {})
-        try:
-            self.anchors = self.config.trading.market_data.macro_sync.anchors
-        except Exception:
-            # Fallback to dict-based anchors resolution
-            try:
-                self.anchors = list((trading_section.get("market_data", {})
-                                     .get("macro_sync", {})
-                                     .get("anchors", [])) or [])
-            except Exception:
-                self.anchors = []
-        LOG.info(f"✅ Macro sync anchors: {self.anchors}")
+        # Load trading section (guaranteed valid by AuroraConfig validation).
+        trading = self.config.trading
 
-        # Configure polling interval and streams (Pydantic-first with dict fallback)
-        poll_interval_sec = 2.0
-        websocket_streams = ["bookTicker", "trade"]
-        try:
-            if hasattr(trading_section, "market_data") and getattr(trading_section, "market_data"):
-                md = trading_section.market_data
-                poll_interval_sec = float(
-                    getattr(md, "poll_interval_sec", poll_interval_sec))
-                websocket_streams = list(
-                    getattr(md, "websocket_streams", websocket_streams))
-            elif isinstance(trading_section, dict):
-                md = trading_section.get("market_data", {})
-                poll_interval_sec = float(
-                    md.get("poll_interval_sec", poll_interval_sec))
-                websocket_streams = list(
-                    md.get("websocket_streams", websocket_streams))
-        except Exception:
-            pass
-        self.poll_interval_sec = poll_interval_sec
-        self.websocket_streams = websocket_streams
-
-        # Configure WebSocket Market Data (FSMP-P2)
-        self.use_ws_market_data = False
-        try:
-            if hasattr(trading_section, "market_data"):
-                md = trading_section.market_data
-                self.use_ws_market_data = getattr(
-                    md, "use_ws_market_data", False)
-            elif isinstance(trading_section, dict):
-                md = trading_section.get("market_data", {})
-                self.use_ws_market_data = md.get("use_ws_market_data", False)
-        except Exception:
-            pass
-
-        self.ws_client: Optional[MarketWSClient] = None
-        if self.use_ws_market_data:
-            # Include anchors in WS subscription
-            ws_symbols = list(set(self.symbols + self.anchors))
-            self.ws_client = MarketWSClient(
-                symbols=ws_symbols,
-                on_book_ticker=self._on_ws_book_ticker,
-                on_trade=self._on_ws_trade,
-                reconnect_interval_sec=5
-            )
-            LOG.info(
-                f"✅ MarketWSClient initialized for {len(ws_symbols)} symbols")
-
-        # Initialize the BinanceAdapter based on the domain-level trading_mode
-        mode = "live"  # Default for market_data domain
-
-        # Try to get domain-specific mode first
-        if hasattr(config, "get_domain_mode"):
-            try:
-                mode = config.get_domain_mode("market_data")
-                LOG.info(
-                    f"MarketDataConnector using domain-specific mode: {mode}")
-            except Exception as e:
-                LOG.warning(f"Could not get domain mode, using fallback: {e}")
-                try:
-                    mode = get_domain_mode_from_mapping(
-                        self.config, "market_data")
-                except Exception:
-                    mode = getattr(self.config, "trading_mode", "testnet") if not isinstance(
-                        self.config, dict) else self.config.get("trading_mode", "testnet")
-        else:
-            try:
-                mode = get_domain_mode_from_mapping(self.config, "market_data")
-                LOG.info(
-                    "MarketDataConnector using domain-specific mode via resolver: %s",
-                    mode,
-                )
-            except Exception:
-                if hasattr(self.config, "trading_mode"):
-                    mode = getattr(self.config, "trading_mode", "testnet")
-                elif isinstance(self.config, dict):
-                    mode = self.config.get("trading_mode", "testnet")
-                else:
-                    mode = "testnet"
-                LOG.info(
-                    f"MarketDataConnector using global trading_mode: {mode}")
-
-        # Resolve API env config (Pydantic-first with dict fallback)
-        api_key = api_secret = rest_url = None
-        if hasattr(self.config, "binance_api"):
-            bapi = self.config.binance_api
-            if mode in ["live", "hybrid_live_data_testnet_exec"]:
-                env = getattr(bapi, "live", None)
-                self.data_source_tag = "live"
-                LOG.info(
-                    "MarketDataConnector is configured to use LIVE data source.")
-            else:
-                env = getattr(bapi, "testnet", None)
-                self.data_source_tag = "testnet"
-                LOG.info(
-                    "MarketDataConnector is configured to use TESTNET data source.")
-
-            if env is not None:
-                api_key = getattr(env, "api_key", None)
-                api_secret = getattr(env, "api_secret", None)
-                rest_url = getattr(env, "rest_url", None)
-        elif isinstance(self.config, dict):
-            bapi = self.config.get("binance_api", {})
-            env_dict = bapi.get("live", {}) if mode in [
-                "live", "hybrid_live_data_testnet_exec"] else bapi.get("testnet", {})
-            self.data_source_tag = "live" if mode in [
-                "live", "hybrid_live_data_testnet_exec"] else "testnet"
-            api_key = env_dict.get("api_key")
-            api_secret = env_dict.get("api_secret")
-            rest_url = env_dict.get("rest_url")
-
-        if not all([api_key, api_secret, rest_url]):
+        # Symbols: Load from instruments dict keys. Fail if empty.
+        self.symbols: list[str] = list(trading.instruments.keys())
+        if not self.symbols:
             raise ValueError(
-                f"API configuration for '{mode}' mode is incomplete.")
+                "trading.instruments must contain at least one symbol")
 
+        # Anchors: Load from macro_sync config. Fail if None/missing.
+        if not trading.market_data or not trading.market_data.macro_sync:
+            raise ValueError(
+                "trading.market_data.macro_sync must be configured")
+        self.anchors: list[str] = trading.market_data.macro_sync.anchors
+
+        # Poll interval: Direct access (validated by Pydantic).
+        self.poll_interval_sec: int = trading.market_data.poll_interval_sec
+        self.websocket_streams = ["bookTicker", "trade"]
+
+        # Resolve domain mode (live vs testnet).
+        mode = get_domain_mode_from_mapping(self.config, "market_data")
+        self.data_source_tag = "live" if mode in [
+            "live", "hybrid_live_data_testnet_exec"] else "testnet"
+
+        # Load API credentials based on resolved mode.
+        env = (self.config.binance_api.live
+               if self.data_source_tag == "live"
+               else self.config.binance_api.testnet)
+        if not all([env.api_key, env.api_secret, env.rest_url]):
+            raise ValueError(
+                f"API configuration for '{self.data_source_tag}' mode is incomplete: "
+                f"missing api_key/api_secret/rest_url")
+
+        # Initialize BinanceAdapter with clean credentials.
         self.adapter = BinanceAdapter(
-            api_key=str(api_key),
-            api_secret=str(api_secret),
-            rest_url=str(rest_url),
+            api_key=str(env.api_key),
+            api_secret=str(env.api_secret),
+            rest_url=str(env.rest_url),
         )
 
-        # Initialize WebSocket aggregator for real-time data collection
+        # Initialize WebSocket aggregator for real-time data collection.
         self.aggregator = WebSocketAggregator(
             self.symbols, window_seconds=60, anchors=self.anchors)
-        LOG.info(
-            f"✅ WebSocket Aggregator initialized for {self.symbols} with anchors: {self.anchors}")
+
+        LOG.info(f"✅ MarketDataConnector initialized: symbols={self.symbols}, "
+                 f"anchors={self.anchors}, mode={self.data_source_tag}")
 
     def set_feature_engineering(self, fe: Any) -> None:
         """
@@ -246,249 +136,276 @@ class MarketDataConnector:
         if self.feature_engineering:
             self.feature_engineering.update_anchor_price(anchor, price)
 
-    def _on_ws_book_ticker(self, payload: dict[str, Any]) -> None:
-        """Callback for WebSocket bookTicker updates."""
+    def _get_ws_url(self) -> str:
+        """
+        Get the correct WebSocket URL based on data_source_tag.
+
+        Returns:
+            WebSocket URL string (live or testnet).
+        """
+        if self.data_source_tag == "live":
+            return self.WS_URL_LIVE
+        else:
+            return self.WS_URL_TESTNET
+
+    def _make_subscribe_payload(self) -> dict:
+        """
+        Construct the JSON subscription payload for all trading symbols.
+
+        Each symbol subscribes to:
+        - <symbol>@bookTicker (order book updates)
+        - <symbol>@trade (trade stream)
+
+        Returns:
+            Subscription payload dict with format:
+            {"method": "SUBSCRIBE", "params": [...], "id": 1}
+        """
+        streams: list[str] = []
+        for symbol in self.symbols:
+            # Binance requires lowercase symbols for streams
+            symbol_lower = symbol.lower()
+            streams.append(f"{symbol_lower}@bookTicker")
+            streams.append(f"{symbol_lower}@trade")
+
+        return {
+            "method": "SUBSCRIBE",
+            "params": streams,
+            "id": 1,
+        }
+
+    def _handle_message(self, msg: dict[str, Any]) -> None:
+        """
+        Parse and dispatch incoming WebSocket message to aggregator.
+
+        Handles:
+        - bookTicker events: update order book state
+        - trade events: update trade flow state
+        - ping: application-level keep-alive (though aiohttp may handle low-level pings)
+
+        Args:
+            msg: Parsed JSON message from WebSocket.
+        """
+        # Skip if message doesn't have event type
+        event_type = msg.get("e")
+        if not event_type:
+            LOG.debug(f"Skipping message without event type: {msg}")
+            return
+
         try:
-            symbol = payload.get("s")
-            if not symbol:
-                return
+            if event_type == "bookTicker":
+                # Order Book Ticker Update
+                symbol = msg.get("s", "")
+                bid_price = msg.get("b", "0")
+                bid_qty = msg.get("B", "0")
+                ask_price = msg.get("a", "0")
+                ask_qty = msg.get("A", "0")
+                ts = msg.get("E", int(time.time() * 1000))
 
-            bid_price = payload.get("b", "0")
-            bid_qty = payload.get("B", "0")
-            ask_price = payload.get("a", "0")
-            ask_qty = payload.get("A", "0")
-            # T = transaction time, E = event time
-            ts = payload.get("T") or payload.get(
-                "E") or int(time.time() * 1000)
+                self.aggregator.on_book_ticker(
+                    symbol=symbol,
+                    bid_price=bid_price,
+                    bid_size=bid_qty,
+                    ask_price=ask_price,
+                    ask_size=ask_qty,
+                    ts=ts,
+                )
+                LOG.debug(
+                    f"📗 BookTicker {symbol}: bid={bid_price}@{bid_qty}, ask={ask_price}@{ask_qty}"
+                )
 
-            self.aggregator.on_book_ticker(
-                symbol, bid_price, bid_qty, ask_price, ask_qty, ts
-            )
+            elif event_type == "trade":
+                # Trade Event
+                symbol = msg.get("s", "")
+                price = msg.get("p", "0")
+                qty = msg.get("q", "0")
+                # True if buyer is maker (sell)
+                is_buyer_maker = msg.get("m", False)
+                ts = msg.get("T", int(time.time() * 1000))
 
-            # Handle anchors
-            if symbol in self.anchors:
-                mid_price = (float(bid_price) + float(ask_price)) / 2.0
-                # We need to call async callback from sync context?
-                # _on_anchor_update is async.
-                # But this callback is called from WS loop which is async.
-                # Wait, MarketWSClient calls this callback synchronously?
-                # MarketWSClient._handle_message calls self.on_book_ticker(payload)
-                # And _handle_message is called from async _run_loop.
-                # So we are in async context, but the callback is defined as sync in type hint?
-                # In MarketWSClient: on_book_ticker: Callable[[Dict[str, Any]], None]
-                # So it expects a sync function.
-                # If I want to await something, I should make it async or use create_task.
-                # Since I'm in the loop, I can use asyncio.create_task if I have the loop.
-                # Or I can just fire and forget if it's just updating internal state.
-                # feature_engineering.update_anchor_price is likely sync?
-                # Let's check.
-                pass
-                # For now, I'll assume update_anchor_price is sync or I'll fix it later.
-                # Actually _on_anchor_update is async in MarketDataConnector.
-                # So I should schedule it.
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self._on_anchor_update(
-                        symbol, str(mid_price)))
-                except RuntimeError:
-                    pass
+                self.aggregator.on_trade(
+                    symbol=symbol,
+                    price=price,
+                    quantity=qty,
+                    is_buyer_maker=is_buyer_maker,
+                    ts=ts,
+                )
+                LOG.debug(
+                    f"📈 Trade {symbol}: price={price}, qty={qty}, is_buyer_maker={is_buyer_maker}"
+                )
 
+            elif event_type == "ping":
+                # Application-level ping (respond with pong if needed)
+                LOG.debug(
+                    "Received ping, aiohttp should handle low-level pings automatically")
+
+            else:
+                LOG.debug(
+                    f"Unknown event type '{event_type}' in message: {msg}")
+
+        except KeyError as e:
+            LOG.error(f"Missing field in message: {e}, msg={msg}")
         except Exception as e:
-            LOG.error(f"Error in WS bookTicker callback: {e}")
+            LOG.error(f"Error handling WebSocket message: {e}", exc_info=True)
 
-    def _on_ws_trade(self, payload: dict[str, Any]) -> None:
-        """Callback for WebSocket aggTrade updates."""
-        try:
-            symbol = payload.get("s")
-            if not symbol:
-                return
+    async def _on_tick_event(self, symbol: str, tick: dict[str, Any]) -> None:
+        """Async wrapper to forward aggregator ticks to the synchronous emitter."""
+        self._emit_market_tick(symbol, tick)
 
-            price = payload.get("p", "0")
-            qty = payload.get("q", "0")
-            is_buyer_maker = payload.get("m", False)
-            ts = payload.get("T") or payload.get(
-                "E") or int(time.time() * 1000)
-
-            self.aggregator.on_trade(
-                symbol, price, qty, is_buyer_maker, ts
-            )
-        except Exception as e:
-            LOG.error(f"Error in WS trade callback: {e}")
-
-    def start(self) -> None:
-        """Start the data polling in a background thread."""
+    async def start_async(self) -> None:
+        """Async version of start() - for use with run_coroutine_threadsafe."""
         if self.running:
             LOG.warning("MarketDataConnector already running.")
             return
 
+        loop = asyncio.get_running_loop()
         self.running = True
-        self.thread = threading.Thread(target=self._poll_loop, daemon=True)
-        self.thread.start()
-        LOG.info(
-            f"MarketDataConnector started for symbols: {self.symbols} with {self.poll_interval_sec}s interval."
+        self.aggregator.set_tick_callback(self._on_tick_event)
+        self.aggregator.set_anchor_update_callback(self._on_anchor_update)
+
+        self._emit_task = loop.create_task(
+            self.aggregator.periodic_emit(self.poll_interval_sec)
         )
+        self._ws_task = loop.create_task(self._ws_loop())
 
-    def stop(self) -> None:
-        """Stop the data polling thread."""
-        self.running = False
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
-        # Close the adapter's session (without asyncio.run() to avoid conflicts)
+        LOG.info("✅ MarketDataConnector emitter started (async)")
+
+    def start(self) -> None:
+        """Start WebSocket and aggregator emitter tasks using the running event loop."""
+        if self.running:
+            LOG.warning("MarketDataConnector already running.")
+            return
+
         try:
-            import sys
-
-            if sys.platform == "win32":
-                # On Windows, use a safer approach
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(self.adapter.close_session())
-                finally:
-                    loop.close()
-            else:
-                asyncio.run(self.adapter.close_session())
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            # If asyncio.run() fails (e.g., inside async test), skip
-            LOG.debug("Could not close adapter session (already in event loop)")
-        LOG.info("MarketDataConnector stopped.")
+            LOG.error(
+                "Cannot start MarketDataConnector outside of an async loop.")
+            return
 
-    def _poll_loop(self) -> None:
-        """Main polling loop that runs in the background thread."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(self._async_poll_loop())
-        finally:
-            loop.close()
-            LOG.info("Polling loop has ended.")
+        self.running = True
+        self.aggregator.set_tick_callback(self._on_tick_event)
+        self.aggregator.set_anchor_update_callback(self._on_anchor_update)
 
-    async def _async_poll_loop(self) -> None:
-        """Async loop for polling and WS management."""
-        if self.ws_client:
-            # Start WS client as a background task in this loop
-            self.ws_client.start()
+        self._emit_task = loop.create_task(
+            self.aggregator.periodic_emit(self.poll_interval_sec)
+        )
+        self._ws_task = loop.create_task(self._ws_loop())
 
+        LOG.info("✅ MarketDataConnector emitter started")
+
+    async def _ws_loop(self) -> None:
+        """Maintain a WS connection with exponential backoff upon failure."""
+
+        retry_delay = 1.0
         while self.running:
-            await self._fetch_and_emit_data()
-            await asyncio.sleep(self.poll_interval_sec)
+            if self.session is None or self.session.closed:
+                self.session = aiohttp.ClientSession()
 
-        if self.ws_client:
-            await self.ws_client.stop()
+            ws_url = self._get_ws_url()
+            LOG.info(f"🔗 Connecting to WebSocket: {ws_url}")
 
-    async def _fetch_and_emit_data(self) -> None:
-        """
-        Fetch real-time market data (bookTicker + trades) and emit FSM events.
-
-        This is the KEY FIX: Instead of using constant values,
-        we now fetch REAL bid/ask sizes and REAL trade volumes.
-        """
-        LOG.debug("🔄 Starting data fetch cycle")
-        for symbol in self.symbols:
             try:
-                LOG.debug(f"📡 Fetching data for {symbol}")
+                async with self.session.ws_connect(ws_url) as ws:
+                    self.ws = ws
+                    LOG.info(f"✅ Connected to Binance WebSocket ({ws_url})")
 
-                if not self.use_ws_market_data:
-                    # Fetch REAL bid/ask sizes from bookTicker
-                    book_data = await self.adapter.get_book_ticker(symbol=symbol)
-                    if book_data:
-                        LOG.debug(f"📗 BookTicker for {symbol}: {book_data}")
-                        bid_price = book_data.get("bidPrice", "0")
-                        bid_size = book_data.get("bidQty", "0")
-                        ask_price = book_data.get("askPrice", "0")
-                        ask_size = book_data.get("askQty", "0")
-                        ts = int(time.time() * 1000)
+                    payload = self._make_subscribe_payload()
+                    await ws.send_json(payload)
+                    LOG.info(
+                        f"✅ Subscription sent: {len(payload['params'])} streams")
 
-                        # Feed data to aggregator
-                        self.aggregator.on_book_ticker(
-                            symbol, bid_price, bid_size, ask_price, ask_size, ts
-                        )
-                    else:
-                        LOG.warning(f"❌ No bookTicker data for {symbol}")
+                    retry_delay = 1.0
+                    async for msg in ws:
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            try:
+                                data = json.loads(msg.data)
+                                self._handle_message(data)
+                            except json.JSONDecodeError as e:
+                                LOG.error(
+                                    f"Failed to decode JSON: {e}, msg={msg.data}"
+                                )
+                        elif msg.type == aiohttp.WSMsgType.ERROR:
+                            LOG.error(f"WebSocket error: {ws.exception()}")
+                            break
+                        elif msg.type == aiohttp.WSMsgType.CLOSED:
+                            LOG.info("WebSocket closed by server")
+                            break
 
-                    # Fetch REAL recent trades
-                    trades_data = await self.adapter.get_recent_trades(
-                        symbol=symbol, limit=50
-                    )
-                    if trades_data:
-                        LOG.debug(
-                            f"📈 Got {len(trades_data)} trades for {symbol}")
-                        for trade in trades_data:
-                            self.aggregator.on_trade(
-                                symbol,
-                                price=trade.get("price", "0"),
-                                quantity=trade.get("qty", "0"),
-                                is_buyer_maker=trade.get(
-                                    "m", True
-                                ),  # m=True means buyer is maker (sell)
-                                ts=trade.get("time", int(time.time() * 1000)),
-                            )
-                    else:
-                        LOG.warning(f"❌ No trades data for {symbol}")
-
-                # Fetch klines for delta_price calculation
-                klines = await self.adapter.get_klines(
-                    symbol=symbol, interval="1m", limit=2
-                )
-                if klines and len(klines) >= 2:
-                    LOG.debug(f"📊 Got {len(klines)} klines for {symbol}")
-                    # Update price history
-                    for kline in klines:
-                        price = kline[4]  # close price
-                        ts = kline[6]  # close time
-                        self.aggregator.on_trade(
-                            symbol,
-                            price=str(price),
-                            quantity="0",
-                            is_buyer_maker=False,
-                            ts=ts,
-                        )
-                else:
-                    LOG.warning(f"❌ No klines data for {symbol}")
-
-                # Get aggregated market tick with REAL features
-                tick = self.aggregator.get_market_tick(symbol)
-                if tick:
-                    LOG.debug(f"✅ Got tick for {symbol}: {tick}")
-                    self._emit_market_tick(symbol, tick)
-                else:
-                    LOG.debug(f"⏳ Not enough data yet for {symbol}")
-
+            except asyncio.CancelledError:
+                LOG.info("WebSocket task cancelled (stopping)")
+                break
             except Exception as e:
                 LOG.error(
-                    f"❌ Failed to fetch data for {symbol}: {e}", exc_info=True)
+                    f"WebSocket connection failed: {e}. Retrying in {retry_delay}s...",
+                    exc_info=True,
+                )
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 30.0)
+                continue
+            finally:
+                self.ws = None
+                LOG.debug(
+                    "WebSocket context exited, will retry if still running")
 
-        # 🆕 FIX #1: Fetch anchor prices (non-blocking, parallel with main symbols)
-        if self.anchors and not self.use_ws_market_data:
-            LOG.debug(f"📌 Fetching anchor prices: {self.anchors}")
-            for anchor in self.anchors:
-                try:
-                    LOG.debug(f"📡 Fetching anchor {anchor}")
-                    book_data = await self.adapter.get_book_ticker(symbol=anchor)
-                    if book_data:
-                        bid_price = float(book_data.get("bidPrice", "0"))
-                        ask_price = float(book_data.get("askPrice", "0"))
-                        mid_price = (bid_price + ask_price) / 2.0
-                        ts = int(time.time() * 1000)
+        self.running = False
+        LOG.info("WebSocket loop ended")
 
-                        # Feed anchor data to aggregator
-                        self.aggregator.on_book_ticker(
-                            anchor,
-                            bid_price=str(bid_price),
-                            bid_size=book_data.get("bidQty", "0"),
-                            ask_price=str(ask_price),
-                            ask_size=book_data.get("askQty", "0"),
-                            ts=ts
-                        )
+    async def _cleanup(self) -> None:
+        """Close aiohttp session and WebSocket connection gracefully."""
+        try:
+            if self.ws:
+                await self.ws.close()
+                self.ws = None
+                LOG.debug("WebSocket connection closed")
 
-                        # Trigger callback to FeatureEngineering
-                        await self._on_anchor_update(anchor, str(mid_price))
-                        LOG.debug(
-                            f"✅ Anchor {anchor} price updated: {mid_price}")
-                    else:
-                        LOG.warning(
-                            f"❌ No bookTicker data for anchor {anchor}")
-                except Exception as e:
-                    LOG.warning(f"❌ Failed to fetch anchor {anchor}: {e}")
+            if self.session:
+                await self.session.close()
+                self.session = None
+                LOG.debug("aiohttp ClientSession closed")
+        except Exception as e:
+            LOG.error(f"Error during cleanup: {e}")
+
+    def stop(self) -> None:
+        """
+        Stop the WebSocket connector.
+
+        Cancels the `_ws_loop` task and closes the session/connection.
+        """
+        if not self.running:
+            LOG.warning("MarketDataConnector is not running.")
+            return
+
+        self.running = False
+
+        # Cancel the WebSocket task
+        if self._ws_task and not self._ws_task.done():
+            self._ws_task.cancel()
+            LOG.info("WebSocket task cancelled")
+        self._ws_task = None
+
+        # Cancel the aggregator emitter task
+        if self._emit_task and not self._emit_task.done():
+            self._emit_task.cancel()
+            LOG.info("MarketDataConnector emitter task cancelled")
+        self._emit_task = None
+
+        # Schedule cleanup if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(self._cleanup())
+        except RuntimeError:
+            # Not in an async context; try to cleanup synchronously
+            LOG.warning(
+                "stop() called outside async context; cleanup may be incomplete")
+            try:
+                # Fallback: close session synchronously if possible
+                if self.session:
+                    # Note: This is not ideal but necessary for sync contexts
+                    pass  # aiohttp session requires async close
+            except Exception as e:
+                LOG.debug(f"Could not cleanup session: {e}")
+
+        LOG.info("✅ MarketDataConnector stopped")
 
     def _emit_market_tick(self, symbol: str, tick: dict[str, Any]) -> None:
         """Emit a market tick event with real feature data."""

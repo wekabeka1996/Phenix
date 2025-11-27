@@ -144,6 +144,9 @@ class ExecPosRuntimeV2:
         self._last_guard_recovery_ts: Dict[str, float] = {}
         self._last_snapshot_request_ts: Dict[str, float] = {}
 
+        # Concurrency control
+        self._evaluation_lock = asyncio.Lock()
+
         # Metrics
         self._metrics = {
             "events_total": 0,
@@ -584,126 +587,128 @@ class ExecPosRuntimeV2:
         5. Emit exposure update
         6. Trigger watchdog
         """
-        # 1. Check idempotency
-        if not self.fill_idempotency.should_process_fill(payload, symbol=symbol):
-            self._metrics["fills_duplicate"] += 1
-            return
+        # Serialize execution to prevent race conditions on partial fills
+        async with self._evaluation_lock:
+            # 1. Check idempotency
+            if not self.fill_idempotency.should_process_fill(payload, symbol=symbol):
+                self._metrics["fills_duplicate"] += 1
+                return
 
-        self._metrics["fills_processed"] += 1
+            self._metrics["fills_processed"] += 1
 
-        # 2. Enrich price if needed
-        enriched = self.price_enricher.enrich_trade(
-            trade_payload=payload,
-            position_entry_price=None,  # Could fetch from position
-            current_price_quote=None
-        )
-
-        # 3. Update position state (CRITICAL: do this before WAL/exposure)
-        raw_qty = float(payload.get("quantity", 0) or payload.get("qty", 0))
-        # R2-F: Normalize to abs (adapter should already do this, but defense-in-depth)
-        qty = abs(raw_qty)
-        side = payload.get("side", "").upper()
-
-        # R2-G: Track fill metrics
-        self._metrics["fills_total"] += 1
-        if raw_qty < 0:
-            self._metrics["fills_signed_qty_seen_total"] += 1
-        if qty != raw_qty:
-            self._metrics["fills_abs_normalized_total"] += 1
-
-        if side not in ("BUY", "SELL"):
-            logger.warning("TRADE_EXECUTED missing/invalid side; skipping fill",
-                           extra={"symbol": symbol, "payload": payload})
-            return
-        if qty == 0:
-            # R2-G: Track zero fills
-            self._metrics["fills_zero_ignored_total"] += 1
-            logger.warning("TRADE_EXECUTED zero quantity; skipping fill",
-                           extra={"symbol": symbol, "payload": payload})
-            return
-
-        current_state = self._positions_by_symbol.get(
-            symbol) or PositionState(symbol=symbol)
-        is_new_position = abs(current_state.qty) < 0.0001
-
-        # R2-B: Save previous position state for reverse detection
-        if abs(current_state.qty) > 0.0001:
-            self._prev_positions_by_symbol[symbol] = current_state
-
-        # Apply fill via PositionState
-        new_state = apply_fill(
-            current_state,
-            side=side,
-            quantity=qty,
-            price=float(payload.get("price", 0)
-                        or payload.get("last_price", 0) or 0.0),
-            ts=payload.get("timestamp") or payload.get("ts"),
-        )
-
-        # R2-D: Increment cycle_id on new position or reverse
-        prev_side = current_state.side
-        new_side = new_state.side
-
-        is_prev_flat = abs(current_state.qty) < 0.0001
-        is_new_flat = abs(new_state.qty) < 0.0001
-
-        if is_prev_flat and not is_new_flat:
-            # New position opened from FLAT
-            new_cycle_id = current_state.cycle_id + 1
-            new_state = replace(new_state, cycle_id=new_cycle_id)
-            logger.debug(
-                f"[ExecPosV2] POSITION_CYCLE_NEW: {symbol} cycle_id {current_state.cycle_id} → {new_cycle_id}",
-                extra={"symbol": symbol, "prev_side": prev_side,
-                       "new_side": new_side}
+            # 2. Enrich price if needed
+            enriched = self.price_enricher.enrich_trade(
+                trade_payload=payload,
+                position_entry_price=None,  # Could fetch from position
+                current_price_quote=None
             )
-        elif not is_prev_flat and not is_new_flat and prev_side != new_side:
-            # Reverse LONG↔SHORT without intermediate FLAT
-            new_cycle_id = current_state.cycle_id + 1
-            new_state = replace(new_state, cycle_id=new_cycle_id)
-            logger.debug(
-                f"[ExecPosV2] POSITION_CYCLE_REVERSE: {symbol} cycle_id {current_state.cycle_id} → {new_cycle_id}",
-                extra={"symbol": symbol, "prev_side": prev_side,
-                       "new_side": new_side}
+
+            # 3. Update position state (CRITICAL: do this before WAL/exposure)
+            raw_qty = float(payload.get("quantity", 0) or payload.get("qty", 0))
+            # R2-F: Normalize to abs (adapter should already do this, but defense-in-depth)
+            qty = abs(raw_qty)
+            side = payload.get("side", "").upper()
+
+            # R2-G: Track fill metrics
+            self._metrics["fills_total"] += 1
+            if raw_qty < 0:
+                self._metrics["fills_signed_qty_seen_total"] += 1
+            if qty != raw_qty:
+                self._metrics["fills_abs_normalized_total"] += 1
+
+            if side not in ("BUY", "SELL"):
+                logger.warning("TRADE_EXECUTED missing/invalid side; skipping fill",
+                               extra={"symbol": symbol, "payload": payload})
+                return
+            if qty == 0:
+                # R2-G: Track zero fills
+                self._metrics["fills_zero_ignored_total"] += 1
+                logger.warning("TRADE_EXECUTED zero quantity; skipping fill",
+                               extra={"symbol": symbol, "payload": payload})
+                return
+
+            current_state = self._positions_by_symbol.get(
+                symbol) or PositionState(symbol=symbol)
+            is_new_position = abs(current_state.qty) < 0.0001
+
+            # R2-B: Save previous position state for reverse detection
+            if abs(current_state.qty) > 0.0001:
+                self._prev_positions_by_symbol[symbol] = current_state
+
+            # Apply fill via PositionState
+            new_state = apply_fill(
+                current_state,
+                side=side,
+                quantity=qty,
+                price=float(payload.get("price", 0)
+                            or payload.get("last_price", 0) or 0.0),
+                ts=payload.get("timestamp") or payload.get("ts"),
             )
-        else:
-            # Same cycle, carry over cycle_id
-            new_state = replace(new_state, cycle_id=current_state.cycle_id)
 
-        self._positions_by_symbol[symbol] = new_state
-        self._mark_position_snapshot(symbol)
-        self._ensure_guard_loop_running()
+            # R2-D: Increment cycle_id on new position or reverse
+            prev_side = current_state.side
+            new_side = new_state.side
 
-        # 4. Write WAL records (fail-closed)
-        # EXEC_TRADE record
-        position_ctx = {
-            "position_id": f"{symbol}_{int(time.time())}",
-            "is_new_position": is_new_position,
-            "realized_pnl": new_state.realized_pnl,
-            "fee": 0,  # TODO: extract from payload
-        }
-        if self.wal_writer.write_trade_wal(payload, position_ctx):
-            self._metrics["wal_trades_written"] += 1
+            is_prev_flat = abs(current_state.qty) < 0.0001
+            is_new_flat = abs(new_state.qty) < 0.0001
 
-        # EXEC_POSITION record (if position changed)
-        if self.wal_writer.write_position_wal(self._position_to_dict(new_state)):
-            self._metrics["wal_positions_written"] += 1
+            if is_prev_flat and not is_new_flat:
+                # New position opened from FLAT
+                new_cycle_id = current_state.cycle_id + 1
+                new_state = replace(new_state, cycle_id=new_cycle_id)
+                logger.debug(
+                    f"[ExecPosV2] POSITION_CYCLE_NEW: {symbol} cycle_id {current_state.cycle_id} → {new_cycle_id}",
+                    extra={"symbol": symbol, "prev_side": prev_side,
+                           "new_side": new_side}
+                )
+            elif not is_prev_flat and not is_new_flat and prev_side != new_side:
+                # Reverse LONG↔SHORT without intermediate FLAT
+                new_cycle_id = current_state.cycle_id + 1
+                new_state = replace(new_state, cycle_id=new_cycle_id)
+                logger.debug(
+                    f"[ExecPosV2] POSITION_CYCLE_REVERSE: {symbol} cycle_id {current_state.cycle_id} → {new_cycle_id}",
+                    extra={"symbol": symbol, "prev_side": prev_side,
+                           "new_side": new_side}
+                )
+            else:
+                # Same cycle, carry over cycle_id
+                new_state = replace(new_state, cycle_id=current_state.cycle_id)
 
-        # 5. Emit exposure update (fail-closed)
-        if self.exposure_bridge.emit_exposure_update(self._position_to_dict(new_state)):
-            self._metrics["exposure_updates_emitted"] += 1
+            self._positions_by_symbol[symbol] = new_state
+            self._mark_position_snapshot(symbol)
+            self._ensure_guard_loop_running()
 
-        # 6. Trigger watchdog after all state/WAL/exposure updates
-        await self._run_watchdog_analysis()
-        # 7. Evaluate trailing (log-only for now)
-        self._evaluate_trailing(symbol, new_state, float(
-            payload.get("price", 0) or payload.get("last_price", 0) or 0.0))
+            # 4. Write WAL records (fail-closed)
+            # EXEC_TRADE record
+            position_ctx = {
+                "position_id": f"{symbol}_{int(time.time())}",
+                "is_new_position": is_new_position,
+                "realized_pnl": new_state.realized_pnl,
+                "fee": 0,  # TODO: extract from payload
+            }
+            if self.wal_writer.write_trade_wal(payload, position_ctx):
+                self._metrics["wal_trades_written"] += 1
 
-        # R2-B: Detect reverse (LONG→SHORT or SHORT→LONG) and cleanup old side brackets
-        await self._handle_reverse_cleanup(symbol, new_state)
+            # EXEC_POSITION record (if position changed)
+            if self.wal_writer.write_position_wal(self._position_to_dict(new_state)):
+                self._metrics["wal_positions_written"] += 1
 
-        # 8. Evaluate brackets (execute BracketPlan actions)
-        await self._evaluate_brackets(symbol, new_state, reason="trade_executed")
-        self._maybe_stop_guard_loop()
+            # 5. Emit exposure update (fail-closed)
+            if self.exposure_bridge.emit_exposure_update(self._position_to_dict(new_state)):
+                self._metrics["exposure_updates_emitted"] += 1
+
+            # 6. Trigger watchdog after all state/WAL/exposure updates
+            await self._run_watchdog_analysis()
+            # 7. Evaluate trailing (log-only for now)
+            self._evaluate_trailing(symbol, new_state, float(
+                payload.get("price", 0) or payload.get("last_price", 0) or 0.0))
+
+            # R2-B: Detect reverse (LONG→SHORT or SHORT→LONG) and cleanup old side brackets
+            await self._handle_reverse_cleanup(symbol, new_state)
+
+            # 8. Evaluate brackets (execute BracketPlan actions)
+            await self._evaluate_brackets(symbol, new_state, reason="trade_executed")
+            self._maybe_stop_guard_loop()
 
     async def _handle_position_sync(self, symbol: str, payload: Dict[str, Any]):
         """
@@ -711,33 +716,35 @@ class ExecPosRuntimeV2:
         Triggers bracket evaluation for positions that may have been filled
         but didn't emit proper TRADE_EXECUTED events.
         """
-        positions = payload.get("positions", [])
+        async with self._evaluation_lock:
+            positions = payload.get("positions", [])
 
-        for pos in positions:
-            pos_symbol = pos.get("symbol")
-            if not pos_symbol or pos_symbol != symbol:
-                continue
+            for pos in positions:
+                pos_symbol = pos.get("symbol")
+                if not pos_symbol or pos_symbol != symbol:
+                    continue
 
-            # Update position state
-            await self._handle_single_position_update(pos)
+                # Update position state
+                await self._handle_single_position_update(pos)
 
-            # Get current state and evaluate brackets
-            current_state = self._positions_by_symbol.get(pos_symbol)
-            if current_state and abs(current_state.qty) > 0.0001:
-                logger.info(
-                    f"📊 POSITION_SYNC: Evaluating brackets for {pos_symbol} qty={current_state.qty}")
-                await self._evaluate_brackets(pos_symbol, current_state, reason="account_update_sync")
+                # Get current state and evaluate brackets
+                current_state = self._positions_by_symbol.get(pos_symbol)
+                if current_state and abs(current_state.qty) > 0.0001:
+                    logger.info(
+                        f"📊 POSITION_SYNC: Evaluating brackets for {pos_symbol} qty={current_state.qty}")
+                    await self._evaluate_brackets(pos_symbol, current_state, reason="account_update_sync")
 
     async def _handle_position_snapshot(self, payload: Dict[str, Any]):
         """Handle position snapshot from exchange."""
-        # Handle list of positions (e.g. from REST snapshot)
-        if "positions" in payload:
-            for pos in payload["positions"]:
-                await self._handle_single_position_update(pos)
-            return
+        async with self._evaluation_lock:
+            # Handle list of positions (e.g. from REST snapshot)
+            if "positions" in payload:
+                for pos in payload["positions"]:
+                    await self._handle_single_position_update(pos)
+                return
 
-        # Handle single position (e.g. from WS update)
-        await self._handle_single_position_update(payload)
+            # Handle single position (e.g. from WS update)
+            await self._handle_single_position_update(payload)
 
     async def _handle_single_position_update(self, payload: Dict[str, Any]):
         """Update state for a single position."""
@@ -1529,11 +1536,24 @@ class ExecPosRuntimeV2:
             )
 
             if action.action_type == "CANCEL":
-                await self.execution_service.cancel_order(
+                cancel_result = await self.execution_service.cancel_order(
                     symbol=symbol,
                     order_id=action.order_id,
                     client_order_id=action.client_order_id,
                 )
+                # Handle cancel timeout - force snapshot to sync with exchange
+                if isinstance(cancel_result, dict) and cancel_result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
+                    logger.warning(
+                        "[ExecPosV2] Timeout canceling bracket for %s order_id=%s, forcing ORDERS_SNAPSHOT",
+                        symbol, action.order_id
+                    )
+                    self._orders_snapshot_state[symbol] = "UNKNOWN"
+                    self._last_orders_snapshot_ts[symbol] = 0.0
+                    await self._request_orders_snapshot(symbol, force=True)
+                    # Don't update mirror - let snapshot reconcile actual state
+                    status.in_flight = False
+                    status.awaiting_snapshot = True
+                    return
                 # R2-B: Update local mirror after CANCEL to reflect exchange state
                 self._remove_order_from_mirror(symbol, action.order_id)
             elif action.action_type in ("PLACE_SL", "PLACE_TP") and exit_side:
@@ -1573,6 +1593,31 @@ class ExecPosRuntimeV2:
                     return
                 if isinstance(result, dict) and result.get("success") is False:
                     continue
+
+                # R2-B FIX: Immediately update local mirror with new bracket order
+                if isinstance(result, dict) and result.get("success"):
+                    mock_order = {
+                        "orderId": result.get("order_id") or result.get("orderId"),
+                        "clientOrderId": result.get("client_order_id") or client_order_id,
+                        "symbol": symbol,
+                        "side": exit_side,
+                        "type": order_type,
+                        "quantity": str(qty),
+                        "price": str(action.price) if action.price is not None else None,
+                        "stopPrice": str(action.price) if action.price is not None else None,
+                        "reduceOnly": True,
+                        "status": "NEW",
+                        "created_ts": time.time() * 1000,
+                        "update_ts": time.time() * 1000
+                    }
+                    if symbol not in self._open_orders_by_symbol:
+                        self._open_orders_by_symbol[symbol] = []
+                    self._open_orders_by_symbol[symbol].append(mock_order)
+                    logger.info(
+                        f"[ExecPosV2] MIRROR_UPDATE_ADD symbol={symbol} order_id={mock_order['orderId']} "
+                        f"client_order_id={mock_order['clientOrderId']}"
+                    )
+
                 placed_orders.append(
                     {
                         "order_id": result.get("order_id") if isinstance(result, dict) else None,
@@ -1612,6 +1657,31 @@ class ExecPosRuntimeV2:
                     return
                 if isinstance(result, dict) and result.get("success") is False:
                     continue
+
+                # R2-B FIX: Immediately update local mirror with new bracket order
+                if isinstance(result, dict) and result.get("success"):
+                    mock_order = {
+                        "orderId": result.get("order_id") or result.get("orderId"),
+                        "clientOrderId": result.get("client_order_id") or client_order_id,
+                        "symbol": symbol,
+                        "side": exit_side,
+                        "type": order_type,
+                        "quantity": str(qty),
+                        "price": str(action.price) if action.price is not None else None,
+                        "stopPrice": str(action.price) if action.price is not None else None,
+                        "reduceOnly": True,
+                        "status": "NEW",
+                        "created_ts": time.time() * 1000,
+                        "update_ts": time.time() * 1000
+                    }
+                    if symbol not in self._open_orders_by_symbol:
+                        self._open_orders_by_symbol[symbol] = []
+                    self._open_orders_by_symbol[symbol].append(mock_order)
+                    logger.info(
+                        f"[ExecPosV2] MIRROR_UPDATE_ADD (ADJUST) symbol={symbol} order_id={mock_order['orderId']} "
+                        f"client_order_id={mock_order['clientOrderId']}"
+                    )
+
                 placed_orders.append(
                     {
                         "order_id": result.get("order_id") if isinstance(result, dict) else None,
