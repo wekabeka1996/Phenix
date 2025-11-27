@@ -25,5 +25,6 @@ class PortfolioSnapshot(BaseModel):
         return value
 
     class Config:
-        allow_population_by_field_name = True
+        # Pydantic V2 (was: allow_population_by_field_name)
+        populate_by_name = True
         frozen = True

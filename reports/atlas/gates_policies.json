@@ -26,10 +26,19 @@
     "config\\domains\\decision.yaml": {},
     "config\\domains\\execution.yaml": {},
     "config\\domains\\features.yaml": {},
+    "config\\domains\\market_data.yaml": {},
     "config\\domains\\regimes.yaml": {},
     "config\\domains\\risk.yaml": {},
     "config\\domains\\sizing.yaml": {},
     "config\\domains\\tca.yaml": {},
+    "config\\examples\\execution_position_aggressive.yaml": {},
+    "config\\examples\\execution_position_moderate.yaml": {},
+    "config\\examples\\execution_position_safe.yaml": {},
+    "configs\\execution_testnet_algo.yaml": {
+      "ops": {
+        "metrics_url": "http://127.0.0.1:8000/metrics"
+      }
+    },
     "configs\\master_config_v1.yaml": {
       "execution": {
         "preflight_backoff_ms": [

@@ -132,9 +132,18 @@ class TestBinanceAdapterRequest:
         mock_session = MagicMock()
         mock_session.request = AsyncMock()
 
+        # Create mock time sync manager
+        mock_time_sync_manager = MagicMock()
+        mock_time_sync_manager.sync = AsyncMock(return_value=True)
+        mock_time_sync_manager.start = AsyncMock()
+        mock_time_sync_manager.stop = AsyncMock()
+        mock_time_sync_manager.is_initialized = True
+        mock_time_sync_manager.offset_ms = 0
+
         with patch("httpx.AsyncClient", return_value=mock_session):
             adapter = BinanceAdapter(
-                "key", "secret", "https://demo-fapi.binance.com"
+                "key", "secret", "https://demo-fapi.binance.com",
+                time_sync_manager=mock_time_sync_manager,
             )
             # Override session with our isolated mock
             adapter.session = mock_session
@@ -143,6 +152,7 @@ class TestBinanceAdapterRequest:
             # Ensure clean state
             adapter.session.request.reset_mock()
             adapter._sync_time.reset_mock()
+            mock_time_sync_manager.sync.reset_mock()
 
             return adapter
 
@@ -198,8 +208,8 @@ class TestBinanceAdapterRequest:
         assert result == {"ok": True}
         # Should have called request twice
         assert adapter.session.request.call_count == 2
-        # Should have called _sync_time with force=True on retry
-        adapter._sync_time.assert_any_call(True)
+        # Should have called time_sync_manager.sync with force=True on retry
+        adapter._time_sync_manager.sync.assert_any_call(force=True)
 
     @pytest.mark.anyio
     async def test_request_retry_on_1022(self, adapter):
@@ -219,7 +229,7 @@ class TestBinanceAdapterRequest:
         result = await adapter._request("GET", "/test", signed=True)
         assert result == {"ok": True}
         assert adapter.session.request.call_count == 2
-        adapter._sync_time.assert_any_call(True)
+        adapter._time_sync_manager.sync.assert_any_call(force=True)
 
     @pytest.mark.skip(reason="Test has state conflicts in full test suite - run separately")
     @pytest.mark.anyio

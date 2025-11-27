@@ -57,20 +57,8 @@ def build_execution_adapter(config: Any, fsm: Any | None = None) -> Any | None:
     mode = str(mode or "testnet").lower()
 
     if mode in {"testnet", "live", "hybrid_live_data_testnet_exec"}:
-        # Extract REST timeout from config (default 20.0s)
-        rest_timeout_sec = 20.0
-        try:
-            # Try config v2 path: execution.adapters.binance.rest_timeout_sec
-            if hasattr(config, 'config_v2') and config.config_v2:
-                execution_cfg = getattr(config.config_v2, 'execution', None)
-                if execution_cfg and isinstance(execution_cfg, dict):
-                    adapters_cfg = execution_cfg.get('adapters', {})
-                    binance_cfg = adapters_cfg.get('binance', {})
-                    rest_timeout_sec = float(
-                        binance_cfg.get('rest_timeout_sec', 20.0))
-        except Exception as e:
-            logger.debug(
-                f"Failed to read rest_timeout_sec from config, using default 20.0s: {e}")
+        # Timeout/retry config is now read from YAML via TimeoutConfig.from_config()
+        # inside BinanceExecutionAdapter.__init__
 
         adapter_cls = CANONICAL_EXECUTION_ADAPTER
         logger.info(
@@ -82,7 +70,6 @@ def build_execution_adapter(config: Any, fsm: Any | None = None) -> Any | None:
             fsm=fsm,
             config=config,
             shadow_mode=False,
-            rest_timeout_sec=rest_timeout_sec
         )
 
     if mode in {"sim", "shadow", "paper"}:

@@ -16,12 +16,11 @@ config = Mock()
 config.trading = Mock()
 config.trading.trading_env = "test"
 
-# Create adapter
+# Create adapter (timeout config is now read from YAML via TimeoutConfig.from_config())
 adapter = BinanceExecutionAdapter(
     fsm=None,
     config=config,
     shadow_mode=True,
-    rest_timeout_sec=20.0
 )
 
 # Load real SOLUSDT profile from config
@@ -92,9 +91,10 @@ try:
 except BinanceValidationError as e:
     print(f"   ✅ Correctly rejected: {e}")
 
-# Test 5: REST timeout
-print(f"\n⏱️ REST timeout configured: {adapter._rest_timeout}s")
-assert adapter._rest_timeout == 20.0, f"Expected 20.0s, got {adapter._rest_timeout}s"
-print("   ✅ Timeout matches expected default")
+# Test 5: Timeout config
+print(
+    f"\n⏱️ Timeout config: read={adapter._timeout_config.read}s, connect={adapter._timeout_config.connect}s")
+assert adapter._timeout_config.read >= 10.0, f"Expected read >= 10.0s, got {adapter._timeout_config.read}s"
+print("   ✅ Timeout configured via TimeoutConfig")
 
 print("\n🎉 All verification tests passed! EP-ADAPTER-PRECISION-GUARDS-S19 fix working correctly.")

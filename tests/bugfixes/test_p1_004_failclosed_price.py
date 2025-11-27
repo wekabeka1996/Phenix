@@ -92,7 +92,8 @@ class TestFailClosedPricePattern:
         }
 
         portfolio_payload = {
-            "equity": "10000.0",
+            "equity_free_usdt": "10000.0",
+            "equity_total_usdt": "10000.0",
             "realized_pnl": "50.0",
             "unrealized_pnl": "25.0",
             "positions": {},
@@ -196,7 +197,8 @@ class TestFailClosedPricePattern:
             verb="PORTFOLIO_STATE_UPDATED",
             src="test",
             dst="test",
-            pld={"equity": "10000.0"},
+            pld={"equity_free_usdt": "10000.0",
+                 "equity_total_usdt": "10000.0"},
         )
 
         # Act: Feed events in the correct order (features is the trigger)

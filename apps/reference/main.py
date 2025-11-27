@@ -892,7 +892,6 @@ def debug_event_listener(event: Any) -> None:
             print(trade_info)
 
             # Log formatted trade info to formatted log file (exactly as shown in console)
-            # Note: Structured logging handled by AuroraLogAdapter in execution_position/fsm.py
             trade_formatted_logger = logging.getLogger(
                 "aurora.trade_formatted")
             trade_formatted_logger.info(trade_info)

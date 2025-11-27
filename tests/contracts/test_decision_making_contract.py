@@ -9,6 +9,8 @@ WHY: Enforce "Contract > Code" principle — validate runtime behavior
 against formal contracts [FSMP-PORTING-T02A]
 """
 
+from vfoundation.core.protocol import Message
+from apps.reference.domains.decision_making.decision_making import DecisionMaking
 import json
 from pathlib import Path
 import pytest
@@ -17,11 +19,11 @@ from jsonschema import validate
 from unittest.mock import MagicMock
 import sys
 
-# Add apps to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "apps"))
+# Add project root to path for imports (needed for apps.reference.* imports within modules)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-from reference.domains.decision_making.decision_making import DecisionMaking
-from vfoundation.core.protocol import Message
 
 # Load schema once for all tests
 SCHEMA_PATH = (
@@ -126,7 +128,9 @@ def test_emitted_trade_intent_conforms_to_schema(decision_domain_for_contract_te
         "symbol": "ETHUSDT",
         "risk_parameters": {"is_trading_allowed": True},
     }
-    portfolio_payload = {"equity": "50000", "positions": {}}
+    # Use new PortfolioProvider format with equity_free_usdt/equity_total_usdt
+    portfolio_payload = {"equity_free_usdt": "50000",
+                         "equity_total_usdt": "50000", "positions": {}}
 
     risk_event = Message(
         op="EVT",

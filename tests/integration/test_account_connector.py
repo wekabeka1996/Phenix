@@ -3,6 +3,8 @@
 Tests AccountConnector initialization, polling, event emission, and error handling.
 """
 
+from vfoundation.core import FSMCore
+from apps.reference.domains.account_balance.account_connector import AccountConnector
 import pytest
 import time
 import sys
@@ -12,9 +14,6 @@ from unittest.mock import MagicMock, patch
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-
-from apps.reference.domains.account_balance.account_connector import AccountConnector
-from vfoundation.core import FSMCore
 
 
 @pytest.fixture
@@ -54,7 +53,8 @@ def test_account_connector_initialization(test_config, test_fsm_core):
 
     assert connector.update_interval == test_config["poll_interval_seconds"]
     assert connector.adapter is not None
-    assert "testnet" in connector.adapter.base_url
+    # Binance testnet URL is demo-fapi.binance.com
+    assert "demo-fapi" in connector.adapter.base_url or "testnet" in connector.adapter.base_url
 
 
 def test_account_connector_polling_and_event_emission(test_config, test_fsm_core):

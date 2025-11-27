@@ -48,9 +48,6 @@
     "$id": "https://aurora.scalp/shared/config/config_v2.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "required": [
-      "instruments",
-      "overrides",
-      "modes",
       "domains"
     ],
     "defaults": {}

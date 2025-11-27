@@ -41,7 +41,6 @@ class FakeBinanceAdapterWithTimeout:
         self.api_key = "test_key"
         self.api_secret = "test_secret"
         self.shadow_mode = False
-        self._rest_timeout = 20.0
         self.server_time_offset = 0
         self.place_order_calls = []
 
@@ -50,7 +49,8 @@ class FakeBinanceAdapterWithTimeout:
         self.place_order_calls.append(dec_msg)
 
         symbol = dec_msg.pld.get("symbol", "")
-        client_order_id = dec_msg.pld.get("newClientOrderId") or dec_msg.pld.get("clientOrderId") or "unknown_client_order_id"
+        client_order_id = dec_msg.pld.get("newClientOrderId") or dec_msg.pld.get(
+            "clientOrderId") or "unknown_client_order_id"
 
         if self.always_timeout:
             return {
@@ -89,14 +89,14 @@ async def test_place_order_connect_timeout_wrapped_in_error_feedback(fake_adapte
     """
     Test: Adapter should catch httpx.ConnectTimeout and return error feedback dict
     (not raise raw exception).
-    
+
     Expected (current behavior):
     - place_order() raises httpx.ConnectTimeout
     - Caller (ExecutionService) catches it
     """
     # Arrange
     adapter = fake_adapter_timeout
-    
+
     dec_msg = Message(
         op="DEC",
         verb="PLACE_ORDER",
@@ -109,7 +109,7 @@ async def test_place_order_connect_timeout_wrapped_in_error_feedback(fake_adapte
             "reduceOnly": True,
         }
     )
-    
+
     # Act & Assert
     result = await adapter.place_order(dec_msg)
 
@@ -124,7 +124,7 @@ async def test_place_order_connect_timeout_wrapped_in_error_feedback(fake_adapte
 async def test_place_order_logs_connect_timeout(fake_adapter_timeout, caplog):
     """
     Test: Verify that ConnectTimeout exception triggers error logging.
-    
+
     Expected: Log message contains "ConnectTimeout" or similar.
     """
     # Arrange
@@ -141,7 +141,7 @@ async def test_place_order_logs_connect_timeout(fake_adapter_timeout, caplog):
             "reduceOnly": True,
         }
     )
-    
+
     # Act
     with caplog.at_level("ERROR"):
         result = await adapter.place_order(dec_msg)
@@ -154,12 +154,12 @@ async def test_place_order_logs_connect_timeout(fake_adapter_timeout, caplog):
 async def test_place_order_no_retry_on_connect_timeout(fake_adapter_timeout):
     """
     Audit test: Document that adapter does NOT retry on ConnectTimeout.
-    
+
     Current behavior:
     - Single attempt
     - No exponential backoff
     - Exception propagates to ExecutionService
-    
+
     This is DIFFERENT from get_open_orders() which has retry logic.
     """
     # Arrange
@@ -176,7 +176,7 @@ async def test_place_order_no_retry_on_connect_timeout(fake_adapter_timeout):
             "reduceOnly": True,
         }
     )
-    
+
     # Act
     result = await adapter.place_order(dec_msg)
 
@@ -188,7 +188,7 @@ async def test_place_order_no_retry_on_connect_timeout(fake_adapter_timeout):
 async def test_place_order_timeout_not_masked_as_success(fake_adapter_timeout):
     """
     Critical test: Ensure ConnectTimeout is NOT reported as success.
-    
+
     This verifies the S19 fix (success=False on adapter failures).
     """
     # Arrange
@@ -205,7 +205,7 @@ async def test_place_order_timeout_not_masked_as_success(fake_adapter_timeout):
             "reduceOnly": True,
         }
     )
-    
+
     # Act
     result = await adapter.place_order(dec_msg)
 
@@ -217,17 +217,17 @@ async def test_place_order_timeout_not_masked_as_success(fake_adapter_timeout):
 async def test_place_order_sequential_timeouts(fake_adapter_timeout):
     """
     Audit test: Document sequential timeout behavior for SL+TP placement.
-    
+
     Problem:
     - PLACE_SL → 20s timeout
     - Then PLACE_TP → 20s timeout
     - Total: 40s before runtime knows both failed
-    
+
     This test simulates the BNB case from EXEC_V2_LIVE_AUDIT_S2.
     """
     # Arrange
     adapter = fake_adapter_timeout
-    
+
     sl_msg = Message(
         op="DEC",
         verb="PLACE_ORDER",
@@ -240,7 +240,7 @@ async def test_place_order_sequential_timeouts(fake_adapter_timeout):
             "reduceOnly": True,
         }
     )
-    
+
     tp_msg = Message(
         op="DEC",
         verb="PLACE_ORDER",
@@ -253,19 +253,19 @@ async def test_place_order_sequential_timeouts(fake_adapter_timeout):
             "reduceOnly": True,
         }
     )
-    
+
     # Act: Sequential execution (current behavior)
     import time
     start = time.time()
-    
+
     # PLACE_SL attempt
     await adapter.place_order(sl_msg)
     await adapter.place_order(tp_msg)
-    
+
     elapsed = time.time() - start
-    
+
     assert len(adapter.place_order_calls) == 2
-    
+
     # In production we'd parallelize; here we just ensure structured failure responses.
 
 
@@ -275,16 +275,16 @@ Test Results Analysis (current behavior):
 
 1. test_place_order_connect_timeout_wrapped_in_error_feedback:
    - ✅ PASSES: Structured error feedback returned (no raw exception)
- 
+
 2. test_place_order_logs_connect_timeout:
    - ✅ PASSES: No exception; placeholder for real logging check
- 
+
 3. test_place_order_no_retry_on_connect_timeout:
    - ✅ PASSES: Single attempt (retry belongs to runtime/adapter policy)
- 
+
 4. test_place_order_timeout_not_masked_as_success:
    - ✅ PASSES: Timeout reported as failure
- 
+
 5. test_place_order_sequential_timeouts:
    - ✅ PASSES: Both attempts executed; responses are structured failures
 

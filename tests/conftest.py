@@ -19,7 +19,8 @@ import pytest
 from pathlib import Path
 
 # Add project root, apps and vfoundation to path for imports BEFORE any tests run
-project_root = Path(__file__).parent
+# CRITICAL: project_root is workspace root (parent of tests/), not tests/ itself!
+project_root = Path(__file__).parent.parent
 apps_root = project_root / "apps"
 # CRITICAL: vfoundation package root (where vfoundation/ module lives)
 vfoundation_package_root = project_root / "vfoundation"

@@ -76,7 +76,8 @@ def test_bar_gating_allows_only_one_intent_per_bar(monkeypatch):
             verb="PORTFOLIO_STATE_UPDATED",
             src="test",
             dst="decision_making",
-            pld={"equity": 10000.0, "positions": []},
+            pld={"equity_total_usdt": 10000.0,
+                 "equity_free_usdt": 10000.0, "positions": []},
         )
     )
 
@@ -86,7 +87,8 @@ def test_bar_gating_allows_only_one_intent_per_bar(monkeypatch):
             verb="RISK_ASSESSMENT_COMPLETED",
             src="test",
             dst="decision_making",
-            pld={"symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}},
+            pld={"symbol": "ETHUSDT", "risk_parameters": {
+                "is_trading_allowed": True}},
         )
     )
 
@@ -96,11 +98,13 @@ def test_bar_gating_allows_only_one_intent_per_bar(monkeypatch):
         "symbol": "ETHUSDT",
         "features": {"obi": 0.5, "tfi": 0.4, "delta_price": 0.0, "price": 2000.0},
     }
-    dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED", src="test", dst="decision_making", pld=feats))
+    dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED",
+                   src="test", dst="decision_making", pld=feats))
     # Second event with ts slightly later but same bar index
     feats2 = dict(feats)
     feats2["ts"] = ts_bar + 500
-    dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED", src="test", dst="decision_making", pld=feats2))
+    dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED",
+                   src="test", dst="decision_making", pld=feats2))
 
     # Assert only one intent emitted
     assert len(emitted) == 1, f"Expected 1 intent, got {len(emitted)}"

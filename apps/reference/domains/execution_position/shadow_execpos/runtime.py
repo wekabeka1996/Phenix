@@ -120,6 +120,19 @@ class ExecPosRuntimeV2:
         self._snapshot_request_hook: Optional[Callable[[
             str], Awaitable[None]]] = None
 
+        # =================================================================
+        # TIMEOUT RESILIENCE STATE
+        # =================================================================
+        # Tracks whether the last API call for a symbol failed due to timeout.
+        # When True, new trades/decisions are blocked until successful resync.
+        # This prevents "blind trading" when we don't know the exchange state.
+        self._open_orders_stale: Dict[str, bool] = {}
+        # Timestamp when stale mode was entered (for logging/metrics)
+        self._stale_entered_ts: Dict[str, float] = {}
+        # Recovery task to periodically attempt resync
+        self._stale_recovery_task: Optional[asyncio.Task] = None
+        self._stale_recovery_interval_sec = 10.0
+
         # R3-D1: Per-symbol bracket status to prevent double-apply
         self._bracket_status: Dict[str, BracketStatus] = {}
 
@@ -174,6 +187,12 @@ class ExecPosRuntimeV2:
             "brackets_evaluated": 0,
             "brackets_alerts": 0,
             "brackets_throttled": 0,
+            # TIMEOUT RESILIENCE metrics
+            "stale_mode_entered": 0,
+            "stale_mode_exited": 0,
+            "stale_mode_blocked_intents": 0,
+            "stale_recovery_attempts": 0,
+            "stale_recovery_success": 0,
         }
 
     def hydrate(self, snapshot: Dict[str, Any]) -> None:
@@ -297,9 +316,164 @@ class ExecPosRuntimeV2:
         ttl = self._get_snapshot_cfg().position_ttl_sec
         return (time.monotonic() - ts) <= ttl
 
+    # =========================================================================
+    # TIMEOUT RESILIENCE - Stale Mode Management
+    # =========================================================================
+
+    def is_orders_stale(self, symbol: str) -> bool:
+        """
+        Check if symbol is in stale mode (API timeout occurred).
+
+        When stale=True, no new trades should be opened for this symbol
+        until successful resync with exchange.
+
+        Args:
+            symbol: Trading symbol to check
+
+        Returns:
+            True if symbol is in stale mode
+        """
+        return self._open_orders_stale.get(symbol, False)
+
+    def _enter_stale_mode(self, symbol: str, reason: str = "timeout") -> None:
+        """
+        Enter stale mode for a symbol after API failure.
+
+        Blocks new trades and starts recovery process.
+
+        Args:
+            symbol: Trading symbol
+            reason: Why we're entering stale mode (for logging)
+        """
+        was_stale = self._open_orders_stale.get(symbol, False)
+        self._open_orders_stale[symbol] = True
+        self._stale_entered_ts[symbol] = time.monotonic()
+        self._orders_snapshot_state[symbol] = "STALE"
+
+        if not was_stale:
+            self._metrics["stale_mode_entered"] += 1
+            logger.warning(
+                f"[ExecPosV2] STALE_MODE_ENTERED: symbol={symbol} reason={reason}. "
+                f"No new trades will be opened until successful resync."
+            )
+            # Start recovery task if not running
+            self._ensure_stale_recovery_running()
+        else:
+            logger.debug(
+                f"[ExecPosV2] STALE_MODE_STILL_ACTIVE: symbol={symbol} reason={reason}"
+            )
+
+    def _exit_stale_mode(self, symbol: str, reason: str = "resync_success") -> None:
+        """
+        Exit stale mode for a symbol after successful API call.
+
+        Args:
+            symbol: Trading symbol
+            reason: Why we're exiting stale mode (for logging)
+        """
+        was_stale = self._open_orders_stale.get(symbol, False)
+        self._open_orders_stale[symbol] = False
+        self._orders_snapshot_state[symbol] = "FRESH"
+
+        if was_stale:
+            stale_duration = time.monotonic() - self._stale_entered_ts.get(symbol, 0)
+            self._metrics["stale_mode_exited"] += 1
+            self._metrics["stale_recovery_success"] += 1
+            logger.info(
+                f"[ExecPosV2] STALE_MODE_EXITED: symbol={symbol} reason={reason} "
+                f"duration={stale_duration:.1f}s. Trading resumed."
+            )
+            # Clear entry timestamp
+            self._stale_entered_ts.pop(symbol, None)
+
+    def get_stale_symbols(self) -> List[str]:
+        """
+        Get list of symbols currently in stale mode.
+
+        Returns:
+            List of symbols with stale order state
+        """
+        return [s for s, is_stale in self._open_orders_stale.items() if is_stale]
+
+    async def _try_stale_recovery(self, symbol: str) -> bool:
+        """
+        Attempt single recovery for a stale symbol.
+
+        Args:
+            symbol: Symbol to recover
+
+        Returns:
+            True if recovery succeeded (exited stale mode), False otherwise
+        """
+        self._metrics["stale_recovery_attempts"] = self._metrics.get(
+            "stale_recovery_attempts", 0) + 1
+        logger.info(f"[ExecPosV2] STALE_RECOVERY_ATTEMPT: symbol={symbol}")
+
+        try:
+            await self._request_orders_snapshot(symbol, force=True)
+            # _request_orders_snapshot will call _exit_stale_mode on success
+            return not self.is_orders_stale(symbol)
+        except Exception as e:
+            logger.warning(
+                f"[ExecPosV2] STALE_RECOVERY_FAILED: symbol={symbol} error={e}"
+            )
+            return False
+
+    def _ensure_stale_recovery_running(self) -> None:
+        """Start stale recovery task if not already running."""
+        if self._stale_recovery_task and not self._stale_recovery_task.done():
+            return
+
+        loop = self.async_manager.get_async_loop()
+        coro = self._stale_recovery_loop()
+        if loop:
+            try:
+                self._stale_recovery_task = loop.create_task(coro)
+            except Exception:
+                self._stale_recovery_task = None
+        else:
+            try:
+                self._stale_recovery_task = asyncio.create_task(coro)
+            except Exception:
+                self._stale_recovery_task = None
+
+    async def _stale_recovery_loop(self) -> None:
+        """
+        Periodically attempt to recover from stale mode.
+
+        Runs until all symbols exit stale mode.
+        """
+        while True:
+            # Check if any symbols still stale
+            stale_symbols = [
+                s for s, is_stale in self._open_orders_stale.items() if is_stale]
+            if not stale_symbols:
+                logger.debug(
+                    "[ExecPosV2] STALE_RECOVERY_COMPLETE: No more stale symbols")
+                break
+
+            for symbol in stale_symbols:
+                self._metrics["stale_recovery_attempts"] += 1
+                logger.info(
+                    f"[ExecPosV2] STALE_RECOVERY_ATTEMPT: symbol={symbol}")
+
+                try:
+                    # Request fresh snapshot
+                    await self._request_orders_snapshot(symbol, force=True)
+                    # Note: _exit_stale_mode is called in _handle_orders_snapshot if successful
+                except Exception as e:
+                    logger.warning(
+                        f"[ExecPosV2] STALE_RECOVERY_FAILED: symbol={symbol} error={e}"
+                    )
+
+            await asyncio.sleep(self._stale_recovery_interval_sec)
+
     def _mark_orders_snapshot(self, symbol: str, ts: Optional[float] = None) -> None:
         self._last_orders_snapshot_ts[symbol] = ts or time.monotonic()
         self._orders_snapshot_state[symbol] = "FRESH"
+        # Exit stale mode on successful snapshot
+        if self._open_orders_stale.get(symbol, False):
+            self._exit_stale_mode(symbol, reason="orders_snapshot_received")
 
     def _mark_position_snapshot(self, symbol: str, ts: Optional[float] = None) -> None:
         self._last_position_snapshot_ts[symbol] = ts or time.monotonic()
@@ -328,7 +502,11 @@ class ExecPosRuntimeV2:
         )
 
     async def _request_orders_snapshot(self, symbol: str, *, force: bool = False) -> None:
-        """Invoke hook to refresh orders snapshot with per-symbol throttle."""
+        """
+        Invoke hook to refresh orders snapshot with per-symbol throttle.
+
+        On timeout/network error, enters stale mode for the symbol.
+        """
         if not self._snapshot_request_hook:
             return
         now = time.monotonic()
@@ -348,12 +526,36 @@ class ExecPosRuntimeV2:
         )
         try:
             await self._snapshot_request_hook(symbol)
-        except Exception:
-            logger.error(
-                "[ExecPosV2] FORCE_SNAPSHOT_REQUEST_FAILED",
-                exc_info=True,
-                extra={"symbol": symbol},
-            )
+            # Note: _exit_stale_mode is called in _handle_orders_snapshot if successful
+        except Exception as e:
+            exception_type = type(e).__name__
+
+            # Check if this is a timeout exception
+            timeout_types = ("ReadTimeout", "ConnectTimeout", "WriteTimeout",
+                             "PoolTimeout", "TimeoutException")
+            network_types = ("ConnectError", "RemoteProtocolError", "NetworkError",
+                             "ConnectionError", "OSError")
+
+            if exception_type in timeout_types:
+                logger.warning(
+                    f"[ExecPosV2] SNAPSHOT_REQUEST_TIMEOUT: symbol={symbol} "
+                    f"error={exception_type}: {str(e)[:80]}. Entering stale mode."
+                )
+                self._enter_stale_mode(
+                    symbol, reason=f"snapshot_timeout_{exception_type}")
+            elif exception_type in network_types:
+                logger.warning(
+                    f"[ExecPosV2] SNAPSHOT_REQUEST_NETWORK_ERROR: symbol={symbol} "
+                    f"error={exception_type}: {str(e)[:80]}. Entering stale mode."
+                )
+                self._enter_stale_mode(
+                    symbol, reason=f"snapshot_network_{exception_type}")
+            else:
+                logger.error(
+                    "[ExecPosV2] FORCE_SNAPSHOT_REQUEST_FAILED",
+                    exc_info=True,
+                    extra={"symbol": symbol},
+                )
 
     async def handle(self, event):
         """Main event dispatcher. Accepts dict or RuntimeEvent."""
@@ -413,6 +615,34 @@ class ExecPosRuntimeV2:
             payload.get("side"),
             payload.get("qty") or payload.get("quantity"),
         )
+
+        # =================================================================
+        # TIMEOUT RESILIENCE: Block new entries when in stale mode
+        # =================================================================
+        # If we recently had a timeout fetching exchange state, we're "blind"
+        # and should not open new positions until we successfully resync.
+        if self.is_orders_stale(symbol):
+            self._metrics["stale_mode_blocked_intents"] += 1
+            stale_duration = time.monotonic() - self._stale_entered_ts.get(symbol, 0)
+            logger.warning(
+                f"[ExecPosV2] ENTRY_BLOCKED_STALE_MODE: symbol={symbol} "
+                f"stale_duration={stale_duration:.1f}s. "
+                f"Waiting for successful API resync before trading."
+            )
+            logging_v2.log_runtime_event(
+                event_kind="ENTRY_INTENT",
+                symbol=symbol,
+                action="blocked",
+                result="stale_mode",
+                why="orders_snapshot_stale_timeout",
+                extra={
+                    "stale_duration_sec": round(stale_duration, 1),
+                    "side": payload.get("side"),
+                    "quantity": str(payload.get("quantity") or payload.get("qty")),
+                }
+            )
+            return
+
         side = payload.get("side")
         quantity = payload.get("quantity")
         price = payload.get("price")
@@ -604,7 +834,8 @@ class ExecPosRuntimeV2:
             )
 
             # 3. Update position state (CRITICAL: do this before WAL/exposure)
-            raw_qty = float(payload.get("quantity", 0) or payload.get("qty", 0))
+            raw_qty = float(payload.get("quantity", 0)
+                            or payload.get("qty", 0))
             # R2-F: Normalize to abs (adapter should already do this, but defense-in-depth)
             qty = abs(raw_qty)
             side = payload.get("side", "").upper()

@@ -41,19 +41,28 @@ def test_adapt_quantity():
     assert adapter._adapt_quantity("0.1234000") == "0.1234"
 
 
-def test_generate_signature_matches_manual():
+def test_build_signed_request_includes_signature():
+    """Verify _build_signed_request generates valid HMAC signature."""
     secret = "mysecret"
     cfg = {"binance_ro_api_secret": secret, "binance_ro_api_key": "k"}
     adapter = BinanceExecutionAdapter(fsm=None, config=cfg, shadow_mode=True)
     params = {"b": "2", "a": "1"}
-    sig = adapter._generate_signature(params)
 
-    # manual signature
-    qs = "&".join([f"{key}={params[key]}" for key in sorted(params.keys())])
+    signed_params, _, sign_target, sig = adapter._build_signed_request(params)
+
+    # Verify signature is present and correct format (64 hex chars)
+    assert "signature" in signed_params
+    assert len(signed_params["signature"]) == 64
+
+    # Verify manual signature calculation matches
     expected = hmac.new(
-        secret.encode("utf-8"), qs.encode("utf-8"), hashlib.sha256
+        secret.encode("utf-8"), sign_target.encode("utf-8"), hashlib.sha256
     ).hexdigest()
     assert sig == expected
+    assert signed_params["signature"] == expected
+
+    # Verify timestamp was added by _get_signed_params
+    assert "timestamp" in signed_params
 
 
 @pytest.mark.asyncio
@@ -73,7 +82,10 @@ async def test_place_order_shadow_mode():
         pld={"symbol": "ETHUSDT", "side": "BUY", "qty": "1"},
     )
     res = await adapter.place_order(msg)
-    assert res["lifecycle"] == "filled"
+    # New format uses 'success' and 'allowed' instead of 'lifecycle'
+    assert res["success"] is True
+    assert res["allowed"] is True
+    assert "shadow" in res["order_id"]
 
 
 """
@@ -116,5 +128,7 @@ async def test_place_order_shadow_mode_success(adapter_shadow):
         pld={"symbol": "BTCUSDT", "side": "BUY", "qty": "1"},
     )
     result = await adapter_shadow.place_order(dec_msg)
-    assert result["lifecycle"] == "filled"
+    # New format uses 'success' and 'allowed' instead of 'lifecycle'
+    assert result["success"] is True
+    assert result["allowed"] is True
     assert "shadow" in result["order_id"]

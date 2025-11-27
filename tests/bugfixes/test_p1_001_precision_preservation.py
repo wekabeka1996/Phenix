@@ -91,7 +91,9 @@ class TestDecimalPrecisionPreservation:
             "symbol": "ETHUSDT",
             "risk_parameters": {"is_trading_allowed": True, "leverage": 10},
         }
-        portfolio_payload = {"equity": "10000", "positions": {}}
+        # Use new PortfolioProvider format with equity_free_usdt/equity_total_usdt
+        portfolio_payload = {"equity_free_usdt": "10000",
+                             "equity_total_usdt": "10000", "positions": {}}
 
         features_event = Message(
             op="EVT",

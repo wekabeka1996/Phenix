@@ -55,11 +55,16 @@ async def test_place_minimal_bracket_orders():
 
     print(f"📥 Результат SL ордера: {result}")
 
-    # Verify success
-    assert result["lifecycle"] == "filled"  # Shadow mode returns success
-    assert result["instrument"] == "ETHUSDT"
-    assert "clientOrderId" in result
-    assert result["clientOrderId"] == "test_sl_minimal"
+    # Verify success - shadow mode returns success/allowed instead of lifecycle
+    assert result.get(
+        "success") is True, "Shadow mode should return success=True"
+    assert result.get(
+        "allowed") is True, "Shadow mode should return allowed=True"
+    assert result["symbol"] == "ETHUSDT"
+    assert "clientOrderId" in result or "client_order_id" in result
+    client_order_id = result.get(
+        "clientOrderId") or result.get("client_order_id")
+    assert client_order_id == "test_sl_minimal"
 
 
 @pytest.mark.asyncio
@@ -97,9 +102,15 @@ async def test_place_tp_bracket_order():
 
     print(f"📥 Результат TP ордера: {result}")
 
-    assert result["lifecycle"] == "filled"
-    assert result["instrument"] == "ETHUSDT"
-    assert result["clientOrderId"] == "test_tp_minimal"
+    # Verify success - shadow mode returns success/allowed instead of lifecycle
+    assert result.get(
+        "success") is True, "Shadow mode should return success=True"
+    assert result.get(
+        "allowed") is True, "Shadow mode should return allowed=True"
+    assert result["symbol"] == "ETHUSDT"
+    client_order_id = result.get(
+        "clientOrderId") or result.get("client_order_id")
+    assert client_order_id == "test_tp_minimal"
 
 
 @pytest.mark.asyncio

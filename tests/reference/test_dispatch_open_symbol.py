@@ -127,7 +127,11 @@ class TestEventAdapterSymbolPropagation:
         assert event.symbol == "SOLUSDT", f"Expected 'SOLUSDT', got {event.symbol}"
 
     def test_cmd_open_symbol_none_when_missing(self):
-        """Test that CMD:OPEN with missing symbol results in None symbol."""
+        """Test that CMD:OPEN with missing symbol results in None (fail-closed).
+
+        After refactor, invalid payloads are rejected early (model validation),
+        returning None rather than an event with missing fields.
+        """
         from apps.reference.domains.execution_position.shadow_execpos.event_adapter import (
             MessageToRuntimeEventAdapter,
         )
@@ -150,7 +154,5 @@ class TestEventAdapterSymbolPropagation:
 
         event = adapter.from_legacy_message(msg)
 
-        assert event is not None, "Event should not be None"
-        assert event.kind == "ENTRY_INTENT"
-        # Symbol should be None when missing from payload
-        assert event.symbol is None, f"Expected None, got {event.symbol}"
+        # After refactor: invalid payload → None (fail-closed)
+        assert event is None, "Invalid payload (missing symbol) should return None"

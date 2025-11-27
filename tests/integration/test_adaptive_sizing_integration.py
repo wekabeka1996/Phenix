@@ -8,6 +8,8 @@ correctly modify the base position size calculated from Kelly/CVaR/Liquidity cap
 WHY: "Validate end-to-end adaptive sizing logic with realistic multi-layer constraints [FSMP-ADAPTIVE-T01-A]"
 """
 
+from vfoundation.core.protocol import Message
+from apps.reference.domains.decision_making.decision_making import DecisionMaking
 import pytest
 from unittest.mock import MagicMock
 from decimal import Decimal
@@ -17,9 +19,6 @@ import time
 
 # Add apps to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from apps.reference.domains.decision_making.decision_making import DecisionMaking
-from vfoundation.core.protocol import Message
 
 
 @pytest.fixture
@@ -76,8 +75,17 @@ def decision_domain_for_sizing(full_config):
     domain = DecisionMaking(config=full_config, fsm=MagicMock())
     domain.logger = MagicMock()
 
-    # Pre-fill states that are constant for these tests
-    domain.latest_portfolio = {"equity": "50000"}  # $50k equity
+    # Pre-fill portfolio via on_portfolio to properly initialize PortfolioProvider
+    from vfoundation.core.protocol import Message
+    portfolio_msg = Message(
+        op="EVT",
+        verb="PORTFOLIO_STATE_UPDATED",
+        src="test",
+        dst="decision_making",
+        pld={"equity_free_usdt": 50000.0,
+             "equity_total_usdt": 50000.0, "positions": []}
+    )
+    domain.on_portfolio(portfolio_msg)
     domain.latest_regime = None  # Initialize regime state
 
     # Pre-populate risk state for ETHUSDT symbol
@@ -123,7 +131,8 @@ def test_adaptive_sizing_integration_across_regimes(
     # --- Arrange ---
     domain = decision_domain_for_sizing
     # Set the regime that matches current parametrized test case
-    domain.latest_regime = {"regime": regime, "symbol": "ETHUSDT", "confidence": "0.90"}
+    domain.latest_regime = {"regime": regime,
+                            "symbol": "ETHUSDT", "confidence": "0.90"}
 
     # Strong buy signal that should result in liquidity cap being the limit
     features_event = Message(

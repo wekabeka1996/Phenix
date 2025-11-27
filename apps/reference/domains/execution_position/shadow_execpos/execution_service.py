@@ -14,6 +14,11 @@ try:
 except ImportError:
     httpx = None  # type: ignore
 
+try:
+    import httpcore
+except ImportError:
+    httpcore = None  # type: ignore
+
 from pydantic import ValidationError
 
 from apps.reference.domains.execution_position.contracts import ExecutionRequest
@@ -27,6 +32,18 @@ ERROR_WOULD_TRIGGER = "-2021"
 ERROR_DUPLICATE_ID = "-4116"
 ERROR_INVALID_QTY = "-4137"
 ERROR_MIN_NOTIONAL = "-4164"
+
+# Timeout exception types for classification
+TIMEOUT_EXCEPTION_NAMES = frozenset({
+    "ReadTimeout", "ConnectTimeout", "WriteTimeout",
+    "PoolTimeout", "TimeoutException"
+})
+
+# Network exception types for classification
+NETWORK_EXCEPTION_NAMES = frozenset({
+    "ConnectError", "RemoteProtocolError", "NetworkError",
+    "ConnectionError", "OSError"
+})
 
 
 class ExecutionService:
@@ -113,6 +130,23 @@ class ExecutionService:
         """
         error_str = str(exception)
         exception_type = type(exception).__name__
+
+        # Check for timeout exceptions first (highest priority)
+        # These should propagate as TIMEOUT for proper handling
+        timeout_types = (
+            "ReadTimeout", "ConnectTimeout", "WriteTimeout",
+            "PoolTimeout", "TimeoutException"
+        )
+        if exception_type in timeout_types:
+            return f"TIMEOUT: {error_str[:80]}"
+
+        # Check for network exceptions
+        network_types = (
+            "ConnectError", "RemoteProtocolError", "NetworkError",
+            "ConnectionError", "OSError"
+        )
+        if exception_type in network_types:
+            return f"NETWORK_ERROR: {error_str[:80]}"
 
         # Check for BinanceValidationError (precision/filter violations)
         if exception_type == "BinanceValidationError":
@@ -256,7 +290,8 @@ class ExecutionService:
                 "metadata": {}
             }
 
-        tif_value = cmd.get("tif") or cmd.get("time_in_force") or extra_params.get("tif") or extra_params.get("time_in_force")
+        tif_value = cmd.get("tif") or cmd.get("time_in_force") or extra_params.get(
+            "tif") or extra_params.get("time_in_force")
 
         try:
             exec_request = ExecutionRequest(
@@ -268,7 +303,8 @@ class ExecutionService:
                 price=price,
                 stop_price=stop_price,
                 reduce_only=reduce_only,
-                position_side=cmd.get("position_side") or extra_params.get("position_side"),
+                position_side=cmd.get(
+                    "position_side") or extra_params.get("position_side"),
                 client_order_id=client_order_id,
                 raw_payload=cmd,
             )
@@ -401,20 +437,37 @@ class ExecutionService:
             error_kind = "ADAPTER_ERROR"
             exception_type = type(e).__name__
 
-            # Specific handling for timeout exceptions
+            # Check for timeout exceptions (both httpx and httpcore)
+            is_timeout_exception = exception_type in TIMEOUT_EXCEPTION_NAMES
             if httpx and isinstance(e, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
+                is_timeout_exception = True
+            if httpcore and isinstance(e, (httpcore.ReadTimeout, httpcore.ConnectTimeout)):
+                is_timeout_exception = True
+
+            if is_timeout_exception:
                 error_kind = "ADAPTER_ERROR_TIMEOUT"
                 exception_type = "TimeoutException"
 
+            # Check for network exceptions
+            is_network_exception = exception_type in NETWORK_EXCEPTION_NAMES
+            if httpx and isinstance(e, httpx.ConnectError):
+                is_network_exception = True
+            if httpcore and isinstance(e, httpcore.ConnectError):
+                is_network_exception = True
+
+            if is_network_exception and not is_timeout_exception:
+                error_kind = "ADAPTER_ERROR_NETWORK"
+
             error_normalized = self._normalize_error(e)
             is_timeout = error_kind == "ADAPTER_ERROR_TIMEOUT"
+            is_network = error_kind == "ADAPTER_ERROR_NETWORK"
 
             # EXEC-R2-K: Classify exception-based errors
             classification = self._classify_place_error(error_normalized, {})
             reason_code = classification["reason_code"]
 
-            # Timeouts -> ERROR, benign ORDER_WOULD_TRIGGER -> WARNING, others -> ERROR
-            if is_timeout:
+            # Timeouts/Network -> ERROR, benign ORDER_WOULD_TRIGGER -> WARNING, others -> ERROR
+            if is_timeout or is_network:
                 log_level = logger.error
             elif classification["category"] == "expected" and reason_code == "ORDER_WOULD_TRIGGER":
                 log_level = logger.warning
@@ -443,6 +496,7 @@ class ExecutionService:
                 "error": error_normalized,
                 "error_kind": error_kind,
                 "is_timeout": is_timeout,
+                "is_network": is_network,
                 "should_retry": False if is_timeout else False,
                 "reason_code": reason_code,  # R2-K: Add reason_code to result
                 "metadata": {
@@ -509,7 +563,8 @@ class ExecutionService:
 
             # Handle structured error response (non-timeout)
             if isinstance(response, dict) and response.get("success") is False:
-                error_msg = response.get("msg") or response.get("error") or "Cancel failed"
+                error_msg = response.get("msg") or response.get(
+                    "error") or "Cancel failed"
                 logger.warning(
                     f"SHADOW_EXEC_POS_CANCEL_FAILED",
                     extra={

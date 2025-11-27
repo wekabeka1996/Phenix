@@ -949,6 +949,10 @@
       }
     }
   },
+  "system_config.yaml": {
+    "keys": null,
+    "raw": null
+  },
   "apps\\reference\\dictionaries\\global_v2_2.yaml": {
     "keys": [
       "version",
@@ -1038,11 +1042,11 @@
           "base_asset": "SOL",
           "quote_asset": "USDT",
           "precision": {
-            "quantity": 2,
+            "quantity": 0,
             "price": 2
           },
           "limits": {
-            "min_notional": 10.0,
+            "min_notional": 5.0,
             "min_qty": 0.01,
             "min_price": 0.01,
             "step_size": 0.01,
@@ -1060,7 +1064,7 @@
             "price": 2
           },
           "limits": {
-            "min_notional": 10.0,
+            "min_notional": 20.0,
             "min_qty": 0.001,
             "min_price": 0.01,
             "step_size": 0.001,
@@ -1078,7 +1082,7 @@
             "price": 2
           },
           "limits": {
-            "min_notional": 10.0,
+            "min_notional": 100.0,
             "min_qty": 0.001,
             "min_price": 0.1,
             "step_size": 0.001,
@@ -1096,7 +1100,7 @@
             "price": 2
           },
           "limits": {
-            "min_notional": 10.0,
+            "min_notional": 20.0,
             "min_qty": 0.01,
             "min_price": 0.01,
             "step_size": 0.01,
@@ -1110,7 +1114,8 @@
   },
   "config\\modes.yaml": {
     "keys": [
-      "profiles"
+      "profiles",
+      "default_profile"
     ],
     "raw": {
       "profiles": {
@@ -1126,14 +1131,14 @@
           }
         },
         "full_live": {
-          "trading_mode": "full_testnet",
+          "trading_mode": "full_live",
           "domains": {
-            "market_data": "testnet",
-            "feature_engineering": "testnet",
-            "decision_making": "testnet",
-            "risk_management": "testnet",
-            "execution_position": "testnet",
-            "audit_trail": "testnet"
+            "market_data": "live",
+            "feature_engineering": "live",
+            "decision_making": "live",
+            "risk_management": "live",
+            "execution_position": "live",
+            "audit_trail": "live"
           }
         },
         "full_testnet": {
@@ -1147,7 +1152,8 @@
             "audit_trail": "testnet"
           }
         }
-      }
+      },
+      "default_profile": "shadow_live"
     }
   },
   "config\\overrides.yaml": {
@@ -1278,12 +1284,60 @@
   },
   "config\\domains\\execution.yaml": {
     "keys": [
+      "adapter",
       "exposure",
-      "manage",
       "fallback",
       "brackets"
     ],
     "raw": {
+      "adapter": {
+        "timeouts": {
+          "connect": 10.0,
+          "read": 30.0,
+          "write": 10.0,
+          "pool": 10.0
+        },
+        "retry": {
+          "max_retries": 3,
+          "initial_backoff_sec": 0.5,
+          "max_backoff_sec": 8.0,
+          "backoff_multiplier": 2.0
+        },
+        "websocket": {
+          "initial_delay_sec": 1.0,
+          "max_delay_sec": 60.0,
+          "multiplier": 2.0,
+          "reset_after_success": true,
+          "listen_key_keepalive_sec": 2700
+        },
+        "time_sync": {
+          "recv_window_mainnet_ms": 5000,
+          "recv_window_testnet_ms": 20000,
+          "interval_sec": 30,
+          "cache_valid_sec": 25,
+          "max_drift_warn_ms": 500,
+          "max_drift_change_warn_ms": 10000,
+          "max_drift_hard_limit_ms": 60000,
+          "sync_max_attempts": 5,
+          "sync_backoff_base_sec": 0.5,
+          "sync_timeout_sec": 10.0,
+          "stale_cache_grace_period_sec": 300.0,
+          "error_1021": {
+            "max_retries": 2,
+            "backoff_base_sec": 0.3,
+            "backoff_multiplier": 2.0,
+            "force_sync_before_retry": true
+          }
+        },
+        "open_orders": {
+          "max_attempts": 3,
+          "backoff_ms": [
+            200,
+            500
+          ],
+          "fallback_reason": "API_ORDERS_FAILED"
+        }
+      },
       "exposure": {
         "max_equity_utilization_pct": 200.0,
         "max_portfolio_fraction": 2.0,
@@ -1299,15 +1353,6 @@
         "post_fill_hold_ttl_sec": 10,
         "positions_stale_ttl_sec": 5,
         "leverage_defaults": {
-          "SOLUSDT": 125,
-          "ETHUSDT": 125,
-          "__default__": 125
-        }
-      },
-      "manage": {
-        "mode": "aggregated_only",
-        "auto": true,
-        "brackets": {
           "enable": true,
           "oco_emulation": true,
           "stop_loss_bps": 50,
@@ -1341,10 +1386,19 @@
             "recalc_on_partial_close": true,
             "ttl_protect_new_bracket_ms": 3000,
             "allow_unprotected_position": false,
+            "recreate_missing_brackets": true,
             "watchdog": {
               "enabled": true,
               "interval_sec": 5,
-              "auto_heal_orphans": true
+              "auto_heal_orphans": true,
+              "grace": {
+                "enabled": true,
+                "period_sec": 2.0,
+                "kinds": [
+                  "NO_SL_FOR_OPEN_POSITION",
+                  "ORPHAN_SL_FOR_ZERO_POSITION"
+                ]
+              }
             }
           }
         },
@@ -1370,7 +1424,12 @@
         "watchdog": {
           "ack_ttl_ms": 8000,
           "fill_ttl_ms": 300000,
-          "check_interval_ms": 1000
+          "check_interval_ms": 1000,
+          "timeouts": {
+            "ack_ttl_ms": 8000,
+            "fill_ttl_ms": 300000,
+            "check_interval_ms": 1000
+          }
         },
         "orphan_monitor": {
           "enabled": true,
@@ -1430,7 +1489,15 @@
           "watchdog": {
             "enabled": true,
             "interval_sec": 5,
-            "auto_heal_orphans": true
+            "auto_heal_orphans": true,
+            "grace": {
+              "enabled": true,
+              "period_sec": 2.0,
+              "kinds": [
+                "NO_SL_FOR_OPEN_POSITION",
+                "ORPHAN_SL_FOR_ZERO_POSITION"
+              ]
+            }
           }
         }
       }
@@ -1485,6 +1552,16 @@
         ],
         "window": 60
       }
+    }
+  },
+  "config\\domains\\market_data.yaml": {
+    "keys": [
+      "use_ws_market_data",
+      "poll_interval_sec"
+    ],
+    "raw": {
+      "use_ws_market_data": false,
+      "poll_interval_sec": 5
     }
   },
   "config\\domains\\regimes.yaml": {
@@ -1613,6 +1690,206 @@
           "fallback": "limit",
           "allow_post_only": false
         }
+      }
+    }
+  },
+  "config\\examples\\execution_position_aggressive.yaml": {
+    "keys": [
+      "manage"
+    ],
+    "raw": {
+      "manage": {
+        "brackets": {
+          "aggregated_oco": {
+            "enabled": true,
+            "aggregated_only_mode": false,
+            "sl_pct": 0.01,
+            "tp_rr": 3.0,
+            "recalc_on_scale_in": true,
+            "recalc_on_partial_close": true,
+            "ttl_protect_new_bracket_ms": 2000,
+            "allow_unprotected_position": false,
+            "max_sl_legs": 3,
+            "max_tp_legs": 5,
+            "watchdog": {
+              "enabled": true,
+              "interval_sec": 5,
+              "auto_heal_orphans": true,
+              "grace": {
+                "enabled": true,
+                "period_sec": 2.0,
+                "kinds": [
+                  "NO_SL_FOR_OPEN_POSITION",
+                  "ORPHAN_SL",
+                  "TOO_MANY_SL",
+                  "STALE_LEVELS"
+                ]
+              }
+            }
+          }
+        },
+        "trailing": {
+          "enabled": true,
+          "trail_distance_bps": 150.0,
+          "activate_after_bps": 30.0,
+          "breakeven_rr": 1.5,
+          "hard_time_exit_sec": 21600.0,
+          "activation_profit_atr_k": 0.8,
+          "cooldown_sec": 5.0,
+          "step_bps": 3.0
+        },
+        "close": {
+          "max_hold_time_sec": 43200,
+          "reason_policy": "permissive",
+          "allow_time_exit": true,
+          "allow_profit_exit": true
+        }
+      }
+    }
+  },
+  "config\\examples\\execution_position_moderate.yaml": {
+    "keys": [
+      "manage"
+    ],
+    "raw": {
+      "manage": {
+        "brackets": {
+          "aggregated_oco": {
+            "enabled": true,
+            "aggregated_only_mode": false,
+            "sl_pct": 0.02,
+            "tp_rr": 2.0,
+            "recalc_on_scale_in": true,
+            "recalc_on_partial_close": false,
+            "ttl_protect_new_bracket_ms": 3000,
+            "allow_unprotected_position": false,
+            "max_sl_legs": 2,
+            "max_tp_legs": 3,
+            "watchdog": {
+              "enabled": true,
+              "interval_sec": 10,
+              "auto_heal_orphans": true,
+              "grace": {
+                "enabled": true,
+                "period_sec": 3.0,
+                "kinds": [
+                  "NO_SL_FOR_OPEN_POSITION",
+                  "ORPHAN_SL",
+                  "TOO_MANY_SL"
+                ]
+              }
+            }
+          }
+        },
+        "trailing": {
+          "enabled": true,
+          "trail_distance_bps": 100.0,
+          "activate_after_bps": 50.0,
+          "breakeven_rr": 1.2,
+          "hard_time_exit_sec": 10800.0,
+          "activation_profit_atr_k": 1.0,
+          "cooldown_sec": 15.0,
+          "step_bps": 5.0
+        },
+        "close": {
+          "max_hold_time_sec": 21600,
+          "reason_policy": "default",
+          "allow_time_exit": true,
+          "allow_profit_exit": true
+        }
+      }
+    }
+  },
+  "config\\examples\\execution_position_safe.yaml": {
+    "keys": [
+      "manage"
+    ],
+    "raw": {
+      "manage": {
+        "brackets": {
+          "aggregated_oco": {
+            "enabled": true,
+            "aggregated_only_mode": false,
+            "sl_pct": 0.015,
+            "tp_rr": 1.5,
+            "recalc_on_scale_in": false,
+            "recalc_on_partial_close": false,
+            "ttl_protect_new_bracket_ms": 5000,
+            "allow_unprotected_position": false,
+            "max_sl_legs": 1,
+            "max_tp_legs": 1,
+            "watchdog": {
+              "enabled": true,
+              "interval_sec": 15,
+              "auto_heal_orphans": true,
+              "grace": {
+                "enabled": true,
+                "period_sec": 5.0,
+                "kinds": [
+                  "NO_SL_FOR_OPEN_POSITION",
+                  "ORPHAN_SL"
+                ]
+              }
+            }
+          }
+        },
+        "trailing": {
+          "enabled": true,
+          "trail_distance_bps": 80.0,
+          "activate_after_bps": 100.0,
+          "breakeven_rr": 1.0,
+          "hard_time_exit_sec": 7200.0,
+          "activation_profit_atr_k": 1.5,
+          "cooldown_sec": 30.0,
+          "step_bps": 10.0
+        },
+        "close": {
+          "max_hold_time_sec": 14400,
+          "reason_policy": "strict",
+          "allow_time_exit": true,
+          "allow_profit_exit": true
+        }
+      }
+    }
+  },
+  "configs\\execution_testnet_algo.yaml": {
+    "keys": [
+      "trading",
+      "symbols",
+      "ops"
+    ],
+    "raw": {
+      "trading": {
+        "trading_env": "test",
+        "execution": {
+          "use_algo_service_for_conditionals": true,
+          "manage": {
+            "mode": "aggregated_only",
+            "brackets": {
+              "enable": true,
+              "oco_emulation": true,
+              "sl": {
+                "fixed_bps": 50
+              },
+              "tp": {
+                "fixed_bps": 100
+              },
+              "aggregated_oco": {
+                "enabled": true,
+                "aggregated_only_mode": true
+              }
+            }
+          }
+        }
+      },
+      "symbols": {
+        "allow_list": [
+          "BTCUSDT",
+          "ETHUSDT"
+        ]
+      },
+      "ops": {
+        "metrics_url": "http://127.0.0.1:8000/metrics"
       }
     }
   },

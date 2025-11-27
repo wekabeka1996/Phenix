@@ -82,7 +82,7 @@ def test_position_tracking_emits_equity_fields():
 
 def test_decision_making_caches_equity():
     """
-    Test that DecisionMaking caches equity_free_usdt and doesn't overwrite with zero.
+    Test that DecisionMaking's PortfolioProvider retains non-zero equity and doesn't overwrite with zero.
     """
     from apps.reference.domains.decision_making.decision_making import DecisionMaking
 
@@ -108,7 +108,7 @@ def test_decision_making_caches_equity():
 
     portfolio_payload_1 = {
         "equity_free_usdt": "10000.0",
-        "equity_cross_usdt": "10500.0",
+        "equity_total_usdt": "10500.0",
     }
     msg1 = Message(
         op="EVT",
@@ -119,13 +119,15 @@ def test_decision_making_caches_equity():
     )
     decision_component.on_portfolio(msg1)
 
-    # Verify cached
-    assert decision_component._cached_equity_free_usdt == "10000.0"
-    assert decision_component._cached_equity_cross_usdt == "10500.0"
+    # Verify cached via portfolio_provider
+    snapshot1 = decision_component.portfolio_provider.get_snapshot(
+        prefer_nonzero=True)
+    assert float(snapshot1.equity_free_usdt) == 10000.0
+    assert float(snapshot1.equity_total_usdt) == 10500.0
 
-    # Second update with zero (should not overwrite)
+    # Second update with zero (should not overwrite cached non-zero)
     portfolio_payload_2 = {
-        "equity_free_usdt": "0.0", "equity_cross_usdt": "0.0"}
+        "equity_free_usdt": "0.0", "equity_total_usdt": "0.0"}
     msg2 = Message(
         op="EVT",
         verb="PORTFOLIO_STATE_UPDATED",
@@ -135,9 +137,11 @@ def test_decision_making_caches_equity():
     )
     decision_component.on_portfolio(msg2)
 
-    # Verify cache preserved
-    assert decision_component._cached_equity_free_usdt == "10000.0"
-    assert decision_component._cached_equity_cross_usdt == "10500.0"
+    # Verify cache preserved when prefer_nonzero=True
+    snapshot2 = decision_component.portfolio_provider.get_snapshot(
+        prefer_nonzero=True)
+    assert float(snapshot2.equity_free_usdt) == 10000.0
+    assert float(snapshot2.equity_total_usdt) == 10500.0
 
 
 if __name__ == "__main__":

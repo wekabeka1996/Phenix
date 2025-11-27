@@ -46,21 +46,23 @@ def test_strong_long_signal_emits_trade(mock_fsm, full_valid_config):
         verb="FEATURES_CALCULATED",
         src="test",
         dst="test",
-        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "features": features},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT",
+             "features": features},
     )
     risk_msg = Message(
         op="EVT",
         verb="RISK_ASSESSMENT_COMPLETED",
         src="test",
         dst="test",
-        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "risk_parameters": {"is_trading_allowed": True}},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT",
+             "risk_parameters": {"is_trading_allowed": True}},
     )
     portfolio_msg = Message(
         op="EVT",
         verb="PORTFOLIO_STATE_UPDATED",
         src="test",
         dst="test",
-        pld={"equity": "50000"},
+        pld={"equity_total_usdt": 50000, "equity_free_usdt": 50000},
     )
 
     decision_domain.on_portfolio(portfolio_msg)
@@ -84,21 +86,23 @@ def test_position_size_below_minimum_rejected(mock_fsm, full_valid_config, caplo
         verb="FEATURES_CALCULATED",
         src="test",
         dst="test",
-        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "features": features},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT",
+             "features": features},
     )
     risk_msg = Message(
         op="EVT",
         verb="RISK_ASSESSMENT_COMPLETED",
         src="test",
         dst="test",
-        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT", "risk_parameters": {"is_trading_allowed": True}},
+        pld={"ts": int(time.time() * 1000), "symbol": "BTCUSDT",
+             "risk_parameters": {"is_trading_allowed": True}},
     )
     portfolio_msg = Message(
         op="EVT",
         verb="PORTFOLIO_STATE_UPDATED",
         src="test",
         dst="test",
-        pld={"equity": "10000"},
+        pld={"equity_total_usdt": 10000, "equity_free_usdt": 10000},
     )
 
     decision_domain.on_portfolio(portfolio_msg)

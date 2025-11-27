@@ -9,26 +9,56 @@ Inherits from vfoundation.core.adapters.base.AbstractExchangeAdapter to ensure
 compatibility with the generic FSM interface.
 """
 
-import json as _json
-import asyncio
-import hashlib
-import hmac
-import logging
-import time
-from decimal import Decimal, ROUND_DOWN, ROUND_UP
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlencode, quote_plus
-
-import httpx
-
+from apps.reference.config_exposure_policy import resolve_exposure_policy
 from vfoundation.core.adapters.base import (
     AbstractExchangeAdapter,
     ExchangeOrderParams,
     ExchangeOrderResponse,
     ExchangePosition,
 )
+import json as _json
+import asyncio
+import hashlib
+import hmac
+import logging
+import time
+from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlencode, quote_plus
 
-from apps.reference.config_exposure_policy import resolve_exposure_policy
+import httpx
+import httpcore
+
+# Import adapter configuration from central resolver (follows YAML config pattern)
+from apps.reference.config_adapter import (
+    TimeoutConfig,
+    RetryConfig,
+    TimeSyncConfig,
+    Error1021RetryConfig,
+    TIMEOUT_EXCEPTIONS,
+    NETWORK_EXCEPTIONS,
+    resolve_timeout_config,
+    resolve_retry_config,
+    resolve_time_sync_config,
+)
+
+# Import centralized time sync manager
+from apps.reference.adapters.time_sync_manager import TimeSyncManager, TimeSyncError
+
+# Re-export for backward compatibility
+__all__ = [
+    "BinanceAdapter",
+    "BinanceAPIError",
+    "TimeoutConfig",
+    "RetryConfig",
+    "TimeSyncConfig",
+    "TimeSyncManager",
+    "TimeSyncError",
+    "TIMEOUT_EXCEPTIONS",
+    "NETWORK_EXCEPTIONS",
+]
+
 
 LOG = logging.getLogger(__name__)
 # забезпечуємо саме таку змінну, яку патчить тест
@@ -96,6 +126,10 @@ class BinanceAdapter(AbstractExchangeAdapter):
         *,
         session: Optional[httpx.AsyncClient] = None,  # <-- новий аргумент
         timeout: float = 10.0,
+        timeout_config: Optional[TimeoutConfig] = None,
+        retry_config: Optional[RetryConfig] = None,
+        time_sync_config: Optional[TimeSyncConfig] = None,
+        time_sync_manager: Optional[TimeSyncManager] = None,
         **kwargs,
     ):
         rest_url = kwargs.pop("rest_url", None)  # legacy alias
@@ -109,28 +143,71 @@ class BinanceAdapter(AbstractExchangeAdapter):
         # 🔴 ADD: logger for diagnostics
         self.logger = logging.getLogger(__name__)
 
-        # NEW: time sync state
+        # =================================================================
+        # TIMEOUT & RETRY CONFIGURATION
+        # =================================================================
+        # Priority: explicit args > config dict > environment defaults
+        # Testnet gets more generous timeouts by default
+        is_testnet = "testnet" in base_url.lower() or "demo-fapi" in base_url.lower()
+        self._is_testnet = is_testnet
+
+        if timeout_config:
+            self._timeout_config = timeout_config
+        else:
+            self._timeout_config = TimeoutConfig.from_config(self.config)
+            # Apply testnet defaults if not explicitly configured
+            if is_testnet and not self.config.get("adapter", {}).get("timeouts"):
+                self._timeout_config = TimeoutConfig.testnet_defaults()
+
+        if retry_config:
+            self._retry_config = retry_config
+        else:
+            self._retry_config = RetryConfig.from_config(self.config)
+
+        # =================================================================
+        # TIME SYNC CONFIGURATION (NEW)
+        # =================================================================
+        if time_sync_config:
+            self._time_sync_config = time_sync_config
+        else:
+            self._time_sync_config = resolve_time_sync_config(self.config)
+
+        LOG.info(
+            f"[BinanceAdapter] Initialized with timeouts: "
+            f"read={self._timeout_config.read}s, connect={self._timeout_config.connect}s, "
+            f"retries={self._retry_config.max_retries}, testnet={is_testnet}, "
+            f"recvWindow={self._time_sync_config.get_recv_window(is_testnet)}ms"
+        )
+
+        # Сумісність із тестами: публічне поле .session завжди існує
+        # Use TimeoutConfig for httpx session
+        httpx_timeout = self._timeout_config.to_httpx_timeout()
+        self.session: httpx.AsyncClient = session or httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=httpx_timeout,
+            headers={"X-MBX-APIKEY": self.api_key},
+        )
+
+        # =================================================================
+        # TIME SYNC MANAGER (NEW - centralized time management)
+        # =================================================================
+        if time_sync_manager:
+            self._time_sync_manager = time_sync_manager
+        else:
+            self._time_sync_manager = TimeSyncManager(
+                config=self.config,
+                http_client=self.session,
+                base_url=self.base_url,
+                is_testnet=is_testnet,
+            )
+
+        # Legacy time sync state (for backward compatibility)
         self._time_offset_ms = 0
         self._last_time_sync_monotonic = 0.0
         self._time_sync_lock = asyncio.Lock()
-        # recvWindow (ms). Для ф'ючерсів максимум 60000.
-        try:
-            if hasattr(self.config, 'recv_window_ms'):
-                self._recv_window_ms = int(self.config.recv_window_ms)
-            elif isinstance(self.config, dict):
-                self._recv_window_ms = int(
-                    self.config.get("recv_window_ms", 20000))
-            else:
-                self._recv_window_ms = 20000
-        except (AttributeError, TypeError, ValueError):
-            self._recv_window_ms = 20000
-
-        # Сумісність із тестами: публічне поле .session завжди існує
-        self.session: httpx.AsyncClient = session or httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self._timeout,
-            headers={"X-MBX-APIKEY": self.api_key},
-        )
+        # recvWindow from config (legacy fallback)
+        self._recv_window_ms = self._time_sync_config.get_recv_window(
+            is_testnet)
 
         # PHASE B1: ClientOrderId ledger for -4116 idempotency
         # Format: {clientOrderId: (timestamp_ms: int, order_id: str, symbol: str)}
@@ -162,23 +239,23 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     async def start(self) -> None:
         """
-        Start the adapter (no-op for REST-only adapter).
+        Start the adapter including time sync manager.
 
-        This method exists for compatibility with FSM initialization
-        that expects polling adapters. Since this adapter is REST-only,
-        no background polling is started.
+        Starts the TimeSyncManager for background time synchronization.
         """
-        LOG.info("BinanceAdapter started (REST-only mode, no polling)")
+        # Start time sync manager with background sync
+        await self._time_sync_manager.start()
+        LOG.info("BinanceAdapter started (TimeSyncManager active)")
 
     async def stop(self) -> None:
         """
-        Stop the adapter (no-op for REST-only adapter).
+        Stop the adapter and clean up resources.
 
-        This method exists for compatibility with FSM cleanup
-        that expects polling adapters. Since this adapter is REST-only,
-        no background polling needs to be stopped.
+        Stops the TimeSyncManager and closes HTTP session.
         """
-        LOG.info("BinanceAdapter stopped (REST-only mode, no polling)")
+        # Stop time sync manager
+        await self._time_sync_manager.stop()
+        LOG.info("BinanceAdapter stopped (TimeSyncManager stopped)")
 
     def track_order(self, order_response: Dict[str, Any]) -> None:
         """
@@ -259,46 +336,57 @@ class BinanceAdapter(AbstractExchangeAdapter):
         return out
 
     async def _server_time(self) -> int:
-        # Для USDM futures: /fapi/v1/time
-        r = await self.session.get(f"{self.base_url}/fapi/v1/time")
-        r.raise_for_status()
-        data = await _coerce_json(r)
-        # serverTime у мілісекундах
-        return int(data["serverTime"])
+        """
+        Get server time (legacy method for backward compatibility).
+        Uses TimeSyncManager internally.
+        """
+        # Force sync and return timestamp from manager
+        await self._time_sync_manager.sync(force=True)
+        return int(time.time() * 1000) + self._time_sync_manager.offset_ms
 
     async def _sync_time(self, force: bool = False):
-        # TTL 2 хв за замовчуванням
-        try:
-            if hasattr(self.config, 'time_sync_ttl_sec'):
-                ttl_sec = int(self.config.time_sync_ttl_sec)
-            elif isinstance(self.config, dict):
-                ttl_sec = int(self.config.get("time_sync_ttl_sec", 120))
-            else:
-                ttl_sec = 120
-        except (AttributeError, TypeError, ValueError):
-            ttl_sec = 120
-
-        now_mono = time.monotonic()
-        if not force and (now_mono - self._last_time_sync_monotonic) < ttl_sec:
-            return
-        async with self._time_sync_lock:
-            # Могли вже інші синхронізувати
-            if not force and (time.monotonic() - self._last_time_sync_monotonic) < ttl_sec:
-                return
-            server_ms = await self._server_time()
-            local_ms = int(time.time() * 1000)
-            self._time_offset_ms = server_ms - local_ms
+        """
+        Sync time with server (legacy method for backward compatibility).
+        Delegates to TimeSyncManager.
+        """
+        success = await self._time_sync_manager.sync(force=force)
+        if success:
+            # Update legacy state for backward compatibility
+            self._time_offset_ms = self._time_sync_manager.offset_ms
             self._last_time_sync_monotonic = time.monotonic()
+        return success
+
+    async def _ensure_time_sync(self) -> int:
+        """
+        Ensure time is synced and return timestamp for signing.
+        Raises TimeSyncError if sync fails.
+
+        Returns:
+            Timestamp in milliseconds (local_time + offset)
+        """
+        return await self._time_sync_manager.get_timestamp()
 
     def _sign_build(self, base_params: dict) -> tuple[str, dict]:
         """
+        Build signed request parameters.
+        Uses cached offset from TimeSyncManager.
+
         Приймає 'базові' params (без timestamp/recvWindow/signature),
         повертає (encoded_qs_with_signature, final_params_dict).
         """
         base = self._norm_params(base_params)
-        ts = int(time.time() * 1000) + int(self._time_offset_ms)
+
+        # Use timestamp from TimeSyncManager (uses cached offset)
+        if self._time_sync_manager.is_initialized:
+            offset = self._time_sync_manager.offset_ms
+        else:
+            # Fallback to legacy offset if manager not initialized
+            offset = self._time_offset_ms
+
+        ts = int(time.time() * 1000) + int(offset)
         base["timestamp"] = str(ts)
         base.setdefault("recvWindow", str(self._recv_window_ms))
+
         # Строга URL-енкодація й підпис рівно того рядка, що підемо відправляти
         qs = urlencode(base, doseq=True, quote_via=quote_plus)
         sig = hmac.new(self.api_secret, qs.encode(),
@@ -311,17 +399,43 @@ class BinanceAdapter(AbstractExchangeAdapter):
     async def _request(
         self, method: str, path: str, params: dict | None = None, signed: bool = True
     ):
+        """
+        Execute HTTP request with retry logic and proper error classification.
+
+        Features:
+        - Exponential backoff retry on timeout/network errors
+        - Automatic time sync retry on -1021/-1022 errors
+        - Detailed logging with attempt tracking
+        - Error classification for upstream consumers
+
+        Args:
+            method: HTTP method (GET, POST, DELETE, etc.)
+            path: API endpoint path
+            params: Request parameters
+            signed: Whether to sign the request
+
+        Returns:
+            Parsed JSON response
+
+        Raises:
+            BinanceAPIError: For API-level errors
+            httpx.ReadTimeout: After all retries exhausted (re-raised for upstream handling)
+        """
         url = f"{self.base_url}{path}"
         params = params or {}
 
         # Готуємо одразу "базові" params (без підпису) для можливого ретраю
         base_params = dict(params)
 
-        async def _do(method: str, base_params: dict):
+        # Get backoff delays from retry config
+        backoff_delays = self._retry_config.get_backoff_delays()
+        max_attempts = 1 + self._retry_config.max_retries
+
+        async def _do_request() -> Any:
+            """Single request attempt."""
             if signed:
                 await self._sync_time(False)
                 qs, final_params = self._sign_build(base_params)
-                # ВИКОРИСТОВУЄМО self.session — щоб тести могли мокати її
                 r = await self.session.request(method.upper(), url, params=final_params)
                 if r.status_code >= 400:
                     err = await _safe_read_err(r)
@@ -332,36 +446,138 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     method.upper(), url, params=self._norm_params(base_params)
                 )
                 r.raise_for_status()
-                return await _coerce_json(r)        # 1-й запит
-        try:
-            return await _do(method, base_params)
-        except Exception as e:
-            # Якщо ReadTimeout або ConnectTimeout → спробуємо ретрай (1 раз)
-            import httpx
-            import httpcore
-            timeout_exceptions = (
-                httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException,
-                httpcore.ReadTimeout, httpcore.ConnectTimeout, httpcore.TimeoutException
-            )
-            if isinstance(e, timeout_exceptions):
-                LOG.warning(f"Timeout on {method} {path}, retrying once...")
-                import asyncio
-                await asyncio.sleep(0.5)  # Невелика затримка перед ретраєм
-                return await _do(method, base_params)
-            # Якщо -1021 → жорстка синхронізація і другий запит з НОВОГО base_params
-            msg = str(e)
-            if "code': -1021" in msg or "-1021" in msg:
-                await self._sync_time(True)
-                return await _do(method, base_params)
-            # Якщо -1022 → також спробуємо 1 ретрай з чистої бази (частий кейс "перепідписали")
-            if (
-                "code': -1022" in msg
-                or "-1022" in msg
-                or "Signature for this request is not valid" in msg
-            ):
-                await self._sync_time(True)
-                return await _do(method, base_params)
-            raise
+                return await _coerce_json(r)
+
+        last_exception: Optional[Exception] = None
+
+        for attempt in range(max_attempts):
+            try:
+                result = await _do_request()
+
+                # Log recovery if this wasn't the first attempt
+                if attempt > 0:
+                    LOG.info(
+                        f"[BinanceAdapter] Request recovered on attempt {attempt + 1}/{max_attempts}: "
+                        f"{method} {path}"
+                    )
+                return result
+
+            except TIMEOUT_EXCEPTIONS as e:
+                last_exception = e
+
+                # Check if we should retry
+                if not self._retry_config.retry_on_timeout:
+                    LOG.error(
+                        f"[BinanceAdapter] TIMEOUT (retry disabled): {method} {path} - {type(e).__name__}"
+                    )
+                    raise
+
+                # Check if we have more attempts
+                if attempt < len(backoff_delays):
+                    delay = backoff_delays[attempt]
+                    LOG.warning(
+                        f"[BinanceAdapter] TIMEOUT on attempt {attempt + 1}/{max_attempts}: "
+                        f"{method} {path} - {type(e).__name__}, "
+                        f"retrying in {delay:.1f}s (read_timeout={self._timeout_config.read}s)"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    # All retries exhausted
+                    LOG.error(
+                        f"[BinanceAdapter] TIMEOUT_EXHAUSTED after {max_attempts} attempts: "
+                        f"{method} {path} - {type(e).__name__}"
+                    )
+                    raise
+
+            except NETWORK_EXCEPTIONS as e:
+                last_exception = e
+
+                # Check if we should retry
+                if not self._retry_config.retry_on_network:
+                    LOG.error(
+                        f"[BinanceAdapter] NETWORK_ERROR (retry disabled): {method} {path} - {type(e).__name__}"
+                    )
+                    raise
+
+                # Check if we have more attempts
+                if attempt < len(backoff_delays):
+                    delay = backoff_delays[attempt]
+                    LOG.warning(
+                        f"[BinanceAdapter] NETWORK_ERROR on attempt {attempt + 1}/{max_attempts}: "
+                        f"{method} {path} - {type(e).__name__}: {str(e)[:100]}, "
+                        f"retrying in {delay:.1f}s"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    LOG.error(
+                        f"[BinanceAdapter] NETWORK_ERROR_EXHAUSTED after {max_attempts} attempts: "
+                        f"{method} {path} - {type(e).__name__}"
+                    )
+                    raise
+
+            except BinanceAPIError as e:
+                # Handle specific API errors that warrant retry
+
+                # -1021: Timestamp error - use Error1021RetryConfig for retries
+                if e.code == -1021:
+                    retry_cfg = self._time_sync_config.error_1021
+                    max_ts_retries = retry_cfg.max_retries
+
+                    for ts_attempt in range(max_ts_retries):
+                        backoff = retry_cfg.backoff_base_sec * \
+                            (retry_cfg.backoff_multiplier ** ts_attempt)
+                        LOG.warning(
+                            f"[BinanceAdapter] TIMESTAMP_ERROR (-1021): {method} {path}, "
+                            f"attempt {ts_attempt + 1}/{max_ts_retries}, "
+                            f"force_sync={retry_cfg.force_sync_before_retry}, "
+                            f"backoff={backoff:.2f}s"
+                        )
+
+                        if retry_cfg.force_sync_before_retry:
+                            await self._time_sync_manager.sync(force=True)
+
+                        if backoff > 0:
+                            await asyncio.sleep(backoff)
+
+                        try:
+                            return await _do_request()
+                        except BinanceAPIError as retry_e:
+                            if retry_e.code == -1021 and ts_attempt < max_ts_retries - 1:
+                                continue  # Try again
+                            raise  # Either different error or exhausted retries
+                        except Exception:
+                            raise  # Different exception type - don't retry
+
+                    # Should not reach here, but just in case
+                    raise
+
+                # -1022: Invalid signature - may need re-sign after time sync
+                if e.code == -1022:
+                    LOG.warning(
+                        f"[BinanceAdapter] SIGNATURE_ERROR (-1022): {method} {path}, syncing time and retrying"
+                    )
+                    await self._time_sync_manager.sync(force=True)
+                    try:
+                        return await _do_request()
+                    except Exception:
+                        raise
+
+                # Other API errors - don't retry
+                raise
+
+            except Exception as e:
+                # Unknown exception - don't retry, log and raise
+                LOG.error(
+                    f"[BinanceAdapter] UNEXPECTED_ERROR: {method} {path} - {type(e).__name__}: {e}"
+                )
+                raise
+
+        # Should never reach here, but if we do, raise last exception
+        if last_exception:
+            raise last_exception
+        raise RuntimeError(f"Request failed after {max_attempts} attempts")
 
     # --- Public API Methods (via AbstractExchangeAdapter interface) ---
 

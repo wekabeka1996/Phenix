@@ -25,10 +25,29 @@ from typing import Any, Dict, List, Mapping, Optional
 from urllib.parse import urlencode
 
 import httpx
+import httpcore
 
 from vfoundation.core.protocol import Message
 
 from .execution_adapter import AbstractExecutionAdapter
+
+# Import adapter configuration from central resolver (follows YAML config pattern)
+from apps.reference.config_adapter import (
+    TimeoutConfig,
+    RetryConfig,
+    WebSocketReconnectConfig,
+    TimeSyncConfig,
+    Error1021RetryConfig,
+    OpenOrdersConfig,
+    TIMEOUT_EXCEPTIONS,
+    NETWORK_EXCEPTIONS,
+    resolve_timeout_config,
+    resolve_retry_config,
+    resolve_websocket_reconnect_config,
+    resolve_time_sync_config,
+    resolve_open_orders_config,
+)
+from apps.reference.adapters.time_sync_manager import TimeSyncManager, TimeSyncError
 from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult, ClientOrderIdConfig
 from .algo_order_index import AlgoOrderIndex, AlgoOrderUpdate
 from apps.reference.telemetry.audit_logger import audit_logger
@@ -75,29 +94,32 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["BinanceExecutionAdapter"]
 
-# Time synchronization constants
+# Time synchronization constants - NOW LOADED FROM TimeSyncConfig (YAML)
+# These are kept as fallbacks only, TimeSyncManager uses config values
 TIME_SYNC_INTERVAL_SEC = 30  # Re-sync every 30 seconds for Futures stability
 TIME_DRIFT_INFO_THRESHOLD_MS = 500
 # Increased for testnet latency tolerance
 TIME_DRIFT_WARN_CHANGE_THRESHOLD_MS = 10_000
 TIME_DRIFT_HARD_LIMIT_MS = 60_000
-# Robust time sync constants (TASK-TIMESYNC-FIX)
+# Robust time sync constants (TASK-TIMESYNC-FIX) - DEPRECATED, use TimeSyncConfig
 TIME_SYNC_CACHE_VALID_SEC = 25.0  # Cache offset for 25 seconds
 TIME_SYNC_MAX_RETRIES = 5
 TIME_SYNC_BACKOFF_BASE_SEC = 0.5
 
+# DEPRECATED: Use OpenOrdersConfig from config_adapter.py
+# Kept for backward compatibility only
 GET_OPEN_ORDERS_MAX_ATTEMPTS = 3
 GET_OPEN_ORDERS_BACKOFF_MS = (200, 500)
 GET_OPEN_ORDERS_FALLBACK_REASON = "API_ORDERS_FAILED"
 
+# DEPRECATED: Use WebSocketReconnectConfig.listen_key_keepalive_sec
 LISTEN_KEY_KEEPALIVE_SECONDS = 45 * 60  # 45 minutes
 
 # Binance Futures API configuration
-# Default to demo-fapi.binance.com for USDT-M Futures testnet (/fapi endpoints)
-# NOTE: testnet.binancefuture.com is deprecated, demo-fapi.binance.com is the new testnet URL
-# See: https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info
+# Use testnet.binancefuture.com for USDT-M Futures testnet
+# (demo-fapi.binance.com has different time sync, causing -1021 errors)
 BASE_URL = os.environ.get("BINANCE_FUTURES_BASE_URL",
-                          "https://demo-fapi.binance.com")
+                          "https://testnet.binancefuture.com")
 
 
 class BinanceValidationError(Exception):
@@ -113,25 +135,46 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
     Handles DEC:OPEN messages and executes market orders with guards.
     """
 
-    def __init__(self, fsm=None, config=None, shadow_mode: bool = False, rest_timeout_sec: float = 60.0, **kwargs):
+    def __init__(self, fsm=None, config=None, shadow_mode: bool = False, **kwargs):
         """
         Initialize Binance adapter.
 
         Args:
             fsm: FSM instance for event emission
-            config: Configuration dict
+            config: Configuration dict (reads timeout from config.adapter.timeouts)
             shadow_mode: If True, no live API calls (for testing)
-            rest_timeout_sec: HTTP request timeout in seconds (default: 60.0)
             **kwargs: Additional arguments (e.g., fsm_core for testing)
         """
         super().__init__(fsm, config)
         self.shadow_mode = shadow_mode
-        self._rest_timeout = float(rest_timeout_sec)
         # Support both fsm and fsm_core parameter names (for testing)
         # For emitting EVT:* events
         self.fsm_core = kwargs.get('fsm_core', fsm)
         self._last_status_check = 0.0
         self._status_cache = "unknown"
+
+        # ===========================================================
+        # TIMEOUT & RETRY CONFIGURATION (from YAML config resolver)
+        # ===========================================================
+        # Read from config (YAML) with fallback to environment-based defaults.
+        # Config path: config_v2.domains.execution.adapter.timeouts/retry/websocket
+        # Falls back to testnet_defaults() or live_defaults() based on USE_TESTNET env.
+        self._is_testnet = os.environ.get("USE_TESTNET", "1") == "1"
+
+        # Initialize timeout config from YAML or env-based defaults
+        self._timeout_config: TimeoutConfig = TimeoutConfig.from_config(config)
+
+        # Initialize retry config from YAML or defaults
+        self._retry_config: RetryConfig = RetryConfig.from_config(config)
+
+        # Initialize WebSocket reconnect config from YAML or defaults
+        self._ws_reconnect_config: WebSocketReconnectConfig = WebSocketReconnectConfig.from_config(
+            config)
+
+        logger.info(
+            f"[BinanceExecutionAdapter] TimeoutConfig: read={self._timeout_config.read}s, "
+            f"connect={self._timeout_config.connect}s, RetryConfig: max_retries={self._retry_config.max_retries}"
+        )
 
         # Persistent httpx.AsyncClient to avoid connection pool exhaustion
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -143,25 +186,37 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         self.ws_listen_key: Optional[str] = None
         self.ws_thread: Optional[threading.Thread] = None
         self.ws_running = False
-        self.ws_reconnect_delay = 1.0  # Start with 1 second, exponential backoff
-        self.ws_max_reconnect_delay = 60.0  # Max 1 minute
+        # Use config values for WebSocket reconnect
+        self.ws_reconnect_delay = self._ws_reconnect_config.initial_delay_sec
+        self.ws_max_reconnect_delay = self._ws_reconnect_config.max_delay_sec
         self.listen_key_last_refresh = 0.0
         self._last_listen_key_keepalive_at = 0.0
 
-        # Time sync attributes
+        # Open orders retry config from YAML
+        self._open_orders_config: OpenOrdersConfig = resolve_open_orders_config(
+            config)
+
+        # Time sync configuration from YAML (centralized)
+        self._time_sync_config: TimeSyncConfig = resolve_time_sync_config(
+            config)
+
+        # Legacy time sync attributes (kept for compatibility, managed by TimeSyncManager)
         self.server_time_offset = 0.0  # Offset between local and server time
         self.last_time_sync = 0.0
         self._time_sync_initialized = False
         self._last_drift_warning_bucket: Optional[int] = None
-        # Background time sync task
+        # Background time sync task - now managed by TimeSyncManager
         self._time_sync_task: Optional[asyncio.Task] = None
-        # Robust time sync (TASK-TIMESYNC-FIX)
+        # Robust time sync (TASK-TIMESYNC-FIX) - locks are now in TimeSyncManager
         # Two locks: threading.Lock for WS thread, asyncio.Lock for async context
         # For sync _sync_time_with_server_sync
         self._time_sync_thread_lock = threading.Lock()
         # Lazy init for async context
         self._time_sync_async_lock: Optional[asyncio.Lock] = None
         self._time_sync_valid_until: float = 0.0  # monotonic timestamp
+
+        # TimeSyncManager will be initialized after we know the base URL and http client
+        self._time_sync_manager: Optional[TimeSyncManager] = None
 
         # Read API credentials from environment or config
         try:
@@ -181,6 +236,20 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             os.environ.get("USE_TESTNET", "1") == "1" or
             os.environ.get("USE_TESTNET", "").lower() == "true"
         )
+
+        # Update _is_testnet with proper value from config detection
+        self._is_testnet = self.use_testnet
+
+        # Re-initialize timeout config if testnet detection changed
+        if self._is_testnet != (os.environ.get("USE_TESTNET", "1") == "1"):
+            self._timeout_config = (
+                TimeoutConfig.testnet_defaults() if self._is_testnet
+                else TimeoutConfig.live_defaults()
+            )
+            logger.info(
+                f"[BinanceExecutionAdapter] TimeoutConfig updated for testnet={self._is_testnet}: "
+                f"read={self._timeout_config.read}s"
+            )
 
         # Select correct API credentials based on testnet/mainnet
         try:
@@ -286,40 +355,77 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         # Set REST base URL for API calls (WebSocket listen key, etc.)
         self.rest_url = BASE_URL
 
-        # Log REST base URL and timeout for visibility (especially for testnet → demo-fapi migration)
+        # Initialize TimeSyncManager (centralized time sync with config from YAML)
+        # http_client will be set lazily via set_http_client when available
+        self._time_sync_manager = TimeSyncManager(
+            config=self._time_sync_config,
+            base_url=self.rest_url,
+            http_client=None,  # Will be set via get_http_client
+            is_testnet=self.use_testnet,
+        )        # Log REST base URL and timeout for visibility (especially for testnet → demo-fapi migration)
         logger.info(
             f"[BinanceAdapter] Using REST base_url='{self.rest_url}' "
             f"(shadow_mode={self.shadow_mode}, testnet={self.use_testnet}, ws_enabled={fsm is not None})"
         )
         logger.info(
-            f"[BinanceAdapter] REST timeout configured: {self._rest_timeout:.1f}s"
+            f"[BinanceAdapter] REST timeout configured: read={self._timeout_config.read:.1f}s, "
+            f"connect={self._timeout_config.connect:.1f}s"
+        )
+        logger.info(
+            f"[BinanceAdapter] TimeSyncConfig: interval={self._time_sync_config.interval_sec}s, "
+            f"cache_valid={self._time_sync_config.cache_valid_sec}s, "
+            f"recv_window={'testnet' if self.use_testnet else 'mainnet'}="
+            f"{self._time_sync_config.get_recv_window(self.use_testnet)}ms"
         )
 
     def start(self) -> None:
         """
         Start the adapter, including WebSocket connection if FSM core is available.
         """
-        # FIXED: Synchronize time with Binance server on startup
+        # FIXED: Synchronize time with Binance server on startup using TimeSyncManager
         if not self.shadow_mode:
             logger.info(
-                "[BinanceAdapter] Synchronizing time with Binance server...")
+                "[BinanceAdapter] Synchronizing time with Binance server via TimeSyncManager...")
             try:
-                self._sync_time_with_server_blocking()
+                # Use TimeSyncManager's blocking sync method
+                self._time_sync_manager.sync_blocking()
             except Exception as e:
                 logger.warning(
                     f"[BinanceAdapter] Initial time sync failed: {e}, will retry on first -1021")
 
-            # Start background time sync task
+            # Start background time sync via TimeSyncManager
             try:
                 loop = asyncio.get_running_loop()
+                # Use create_task to start TimeSyncManager's background loop
                 self._time_sync_task = loop.create_task(
-                    self._background_time_sync_loop())
+                    self._time_sync_manager.start())
                 logger.info(
-                    "[BinanceAdapter] Background time sync task started")
+                    "[BinanceAdapter] TimeSyncManager background task started")
             except RuntimeError:
                 # No running loop yet, will be started later
                 logger.debug(
-                    "[BinanceAdapter] No event loop yet, background sync will start on first async call")
+                    "[BinanceAdapter] No event loop yet, TimeSyncManager will start on first async call")
+
+        if self.fsm_core is not None and not self.shadow_mode:
+            logger.info(
+                "[BinanceAdapter] Starting WebSocket connection to USER_DATA_STREAM")
+            self._start_websocket()
+        else:
+            logger.info(
+                "[BinanceAdapter] WebSocket disabled (no FSM core or shadow mode)")
+
+    async def start_async(self) -> None:
+        """
+        Async version of start() for proper TimeSyncManager initialization.
+        Call this instead of start() when running in async context.
+        """
+        if not self.shadow_mode:
+            logger.info(
+                "[BinanceAdapter] Async start: initializing TimeSyncManager...")
+            # Set the http client for TimeSyncManager
+            client = await self.get_http_client()
+            self._time_sync_manager.set_http_client(client)
+            await self._time_sync_manager.start()
 
         if self.fsm_core is not None and not self.shadow_mode:
             logger.info(
@@ -336,11 +442,28 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         logger.info("[BinanceAdapter] Stopping adapter...")
         self.ws_running = False
 
+        # Stop TimeSyncManager (sync version)
         # Cancel background time sync task
         if self._time_sync_task and not self._time_sync_task.done():
             self._time_sync_task.cancel()
-            logger.info("[BinanceAdapter] Background time sync task cancelled")
+            logger.info("[BinanceAdapter] TimeSyncManager task cancelled")
 
+        if self.ws_thread and self.ws_thread.is_alive():
+            self.ws_thread.join(timeout=5.0)
+            if self.ws_thread.is_alive():
+                logger.warning(
+                    "[BinanceAdapter] WebSocket thread did not stop gracefully")
+
+        logger.info("[BinanceAdapter] Adapter stopped")
+
+    async def stop_async(self) -> None:
+        """
+        Async version of stop() for proper TimeSyncManager cleanup.
+        """
+        logger.info("[BinanceAdapter] Async stop: stopping TimeSyncManager...")
+        await self._time_sync_manager.stop()
+
+        self.ws_running = False
         if self.ws_thread and self.ws_thread.is_alive():
             self.ws_thread.join(timeout=5.0)
             if self.ws_thread.is_alive():
@@ -364,13 +487,230 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         Get or create persistent httpx.AsyncClient.
         Avoids connection pool exhaustion from creating new clients per request.
 
+        Uses TimeoutConfig for configurable timeouts (Phase 0 Hotfix).
+
         Returns:
             Reusable httpx.AsyncClient instance
         """
         if self._http_client is None:
-            self._http_client = httpx.AsyncClient()
-            logger.debug("[BinanceAdapter] Created persistent HTTP client")
+            self._http_client = httpx.AsyncClient(
+                timeout=self._timeout_config.to_httpx_timeout()
+            )
+            logger.debug(
+                f"[BinanceAdapter] Created persistent HTTP client with timeout: "
+                f"read={self._timeout_config.read}s, connect={self._timeout_config.connect}s"
+            )
         return self._http_client
+
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        data: Optional[Dict[str, Any]] = None,
+        log_ctx: str = "REQUEST",
+    ) -> httpx.Response:
+        """
+        Execute HTTP request with retry on timeout/network errors.
+
+        Uses RetryConfig for exponential backoff.
+
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE)
+            url: Full URL to request
+            params: Query parameters
+            headers: HTTP headers
+            data: Request body data
+            log_ctx: Context string for logging
+
+        Returns:
+            httpx.Response on success
+
+        Raises:
+            Last exception if all retries exhausted
+        """
+        client = await self.get_http_client()
+        delays = self._retry_config.get_backoff_delays()
+        last_error: Optional[Exception] = None
+
+        for attempt in range(self._retry_config.max_retries + 1):
+            try:
+                if method.upper() == "GET":
+                    response = await client.get(url, params=params, headers=headers)
+                elif method.upper() == "POST":
+                    response = await client.post(url, params=params, headers=headers, data=data)
+                elif method.upper() == "PUT":
+                    response = await client.put(url, params=params, headers=headers, data=data)
+                elif method.upper() == "DELETE":
+                    response = await client.delete(url, params=params, headers=headers)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+
+                # Success - log if we had retries
+                if attempt > 0:
+                    logger.info(
+                        f"[BinanceExecutionAdapter] {log_ctx} SUCCESS after {attempt} retries"
+                    )
+                return response
+
+            except TIMEOUT_EXCEPTIONS as e:
+                last_error = e
+                if not self._retry_config.retry_on_timeout:
+                    raise
+                if attempt < self._retry_config.max_retries:
+                    delay = delays[attempt] if attempt < len(
+                        delays) else delays[-1]
+                    logger.warning(
+                        f"[BinanceExecutionAdapter] {log_ctx} TIMEOUT (attempt {attempt + 1}/{self._retry_config.max_retries + 1}): "
+                        f"{type(e).__name__}. Retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"[BinanceExecutionAdapter] {log_ctx} TIMEOUT EXHAUSTED after {attempt + 1} attempts: {e}"
+                    )
+                    raise
+
+            except NETWORK_EXCEPTIONS as e:
+                last_error = e
+                if not self._retry_config.retry_on_network:
+                    raise
+                if attempt < self._retry_config.max_retries:
+                    delay = delays[attempt] if attempt < len(
+                        delays) else delays[-1]
+                    logger.warning(
+                        f"[BinanceExecutionAdapter] {log_ctx} NETWORK_ERROR (attempt {attempt + 1}/{self._retry_config.max_retries + 1}): "
+                        f"{type(e).__name__}. Retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"[BinanceExecutionAdapter] {log_ctx} NETWORK_ERROR EXHAUSTED after {attempt + 1} attempts: {e}"
+                    )
+                    raise
+
+        # Should not reach here, but raise last error if we do
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"Unexpected retry loop exit for {log_ctx}")
+
+    async def _signed_request_with_retry(
+        self,
+        method: str,
+        endpoint: str,
+        params: Dict[str, Any],
+        *,
+        body: Optional[Dict[str, Any]] = None,
+        log_ctx: str = "SIGNED_REQUEST",
+    ) -> httpx.Response:
+        """
+        Execute signed REST request with automatic retry on timeout/network errors.
+
+        Combines:
+        - _get_signed_params() for timestamp/recvWindow
+        - _build_signed_request() for HMAC signature
+        - _request_with_retry() for timeout resilience
+        - Automatic re-sign on retry (fresh timestamp)
+
+        Args:
+            method: HTTP method (GET, POST, DELETE)
+            endpoint: API endpoint path (e.g., "/fapi/v1/order")
+            params: Request parameters (will be signed)
+            body: Optional request body
+            log_ctx: Context string for logging
+
+        Returns:
+            httpx.Response on success
+
+        Raises:
+            Exception if all retries exhausted
+        """
+        base_url = BASE_URL
+        url = f"{base_url}{endpoint}"
+        headers = {"X-MBX-APIKEY": self.api_key}
+
+        delays = self._retry_config.get_backoff_delays()
+        last_error: Optional[Exception] = None
+
+        for attempt in range(self._retry_config.max_retries + 1):
+            try:
+                # Build fresh signed request (important for retries - new timestamp)
+                signed_params = self._get_signed_params(params)
+                signed_params, body_dict, _, _ = self._build_signed_request(
+                    signed_params,
+                    body=body,
+                    log_ctx=f"{log_ctx}_attempt_{attempt + 1}",
+                )
+
+                client = await self.get_http_client()
+
+                if method.upper() == "GET":
+                    response = await client.get(
+                        url, params=signed_params, headers=headers,
+                        timeout=self._timeout_config.read
+                    )
+                elif method.upper() == "POST":
+                    response = await client.post(
+                        url, params=signed_params, data=body_dict or None,
+                        headers=headers, timeout=self._timeout_config.read
+                    )
+                elif method.upper() == "DELETE":
+                    response = await client.delete(
+                        url, params=signed_params, headers=headers,
+                        timeout=self._timeout_config.read
+                    )
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+
+                # Log recovery if retried
+                if attempt > 0:
+                    logger.info(
+                        f"[BinanceExecutionAdapter] {log_ctx} SUCCESS after {attempt} retries"
+                    )
+
+                return response
+
+            except TIMEOUT_EXCEPTIONS as e:
+                last_error = e
+                if not self._retry_config.retry_on_timeout:
+                    raise
+                if attempt < self._retry_config.max_retries:
+                    delay = delays[attempt] if attempt < len(
+                        delays) else delays[-1]
+                    logger.warning(
+                        f"[BinanceExecutionAdapter] {log_ctx} TIMEOUT (attempt {attempt + 1}/{self._retry_config.max_retries + 1}): "
+                        f"{type(e).__name__}. Retrying in {delay:.1f}s with fresh signature..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"[BinanceExecutionAdapter] {log_ctx} TIMEOUT EXHAUSTED after {attempt + 1} attempts"
+                    )
+                    raise
+
+            except NETWORK_EXCEPTIONS as e:
+                last_error = e
+                if not self._retry_config.retry_on_network:
+                    raise
+                if attempt < self._retry_config.max_retries:
+                    delay = delays[attempt] if attempt < len(
+                        delays) else delays[-1]
+                    logger.warning(
+                        f"[BinanceExecutionAdapter] {log_ctx} NETWORK_ERROR (attempt {attempt + 1}/{self._retry_config.max_retries + 1}): "
+                        f"{type(e).__name__}. Retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"[BinanceExecutionAdapter] {log_ctx} NETWORK_ERROR EXHAUSTED after {attempt + 1} attempts"
+                    )
+                    raise
+
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"Unexpected retry loop exit for {log_ctx}")
 
     def _get_instrument_profile(self, symbol: str) -> InstrumentProfile:
         """
@@ -543,15 +883,30 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
     def _websocket_loop(self) -> None:
         """
         Main loop for WebSocket connection management.
+
+        Implements exponential backoff for reconnects using WebSocketReconnectConfig:
+        - Initial: configurable (default 1s)
+        - Max: configurable (default 30s)
+        - Multiplier: configurable (default 2x)
+        - Resets after successful connection
         """
+        ws_cfg = self._ws_reconnect_config
+        ws_reconnect_delay = ws_cfg.initial_delay_sec
+
         while self.ws_running:
             try:
                 self._establish_websocket_connection()
+                # Reset delay on successful connection
+                if ws_cfg.reset_after_success:
+                    ws_reconnect_delay = ws_cfg.initial_delay_sec
             except Exception as e:
                 logger.error(
-                    f"[BinanceAdapter] WebSocket connection failed: {e}")
-                # Backoff before reconnect
-                time.sleep(5)
+                    f"[BinanceAdapter] WebSocket connection failed: {e}",
+                    extra={"reconnect_delay_sec": ws_reconnect_delay}
+                )
+                # Exponential backoff before reconnect
+                time.sleep(ws_reconnect_delay)
+                ws_reconnect_delay = ws_cfg.get_next_delay(ws_reconnect_delay)
 
     def _establish_websocket_connection(self) -> None:
         """
@@ -593,14 +948,14 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                 msg_data = json.loads(message)
                                 self._handle_ws_message(msg_data)
 
-                                # FIXED: Periodic time resync every 5 minutes
+                                # FIXED: Periodic time resync (uses config)
                                 # Use sync version to avoid cross-event-loop lock issues
-                                if time.time() - last_resync > 300:
+                                if time.time() - last_resync > self._time_sync_config.stale_cache_grace_period_sec:
                                     self._sync_time_with_server_sync()
                                     last_resync = time.time()
 
-                                # FIXED: Periodic listen key keepalive
-                                if time.time() - self._last_listen_key_keepalive_at > LISTEN_KEY_KEEPALIVE_SECONDS:
+                                # FIXED: Periodic listen key keepalive (uses config)
+                                if time.time() - self._last_listen_key_keepalive_at > self._ws_reconnect_config.listen_key_keepalive_sec:
                                     success = await self._refresh_listen_key()
                                     if not success:
                                         logger.warning(
@@ -611,14 +966,14 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                 # Send ping to keep connection alive
                                 await websocket.ping()
 
-                                # FIXED: Also resync time on ping (connection still alive)
+                                # FIXED: Also resync time on ping (uses config)
                                 # Use sync version to avoid cross-event-loop lock issues
-                                if time.time() - last_resync > 300:
+                                if time.time() - last_resync > self._time_sync_config.stale_cache_grace_period_sec:
                                     self._sync_time_with_server_sync()
                                     last_resync = time.time()
 
-                                # FIXED: Periodic listen key keepalive on timeout too
-                                if time.time() - self._last_listen_key_keepalive_at > LISTEN_KEY_KEEPALIVE_SECONDS:
+                                # FIXED: Periodic listen key keepalive on timeout too (uses config)
+                                if time.time() - self._last_listen_key_keepalive_at > self._ws_reconnect_config.listen_key_keepalive_sec:
                                     success = await self._refresh_listen_key()
                                     if not success:
                                         logger.warning(
@@ -650,9 +1005,10 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         url = f"{self.rest_url}/fapi/v1/listenKey"
         headers = {"X-MBX-APIKEY": self.api_key}
 
-        # Use httpx for async compatibility
+        # Use requests for sync HTTP in WS thread
         import requests
-        resp = requests.post(url, headers=headers, timeout=self._rest_timeout)
+        resp = requests.post(url, headers=headers,
+                             timeout=self._timeout_config.read)
         if resp.ok:
             data = resp.json()
             self.ws_listen_key = data.get("listenKey")
@@ -678,7 +1034,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         try:
             client = await self.get_http_client()
-            resp = await client.put(url, headers=headers, params=params, timeout=self._rest_timeout)
+            resp = await client.put(url, headers=headers, params=params, timeout=self._timeout_config.read)
 
             if resp.is_success:
                 self.listen_key_last_refresh = time.time()
@@ -1122,7 +1478,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                         "last_executed_qty": str(update.last_executed_qty),
                         "cumulative_filled_qty": str(update.cumulative_filled_qty),
                         "transaction_time": update.transaction_time,
-                    "trigger_price": str(update.trigger_price) if update.trigger_price else None
+                        "trigger_price": str(update.trigger_price) if update.trigger_price else None
                     }
                     self.fsm_core.emit(
                         "EVT:ALGO_ORDER_UPDATED", payload, "WS_ALGO_UPDATE")
@@ -1165,7 +1521,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"{k}={v}" for k, v in signed_params.items())
             full_url = f"{url}?{query_string}"
             client = await self.get_http_client()
-            resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
+            resp = await client.post(full_url, headers=headers, timeout=self._timeout_config.read)
             try:
                 data = resp.json()
             except:
@@ -1229,7 +1585,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"{k}={v}" for k, v in signed_params.items())
             full_url = f"{url}?{query_string}"
             client = await self.get_http_client()
-            resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
+            resp = await client.post(full_url, headers=headers, timeout=self._timeout_config.read)
             try:
                 data = resp.json()
             except:
@@ -1264,7 +1620,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     "price": str(price),
                     "notional": str(original_notional),
                     "min_notional": str(min_notional),
-                "deficit": str(min_notional - original_notional) if original_notional > 0 else "N/A",
+                    "deficit": str(min_notional - original_notional) if original_notional > 0 else "N/A",
                 }
             )
 
@@ -1278,7 +1634,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 f"{k}={v}" for k, v in signed_params.items())
             full_url = f"{url}?{query_string}"
             client = await self.get_http_client()
-            resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
+            resp = await client.post(full_url, headers=headers, timeout=self._timeout_config.read)
             try:
                 data = resp.json()
             except:
@@ -1351,7 +1707,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     f"{k}={v}" for k, v in signed_params.items())
                 full_url = f"{url}?{query_string}"
                 client = await self.get_http_client()
-                resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
+                resp = await client.post(full_url, headers=headers, timeout=self._timeout_config.read)
                 try:
                     data = resp.json()
                 except:
@@ -1387,7 +1743,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     f"{k}={v}" for k, v in signed_params.items())
                 full_url = f"{url}?{query_string}"
                 client = await self.get_http_client()
-                resp = await client.post(full_url, headers=headers, timeout=self._rest_timeout)
+                resp = await client.post(full_url, headers=headers, timeout=self._timeout_config.read)
                 try:
                     data = resp.json()
                 except:
@@ -1580,14 +1936,15 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     url = f"{base_url}{endpoint}"
                     client = await self.get_http_client()
                     response = await client.get(
-                        url, params=signed_params, headers=headers, timeout=self._rest_timeout
+                        url, params=signed_params, headers=headers, timeout=self._timeout_config.read
                     )
 
                     if response.status_code == 200:
                         positions = response.json()
 
                         if symbol:
-                            positions = [p for p in positions if p.get("symbol") == symbol]
+                            positions = [p for p in positions if p.get(
+                                "symbol") == symbol]
 
                         if not positions and attempt == 1:
                             logger.warning(
@@ -1631,7 +1988,8 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     )
                     if hasattr(self, 'fsm') and self.fsm and hasattr(self.fsm, 'exposure_guard'):
                         try:
-                            self.fsm.exposure_guard.enter_fallback_mode("API_POSITIONS_EMPTY")
+                            self.fsm.exposure_guard.enter_fallback_mode(
+                                "API_POSITIONS_EMPTY")
                             logger.warning(
                                 "[BinanceAdapter] Entered fallback mode due to empty positions API response"
                             )
@@ -1664,21 +2022,27 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             return []
 
         try:
+            # Use OpenOrdersConfig from YAML (instead of hardcoded constants)
+            open_orders_cfg = self._open_orders_config
+            max_attempts = open_orders_cfg.max_attempts
+
             fallback_policy = self._get_fallback_policy()
-            delay_template = list(GET_OPEN_ORDERS_BACKOFF_MS)
+            delay_template = list(open_orders_cfg.backoff_ms)
             configured = list(getattr(
                 fallback_policy, "backoff_sequence", lambda: ())()) if fallback_policy else []
             if configured:
                 delay_template = list(
-                    configured[: max(1, GET_OPEN_ORDERS_MAX_ATTEMPTS - 1)])
-            while len(delay_template) < max(1, GET_OPEN_ORDERS_MAX_ATTEMPTS - 1):
+                    configured[: max(1, max_attempts - 1)])
+            while len(delay_template) < max(1, max_attempts - 1):
                 delay_template.append(delay_template[-1])
 
             last_error: Optional[Exception] = None
-            for attempt in range(1, GET_OPEN_ORDERS_MAX_ATTEMPTS + 1):
+            for attempt in range(1, max_attempts + 1):
                 try:
-                    # TASK-TIMESYNC-FIX: force=True on retry to get fresh offset
-                    sync_ok = await self._sync_time_with_server(force=(attempt > 1))
+                    # TASK-TIMESYNC-FIX: Always force sync if cache invalid, not just on retry
+                    # This prevents stale timestamps from being used on first attempt
+                    force_sync = (attempt > 1) or not self._time_sync_manager.is_cache_valid()
+                    sync_ok = await self._sync_time_with_server(force=force_sync)
                     if not sync_ok:
                         logger.warning(
                             "[BinanceAdapter] get_open_orders: time sync failed, using cached offset",
@@ -1701,7 +2065,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                         url,
                         params=signed_params,
                         headers=headers,
-                        timeout=self._rest_timeout,
+                        # Use TimeoutConfig (client already has default, but explicit for clarity)
                     )
 
                     if response.status_code == 200:
@@ -1751,13 +2115,13 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                                     },
                                 )
                                 # On final attempt: enter fallback mode and return empty list
-                                if attempt >= GET_OPEN_ORDERS_MAX_ATTEMPTS:
+                                if attempt >= max_attempts:
                                     self._enter_orders_fallback_mode(
                                         reason="API_ORDERS_TIME_SYNC_FAILED"
                                     )
                                     logger.error(
                                         "[BinanceAdapter] get_open_orders time sync failed after %s attempts",
-                                        GET_OPEN_ORDERS_MAX_ATTEMPTS,
+                                        max_attempts,
                                         extra={
                                             "symbol": symbol,
                                             "error": str(last_error),
@@ -1783,7 +2147,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                         exc_info=True,
                     )
 
-                if attempt < GET_OPEN_ORDERS_MAX_ATTEMPTS:
+                if attempt < max_attempts:
                     delay_ms = delay_template[min(
                         attempt - 1, len(delay_template) - 1)]
                     if delay_ms > 0:
@@ -1791,7 +2155,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                             "[BinanceAdapter] get_open_orders retrying",
                             extra={
                                 "attempt": attempt + 1,
-                                "max_attempts": GET_OPEN_ORDERS_MAX_ATTEMPTS,
+                                "max_attempts": max_attempts,
                                 "delay_ms": delay_ms,
                                 "symbol": symbol,
                             },
@@ -1801,7 +2165,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 break
 
             self._enter_orders_fallback_mode()
-            error_msg = f"get_open_orders failed after {GET_OPEN_ORDERS_MAX_ATTEMPTS} attempts"
+            error_msg = f"get_open_orders failed after {max_attempts} attempts"
             logger.error(
                 f"[BinanceAdapter] {error_msg}",
                 extra={"symbol": symbol, "error": str(
@@ -1814,87 +2178,43 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             logger.error(f"[BinanceAdapter] get_open_orders fatal error: {e}")
             raise
 
-
-
     async def _sync_time_with_server(self, force: bool = False) -> bool:
         """
         Robust time sync with retry, backoff, and caching.
         Returns True if sync successful (or cached), False if failed.
-        Uses asyncio.Lock for async context safety.
+
+        Now delegates to TimeSyncManager for centralized sync logic.
         """
-        # Lazy init async lock
-        if self._time_sync_async_lock is None:
-            self._time_sync_async_lock = asyncio.Lock()
+        try:
+            # Ensure TimeSyncManager has the http client
+            if self._time_sync_manager._http_client is None:
+                client = await self.get_http_client()
+                self._time_sync_manager.set_http_client(client)
 
-        # Try to acquire async lock
-        if self._time_sync_async_lock.locked():
-             # If locked, check if we have valid cache
-            now = time.monotonic()
-            if not force and now < self._time_sync_valid_until:
-                return True
+            await self._time_sync_manager.sync(force=force)
 
-        async with self._time_sync_async_lock:
-            now = time.monotonic()
-            # Check cache validity (unless forced)
-            if not force and now < self._time_sync_valid_until:
-                return True
+            # Update legacy attributes for backward compatibility
+            self.server_time_offset = self._time_sync_manager.offset_ms
+            self.last_time_sync = time.time()
+            self._time_sync_initialized = self._time_sync_manager.is_initialized
 
-            # Retry loop
-            for attempt in range(1, 6):  # 5 attempts
-                try:
-                    async with httpx.AsyncClient(timeout=5.0) as client:
-                        t0 = time.time() * 1000
-                        resp = await client.get(f"{self.rest_url}/fapi/v1/time")
-                        resp.raise_for_status()
-                        data = resp.json()
-                        server_time = int(data["serverTime"])
-                        t1 = time.time() * 1000
-
-                        latency = (t1 - t0) / 2
-                        estimated_server_time_at_t1 = server_time + latency
-                        new_offset = estimated_server_time_at_t1 - t1
-
-                        # Check for material drift change
-                        drift_change = abs(new_offset - self.server_time_offset)
-                        if self._time_sync_initialized and drift_change > TIME_DRIFT_WARN_CHANGE_THRESHOLD_MS:
-                            logger.warning(
-                                f"[BinanceAdapter] Time drift changed materially: {self.server_time_offset:.0f}ms -> {new_offset:.0f}ms (delta {drift_change:.0f}ms)"
-                            )
-                        elif abs(new_offset) > TIME_DRIFT_INFO_THRESHOLD_MS:
-                            logger.info(
-                                f"[BinanceAdapter] Time drift: {new_offset:.0f}ms"
-                            )
-
-                        # Update state
-                        self.server_time_offset = int(new_offset)
-                        self.last_time_sync = time.time()
-                        self._time_sync_valid_until = now + 25.0
-                        self._time_sync_initialized = True
-
-                        logger.debug(f"[BinanceAdapter] Time sync successful. Offset: {self.server_time_offset}ms")
-                        return True
-
-                except Exception as e:
-                    if attempt < 5:
-                        wait_time = 0.5 * (2 ** (attempt - 1))
-                        logger.debug(f"[BinanceAdapter] Time sync attempt {attempt} failed: {e}. Retrying in {wait_time}s...")
-                        await asyncio.sleep(wait_time)
-                    else:
-                        logger.error(f"[BinanceAdapter] Time sync failed after 5 attempts: {e}")
-                        return False
-
+            return True
+        except TimeSyncError as e:
+            logger.error(f"[BinanceAdapter] Time sync failed: {e}")
             return False
 
     async def _background_time_sync_loop(self) -> None:
         """
         Background task that periodically syncs time with Binance server.
         Non-blocking, runs in the async event loop.
+
+        Now managed by TimeSyncManager.start() - this method is kept for compatibility.
         """
         logger.info(
-            f"[BinanceAdapter] Background time sync loop started (interval={TIME_SYNC_INTERVAL_SEC}s)")
+            f"[BinanceAdapter] Background time sync loop started (interval={self._time_sync_config.interval_sec}s)")
         while True:
             try:
-                await asyncio.sleep(TIME_SYNC_INTERVAL_SEC)
+                await asyncio.sleep(self._time_sync_config.interval_sec)
                 await self._sync_time_with_server()
             except asyncio.CancelledError:
                 logger.info(
@@ -1910,7 +2230,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         Synchronous time sync for WS thread (blocking HTTP call).
 
         This is used by the WebSocket thread which has its own event loop.
-        Avoids cross-event-loop asyncio.Lock issues.
+        Now delegates to TimeSyncManager.sync_blocking().
 
         Args:
             force: If True, bypass cache and force a fresh sync.
@@ -1918,76 +2238,57 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         Returns:
             True if sync succeeded (or cache is valid), False otherwise.
         """
-        # Check cache validity
-        now_mono = time.monotonic()
-        if not force and now_mono < self._time_sync_valid_until:
+        try:
+            self._time_sync_manager.sync_blocking()
+
+            # Update legacy attributes for backward compatibility
+            self.server_time_offset = self._time_sync_manager.offset_ms
+            self.last_time_sync = time.time()
+            self._time_sync_initialized = self._time_sync_manager.is_initialized
+
             return True
-
-        with self._time_sync_thread_lock:
-            # Double-check after acquiring lock
-            if not force and time.monotonic() < self._time_sync_valid_until:
-                return True
-
-            for attempt in range(1, TIME_SYNC_MAX_RETRIES + 1):
-                try:
-                    url = f"{BASE_URL}/fapi/v1/time"
-                    resp = requests.get(url, timeout=10.0)
-
-                    if resp.ok:
-                        server_time = resp.json().get("serverTime", 0)
-                        local_time = int(time.time() * 1000)
-                        self.server_time_offset = server_time - local_time
-                        self.last_time_sync = time.time()
-                        self._time_sync_valid_until = time.monotonic() + TIME_SYNC_CACHE_VALID_SEC
-
-                        logger.debug(
-                            "[BinanceAdapter] WS thread time sync OK",
-                            extra={"offset_ms": self.server_time_offset, "attempt": attempt}
-                        )
-                        return True
-                except Exception as e:
-                    logger.debug(
-                        "[BinanceAdapter] WS thread time sync attempt failed",
-                        extra={"attempt": attempt, "error": str(e)}
-                    )
-
-                # Backoff before retry
-                if attempt < TIME_SYNC_MAX_RETRIES:
-                    time.sleep(TIME_SYNC_BACKOFF_BASE_SEC * (2 ** (attempt - 1)))
-
-            logger.warning("[BinanceAdapter] WS thread time sync failed after retries")
+        except Exception as e:
+            logger.warning(f"[BinanceAdapter] WS thread time sync failed: {e}")
             return False
 
     def _sync_time_with_server_blocking(self) -> None:
         """
         Synchronous wrapper for contexts that are not async-aware.
         Used only during startup, NOT in hot async paths.
+
+        Now delegates to TimeSyncManager.sync_blocking().
         """
-        asyncio.run(self._sync_time_with_server())
+        self._time_sync_manager.sync_blocking()
 
     def _get_signed_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Add required fields (timestamp/recvWindow) to API parameters (unsigned).
-        Time sync is handled by background task, not here (to avoid blocking).
+        Time sync is handled by TimeSyncManager in background.
         """
-        # NOTE: Time sync moved to _background_time_sync_loop() to avoid blocking async paths
-        # If time is very stale (>5min), log warning but don't block
-        time_since_sync = time.time() - self.last_time_sync
-        if time_since_sync > 300:  # 5 minutes without sync
+        # Check if cache is valid via TimeSyncManager
+        cache_valid = self._time_sync_manager.is_cache_valid()
+        if not cache_valid:
             logger.warning(
-                f"[BinanceAdapter] Time sync stale ({time_since_sync:.0f}s), requests may fail with -1021"
+                f"[BinanceAdapter] Time sync cache invalid, requests may fail with -1021"
             )
 
         unsigned_params = params.copy()
-        unsigned_params["timestamp"] = str(
-            int(time.time() * 1000) + int(self.server_time_offset))
 
-        # TASK-3: Increase recvWindow for testnet stability
-        # Testnet (demo-fapi.binance.com) has higher latency, so 20000ms is safer
-        # Mainnet should use 5000ms per Binance recommendation
-        is_testnet = "demo-fapi" in BASE_URL or "testnet" in BASE_URL
-        recv_window = "20000" if is_testnet else "5000"
-        unsigned_params["recvWindow"] = recv_window
+        # Use TimeSyncManager's offset for timestamp calculation
+        local_time_ms = int(time.time() * 1000)
+        offset_ms = self._time_sync_manager.offset_ms
+        final_ts = local_time_ms + offset_ms
+        unsigned_params["timestamp"] = str(final_ts)
+
+        # DIAG: Log timestamp calculation for -1021 diagnosis (INFO level for visibility)
+        logger.info(
+            f"[BinanceAdapter] TIMESTAMP_CALC: local={local_time_ms}, offset={offset_ms}ms, "
+            f"final_ts={final_ts}, cache_valid={cache_valid}"
+        )
+
+        # Use recvWindow from TimeSyncConfig based on environment
+        recv_window = self._time_sync_config.get_recv_window(self.use_testnet)
+        unsigned_params["recvWindow"] = str(recv_window)
         return unsigned_params
 
     async def place_order_v2(
@@ -2278,22 +2579,18 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
             await self._sync_time_with_server()
 
-            base_url = BASE_URL
-            endpoint = "/fapi/v1/order"
-
             params = {
                 "symbol": symbol,
                 "orderId": order_id,
-                "timestamp": int(time.time() * 1000),
             }
-            signed_params, _, _, _ = self._build_signed_request(
-                params, body=None, log_ctx="GET_ORDER")
 
-            headers = {"X-MBX-APIKEY": api_key}
-            url = f"{base_url}{endpoint}"
-
-            client = await self.get_http_client()
-            response = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+            # Use retry wrapper for timeout resilience
+            response = await self._signed_request_with_retry(
+                "GET",
+                "/fapi/v1/order",
+                params,
+                log_ctx=f"GET_ORDER_{symbol}_{order_id}",
+            )
 
             if response.status_code == 200:
                 return response.json()
@@ -2348,27 +2645,19 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
             await self._sync_time_with_server()
 
-            base_url = BASE_URL
-            endpoint = "/fapi/v1/order"
-
             # Binance API supports origClientOrderId parameter
             params = {
                 "symbol": symbol,
                 "origClientOrderId": client_order_id,
-                "timestamp": int(time.time() * 1000),
                 "recvWindow": 5000,  # EXEC-R2-J: Use 5000ms recvWindow
             }
 
-            signed_params, _, _, _ = self._build_signed_request(
-                params, body=None, log_ctx="GET_ORDER_BY_CLIENT_ID"
-            )
-
-            headers = {"X-MBX-APIKEY": api_key}
-            url = f"{base_url}{endpoint}"
-
-            client = await self.get_http_client()
-            response = await client.get(
-                url, params=signed_params, headers=headers, timeout=self._rest_timeout
+            # Use retry wrapper for timeout resilience
+            response = await self._signed_request_with_retry(
+                "GET",
+                "/fapi/v1/order",
+                params,
+                log_ctx=f"GET_ORDER_BY_CLIENT_ID_{client_order_id}",
             )
 
             if response.status_code == 200:
@@ -2438,26 +2727,19 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             # Sync time with server
             await self._sync_time_with_server()
 
-            # Build signed request
-            base_url = BASE_URL
-            endpoint = "/fapi/v1/order"
-
+            # Build request params (timestamp/recvWindow added by _signed_request_with_retry)
             params = {
-                # PHASE 4: Use provided symbol parameter
                 "symbol": symbol,
                 "orderId": order_id,
-                "timestamp": int(time.time() * 1000),
-                "recvWindow": 5000,  # Increased for stability
             }
 
-            signed_params, _, _, _ = self._build_signed_request(
-                params, body=None, log_ctx="CANCEL_ORDER")
-
-            headers = {"X-MBX-APIKEY": api_key}
-            url = f"{base_url}{endpoint}"
-
-            client = await self.get_http_client()
-            response = await client.delete(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+            # Use retry wrapper for timeout resilience
+            response = await self._signed_request_with_retry(
+                "DELETE",
+                "/fapi/v1/order",
+                params,
+                log_ctx=f"CANCEL_ORDER_{symbol}_{order_id}",
+            )
 
             if response.status_code == 200:
                 result = response.json()
@@ -2469,23 +2751,23 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     f"[BinanceAdapter] Cancel order failed: {error_msg}")
                 return {"status": "error", "success": False, "msg": error_msg, "code": response.status_code}
 
+        except TIMEOUT_EXCEPTIONS as e:
+            # Handle timeout errors with structured response (after all retries exhausted)
+            logger.error(
+                "[BinanceAdapter] Cancel order timeout (retries exhausted)",
+                exc_info=True,
+                extra={"symbol": symbol, "order_id": order_id}
+            )
+            return {
+                "success": False,
+                "error": str(e),
+                "error_kind": "ADAPTER_ERROR_TIMEOUT",
+                "is_timeout": True,
+                "should_retry": False,
+                "symbol": symbol,
+                "order_id": order_id,
+            }
         except Exception as e:
-            # Handle timeout errors with structured response
-            if httpx and isinstance(e, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
-                logger.error(
-                    "[BinanceAdapter] Cancel order timeout",
-                    exc_info=True,
-                    extra={"symbol": symbol, "order_id": order_id}
-                )
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "error_kind": "ADAPTER_ERROR_TIMEOUT",
-                    "is_timeout": True,
-                    "should_retry": False,
-                    "symbol": symbol,
-                    "order_id": order_id,
-                }
             logger.error(f"[BinanceAdapter] Cancel order exception: {e}")
             return {"status": "error", "success": False, "msg": str(e)}
 
@@ -2686,7 +2968,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
         )
         try:
             client = await self.get_http_client()
-            resp = await client.post(url, params=signed_params, data=body_dict or None, headers=headers, timeout=self._rest_timeout)
+            resp = await client.post(url, params=signed_params, data=body_dict or None, headers=headers, timeout=self._timeout_config.read)
 
             # Parse response
             try:
@@ -2721,7 +3003,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                         f"new offset: {self.server_time_offset}ms"
                     )
                     # FIXED: Use params= instead of query string in URL
-                    resp = await client.post(url, params=signed_params, data=body_dict or None, headers=headers, timeout=self._rest_timeout)
+                    resp = await client.post(url, params=signed_params, data=body_dict or None, headers=headers, timeout=self._timeout_config.read)
                     try:
                         data = resp.json()
                     except Exception:
@@ -2751,11 +3033,11 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                             )
 
                 elif error_code == -2010:
-                        # Insufficient balance
-                        logger.error(
-                            f"[BinanceAdapter] Insufficient balance (-2010): {error_msg}")
-                        raise RuntimeError(
-                            f"Insufficient balance: {error_msg}")
+                    # Insufficient balance
+                    logger.error(
+                        f"[BinanceAdapter] Insufficient balance (-2010): {error_msg}")
+                    raise RuntimeError(
+                        f"Insufficient balance: {error_msg}")
 
                 elif error_code == -2021:
                     # Order would immediately trigger - retry with recovery strategy
@@ -2853,7 +3135,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                     "clientOrderId", idempotent_key or "unknown")
                 try:
                     audit_logger.log_order_state_changed(
-                    # RID would come from FSM context if available
+                        # RID would come from FSM context if available
                         rid="",
                         idempotent_key=idempotent_key,
                         clientOrderId=client_order_id,
@@ -2879,7 +3161,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                              extra={"client_order_id": client_order_id, "symbol": symbol})
                 return {
                     "success": False,
-                # Let's raise exception to ensure fail-closed.
+                    # Let's raise exception to ensure fail-closed.
                     "error": str(exc),
                     "error_kind": "ADAPTER_ERROR_TIMEOUT",
                     "clientOrderId": client_order_id,
@@ -2935,7 +3217,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         try:
             client = await self.get_http_client()
-            resp = await client.post(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+            resp = await client.post(url, params=signed_params, headers=headers, timeout=self._timeout_config.read)
 
             try:
                 data = resp.json()
@@ -2983,14 +3265,14 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
                 # Algo service returns algoId
                 "orderId": algo_id,
                 "clientOrderId": client_algo_order_id,
-                    "status": "NEW",  # Assumed
-                    "executedQty": "0",
-                    "avgPrice": "0",
-                    "origQty": quantity,
-                    "type": order_type,
-                    "side": side,
-                    "algo_service": True
-                }
+                "status": "NEW",  # Assumed
+                "executedQty": "0",
+                "avgPrice": "0",
+                "origQty": quantity,
+                "type": order_type,
+                "side": side,
+                "algo_service": True
+            }
 
         except Exception as e:
             logger.error(f"[BinanceAdapter] Algo Service exception: {e}")
@@ -3024,7 +3306,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
 
         try:
             client = await self.get_http_client()
-            resp = await client.delete(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+            resp = await client.delete(url, params=signed_params, headers=headers, timeout=self._timeout_config.read)
 
             try:
                 data = resp.json()
@@ -3075,7 +3357,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             headers = {"X-MBX-APIKEY": self.api_key}
 
             client = await self.get_http_client()
-            resp = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+            resp = await client.get(url, params=signed_params, headers=headers, timeout=self._timeout_config.read)
 
             if not resp.is_success:
                 logger.error(
@@ -3145,7 +3427,7 @@ class BinanceExecutionAdapter(AbstractExecutionAdapter):
             headers = {"X-MBX-APIKEY": self.api_key}
 
             client = await self.get_http_client()
-            resp = await client.get(url, params=signed_params, headers=headers, timeout=self._rest_timeout)
+            resp = await client.get(url, params=signed_params, headers=headers, timeout=self._timeout_config.read)
             if not resp.is_success:
                 return {
                     "is_consistent": False,

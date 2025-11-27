@@ -1,4 +1,421 @@
 ﻿---
+**RID**: `CONFIG-HARDCODE-REMOVAL-V2`
+**Date**: 2025-11-27
+**Task**: Complete hardcoded parameters removal from adapters
+**Priority**: P1 (Maintainability)
+**Why**: All adapter parameters should be configurable via YAML, not hardcoded
+
+**Additional Changes Made** (extending previous session):
+1. **config/domains/execution.yaml** - Added new field:
+   - `time_sync.stale_cache_grace_period_sec: 300.0` - grace period for stale offset (5 min)
+
+2. **apps/reference/config_adapter.py**:
+   - `TimeSyncConfig` - added `stale_cache_grace_period_sec` field
+   - `resolve_time_sync_config()` - reads new field from YAML
+
+3. **apps/reference/adapters/time_sync_manager.py**:
+   - `get_timestamp()` - uses `config.stale_cache_grace_period_sec` instead of hardcoded `300`
+
+4. **apps/reference/domains/execution_position/binance_execution_adapter.py**:
+   - Added import `OpenOrdersConfig`, `resolve_open_orders_config`
+   - Added `_open_orders_config` initialization in constructor
+   - Marked `GET_OPEN_ORDERS_*` and `LISTEN_KEY_KEEPALIVE_SECONDS` as DEPRECATED
+   - `get_open_orders()` now uses `self._open_orders_config` instead of constants
+   - WebSocket handler uses `self._ws_reconnect_config.listen_key_keepalive_sec`
+   - WebSocket handler uses `self._time_sync_config.stale_cache_grace_period_sec`
+
+**Hardcoded Parameters Audit Summary**:
+| File | Parameter | Status |
+|------|-----------|--------|
+| `binance_adapter.py:128` | `timeout=10.0` | OK - fallback, TimeoutConfig is primary |
+| `binance_adapter.py:310,316` | ClientOrderId TTL 24h | TODO - consider externalizing |
+| `binance_execution_adapter.py:107-111` | `GET_OPEN_ORDERS_*` | ✅ FIXED - now uses OpenOrdersConfig |
+| `binance_execution_adapter.py:111` | `LISTEN_KEY_KEEPALIVE_SECONDS` | ✅ FIXED - uses WebSocketReconnectConfig |
+| `time_sync_manager.py:346` | Grace period 300s | ✅ FIXED - uses TimeSyncConfig |
+
+**Test Results**: 25/25 TimeSyncManager tests passed ✅
+
+---
+**RID**: `CONFIG-HARDCODE-REMOVAL`
+**Date**: 2025-01-27
+**Task**: Remove hardcoded constants from adapters, externalize to YAML config
+**Priority**: P1 (Maintainability)
+**Why**: All adapter parameters should be configurable via YAML, not hardcoded
+
+**Changes Made**:
+1. **config/domains/execution.yaml** - Extended with new sections:
+   - `time_sync.sync_max_attempts: 5` - max retries for time sync
+   - `time_sync.sync_backoff_base_sec: 0.5` - base delay between retries
+   - `time_sync.sync_timeout_sec: 10.0` - HTTP timeout for sync requests
+   - `open_orders.max_attempts: 3` - retry limit for get_open_orders
+   - `open_orders.backoff_ms: [200, 500]` - backoff delays
+   - `websocket.listen_key_keepalive_sec: 2700` - 45min keepalive
+
+2. **apps/reference/config_adapter.py** - Extended dataclasses:
+   - `TimeSyncConfig` - added `sync_max_attempts`, `sync_backoff_base_sec`, `sync_timeout_sec`
+   - `WebSocketReconnectConfig` - added `listen_key_keepalive_sec`
+   - `OpenOrdersConfig` - NEW dataclass for open orders retry config
+   - `resolve_open_orders_config()` - NEW resolver function
+   - All resolvers now accept pre-built config objects directly (isinstance check)
+
+3. **apps/reference/adapters/time_sync_manager.py** - Uses config values:
+   - `_do_sync()` uses `config.sync_max_attempts`, `sync_backoff_base_sec`
+   - `sync_blocking()` uses same config values
+   - `_ensure_client()` uses `config.sync_timeout_sec` for timeout
+
+4. **tests/units/test_time_sync_manager.py** - Extended with 6 new tests:
+   - `TestConfigLoadingFromYAML` class for YAML dict loading tests
+   - Tests for TimeSyncConfig, WebSocketReconnectConfig, OpenOrdersConfig
+   - Tests for default values and TimeSyncManager config integration
+
+**Test Results**: 25/25 passed ✅
+
+---
+**RID**: `TIMESYNC-MANAGER-REFACTOR`
+**Date**: 2025-01-27
+**Task**: Centralized Time Sync Manager with YAML Config
+**Priority**: P0 (Stability)
+**Why**: Eliminate -1021 timestamp errors, centralize time sync logic
+
+**Changes Made**:
+1. **config/domains/execution.yaml** - Added `adapter.time_sync` block:
+   - `recv_window_mainnet_ms: 5000`, `recv_window_testnet_ms: 20000`
+   - `interval_sec: 30`, `cache_valid_sec: 25`
+   - `max_drift_warn_ms: 500`, `max_drift_hard_limit_ms: 60000`
+   - `error_1021.max_retries: 2`, `backoff_base_sec: 0.3`, `force_sync_before_retry: true`
+
+2. **apps/reference/config_adapter.py** - Added dataclasses:
+   - `Error1021RetryConfig` - retry parameters for -1021 handling
+   - `TimeSyncConfig` - centralized time sync configuration
+   - `resolve_time_sync_config()` - config resolver function
+
+3. **apps/reference/adapters/time_sync_manager.py** - NEW FILE:
+   - `TimeSyncManager` class - centralized time sync management
+   - Async `sync()` with cache validation, retries, backoff
+   - `sync_blocking()` for WS thread context (uses `requests`)
+   - `get_timestamp()` - validates cache before returning
+   - Background periodic sync task via `start()/stop()`
+
+4. **apps/reference/adapters/binance_adapter.py** - Integration:
+   - Constructor now accepts `TimeSyncManager`
+   - `start()/stop()` manage TimeSyncManager lifecycle
+   - `_sync_time()`, `_sign_build()` delegate to manager
+   - `_request()` uses `Error1021RetryConfig` for -1021 retries
+
+5. **apps/reference/domains/execution_position/binance_execution_adapter.py** - Integration:
+   - Added imports for TimeSyncConfig, TimeSyncManager
+   - Constructor initializes TimeSyncManager
+   - `start()/stop()`, `start_async()/stop_async()` methods
+   - `_sync_time_with_server()` delegates to manager
+   - `_get_signed_params()` uses manager offset and config recvWindow
+
+6. **tests/units/test_time_sync_manager.py** - NEW FILE:
+   - 18 unit tests for TimeSyncManager and config classes
+   - Tests cache validity, sync success/failure, blocking sync
+
+**Key Design Decisions**:
+- `timestamp = now + offset` - offset is periodically updated from `/fapi/v1/time`
+- Cache validated before signing; if invalid → async sync before signature
+- -1021 handling: force sync → rebuild signature → retry (from config)
+- WS thread uses `sync_blocking()` with separate `threading.Lock`
+- Single `httpx.AsyncClient` shared, not creating new clients
+
+**Tests**: 18 passed ✓
+
+---
+**RID**: `ADAPTER-TIMEOUT-PHASE4-TESTS-EXPANSION`
+**Date**: 2025-11-27
+**Task**: Phase 4 - Tests Expansion
+**Priority**: P0 (Test coverage)
+**Why**: Comprehensive test coverage for timeout resilience
+
+**Tests Added** (14 new tests):
+1. **_signed_request_with_retry**:
+   - `test_signed_request_with_retry_success` - GET/POST/DELETE success
+   - `test_signed_request_with_retry_handles_timeout` - retry on timeout
+   - `test_signed_request_with_retry_handles_api_error` - API error handling
+   - `test_signed_request_with_retry_exhausted_retries` - raises after exhaustion
+
+2. **Network error scenarios**:
+   - `test_signed_request_handles_connection_error` - ConnectionError retry
+   - `test_signed_request_handles_remote_protocol_error` - protocol error retry
+
+3. **Latency simulation**:
+   - `test_request_with_slow_response` - slow but successful requests
+   - `test_backoff_timing_is_respected` - verifies exponential backoff timing
+
+4. **Method integration**:
+   - `test_cancel_binance_order_async_uses_retry_wrapper` - cancel uses wrapper
+   - `test_get_order_uses_retry_wrapper` - get_order uses wrapper
+
+5. **Concurrent & error**:
+   - `test_concurrent_requests_with_timeouts` - parallel timeout handling
+   - `test_timeout_exceptions_tuple_complete` - exception tuple validation
+   - `test_network_exceptions_tuple_complete` - network exception validation
+   - `test_adapter_provides_timeout_error_info` - structured error info
+
+**Test Results**:
+- `test_binance_execution_adapter_timeout.py`: 41/41 PASSED (up from 27)
+- Total coverage: All 4 phases tested
+
+**Files Modified**:
+- `tests/.../test_binance_execution_adapter_timeout.py` (+14 tests)
+
+**DoD**:
+```
+✅ 14 new tests for Phase 4
+✅ Network error scenarios covered
+✅ Latency simulation tests
+✅ Method integration tests
+✅ 41/41 tests passing
+```
+
+---
+**RID**: `ADAPTER-TIMEOUT-PHASE3-WS-RESILIENCE`
+**Date**: 2025-11-27
+**Task**: Phase 3 - WebSocket Reconnect Resilience
+**Priority**: P0 (Timeout resilience)
+**Why**: Експоненційний backoff для reconnect WS замість фіксованих 5 секунд
+
+**Problem**:
+- WebSocket reconnect мав фіксований delay 5 секунд
+- Не масштабувався при тривалих відключеннях
+- Не було конфігурації через YAML
+
+**Solution**:
+1. **Created** `WebSocketReconnectConfig` dataclass:
+   - `initial_delay_sec`: 1.0 (стартовий delay)
+   - `max_delay_sec`: 30.0 (cap)
+   - `multiplier`: 2.0 (експоненційний множник)
+   - `reset_after_success`: True (скидання після успішного з'єднання)
+   - `get_next_delay()` - обчислення наступного delay з cap
+
+2. **Updated** `_websocket_loop()` to use config:
+   - Uses `ws_cfg.get_next_delay(current_delay)`
+   - Resets to `initial_delay_sec` after successful connection
+   - Logs reconnect_delay_sec in error logs
+
+3. **Added** YAML config support:
+   ```yaml
+   # config/domains/execution.yaml
+   adapter:
+     websocket:
+       initial_delay_sec: 1.0
+       max_delay_sec: 30.0
+       multiplier: 2.0
+       reset_after_success: true
+   ```
+
+**Test Results**:
+- `test_binance_execution_adapter_timeout.py`: 27/27 PASSED
+- New tests: 5 tests for WebSocketReconnectConfig
+
+**Files Modified**:
+- `apps/reference/adapters/timeout_config.py` (+WebSocketReconnectConfig)
+- `binance_execution_adapter.py` (use config in _websocket_loop)
+- `config/domains/execution.yaml` (+websocket section)
+- `tests/.../test_binance_execution_adapter_timeout.py` (+5 WS tests)
+
+**DoD**:
+```
+✅ WebSocketReconnectConfig dataclass created
+✅ Exponential backoff in _websocket_loop
+✅ YAML config integration
+✅ 27/27 тестів проходять
+```
+
+---
+**RID**: `ADAPTER-TIMEOUT-PHASE2-REST-DELEGATION`
+**Date**: 2025-11-27
+**Task**: Phase 2 - REST Delegation with Retry Wrapper
+**Priority**: P0 (Timeout resilience)
+**Why**: Уніфікована обробка timeout/retry для всіх signed REST запитів
+
+**Problem**:
+- Duplicated timeout/retry logic across multiple methods
+- Each method had its own error handling for -1021/-1022
+- No consistent retry behavior for network errors
+
+**Solution**:
+1. **Created** `_signed_request_with_retry()` (~120 lines) wrapper method:
+   - Handles GET/POST/PUT/DELETE with proper signing
+   - Retry logic: 3 attempts with exponential backoff (0.5s → 1s → 2s)
+   - Auto-handles timestamp errors (-1021, -1022) with time sync retry
+   - Structured logging with attempt/backoff info
+
+2. **Migrated methods**:
+   - `cancel_order_by_id` → simplified from ~60 to ~25 lines
+   - `get_order` → removed manual signing, uses wrapper
+   - `get_order_by_client_id` → removed manual signing, uses wrapper
+   - `_cancel_binance_order_async` → already had retry, fixed syntax error
+
+3. **Not migrated (complex logic)**:
+   - `_place_binance_order_async` - has special error code handlers (-2010, -2021, -4116, etc.)
+   - `get_open_orders` - has custom backoff for empty responses
+
+**Test Results**:
+- `test_binance_execution_adapter_timeout.py`: 22/22 PASSED
+- No syntax errors in adapter
+
+**Files Modified**:
+- `binance_execution_adapter.py`: +_signed_request_with_retry(), refactored 4 methods
+
+**DoD**:
+```
+✅ _signed_request_with_retry() wrapper created
+✅ 4 REST methods migrated
+✅ 22/22 тестів проходять
+✅ No errors in binance_execution_adapter.py
+```
+
+---
+**RID**: `ADAPTER-TIMEOUT-CONFIG-FIX`
+**Date**: 2025-11-27
+**Task**: Fix timeout_config.py to read from correct config path
+**Priority**: P0 (Architecture alignment)
+**Why**: timeout_config.py читав з system_config.yaml, а має з config/domains/execution.yaml
+
+**Problem**:
+- `system_config.yaml` — це НЕ робочий конфіг, а лише combined view для відладки
+- Реальні конфіги живуть в `config/domains/*.yaml`
+- ConfigLoader читає `config_v2.domains.execution` — туди треба додати `adapter`
+
+**Solution**:
+1. **Видалено** помилковий приклад з `system_config.yaml`
+2. **Додано** секцію `adapter` в `config/domains/execution.yaml`:
+   ```yaml
+   adapter:
+     timeouts:
+       connect: 10.0
+       read: 30.0
+       write: 10.0
+       pool: 10.0
+     retry:
+       max_retries: 3
+       initial_backoff_sec: 0.5
+       max_backoff_sec: 8.0
+       backoff_multiplier: 2.0
+   ```
+3. **Оновлено** `timeout_config.py` для читання з правильного шляху:
+   - Primary: `config_v2.domains.execution.adapter.timeouts`
+   - Fallback: direct `adapter.timeouts` dict
+   - Legacy: `rest_timeout_sec`, `brackets.retry`
+
+**Test Results**:
+- `test_binance_execution_adapter_timeout.py`: 22/22 PASSED
+- New tests: config_v2_domains_execution path verification
+
+**Files Modified**:
+- `config/domains/execution.yaml` (+adapter section)
+- `apps/reference/adapters/timeout_config.py` (config_v2 path)
+- `system_config.yaml` (removed erroneous adapter comment)
+- `tests/.../test_binance_execution_adapter_timeout.py` (+2 tests)
+
+**DoD**:
+```
+✅ Конфіг читається з config/domains/execution.yaml
+✅ Шлях: config_v2.domains.execution.adapter
+✅ 22/22 тестів проходять
+✅ system_config.yaml очищено
+```
+
+---
+**RID**: `ADAPTER-TIMEOUT-YAML-INT`
+**Date**: 2025-11-27
+**Task**: Інтеграція timeout_config.py з YAML системою конфігурації
+**Priority**: P0 (Architecture alignment)
+**Why**: timeout_config.py конфліктував з існуючою resolver/YAML системою — рефакторинг на from_config()
+
+**Problem**:
+- `timeout_config.py` мав hardcoded defaults, не читав з YAML
+- Проект вже має систему конфігурації: `system_config.yaml`, `resolve_*` функції
+- Існує `rest_timeout_sec` в adapter_factory.py та `brackets.retry` в YAML
+
+**Solution**:
+1. Оновлено `TimeoutConfig.from_config()` для підтримки:
+   - YAML v2: `adapter.timeouts.{connect,read,write,pool}`
+   - Legacy: `rest_timeout_sec` (backward compatibility)
+   - Fallback: env-based defaults (USE_TESTNET)
+
+2. Оновлено `RetryConfig.from_config()` для підтримки:
+   - YAML v2: `adapter.retry.{max_retries,initial_backoff_sec,...}`
+   - Existing: `brackets.retry.{max_attempts,backoff_ms}` (reuse)
+
+3. Оновлено `BinanceExecutionAdapter.__init__`:
+   - `TimeoutConfig.from_config(config)` замість hardcoded testnet_defaults()
+   - `RetryConfig.from_config(config)` замість RetryConfig()
+
+4. Додано приклад структури в `system_config.yaml` (commented, optional)
+
+**Test Results**:
+- `test_binance_execution_adapter_timeout.py`: 20/20 PASSED
+- New tests: from_yaml_v2_format, from_rest_timeout_sec, from_brackets_retry
+
+**Files Modified**:
+- `apps/reference/adapters/timeout_config.py` (from_config integration)
+- `apps/reference/domains/execution_position/binance_execution_adapter.py` (use from_config)
+- `system_config.yaml` (added adapter section as comment/example)
+- `tests/.../test_binance_execution_adapter_timeout.py` (+6 tests)
+
+**DoD**:
+```
+✅ TimeoutConfig.from_config() читає з YAML
+✅ RetryConfig.from_config() читає з existing brackets.retry
+✅ Fallback до env-based defaults (USE_TESTNET)
+✅ 20/20 тестів проходять
+✅ Backward compatible з rest_timeout_sec
+```
+
+---
+**RID**: `ADAPTER-TIMEOUT-UNIFY-P1`
+**Date**: 2025-11-27
+**Task**: Phase 1 Complete — Extract Shared Timeout Config Module
+**Priority**: P0 (Production timeout resilience)
+**Why**: Single source of truth для timeout/retry конфігурації, видалено дублювання
+
+**Changes Made**:
+
+1. **1.1 Created timeout_config.py**
+   - New file: `apps/reference/adapters/timeout_config.py`
+   - Contents: TimeoutConfig, RetryConfig, TIMEOUT_EXCEPTIONS, NETWORK_EXCEPTIONS
+   - Canonical source for all timeout/retry configuration
+
+2. **1.2 Updated binance_adapter.py**
+   - Import from `timeout_config.py` instead of local definitions
+   - Removed ~185 lines of duplicated dataclass definitions
+   - Preserved all existing functionality
+
+3. **1.3 Updated binance_execution_adapter.py**
+   - Changed import: `from apps.reference.adapters.timeout_config import ...`
+   - Was: `from apps.reference.adapters.binance_adapter import ...`
+
+4. **1.4 execution_service.py** — N/A
+   - File does not import these classes directly
+
+**Test Results**:
+- `test_binance_execution_adapter_timeout.py`: 14/14 PASSED
+- `test_binance_adapter.py`: 9/9 PASSED (2 skipped)
+- No regressions detected
+
+**Files Modified**:
+- `apps/reference/adapters/binance_adapter.py` (imports updated, duplicates removed)
+- `apps/reference/domains/execution_position/binance_execution_adapter.py` (import path)
+- `TODO.md` (Phase 1 marked complete)
+
+**Files Created**:
+- `apps/reference/adapters/timeout_config.py`
+
+**DoD**:
+```
+✅ timeout_config.py створено
+✅ Немає дублювання TimeoutConfig/RetryConfig
+✅ Всі імпорти оновлено
+✅ pytest tests/ проходить без регресій
+```
+
+**Links**: TODO.md, docs/ADAPTER_UNIFICATION_PLAN.md
+
+---
 **RID**: `ADAPTER-HARDENING-4FIXES`
 **Date**: 2025-11-27
 **Task**: Binance Adapter Hardening - 4 Critical Fixes from Log Analysis

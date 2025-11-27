@@ -1,0 +1,440 @@
+{
+  "modules": [
+    "execution_position.adapter_factory",
+    "execution_position.algo_order_index",
+    "execution_position.binance_execution_adapter",
+    "execution_position.brackets_config",
+    "execution_position.config",
+    "execution_position.contracts",
+    "execution_position.drift_monitor",
+    "execution_position.execution_adapter",
+    "execution_position.exposure_guard",
+    "execution_position.idempotent_cancel",
+    "execution_position.internal_types",
+    "execution_position.manage_config",
+    "execution_position.metrics_aggregator",
+    "execution_position.metrics_collector",
+    "execution_position.order_index",
+    "execution_position.runtime_factory",
+    "execution_position.simulated_adapter",
+    "execution_position.soft_clip",
+    "execution_position.utils",
+    "execution_position.utils_event_bus",
+    "execution_position.watchdog",
+    "execution_position",
+    "shadow_execpos.ab_replay",
+    "shadow_execpos.agg_oco_replay",
+    "shadow_execpos.async_manager",
+    "shadow_execpos.bracket_service",
+    "shadow_execpos.close_flow",
+    "shadow_execpos.event_adapter",
+    "shadow_execpos.execution_service",
+    "shadow_execpos.exposure_bridge",
+    "shadow_execpos.gatekeeper",
+    "shadow_execpos.idempotency",
+    "shadow_execpos.logging_v2",
+    "shadow_execpos.position_model",
+    "shadow_execpos.price_enricher",
+    "shadow_execpos.runtime",
+    "shadow_execpos.trailing",
+    "shadow_execpos.types",
+    "shadow_execpos.wal_writer",
+    "shadow_execpos.watchdog",
+    "shadow_execpos"
+  ],
+  "exports": {
+    "execution_position.adapter_factory": [
+      "_extract_trading_mode",
+      "build_execution_adapter"
+    ],
+    "execution_position.algo_order_index": [
+      "AlgoOrderIndex",
+      "AlgoOrderState",
+      "AlgoOrderUpdate"
+    ],
+    "execution_position.binance_execution_adapter": [
+      "BinanceExecutionAdapter",
+      "BinanceValidationError",
+      "MockAuditLogger"
+    ],
+    "execution_position.brackets_config": [
+      "ResolvedBrackets",
+      "_build_brackets_from_legacy",
+      "_build_brackets_from_v2",
+      "_coerce_decimal",
+      "_ensure_mapping",
+      "_get_legacy_execution_brackets_cfg",
+      "_get_v2_execution_brackets_cfg",
+      "_log_legacy_usage",
+      "_pluck",
+      "_warn_once",
+      "clear_brackets_warning_cache",
+      "resolve_brackets_config"
+    ],
+    "execution_position.config": [
+      "AggregatedOcoConfig",
+      "AggregatedOcoWatchdogConfig",
+      "AggregatedOcoWatchdogGraceConfig",
+      "CloseConfig",
+      "Config",
+      "ExecutionPositionConfig",
+      "SnapshotConfig",
+      "TrailingConfig"
+    ],
+    "execution_position.contracts": [
+      "BracketErrorCode",
+      "BracketOrderPayload",
+      "ExecutionRequest",
+      "ExitOrderKind",
+      "OpenCommandPayload",
+      "OrderPayload",
+      "OrderStatus",
+      "OrderType",
+      "PositionPayload",
+      "PositionSide",
+      "PositionSnapshot",
+      "Side",
+      "TPSLValidationRules",
+      "TimeInForce",
+      "TradeIntentPayload",
+      "WorkingType",
+      "_as_decimal",
+      "build_dec_close",
+      "canonicalize_position_side",
+      "canonicalize_position_side_from_qty",
+      "classify_exit_order",
+      "is_exit_order",
+      "resolve_order_defaults",
+      "validate_order_command"
+    ],
+    "execution_position.drift_monitor": [
+      "ConfusionMatrix",
+      "DriftReport",
+      "Mismatch",
+      "aggregate_drift_metrics",
+      "compute_drift"
+    ],
+    "execution_position.execution_adapter": [
+      "AbstractExecutionAdapter"
+    ],
+    "execution_position.exposure_guard": [
+      "ClipResult",
+      "ExposureGuard",
+      "ExposureState",
+      "FallbackState",
+      "SoftLimitConfig",
+      "_normalize_pct_decimal"
+    ],
+    "execution_position.idempotent_cancel": [
+      "ClientOrderIdConfig",
+      "IdempotentCancelHelper",
+      "IdempotentCancelResult",
+      "OrderStatus"
+    ],
+    "execution_position.internal_types": [
+      "ExecutionResult",
+      "RuntimeEntryIntent"
+    ],
+    "execution_position.manage_config": [
+      "AggregatedOcoConfig",
+      "AggregatedOcoWatchdogConfig",
+      "AggregatedOcoWatchdogGraceConfig",
+      "BracketsMetaConfig",
+      "EmergencyConfig",
+      "ExecutionManageConfig",
+      "GuardianConfig",
+      "OrphanMonitorConfig",
+      "PositionsConfig",
+      "QuickProfitConfig",
+      "TrailingConfig",
+      "WatchdogConfig",
+      "WatchdogTimeoutsConfig",
+      "WsSnapshotConfig",
+      "_build_manage_from_legacy",
+      "_build_manage_from_v2",
+      "_coerce_bool",
+      "_coerce_decimal",
+      "_coerce_float",
+      "_coerce_int",
+      "_coerce_sequence",
+      "_coerce_str_tuple",
+      "_extract_manage_node",
+      "_get_v2_execution_manage_cfg",
+      "_normalize_manage_mode",
+      "_pluck",
+      "_resolve_aggregated_oco",
+      "_resolve_aggregated_oco_from_v2",
+      "_resolve_aggregated_watchdog",
+      "_resolve_brackets_meta",
+      "_resolve_brackets_meta_from_v2",
+      "_resolve_emergency",
+      "_resolve_guardian",
+      "_resolve_guardian_from_v2",
+      "_resolve_orphan_monitor",
+      "_resolve_positions_config",
+      "_resolve_positions_from_v2",
+      "_resolve_quick_profit",
+      "_resolve_quick_profit_from_v2",
+      "_resolve_trailing",
+      "_resolve_watchdog",
+      "_resolve_watchdog_from_v2",
+      "_resolve_watchdog_grace",
+      "_resolve_ws_snapshot",
+      "_strict_coerce_decimal",
+      "_update_from",
+      "_validate_manage_mode",
+      "clear_manage_config_cache",
+      "resolve_execution_manage_config"
+    ],
+    "execution_position.metrics_aggregator": [
+      "CancelMetricEvent",
+      "ClipMetricEvent",
+      "MetricAggregator",
+      "MetricEventType",
+      "RejectMetricEvent",
+      "StructuredMetricsLogger"
+    ],
+    "execution_position.metrics_collector": [
+      "MetricsCollector"
+    ],
+    "execution_position.order_index": [
+      "OrderIndex",
+      "OrderRef"
+    ],
+    "execution_position.runtime_factory": [
+      "ExecutionRuntime",
+      "V2RuntimeFacade",
+      "build_execution_runtime"
+    ],
+    "execution_position.simulated_adapter": [
+      "SimulatedExecutionAdapter"
+    ],
+    "execution_position.soft_clip": [
+      "ClipResult",
+      "SoftClipEngine"
+    ],
+    "execution_position.utils": [
+      "ClientOrderIdMeta",
+      "ClientOrderIntent",
+      "_build_nonce",
+      "_derive_seed",
+      "_encode_base36",
+      "_round_to_tick",
+      "_sanitize_component",
+      "_to_float",
+      "build_bracket_client_ids",
+      "build_client_order_id",
+      "calc_tp_sl_from_mark",
+      "generate_client_order_id",
+      "make_execpos_client_order_id",
+      "nudge_down",
+      "nudge_up",
+      "opposite_side",
+      "parse_client_order_id",
+      "quantize_stop_price",
+      "validate_anti_2021",
+      "validate_not_immediate"
+    ],
+    "execution_position.utils_event_bus": [
+      "LocalBus"
+    ],
+    "execution_position.watchdog": [
+      "OrderDeadline",
+      "OrderTimeoutType",
+      "OrderTimeoutWatchdog"
+    ],
+    "execution_position": [],
+    "shadow_execpos.ab_replay": [
+      "ABReplayResult",
+      "AdapterCall",
+      "AdapterDiffReport",
+      "ExecPosReplay",
+      "diff_adapter_calls"
+    ],
+    "shadow_execpos.agg_oco_replay": [
+      "AggOcoReplayEnforcer",
+      "AggOcoReplayState",
+      "NormalizedOrder",
+      "_extract_ts",
+      "_is_sl",
+      "_is_tp",
+      "_order_id_key",
+      "_to_decimal"
+    ],
+    "shadow_execpos.async_manager": [
+      "ExecPosAsyncManager"
+    ],
+    "shadow_execpos.bracket_service": [
+      "BracketAction",
+      "BracketExecutionPlan",
+      "BracketLeg",
+      "BracketPlan",
+      "BracketRulesConfig",
+      "BracketService",
+      "BracketSet",
+      "BracketState",
+      "OrderView",
+      "PositionView",
+      "parse_cycle_id_from_client_order_id"
+    ],
+    "shadow_execpos.close_flow": [
+      "CloseConfig",
+      "CloseContext",
+      "CloseDecision",
+      "CloseFlowService"
+    ],
+    "shadow_execpos.event_adapter": [
+      "MessageToRuntimeEventAdapter"
+    ],
+    "shadow_execpos.execution_service": [
+      "ExecutionService"
+    ],
+    "shadow_execpos.exposure_bridge": [
+      "ExposureBridge"
+    ],
+    "shadow_execpos.gatekeeper": [
+      "ExecPosGatekeeper"
+    ],
+    "shadow_execpos.idempotency": [
+      "EventIdempotency",
+      "FillIdempotency"
+    ],
+    "shadow_execpos.logging_v2": [
+      "_ensure_log_dir",
+      "_write_jsonl",
+      "log_bracket_eval_snapshot",
+      "log_runtime_event",
+      "log_watchdog_action"
+    ],
+    "shadow_execpos.position_model": [
+      "PositionState",
+      "_now_ts",
+      "apply_fill"
+    ],
+    "shadow_execpos.price_enricher": [
+      "PriceEnricher"
+    ],
+    "shadow_execpos.runtime": [
+      "ExecPosRuntimeV2"
+    ],
+    "shadow_execpos.trailing": [
+      "TrailingConfig",
+      "TrailingDecision",
+      "TrailingState",
+      "TrailingStopService"
+    ],
+    "shadow_execpos.types": [
+      "EnrichedTrade",
+      "ExecutionCommand",
+      "ExecutionResult",
+      "ExecutionStatus",
+      "GateDecision",
+      "RuntimeEvent",
+      "WatchdogAction",
+      "WatchdogRecommendation"
+    ],
+    "shadow_execpos.wal_writer": [
+      "ExecPosWALWriter"
+    ],
+    "shadow_execpos.watchdog": [
+      "AggOcoWatchdogService"
+    ],
+    "shadow_execpos": []
+  },
+  "unused_exports": {
+    "execution_position.brackets_config": [
+      "resolve_brackets_config"
+    ],
+    "execution_position.contracts": [
+      "PositionSnapshot",
+      "TPSLValidationRules",
+      "build_dec_close",
+      "canonicalize_position_side_from_qty"
+    ],
+    "execution_position.manage_config": [
+      "resolve_execution_manage_config"
+    ],
+    "execution_position.utils": [
+      "build_bracket_client_ids"
+    ]
+  },
+  "internal_dependencies": {
+    "execution_position.adapter_factory": [
+      "execution_position.binance_execution_adapter",
+      "execution_position.simulated_adapter"
+    ],
+    "execution_position.binance_execution_adapter": [
+      "execution_position.algo_order_index",
+      "execution_position.execution_adapter",
+      "execution_position.idempotent_cancel",
+      "execution_position.metrics_aggregator"
+    ],
+    "execution_position.contracts": [
+      "execution_position.utils"
+    ],
+    "execution_position.exposure_guard": [
+      "execution_position.metrics_aggregator",
+      "execution_position.soft_clip"
+    ],
+    "execution_position.idempotent_cancel": [
+      "execution_position.utils"
+    ],
+    "execution_position.runtime_factory": [
+      "execution_position.adapter_factory",
+      "execution_position.contracts",
+      "execution_position.internal_types",
+      "shadow_execpos.event_adapter",
+      "shadow_execpos.runtime"
+    ],
+    "execution_position.simulated_adapter": [
+      "execution_position.execution_adapter"
+    ],
+    "shadow_execpos.ab_replay": [
+      "shadow_execpos.runtime",
+      "shadow_execpos.types"
+    ],
+    "shadow_execpos.close_flow": [
+      "shadow_execpos.position_model"
+    ],
+    "shadow_execpos.event_adapter": [
+      "execution_position.contracts",
+      "execution_position.internal_types",
+      "shadow_execpos.types"
+    ],
+    "shadow_execpos.execution_service": [
+      "execution_position.contracts",
+      "shadow_execpos.types"
+    ],
+    "shadow_execpos.gatekeeper": [
+      "shadow_execpos.types"
+    ],
+    "shadow_execpos.price_enricher": [
+      "shadow_execpos.types"
+    ],
+    "shadow_execpos.runtime": [
+      "execution_position.config",
+      "shadow_execpos",
+      "shadow_execpos.async_manager",
+      "shadow_execpos.bracket_service",
+      "shadow_execpos.close_flow",
+      "shadow_execpos.execution_service",
+      "shadow_execpos.exposure_bridge",
+      "shadow_execpos.gatekeeper",
+      "shadow_execpos.idempotency",
+      "shadow_execpos.position_model",
+      "shadow_execpos.price_enricher",
+      "shadow_execpos.trailing",
+      "shadow_execpos.types",
+      "shadow_execpos.wal_writer",
+      "shadow_execpos.watchdog"
+    ],
+    "shadow_execpos.trailing": [
+      "shadow_execpos.position_model"
+    ],
+    "shadow_execpos.watchdog": [
+      "shadow_execpos.bracket_service",
+      "shadow_execpos.types"
+    ]
+  },
+  "cycles": []
+}

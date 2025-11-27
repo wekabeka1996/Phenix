@@ -43,7 +43,8 @@ class TestExchangeRejectNRR018:
         other_codes = [-1001, -1002, -2011]  # Other Binance error codes
 
         for code in other_codes:
-            with patch('vfoundation.adapters.binance_adapter.log') as mock_log:
+            # Patch in the actual module where 'log' is defined
+            with patch('apps.reference.adapters.binance_adapter.log') as mock_log:
                 resp_mock = Mock()
                 resp_mock.status_code = 400
                 err = {"code": code, "msg": f"Error {code}"}

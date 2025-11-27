@@ -23,6 +23,22 @@ def mock_config():
     return config
 
 
+def _create_mock_http_client():
+    """Create a mock HTTP client that supports both get and post methods."""
+    mock_client = AsyncMock()
+    return mock_client
+
+
+def _create_mock_response(success: bool, json_data: dict = None, status_code: int = 200):
+    """Create a mock HTTP response."""
+    mock_response = MagicMock()
+    mock_response.is_success = success
+    mock_response.status_code = status_code
+    mock_response.json = MagicMock(return_value=json_data or {})
+    mock_response.text = "" if success else "error"
+    return mock_response
+
+
 @pytest.mark.asyncio
 async def test_percent_price_handler_adjusts_stop_price_outside_band(mock_config):
     """
@@ -45,31 +61,29 @@ async def test_percent_price_handler_adjusts_stop_price_outside_band(mock_config
         config=mock_config
     )
 
-    # Mock _get_mark_price_async to return mark price
+    # Create mock HTTP client
+    mock_client = _create_mock_http_client()
+    mock_response_success = _create_mock_response(
+        success=True,
+        json_data={
+            "orderId": "7474573155",
+            "status": "NEW",
+            "clientOrderId": "test_sl",
+            "symbol": "ETHUSDT"
+        }
+    )
+    mock_client.post.return_value = mock_response_success
+
+    # Mock dependencies
     with patch.object(adapter, '_get_mark_price_async', new_callable=AsyncMock) as mock_get_mark:
         mock_get_mark.return_value = Decimal("3087.70")
 
-        # Mock _get_signed_params
         with patch.object(adapter, '_get_signed_params') as mock_signed:
             mock_signed.return_value = {
                 "symbol": "ETHUSDT", "timestamp": "123"}
 
-            # Mock httpx.AsyncClient - POST succeeds after adjustment
-            with patch('httpx.AsyncClient') as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value.__aenter__.return_value = mock_client
-
-                # Response: success after adjustment (handler already received -4024, now retries)
-                mock_response_success = MagicMock()
-                mock_response_success.is_success = True
-                mock_response_success.json = MagicMock(return_value={
-                    "orderId": "7474573155",
-                    "status": "NEW",
-                    "clientOrderId": "test_sl",
-                    "symbol": "ETHUSDT"
-                })
-
-                mock_client.post.return_value = mock_response_success
+            with patch.object(adapter, 'get_http_client', new_callable=AsyncMock) as mock_get_client:
+                mock_get_client.return_value = mock_client
 
                 # Call _handle_bracket_error
                 params = {
@@ -132,6 +146,14 @@ async def test_percent_price_handler_no_adjustment_needed(mock_config):
         config=mock_config
     )
 
+    # Create mock HTTP client
+    mock_client = _create_mock_http_client()
+    mock_response_success = _create_mock_response(
+        success=True,
+        json_data={"orderId": "7474573156", "status": "NEW"}
+    )
+    mock_client.post.return_value = mock_response_success
+
     with patch.object(adapter, '_get_mark_price_async', new_callable=AsyncMock) as mock_get_mark:
         mock_get_mark.return_value = Decimal("3087.70")
 
@@ -139,19 +161,8 @@ async def test_percent_price_handler_no_adjustment_needed(mock_config):
             mock_signed.return_value = {
                 "symbol": "ETHUSDT", "timestamp": "123"}
 
-            with patch('httpx.AsyncClient') as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value.__aenter__.return_value = mock_client
-
-                # Success on retry (no adjustment needed)
-                mock_response_success = MagicMock()
-                mock_response_success.is_success = True
-                mock_response_success.json = MagicMock(return_value={
-                    "orderId": "7474573156",
-                    "status": "NEW"
-                })
-
-                mock_client.post.return_value = mock_response_success
+            with patch.object(adapter, 'get_http_client', new_callable=AsyncMock) as mock_get_client:
+                mock_get_client.return_value = mock_client
 
                 params = {
                     "symbol": "ETHUSDT",
@@ -231,24 +242,26 @@ async def test_get_mark_price_async_success(mock_config):
         config=mock_config
     )
 
+    # Create mock HTTP client for GET request
+    mock_client = _create_mock_http_client()
+    mock_response = _create_mock_response(
+        success=True,
+        status_code=200,
+        json_data={
+            "symbol": "ETHUSDT",
+            "markPrice": "3087.70",
+            "indexPrice": "3087.65"
+        }
+    )
+    mock_client.get.return_value = mock_response
+
     with patch.object(adapter, '_sync_time_with_server'):
         with patch.object(adapter, '_get_signed_params') as mock_signed:
             mock_signed.return_value = {
                 "symbol": "ETHUSDT", "timestamp": "123"}
 
-            with patch('httpx.AsyncClient') as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value.__aenter__.return_value = mock_client
-
-                mock_response = MagicMock()
-                mock_response.status_code = 200
-                mock_response.json = MagicMock(return_value={
-                    "symbol": "ETHUSDT",
-                    "markPrice": "3087.70",
-                    "indexPrice": "3087.65"
-                })
-
-                mock_client.get.return_value = mock_response
+            with patch.object(adapter, 'get_http_client', new_callable=AsyncMock) as mock_get_client:
+                mock_get_client.return_value = mock_client
 
                 mark_price = await adapter._get_mark_price_async("ETHUSDT")
 
@@ -288,21 +301,23 @@ async def test_get_mark_price_async_api_error(mock_config):
         config=mock_config
     )
 
+    # Create mock HTTP client that returns error
+    mock_client = _create_mock_http_client()
+    mock_response = _create_mock_response(
+        success=False,
+        status_code=500,
+        json_data={}
+    )
+    mock_response.text = "Internal server error"
+    mock_client.get.return_value = mock_response
+
     with patch.object(adapter, '_sync_time_with_server'):
         with patch.object(adapter, '_get_signed_params') as mock_signed:
             mock_signed.return_value = {
                 "symbol": "ETHUSDT", "timestamp": "123"}
 
-            with patch('httpx.AsyncClient') as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value.__aenter__.return_value = mock_client
-
-                # API returns error
-                mock_response = MagicMock()
-                mock_response.status_code = 500
-                mock_response.text = "Internal server error"
-
-                mock_client.get.return_value = mock_response
+            with patch.object(adapter, 'get_http_client', new_callable=AsyncMock) as mock_get_client:
+                mock_get_client.return_value = mock_client
 
                 mark_price = await adapter._get_mark_price_async("ETHUSDT")
 

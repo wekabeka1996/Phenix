@@ -20,7 +20,8 @@ def config():
     return OrchestratorConfig(
         max_rid_ttl_seconds=3600,
         circuit_breaker_threshold=3,
-        enable_signing=False  # Disable for tests
+        enable_signing=False,  # Disable for tests
+        enable_trade_intent_listener=True,  # Enable to test TRADE_INTENT handling
     )
 
 

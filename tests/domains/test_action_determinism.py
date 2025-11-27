@@ -15,7 +15,8 @@ class Bus:
 
     def emit(self, name, payload=None, why=None, data_ref=None):
         for cb in self.listeners.get(name, []):
-            cb(Message(op="EVT", verb=name.split(":")[1], src="test", dst="any", pld=payload or {}, why=why or "", data_ref=data_ref or []))
+            cb(Message(op="EVT", verb=name.split(":")[
+               1], src="test", dst="any", pld=payload or {}, why=why or "", data_ref=data_ref or []))
 
 
 def _build_dm(cfg):
@@ -64,7 +65,7 @@ def test_action_determinism_same_psi_same_action():
 
     # shared test messages
     portfolio = Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="test", dst="dm",
-                        pld={"equity": 10000.0, "positions": []})
+                        pld={"equity_total_usdt": 10000.0, "equity_free_usdt": 10000.0, "positions": []})
     risk = Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED", src="test", dst="dm",
                    pld={"symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}})
     feats_pld = {
@@ -72,7 +73,8 @@ def test_action_determinism_same_psi_same_action():
         "symbol": "ETHUSDT",
         "features": {"obi": 0.4, "tfi": 0.3, "delta_price": 0.0, "price": 2000.0}
     }
-    features = Message(op="EVT", verb="FEATURES_CALCULATED", src="test", dst="dm", pld=feats_pld)
+    features = Message(op="EVT", verb="FEATURES_CALCULATED",
+                       src="test", dst="dm", pld=feats_pld)
 
     # drive both DMs with identical events
     for dm in (dm1, dm2):
@@ -85,4 +87,5 @@ def test_action_determinism_same_psi_same_action():
     assert i1.pld["side"] == i2.pld["side"]
     assert i1.pld["instrument"] == i2.pld["instrument"]
     # quantities must be equal after rounding (nested in order)
-    assert str(i1.pld["order"]["qty"]) == str(i2.pld["order"]["qty"])  # deterministic sizing
+    assert str(i1.pld["order"]["qty"]) == str(
+        i2.pld["order"]["qty"])  # deterministic sizing

@@ -1,6 +1,55 @@
 # v2 config for execution domain
 # See docs/config_v2/specification.md for full contract.
 
+# HTTP adapter configuration for Binance REST API
+# Used by BinanceExecutionAdapter for timeout/retry settings
+adapter:
+  timeouts:
+    connect: 10.0    # TCP connection timeout (sec) - testnet default
+    read: 30.0       # Response read timeout (sec) - testnet needs generous timeouts
+    write: 10.0      # Request write timeout (sec)
+    pool: 10.0       # Connection pool timeout (sec)
+  retry:
+    max_retries: 3
+    initial_backoff_sec: 0.5
+    max_backoff_sec: 8.0
+    backoff_multiplier: 2.0
+  websocket:
+    initial_delay_sec: 1.0   # Initial reconnect delay after WS disconnect
+    max_delay_sec: 60.0      # Maximum reconnect delay cap (was 30, matches ws_max_reconnect_delay)
+    multiplier: 2.0          # Exponential backoff multiplier
+    reset_after_success: true  # Reset delay to initial after successful connect
+    listen_key_keepalive_sec: 2700  # Listen key refresh interval (45 min = 45*60)
+  # Time synchronization configuration for Binance API
+  # Addresses -1021 timestamp errors by maintaining fresh server time offset
+  time_sync:
+    # recvWindow per environment (ms) - max allowed request age
+    recv_window_mainnet_ms: 5000     # Mainnet: 5s (tighter, lower latency)
+    recv_window_testnet_ms: 20000    # Testnet: 20s (more lenient for high latency)
+    # Sync schedule
+    interval_sec: 30                  # How often to refresh offset in background
+    cache_valid_sec: 25               # How long cached offset is considered valid
+    # Drift monitoring
+    max_drift_warn_ms: 500            # Warn if drift exceeds this (ms)
+    max_drift_change_warn_ms: 10000   # Warn if drift changes by more than this (ms)
+    max_drift_hard_limit_ms: 60000    # Hard limit - reject requests if exceeded
+    # Sync retry configuration (for _do_sync method)
+    sync_max_attempts: 5              # Max attempts for initial/forced sync
+    sync_backoff_base_sec: 0.5        # Base backoff between sync attempts
+    sync_timeout_sec: 10.0            # HTTP timeout for /fapi/v1/time
+    stale_cache_grace_period_sec: 300.0  # Allow stale offset for 5 min if sync fails
+    # Retry configuration for -1021 errors specifically
+    error_1021:
+      max_retries: 2                  # Retry count after -1021 (not initial attempt)
+      backoff_base_sec: 0.3           # Base backoff between retries
+      backoff_multiplier: 2.0         # Exponential backoff multiplier
+      force_sync_before_retry: true   # Force time sync before each retry
+  # Open orders query configuration
+  open_orders:
+    max_attempts: 3                   # Max retry attempts for get_open_orders
+    backoff_ms: [200, 500]            # Backoff delays between attempts (ms)
+    fallback_reason: "API_ORDERS_FAILED"  # Reason code for fallback mode
+
 exposure:
   # from trading.execution.exposure.*
   max_equity_utilization_pct: 200.0  # matches trading.execution.exposure.max_equity_utilization_pct (percent scale, 200% testnet)

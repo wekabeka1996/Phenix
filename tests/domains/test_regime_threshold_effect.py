@@ -9,11 +9,14 @@ from vfoundation.core.protocol import Message
 class Bus:
     def __init__(self):
         self.listeners = {}
+
     def listen(self, n, cb):
         self.listeners.setdefault(n, []).append(cb)
+
     def emit(self, n, payload=None, why=None, data_ref=None):
         for cb in self.listeners.get(n, []):
-            cb(Message(op="EVT", verb=n.split(":")[1], src="t", dst="a", pld=payload or {}, why=why or "", data_ref=data_ref or []))
+            cb(Message(op="EVT", verb=n.split(":")[1], src="t", dst="a", pld=payload or {
+            }, why=why or "", data_ref=data_ref or []))
 
 
 def _decision(cfg):
@@ -24,9 +27,12 @@ def _decision(cfg):
 def _run(dm, regime_name, feats_score=0.1):
     intents = []
     dm.fsm.listen("EVT:TRADE_INTENT_PROPOSED", lambda m: intents.append(m))
-    dm.on_portfolio(Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="t", dst="d", pld={"equity": 10000.0, "positions": []}))
-    dm.on_risk(Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED", src="t", dst="d", pld={"symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}}))
-    dm.on_regime(Message(op="EVT", verb="REGIME_DETECTED", src="t", dst="d", pld={"symbol": "ETHUSDT", "regime": regime_name, "confidence": "0.8"}))
+    dm.on_portfolio(Message(op="EVT", verb="PORTFOLIO_STATE_UPDATED", src="t", dst="d", pld={
+                    "equity_total_usdt": 10000.0, "equity_free_usdt": 10000.0, "positions": []}))
+    dm.on_risk(Message(op="EVT", verb="RISK_ASSESSMENT_COMPLETED", src="t", dst="d", pld={
+               "symbol": "ETHUSDT", "risk_parameters": {"is_trading_allowed": True}}))
+    dm.on_regime(Message(op="EVT", verb="REGIME_DETECTED", src="t", dst="d", pld={
+                 "symbol": "ETHUSDT", "regime": regime_name, "confidence": "0.8"}))
     dm.on_features(Message(op="EVT", verb="FEATURES_CALCULATED", src="t", dst="d",
                            pld={"ts": int(time.time()*1000), "symbol": "ETHUSDT", "features": {"obi": feats_score, "tfi": 0.0, "delta_price": 0.0, "price": 2000.0}}))
     return len(intents)

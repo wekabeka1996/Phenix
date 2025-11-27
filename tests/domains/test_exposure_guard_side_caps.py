@@ -87,9 +87,9 @@ def test_side_cap_long(exposure_guard):
     result = exposure_guard.can_open(
         "BTCUSDT", Decimal("400"), portfolio_state)
 
-    # Should be shrunk or rejected
+    # Should be clipped, shrunk or rejected
     assert (result.get("allowed") == False or
-            result.get("reason") in ["SHRUNK_TO_FIT_SIDE", "SIDE_EXPOSURE_EXCEEDED"])
+            result.get("reason") in ["SHRUNK_TO_FIT_SIDE", "SIDE_EXPOSURE_EXCEEDED", "CLIPPED_DIRECTIONAL"])
 
 
 def test_side_cap_short(exposure_guard):

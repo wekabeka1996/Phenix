@@ -155,7 +155,8 @@ def test_decision_making_aggregates_events_and_proposes_intent(
         dst="decision_making",
         pld={
             "ts": 1693526400000,
-            "equity": 10000.0,
+            "equity_total_usdt": 10000.0,
+            "equity_free_usdt": 10000.0,
             "realized_pnl": 0.0,
             "unrealized_pnl": 0.0,
             "positions": [],  # No existing positions to allow new trade
