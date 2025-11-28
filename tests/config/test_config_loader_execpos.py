@@ -62,7 +62,6 @@ manage:
     breakeven_rr: 1.5
   close:
     max_hold_time_sec: 7200
-    reason_policy: strict
 """)
 
     # Load config
@@ -93,7 +92,6 @@ manage:
 
     # Verify close fields
     assert ep_cfg.close.max_hold_time_sec == 7200
-    assert ep_cfg.close.reason_policy == "strict"
 
 
 def test_config_loader_execution_position_cfg_defaults(tmp_path, monkeypatch):

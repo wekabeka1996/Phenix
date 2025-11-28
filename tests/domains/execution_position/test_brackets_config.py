@@ -14,10 +14,12 @@ from apps.reference.domains.execution_position.brackets_config import (
 
 
 def test_resolver_prefers_canonical_fixed_bps():
-    config = {
-        "trading": {
-            "execution": {
-                "manage": {
+    # This test now verifies V2 config behavior
+    cfg = AuroraConfig(
+        trading={},
+        config_v2=ConfigV2(
+            domains={
+                "execution": {
                     "brackets": {
                         "sl": {"fixed_bps": 80},
                         "tp": {"fixed_bps": 160},
@@ -25,65 +27,16 @@ def test_resolver_prefers_canonical_fixed_bps():
                     }
                 }
             }
-        }
-    }
+        ),
+    )
 
-    result = resolve_brackets_config(config)
+    result = resolve_brackets_config(cfg)
 
     assert result.sl_bps == Decimal("80")
     assert result.tp_bps == Decimal("160")
     assert result.offset_bps == 9
     assert result.sl_source == "sl.fixed_bps"
     assert result.tp_source == "tp.fixed_bps"
-
-
-def test_resolver_falls_back_to_legacy_keys(caplog):
-    caplog.set_level("WARNING")
-
-    config = {
-        "trading": {
-            "execution": {
-                "manage": {
-                    "brackets": {
-                        "stop_loss_bps": 55,
-                        "take_profit_high_ratio": 1.8,
-                    }
-                }
-            }
-        }
-    }
-
-    result = resolve_brackets_config(config, symbol="ETHUSDT")
-
-    assert result.sl_bps == Decimal("55")
-    # 55 * 1.8 = 99. -> resolver rounds to int
-    assert result.tp_bps == Decimal("99")
-    assert result.offset_bps == DEFAULT_OFFSET_BPS
-    assert result.sl_source == "stop_loss_bps"
-    assert result.tp_source == "take_profit_high_ratio"
-    assert any("legacy" in record.getMessage().lower()
-               for record in caplog.records)
-
-
-def test_resolver_low_ratio_used_when_high_absent():
-    config = {
-        "trading": {
-            "execution": {
-                "manage": {
-                    "brackets": {
-                        "stop_loss_bps": 40,
-                        "take_profit_low_ratio": 0.5,
-                    }
-                }
-            }
-        }
-    }
-
-    result = resolve_brackets_config(config)
-
-    assert result.sl_bps == Decimal("40")
-    assert result.tp_bps == Decimal("20")
-    assert result.tp_source == "take_profit_low_ratio"
 
 
 @pytest.mark.parametrize(

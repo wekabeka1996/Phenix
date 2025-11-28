@@ -10,8 +10,16 @@ async def test_entry_chain_reaches_adapter_place_order():
     class FakeAdapter:
         def __init__(self):
             self.place_calls = []
+            self.create_order = self.place_order_v2 # Alias
 
-        async def place_order_v2(self, **kwargs):
+        async def place_order_v2(self, params=None, **kwargs):
+            if params:
+                kwargs.update({
+                    "symbol": params.symbol,
+                    "side": params.side,
+                    "quantity": params.quantity,
+                    "client_order_id": params.client_order_id
+                })
             self.place_calls.append(kwargs)
             return {"success": True, "order_id": "TEST_ORDER", "client_order_id": kwargs.get("client_order_id")}
 

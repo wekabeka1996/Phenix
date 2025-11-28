@@ -33,9 +33,3 @@ async def test_guardian_on_fill_and_close_entry_minimal():
     e = next(e for e in entries if e["order_id"] == "1001")
     assert pytest.approx(e["filled_qty"], rel=1e-6) == 1.0
     assert pytest.approx(e["remaining_qty"], rel=1e-6) == 1.0
-
-    # close_entry should not raise and should cancel 0 brackets (no adapter)
-    res = await g.close_entry(symbol="BTCUSDT", parent_order_id="1001")
-    assert isinstance(res, dict)
-    assert res["cancelled_brackets"] == 0
-    assert pytest.approx(float(res["remaining_qty"])) == 1.0

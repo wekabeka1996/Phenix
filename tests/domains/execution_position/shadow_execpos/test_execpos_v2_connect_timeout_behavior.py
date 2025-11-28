@@ -17,8 +17,17 @@ class TimeoutAdapter:
     def __init__(self) -> None:
         self.place_order_calls = []
         self.fail_on_brackets = True
+        self.create_order = self.place_order # Alias for ExecutionService compatibility
 
-    async def place_order(self, symbol, side, order_type, quantity, **kwargs):
+    async def place_order(self, symbol=None, side=None, order_type=None, quantity=None, params=None, **kwargs):
+        if params:
+            symbol = params.symbol
+            side = params.side
+            order_type = params.order_type
+            quantity = params.quantity
+            # Unpack other fields if needed
+            kwargs.update({"client_order_id": params.client_order_id})
+
         self.place_order_calls.append(
             {
                 "symbol": symbol,

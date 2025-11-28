@@ -3,7 +3,7 @@ import yaml
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
-from apps.reference.domains.execution_position.runtime_factory import build_execution_runtime
+from apps.reference.domains.execution_position.infra.runtime_factory import build_execution_runtime
 
 
 class TestNoLegacyRuntime:

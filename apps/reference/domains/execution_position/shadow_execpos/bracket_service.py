@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import time
+import hashlib
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, NamedTuple
@@ -47,6 +48,53 @@ def parse_cycle_id_from_client_order_id(client_order_id: str) -> int:
         return int(match.group(1))
 
     return 0  # Legacy order without cycle_id
+
+
+def build_position_id(symbol: str, position: PositionView) -> str:
+    """
+    Build deterministic position fingerprint for bracket clientOrderId.
+    """
+    qty_tag = f"{abs(position.qty):.4f}"
+    price_tag = f"{position.avg_entry_price:.2f}" if position.avg_entry_price else "0"
+    return f"{qty_tag}-{price_tag}"
+
+
+def make_bracket_client_order_id(
+    symbol: str,
+    action_type: str,
+    exit_side: Optional[str],
+    qty: float,
+    price: Optional[Decimal],
+    position: Optional[PositionView] = None,
+) -> str:
+    """
+    Generate deterministic clientOrderId for bracket orders to improve idempotency.
+    R2-D: Includes cycle_id suffix for position lifecycle separation.
+    """
+    if position is not None:
+        # R2-D: Include cycle_id in clientOrderId
+        cycle_suffix = f"C{position.cycle_id}"
+        position_id = build_position_id(symbol, position)
+        base = f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-{position_id}"
+
+        # Binance limit: 32 chars
+        if len(base) > 32:
+            # Truncate position_id to fit
+            max_pos_id_len = 32 - \
+                len(f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-")
+            if max_pos_id_len > 0:
+                position_id = position_id[:max_pos_id_len]
+                base = f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-{position_id}"
+            else:
+                # Extreme case: truncate symbol if needed
+                base = base[:32]
+
+        return base
+
+    seed = f"{symbol}|{action_type}|{exit_side}|{qty}|{price}"
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:20]
+    return f"AUR-BRK-{digest}"
+
 
 
 # ============================================================================
@@ -186,6 +234,8 @@ class BracketState:
     guardian_meta: Optional[Dict[str, Any]] = None
     # Timestamp of state snapshot
     snapshot_ts: float = field(default_factory=time.time)
+    # R2-E: Instrument precision for rounding (default 0.01 for backward compatibility)
+    tick_size: Decimal = field(default=Decimal("0.01"))
 
     @property
     def is_flat(self) -> bool:
@@ -347,6 +397,7 @@ class BracketService:
         symbol: Optional[str] = None,
         side: Optional[str] = None,
         rid: Optional[str] = None,
+        tick_size: Optional[Decimal] = None,
     ) -> Dict[Tuple[str, str], BracketState]:
         """
         Reconstruct BracketState for all or specific (symbol, side) pairs.
@@ -358,6 +409,7 @@ class BracketService:
             symbol: Optional symbol filter (if None, all symbols processed).
             side: Optional side filter (if None, all sides processed).
             rid: Optional request ID for tracing.
+            tick_size: Optional instrument tick size (default 0.01).
 
         Returns:
             Dict mapping (symbol, side) -> BracketState.
@@ -458,6 +510,7 @@ class BracketService:
                     bracket_set=bracket_set,
                     guardian_meta=None,  # Pass through as-is if needed
                     snapshot_ts=time.time(),
+                    tick_size=tick_size if tick_size is not None else Decimal("0.01"),
                 )
 
                 states[key] = state
@@ -528,6 +581,10 @@ class BracketService:
             legs.append(leg)
 
         return legs
+
+    def _is_price_match(self, p1: Decimal, p2: Decimal, tolerance: Decimal = Decimal("0.0001")) -> bool:
+        """Check if prices match within tolerance."""
+        return abs(p1 - p2) <= tolerance
 
     def evaluate(
         self,
@@ -744,8 +801,8 @@ class BracketService:
                 current_sl_leg = state.bracket_set.sl_legs[0]  # type: ignore
                 current_sl_price = current_sl_leg.price
 
-                # Check if SL price is stale
-                if current_sl_price and current_sl_price != desired_levels["sl_price"]:
+                # Check if SL price is stale (using tolerance)
+                if current_sl_price and not self._is_price_match(current_sl_price, desired_levels["sl_price"]):
                     severity = "WARN"
                     why = f"stale_levels|sl_{current_sl_price}→{desired_levels['sl_price']}"
 
@@ -776,7 +833,7 @@ class BracketService:
                     current_tp_leg = state.bracket_set.tp_legs[0]
                     current_tp_price = current_tp_leg.price
 
-                    if current_tp_price and current_tp_price != desired_levels["tp_price"]:
+                    if current_tp_price and not self._is_price_match(current_tp_price, desired_levels["tp_price"]):
                         if severity == "INFO":
                             severity = "WARN"
                             why = f"stale_levels|tp_{current_tp_price}→{desired_levels['tp_price']}"
@@ -856,8 +913,8 @@ class BracketService:
 
             # Simple constraints (will be overridden by caller with real data)
             constraints = InstrumentPriceConstraints(
-                tick_size=Decimal("0.01"),
-                min_price=Decimal("0.01"),
+                tick_size=state.tick_size,
+                min_price=state.tick_size,
             )
 
             levels = self._aggregator.compute_aggregated_brackets(
@@ -1091,6 +1148,11 @@ class BracketService:
     ) -> List[BracketPlan]:
         """
         Recovery pass wrapper: identical to evaluate_all, kept explicit for DR wiring.
+
+        This method provides semantic context for Disaster Recovery (DR) scenarios.
+        It allows callers to explicitly signal that they are performing a recovery
+        evaluation, which aids in code readability and finding usages related to
+        system restoration.
         """
         return self.evaluate_all(positions=positions, orders=orders, cfg=cfg, guardian_meta=guardian_meta, rid=rid)
 
@@ -1104,6 +1166,11 @@ class BracketService:
         """
         React to ALGO_UPDATE event (e.g. conditional order filled).
         Pure function: returns a BracketPlan based on the update and current state.
+
+        This method serves as an extension hook for Algo Order integration.
+        Currently, it delegates to evaluate(), but it allows for future
+        specialized logic (e.g., handling trailing stop triggers or
+        conditional order chains) without changing the core interface.
 
         Args:
             update: AlgoOrderUpdate object (or dict).
@@ -1123,3 +1190,126 @@ class BracketService:
         # information not present in standard Position/Order views.
 
         return self.evaluate(state, cfg, rid=rid)
+
+    def plan_orphan_cleanup(
+        self,
+        symbol: str,
+        orders: Iterable[OrderView],
+        *,
+        rid: Optional[str] = None,
+    ) -> BracketPlan:
+        """
+        Generate plan to cancel all orphan brackets (e.g. when position is FLAT).
+
+        Args:
+            symbol: Trading symbol.
+            orders: All open orders for the symbol.
+            rid: Optional request ID.
+
+        Returns:
+            BracketPlan with CANCEL actions for all reduce-only orders.
+        """
+        actions: List[BracketAction] = []
+
+        for order in orders:
+            # Check if order is a bracket (reduce_only SL/TP)
+            is_bracket = order.reduce_only or order.close_position
+            if not is_bracket:
+                continue
+
+            # Check order type compatibility
+            is_sl = "STOP" in order.order_type.upper()
+            is_tp = "TAKE_PROFIT" in order.order_type.upper() or "LIMIT" in order.order_type.upper()
+
+            if is_sl or is_tp:
+                actions.append(BracketAction(
+                    action_type="CANCEL",
+                    order_id=order.order_id,
+                    client_order_id=order.client_order_id,
+                    reason_code="ORPHAN_CLEANUP",
+                    why="orphan_cleanup|position_flat",
+                    rid=rid,
+                ))
+
+        return BracketPlan(
+            symbol=symbol,
+            side="FLAT",  # Virtual side
+            state=BracketState(
+                symbol=symbol,
+                side="LONG",  # Dummy side to satisfy validation
+                position_view=None,
+                bracket_set=None,
+            ),
+            actions=actions,
+            severity="WARN" if actions else "INFO",
+            why="orphan_cleanup_plan",
+            rid=rid,
+        )
+
+    def plan_reverse_cleanup(
+        self,
+        symbol: str,
+        prev_side: str,
+        new_side: str,
+        orders: Iterable[OrderView],
+        *,
+        rid: Optional[str] = None,
+    ) -> BracketPlan:
+        """
+        Generate plan to cancel brackets from previous side after a reversal.
+
+        Args:
+            symbol: Trading symbol.
+            prev_side: Previous position side ("LONG" or "SHORT").
+            new_side: New position side ("LONG" or "SHORT").
+            orders: All open orders for the symbol.
+            rid: Optional request ID.
+
+        Returns:
+            BracketPlan with CANCEL actions for old side brackets.
+        """
+        actions: List[BracketAction] = []
+
+        # Determine old exit side
+        # LONG position -> SL/TP are SELL
+        # SHORT position -> SL/TP are BUY
+        old_exit_side = "SELL" if prev_side == "LONG" else "BUY"
+
+        for order in orders:
+            # Check if order is a bracket (reduce_only)
+            is_bracket = order.reduce_only or order.close_position
+            if not is_bracket:
+                continue
+
+            # Check if order side matches old exit side
+            if order.side != old_exit_side:
+                continue
+
+            # Check order type compatibility
+            is_sl = "STOP" in order.order_type.upper()
+            is_tp = "TAKE_PROFIT" in order.order_type.upper() or "LIMIT" in order.order_type.upper()
+
+            if is_sl or is_tp:
+                actions.append(BracketAction(
+                    action_type="CANCEL",
+                    order_id=order.order_id,
+                    client_order_id=order.client_order_id,
+                    reason_code="REVERSE_CLEANUP",
+                    why=f"reverse_cleanup|{prev_side}->{new_side}",
+                    rid=rid,
+                ))
+
+        return BracketPlan(
+            symbol=symbol,
+            side=new_side,
+            state=BracketState(
+                symbol=symbol,
+                side=new_side,
+                position_view=None,  # Not needed for cleanup plan
+                bracket_set=None,
+            ),
+            actions=actions,
+            severity="WARN" if actions else "INFO",
+            why="reverse_cleanup_plan",
+            rid=rid,
+        )

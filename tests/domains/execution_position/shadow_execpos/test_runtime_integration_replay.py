@@ -42,14 +42,14 @@ async def test_valid_entry_flow(runtime, fake_adapter):
             "order_type": "LIMIT"
         }
     )
-    
+
     await runtime.handle(event)
-    
+
     # Verify adapter was called
     assert len(fake_adapter.calls) == 1
     assert fake_adapter.calls[0].verb == "place"
     assert fake_adapter.calls[0].symbol == "BTCUSDT"
-    
+
     # Verify metrics
     metrics = runtime.get_metrics()
     assert metrics["events_total"] == 1
@@ -73,12 +73,12 @@ async def test_gatekeeper_rejects_small_qty(runtime, fake_adapter):
             "order_type": "LIMIT"
         }
     )
-    
+
     await runtime.handle(event)
-    
+
     # Verify adapter was NOT called
     assert len(fake_adapter.calls) == 0
-    
+
     # Verify metrics
     metrics = runtime.get_metrics()
     assert metrics["gatekeeper_rejected"] == 1
@@ -96,12 +96,14 @@ async def test_orphan_sl_detection(runtime):
         "orders": [{
             "symbol": "BTCUSDT",
             "orderId": "sl_orphan",
+            "clientOrderId": "epv2_sBTCUSDT_c999_tSL_sSELL_q0.1_p45000",
             "type": "STOP_MARKET",
             "side": "SELL",
-            "reduceOnly": True
+            "reduceOnly": True,
+            "origQty": "0.1"
         }]
     })
-    
+
     # Trigger watchdog via snapshot update
     event = RuntimeEvent(
         kind="ORDERS_SNAPSHOT",
@@ -111,6 +113,7 @@ async def test_orphan_sl_detection(runtime):
             "orders": [{
                 "symbol": "BTCUSDT",
                 "orderId": "sl_orphan",
+                "clientOrderId": "epv2_sBTCUSDT_c999_tSL_sSELL_q0.1_p45000",
                 "type": "STOP_MARKET",
                 "side": "SELL",
                 "reduceOnly": True,
@@ -119,12 +122,12 @@ async def test_orphan_sl_detection(runtime):
             }]
         }
     )
-    
+
     await runtime.handle(event)
-    
+
     # Trigger analysis (happens after state update)
     await runtime._run_watchdog_analysis()
-    
+
     # Verify watchdog violation detected
     metrics = runtime.get_metrics()
     assert metrics["watchdog_violations"] >= 1
@@ -143,16 +146,18 @@ async def test_idempotent_cancel(runtime, fake_adapter):
             "side": "BUY",
             "quantity": "10.0",
             "price": "100",
-            "order_type": "LIMIT"
+            "order_type": "LIMIT",
+            "client_order_id": "test_client_oid_2"
         }
     )
     await runtime.handle(entry_event)
-    
+
     # Get order ID from state
-    orders = runtime._open_orders_by_symbol.get("SOLUSDT", [])
+    refs = runtime.order_index.get_by_symbol("SOLUSDT")
+    orders = [r.to_dict() for r in refs]
     assert len(orders) == 1
     order_id = orders[0]["order_id"]
-    
+
     # First cancel
     cancel_event = RuntimeEvent(
         kind="CANCEL_INTENT",
@@ -161,15 +166,16 @@ async def test_idempotent_cancel(runtime, fake_adapter):
         payload={"order_id": order_id}
     )
     await runtime.handle(cancel_event)
-    
+
     # Configure adapter to return -2011 for second cancel
     fake_adapter.set_error_for_order(order_id, -2011)
-    
+
     # Second cancel (should be idempotent)
     await runtime.handle(cancel_event)
-    
+
     # Both cancels should succeed (idempotent)
     metrics = runtime.get_metrics()
+    print(f"DEBUG: metrics={metrics}")
     assert metrics["execution_success"] == 3  # 1 place + 2 cancels
 
 # --- SCENARIO 5: FILL PROCESSING WITH IDEMPOTENCY ---
@@ -191,19 +197,19 @@ async def test_fill_idempotency(runtime):
         }
     )
     await runtime.handle(fill_event)
-    
+
     # Duplicate fill (same cum_qty)
     await runtime.handle(fill_event)
-    
+
     # Verify metrics
     metrics = runtime.get_metrics()
     assert metrics["fills_processed"] == 1
     assert metrics["fills_duplicate"] == 1
-    
+
     # Verify position updated only once
     pos = runtime._positions_by_symbol.get("BTCUSDT")
     assert pos is not None
-    assert float(pos["qty"]) == 0.1
+    assert float(pos.qty) == 0.1
 
 # --- SCENARIO 6: MISSING SL DETECTION ---
 
@@ -224,7 +230,7 @@ async def test_missing_sl_detection(runtime):
         }
     )
     await runtime.handle(fill_event)
-    
+
     # Update with empty orders snapshot (no SL)
     orders_event = RuntimeEvent(
         kind="ORDERS_SNAPSHOT",
@@ -233,7 +239,7 @@ async def test_missing_sl_detection(runtime):
         payload={"orders": []}
     )
     await runtime.handle(orders_event)
-    
+
     # Verify watchdog detected violation
     metrics = runtime.get_metrics()
     assert metrics["watchdog_violations"] >= 1
@@ -246,7 +252,7 @@ async def test_complete_lifecycle(runtime, fake_adapter):
     """Test complete entry → fill → close lifecycle."""
     # Reset gatekeeper cooldown
     runtime.gatekeeper.reset_cooldown("BTCUSDT")
-    
+
     # Entry
     entry_event = RuntimeEvent(
         kind="ENTRY_INTENT",
@@ -255,7 +261,7 @@ async def test_complete_lifecycle(runtime, fake_adapter):
         payload={"side": "BUY", "quantity": "0.1", "price": "50000", "order_type": "LIMIT"}
     )
     await runtime.handle(entry_event)
-    
+
     # Fill
     fill_event = RuntimeEvent(
         kind="TRADE_EXECUTED",
@@ -264,7 +270,7 @@ async def test_complete_lifecycle(runtime, fake_adapter):
         payload={"order_id": "ORDER_1000", "quantity": "0.1", "price": "50000", "side": "BUY", "cum_qty": "0.1"}
     )
     await runtime.handle(fill_event)
-    
+
     # Close
     close_event = RuntimeEvent(
         kind="CLOSE_INTENT",
@@ -273,13 +279,13 @@ async def test_complete_lifecycle(runtime, fake_adapter):
         payload={"quantity": "0.1"}
     )
     await runtime.handle(close_event)
-    
+
     # Verify full lifecycle
     metrics = runtime.get_metrics()
     assert metrics["events_total"] == 3
     assert metrics["execution_success"] == 2  # Entry + close
     assert metrics["fills_processed"] == 1
-    
+
     # Verify adapter calls (entry + bracket placements + close)
     assert len(fake_adapter.calls) >= 2
     assert fake_adapter.calls[0].verb == "place"
@@ -292,17 +298,17 @@ async def test_complete_lifecycle(runtime, fake_adapter):
 async def test_metrics_tracking(runtime):
     """Test metrics are tracked correctly."""
     metrics = runtime.get_metrics()
-    
+
     # Initial state
     assert metrics["events_total"] == 0
     assert metrics["gatekeeper_allowed"] == 0
     assert metrics["positions_tracked"] == 0
-    
+
     # After hydration
     runtime.hydrate({
         "positions": [{"symbol": "BTC USDT", "qty": "0.1"}],
         "orders": []
     })
-    
+
     metrics = runtime.get_metrics()
     assert metrics["positions_tracked"] == 1

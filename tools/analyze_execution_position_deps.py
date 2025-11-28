@@ -41,7 +41,7 @@ EXTERNAL_USAGE_HINTS: Dict[str, Set[str] | str] = {
     # Adapter contract consumed by upstream services
     "execution_position.binance_execution_adapter": "*",
     # Facade contract consumed by FSM layer
-    "execution_position.runtime_factory": {
+    "execution_position.infra.runtime_factory": {
         "build_execution_runtime",
         "V2RuntimeFacade",
         "ExecutionRuntime",
@@ -59,14 +59,13 @@ EXTERNAL_USAGE_HINTS: Dict[str, Set[str] | str] = {
         "is_exit_order",
         "validate_order_command",
     },
-    "execution_position.exposure_guard": {"ExposureGuard", "ClipResult"},
-    "execution_position.idempotent_cancel": {"OrderStatus"},
+    "execution_position.infra.idempotent_cancel": {"OrderStatus"},
     "execution_position.internal_types": {"ExecutionResult"},
     "execution_position.manage_config": {"clear_manage_config_cache"},
-    "execution_position.metrics_collector": {"MetricsCollector"},
-    "execution_position.order_index": {"OrderIndex"},
-    "execution_position.utils_event_bus": {"LocalBus"},
-    "execution_position.utils": {
+    "execution_position.observability.metrics_collector": {"MetricsCollector"},
+    "execution_position.infra.order_index": {"OrderIndex"},
+    "execution_position.infra.utils_event_bus": {"LocalBus"},
+    "execution_position.infra.utils": {
         "calc_tp_sl_from_mark",
         "generate_client_order_id",
         "opposite_side",
@@ -75,15 +74,15 @@ EXTERNAL_USAGE_HINTS: Dict[str, Set[str] | str] = {
     },
     "execution_position.watchdog": {"OrderTimeoutWatchdog"},
     "execution_position.agg_oco_introspection": {"AggOcoStateRow"},
-    "execution_position.drift_monitor": {"aggregate_drift_metrics", "compute_drift"},
+    "execution_position.observability.drift_monitor": {"aggregate_drift_metrics", "compute_drift"},
     "execution_position.config": {"Config"},
     # Shadow public helpers used in tests/tools
-    "shadow_execpos.ab_replay": {"ExecPosReplay"},
-    "shadow_execpos.agg_oco_replay": {"AggOcoReplayEnforcer"},
+    # NOTE: ab_replay moved to tests/domains/execution_position/shadow_execpos/ab_replay.py (test utility)
+    # NOTE: agg_oco_replay moved to tests/domains/execution_position/shadow_execpos/agg_oco_replay.py (test utility)
+    # NOTE: log_watchdog_action removed (dead code - watchdog is detect-only in V2)
     "shadow_execpos.logging_v2": {
         "log_bracket_eval_snapshot",
         "log_runtime_event",
-        "log_watchdog_action",
     },
 }
 
@@ -95,7 +94,7 @@ PUBLIC_EXPORT_OVERRIDES: Dict[str, Set[str]] = {
         "BinanceValidationError",
         "MockAuditLogger",
     },
-    "execution_position.runtime_factory": {
+    "execution_position.infra.runtime_factory": {
         "ExecutionRuntime",
         "V2RuntimeFacade",
         "build_execution_runtime",

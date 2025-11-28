@@ -74,36 +74,6 @@ def _get_v2_execution_brackets_cfg(cfg: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _get_legacy_execution_brackets_cfg(cfg: Any) -> Optional[Dict[str, Any]]:
-    """Return legacy execution.manage.brackets nodes when config_v2 is absent or invalid."""
-
-    execution_block = _ensure_mapping(_pluck(cfg, "execution"))
-    if execution_block:
-        primary_cfg = _ensure_mapping(execution_block.get("brackets"))
-        if primary_cfg is not None:
-            return primary_cfg
-        fallback_cfg = _ensure_mapping(
-            _pluck(execution_block, "manage", "brackets")
-        )
-        if fallback_cfg is not None:
-            return fallback_cfg
-
-    trading_exec_block = _ensure_mapping(
-        _pluck(cfg, "trading", "execution")
-    )
-    if trading_exec_block:
-        primary_cfg = _ensure_mapping(trading_exec_block.get("brackets"))
-        if primary_cfg is not None:
-            return primary_cfg
-        fallback_cfg = _ensure_mapping(
-            _pluck(trading_exec_block, "manage", "brackets")
-        )
-        if fallback_cfg is not None:
-            return fallback_cfg
-
-    return None
-
-
 def _pluck(obj: Any, *path: str) -> Any:
     """Safely traverse nested dict/Pydantic/object attributes."""
     current = obj
@@ -152,14 +122,6 @@ DEFAULT_TP_BPS = Decimal("100")
 DEFAULT_OFFSET_BPS = 5
 
 
-def _log_legacy_usage(field: str, symbol: Optional[str]) -> None:
-    LOG.warning(
-        "legacy execution.brackets field '%s' used for symbol=%s; migrate to canonical sl/tp.fixed_bps",
-        field,
-        symbol or "GLOBAL",
-    )
-
-
 def _build_brackets_from_v2(v2_cfg: Dict[str, Any], symbol: Optional[str] = None) -> ResolvedBrackets:
     """Build brackets from v2 config."""
     sl_bps = DEFAULT_SL_BPS
@@ -198,34 +160,6 @@ def _build_brackets_from_v2(v2_cfg: Dict[str, Any], symbol: Optional[str] = None
         else:
             raise ValueError(f"Invalid offset_bps type: {type(offset_raw)}")
 
-    legacy_cfg = v2_cfg or {}
-
-    if sl_source == "default":
-        legacy_sl_raw = legacy_cfg.get("stop_loss_bps")
-        if legacy_sl_raw is not None:
-            legacy_sl = _coerce_decimal(legacy_sl_raw)
-            if legacy_sl is None:
-                raise ValueError(
-                    f"Invalid stop_loss_bps value: {legacy_sl_raw}")
-            sl_bps = legacy_sl
-            sl_source = "stop_loss_bps"
-            _log_legacy_usage("stop_loss_bps", symbol)
-
-    if tp_source == "default":
-        for ratio_key in ("take_profit_high_ratio", "take_profit_low_ratio"):
-            ratio_raw = legacy_cfg.get(ratio_key)
-            if ratio_raw is None:
-                continue
-            ratio = _coerce_decimal(ratio_raw)
-            if ratio is None:
-                raise ValueError(f"Invalid {ratio_key} value: {ratio_raw}")
-            if ratio <= 0:
-                raise ValueError(f"{ratio_key} must be positive")
-            tp_bps = (sl_bps * ratio).quantize(Decimal("1"))
-            tp_source = ratio_key
-            _log_legacy_usage(ratio_key, symbol)
-            break
-
     return ResolvedBrackets(
         sl_bps=sl_bps,
         tp_bps=tp_bps,
@@ -234,11 +168,6 @@ def _build_brackets_from_v2(v2_cfg: Dict[str, Any], symbol: Optional[str] = None
         tp_source=tp_source,
         source="config_v2",
     )
-
-
-def _build_brackets_from_legacy(legacy_cfg: Optional[Dict[str, Any]], symbol: Optional[str] = None) -> ResolvedBrackets:
-    resolved = _build_brackets_from_v2(legacy_cfg or {}, symbol)
-    return replace(resolved, source="legacy")
 
 
 def resolve_brackets_config(config: Any, *, symbol: Optional[str] = None) -> ResolvedBrackets:
@@ -250,16 +179,14 @@ def resolve_brackets_config(config: Any, *, symbol: Optional[str] = None) -> Res
             return _build_brackets_from_v2(v2_cfg, symbol)
         except ValueError as exc:
             LOG.warning(
-                "Failed to build execution.brackets from config_v2, falling back to legacy: %s",
+                "Failed to build execution.brackets from config_v2: %s",
                 exc,
             )
+            raise
 
-    legacy_cfg = _get_legacy_execution_brackets_cfg(config)
-    if legacy_cfg:
-        return _build_brackets_from_legacy(legacy_cfg, symbol)
-
+    # Fallback to defaults if no config found, but warn
     LOG.debug(
         "execution.brackets config missing; using defaults for symbol=%s",
         symbol,
     )
-    return _build_brackets_from_legacy({}, symbol)
+    return _build_brackets_from_v2({}, symbol)

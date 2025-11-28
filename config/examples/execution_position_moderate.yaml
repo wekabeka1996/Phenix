@@ -71,9 +71,5 @@ manage:
     # Standard max hold time: 6 hours (21600 sec)
     max_hold_time_sec: 21600
 
-    # Default close policy: flexible
-    reason_policy: default
-
-    # Allow both time and profit exits
+    # Allow time-based exits
     allow_time_exit: true
-    allow_profit_exit: true

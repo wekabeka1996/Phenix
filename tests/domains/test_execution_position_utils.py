@@ -1,5 +1,5 @@
 import pytest
-from apps.reference.domains.execution_position import utils
+from apps.reference.domains.execution_position.infra import utils
 from decimal import Decimal
 
 
@@ -22,14 +22,30 @@ def test_validate_anti_2021_adjusts_and_quantizes():
     assert adjusted2
 
 
-def test_generate_client_order_id_and_allowed_chars():
-    cid = utils.generate_client_order_id("PR", "DEC123", "extra", max_len=20)
-    assert isinstance(cid, str)
-    assert len(cid) <= 20
-    # only allowed chars
-    import re
+def test_make_execpos_client_order_id_and_allowed_chars():
+    """Test canonical clientOrderId builder produces valid format."""
+    from apps.reference.domains.execution_position.infra.utils import (
+        ClientOrderIntent,
+        make_execpos_client_order_id,
+    )
 
-    assert re.match(r"^[A-Za-z0-9_\-]+$", cid)
+    meta = make_execpos_client_order_id(
+        intent=ClientOrderIntent.ENTRY,
+        symbol="BTCUSDT",
+        rid="RID-TEST",
+        decision_id="DEC123",
+    )
+    cid = meta.raw
+
+    assert isinstance(cid, str)
+    assert len(cid) <= 36  # Binance limit
+    # only allowed chars (alphanumeric + dash)
+    import re
+    assert re.match(r"^[A-Za-z0-9\-]+$", cid)
+    # Should start with epv1 prefix
+    assert cid.startswith("epv1-")
+    # Intent token should be 'en' for ENTRY
+    assert "-en-" in cid
 
 
 def test_to_float_and_calc_tp_sl_and_validate_not_immediate():
@@ -63,7 +79,7 @@ def test_opposite_side():
 
 import pytest
 from decimal import Decimal
-from apps.reference.domains.execution_position.utils import (
+from apps.reference.domains.execution_position.infra.utils import (
     _to_float,
     calc_tp_sl_from_mark,
     validate_not_immediate,
@@ -199,3 +215,44 @@ class TestValidateNotImmediate:
     def test_invalid_side(self):
         with pytest.raises(ValueError, match="Unknown side"):
             validate_not_immediate("INVALID", 101.0, 99.5, 100.0)
+
+
+class TestBpsDivisorConstant:
+    """Tests for BPS_DIVISOR constant usage in calc_tp_sl_from_mark."""
+
+    def test_bps_divisor_exported(self):
+        """BPS_DIVISOR should be exported in __all__."""
+        from apps.reference.domains.execution_position.infra import utils
+        assert hasattr(utils, "BPS_DIVISOR")
+        assert utils.BPS_DIVISOR == 10000.0
+
+    def test_bps_calculation_precision(self):
+        """Verify BPS calculation: 100 bps = 1%."""
+        from apps.reference.domains.execution_position.infra.utils import BPS_DIVISOR
+        # 100 bps should equal 1%
+        assert 100 / BPS_DIVISOR == 0.01
+        # 10000 bps should equal 100%
+        assert BPS_DIVISOR / BPS_DIVISOR == 1.0
+
+    def test_calc_tp_sl_uses_bps_divisor(self):
+        """Verify calc_tp_sl_from_mark uses BPS_DIVISOR correctly."""
+        # 100 bps = 1% increase for LONG TP
+        tp, sl = calc_tp_sl_from_mark(100.0, "LONG", 100, 50)
+        # TP = 100 * (1 + 100/10000) = 100 * 1.01 = 101
+        assert tp == 101.0
+        # SL = 100 * (1 - 50/10000) = 100 * 0.995 = 99.5
+        assert sl == 99.5
+
+
+class TestGenerateClientOrderIdRemoved:
+    """Verify legacy generate_client_order_id is no longer exported."""
+
+    def test_generate_client_order_id_not_in_all(self):
+        """generate_client_order_id should NOT be in __all__."""
+        from apps.reference.domains.execution_position.infra import utils
+        assert "generate_client_order_id" not in utils.__all__
+
+    def test_make_execpos_client_order_id_is_canonical(self):
+        """make_execpos_client_order_id is the canonical replacement."""
+        from apps.reference.domains.execution_position.infra import utils
+        assert "make_execpos_client_order_id" in utils.__all__

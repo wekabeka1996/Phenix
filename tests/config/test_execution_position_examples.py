@@ -98,7 +98,6 @@ def test_safe_profile_satisfies_core_invariants():
 
     # Close invariants
     assert ep_cfg.close.max_hold_time_sec >= 0, "max_hold_time_sec >= 0"
-    assert ep_cfg.close.reason_policy in ["default", "strict", "permissive"]
 
 
 def test_moderate_profile_satisfies_core_invariants():
@@ -119,7 +118,6 @@ def test_moderate_profile_satisfies_core_invariants():
         assert ep_cfg.trailing.hard_time_exit_sec >= 0.0
 
     assert ep_cfg.close.max_hold_time_sec >= 0
-    assert ep_cfg.close.reason_policy in ["default", "strict", "permissive"]
 
 
 def test_aggressive_profile_satisfies_core_invariants():
@@ -140,7 +138,6 @@ def test_aggressive_profile_satisfies_core_invariants():
         assert ep_cfg.trailing.hard_time_exit_sec >= 0.0
 
     assert ep_cfg.close.max_hold_time_sec >= 0
-    assert ep_cfg.close.reason_policy in ["default", "strict", "permissive"]
 
 
 # ==============================================================================

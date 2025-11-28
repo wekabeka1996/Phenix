@@ -96,16 +96,24 @@ class TestSymbolExtractionLogic:
 
 
 class TestEventAdapterSymbolPropagation:
-    """Test symbol propagation through event_adapter.from_legacy_message."""
+    """Test symbol propagation through V2RuntimeFacade mapping logic."""
 
     def test_cmd_open_extracts_symbol_from_payload(self):
         """Test that CMD:OPEN correctly extracts symbol from payload."""
-        from apps.reference.domains.execution_position.shadow_execpos.event_adapter import (
-            MessageToRuntimeEventAdapter,
-        )
+        from apps.reference.domains.execution_position.infra.runtime_factory import V2RuntimeFacade
         from vfoundation.core.protocol import Message
+        from unittest.mock import MagicMock
 
-        adapter = MessageToRuntimeEventAdapter()
+        # Mock dependencies
+        mock_config = MagicMock()
+        mock_adapter = MagicMock()
+
+        # Instantiate Facade
+        facade = V2RuntimeFacade(config=mock_config, adapter=mock_adapter)
+
+        # Mock internal runtime to capture handle calls
+        facade.runtime = MagicMock()
+        facade._submit_to_loop = MagicMock() # Don't actually run async
 
         # Test with 'symbol' key (current format)
         msg = Message(
@@ -120,26 +128,31 @@ class TestEventAdapterSymbolPropagation:
             }
         )
 
-        event = adapter.from_legacy_message(msg)
+        # Call handle
+        facade.handle(msg)
 
-        assert event is not None, "Event should not be None"
-        assert event.kind == "ENTRY_INTENT", f"Expected ENTRY_INTENT, got {event.kind}"
-        assert event.symbol == "SOLUSDT", f"Expected 'SOLUSDT', got {event.symbol}"
+        # Verify runtime.handle was called with correct event
+        assert facade.runtime.handle.called
+        call_args = facade.runtime.handle.call_args[0][0]
+
+        assert call_args.kind == "ENTRY_INTENT"
+        assert call_args.symbol == "SOLUSDT"
 
     def test_cmd_open_symbol_none_when_missing(self):
-        """Test that CMD:OPEN with missing symbol results in None (fail-closed).
-
-        After refactor, invalid payloads are rejected early (model validation),
-        returning None rather than an event with missing fields.
-        """
-        from apps.reference.domains.execution_position.shadow_execpos.event_adapter import (
-            MessageToRuntimeEventAdapter,
-        )
+        """Test that CMD:OPEN with missing symbol results in None (fail-closed)."""
+        from apps.reference.domains.execution_position.infra.runtime_factory import V2RuntimeFacade
         from vfoundation.core.protocol import Message
+        from unittest.mock import MagicMock
 
-        adapter = MessageToRuntimeEventAdapter()
+        # Mock dependencies
+        mock_config = MagicMock()
+        mock_adapter = MagicMock()
 
-        # Test with missing symbol (the bug scenario)
+        facade = V2RuntimeFacade(config=mock_config, adapter=mock_adapter)
+        facade.runtime = MagicMock()
+        facade._submit_to_loop = MagicMock()
+
+        # Test with missing symbol
         msg = Message(
             op="CMD",
             verb="OPEN",
@@ -152,7 +165,7 @@ class TestEventAdapterSymbolPropagation:
             }
         )
 
-        event = adapter.from_legacy_message(msg)
+        facade.handle(msg)
 
-        # After refactor: invalid payload → None (fail-closed)
-        assert event is None, "Invalid payload (missing symbol) should return None"
+        # Verify runtime.handle was NOT called (invalid payload rejected)
+        assert not facade.runtime.handle.called

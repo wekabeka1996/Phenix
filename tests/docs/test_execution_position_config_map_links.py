@@ -213,7 +213,6 @@ def test_config_map_documents_field_constraints():
         "max_sl_legs",
         "max_tp_legs",
         "trail_distance_bps",
-        "reason_policy",
     ]
 
     for field in key_fields:

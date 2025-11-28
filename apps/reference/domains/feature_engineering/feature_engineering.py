@@ -130,7 +130,8 @@ class FeatureEngineering:
     def _update_volume_spike(self, symbol: str, current_tick: dict, time_diff_ms: int) -> None:
         """Update volume window and compute spike (FIX #2: use real volumes, not tick count)."""
         state = self.symbol_state[symbol]
-        current_ts = current_tick["ts"]
+        # ts can be string or int - convert to int for arithmetic
+        current_ts = int(current_tick["ts"]) if isinstance(current_tick["ts"], str) else current_tick["ts"]
 
         # ✅ REFACTORED: Direct config access
         window_sec = self.config.volume_window_sec
@@ -181,7 +182,8 @@ class FeatureEngineering:
     def _update_volatility_state(self, symbol: str, price: decimal.Decimal, current_tick: dict) -> None:
         """Update volatility range window."""
         state = self.symbol_state[symbol]
-        current_ts = current_tick["ts"]
+        # ts can be string or int - convert to int for arithmetic
+        current_ts = int(current_tick["ts"]) if isinstance(current_tick["ts"], str) else current_tick["ts"]
 
         # ✅ REFACTORED: Direct config access
         window_sec = self.config.volatility_window_sec
@@ -362,7 +364,10 @@ class FeatureEngineering:
             tfi = ((buy_volume - sell_volume) /
                    total_flow if total_flow > 0 else decimal.Decimal(0))
 
-            time_diff = current_tick["ts"] - last_tick["ts"]
+            # ts can be string or int - convert to int for arithmetic
+            current_ts = int(current_tick["ts"]) if isinstance(current_tick["ts"], str) else current_tick["ts"]
+            last_ts = int(last_tick["ts"]) if isinstance(last_tick["ts"], str) else last_tick["ts"]
+            time_diff = current_ts - last_ts
             delta_price = price - \
                 prev_price if time_diff < 5000 else decimal.Decimal(0)
 

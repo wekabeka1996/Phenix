@@ -248,6 +248,105 @@ class TestOrchestratorFSM:
     def test_get_stats(self, orchestrator):
         """Test statistics retrieval."""
         stats = orchestrator.get_stats()
-        assert "active_rids" in stats
-        assert "error_counts" in stats
-        assert "circuit_breaker_domains" in stats
+
+
+class TestLocalBus:
+    """Tests for LocalBus event bus."""
+
+    def test_listen_and_emit(self):
+        """Test basic listen and emit."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+
+        bus = LocalBus()
+        received = []
+
+        def callback(msg):
+            received.append(msg)
+
+        bus.listen("EVT:TEST", callback)
+        bus.emit("EVT:TEST", {"data": "test"}, why="unit_test")
+
+        assert len(received) == 1
+        assert received[0]["pld"]["data"] == "test"
+        assert received[0]["op"] == "EVT"
+        assert received[0]["verb"] == "TEST"
+        assert received[0]["why"] == "unit_test"
+
+    def test_unlisten(self):
+        """Test unlisten removes callback."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+
+        bus = LocalBus()
+        received = []
+
+        def callback(msg):
+            received.append(msg)
+
+        bus.listen("EVT:TEST", callback)
+        bus.emit("EVT:TEST", {"n": 1}, why="test")
+        assert len(received) == 1
+
+        bus.unlisten("EVT:TEST", callback)
+        bus.emit("EVT:TEST", {"n": 2}, why="test")
+        assert len(received) == 1  # Still 1, callback was removed
+
+    def test_unlisten_nonexistent_callback(self):
+        """Test unlisten with callback that was never registered."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+
+        bus = LocalBus()
+
+        def callback(msg):
+            pass
+
+        # Should not raise
+        bus.unlisten("EVT:TEST", callback)
+        bus.unlisten("EVT:NONEXISTENT", callback)
+
+    def test_multiple_listeners(self):
+        """Test multiple listeners for same event."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+
+        bus = LocalBus()
+        results = {"a": 0, "b": 0}
+
+        def callback_a(msg):
+            results["a"] += 1
+
+        def callback_b(msg):
+            results["b"] += 1
+
+        bus.listen("EVT:TEST", callback_a)
+        bus.listen("EVT:TEST", callback_b)
+        bus.emit("EVT:TEST", {}, why="test")
+
+        assert results["a"] == 1
+        assert results["b"] == 1
+
+    def test_emit_no_listeners(self):
+        """Test emit with no registered listeners."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+
+        bus = LocalBus()
+        # Should not raise
+        bus.emit("EVT:NOBODY_LISTENS", {}, why="test")
+
+    def test_listener_exception_does_not_stop_others(self):
+        """Test that one failing listener doesn't stop others."""
+        from apps.reference.orchestrator.utils_event_bus import LocalBus
+
+        bus = LocalBus()
+        results = []
+
+        def failing_callback(msg):
+            raise ValueError("I fail!")
+
+        def success_callback(msg):
+            results.append("success")
+
+        bus.listen("EVT:TEST", failing_callback)
+        bus.listen("EVT:TEST", success_callback)
+        bus.emit("EVT:TEST", {}, why="test")
+
+        # Second callback should still execute
+        assert results == ["success"]

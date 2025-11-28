@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from apps.reference.domains.execution_position.runtime_factory import V2RuntimeFacade
+from apps.reference.domains.execution_position.infra.runtime_factory import V2RuntimeFacade
 
 
 class SimpleMessage:
@@ -13,8 +13,19 @@ class SimpleMessage:
 class FakeAdapter:
     def __init__(self):
         self.place_order_calls = []
+        self.create_order = self.place_order # Alias for ExecutionService compatibility
 
-    async def place_order(self, symbol, side, order_type, quantity, **kwargs):
+    async def place_order(self, symbol=None, side=None, order_type=None, quantity=None, params=None, **kwargs):
+        if params:
+            symbol = params.symbol
+            side = params.side
+            order_type = params.order_type
+            quantity = params.quantity
+            kwargs.update({
+                "client_order_id": params.client_order_id,
+                "tif": params.time_in_force
+            })
+
         self.place_order_calls.append(
             {
                 "symbol": symbol,

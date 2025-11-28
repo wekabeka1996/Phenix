@@ -34,11 +34,8 @@ class CloseContext:
 class CloseConfig:
     allow_partial: bool = True
     min_close_qty: float = 0.0
-    # Optional fields propagated from typed ExecutionPositionConfig (not used in current logic)
     max_hold_time_sec: Optional[float] = None
-    reason_policy: str = "default"
     allow_time_exit: bool = True
-    allow_profit_exit: bool = True
 
 
 class CloseFlowService:

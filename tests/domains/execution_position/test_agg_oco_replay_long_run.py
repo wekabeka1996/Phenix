@@ -3,42 +3,23 @@ import pytest
 from pathlib import Path
 from typing import List, Dict, Any
 
-from apps.reference.domains.execution_position.shadow_execpos.agg_oco_replay import (
+from tests.domains.execution_position.shadow_execpos.agg_oco_replay import (
     AggOcoReplayEnforcer,
+    is_sl,
+    is_tp,
 )
 
 REPLAY_FILE = Path("docs") / "OCO_REPLAY_SAMPLE.json"
 
+
 def load_replay_sample() -> List[Dict[str, Any]]:
     if not REPLAY_FILE.exists():
         pytest.skip(f"Replay file not found: {REPLAY_FILE}")
-    
+
     text = REPLAY_FILE.read_text(encoding="utf-8")
     data = json.loads(text)
     assert isinstance(data, list)
     return data
-
-def is_sl(order: Dict[str, Any]) -> bool:
-    """Check if order is Stop Loss."""
-    otype = order.get("type", "").upper()
-    cid = str(order.get("clientOrderId", "")).upper()
-    
-    if "STOP" in otype:
-        return True
-    if "-SL-" in cid:
-        return True
-    return False
-
-def is_tp(order: Dict[str, Any]) -> bool:
-    """Check if order is Take Profit."""
-    otype = order.get("type", "").upper()
-    cid = str(order.get("clientOrderId", "")).upper()
-    
-    if "TAKE_PROFIT" in otype:
-        return True
-    if "-TP-" in cid:
-        return True
-    return False
 
 def assert_bracket_invariants(frame: Dict[str, Any]) -> None:
     pos_qty = float(frame.get("position_qty", 0.0))
@@ -67,17 +48,17 @@ def assert_bracket_invariants(frame: Dict[str, Any]) -> None:
     # by the nature of the snapshot frame (it is per symbol).
     # However, we should check if the order side matches the closing side for the position.
     # Position LONG -> Order SELL. Position SHORT -> Order BUY.
-    # The replay frame generator should have already filtered relevant orders, 
+    # The replay frame generator should have already filtered relevant orders,
     # but let's assume 'orders' in frame are the ones relevant to this bracket context.
-    
+
     total_sl_qty = sum(float(o.get("qty", 0)) for o in sl_orders)
     total_tp_qty = sum(float(o.get("qty", 0)) for o in tp_orders)
-    
+
     # Check SL sum
     assert total_sl_qty <= pos_qty * (1 + eps), (
         f"[{ts}] {symbol}/{side} SL qty {total_sl_qty} > pos {pos_qty}"
     )
-    
+
     # Check TP sum
     assert total_tp_qty <= pos_qty * (1 + eps), (
         f"[{ts}] {symbol}/{side} TP qty {total_tp_qty} > pos {pos_qty}"
@@ -89,10 +70,10 @@ def test_agg_oco_replay_long_run_invariants():
     Expected to FAIL on real logs if bugs exist (duplicate TP/SL, size mismatch).
     """
     frames = load_replay_sample()
-    
+
     failures = []
     enforcer = AggOcoReplayEnforcer()
-    
+
     for i, frame in enumerate(frames):
         repaired, repairs = enforcer.apply_frame(frame)
         try:
@@ -102,7 +83,7 @@ def test_agg_oco_replay_long_run_invariants():
             if repairs or repaired.get("orphan_orders"):
                 suffix = f" | repairs={repairs or []} orphans={len(repaired.get('orphan_orders', []))}"
             failures.append(f"Frame {i}: {str(e)}{suffix}")
-            
+
     if failures:
         pytest.fail(f"Invariant violations found in {len(failures)} frames:\n" + "\n".join(failures[:10]))
 
@@ -145,6 +126,6 @@ def test_agg_oco_real_replay_invariants():
         for idx, symbol, side, msg, repairs in violations[:20]:
             suffix = f" repairs={repairs}" if repairs else ""
             print(f"[VIOLATION] idx={idx} {symbol}/{side}: {msg}{suffix}")
-            
+
     # Fail if violations found (to signal RED state as requested)
     assert not violations, f"Found {len(violations)} invariant violations in real replay sample"

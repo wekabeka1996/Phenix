@@ -1,5 +1,5 @@
 import time
-from apps.reference.domains.execution_position.metrics_collector import MetricsCollector
+from apps.reference.domains.execution_position.observability.metrics_collector import MetricsCollector
 
 
 def test_metrics_basic_flow():

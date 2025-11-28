@@ -151,15 +151,11 @@ def test_close_config_valid():
     """Test: Valid CloseConfig"""
     cfg = CloseConfig(
         max_hold_time_sec=7200,
-        reason_policy="strict",
         allow_time_exit=False,
-        allow_profit_exit=True,
     )
 
     assert cfg.max_hold_time_sec == 7200
-    assert cfg.reason_policy == "strict"
     assert cfg.allow_time_exit is False
-    assert cfg.allow_profit_exit is True
 
 
 def test_close_config_defaults():
@@ -167,21 +163,13 @@ def test_close_config_defaults():
     cfg = CloseConfig()
 
     assert cfg.max_hold_time_sec == 0
-    assert cfg.reason_policy == "default"
     assert cfg.allow_time_exit is True
-    assert cfg.allow_profit_exit is True
 
 
 def test_close_config_invalid_max_hold_time():
     """Test: max_hold_time_sec < 0 raises ValidationError"""
     with pytest.raises(ValidationError, match="greater than or equal to 0"):
         CloseConfig(max_hold_time_sec=-1)
-
-
-def test_close_config_invalid_reason_policy():
-    """Test: Unknown reason_policy raises ValidationError"""
-    with pytest.raises(ValidationError, match="reason_policy='invalid' not in"):
-        CloseConfig(reason_policy="invalid")
 
 
 def test_execution_position_config_valid():
@@ -239,7 +227,6 @@ def test_resolver_happy_path():
             },
             "close": {
                 "max_hold_time_sec": 10800,
-                "reason_policy": "strict",
                 "allow_time_exit": False,
             },
         },
@@ -266,7 +253,7 @@ def test_resolver_happy_path():
 
     # Check close
     assert ep_cfg.close.max_hold_time_sec == 10800
-    assert ep_cfg.close.reason_policy == "strict"
+    assert ep_cfg.close.allow_time_exit is False
 
 
 def test_resolver_defaults():
@@ -429,13 +416,6 @@ def test_trailing_config_hard_time_exit_none():
     cfg = TrailingConfig(hard_time_exit_sec=None)
 
     assert cfg.hard_time_exit_sec is None
-
-
-def test_close_config_permissive_policy():
-    """Test: CloseConfig with reason_policy='permissive'"""
-    cfg = CloseConfig(reason_policy="permissive")
-
-    assert cfg.reason_policy == "permissive"
 
 
 # ============================================================================

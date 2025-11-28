@@ -12,7 +12,29 @@ from apps.reference.domains.execution_position.shadow_execpos.gatekeeper import 
 
 @pytest.fixture
 def gatekeeper():
-    return ExecPosGatekeeper(config={"cooldown_sec": 0.5})
+    gk = ExecPosGatekeeper(config={"cooldown_sec": 0.5})
+    # Inject test specs to avoid relying on fallbacks
+    gk.update_instrument_specs({
+        "BTCUSDT": {
+            "step_size": "0.000001",
+            "min_qty": "0.000001",
+            "min_notional": "5",
+            "tick_size": "0.01"
+        },
+        "ETHUSDT": {
+            "step_size": "0.000001",
+            "min_qty": "0.000001",
+            "min_notional": "5",
+            "tick_size": "0.01"
+        },
+        "SOLUSDT": {
+            "step_size": "0.000001",
+            "min_qty": "0.000001",
+            "min_notional": "5",
+            "tick_size": "0.01"
+        }
+    })
+    return gk
 
 # --- VALID ENTRY ---
 
@@ -25,7 +47,7 @@ def test_valid_entry_passes_all_guards(gatekeeper):
         price="50000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is True
     assert decision["reason"] == "OK"
     assert "quantity" in decision["modified_params"]
@@ -41,7 +63,7 @@ def test_non_positive_quantity_rejected(gatekeeper):
         price="3000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is False
     assert decision["reason"] == "NON_POSITIVE_QTY"
 
@@ -54,7 +76,7 @@ def test_negative_quantity_rejected(gatekeeper):
         price="50000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is False
     assert decision["reason"] == "NON_POSITIVE_QTY"
 
@@ -70,7 +92,7 @@ def test_below_min_qty_rejected(gatekeeper):
         price="50000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is False
     assert decision["reason"] == "MIN_QTY_VIOLATION"
 
@@ -88,7 +110,7 @@ def test_quantity_rounding_to_step_size(gatekeeper):
         price="50000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is True
     adjusted_qty = Decimal(decision["modified_params"]["quantity"])
     assert adjusted_qty == Decimal("0.123456")
@@ -103,7 +125,7 @@ def test_qty_rounds_to_zero_rejected(gatekeeper):
         price="50000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is False
     # With default min_qty=1e-6, this fails min_qty check first
     assert decision["reason"] in ["MIN_QTY_VIOLATION", "QTY_ROUNDS_TO_ZERO"]
@@ -121,7 +143,7 @@ def test_below_min_notional_rejected(gatekeeper):
         price="1000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is False
     assert decision["reason"] == "MIN_NOTIONAL_VIOLATION"
 
@@ -135,7 +157,7 @@ def test_min_notional_passes(gatekeeper):
         price="50000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is True
 
 # --- COOLDOWN ---
@@ -151,7 +173,7 @@ def test_cooldown_rejects_rapid_entry(gatekeeper):
         order_type="LIMIT"
     )
     assert decision1["allowed"] is True
-    
+
     # Immediate second entry (within cooldown)
     decision2 = gatekeeper.check_entry(
         symbol="ETHUSDT",
@@ -175,10 +197,10 @@ def test_cooldown_allows_after_elapsed(gatekeeper):
         order_type="LIMIT"
     )
     assert decision1["allowed"] is True
-    
+
     # Wait for cooldown to elapse
     time.sleep(0.6)
-    
+
     # Second entry (after cooldown)
     decision2 = gatekeeper.check_entry(
         symbol="SOLUSDT",
@@ -193,7 +215,7 @@ def test_cooldown_per_symbol(gatekeeper):
     """Test that cooldown is tracked per symbol."""
     # Entry for BTC
     gatekeeper.check_entry("BTCUSDT", "BUY", "0.1", "50000", "LIMIT")
-    
+
     # Immediate entry for ETH (different symbol) - should pass
     decision = gatekeeper.check_entry("ETHUSDT", "BUY", "1.0", "3000", "LIMIT")
     assert decision["allowed"] is True
@@ -209,7 +231,7 @@ def test_market_order_without_price(gatekeeper):
         price=None,  # MARKET orders don't have price
         order_type="MARKET"
     )
-    
+
     # Should pass qty checks, skip notional check
     assert decision["allowed"] is True
 
@@ -224,11 +246,11 @@ def test_modified_params_includes_adjusted_values(gatekeeper):
         price="50000.123",  # Will be rounded
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is True
     assert "quantity" in decision["modified_params"]
     assert "price" in decision["modified_params"]
-    
+
     # Verify rounding
     adjusted_qty = Decimal(decision["modified_params"]["quantity"])
     adjusted_price = Decimal(decision["modified_params"]["price"])
@@ -246,7 +268,7 @@ def test_invalid_quantity_type(gatekeeper):
         price="50000",
         order_type="LIMIT"
     )
-    
+
     assert decision["allowed"] is False
     assert decision["reason"] == "GATEKEEPER_ERROR"
 
@@ -256,10 +278,44 @@ def test_reset_cooldown(gatekeeper):
     """Test cooldown reset functionality."""
     # Entry
     gatekeeper.check_entry("BTCUSDT", "BUY", "0.1", "50000", "LIMIT")
-    
+
     # Reset cooldown
     gatekeeper.reset_cooldown("BTCUSDT")
-    
+
     # Immediate second entry should now pass
     decision = gatekeeper.check_entry("BTCUSDT", "BUY", "0.1", "50000", "LIMIT")
     assert decision["allowed"] is True
+
+# --- FALLBACK LOGIC ---
+
+def test_missing_specs_uses_fallback(gatekeeper):
+    """Test that symbols without specs use safe fallbacks."""
+    # UNKNOWN_SYMBOL is not in the fixture's update_instrument_specs
+    symbol = "UNKNOWN_SYMBOL"
+
+    # Fallback min_notional is 1.0
+    # Try an order with notional 0.5 (should fail if fallback works)
+    decision_fail = gatekeeper.check_entry(
+        symbol=symbol,
+        side="BUY",
+        quantity="0.5",
+        price="1.0", # Notional = 0.5
+        order_type="LIMIT"
+    )
+
+    assert decision_fail["allowed"] is False
+    assert decision_fail["reason"] == "MIN_NOTIONAL_VIOLATION"
+    # The metadata might contain the min_notional value, let's check if it's present
+    if "metadata" in decision_fail and "min_notional" in decision_fail["metadata"]:
+        assert str(decision_fail["metadata"]["min_notional"]) == "1.0"
+
+    # Try an order with notional 1.5 (should pass if fallback works)
+    decision_pass = gatekeeper.check_entry(
+        symbol=symbol,
+        side="BUY",
+        quantity="1.5",
+        price="1.0",
+        order_type="LIMIT"
+    )
+
+    assert decision_pass["allowed"] is True

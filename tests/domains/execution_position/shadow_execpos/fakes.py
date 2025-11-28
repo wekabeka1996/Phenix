@@ -59,7 +59,7 @@ class FakeExecutionAdapter:
             }
         )
         return {
-            "status": ExecutionStatus.CANCELLED,
+            "status": ExecutionStatus.SUCCESS,
             "success": True,
             "order_id": order_id,
             "client_order_id": client_order_id,

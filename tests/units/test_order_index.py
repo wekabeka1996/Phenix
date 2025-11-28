@@ -4,7 +4,7 @@ Unit tests for OrderIndex functionality.
 
 import time
 import pytest
-from apps.reference.domains.execution_position.order_index import (
+from apps.reference.domains.execution_position.infra.order_index import (
     OrderIndex,
     OrderRef,
 )

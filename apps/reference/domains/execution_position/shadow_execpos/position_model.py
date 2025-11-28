@@ -15,6 +15,9 @@ from dataclasses import dataclass, replace
 from typing import Optional
 import time
 
+# Tolerance for floating point zero comparisons
+POSITION_ZERO_TOLERANCE = 1e-12
+
 
 @dataclass(frozen=True)
 class PositionState:
@@ -32,38 +35,11 @@ class PositionState:
 
     @property
     def side(self) -> str:
-        if self.qty > 0:
+        if self.qty > POSITION_ZERO_TOLERANCE:
             return "LONG"
-        if self.qty < 0:
+        if self.qty < -POSITION_ZERO_TOLERANCE:
             return "SHORT"
         return "FLAT"
-
-    def get(self, key: str, default: Optional[float] = None):
-        """
-        Provide dict-like access for legacy callers/tests.
-        """
-        mapping = {
-            "symbol": self.symbol,
-            "qty": self.qty,
-            "position_size": self.qty,
-            "side": self.side,
-            "direction": self.side,
-            "entry_price": self.avg_entry_price,
-            "avg_price": self.avg_entry_price,
-            "avg_entry_price": self.avg_entry_price,
-            "realized_pnl": self.realized_pnl,
-            "unrealized_pnl": self.unrealized_pnl,
-            "open_time": self.open_time,
-            "last_update_time": self.last_update_time,
-            "cycle_id": self.cycle_id,
-        }
-        return mapping.get(key, default)
-
-    def __getitem__(self, key: str):
-        val = self.get(key)
-        if val is None:
-            raise KeyError(key)
-        return val
 
 
 def _now_ts(ts: Optional[float]) -> float:
@@ -89,14 +65,14 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
     # R2-F: Normalize quantity to absolute value (handle signed payloads)
     quantity = abs(quantity)
 
-    if quantity == 0:
+    if quantity < POSITION_ZERO_TOLERANCE:
         return replace(state, last_update_time=_now_ts(ts))
 
     signed_fill = quantity if side.upper() == "BUY" else -quantity
     ts_val = _now_ts(ts)
 
     # Fresh open
-    if abs(state.qty) < 1e-12:
+    if abs(state.qty) < POSITION_ZERO_TOLERANCE:
         return PositionState(
             symbol=state.symbol,
             qty=signed_fill,
@@ -107,6 +83,7 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
             last_update_time=ts_val,
             scale_in_count=0,
             scale_out_count=0,
+            cycle_id=state.cycle_id + 1,
         )
 
     # Same direction (scale-in)
@@ -124,6 +101,7 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
             last_update_time=ts_val,
             scale_in_count=state.scale_in_count + 1,
             scale_out_count=state.scale_out_count,
+            cycle_id=state.cycle_id,
         )
 
     # Opposite direction: closing or flipping
@@ -135,7 +113,7 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
     new_qty = state.qty + signed_fill  # may flip sign
 
     # Fully flat after close
-    if abs(new_qty) < 1e-12:
+    if abs(new_qty) < POSITION_ZERO_TOLERANCE:
         return PositionState(
             symbol=state.symbol,
             qty=0.0,
@@ -146,6 +124,7 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
             last_update_time=ts_val,
             scale_in_count=state.scale_in_count,
             scale_out_count=state.scale_out_count + 1,
+            cycle_id=state.cycle_id,
         )
 
     # Flip: remaining open on opposite side at flip price
@@ -161,6 +140,7 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
             last_update_time=ts_val,
             scale_in_count=0,
             scale_out_count=state.scale_out_count + 1,
+            cycle_id=state.cycle_id + 1,
         )
 
     # Partial close (same direction remains)
@@ -174,4 +154,5 @@ def apply_fill(state: PositionState, *, side: str, quantity: float, price: float
         last_update_time=ts_val,
         scale_in_count=state.scale_in_count,
         scale_out_count=state.scale_out_count + 1,
+        cycle_id=state.cycle_id,
     )

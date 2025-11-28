@@ -20,7 +20,7 @@ from pydantic import (
 )
 
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.utils import (
+from .infra.utils import (
     ClientOrderIntent,
     ClientOrderIdMeta,
     parse_client_order_id,
@@ -644,6 +644,13 @@ MIN_NOTIONAL = Decimal("10.0")  # Minimum order value (qty * price)
 # Quantization steps
 QTY_STEP = Decimal("0.001")  # Lot size step
 PRICE_STEP = Decimal("0.01")  # Price tick step
+
+# Zero tolerance for position size (effectively zero)
+POSITION_ZERO_TOLERANCE = 1e-8
+
+# Event Constants
+EVT_EXEC_POS_EXPOSURE_UPDATED = "EVT:EXEC_POS_EXPOSURE_UPDATED"
+
 
 
 class OrderPayload(BaseModel):

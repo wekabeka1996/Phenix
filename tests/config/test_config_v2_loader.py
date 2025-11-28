@@ -12,8 +12,7 @@ from unittest.mock import patch
 from apps.reference.config_loader import ConfigLoader, AuroraConfig
 from apps.reference.config_models import ConfigV2
 from apps.reference.config_exposure_policy import resolve_exposure_policy
-from apps.reference.domains.execution_position.manage_config import resolve_execution_manage_config
-from apps.reference.domains.execution_position.manage_config import clear_manage_config_cache
+from apps.reference.config.execution_position import resolve_execution_position_config
 from apps.reference.config_risk import resolve_daily_risk_state
 
 
@@ -98,14 +97,6 @@ def _load_with_config_v2(config_v2: ConfigV2) -> AuroraConfig:
         return loader.load_config()
 
 
-@pytest.fixture(autouse=True)
-def _manage_cache_guard():
-    """Ensure execution manage cache is cleared between tests."""
-    clear_manage_config_cache()
-    yield
-    clear_manage_config_cache()
-
-
 class TestConfigV2LoaderDeterministic:
     """Deterministic coverage for config v2 loader + resolvers."""
 
@@ -153,7 +144,16 @@ class TestConfigV2LoaderDeterministic:
                 "execution": {
                     "exposure": {"max_equity_utilization_pct": 200.0},
                     # Add manage data for migrated domain
-                    "manage": {"auto": True},
+                    "manage": {
+                        "auto": True,
+                        "brackets": {
+                            "aggregated_oco": {
+                                "enabled": True,
+                                "aggregated_only_mode": True,
+                                "recalc_on_partial_close": True,
+                            }
+                        }
+                    },
                 },  # Migrated domain with data
                 "risk": {},  # Unmigrated domain, skeleton empty
             },
@@ -167,8 +167,10 @@ class TestConfigV2LoaderDeterministic:
         assert exposure.caps.max_equity_utilization_ratio == Decimal(
             "2.0")  # 200% as decimal
 
-        manage = resolve_execution_manage_config(config)
-        assert manage.source == "config_v2"
+        raw_exec = config.config_v2.domains.get("execution", {})
+        ep_cfg = resolve_execution_position_config(raw_exec)
+        assert ep_cfg.aggregated_oco.enabled is True
+        assert ep_cfg.aggregated_oco.aggregated_only_mode is True
 
         # Risk domain not migrated, skeleton empty, so fallback to legacy
         risk_state = resolve_daily_risk_state(config)
@@ -189,6 +191,11 @@ class TestConfigV2LoaderDeterministic:
                     "enable": True,
                     "oco_emulation": False,
                     "retry": {"max_attempts": 7, "backoff_ms": [50, 75]},
+                    "aggregated_oco": {
+                        "enabled": True,
+                        "aggregated_only_mode": True,
+                        "recalc_on_partial_close": True,
+                    }
                 },
                 "guardian": {
                     "unified": False,
@@ -244,11 +251,10 @@ class TestConfigV2LoaderDeterministic:
         assert exposure.leverage_defaults.resolve_for(
             "BTCUSDT") == Decimal("15")
 
-        manage = resolve_execution_manage_config(config)
-        assert manage.source == "config_v2"
-        assert manage.auto is False
-        assert manage.quick_profit.enabled is True
-        assert manage.quick_profit.target_usd == Decimal("5.5")
+        raw_exec = config.config_v2.domains.get("execution", {})
+        ep_cfg = resolve_execution_position_config(raw_exec)
+        assert ep_cfg.aggregated_oco.enabled is True
+        assert ep_cfg.aggregated_oco.aggregated_only_mode is True
 
         risk_state = resolve_daily_risk_state(config)
         assert risk_state.cfg.max_realized_loss_usd == pytest.approx(1337.0)

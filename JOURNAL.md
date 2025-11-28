@@ -1,4 +1,45 @@
 ﻿---
+**RID**: `ADAPTER-UNIFICATION-V1`
+**Date**: 2025-01-28
+**Task**: Merge BinanceExecutionAdapter features into BinanceAdapter
+**Priority**: P0 (Architecture Consolidation)
+**Why**: Two adapters with overlapping functionality caused confusion and inconsistency
+
+**Phase 1: Merge (COMPLETED)**
+- Updated `BinanceAdapter.__init__` with WebSocket and FSM support parameters
+- Added WebSocket USER_DATA_STREAM support
+- Added FSM Message-based order methods: `place_order_fsm`, `cancel_order_fsm`
+- Added bracket error handling `_handle_bracket_error`
+- Removed dead code: `_is_code_1021()`
+
+**Phase 2: Migration (COMPLETED 2025-01-28)**
+Migrated all imports from `BinanceExecutionAdapter` to `BinanceAdapter`:
+
+| File | Status |
+|------|--------|
+| `apps/reference/domains/execution_position/infra/adapter_factory.py` | ✅ MIGRATED |
+| `tools/audit_algo_orders.py` | ✅ MIGRATED |
+| `tests/test_ws_integration.py` | ✅ MIGRATED |
+| `tests/unit/test_slippage_cap_conversion.py` | ✅ MIGRATED (skip) |
+| `tests/unit/test_websocket_payload_normalization.py` | ✅ MIGRATED |
+| `tests/units/test_adapter_cancel_order_fallback.py` | ✅ MIGRATED |
+| `tests/units/test_binance_execution_adapter_unit.py` | ✅ MIGRATED |
+| `tests/domains/execution_position/test_time_sync_robust.py` | ✅ MIGRATED |
+| `tests/domains/conftest.py` | ✅ MIGRATED |
+| `tests/domains/execution_position/shadow_execpos/test_execution_service_error_handling.py` | ✅ MIGRATED |
+| `tests/apps/test_main_execpos_v2_wiring.py` | ✅ MIGRATED |
+
+**Phase 3: Deletion (COMPLETED)**
+- **DELETED**: `apps/reference/domains/execution_position/binance_execution_adapter.py` (1975 lines)
+
+**Test Results After Migration**:
+- `pytest tests/units/ tests/unit/` → **126 passed, 17 skipped** ✅
+- All BinanceAdapter tests passing
+- adapter_factory builds BinanceAdapter correctly
+
+**Breaking Changes**: None - alias `BinanceAdapter as BinanceExecutionAdapter` used for compatibility
+
+---
 **RID**: `CONFIG-HARDCODE-REMOVAL-V2`
 **Date**: 2025-11-27
 **Task**: Complete hardcoded parameters removal from adapters
@@ -13738,3 +13779,110 @@ Added _sync_orders_and_handle_trade() to fetch orders BEFORE processing TRADE_EX
 2025-11-26 — ExecPos + Binance adapter audit (docs only)
 - Created / updated `execpos_adapter_audit.md` with runtime entrypoints, payload contracts, behavioral invariants, known issues, suspected weak spots, and test coverage for `execution_position` + Binance adapter.
 - No business-logic or test changes in this step; next phases: linters → test refactors/fixes → architecture-level fixes and final report.
+
+---
+**RID**: EP-CORE-SLIM-CLASSIFY
+**Date**: 2025-11-27
+**Task**: Physical restructuring of Execution Position domain (Core vs Infra vs Observability)
+**Priority**: P1 (Refactoring)
+**Why**: Separate core domain logic (Runtime, Adapter) from infrastructure (Factories, Utils) and observability (Metrics, Drift).
+
+**Changes Made**:
+1. **Physical Move**:
+   - Moved
+untime_factory.py, dapter_factory.py, idempotent_cancel.py, utils.py, utils_event_bus.py -> infra/
+   - Moved metrics_collector.py, metrics_aggregator.py, drift_monitor.py, order_index.py, lgo_order_index.py -> observability/
+
+2. **Compat-Shims (Proxies)**:
+   - Created proxy files in root (utils.py,
+untime_factory.py, etc.) that re-export from new locations.
+   - Ensures backward compatibility for external consumers and tests.
+
+3. **Import Updates**:
+   - Updated inance_execution_adapter.py, contracts.py, exposure_guard.py to import from .infra and .observability.
+   - Updated 	ests/domains/execution_position/** to use new paths where appropriate (or rely on shims).
+
+4. **Documentation**:
+   - Updated EXEC_POS_BC.md with 'Physical Structure' section.
+
+**Test Results**:
+- pytest tests/domains/execution_position -q: 533 passed, 13 skipped, 2 xfailed
+
+**Status**:  COMPLETE - Domain physically restructured, tests passing, backward compatibility maintained via shims.
+
+
+---
+**RID**: EP-CORE-SLIM-RUNTIME-STEP1
+**Date**: 2025-11-28
+**Task**: Simplify ExecPosRuntimeV2 hot path (snapshot gating + evaluate/apply)
+**Priority**: P1 (Refactoring)
+**Why**: Reduce complexity of the main guard loop and bracket evaluation logic by extracting helper methods, without changing external behavior.
+
+**Changes Made**:
+1.  **Extracted _snapshot_allows_brackets**: Encapsulates snapshot gating logic (freshness, fail-open/closed rules).
+2.  **Extracted _build_bracket_context**: Encapsulates context gathering (position, orders, config) into a BracketEvalContext dataclass.
+3.  **Extracted _evaluate_and_apply_brackets_for_symbol**: Encapsulates the core evaluation and application logic.
+4.  **Refactored _evaluate_brackets**: Simplified the main method to use these helpers, resulting in a linear flow: Gate -> Build Context -> Evaluate & Apply.
+5.  **Enhanced Tests**: Added 	ests/domains/execution_position/shadow_execpos/test_bracket_snapshot_gating_enhanced.py to explicitly test snapshot gating contracts via the public interface.
+
+**Test Results**:
+- pytest tests/domains/execution_position -q: 539 passed, 13 skipped, 2 xfailed
+
+**Status**:  COMPLETE - Runtime hot path simplified, invariants preserved, tests passing.
+
+
+---
+**RID**: EP-CORE-SLIM-WATCHDOG-AND-OBS-CLEANUP
+**Date**: 2025-11-27
+**Task**: Remove legacy OrderTimeoutWatchdog and cleanup observability re-exports
+**Priority**: P1 (Cleanup)
+**Why**: Reduce noise and remove 'hidden brains' (legacy watchdog) that are not part of the V2 runtime.
+
+**Changes Made**:
+1. **Deleted Legacy Watchdog**:
+   - pps/reference/domains/execution_position/watchdog.py (Legacy OrderTimeoutWatchdog)
+   - 	ests/domains/execution_position/test_watchdog.py (Corresponding tests)
+
+2. **Cleaned up Observability Re-exports**:
+   - pps/reference/domains/execution_position/drift_monitor.py
+   - pps/reference/domains/execution_position/metrics_collector.py
+   - pps/reference/domains/execution_position/metrics_aggregator.py
+
+3. **Updated Tests**:
+   - Updated 7 test files to import directly from pps.reference.domains.execution_position.observability.* instead of the deleted re-export files.
+   - 	ests/test_debug_drift_integration.py
+   - 	ests/test_metrics_drift_integration.py
+   - 	ests/unit/test_exposure_guard_reject_metrics.py
+   - 	ests/unit/test_metrics_aggregator_unit.py
+   - 	ests/test_drift_unit.py
+   - 	ests/domains/test_drift_monitor.py
+   - 	ests/domains/test_metrics_collector.py
+
+**Verification**:
+- Verified that OrderTimeoutWatchdog was not used in V2 runtime (shadow_execpos/runtime.py uses AggOcoWatchdogService).
+- Ran updated tests: 42 passed, 3 skipped.
+
+**Status**:  COMPLETE
+
+
+---
+
+---
+**RID**: EXECPOS-RUNTIME-REFACTOR-S1`n**Date**: 2025-11-28
+**Task**: Standardize ExecPosRuntimeV2 constants
+**Why**: Remove magic numbers (0.0001) and centralize config constants.
+**Changes**:
+- Imported POSITION_ZERO_TOLERANCE from position_model.
+- Replaced  .0001 with POSITION_ZERO_TOLERANCE.
+- Centralized interval constants in ExecPosRuntimeV2 class.
+- Removed dead code (_is_brackets_suppressed).
+
+---
+**RID**: EXECPOS-RUNTIME-REFACTOR-S2`n**Date**: 2025-11-28
+**Task**: Migrate cleanup logic to BracketService
+**Why**: Centralize behavioral logic in pure service, keep runtime as orchestrator.
+**Changes**:
+- Added plan_orphan_cleanup and plan_reverse_cleanup to BracketService.
+- Refactored ExecPosRuntimeV2 to use these methods.
+- Added _get_order_views helper in Runtime.
+- Added unit tests for new service methods.

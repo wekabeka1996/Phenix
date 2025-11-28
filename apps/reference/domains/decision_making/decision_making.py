@@ -846,7 +846,8 @@ class DecisionMaking:
             return False
 
         now_ts = time.time() * 1000  # milliseconds
-        features_ts = features_data["ts"]
+        # ts can be string or int - convert to float for arithmetic
+        features_ts = float(features_data["ts"]) if isinstance(features_data["ts"], str) else features_data["ts"]
         lag_ms = now_ts - features_ts
         ttl_ms = self.features_ttl_sec * 1000
 
@@ -876,7 +877,9 @@ class DecisionMaking:
             if not features_ready:
                 # XAI instrumentation: features not ready
                 now_ts = time.time() * 1000
-                features_ts = state["features"].get("ts", 0)
+                raw_ts = state["features"].get("ts", 0)
+                # ts can be string or int - convert to float for arithmetic
+                features_ts = float(raw_ts) if isinstance(raw_ts, str) else raw_ts
                 lag_ms = now_ts - features_ts
                 ttl_ms = self.features_ttl_sec * 1000
 
@@ -895,7 +898,9 @@ class DecisionMaking:
             # Optional bar gating (e.g., M15) to avoid multiple decisions per bar
             if self._bar_gating_enabled:
                 feats = state["features"] or {}
-                ts = int(feats.get("ts", 0))
+                raw_ts = feats.get("ts", 0)
+                # ts can be string or int - convert safely
+                ts = int(float(raw_ts)) if raw_ts else 0
                 if ts > 0 and self._bar_ms > 0:
                     bar_index = ts // self._bar_ms
                     last_idx = self._last_bar_index.get(symbol)

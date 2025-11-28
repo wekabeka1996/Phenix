@@ -5,7 +5,7 @@ Tests for drift_report integration in /debug/{rid} endpoint.
 import pathlib
 import tempfile
 from vfoundation.dr import wal
-from apps.reference.domains.execution_position.drift_monitor import (
+from apps.reference.domains.execution_position.observability.drift_monitor import (
     DriftReport,
     ConfusionMatrix,
     Mismatch,

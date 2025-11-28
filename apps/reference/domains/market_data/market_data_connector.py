@@ -185,8 +185,28 @@ class MarketDataConnector:
         Args:
             msg: Parsed JSON message from WebSocket.
         """
-        # Skip if message doesn't have event type
+        # Binance Combined Stream wraps messages in {"stream": "...", "data": {...}}
+        # Unwrap if this is a combined stream message
+        if "stream" in msg and "data" in msg:
+            msg = msg["data"]
+
+        # Skip subscription responses
+        if "result" in msg or "id" in msg and "result" in msg:
+            LOG.debug(f"Subscription response: {msg}")
+            return
+
+        # Detect event type - Binance Spot bookTicker doesn't have 'e' field!
+        # Must detect by presence of specific keys
         event_type = msg.get("e")
+
+        # BookTicker detection: has 'b', 'B', 'a', 'A', 's' but no 'e'
+        if not event_type and all(k in msg for k in ["b", "B", "a", "A", "s"]):
+            event_type = "bookTicker"
+
+        # Trade detection: has 'p', 'q', 'm', 's' but no 'e' (some streams)
+        if not event_type and all(k in msg for k in ["p", "q", "m", "s"]):
+            event_type = "trade"
+
         if not event_type:
             LOG.debug(f"Skipping message without event type: {msg}")
             return

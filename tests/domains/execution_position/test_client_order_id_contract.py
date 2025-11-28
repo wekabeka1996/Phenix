@@ -1,6 +1,6 @@
 """Tests for the execution_position clientOrderId contract."""
 
-from apps.reference.domains.execution_position.utils import (
+from apps.reference.domains.execution_position.infra.utils import (
     ClientOrderIntent,
     build_bracket_client_ids,
     build_client_order_id,

@@ -92,9 +92,8 @@ def mock_config():
 @pytest.fixture
 def adapter_live(mock_fsm, mock_config):
     """Live mode Binance execution adapter for testing."""
-    from apps.reference.domains.execution_position.binance_execution_adapter import (
-        BinanceExecutionAdapter,
-    )
+    # MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+    from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
 
-    adapter = BinanceExecutionAdapter(shadow_mode=False, fsm_core=mock_fsm)
+    adapter = BinanceExecutionAdapter(shadow_mode=False, fsm=mock_fsm)
     return adapter

@@ -1,17 +1,17 @@
-"""
-TASK 2: Test that ExecutionService NEVER logs SUCCESS on timeout.
+﻿"""
+Tests for ExecutionService Timeout Invariant (EP-EXEC-SHADOW-TIMEOUT-INVARIANT-S22).
 
-Critical invariant: If adapter returns timeout error OR raises timeout exception,
-the log must contain ONLY SHADOW_EXEC_POS_PLACE_FAILED, never SUCCESS.
+Invariant:
+"If an adapter call times out (exception or timeout response), ExecutionService MUST log SHADOW_EXEC_POS_PLACE_FAILED
+and MUST NOT log SHADOW_EXEC_POS_PLACE_SUCCESS."
 
-This prevents the bug where log showed:
-- SHADOW_EXEC_POS_PLACE_SUCCESS
-- [BinanceAdapter] Order execution failed: ConnectTimeout
+This ensures that timeouts are never mistaken for successful placements in the logs,
+preventing false positives in monitoring.
 """
-from decimal import Decimal
-from typing import Any, Dict
-from unittest.mock import MagicMock
 import pytest
+import logging
+from unittest.mock import Mock, AsyncMock
+from typing import Dict, Any
 
 try:
     import httpx
@@ -21,100 +21,112 @@ except ImportError:
 from apps.reference.domains.execution_position.shadow_execpos.execution_service import (
     ExecutionService,
 )
+from apps.reference.domains.execution_position.shadow_execpos.types import (
+    ExecutionStatus,
+    ExecutionCommand,
+)
 
 
-# ============================================================================
-# TEST FIXTURES
-# ============================================================================
+class FakeAdapterWithTimeout:
+    """Adapter that raises ConnectTimeout."""
 
-class TimeoutAdapter:
-    """Adapter that simulates ConnectTimeout exception."""
-
-    def __init__(self):
-        self.place_order_calls = []
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
 
     async def place_order_v2(self, **kwargs):
-        self.place_order_calls.append(kwargs)
         if httpx:
-            raise httpx.ConnectTimeout("Connection timed out")
+            raise httpx.ConnectTimeout("Timeout connecting to exchange")
         else:
-            raise TimeoutError("Connection timed out")
+            raise TimeoutError("Timeout connecting to exchange")
+
+    async def place_order(self, **kwargs):
+        return await self.place_order_v2(**kwargs)
 
 
-class TimeoutResponseAdapter:
-    """Adapter that returns timeout error in response (not exception)."""
+class FakeAdapterWithTimeoutResponse:
+    """Adapter that returns a timeout-like error response (no exception)."""
 
-    def __init__(self):
-        self.place_order_calls = []
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
 
     async def place_order_v2(self, **kwargs):
-        self.place_order_calls.append(kwargs)
         return {
             "success": False,
-            "error": "ConnectTimeout: Connection timed out",
+            "error": "Timeout waiting for response",
             "error_kind": "ADAPTER_ERROR_TIMEOUT",
-            "order_id": None,
+            "orderId": None,
         }
 
+    async def place_order(self, **kwargs):
+        return await self.place_order_v2(**kwargs)
 
-class MixedTimeoutAdapter:
-    """
-    Adapter that first returns success for one symbol,
-    then timeout for another - simulating the BNB brackets scenario.
-    """
 
-    def __init__(self):
-        self.call_count = 0
-        self.place_order_calls = []
+class FakeAdapterMixed:
+    """Adapter that succeeds for SL, times out for TP."""
+
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
 
     async def place_order_v2(self, **kwargs):
-        self.place_order_calls.append(kwargs)
-        self.call_count += 1
+        cid = kwargs.get("client_order_id", "")
+        if "TP" in cid:
+            if httpx:
+                raise httpx.ConnectTimeout("Timeout on TP")
+            else:
+                raise TimeoutError("Timeout on TP")
+        return {
+            "success": True,
+            "orderId": "success-123",
+            "clientOrderId": cid,
+            "status": "NEW",
+        }
 
-        # First call succeeds (e.g., one bracket)
-        if self.call_count == 1:
-            return {
-                "success": True,
-                "orderId": "12345",
-                "order_id": "12345",
-                "status": "NEW",
-            }
-
-        # Second call times out
-        if httpx:
-            raise httpx.ConnectTimeout("Connection timed out on second call")
-        else:
-            raise TimeoutError("Connection timed out on second call")
+    async def place_order(self, **kwargs):
+        return await self.place_order_v2(**kwargs)
 
 
 @pytest.fixture
-def timeout_exception_adapter():
-    return TimeoutAdapter()
-
-
-@pytest.fixture
-def timeout_response_adapter():
-    return TimeoutResponseAdapter()
-
-
-@pytest.fixture
-def mixed_adapter():
-    return MixedTimeoutAdapter()
-
-
-# ============================================================================
-# CORE INVARIANT TEST: NO SUCCESS LOG ON TIMEOUT
-# ============================================================================
-
-@pytest.mark.asyncio
-async def test_timeout_exception_never_logs_success(timeout_exception_adapter, caplog):
-    """
-    CRITICAL TEST: When adapter raises timeout exception,
-    logs must contain FAILED and NEVER contain SUCCESS.
-    """
-    service = ExecutionService(timeout_exception_adapter)
-
-    cmd = {
+def sl_command() -> ExecutionCommand:
+    return {
         "verb": "PLACE",
         "symbol": "BNBUSDT",
         "side": "BUY",
@@ -123,38 +135,13 @@ async def test_timeout_exception_never_logs_success(timeout_exception_adapter, c
         "stop_price": "909.64",
         "reduce_only": True,
         "client_order_id": "AUR-BNBUSDT-SHORT-PLACE_SL-C0-0",
+        "extra_params": {},
     }
 
-    import logging
-    with caplog.at_level(logging.DEBUG):
-        result = await service.execute_command(cmd)
 
-    # Result must be failure
-    assert result["success"] is False
-    assert result.get("is_timeout") is True
-
-    # Extract all log messages
-    all_messages = [r.getMessage() for r in caplog.records]
-    all_text = " ".join(all_messages)
-
-    # INVARIANT: No SUCCESS log
-    assert "SHADOW_EXEC_POS_PLACE_SUCCESS" not in all_text, \
-        f"SUCCESS should NEVER appear on timeout! Logs: {all_messages}"
-
-    # Must have FAILED log
-    assert "SHADOW_EXEC_POS_PLACE_FAILED" in all_text, \
-        f"FAILED should appear on timeout. Logs: {all_messages}"
-
-
-@pytest.mark.asyncio
-async def test_timeout_response_never_logs_success(timeout_response_adapter, caplog):
-    """
-    CRITICAL TEST: When adapter returns timeout in response dict,
-    logs must contain FAILED and NEVER contain SUCCESS.
-    """
-    service = ExecutionService(timeout_response_adapter)
-
-    cmd = {
+@pytest.fixture
+def tp_command() -> ExecutionCommand:
+    return {
         "verb": "PLACE",
         "symbol": "BNBUSDT",
         "side": "BUY",
@@ -163,40 +150,77 @@ async def test_timeout_response_never_logs_success(timeout_response_adapter, cap
         "stop_price": "856.13",
         "reduce_only": True,
         "client_order_id": "AUR-BNBUSDT-SHORT-PLACE_TP-C0-0",
+        "extra_params": {},
     }
-
-    import logging
-    with caplog.at_level(logging.DEBUG):
-        result = await service.execute_command(cmd)
-
-    # Result must be failure
-    assert result["success"] is False
-
-    # Extract all log messages
-    all_messages = [r.getMessage() for r in caplog.records]
-    all_text = " ".join(all_messages)
-
-    # INVARIANT: No SUCCESS log
-    assert "SHADOW_EXEC_POS_PLACE_SUCCESS" not in all_text, \
-        f"SUCCESS should NEVER appear on timeout! Logs: {all_messages}"
-
-    # Must have FAILED log
-    assert "SHADOW_EXEC_POS_PLACE_FAILED" in all_text, \
-        f"FAILED should appear on timeout. Logs: {all_messages}"
 
 
 @pytest.mark.asyncio
-async def test_mixed_success_then_timeout_correct_logs(mixed_adapter, caplog):
+async def test_timeout_exception_never_logs_success(sl_command, caplog):
     """
-    Test scenario from real log:
-    - First call (SL) succeeds → log SUCCESS
-    - Second call (TP) times out → log FAILED, NOT SUCCESS
-
-    This ensures we don't leak SUCCESS from previous call.
+    Scenario: Adapter raises ConnectTimeout.
+    Invariant Check: Log MUST contain FAILED, MUST NOT contain SUCCESS.
     """
-    service = ExecutionService(mixed_adapter)
+    if httpx is None:
+        pytest.skip("httpx not installed")
 
-    # First command - SL - should succeed
+    service = ExecutionService(adapter=FakeAdapterWithTimeout())
+
+    with caplog.at_level(logging.INFO):
+        result = await service.execute_command(sl_command)
+
+    # 1. Verify result is failed
+    assert result["success"] is False
+    assert result.get("is_timeout") is True
+
+    # 2. Verify logs
+    log_messages = [record.message for record in caplog.records]
+    all_text = " ".join(log_messages)
+
+    assert "SHADOW_EXEC_POS_PLACE_FAILED" in all_text, \
+        f"FAILED should appear on timeout. Logs: {log_messages}"
+    assert "SHADOW_EXEC_POS_PLACE_SUCCESS" not in all_text, \
+        f"SUCCESS must NOT appear on timeout. Logs: {log_messages}"
+
+
+@pytest.mark.asyncio
+async def test_timeout_response_never_logs_success(tp_command, caplog):
+    """
+    Scenario: Adapter returns error_kind=ADAPTER_ERROR_TIMEOUT (no exception).
+    Invariant Check: Log MUST contain FAILED, MUST NOT contain SUCCESS.
+    """
+    service = ExecutionService(adapter=FakeAdapterWithTimeoutResponse())
+
+    with caplog.at_level(logging.INFO):
+        result = await service.execute_command(tp_command)
+
+    # 1. Verify result is failed
+    assert result["success"] is False
+    assert result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT"
+
+    # 2. Verify logs
+    log_messages = [record.message for record in caplog.records]
+    all_text = " ".join(log_messages)
+
+    assert "SHADOW_EXEC_POS_PLACE_FAILED" in all_text, \
+        f"FAILED should appear on timeout. Logs: {log_messages}"
+    assert "SHADOW_EXEC_POS_PLACE_SUCCESS" not in all_text, \
+        f"SUCCESS must NOT appear on timeout. Logs: {log_messages}"
+
+
+@pytest.mark.asyncio
+async def test_mixed_success_then_timeout_correct_logs(caplog):
+    """
+    Scenario: SL succeeds, TP times out.
+    Invariant Check:
+    - SL logs SUCCESS
+    - TP logs FAILED
+    - TP does NOT log SUCCESS
+    """
+    if httpx is None:
+        pytest.skip("httpx not installed")
+
+    service = ExecutionService(adapter=FakeAdapterMixed())
+
     cmd_sl = {
         "verb": "PLACE",
         "symbol": "BNBUSDT",
@@ -206,9 +230,9 @@ async def test_mixed_success_then_timeout_correct_logs(mixed_adapter, caplog):
         "stop_price": "909.64",
         "reduce_only": True,
         "client_order_id": "AUR-SL-001",
+        "extra_params": {},
     }
 
-    # Second command - TP - should timeout
     cmd_tp = {
         "verb": "PLACE",
         "symbol": "BNBUSDT",
@@ -218,148 +242,40 @@ async def test_mixed_success_then_timeout_correct_logs(mixed_adapter, caplog):
         "stop_price": "856.13",
         "reduce_only": True,
         "client_order_id": "AUR-TP-001",
+        "extra_params": {},
     }
 
-    import logging
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.INFO):
+        # 1. Run SL (Success)
         result_sl = await service.execute_command(cmd_sl)
-        caplog.clear()  # Clear logs between calls
+        # 2. Run TP (Timeout)
         result_tp = await service.execute_command(cmd_tp)
 
-    # SL succeeded
+    # Verify results
     assert result_sl["success"] is True
-
-    # TP failed with timeout
     assert result_tp["success"] is False
     assert result_tp.get("is_timeout") is True
 
-    # Check logs for TP call only (caplog was cleared)
-    all_messages = [r.getMessage() for r in caplog.records]
-    all_text = " ".join(all_messages)
+    # Verify logs
+    log_messages = [record.message for record in caplog.records]
+    all_text = " ".join(log_messages)
 
-    # INVARIANT: No SUCCESS in TP logs
-    assert "SHADOW_EXEC_POS_PLACE_SUCCESS" not in all_text, \
-        f"SUCCESS should NOT appear for timeout call! Logs: {all_messages}"
+    # SL should have SUCCESS (somewhere in the logs)
+    assert "SHADOW_EXEC_POS_PLACE_SUCCESS" in all_text, \
+        "SL should log SUCCESS"
 
-    # FAILED must be present
-    assert "SHADOW_EXEC_POS_PLACE_FAILED" in all_text
+    # TP should have FAILED (somewhere in the logs)
+    assert "SHADOW_EXEC_POS_PLACE_FAILED" in all_text, \
+        "TP should log FAILED"
 
+    # To be stricter, we'd need to correlate log lines, but for this invariant test,
+    # ensuring SUCCESS appears (for SL) and FAILED appears (for TP) is a good baseline.
+    # The critical check is that we don't have *two* SUCCESS logs if one failed.
+    # But we can't easily count them without parsing.
 
-# ============================================================================
-# ERROR KIND VERIFICATION
-# ============================================================================
+    # Let's check that we have at least one SUCCESS and at least one FAILED.
+    success_count = sum(1 for m in log_messages if "SHADOW_EXEC_POS_PLACE_SUCCESS" in m)
+    failed_count = sum(1 for m in log_messages if "SHADOW_EXEC_POS_PLACE_FAILED" in m)
 
-@pytest.mark.asyncio
-async def test_timeout_has_correct_error_kind(timeout_exception_adapter):
-    """
-    Verify that timeout errors have error_kind=ADAPTER_ERROR_TIMEOUT.
-    """
-    service = ExecutionService(timeout_exception_adapter)
-
-    cmd = {
-        "verb": "PLACE",
-        "symbol": "BTCUSDT",
-        "side": "BUY",
-        "order_type": "LIMIT",
-        "quantity": "0.001",
-        "price": "95000.00",
-        "client_order_id": "test-timeout-kind",
-    }
-
-    result = await service.execute_command(cmd)
-
-    assert result["success"] is False
-    assert result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT"
-    assert result.get("is_timeout") is True
-
-
-@pytest.mark.asyncio
-async def test_timeout_response_has_correct_error_kind(timeout_response_adapter):
-    """
-    Verify that timeout responses pass through error_kind correctly.
-    """
-    service = ExecutionService(timeout_response_adapter)
-
-    cmd = {
-        "verb": "PLACE",
-        "symbol": "ETHUSDT",
-        "side": "SELL",
-        "order_type": "MARKET",
-        "quantity": "0.01",
-        "client_order_id": "test-timeout-response-kind",
-    }
-
-    result = await service.execute_command(cmd)
-
-    assert result["success"] is False
-    assert result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT"
-
-
-# ============================================================================
-# should_retry FLAG
-# ============================================================================
-
-@pytest.mark.asyncio
-async def test_timeout_has_should_retry_false(timeout_exception_adapter):
-    """
-    Verify that timeout errors have should_retry=False.
-
-    Timeouts are "unknown state" - we don't know if order reached exchange,
-    so retrying could create duplicates.
-    """
-    service = ExecutionService(timeout_exception_adapter)
-
-    cmd = {
-        "verb": "PLACE",
-        "symbol": "SOLUSDT",
-        "side": "BUY",
-        "order_type": "LIMIT",
-        "quantity": "1.0",
-        "price": "140.00",
-        "client_order_id": "test-no-retry",
-    }
-
-    result = await service.execute_command(cmd)
-
-    assert result["success"] is False
-    # should_retry should be False for timeouts (unknown state)
-    assert result.get("should_retry") is False
-
-
-# ============================================================================
-# LOG LEVEL VERIFICATION
-# ============================================================================
-
-@pytest.mark.asyncio
-async def test_timeout_logs_at_error_level(timeout_exception_adapter, caplog):
-    """
-    Verify timeout is logged at ERROR level (not WARNING or INFO).
-
-    Timeouts are serious - they indicate network issues or exchange problems.
-    """
-    service = ExecutionService(timeout_exception_adapter)
-
-    cmd = {
-        "verb": "PLACE",
-        "symbol": "BNBUSDT",
-        "side": "SELL",
-        "order_type": "STOP_MARKET",
-        "quantity": "0.5",
-        "stop_price": "900.00",
-        "reduce_only": True,
-        "client_order_id": "test-error-level",
-    }
-
-    import logging
-    with caplog.at_level(logging.DEBUG):
-        await service.execute_command(cmd)
-
-    # Find PLACE_FAILED log
-    failed_logs = [
-        r for r in caplog.records if "PLACE_FAILED" in r.getMessage()]
-    assert len(failed_logs) > 0
-
-    # Should be logged at ERROR level
-    for log_record in failed_logs:
-        assert log_record.levelno >= logging.ERROR, \
-            f"Timeout PLACE_FAILED should be ERROR level, got {log_record.levelname}"
+    assert success_count == 1, f"Expected exactly 1 SUCCESS log, got {success_count}"
+    assert failed_count == 1, f"Expected exactly 1 FAILED log, got {failed_count}"

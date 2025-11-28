@@ -5,9 +5,8 @@ This test monkeypatches adapter internals to avoid real network calls.
 
 import pytest
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.binance_execution_adapter import (
-    BinanceExecutionAdapter,
-)
+# MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
 
 
 class DummyOrderIndex:

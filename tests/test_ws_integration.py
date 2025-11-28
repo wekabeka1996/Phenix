@@ -3,11 +3,9 @@ import sys
 sys.path.insert(0, ".")
 sys.path.insert(0, "vfoundation")
 
-# Test updated Binance adapter integration
-from apps.reference.domains.execution_position.binance_execution_adapter import (
-    BinanceExecutionAdapter,
-)
-from apps.reference.domains.execution_position.order_index import OrderIndex
+# MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
+from apps.reference.domains.execution_position.infra.order_index import OrderIndex
 
 
 # Create mock FSM core with order_index

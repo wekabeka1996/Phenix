@@ -1,40 +1,15 @@
+"""
+Unit tests for BinanceAdapter (formerly BinanceExecutionAdapter).
+MIGRATED: Tests now use unified BinanceAdapter from apps.reference.adapters.
+"""
 import hmac
 import hashlib
 import pytest
 from unittest.mock import MagicMock
 from urllib.parse import urlencode
 
-import importlib.util
-import importlib.machinery
-import sys
-import os
-
-# Load execution_adapter module first to satisfy the relative import inside the adapter
-base_path = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "..",
-    "apps",
-    "reference",
-    "domains",
-    "execution_position",
-)
-exec_adapter_path = os.path.join(base_path, "execution_adapter.py")
-spec_exec = importlib.util.spec_from_file_location(
-    "apps.reference.domains.execution_position.execution_adapter", exec_adapter_path
-)
-mod_exec = importlib.util.module_from_spec(spec_exec)
-sys.modules[spec_exec.name] = mod_exec
-spec_exec.loader.exec_module(mod_exec)
-
-binance_path = os.path.join(base_path, "binance_execution_adapter.py")
-spec_bin = importlib.util.spec_from_file_location(
-    "apps.reference.domains.execution_position.binance_execution_adapter", binance_path
-)
-mod_bin = importlib.util.module_from_spec(spec_bin)
-sys.modules[spec_bin.name] = mod_bin
-spec_bin.loader.exec_module(mod_bin)
-BinanceExecutionAdapter = mod_bin.BinanceExecutionAdapter
+# MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
 
 
 def test_generate_signature_placeholder():

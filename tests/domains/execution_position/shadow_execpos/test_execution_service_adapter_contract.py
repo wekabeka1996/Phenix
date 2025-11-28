@@ -7,6 +7,8 @@ from apps.reference.domains.execution_position.shadow_execpos.types import Execu
 class FakeAdapterV2:
     def __init__(self):
         self.calls = []
+        self.create_order = self.place_order_v2 # Alias
+        self.place_order = self.place_order_v2 # Alias
 
     async def place_order_v2(self, **kwargs):
         self.calls.append(kwargs)

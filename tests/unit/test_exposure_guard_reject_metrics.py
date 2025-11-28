@@ -7,7 +7,7 @@ NOTE: These tests are OUTDATED after ExposureGuard refactoring.
       Skip until tests are updated to match current behavior.
 """
 
-from apps.reference.domains.execution_position.metrics_aggregator import (
+from apps.reference.domains.execution_position.observability.metrics_aggregator import (
     metrics_logger,
 )
 from apps.reference.domains.execution_position.exposure_guard import ExposureGuard

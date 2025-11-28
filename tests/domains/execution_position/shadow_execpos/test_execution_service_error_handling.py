@@ -1,11 +1,11 @@
-"""
+﻿"""
 Tests for ExecutionService error handling (EP-EXEC-SHADOW-PLACE-ERROR-HANDLING-S21).
 
 Verifies that:
-1. Adapter success → logs SHADOW_EXEC_POS_PLACE_SUCCESS
-2. Adapter failure (success=False) → logs SHADOW_EXEC_POS_PLACE_FAILED, no SUCCESS
-3. Adapter timeout exception → logs SHADOW_EXEC_POS_PLACE_FAILED with error_kind=ADAPTER_ERROR_TIMEOUT
-4. Generic adapter exception → logs SHADOW_EXEC_POS_PLACE_FAILED with error_kind=ADAPTER_ERROR
+1. Adapter success  logs SHADOW_EXEC_POS_PLACE_SUCCESS
+2. Adapter failure (success=False)  logs SHADOW_EXEC_POS_PLACE_FAILED, no SUCCESS
+3. Adapter timeout exception  logs SHADOW_EXEC_POS_PLACE_FAILED with error_kind=ADAPTER_ERROR_TIMEOUT
+4. Generic adapter exception  logs SHADOW_EXEC_POS_PLACE_FAILED with error_kind=ADAPTER_ERROR
 5. Runtime interprets failed results correctly (no position update)
 """
 import pytest
@@ -30,6 +30,22 @@ from apps.reference.domains.execution_position.shadow_execpos.types import (
 class FakeAdapterSuccess:
     """Adapter that returns successful response."""
 
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
+
     async def place_order_v2(self, **kwargs):
         return {
             "success": True,
@@ -44,6 +60,22 @@ class FakeAdapterSuccess:
 
 class FakeAdapterFailure:
     """Adapter that returns failure response (no exception)."""
+
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
 
     async def place_order_v2(self, **kwargs):
         return {
@@ -60,6 +92,22 @@ class FakeAdapterFailure:
 class FakeAdapterTimeout:
     """Adapter that raises httpx.TimeoutException."""
 
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
+
     async def place_order_v2(self, **kwargs):
         if httpx:
             raise httpx.ConnectTimeout(
@@ -74,6 +122,22 @@ class FakeAdapterTimeout:
 class FakeAdapterGenericError:
     """Adapter that raises generic exception."""
 
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
+
     async def place_order_v2(self, **kwargs):
         raise RuntimeError("Unexpected adapter error")
 
@@ -84,11 +148,26 @@ class FakeAdapterGenericError:
 class FakeAdapterBinanceValidationError:
     """Adapter that raises BinanceValidationError (precision issue)."""
 
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
+
     async def place_order_v2(self, **kwargs):
         # Simulate precision validation error
-        from apps.reference.domains.execution_position.binance_execution_adapter import (
-            BinanceValidationError,
-        )
+        # MIGRATED: BinanceValidationError from BinanceAdapter (unified adapter)
+        from apps.reference.adapters.binance_adapter import BinanceValidationError
         raise BinanceValidationError(
             "Quantity 0 below min_qty 1.0 for SOLUSDT (raw_qty=0.5, step_size=1.0)"
         )
@@ -115,7 +194,7 @@ def execution_command() -> ExecutionCommand:
 
 @pytest.mark.asyncio
 async def test_adapter_success_logs_place_success(execution_command, caplog):
-    """Adapter success → logs SHADOW_EXEC_POS_PLACE_SUCCESS, no FAILED."""
+    """Adapter success  logs SHADOW_EXEC_POS_PLACE_SUCCESS, no FAILED."""
     service = ExecutionService(adapter=FakeAdapterSuccess())
 
     with caplog.at_level(logging.INFO):
@@ -137,7 +216,7 @@ async def test_adapter_success_logs_place_success(execution_command, caplog):
 
 @pytest.mark.asyncio
 async def test_adapter_failure_logs_place_failed(execution_command, caplog):
-    """Adapter returns success=False → logs SHADOW_EXEC_POS_PLACE_FAILED, no SUCCESS."""
+    """Adapter returns success=False  logs SHADOW_EXEC_POS_PLACE_FAILED, no SUCCESS."""
     service = ExecutionService(adapter=FakeAdapterFailure())
 
     with caplog.at_level(logging.ERROR):
@@ -160,7 +239,7 @@ async def test_adapter_failure_logs_place_failed(execution_command, caplog):
 
 @pytest.mark.asyncio
 async def test_adapter_timeout_logs_place_failed_with_timeout_kind(execution_command, caplog):
-    """Adapter raises httpx.ConnectTimeout → logs PLACE_FAILED with error_kind=ADAPTER_ERROR_TIMEOUT."""
+    """Adapter raises httpx.ConnectTimeout  logs PLACE_FAILED with error_kind=ADAPTER_ERROR_TIMEOUT."""
     if httpx is None:
         pytest.skip("httpx not installed")
 
@@ -195,7 +274,7 @@ async def test_adapter_timeout_logs_place_failed_with_timeout_kind(execution_com
 
 @pytest.mark.asyncio
 async def test_adapter_generic_exception_logs_place_failed(execution_command, caplog):
-    """Adapter raises generic exception → logs PLACE_FAILED with error_kind=ADAPTER_ERROR."""
+    """Adapter raises generic exception  logs PLACE_FAILED with error_kind=ADAPTER_ERROR."""
     service = ExecutionService(adapter=FakeAdapterGenericError())
 
     with caplog.at_level(logging.ERROR):
@@ -218,7 +297,7 @@ async def test_adapter_generic_exception_logs_place_failed(execution_command, ca
 
 @pytest.mark.asyncio
 async def test_adapter_validation_error_logs_place_failed(execution_command, caplog):
-    """Adapter raises BinanceValidationError → logs PLACE_FAILED with VALIDATION_ERROR."""
+    """Adapter raises BinanceValidationError  logs PLACE_FAILED with VALIDATION_ERROR."""
     service = ExecutionService(adapter=FakeAdapterBinanceValidationError())
 
     with caplog.at_level(logging.ERROR):
@@ -242,7 +321,7 @@ async def test_adapter_validation_error_logs_place_failed(execution_command, cap
 
 @pytest.mark.asyncio
 async def test_missing_required_params_logs_place_failed(caplog):
-    """Missing symbol/side/quantity → logs PLACE_FAILED."""
+    """Missing symbol/side/quantity  logs PLACE_FAILED."""
     service = ExecutionService(adapter=FakeAdapterSuccess())
 
     cmd_missing_symbol: ExecutionCommand = {

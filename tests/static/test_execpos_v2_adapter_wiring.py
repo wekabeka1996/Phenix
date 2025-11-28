@@ -29,7 +29,7 @@ def test_main_and_runtime_factory_no_shadow_adapter_hint():
     """
     targets = [
         Path("apps/reference/main.py"),
-        Path("apps/reference/domains/execution_position/runtime_factory.py"),
+        Path("apps/reference/domains/execution_position/infra/runtime_factory.py"),
     ]
     for path in targets:
         text = path.read_text(encoding="utf-8", errors="ignore")

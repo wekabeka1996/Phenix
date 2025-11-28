@@ -20,7 +20,7 @@ Set LOG_LEVEL environment variable to control logging:
 from apps.reference.bootstrap.preflight import check_hybrid_coherence, HybridIncoherenceError  # NEW IMPORT
 from apps.reference.config_loader import ConfigLoader
 # Legacy ExecPosFSM import removed - use build_execution_runtime factory instead
-from apps.reference.domains.execution_position.runtime_factory import build_execution_runtime
+from apps.reference.domains.execution_position.infra.runtime_factory import build_execution_runtime
 # from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
 #     SnapshotScheduler,
 # )

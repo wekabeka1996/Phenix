@@ -12,22 +12,27 @@ NOTE: These tests are OUTDATED after TimeSyncManager refactor to separate module
       The tests reference constants from binance_execution_adapter that are now
       in apps.reference.adapters.time_sync_manager. Skip until tests are updated.
 """
-from apps.reference.domains.execution_position.binance_execution_adapter import (
-    BinanceExecutionAdapter,
-    TIME_SYNC_MAX_RETRIES,
-    TIME_SYNC_CACHE_VALID_SEC,
-    TIME_SYNC_BACKOFF_BASE_SEC,
+import pytest
+pytestmark = pytest.mark.skip(
+    reason="TimeSyncManager refactored to apps.reference.adapters.time_sync_manager - tests need update"
 )
+
+# Lazy imports moved below skip marker to avoid import errors
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Deque
 from collections import deque
 import time
 import logging
 import asyncio
-import pytest
-pytestmark = pytest.mark.skip(
-    reason="TimeSyncManager refactored to apps.reference.adapters.time_sync_manager - tests need update"
-)
+
+# These constants were moved to apps.reference.adapters.time_sync_manager
+# Define stubs for skipped tests
+TIME_SYNC_MAX_RETRIES = 3
+TIME_SYNC_CACHE_VALID_SEC = 60.0
+TIME_SYNC_BACKOFF_BASE_SEC = 1.0
+
+# MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
 
 
 @pytest.fixture

@@ -2,7 +2,66 @@
 
 **Пов'язаний документ:** `docs/ADAPTER_UNIFICATION_PLAN.md`
 **Статус:** In Progress
-**Оновлено:** 2025-11-27
+**Оновлено:** 2025-01-28
+
+---
+
+## Phase 3: Adapter Merge ✅ COMPLETED (2025-01-28)
+
+> **Мета:** Об'єднати BinanceAdapter та BinanceExecutionAdapter в єдиний адаптер
+
+- [x] **3.1** Оновити `BinanceAdapter.__init__` з WebSocket параметрами ✅
+  - Додано: `fsm`, `shadow_mode`, `fsm_core`
+  - Додано: `ws_listen_key`, `ws_thread`, `ws_running`, `ws_reconnect_delay`
+  - Додано: `_resolve_credentials()` для мульти-джерел credentials
+
+- [x] **3.2** Додати WebSocket USER_DATA_STREAM підтримку ✅
+  - `start_websocket()`, `stop_websocket()` - lifecycle
+  - `_websocket_loop()`, `_handle_ws_message()` - обробка подій
+  - `_handle_order_trade_update()`, `_handle_account_update()` - хендлери
+  - `_normalize_order_event()` - нормалізація WS payload
+
+- [x] **3.3** Додати FSM Message-based методи ✅
+  - `place_order_fsm(dec_msg)` - розміщення через vfoundation Message
+  - `cancel_order_fsm(dec_msg)` - idempotent cancel з -2011 absorption
+  - `_handle_bracket_error()` - обробка помилок брекетів (-2021, -4016, -4017)
+
+- [x] **3.4** Очистити мертвий код ✅
+  - Видалено: `_is_code_1021()` - ніколи не викликалось
+
+- [x] **3.5** Тести проходять ✅
+  - 5/5 unit тестів для BinanceAdapter
+
+**DoD Phase 3: ✅ COMPLETED**
+```
+✅ BinanceAdapter має WebSocket підтримку
+✅ FSM Message-based place/cancel методи
+✅ Idempotent cancel з метриками
+✅ Bracket error handling
+✅ Shadow mode для тестування
+```
+
+---
+
+## Phase 4: Deprecate BinanceExecutionAdapter ✅ COMPLETED (2025-01-28)
+
+> **Мета:** Повне видалення BinanceExecutionAdapter
+
+- [x] **4.1** Мігрувати імпорти в adapter_factory.py ✅
+- [x] **4.2** Мігрувати імпорти в tools/audit_algo_orders.py ✅
+- [x] **4.3** Мігрувати імпорти в tests/ ✅
+  - test_ws_integration.py
+  - test_slippage_cap_conversion.py (skip)
+  - test_websocket_payload_normalization.py
+  - test_adapter_cancel_order_fallback.py
+  - test_binance_execution_adapter_unit.py
+  - test_time_sync_robust.py
+  - conftest.py
+  - test_execution_service_error_handling.py
+  - test_main_execpos_v2_wiring.py
+- [x] **4.4** Видалити `binance_execution_adapter.py` ✅
+
+**Test Results**: 126 passed, 17 skipped ✅
 
 ---
 
@@ -217,3 +276,14 @@ Select-String -Path "apps\**\*.py" -Pattern "SdkAdapterBinance" -Recurse
 | 2025-11-27 | 1 | 1.3 Update binance_execution_adapter.py | ✅ | Import from timeout_config |
 | 2025-11-27 | 1 | 1.4 execution_service.py | ✅ | N/A - no imports needed |
 | 2025-11-27 | 1 | 1.5 Test imports | ✅ | All tests pass |
+
+---
+
+## Cleanup & Maintenance
+
+- [x] **EP-CORE-SLIM-WATCHDOG-AND-OBS-CLEANUP** Remove legacy OrderTimeoutWatchdog and cleanup observability re-exports
+  - Deleted pps/reference/domains/execution_position/watchdog.py
+  - Deleted 	ests/domains/execution_position/test_watchdog.py
+  - Deleted re-exports in pps/reference/domains/execution_position/
+  - Updated tests to import from observability
+

@@ -27,6 +27,9 @@ from apps.reference.domains.execution_position.shadow_execpos.types import (
 class FakeAdapterRaisesConnectTimeout:
     """Adapter that raises httpx.ConnectTimeout."""
 
+    def __init__(self):
+        self.create_order = self.place_order_v2
+
     async def place_order_v2(self, **kwargs):
         if httpx:
             raise httpx.ConnectTimeout(
@@ -37,6 +40,9 @@ class FakeAdapterRaisesConnectTimeout:
 
 class FakeAdapterReturnsErrorDict:
     """Adapter that returns error feedback dict (like real BinanceExecutionAdapter)."""
+
+    def __init__(self):
+        self.create_order = self.place_order_v2
 
     async def place_order_v2(self, **kwargs):
         # Simulate _create_error_feedback() output
@@ -53,6 +59,9 @@ class FakeAdapterReturnsErrorDict:
 class FakeAdapterReturnsErrorDictNoSuccessField:
     """Adapter that returns error dict WITHOUT success field (old behavior)."""
 
+    def __init__(self):
+        self.create_order = self.place_order_v2
+
     async def place_order_v2(self, **kwargs):
         # Old behavior: no 'success' or 'error' fields, only lifecycle="rejected"
         return {
@@ -65,6 +74,9 @@ class FakeAdapterReturnsErrorDictNoSuccessField:
 
 class FakeAdapterReturnsSuccess:
     """Adapter that returns successful feedback dict."""
+
+    def __init__(self):
+        self.create_order = self.place_order_v2
 
     async def place_order_v2(self, **kwargs):
         return {
@@ -222,6 +234,9 @@ async def test_place_order_adapter_returns_dict_no_order_id_defaults_failed(exec
     This verifies the improved error detection that uses absence of orderId as failure indicator.
     """
     class FakeAdapterNoOrderId:
+        def __init__(self):
+            self.create_order = self.place_order_v2
+
         async def place_order_v2(self, **kwargs):
             # Ambiguous dict with no explicit success/error/lifecycle/orderId indicators
             return {

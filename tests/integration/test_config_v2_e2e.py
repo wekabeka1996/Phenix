@@ -2,7 +2,6 @@
 
 import pytest
 
-from apps.reference.domains.execution_position.manage_config import resolve_execution_manage_config
 from apps.reference.domains.execution_position.brackets_config import resolve_brackets_config
 from apps.reference.config_decision import resolve_decision_policy
 from apps.reference.config_sizing import resolve_sizing_policy
@@ -32,7 +31,6 @@ def test_all_resolvers_return_config_v2_source():
         ("feature_engineering", lambda: resolve_feature_engineering_config(config)),
         ("regime_detector", lambda: resolve_regime_detector_config(config)),
         ("decision_making", lambda: resolve_decision_policy(config)),
-        ("execution_position", lambda: resolve_execution_manage_config(config)),
         ("brackets", lambda: resolve_brackets_config(config)),
     ]
 

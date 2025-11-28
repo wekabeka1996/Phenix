@@ -8,6 +8,8 @@ Ported from fsm._execute_decision and _call_adapter_fn.
 from typing import Any, Dict, Optional, List, Union
 import logging
 import asyncio
+import os
+import yaml
 
 try:
     import httpx
@@ -21,17 +23,11 @@ except ImportError:
 
 from pydantic import ValidationError
 
+from vfoundation.core.adapters.base import ExchangeOrderParams
 from apps.reference.domains.execution_position.contracts import ExecutionRequest
 from .types import ExecutionResult, ExecutionCommand, ExecutionStatus
 
 logger = logging.getLogger(__name__)
-
-# Error code constants (from Binance API)
-ERROR_UNKNOWN_ORDER = "-2011"
-ERROR_WOULD_TRIGGER = "-2021"
-ERROR_DUPLICATE_ID = "-4116"
-ERROR_INVALID_QTY = "-4137"
-ERROR_MIN_NOTIONAL = "-4164"
 
 # Timeout exception types for classification
 TIMEOUT_EXCEPTION_NAMES = frozenset({
@@ -61,6 +57,39 @@ class ExecutionService:
 
     def __init__(self, adapter: Any):
         self.adapter = adapter
+        self.ERROR_CODES = self._load_error_config()
+
+    def _load_error_config(self) -> Dict[str, str]:
+        """Load adapter error codes from YAML config."""
+        default_codes = {
+            "unknown_order": "-2011",
+            "would_trigger": "-2021",
+            "duplicate_id": "-4116",
+            "invalid_qty": "-4137",
+            "min_notional": "-4164",
+            "insufficient_balance": "-2010",
+            "rate_limit": "-429"
+        }
+
+        try:
+            # Locate config file relative to this file
+            # Path: apps/reference/domains/execution_position/config/adapter_errors.yaml
+            # Current file: apps/reference/domains/execution_position/shadow_execpos/execution_service.py
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            config_path = os.path.join(base_dir, "config", "adapter_errors.yaml")
+
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    data = yaml.safe_load(f)
+                    if data and "binance" in data:
+                        return data["binance"]
+
+            logger.warning(f"Adapter error config not found at {config_path}, using defaults")
+            return default_codes
+
+        except Exception as e:
+            logger.error(f"Failed to load adapter error config: {e}", exc_info=True)
+            return default_codes
 
     async def _call_adapter(self, fn_or_str: Union[Any, str], *args, **kwargs) -> Any:
         """
@@ -82,25 +111,8 @@ class ExecutionService:
             return None
 
         try:
-            # Resolve attribute with place_order_v2 preference
-            f = fn_or_str
-            if isinstance(fn_or_str, str):
-                if fn_or_str == "place_order":
-                    f_v2 = getattr(self.adapter, "place_order_v2", None)
-                    from unittest.mock import Mock  # type: ignore
-
-                    if isinstance(self.adapter, Mock):
-                        has_v2 = "place_order_v2" in getattr(
-                            self.adapter, "__dict__", {})
-                    else:
-                        has_v2 = callable(f_v2)
-
-                    if has_v2 and callable(f_v2):
-                        f = f_v2
-                    else:
-                        f = getattr(self.adapter, fn_or_str, None)
-                else:
-                    f = getattr(self.adapter, fn_or_str, None)
+            # Resolve attribute
+            f = getattr(self.adapter, fn_or_str, None)
 
             if f is None or not callable(f):
                 return None
@@ -116,112 +128,119 @@ class ExecutionService:
         except Exception:
             raise
 
+    def _classify_exception(self, exception: Exception) -> Dict[str, Any]:
+        """
+        Centralized exception classification logic.
+
+        Returns:
+            Dict containing:
+            - error_kind: str (ADAPTER_ERROR, ADAPTER_ERROR_TIMEOUT, ADAPTER_ERROR_NETWORK)
+            - is_timeout: bool
+            - is_network: bool
+            - normalized_error: str
+        """
+        exception_type = type(exception).__name__
+        error_str = str(exception)
+
+        # 1. Check for Timeout
+        is_timeout = exception_type in TIMEOUT_EXCEPTION_NAMES
+        if httpx and isinstance(exception, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
+            is_timeout = True
+        if httpcore and isinstance(exception, (httpcore.ReadTimeout, httpcore.ConnectTimeout)):
+            is_timeout = True
+
+        # Fallback: Check string name explicitly if isinstance fails (e.g. mocking issues)
+        if not is_timeout and exception_type in ("ReadTimeout", "ConnectTimeout", "TimeoutException"):
+            is_timeout = True
+
+        if is_timeout:
+            return {
+                "error_kind": "ADAPTER_ERROR_TIMEOUT",
+                "is_timeout": True,
+                "is_network": False,
+                "normalized_error": f"TIMEOUT: {error_str[:80]}"
+            }
+
+        # 2. Check for Network Error
+        is_network = exception_type in NETWORK_EXCEPTION_NAMES
+        if httpx and isinstance(exception, httpx.ConnectError):
+            is_network = True
+        if httpcore and isinstance(exception, httpcore.ConnectError):
+            is_network = True
+
+        if is_network:
+            return {
+                "error_kind": "ADAPTER_ERROR_NETWORK",
+                "is_timeout": False,
+                "is_network": True,
+                "normalized_error": f"NETWORK_ERROR: {error_str[:80]}"
+            }
+
+        # 3. Check for Validation Error
+        if exception_type == "BinanceValidationError":
+            return {
+                "error_kind": "ADAPTER_ERROR",
+                "is_timeout": False,
+                "is_network": False,
+                "normalized_error": f"VALIDATION_ERROR: {error_str[:100]}"
+            }
+
+        # 4. Check for Specific API Errors (using loaded config)
+        if self.ERROR_CODES["unknown_order"] in error_str:
+            norm_err = "UNKNOWN_ORDER"
+        elif self.ERROR_CODES["would_trigger"] in error_str:
+            norm_err = "WOULD_TRIGGER"
+        elif self.ERROR_CODES["duplicate_id"] in error_str:
+            norm_err = "DUPLICATE_ID"
+        elif self.ERROR_CODES["invalid_qty"] in error_str:
+            norm_err = "INVALID_QUANTITY"
+        elif self.ERROR_CODES["min_notional"] in error_str:
+            norm_err = "MIN_NOTIONAL_FAILED"
+        else:
+            norm_err = f"ADAPTER_ERROR: {error_str[:100]}"
+
+        return {
+            "error_kind": "ADAPTER_ERROR",
+            "is_timeout": False,
+            "is_network": False,
+            "normalized_error": norm_err
+        }
+
     def _normalize_error(self, exception: Exception) -> str:
         """
         Normalize adapter exceptions to error codes.
-
-        Extracts error codes from Binance-style exceptions and maps to normalized strings.
-
-        Args:
-            exception: Exception from adapter
-
-        Returns:
-            Normalized error string
+        Delegates to _classify_exception.
         """
-        error_str = str(exception)
-        exception_type = type(exception).__name__
-
-        # Check for timeout exceptions first (highest priority)
-        # These should propagate as TIMEOUT for proper handling
-        timeout_types = (
-            "ReadTimeout", "ConnectTimeout", "WriteTimeout",
-            "PoolTimeout", "TimeoutException"
-        )
-        if exception_type in timeout_types:
-            return f"TIMEOUT: {error_str[:80]}"
-
-        # Check for network exceptions
-        network_types = (
-            "ConnectError", "RemoteProtocolError", "NetworkError",
-            "ConnectionError", "OSError"
-        )
-        if exception_type in network_types:
-            return f"NETWORK_ERROR: {error_str[:80]}"
-
-        # Check for BinanceValidationError (precision/filter violations)
-        if exception_type == "BinanceValidationError":
-            return f"VALIDATION_ERROR: {error_str[:100]}"
-
-        # Check for specific Binance API error codes
-        if ERROR_UNKNOWN_ORDER in error_str:
-            return "UNKNOWN_ORDER"
-        elif ERROR_WOULD_TRIGGER in error_str:
-            return "WOULD_TRIGGER"
-        elif ERROR_DUPLICATE_ID in error_str:
-            return "DUPLICATE_ID"
-        elif ERROR_INVALID_QTY in error_str:
-            return "INVALID_QUANTITY"
-        elif ERROR_MIN_NOTIONAL in error_str:
-            return "MIN_NOTIONAL_FAILED"
-        else:
-            # Generic error
-            return f"ADAPTER_ERROR: {error_str[:100]}"
+        return self._classify_exception(exception)["normalized_error"]
 
     def _is_unknown_order_error(self, exception: Exception) -> bool:
         """
-        Check if exception is an "Unknown Order" error (-2011).
-
-        This error means the order was already cancelled/filled, so it's
-        safe to treat as success for idempotency.
-
-        Args:
-            exception: Exception from adapter
-
-        Returns:
-            True if this is a -2011 error
+        Check if exception is an "Unknown Order" error.
         """
-        return ERROR_UNKNOWN_ORDER in str(exception)
+        return self.ERROR_CODES["unknown_order"] in str(exception)
 
     def _classify_place_error(self, error_msg: str, response: Dict[str, Any]) -> Dict[str, str]:
         """
         EXEC-R2-K: Classify PLACE errors as expected (races) or unexpected (state divergence).
-
-        Expected errors (should be WARNING/INFO):
-        - Order would immediately trigger (price too close to mark)
-        - Duplicate clientOrderId (idempotent retry)
-        - Insufficient balance (wallet issue, not adapter bug)
-        - Rate limit (temporary, will retry)
-
-        Unexpected errors (should be ERROR):
-        - Invalid qty/price (state divergence, bad calculation)
-        - MIN_NOTIONAL violation (sizing bug)
-        - Unknown errors (need investigation)
-
-        Args:
-            error_msg: Error message from adapter
-            response: Full response dict
-
-        Returns:
-            Dict with "category": "expected"|"unexpected", "reason_code": str
         """
         error_str_lower = error_msg.lower()
 
         # Expected races / transient errors
-        if ERROR_WOULD_TRIGGER in error_msg or "would immediately trigger" in error_str_lower:
+        if self.ERROR_CODES["would_trigger"] in error_msg or "would immediately trigger" in error_str_lower:
             return {"category": "expected", "reason_code": "ORDER_WOULD_TRIGGER"}
-        elif ERROR_DUPLICATE_ID in error_msg or "duplicated" in error_str_lower:
+        elif self.ERROR_CODES["duplicate_id"] in error_msg or "duplicated" in error_str_lower:
             return {"category": "expected", "reason_code": "DUPLICATE_CLIENT_ORDER_ID"}
-        elif "-2010" in error_msg or "insufficient balance" in error_str_lower:
+        elif self.ERROR_CODES["insufficient_balance"] in error_msg or "insufficient balance" in error_str_lower:
             return {"category": "expected", "reason_code": "INSUFFICIENT_BALANCE"}
-        elif "-429" in error_msg or "rate limit" in error_str_lower:
+        elif self.ERROR_CODES["rate_limit"] in error_msg or "rate limit" in error_str_lower:
             return {"category": "expected", "reason_code": "RATE_LIMIT"}
         elif "timeout" in error_str_lower or "connect" in error_str_lower:
             return {"category": "expected", "reason_code": "NETWORK_TIMEOUT"}
 
         # Unexpected errors (state divergence / bugs)
-        elif ERROR_INVALID_QTY in error_msg or "invalid quantity" in error_str_lower:
+        elif self.ERROR_CODES["invalid_qty"] in error_msg or "invalid quantity" in error_str_lower:
             return {"category": "unexpected", "reason_code": "INVALID_QUANTITY"}
-        elif ERROR_MIN_NOTIONAL in error_msg or "min notional" in error_str_lower:
+        elif self.ERROR_CODES["min_notional"] in error_msg or "min notional" in error_str_lower:
             return {"category": "unexpected", "reason_code": "MIN_NOTIONAL_VIOLATION"}
         elif "precision" in error_str_lower or "step size" in error_str_lower:
             return {"category": "unexpected", "reason_code": "PRECISION_VIOLATION"}
@@ -336,11 +355,44 @@ class ExecutionService:
             req_kwargs.setdefault(key, value)
 
         try:
-            # Call adapter place_order method
-            response = await self._call_adapter(
-                "place_order",
-                **req_kwargs,
+            # Construct ExchangeOrderParams
+            # Note: We convert values to strings as expected by ExchangeOrderParams
+            params = ExchangeOrderParams(
+                symbol=str(req_kwargs.get("symbol")),
+                side=str(req_kwargs.get("side")),
+                order_type=str(req_kwargs.get("order_type", "MARKET")),
+                quantity=str(req_kwargs.get("quantity")),
+                price=str(req_kwargs.get("price")) if req_kwargs.get("price") is not None else None,
+                time_in_force=str(req_kwargs.get("time_in_force", "GTC")),
+                reduce_only=bool(req_kwargs.get("reduce_only", False)),
+                close_position=bool(req_kwargs.get("close_position", False)),
+                client_order_id=str(req_kwargs.get("client_order_id")) if req_kwargs.get("client_order_id") else None,
+                position_side=str(req_kwargs.get("position_side")) if req_kwargs.get("position_side") else None,
+                stop_price=str(req_kwargs.get("stop_price")) if req_kwargs.get("stop_price") is not None else None,
+                working_type=str(req_kwargs.get("working_type")) if req_kwargs.get("working_type") else None,
             )
+
+            # Call adapter create_order method
+            # Note: create_order returns ExchangeOrderResponse object, we need to convert it to dict or use it directly
+            response_obj = await self._call_adapter(
+                "create_order",
+                params=params,
+            )
+
+            # Convert ExchangeOrderResponse to dict if needed
+            response = response_obj.to_dict() if hasattr(response_obj, "to_dict") else response_obj
+
+            # Handle missing adapter method or None response
+            if response is None:
+                return {
+                    "status": ExecutionStatus.FAILED,
+                    "success": False,
+                    "order_id": None,
+                    "client_order_id": client_order_id,
+                    "error": "Adapter returned None (method missing?)",
+                    "error_kind": "ADAPTER_ERROR",
+                    "metadata": {}
+                }
 
             # Extract order ID from response
             order_id = None
@@ -407,7 +459,7 @@ class ExecutionService:
                         "error": error_msg,
                         "error_kind": error_kind,
                         "is_timeout": is_timeout,
-                        "should_retry": False if is_timeout else False,
+                        "should_retry": False,  # Currently no retry logic
                         "reason_code": reason_code,  # R2-K: Add reason_code to result
                         "metadata": response
                     }
@@ -433,43 +485,22 @@ class ExecutionService:
             }
 
         except Exception as e:
-            # Determine error kind for better categorization
-            error_kind = "ADAPTER_ERROR"
+            # Use centralized classification
+            classification = self._classify_exception(e)
+            error_kind = classification["error_kind"]
+            error_normalized = classification["normalized_error"]
+            is_timeout = classification["is_timeout"]
+            is_network = classification["is_network"]
             exception_type = type(e).__name__
 
-            # Check for timeout exceptions (both httpx and httpcore)
-            is_timeout_exception = exception_type in TIMEOUT_EXCEPTION_NAMES
-            if httpx and isinstance(e, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
-                is_timeout_exception = True
-            if httpcore and isinstance(e, (httpcore.ReadTimeout, httpcore.ConnectTimeout)):
-                is_timeout_exception = True
-
-            if is_timeout_exception:
-                error_kind = "ADAPTER_ERROR_TIMEOUT"
-                exception_type = "TimeoutException"
-
-            # Check for network exceptions
-            is_network_exception = exception_type in NETWORK_EXCEPTION_NAMES
-            if httpx and isinstance(e, httpx.ConnectError):
-                is_network_exception = True
-            if httpcore and isinstance(e, httpcore.ConnectError):
-                is_network_exception = True
-
-            if is_network_exception and not is_timeout_exception:
-                error_kind = "ADAPTER_ERROR_NETWORK"
-
-            error_normalized = self._normalize_error(e)
-            is_timeout = error_kind == "ADAPTER_ERROR_TIMEOUT"
-            is_network = error_kind == "ADAPTER_ERROR_NETWORK"
-
             # EXEC-R2-K: Classify exception-based errors
-            classification = self._classify_place_error(error_normalized, {})
-            reason_code = classification["reason_code"]
+            place_classification = self._classify_place_error(error_normalized, {})
+            reason_code = place_classification["reason_code"]
 
             # Timeouts/Network -> ERROR, benign ORDER_WOULD_TRIGGER -> WARNING, others -> ERROR
             if is_timeout or is_network:
                 log_level = logger.error
-            elif classification["category"] == "expected" and reason_code == "ORDER_WOULD_TRIGGER":
+            elif place_classification["category"] == "expected" and reason_code == "ORDER_WOULD_TRIGGER":
                 log_level = logger.warning
             else:
                 log_level = logger.error
@@ -481,7 +512,7 @@ class ExecutionService:
                     "order_type": order_type,
                     "error": error_normalized,
                     "error_kind": error_kind,
-                    "error_category": classification["category"],
+                    "error_category": place_classification["category"],
                     "reason_code": reason_code,
                     "exception": str(e),
                     "exception_type": exception_type
@@ -497,7 +528,7 @@ class ExecutionService:
                 "error_kind": error_kind,
                 "is_timeout": is_timeout,
                 "is_network": is_network,
-                "should_retry": False if is_timeout else False,
+                "should_retry": False,  # Currently no retry logic
                 "reason_code": reason_code,  # R2-K: Add reason_code to result
                 "metadata": {
                     "exception": str(e),
@@ -543,11 +574,11 @@ class ExecutionService:
             # Handle structured timeout response from adapter
             if isinstance(response, dict) and response.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
                 logger.warning(
-                    f"SHADOW_EXEC_POS_CANCEL_TIMEOUT",
+                    "SHADOW_EXEC_POS_CANCEL_TIMEOUT",
                     extra={
                         "symbol": symbol,
                         "order_id": order_id,
-                        "client_order_id": client_order_id
+                        "error_kind": "ADAPTER_ERROR_TIMEOUT",
                     }
                 )
                 return {
@@ -555,22 +586,23 @@ class ExecutionService:
                     "success": False,
                     "order_id": order_id,
                     "client_order_id": client_order_id,
-                    "error": response.get("error", "Cancel timeout"),
+                    "error": response.get("error", "Timeout"),
                     "error_kind": "ADAPTER_ERROR_TIMEOUT",
                     "is_timeout": True,
-                    "metadata": response
+                    "metadata": response,
                 }
 
             # Handle structured error response (non-timeout)
             if isinstance(response, dict) and response.get("success") is False:
-                error_msg = response.get("msg") or response.get(
-                    "error") or "Cancel failed"
+                error_msg = response.get("error", "Unknown error from adapter")
+                error_kind = response.get("error_kind", "ADAPTER_ERROR")
                 logger.warning(
-                    f"SHADOW_EXEC_POS_CANCEL_FAILED",
+                    "SHADOW_EXEC_POS_CANCEL_FAILED",
                     extra={
                         "symbol": symbol,
                         "order_id": order_id,
-                        "error": error_msg
+                        "error": error_msg,
+                        "error_kind": error_kind,
                     }
                 )
                 return {
@@ -579,15 +611,16 @@ class ExecutionService:
                     "order_id": order_id,
                     "client_order_id": client_order_id,
                     "error": error_msg,
-                    "metadata": response
+                    "error_kind": error_kind,
+                    "metadata": response,
                 }
 
             logger.info(
-                f"SHADOW_EXEC_POS_CANCEL_SUCCESS",
+                "SHADOW_EXEC_POS_CANCEL_SUCCESS",
                 extra={
                     "symbol": symbol,
                     "order_id": order_id,
-                    "client_order_id": client_order_id
+                    "client_order_id": client_order_id,
                 }
             )
 
@@ -620,8 +653,13 @@ class ExecutionService:
                     "metadata": {"idempotent": True, "exception": str(e)}
                 }
 
-            # Handle httpx timeout exceptions
-            if httpx and isinstance(e, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException)):
+            # Use centralized classification
+            classification = self._classify_exception(e)
+            error_kind = classification["error_kind"]
+            error_normalized = classification["normalized_error"]
+            is_timeout = classification["is_timeout"]
+
+            if is_timeout:
                 logger.warning(
                     f"SHADOW_EXEC_POS_CANCEL_TIMEOUT_EXCEPTION",
                     extra={
@@ -641,10 +679,7 @@ class ExecutionService:
                     "metadata": {"exception": str(e)}
                 }
 
-            error_normalized = self._normalize_error(e)
             # EXEC-R2-K: Add reason_code for CANCEL failures
-            # Most CANCEL failures are unexpected (order should exist if we're canceling)
-            # unless it's a race with fill/manual cancel
             reason_code = "CANCEL_FAILED_UNKNOWN"
             if "does not exist" in error_normalized.lower() or "unknown" in error_normalized.lower():
                 reason_code = "ORDER_NOT_FOUND_RACE"  # Likely race with fill/manual cancel
@@ -695,15 +730,22 @@ class ExecutionService:
             }
 
         try:
-            # Place reduce-only MARKET order
-            response = await self._call_adapter(
-                "place_order",
-                symbol=symbol,
-                side=side,
+            # Place reduce-only MARKET order via create_order
+            params = ExchangeOrderParams(
+                symbol=str(symbol),
+                side=str(side),
                 order_type="MARKET",
-                quantity=quantity,
-                reduce_only=True
+                quantity=str(quantity),
+                reduce_only=True,
+                time_in_force="GTC"
             )
+
+            response_obj = await self._call_adapter(
+                "create_order",
+                params=params
+            )
+
+            response = response_obj.to_dict() if hasattr(response_obj, "to_dict") else response_obj
 
             order_id = None
             if isinstance(response, dict):

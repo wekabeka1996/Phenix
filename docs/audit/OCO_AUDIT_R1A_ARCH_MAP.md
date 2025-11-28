@@ -1,8 +1,8 @@
 # PACK OCO-AUDIT-R1 — R1-A Aggregated OCO Architecture Map
 
-**Date:** 2025-11-23  
-**RID:** OCO-AUDIT-R1-A-ARCH  
-**Type:** Read-only architecture audit (no code changes)  
+**Date:** 2025-11-23
+**RID:** OCO-AUDIT-R1-A-ARCH
+**Type:** Read-only architecture audit (no code changes)
 **Scope:** ExecPosRuntimeV2 + Aggregated OCO / TP‑SL lifecycle (shadow_execpos)
 
 ---
@@ -37,7 +37,7 @@ This document is descriptive only and reflects current behavior in:
 | `vfoundation/.../bracket_aggregator.py` | `compute_aggregated_brackets`, `AggregatedOcoRiskConfig`, `InstrumentPriceConstraints` | Pure price math: computes aggregated SL/TP levels from `(side, avg_entry_price, position_amt, sl_pct, tp_rr, constraints)`. Used by `BracketService._compute_desired_levels`. |
 | `shadow_execpos/watchdog.py` | `AggOcoWatchdogService` | Detect-only watchdog that normalizes raw positions/orders into `BracketPositionView` / `BracketOrderView`, runs `BracketService.evaluate_all`, and converts `BracketPlan`s into `WatchdogRecommendation`s (kind + `WatchdogAction`). Runtime uses it primarily to trigger snapshot refresh. |
 | `shadow_execpos/execution_service.py` | `ExecutionService` | Adapter facade that actually calls Binance adapter (`place_order`, `cancel_order`) for bracket actions. All `PLACE_SL` / `PLACE_TP` / `ADJUST` / `CANCEL` produced by `BracketService` go through here. |
-| `shadow_execpos/runtime.py` | Guard / support services | `ExecPosGatekeeper` (entry guards), `PriceEnricher`, `FillIdempotency`, `EventIdempotency`, `ExecPosWALWriter`, `ExposureBridge`, `TrailingStopService`, `CloseFlowService` — not bracket-specific but participate in the event pipeline before/after bracket evaluation. |
+| `shadow_execpos/runtime.py` | Guard / support services | `ExecPosGatekeeper` (entry guards), `PriceEnricher`, `FillIdempotency`, `ExecPosWALWriter`, `ExposureBridge`, `TrailingStopService`, `CloseFlowService` — not bracket-specific but participate in the event pipeline before/after bracket evaluation. |
 | `shadow_execpos/event_adapter.py` | `MessageToRuntimeEventAdapter` | Converts legacy FSM `Message` objects (e.g. `CMD:OPEN`, `EVT:TRADE_EXECUTED`, `EVT:ORDERS_SNAPSHOT`) into `RuntimeEvent`s consumed by `ExecPosRuntimeV2`. |
 | `runtime_factory.py` | `V2RuntimeFacade` | Bridges FSM ↔ `ExecPosRuntimeV2`: subscribes to `EVT:TRADE_EXECUTED`, `EVT:ACCOUNT_UPDATE_RECEIVED`, `EVT:TRADE_INTENT_PROPOSED`; fetches snapshots from adapter; sends `ORDERS_SNAPSHOT`, `TRADE_EXECUTED`, `POSITION_SYNC` events to runtime. |
 | `manage_config.py` | `ExecutionManageConfig`, `BracketsMetaConfig`, `AggregatedOcoConfig` | Resolves manage/brackets/aggregated_oco configuration (enabled flags, recalc_on_* toggles, watchdog settings) from legacy + V2 configs. Currently not wired directly into `ExecPosRuntimeV2`; used mainly by legacy/manage flows. |

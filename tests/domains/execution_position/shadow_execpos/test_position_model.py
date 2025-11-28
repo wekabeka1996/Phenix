@@ -43,3 +43,33 @@ def test_flip_resets_avg_price_and_counts():
     assert state.scale_out_count == 1
     assert state.side == "SHORT"
 
+
+def test_cycle_id_increments_on_fresh_open():
+    state = PositionState(symbol="BTCUSDT", cycle_id=10)
+    # Fresh open
+    state = apply_fill(state, side="BUY", quantity=1, price=100)
+    assert state.cycle_id == 11
+
+def test_cycle_id_increments_on_flip():
+    state = PositionState(symbol="BTCUSDT", qty=1.0, cycle_id=10)
+    # Flip to short
+    state = apply_fill(state, side="SELL", quantity=2, price=90)
+    assert state.qty == -1.0
+    assert state.cycle_id == 11
+
+def test_cycle_id_preserved_on_scale_in():
+    state = PositionState(symbol="BTCUSDT", qty=1.0, cycle_id=10)
+    state = apply_fill(state, side="BUY", quantity=1, price=100)
+    assert state.cycle_id == 10
+
+def test_cycle_id_preserved_on_partial_close():
+    state = PositionState(symbol="BTCUSDT", qty=2.0, cycle_id=10)
+    state = apply_fill(state, side="SELL", quantity=1, price=100)
+    assert state.cycle_id == 10
+
+def test_cycle_id_preserved_on_close_to_flat():
+    state = PositionState(symbol="BTCUSDT", qty=1.0, cycle_id=10)
+    state = apply_fill(state, side="SELL", quantity=1, price=100)
+    assert state.qty == 0.0
+    assert state.cycle_id == 10
+

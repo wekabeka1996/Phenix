@@ -22,7 +22,6 @@ import tools.config_validator_v2 as config_validator
 
 def _configure_valid_domain_mocks(
     mock_exposure,
-    mock_manage,
     mock_brackets,
     mock_risk,
     mock_risk_soft,
@@ -49,8 +48,6 @@ def _configure_valid_domain_mocks(
         positions_stale_ttl_sec=3,
     )
     mock_exposure.return_value = exposure
-
-    mock_manage.return_value = MagicMock()
 
     brackets = MagicMock()
     brackets.source = "config_v2"
@@ -128,7 +125,6 @@ class TestConfigValidatorV2:
             mock_cfg = MagicMock()
             # Mock all resolvers to return valid objects
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -157,9 +153,6 @@ class TestConfigValidatorV2:
                     positions_stale_ttl_sec=3,
                 )
                 mock_exposure.return_value = exposure
-
-                # Manage config
-                mock_manage.return_value = MagicMock()
 
                 # Brackets config
                 brackets = MagicMock()
@@ -243,7 +236,6 @@ class TestConfigValidatorV2:
         with patch('tools.config_validator_v2.reload_config') as mock_reload:
             mock_cfg = MagicMock()
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -272,7 +264,6 @@ class TestConfigValidatorV2:
                 )
                 mock_exposure.return_value = exposure
 
-                mock_manage.return_value = MagicMock()
                 brackets = MagicMock()
                 brackets.source = "config_v2"
                 brackets.tp_bps = 10
@@ -351,7 +342,6 @@ class TestConfigValidatorV2:
 
         with patch('tools.config_validator_v2.reload_config', return_value=cfg):
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -366,7 +356,6 @@ class TestConfigValidatorV2:
 
                 _configure_valid_domain_mocks(
                     mock_exposure,
-                    mock_manage,
                     mock_brackets,
                     mock_risk,
                     mock_risk_soft,
@@ -401,7 +390,6 @@ class TestConfigValidatorV2:
 
         with patch('tools.config_validator_v2.reload_config', return_value=cfg):
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -416,7 +404,6 @@ class TestConfigValidatorV2:
 
                 _configure_valid_domain_mocks(
                     mock_exposure,
-                    mock_manage,
                     mock_brackets,
                     mock_risk,
                     mock_risk_soft,
@@ -450,7 +437,6 @@ class TestConfigValidatorV2:
 
         with patch('tools.config_validator_v2.reload_config', return_value=cfg):
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -465,7 +451,6 @@ class TestConfigValidatorV2:
 
                 _configure_valid_domain_mocks(
                     mock_exposure,
-                    mock_manage,
                     mock_brackets,
                     mock_risk,
                     mock_risk_soft,
@@ -497,7 +482,6 @@ class TestConfigValidatorV2:
         with patch('tools.config_validator_v2.reload_config') as mock_reload:
             mock_cfg = MagicMock()
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -526,7 +510,6 @@ class TestConfigValidatorV2:
                 )
                 mock_exposure.return_value = exposure
 
-                mock_manage.return_value = MagicMock()
                 brackets = MagicMock()
                 brackets.source = "config_v2"
                 brackets.tp_bps = 10
@@ -605,7 +588,6 @@ class TestConfigValidatorV2:
 
         with patch('tools.config_validator_v2.reload_config', return_value=cfg):
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -620,7 +602,6 @@ class TestConfigValidatorV2:
 
                 _configure_valid_domain_mocks(
                     mock_exposure,
-                    mock_manage,
                     mock_brackets,
                     mock_risk,
                     mock_risk_soft,
@@ -646,7 +627,6 @@ class TestConfigValidatorV2:
 
         with patch('tools.config_validator_v2.reload_config', return_value=cfg):
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -661,7 +641,6 @@ class TestConfigValidatorV2:
 
                 _configure_valid_domain_mocks(
                     mock_exposure,
-                    mock_manage,
                     mock_brackets,
                     mock_risk,
                     mock_risk_soft,
@@ -692,7 +671,6 @@ class TestConfigValidatorV2:
 
         with patch('tools.config_validator_v2.reload_config', return_value=cfg):
             with patch('tools.config_validator_v2.resolve_exposure_policy') as mock_exposure, \
-                    patch('tools.config_validator_v2.resolve_execution_manage_config') as mock_manage, \
                     patch('tools.config_validator_v2.resolve_brackets_config') as mock_brackets, \
                     patch('tools.config_validator_v2.resolve_daily_risk_state') as mock_risk, \
                     patch('tools.config_validator_v2.resolve_risk_soft_limits') as mock_risk_soft, \
@@ -707,7 +685,6 @@ class TestConfigValidatorV2:
 
                 _configure_valid_domain_mocks(
                     mock_exposure,
-                    mock_manage,
                     mock_brackets,
                     mock_risk,
                     mock_risk_soft,

@@ -217,16 +217,17 @@ def test_close_config_marked_as_unused():
     """
     Test 6 (bonus): CloseConfig fields explicitly marked as UNUSED.
 
-    Per report scope, entire CloseConfig block (4 fields) is placeholder/unused.
+    Per report scope, CloseConfig placeholder fields are unused.
     Validates that report explicitly documents this fact.
+
+    Note: reason_policy and allow_profit_exit were removed in cleanup.
     """
     report_text = REPORT_PATH.read_text(encoding="utf-8")
 
+    # Fields that remain in CloseConfig (reason_policy & allow_profit_exit were removed)
     close_fields = [
         "close.max_hold_time_sec",
-        "close.reason_policy",
         "close.allow_time_exit",
-        "close.allow_profit_exit",
     ]
 
     # Check that each close field is mentioned AND marked as UNUSED

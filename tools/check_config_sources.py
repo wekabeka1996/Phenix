@@ -8,7 +8,6 @@ from apps.reference.config_features import resolve_feature_engineering_config
 from apps.reference.config_decision import resolve_decision_policy
 from apps.reference.config_risk import resolve_daily_risk_state, resolve_trading_allowed_thresholds
 from apps.reference.domains.execution_position.brackets_config import resolve_brackets_config
-from apps.reference.domains.execution_position.manage_config import resolve_execution_manage_config
 from apps.reference.config_exposure_policy import resolve_exposure_policy
 from apps.reference.config_loader import get_config
 import sys
@@ -38,8 +37,6 @@ def main():
 
     print("\n=== Domain resolvers source checks ===")
     exposure = print_source("exposure", resolve_exposure_policy, cfg)
-    manage = print_source(
-        "manage_config", resolve_execution_manage_config, cfg)
     brackets = print_source("brackets", resolve_brackets_config, cfg)
     risk = print_source("risk_state", resolve_daily_risk_state, cfg)
     thresholds = print_source(

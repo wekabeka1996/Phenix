@@ -1,7 +1,7 @@
 # ExecPosRuntimeV2 Runtime Specification
 
-**Status:** Canonical (ExecPosRuntimeV2 is the default runtime)  
-**Last verified against code:** 2025-11-21  
+**Status:** Canonical (ExecPosRuntimeV2 is the default runtime)
+**Last verified against code:** 2025-11-21
 **Sources:** `apps/reference/domains/execution_position/shadow_execpos/*.py`, tests under `tests/domains/execution_position/shadow_execpos/`
 
 ## 1. Overview & Scope
@@ -21,7 +21,7 @@
   - `ExecutionService` (adapter facade with retry/error normalization)
   - `ExecPosGatekeeper` (entry guards)
   - `PriceEnricher` (fill enrichment)
-  - `FillIdempotency` / `EventIdempotency`
+  - `FillIdempotency` (with TTL-based cleanup)
   - `AggOcoWatchdogService` (detect-only)
   - `ExecPosWALWriter` (writes EXEC_TRADE / EXEC_POSITION)
   - `ExposureBridge` (emits exposure updates)
@@ -43,7 +43,7 @@
 - `_positions_by_symbol`: `{symbol: {symbol, qty, side|direction, position_size, entry_price, avg_price?, margin?, realized_pnl?, unrealized_pnl?}}`
   - Qty is float; entry_price set on first open; no averaging on subsequent fills (limitation).
 - `_open_orders_by_symbol`: `{symbol: [{order_id, client_order_id, symbol, side, quantity, price, type}]}`. No bracket metadata is tracked.
-- Idempotency stores: `FillIdempotency._seen_fills` keyed by `symbol|side|order_id`; `EventIdempotency` TTL store for generic events.
+- Idempotency stores: `FillIdempotency._seen_fills` keyed by `symbol|side|order_id` with TTL-based cleanup.
 - Metrics dict: see §7.
 
 ## 5. Core Flows (Actual Behavior)

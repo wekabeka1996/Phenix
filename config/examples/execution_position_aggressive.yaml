@@ -72,9 +72,5 @@ manage:
     # Long max hold time: 12 hours (43200 sec) for trend trades
     max_hold_time_sec: 43200
 
-    # Permissive close policy: allow discretionary exits
-    reason_policy: permissive
-
-    # Allow both time and profit exits
+    # Allow time-based exits
     allow_time_exit: true
-    allow_profit_exit: true

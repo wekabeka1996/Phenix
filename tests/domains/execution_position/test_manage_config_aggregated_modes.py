@@ -65,18 +65,6 @@ def test_mode_aggregated_only_valid() -> None:
     assert resolved.brackets.aggregated_oco.enabled is True
 
 
-def test_mode_legacy_valid_without_aggregated_oco() -> None:
-    cfg = _base_cfg()
-    manage = _manage_node(cfg)
-    manage["mode"] = "legacy"
-    manage["brackets"] = {"enable": True}
-
-    resolved = resolve_execution_manage_config(cfg)
-
-    assert resolved.mode == "legacy"
-    assert resolved.brackets.aggregated_oco.enabled is False
-
-
 def test_mode_inferred_as_aggregated_only_when_not_set() -> None:
     cfg = _base_cfg()
     manage = _manage_node(cfg)
@@ -93,16 +81,6 @@ def test_aggregated_only_rejects_allow_unprotected_position() -> None:
     manage = _manage_node(cfg)
     manage["mode"] = "aggregated_only"
     manage["brackets"] = _aggregated_brackets(allow_unprotected_position=True)
-
-    with pytest.raises(ConfigError):
-        resolve_execution_manage_config(cfg)
-
-
-def test_legacy_mode_rejects_aggregated_oco_enabled() -> None:
-    cfg = _base_cfg()
-    manage = _manage_node(cfg)
-    manage["mode"] = "legacy"
-    manage["brackets"] = _aggregated_brackets()
 
     with pytest.raises(ConfigError):
         resolve_execution_manage_config(cfg)

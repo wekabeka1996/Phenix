@@ -1,4 +1,4 @@
-"""
+﻿"""
 Test ExecutionService ConnectTimeout Flow
 
 This test suite verifies ExecutionService correctly categorizes and handles
@@ -41,7 +41,23 @@ class FakeAdapterWithTimeoutError:
         self.place_order_calls = []
         self.cancel_order_calls = []
     
-    async def place_order(self, symbol, side, order_type, quantity, **kwargs):
+    async def create_order(self, params=None, **kwargs):
+        """Alias for place_order to support ExecutionService."""
+        if params:
+            return await self.place_order(
+                symbol=params.symbol,
+                side=params.side,
+                order_type=params.order_type,
+                quantity=params.quantity,
+                price=params.price,
+                client_order_id=params.client_order_id,
+                reduce_only=params.reduce_only,
+                tif=params.time_in_force,
+                **kwargs
+            )
+        return await self.place_order(**kwargs)
+
+    async def place_order(self, symbol=None, side=None, order_type=None, quantity=None, **kwargs):
         """Simulate place_order that raises ConnectTimeout."""
         self.place_order_calls.append({
             "symbol": symbol,
@@ -258,8 +274,8 @@ async def test_runtime_receives_timeout_error_kind(fake_adapter_timeout):
     
     Purpose:
     - Runtime needs to know if error was timeout vs other failure
-    - Timeout → might request snapshot + block further brackets
-    - Other error → different recovery strategy
+    - Timeout  might request snapshot + block further brackets
+    - Other error  different recovery strategy
     
     This test documents the error_kind propagation path.
     """
@@ -293,35 +309,3 @@ async def test_runtime_receives_timeout_error_kind(fake_adapter_timeout):
     assert result["error_kind"] == "ADAPTER_ERROR_TIMEOUT"
     assert result["success"] is False
     assert result.get("is_timeout") is True
-
-
-# Summary comment for test suite
-"""
-Test Results Analysis (ExecutionService layer):
-
-1. test_execution_service_categorizes_timeout:
-   - ✅ PASSES: error_kind=ADAPTER_ERROR_TIMEOUT correctly set
-   
-2. test_execution_service_logs_place_failed:
-   - ✅ PASSES: SHADOW_EXEC_POS_PLACE_FAILED logged
-   
-3. test_execution_service_returns_failure_result:
-   - ✅ PASSES: ExecutionResult(success=False) returned with all fields
-   
-4. test_timeout_does_not_trigger_automatic_retry:
-   - ✅ PASSES (documents current behavior): No retry in ExecutionService
-   
-5. test_runtime_receives_timeout_error_kind:
-   - ✅ PASSES: Runtime can distinguish timeout from other errors
-
-Findings:
-- ✅ ExecutionService correctly categorizes ConnectTimeout
-- ✅ Proper logging with error_kind
-- ✅ Runtime receives error indication
-- ❌ No retry logic (by design, should be in Runtime/Adapter)
-
-Next Steps (from AUDIT-S2 + AUDIT-S3):
-- Runtime should detect error_kind=ADAPTER_ERROR_TIMEOUT
-- After timeout: request snapshot, block brackets, backoff
-- Consider adding retry at Adapter level (like get_open_orders)
-"""

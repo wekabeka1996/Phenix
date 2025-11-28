@@ -321,25 +321,18 @@ async def test_orphan_brackets_detected_after_full_close():
         runtime, symbol, side="SELL", quantity=10.0, price=1.05)
     assert abs(flat_state.qty) < 0.0001, "Position FLAT"
 
-    # Step 3: Try to trigger evaluation (should skip for FLAT)
-    # _evaluate_brackets checks position.side not in ("LONG", "SHORT") → early return
+    # Step 3: Trigger evaluation for FLAT position
+    # R2-ORPHAN-FIX: _evaluate_brackets now calls _cleanup_orphan_brackets_for_flat
     await runtime._evaluate_brackets(symbol, flat_state, reason="guard_loop")
 
-    # Step 4: Check that CANCEL was NOT called (because evaluate was skipped)
+    # Step 4: Verify orphan cleanup was executed
     exec_service = runtime.execution_service
     cancel_calls = [c for c in exec_service.cancel_order.call_args_list]
 
-    # EXPECTED (with gap): cancel_calls is EMPTY
-    # Because _evaluate_brackets returns early for FLAT positions
-
-    # Document the gap:
-    assert len(cancel_calls) == 0, \
-        "No CANCEL calls expected (evaluate skipped for FLAT) — orphan cleanup gap"
-
-    # In future implementation, we would expect:
-    # - Either: evaluate allowed for FLAT positions to trigger orphan cleanup
-    # - Or: guard_loop explicitly calls orphan cleanup for FLAT positions with brackets
-    # - Or: continuous watchdog recommendations are executed (not just detect)
+    # R2-ORPHAN-FIX: Orphan SL should be CANCELLED when position is FLAT
+    assert len(cancel_calls) == 1, \
+        "Orphan SL should be cancelled when position is FLAT"
+    assert cancel_calls[0].kwargs.get("order_id") == "ORPHAN_SL"
 
 
 # ========== Test: Symbol-only binding allows bracket confusion ==========

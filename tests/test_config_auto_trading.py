@@ -1,9 +1,7 @@
 """Test helper to inspect AuroraConfig via config v2 resolvers."""
 
 from apps.reference.config_loader import load_config
-from apps.reference.domains.execution_position.manage_config import (
-    resolve_execution_manage_config,
-)
+from apps.reference.config.execution_position import resolve_execution_position_config
 from apps.reference.config_sizing import resolve_sizing_policy
 from apps.reference.config_symbols import get_trading_symbols, resolve_instrument_profile
 
@@ -17,15 +15,15 @@ def main() -> None:
     config = load_config()
     symbol = _pick_symbol()
 
-    manage_cfg = resolve_execution_manage_config(config)
+    raw_exec = config.model_dump().get("execution", {}) if hasattr(config, "model_dump") else {}
+    ep_cfg = resolve_execution_position_config(raw_exec)
     sizing_cfg = resolve_sizing_policy(config, symbol=symbol, regime="NORMAL")
 
     print("=" * 60)
     print("AUTO-TRADING CONFIGURATION CHECK (config v2)")
     print("=" * 60)
-    print(f"execution.manage.auto = {getattr(manage_cfg, 'auto', False)}")
-    print(f"guardian.emit_tidy_event = {manage_cfg.guardian.emit_tidy_event}")
-    print(f"brackets.enable = {manage_cfg.brackets.enable}")
+    print(f"aggregated_oco.enabled = {ep_cfg.aggregated_oco.enabled}")
+    print(f"trailing.enabled = {ep_cfg.trailing.enabled}")
     print()
 
     print("POSITION SIZING CONFIG (via resolver):")

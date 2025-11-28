@@ -1,0 +1,10 @@
+# Binance Adapter Error Codes
+# Used by ExecutionService to classify errors
+binance:
+  unknown_order: "-2011"
+  would_trigger: "-2021"
+  duplicate_id: "-4116"
+  invalid_qty: "-4137"
+  min_notional: "-4164"
+  insufficient_balance: "-2010"
+  rate_limit: "-429"

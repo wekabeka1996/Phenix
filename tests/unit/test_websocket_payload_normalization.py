@@ -9,9 +9,8 @@ NOTE: These tests are OUTDATED - the _normalize_order_event method was removed
       Skip until tests are updated to test the correct code paths.
 """
 
-from apps.reference.domains.execution_position.binance_execution_adapter import (
-    BinanceExecutionAdapter,
-)
+# MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
 import time
 import pytest
 pytestmark = pytest.mark.skip(

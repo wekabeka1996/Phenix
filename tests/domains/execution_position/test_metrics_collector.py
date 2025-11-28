@@ -1,7 +1,7 @@
 import pytest
 import time
 from threading import Thread
-from apps.reference.domains.execution_position.metrics_collector import MetricsCollector
+from apps.reference.domains.execution_position.observability.metrics_collector import MetricsCollector
 
 @pytest.fixture
 def collector():

@@ -31,7 +31,6 @@ from apps.reference.config_sizing import resolve_sizing_policy
 from apps.reference.config_decision import resolve_decision_policy
 from apps.reference.config_modes import compute_effective_trading_modes, get_domain_mode_from_mapping
 from apps.reference.config_features import resolve_feature_engineering_config
-from apps.reference.domains.execution_position.manage_config import resolve_execution_manage_config
 from apps.reference.domains.execution_position.brackets_config import (
     DEFAULT_SL_BPS,
     DEFAULT_TP_BPS,
@@ -192,7 +191,6 @@ def validate_config_v2(config_root: Optional[Path] = None) -> Dict[str, Any]:
         # Execution domain
         try:
             exposure_policy = resolve_exposure_policy(cfg)
-            manage_config = resolve_execution_manage_config(cfg)
             brackets_config = resolve_brackets_config(cfg)
 
             errors = []

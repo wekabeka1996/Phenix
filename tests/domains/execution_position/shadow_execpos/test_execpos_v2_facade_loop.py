@@ -41,7 +41,7 @@ async def test_facade_attaches_to_running_loop_and_delivers_entry_intent():
     1. Attaches to running loop via _ensure_loop()
     2. Delivers ENTRY_INTENT event to runtime.handle()
     """
-    from apps.reference.domains.execution_position.runtime_factory import V2RuntimeFacade
+    from apps.reference.domains.execution_position.infra.runtime_factory import V2RuntimeFacade
 
     dummy_runtime = DummyRuntime()
 
@@ -88,7 +88,7 @@ async def test_facade_uses_provided_loop():
     """
     Test that V2RuntimeFacade respects explicitly provided loop.
     """
-    from apps.reference.domains.execution_position.runtime_factory import V2RuntimeFacade
+    from apps.reference.domains.execution_position.infra.runtime_factory import V2RuntimeFacade
 
     dummy_runtime = DummyRuntime()
     current_loop = asyncio.get_running_loop()
@@ -130,7 +130,7 @@ async def test_facade_handles_multiple_events_sequentially():
     """
     Test that facade can handle multiple events without dropping any.
     """
-    from apps.reference.domains.execution_position.runtime_factory import V2RuntimeFacade
+    from apps.reference.domains.execution_position.infra.runtime_factory import V2RuntimeFacade
 
     dummy_runtime = DummyRuntime()
 
@@ -175,7 +175,7 @@ async def test_ensure_loop_returns_none_when_no_loop_available():
     Test _ensure_loop() returns None when called outside async context.
     This is an edge case - should not happen in production.
     """
-    from apps.reference.domains.execution_position.runtime_factory import V2RuntimeFacade
+    from apps.reference.domains.execution_position.infra.runtime_factory import V2RuntimeFacade
 
     config = {
         "execution_position": {"runtime_mode": "v2"},

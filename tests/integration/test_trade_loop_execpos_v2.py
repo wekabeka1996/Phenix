@@ -18,7 +18,7 @@ import apps.reference.main as main_module
 from apps.reference.domains.decision_making.contracts import PortfolioSnapshot
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from apps.reference.domains.decision_making.portfolio_provider import PortfolioProvider
-from apps.reference.domains.execution_position.runtime_factory import build_execution_runtime
+from apps.reference.domains.execution_position.infra.runtime_factory import build_execution_runtime
 from apps.reference.main import AuroraBridge
 
 
@@ -399,7 +399,8 @@ def trade_loop_harness(monkeypatch: pytest.MonkeyPatch, integration_config: Dict
         portfolio_provider=provider_adapter,
     )
     yield harness
-    runtime.runtime.async_manager.shutdown_background_tasks()
+    # Cleanup: clear async manager reference
+    runtime.runtime.async_manager.clear()
 
 
 @pytest.fixture

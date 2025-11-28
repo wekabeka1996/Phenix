@@ -87,7 +87,7 @@ async def test_timeout_classified_as_adapter_error_timeout():
     )
 
     class MockAdapter:
-        async def place_order(self, *args, **kwargs):
+        async def create_order(self, *args, **kwargs):
             raise httpx.ReadTimeout("Simulated timeout")
 
     service = ExecutionService(adapter=MockAdapter())  # type: ignore
@@ -114,7 +114,7 @@ async def test_network_error_classified_as_adapter_error_network():
     )
 
     class MockAdapter:
-        async def place_order(self, *args, **kwargs):
+        async def create_order(self, *args, **kwargs):
             raise httpx.ConnectError("Simulated connect error")
 
     service = ExecutionService(adapter=MockAdapter())  # type: ignore
@@ -351,7 +351,7 @@ def test_timeout_config_testnet_defaults():
     """
     Verify TimeoutConfig.testnet_defaults() returns higher timeouts.
     """
-    from apps.reference.adapters.binance_adapter import TimeoutConfig
+    from apps.reference.config_adapter import TimeoutConfig
 
     testnet = TimeoutConfig.testnet_defaults()
     live = TimeoutConfig.live_defaults()
@@ -365,7 +365,7 @@ def test_retry_config_exponential_backoff():
     """
     Verify RetryConfig produces correct exponential backoff delays.
     """
-    from apps.reference.adapters.binance_adapter import RetryConfig
+    from apps.reference.config_adapter import RetryConfig
 
     config = RetryConfig(
         max_retries=4,

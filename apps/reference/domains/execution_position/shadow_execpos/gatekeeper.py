@@ -5,7 +5,7 @@ Entry Gatekeeper for Shadow ExecPos
 Pre-flight validation for entry orders.
 Ported from fsm_open.py and qty_guard.py.
 """
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, TypedDict
 from decimal import Decimal, ROUND_DOWN, InvalidOperation
 import logging
 import time
@@ -14,11 +14,21 @@ from .types import GateDecision
 
 logger = logging.getLogger(__name__)
 
-# Default instrument specifications
-DEFAULT_STEP_SIZE = Decimal("0.000001")
-DEFAULT_MIN_QTY = Decimal("0.000001")
-DEFAULT_MIN_NOTIONAL = Decimal("5")
-DEFAULT_TICK_SIZE = Decimal("0.01")
+# Safe fallbacks if instrument specs are missing (permissive precision, strict safety)
+# We use high precision (1e-8) to avoid accidental rounding to zero for cheap assets (SHIB)
+FALLBACK_STEP_SIZE = Decimal("1e-8")
+FALLBACK_MIN_QTY = Decimal("1e-8")
+FALLBACK_MIN_NOTIONAL = Decimal("1.0") # Conservative fallback
+FALLBACK_TICK_SIZE = Decimal("1e-8")
+
+
+class InstrumentSpec(TypedDict):
+    """Specification for a trading instrument."""
+    symbol: str
+    step_size: Decimal
+    min_qty: Decimal
+    min_notional: Decimal
+    tick_size: Decimal
 
 
 class ExecPosGatekeeper:
@@ -29,7 +39,7 @@ class ExecPosGatekeeper:
     - Validate quantity (min_qty, step_size)
     - Validate notional (min_notional)
     - Apply cooldowns
-   - Return structured GateDecision
+    - Return structured GateDecision
 
     Ported from fsm_open.py (_check_qty_step, guards) and qty_guard.py (ExecutionQtyGuard).
     """
@@ -40,12 +50,38 @@ class ExecPosGatekeeper:
         # Cooldown tracking: symbol -> last_entry_timestamp
         self._last_entry_ts: Dict[str, float] = {}
 
+        # Instrument specifications cache
+        self._specs: Dict[str, InstrumentSpec] = {}
+
         # Default cooldown (can be overridden per symbol)
         self.cooldown_sec = self.config.get("cooldown_sec", 1.0)
         exec_cfg = self.config.get("execution_position")
         if isinstance(exec_cfg, dict) and exec_cfg.get("cooldown_sec") is not None:
             # Prefer explicit execution_position cooldown override when available
             self.cooldown_sec = exec_cfg["cooldown_sec"]
+
+    def update_instrument_specs(self, specs: Dict[str, Dict[str, Any]]) -> None:
+        """
+        Update instrument specifications cache.
+
+        Args:
+            specs: Dictionary mapping symbol to spec dict (tick_size, step_size, etc.)
+        """
+        count = 0
+        for symbol, raw_spec in specs.items():
+            try:
+                self._specs[symbol] = {
+                    "symbol": symbol,
+                    "step_size": self._to_decimal(raw_spec.get("step_size"), "step_size") or FALLBACK_STEP_SIZE,
+                    "min_qty": self._to_decimal(raw_spec.get("min_qty"), "min_qty") or FALLBACK_MIN_QTY,
+                    "min_notional": self._to_decimal(raw_spec.get("min_notional"), "min_notional") or FALLBACK_MIN_NOTIONAL,
+                    "tick_size": self._to_decimal(raw_spec.get("tick_size"), "tick_size") or FALLBACK_TICK_SIZE,
+                }
+                count += 1
+            except Exception as e:
+                logger.warning(f"Failed to parse spec for {symbol}: {e}")
+
+        logger.info(f"Gatekeeper updated specs for {count} instruments")
 
     def check_entry(
         self,
@@ -204,19 +240,26 @@ class ExecPosGatekeeper:
                 metadata={"error": str(e)}
             )
 
-    def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
+    def _get_instrument_specs(self, symbol: str) -> InstrumentSpec:
         """
-        Get instrument specifications from config.
+        Get instrument specifications from cache or fallback.
+        """
+        if symbol in self._specs:
+            return self._specs[symbol]
 
-        For now, uses defaults. Future: fetch from config/adapter.
-        """
-        # TODO: Fetch from config or adapter metadata
-        # For now, use conservative defaults
+        # Log warning only once per symbol to avoid spam
+        # (In a real system we might want a dedicated throttle, but this is simple enough)
+        logger.warning(
+            f"Missing instrument specs for {symbol}, using fallbacks. "
+            f"Tick={FALLBACK_TICK_SIZE}, Step={FALLBACK_STEP_SIZE}"
+        )
+
         return {
-            "step_size": DEFAULT_STEP_SIZE,
-            "min_qty": DEFAULT_MIN_QTY,
-            "min_notional": DEFAULT_MIN_NOTIONAL,
-            "tick_size": DEFAULT_TICK_SIZE
+            "symbol": symbol,
+            "step_size": FALLBACK_STEP_SIZE,
+            "min_qty": FALLBACK_MIN_QTY,
+            "min_notional": FALLBACK_MIN_NOTIONAL,
+            "tick_size": FALLBACK_TICK_SIZE
         }
 
     def _round_to_step(self, value: Decimal, step_size: Decimal) -> Decimal:

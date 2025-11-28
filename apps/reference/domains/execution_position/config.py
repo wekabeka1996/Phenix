@@ -232,52 +232,28 @@ class SnapshotConfig(BaseModel):
 
 class CloseConfig(BaseModel):
     """
-    Position close configuration (max hold time, close reasons, etc.).
+    Position close configuration (max hold time, time-based exits).
 
     Maps to YAML: config.domains.execution.manage.close (if exists)
 
     Key Fields:
         max_hold_time_sec: Force close after this many seconds (0 = disabled)
-        reason_policy: Policy for close reason selection ("default", "strict", etc.)
         allow_time_exit: Allow time-based exits (hard_time_exit from trailing)
-        allow_profit_exit: Allow profit target exits (quick_profit)
 
     Validation:
         - max_hold_time_sec must be >= 0
 
     Defaults:
         - max_hold_time_sec: 0 (disabled)
-        - reason_policy: "default"
         - allow_time_exit: True
-        - allow_profit_exit: True
-
-    Note:
-        This config block does NOT exist in current YAML structure (execution.yaml).
-        Added as placeholder for future close logic consolidation.
-        Current close logic is scattered across:
-        - trailing.hard_time_exit_sec
-        - quick_profit.enabled
-        - No centralized "close" section yet
     """
     max_hold_time_sec: int = Field(
         default=0, ge=0, description="Force close after seconds (0 = disabled)")
-    reason_policy: str = Field(
-        default="default", description="Close reason policy (default, strict, etc.)")
     allow_time_exit: bool = Field(
         default=True, description="Allow time-based exits")
-    allow_profit_exit: bool = Field(
-        default=True, description="Allow profit target exits")
 
     class Config:
         frozen = True
-
-    @validator("reason_policy")
-    def validate_reason_policy(cls, v):
-        """Ensure reason_policy is known value"""
-        allowed = {"default", "strict", "permissive"}
-        if v not in allowed:
-            raise ValueError(f"reason_policy='{v}' not in {allowed}")
-        return v
 
 
 # ============================================================================

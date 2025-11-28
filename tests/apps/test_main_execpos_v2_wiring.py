@@ -2,10 +2,9 @@ import logging
 import pytest
 
 from apps.reference import main
-from apps.reference.domains.execution_position import runtime_factory
-from apps.reference.domains.execution_position.binance_execution_adapter import (
-    BinanceExecutionAdapter,
-)
+from apps.reference.domains.execution_position.infra import runtime_factory
+# MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
 
 
 def test_wire_guardian_loop_skips_when_method_missing():
@@ -99,9 +98,8 @@ def test_v2_runtime_uses_binance_adapter_for_testnet():
     RID: EP-EXEC-V2-ADAPTER-WIRING-S15
     Verify V2 runtime uses BinanceExecutionAdapter for testnet mode.
     """
-    from apps.reference.domains.execution_position.binance_execution_adapter import (
-        BinanceExecutionAdapter,
-    )
+    # MIGRATED: BinanceExecutionAdapter -> BinanceAdapter (unified adapter)
+    from apps.reference.adapters.binance_adapter import BinanceAdapter as BinanceExecutionAdapter
 
     # Create config with testnet mode
     cfg = type("Cfg", (), {})()

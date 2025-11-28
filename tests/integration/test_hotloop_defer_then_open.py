@@ -17,31 +17,6 @@ from types import SimpleNamespace
 from vfoundation.core.protocol import Message
 
 
-class MockExposureGuard:
-    """Mock exposure guard for testing reservations."""
-
-    def __init__(self):
-        self.reservations = {}
-        self.reservations_ts = {}
-        self.state = SimpleNamespace(
-            reservations=self.reservations,
-            reservations_ts=self.reservations_ts,
-            postfill_reservations={}
-        )
-
-    def reserve(self, key, notional_usd):
-        """Mock reserve method."""
-        now = time.time()
-        self.reservations[key] = notional_usd
-        self.reservations_ts[key] = now
-        return True
-
-    def release(self, key):
-        """Mock release method."""
-        self.reservations.pop(key, None)
-        self.reservations_ts.pop(key, None)
-
-
 @pytest.mark.asyncio
 async def test_features_stale_causes_defer():
     """Test that stale features cause decision defer."""

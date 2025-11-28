@@ -24,14 +24,14 @@ from apps.reference.domains.execution_position.brackets_config import (
 
 
 class TestExecutionManageV2:
-    """Test dual-mode execution manage config resolution."""
+    """Test V2-only execution manage config resolution."""
 
     def setup_method(self):
         """Clear cache before each test."""
         clear_manage_config_cache()
 
-    def test_legacy_only_behavior(self):
-        """Test that legacy config works without v2."""
+    def test_legacy_only_behavior_raises_error(self):
+        """Test that legacy config raises ValueError (no V2 config)."""
         mock_config = {
             "trading": {
                 "execution": {
@@ -55,17 +55,11 @@ class TestExecutionManageV2:
         }
 
         cfg = AuroraConfig(trading=mock_config["trading"])
-        manage_cfg = resolve_execution_manage_config(cfg)
-
-        assert isinstance(manage_cfg, ExecutionManageConfig)
-        assert manage_cfg.source == "legacy"
-        assert manage_cfg.auto is True
-        assert manage_cfg.orphan_monitor.enabled is True
-        assert manage_cfg.quick_profit.target_usd == Decimal("3.0")
-        assert manage_cfg.brackets.enable is True
+        with pytest.raises(ValueError, match="Missing execution.manage config in config_v2"):
+            resolve_execution_manage_config(cfg)
 
     def test_v2_config_priority(self):
-        """Test that v2 config takes priority over legacy."""
+        """Test that v2 config is resolved correctly."""
         mock_config = {
             "trading": {
                 "execution": {
@@ -94,6 +88,11 @@ class TestExecutionManageV2:
                             "enable": True,
                             "sl": {"fixed_bps": "35"},
                             "tp": {"fixed_bps": "70"},
+                            "aggregated_oco": {
+                                "enabled": True,
+                                "aggregated_only_mode": True,
+                                "recalc_on_partial_close": True,
+                            }
                         },
                         "guardian": {
                             "unified": False,
@@ -134,8 +133,8 @@ class TestExecutionManageV2:
         assert manage_cfg.watchdog.timeouts.ack_ttl_ms == 123
         assert manage_cfg.watchdog.timeouts.source == "config_v2"
 
-    def test_v2_fallback_on_error(self):
-        """Test fallback to legacy when v2 config is invalid."""
+    def test_v2_error_propagation(self):
+        """Test that invalid V2 config raises error instead of fallback."""
         mock_config = {
             "trading": {
                 "execution": {
@@ -156,6 +155,13 @@ class TestExecutionManageV2:
                         "quick_profit": {
                             "target_usd": "invalid",  # invalid value to trigger error
                         },
+                        "brackets": {
+                            "aggregated_oco": {
+                                "enabled": True,
+                                "aggregated_only_mode": True,
+                                "recalc_on_partial_close": True,
+                            }
+                        }
                     }
                 }
             }
@@ -163,17 +169,14 @@ class TestExecutionManageV2:
 
         cfg = AuroraConfig(
             trading=mock_config["trading"], config_v2=ConfigV2(**v2_data))
-        manage_cfg = resolve_execution_manage_config(cfg)
 
-        assert manage_cfg.source == "legacy"  # fallback
-        assert manage_cfg.auto is True  # legacy value
-
-
+        with pytest.raises(ValueError, match="Invalid v2 manage config"):
+            resolve_execution_manage_config(cfg)
 class TestBracketsConfigV2:
-    """Test dual-mode brackets config resolution."""
+    """Test V2-only brackets config resolution."""
 
-    def test_legacy_only_behavior(self):
-        """Test that legacy config works without v2."""
+    def test_legacy_only_behavior_defaults(self):
+        """Test that missing V2 config returns defaults (no legacy fallback)."""
         mock_config = {
             "trading": {
                 "execution": {
@@ -192,13 +195,14 @@ class TestBracketsConfigV2:
         brackets_cfg = resolve_brackets_config(cfg)
 
         assert isinstance(brackets_cfg, ResolvedBrackets)
-        assert brackets_cfg.source == "legacy"
-        assert brackets_cfg.sl_bps == Decimal("25")
-        assert brackets_cfg.tp_bps == Decimal("50")
-        assert brackets_cfg.offset_bps == 10
+        assert brackets_cfg.source == "config_v2"
+        # Should be defaults because legacy is ignored
+        assert brackets_cfg.sl_bps == Decimal("50") # Default
+        assert brackets_cfg.tp_bps == Decimal("100") # Default
+        assert brackets_cfg.offset_bps == 5 # Default
 
     def test_v2_config_priority(self):
-        """Test that v2 config takes priority over legacy."""
+        """Test that v2 config is resolved correctly."""
         mock_config = {
             "trading": {
                 "execution": {
@@ -233,8 +237,8 @@ class TestBracketsConfigV2:
         assert brackets_cfg.tp_bps == Decimal("60")  # v2 priority
         assert brackets_cfg.offset_bps == 15
 
-    def test_v2_fallback_on_error(self):
-        """Test fallback to legacy when v2 config is invalid."""
+    def test_v2_error_propagation(self):
+        """Test that invalid V2 config raises error."""
         mock_config = {
             "trading": {
                 "execution": {
@@ -267,10 +271,10 @@ class TestBracketsConfigV2:
 
         cfg = AuroraConfig(
             trading=mock_config["trading"], config_v2=ConfigV2(**v2_data))
-        brackets_cfg = resolve_brackets_config(cfg)
 
-        assert brackets_cfg.source == "legacy"  # fallback
-        assert brackets_cfg.sl_bps == Decimal("25")  # legacy value
+        with pytest.raises(ValueError, match="Invalid sl.fixed_bps value"):
+            resolve_brackets_config(cfg)
+
 
     def test_repository_execution_yaml_brackets_source(self):
         """Ensure the canonical config/domains/execution.yaml drives resolver output."""
@@ -293,3 +297,81 @@ class TestBracketsConfigV2:
             str(execution_cfg["brackets"]["tp"]["fixed_bps"]))
         assert brackets_cfg.offset_bps == execution_cfg["brackets"].get(
             "offset_bps", 0)
+
+
+class TestManageConfigCaching:
+    """Test resolver caching behavior (same config object → cached result)."""
+
+    def setup_method(self):
+        """Clear cache before each test."""
+        clear_manage_config_cache()
+
+    def test_caching_returns_same_result_for_same_object(self):
+        """Same config object → cached result returned (no re-resolution)."""
+        v2_data = {
+            "domains": {
+                "execution": {
+                    "manage": {
+                        "auto": True,
+                        "brackets": {
+                            "aggregated_oco": {
+                                "enabled": True,
+                                "aggregated_only_mode": True,
+                                "recalc_on_partial_close": True,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cfg = AuroraConfig(config_v2=ConfigV2(**v2_data))
+
+        result1 = resolve_execution_manage_config(cfg)
+        result2 = resolve_execution_manage_config(cfg)
+
+        assert result1 is result2, "Same config object should return cached result"
+
+    def test_cache_invalidated_for_different_object(self):
+        """Different config object (even if id() reused) → cache invalidated → new resolution."""
+        v2_data1 = {
+            "domains": {
+                "execution": {
+                    "manage": {
+                        "auto": True,
+                        "brackets": {
+                            "aggregated_oco": {
+                                "enabled": True,
+                                "aggregated_only_mode": True,
+                                "recalc_on_partial_close": True,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cfg1 = AuroraConfig(config_v2=ConfigV2(**v2_data1))
+        result1 = resolve_execution_manage_config(cfg1)
+
+        v2_data2 = {
+            "domains": {
+                "execution": {
+                    "manage": {
+                        "auto": False,
+                        "brackets": {
+                            "aggregated_oco": {
+                                "enabled": True,
+                                "aggregated_only_mode": True,
+                                "recalc_on_partial_close": True,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cfg2 = AuroraConfig(config_v2=ConfigV2(**v2_data2))
+        result2 = resolve_execution_manage_config(cfg2)
+
+        # Results should differ based on config differences
+        assert result1.auto is True
+        assert result2.auto is False
+

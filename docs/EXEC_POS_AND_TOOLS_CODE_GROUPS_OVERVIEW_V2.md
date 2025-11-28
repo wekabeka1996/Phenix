@@ -36,7 +36,7 @@ This document identifies:
 | `gatekeeper.py` | ExecPosGatekeeper — pre-execution guards (size, price, notional, cooldown, active orders, exposure). Rejects invalid commands. | **ACTIVE** |
 | `price_enricher.py` | PriceEnricher — enriches events with market price data. | **ACTIVE** |
 | `watchdog.py` | AggOcoWatchdogService — detect-only invariant checker for bracket state (orphan SL/TP, missing SL, stale levels). No auto-heal in V2. | **ACTIVE** |
-| `idempotency.py` | FillIdempotency, EventIdempotency — deduplication for fills and events using hash-based tracking. | **ACTIVE** |
+| `idempotency.py` | FillIdempotency — deduplication for fills using cumulative quantity tracking with TTL-based cleanup. | **ACTIVE** |
 | `wal_writer.py` | ExecPosWALWriter — writes all decisions/events to WAL for DR replay. | **ACTIVE** |
 | `exposure_bridge.py` | ExposureBridge — publishes exposure updates to exposure_guard domain. | **ACTIVE** |
 | `position_model.py` | PositionState — immutable position state dataclass with `apply_fill()` reducer for reconciliation. | **ACTIVE** |
@@ -375,7 +375,7 @@ This document identifies:
 
 4. **Idempotency**:
    - `idempotent_cancel.py` (top-level)
-   - `shadow_execpos/idempotency.py` (FillIdempotency, EventIdempotency)
+   - `shadow_execpos/idempotency.py` (FillIdempotency)
    - **Overlap**: Both handle idempotency for cancel/events.
    - **Recommendation**: Verify if top-level adds value beyond `shadow_execpos/idempotency.py`. Consolidate if redundant.
    - **Task**: `IDEMPOTENCY-DEDUP-S1` — Consolidate idempotency logic.

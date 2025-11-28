@@ -133,7 +133,7 @@ class TestOrderLoggerFlow:
             "quantity": 1.0,
             "nrr_code": "NRR-011",
             "why": "Exposure limit exceeded: 100000.0 > 50000.0",
-            "source_fsm": "ExposureGuard",
+            "source_fsm": "ExecPosGatekeeper",
             "metadata": {"exposure_check": True}
         }
         order_logger.write(exposure_entry)
@@ -180,7 +180,7 @@ class TestOrderLoggerFlow:
             "symbol": "BTCUSDT",
             "side": "BUY",
             "quantity": 0.001,
-            "source_fsm": "ExposureGuard",
+            "source_fsm": "ExecPosGatekeeper",
             "reservation_id": "reserve_123",
             "metadata": {"reservation_created": True}
         }

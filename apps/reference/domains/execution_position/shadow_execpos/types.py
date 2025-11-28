@@ -1,19 +1,15 @@
 """
 Type definitions for the Shadow ExecPos architecture.
 """
-from typing import Any, Dict, Optional, TypedDict, Union, List, Sequence
+from typing import Any, Dict, Optional, TypedDict, Union, List
 from enum import Enum
 from dataclasses import dataclass, field
 
 class ExecutionStatus(Enum):
-    PENDING = "PENDING"
-    SUBMITTED = "SUBMITTED"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    FILLED = "FILLED"
-    CANCELLED = "CANCELLED"
-    REJECTED = "REJECTED"
-    FAILED = "FAILED"
-    SUCCESS = "SUCCESS" # Generic success for non-order ops
+    """Status of execution operations."""
+    SUBMITTED = "SUBMITTED"  # Order placed successfully
+    SUCCESS = "SUCCESS"      # Operation completed (cancel, close)
+    FAILED = "FAILED"        # Any error
 
 class ExecutionResult(TypedDict):
     """Result of an execution request."""
@@ -62,13 +58,6 @@ class WatchdogRecommendation:
     reason: str
     orders_to_cancel: List[str]  # Order IDs to cancel
     details: Dict[str, Any]
-
-class EnrichedTrade(TypedDict):
-    """Trade payload enriched with price data."""
-    original_payload: Dict[str, Any]
-    price: str
-    price_source: str # 'payload', 'position', 'quote'
-    enriched: bool
 
 @dataclass
 class RuntimeEvent:

@@ -1,71 +1,68 @@
 """
-Binance Futures Exchange Adapter (Reference Implementation)
+Binance Futures Exchange Adapter (Unified Implementation)
 
 Implements AbstractExchangeAdapter for Binance Futures (USDM).
-Handles API key signing, endpoint selection (live/testnet), and error handling.
-This adapter is instantiated by domain services with specific environment config.
+Handles API key signing, endpoint selection (live/testnet), error handling,
+WebSocket USER_DATA_STREAM for real-time order updates, and FSM integration.
+
+This adapter combines functionality from:
+- BinanceAdapter (REST API layer)
+- BinanceExecutionAdapter (WebSocket + FSM integration)
 
 Inherits from vfoundation.core.adapters.base.AbstractExchangeAdapter to ensure
 compatibility with the generic FSM interface.
 """
 
-from apps.reference.config_exposure_policy import resolve_exposure_policy
+import json as _json
+import asyncio
+import hashlib
+import hmac
+import logging
+import os
+import random
+import threading
+import time
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from urllib.parse import urlencode, quote_plus
+
+import httpx
+
 from vfoundation.core.adapters.base import (
     AbstractExchangeAdapter,
     ExchangeOrderParams,
     ExchangeOrderResponse,
     ExchangePosition,
 )
-import json as _json
-import asyncio
-import hashlib
-import hmac
-import logging
-import time
-from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_DOWN, ROUND_UP
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlencode, quote_plus
 
-import httpx
-import httpcore
+# Optional imports for FSM integration
+try:
+    from vfoundation.core.protocol import Message
+except ImportError:
+    Message = None  # type: ignore
 
-# Import adapter configuration from central resolver (follows YAML config pattern)
-from apps.reference.config_adapter import (
-    TimeoutConfig,
-    RetryConfig,
-    TimeSyncConfig,
-    Error1021RetryConfig,
-    TIMEOUT_EXCEPTIONS,
-    NETWORK_EXCEPTIONS,
-    resolve_timeout_config,
-    resolve_retry_config,
-    resolve_time_sync_config,
-)
+# Optional telemetry imports
+try:
+    from apps.reference.telemetry.metrics import (
+        inc_order_placed,
+        inc_order_filled,
+        inc_order_state,
+        observe_order_lifecycle,
+    )
+except ImportError:
+    def inc_order_placed(): pass
+    def inc_order_filled(): pass
+    def inc_order_state(status: str): pass
+    def observe_order_lifecycle(duration_sec: float): pass
 
-# Import centralized time sync manager
-from apps.reference.adapters.time_sync_manager import TimeSyncManager, TimeSyncError
-
-# Re-export for backward compatibility
-__all__ = [
-    "BinanceAdapter",
-    "BinanceAPIError",
-    "TimeoutConfig",
-    "RetryConfig",
-    "TimeSyncConfig",
-    "TimeSyncManager",
-    "TimeSyncError",
-    "TIMEOUT_EXCEPTIONS",
-    "NETWORK_EXCEPTIONS",
-]
-
+try:
+    from apps.reference.telemetry.audit_logger import audit_logger
+except ImportError:
+    class _MockAuditLogger:
+        def log_order_state_changed(self, **kwargs): pass
+    audit_logger = _MockAuditLogger()
 
 LOG = logging.getLogger(__name__)
-# забезпечуємо саме таку змінну, яку патчить тест
-log = logging.getLogger(__name__)
-
-
-# +++ add near imports
 
 
 async def _coerce_json(obj):
@@ -86,6 +83,18 @@ async def _coerce_json(obj):
     if isinstance(obj, str):
         return _json.loads(obj)
     raise TypeError(f"Unsupported JSON payload type: {type(obj)!r}")
+
+
+class BinanceValidationError(Exception):
+    """
+    Raised when order parameters fail Binance validation rules.
+
+    Examples:
+    - Quantity below min_qty
+    - Price precision exceeds allowed tick_size
+    - Notional value below minimum
+    """
+    pass
 
 
 class BinanceAPIError(Exception):
@@ -111,118 +120,175 @@ class BinanceAPIError(Exception):
 
 class BinanceAdapter(AbstractExchangeAdapter):
     """
-    Binance Futures (USDM) Exchange Adapter.
+    Binance Futures (USDM) Unified Exchange Adapter.
 
     Implements AbstractExchangeAdapter to provide a consistent interface
-    for vfoundation FSM domains.
+    for vfoundation FSM domains. Combines REST API and WebSocket functionality.
+
+    Features:
+    - REST API for orders, positions, market data
+    - WebSocket USER_DATA_STREAM for real-time order updates
+    - FSM integration via Message-based place_order/cancel_order
+    - Bracket error handling with retry strategies
+    - Idempotent cancel with -2011 absorption
+    - Telemetry and audit logging
     """
 
     def __init__(
         self,
-        api_key: str,
-        api_secret: str,
+        api_key: str = "",
+        api_secret: str = "",
         base_url: str = "https://testnet.binancefuture.com",
         config: dict | None = None,
         *,
-        session: Optional[httpx.AsyncClient] = None,  # <-- новий аргумент
+        session: Optional[httpx.AsyncClient] = None,
         timeout: float = 10.0,
-        timeout_config: Optional[TimeoutConfig] = None,
-        retry_config: Optional[RetryConfig] = None,
-        time_sync_config: Optional[TimeSyncConfig] = None,
-        time_sync_manager: Optional[TimeSyncManager] = None,
+        fsm=None,
+        shadow_mode: bool = False,
         **kwargs,
     ):
+        """
+        Initialize Binance adapter.
+
+        Args:
+            api_key: Binance API key (can also be in config or env)
+            api_secret: Binance API secret (can also be in config or env)
+            base_url: Binance Futures base URL
+            config: Configuration dict or Pydantic config object
+            session: Optional httpx.AsyncClient for testing
+            timeout: Request timeout in seconds
+            fsm: FSM instance for event emission (WebSocket mode)
+            shadow_mode: If True, no live API calls (for testing)
+            **kwargs: Additional arguments (fsm_core, rest_url)
+        """
         rest_url = kwargs.pop("rest_url", None)  # legacy alias
         if rest_url:
             base_url = rest_url
-        self.api_key = api_key
-        self.api_secret = api_secret.encode()
-        self.base_url = base_url.rstrip("/")
-        self.config = config or {}
-        self._timeout = timeout
-        # 🔴 ADD: logger for diagnostics
+
+        # Initialize logger first (needed by _resolve_credentials)
         self.logger = logging.getLogger(__name__)
 
-        # =================================================================
-        # TIMEOUT & RETRY CONFIGURATION
-        # =================================================================
-        # Priority: explicit args > config dict > environment defaults
-        # Testnet gets more generous timeouts by default
-        is_testnet = "testnet" in base_url.lower() or "demo-fapi" in base_url.lower()
-        self._is_testnet = is_testnet
+        self.config = config or {}
+        self.shadow_mode = shadow_mode
+        self.fsm = fsm
+        self.fsm_core = kwargs.get('fsm_core', fsm)
 
-        if timeout_config:
-            self._timeout_config = timeout_config
-        else:
-            self._timeout_config = TimeoutConfig.from_config(self.config)
-            # Apply testnet defaults if not explicitly configured
-            if is_testnet and not self.config.get("adapter", {}).get("timeouts"):
-                self._timeout_config = TimeoutConfig.testnet_defaults()
-
-        if retry_config:
-            self._retry_config = retry_config
-        else:
-            self._retry_config = RetryConfig.from_config(self.config)
-
-        # =================================================================
-        # TIME SYNC CONFIGURATION (NEW)
-        # =================================================================
-        if time_sync_config:
-            self._time_sync_config = time_sync_config
-        else:
-            self._time_sync_config = resolve_time_sync_config(self.config)
-
-        LOG.info(
-            f"[BinanceAdapter] Initialized with timeouts: "
-            f"read={self._timeout_config.read}s, connect={self._timeout_config.connect}s, "
-            f"retries={self._retry_config.max_retries}, testnet={is_testnet}, "
-            f"recvWindow={self._time_sync_config.get_recv_window(is_testnet)}ms"
+        # Resolve API credentials from multiple sources
+        self.api_key, self.api_secret, self.base_url = self._resolve_credentials(
+            api_key, api_secret, base_url
         )
 
-        # Сумісність із тестами: публічне поле .session завжди існує
-        # Use TimeoutConfig for httpx session
-        httpx_timeout = self._timeout_config.to_httpx_timeout()
-        self.session: httpx.AsyncClient = session or httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=httpx_timeout,
-            headers={"X-MBX-APIKEY": self.api_key},
-        )
+        self._timeout = timeout
 
-        # =================================================================
-        # TIME SYNC MANAGER (NEW - centralized time management)
-        # =================================================================
-        if time_sync_manager:
-            self._time_sync_manager = time_sync_manager
-        else:
-            self._time_sync_manager = TimeSyncManager(
-                config=self.config,
-                http_client=self.session,
-                base_url=self.base_url,
-                is_testnet=is_testnet,
-            )
-
-        # Legacy time sync state (for backward compatibility)
+        # Time sync state (async with lock)
         self._time_offset_ms = 0
         self._last_time_sync_monotonic = 0.0
         self._time_sync_lock = asyncio.Lock()
-        # recvWindow from config (legacy fallback)
-        self._recv_window_ms = self._time_sync_config.get_recv_window(
-            is_testnet)
 
-        # PHASE B1: ClientOrderId ledger for -4116 idempotency
-        # Format: {clientOrderId: (timestamp_ms: int, order_id: str, symbol: str)}
+        # recvWindow (ms). Для ф'ючерсів максимум 60000.
+        self._recv_window_ms = self._get_config_value("recv_window_ms", 20000, int)
+
+        # httpx session
+        self.session: httpx.AsyncClient = session or httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self._timeout,
+            headers={"X-MBX-APIKEY": self.api_key},
+        )
+
+        # ClientOrderId ledger for -4116 idempotency
         self._clientorderid_ledger: Dict[str, Tuple[int, str, str]] = {}
 
-        self._mark_price_cache: Dict[
-            str, Dict[str, Any]
-        ] = {}  # symbol -> {'price': float, 'timestamp': float}
+        # Mark price cache
+        self._mark_price_cache: Dict[str, Dict[str, Any]] = {}
 
-        # Logger reference for diagnostics
-        self.logger = logging.getLogger(__name__)
+        # WebSocket state
+        self.ws_listen_key: Optional[str] = None
+        self.ws_thread: Optional[threading.Thread] = None
+        self.ws_running = False
+        self.ws_reconnect_delay = 1.0
+        self.ws_max_reconnect_delay = 60.0
+        self.listen_key_last_refresh = 0.0
 
-        # For compatibility with polling tests
-        self._polling_task = None
-        self._polling_active = False
+        # Status cache
+        self._last_status_check = 0.0
+        self._status_cache = "unknown"
+
+        # Metrics for tracking
+        self.metrics = {
+            "cancel_idempotent_ok": 0,
+            "cancel_-2011_absorbed": 0,
+        }
+
+        # Slippage cap for MARKET orders (optional)
+        self.slippage_cap_bps: Optional[int] = self._get_slippage_cap()
+
+        self.logger.info(
+            f"[BinanceAdapter] Initialized: shadow_mode={shadow_mode}, "
+            f"ws_enabled={fsm is not None}, base_url={self.base_url}"
+        )
+
+    def _resolve_credentials(
+        self, api_key: str, api_secret: str, base_url: str
+    ) -> Tuple[str, bytes, str]:
+        """Resolve API credentials from multiple sources: args, config, env."""
+        # Determine testnet/mainnet
+        trading_env = self._get_config_value("trading_env", None, str)
+        use_testnet = (
+            trading_env == "test" or
+            os.environ.get("USE_TESTNET", "1") == "1" or
+            os.environ.get("USE_TESTNET", "").lower() == "true"
+        )
+
+        # Get credentials
+        if not api_key:
+            api_key = self._get_config_value("binance_ro_api_key", "", str)
+        if not api_key:
+            env_key = "BINANCE_TESTNET_API_KEY" if use_testnet else "BINANCE_MAINNET_API_KEY"
+            api_key = os.environ.get(env_key, "")
+
+        if not api_secret:
+            api_secret = self._get_config_value("binance_ro_api_secret", "", str)
+        if not api_secret:
+            env_key = "BINANCE_TESTNET_API_SECRET" if use_testnet else "BINANCE_MAINNET_API_SECRET"
+            api_secret = os.environ.get(env_key, "")
+
+        # Validate credentials if not shadow mode
+        if not self.shadow_mode and (not api_key or not api_secret):
+            self.logger.warning(
+                "[BinanceAdapter] API credentials not found, enabling shadow mode"
+            )
+            self.shadow_mode = True
+
+        # Encode secret
+        api_secret_bytes = api_secret.encode() if isinstance(api_secret, str) else api_secret
+
+        return api_key, api_secret_bytes, base_url.rstrip("/")
+
+    def _get_config_value(self, key: str, default: Any, value_type: type) -> Any:
+        """Get configuration value from dict or Pydantic config."""
+        try:
+            if hasattr(self.config, key):
+                val = getattr(self.config, key)
+            elif isinstance(self.config, dict):
+                val = self.config.get(key, default)
+            else:
+                val = default
+            return value_type(val) if val is not None else default
+        except (AttributeError, TypeError, ValueError):
+            return default
+
+    def _get_slippage_cap(self) -> Optional[int]:
+        """Get slippage cap from config."""
+        try:
+            if isinstance(self.config, dict):
+                val = self.config.get("trading", {}).get("orders", {}).get("market", {}).get("slippage_cap_bps")
+            elif hasattr(self.config, 'trading'):
+                val = getattr(getattr(getattr(self.config.trading, 'orders', None), 'market', None), 'slippage_cap_bps', None)
+            else:
+                val = None
+            return int(val) if val is not None else None
+        except (AttributeError, TypeError, ValueError):
+            return None
 
     # опційно: контекст-менеджер для акуратного закриття
     async def __aenter__(self) -> "BinanceAdapter":
@@ -239,39 +305,23 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     async def start(self) -> None:
         """
-        Start the adapter including time sync manager.
+        Start the adapter (no-op for REST-only adapter).
 
-        Starts the TimeSyncManager for background time synchronization.
+        This method exists for compatibility with FSM initialization
+        that expects polling adapters. Since this adapter is REST-only,
+        no background polling is started.
         """
-        # Start time sync manager with background sync
-        await self._time_sync_manager.start()
-        LOG.info("BinanceAdapter started (TimeSyncManager active)")
+        LOG.info("BinanceAdapter started (REST-only mode, no polling)")
 
     async def stop(self) -> None:
         """
-        Stop the adapter and clean up resources.
+        Stop the adapter (no-op for REST-only adapter).
 
-        Stops the TimeSyncManager and closes HTTP session.
+        This method exists for compatibility with FSM cleanup
+        that expects polling adapters. Since this adapter is REST-only,
+        no background polling needs to be stopped.
         """
-        # Stop time sync manager
-        await self._time_sync_manager.stop()
-        LOG.info("BinanceAdapter stopped (TimeSyncManager stopped)")
-
-    def track_order(self, order_response: Dict[str, Any]) -> None:
-        """
-        Track an order for polling (no-op for REST-only adapter).
-
-        This method exists for compatibility with polling-based tests.
-        Since this adapter is REST-only, no actual tracking is performed.
-        """
-        LOG.debug(f"Track order called (no-op): {order_response}")
-        # For test compatibility, create a dummy polling task
-        import asyncio
-        if not self._polling_task:
-            async def dummy_poll():
-                await asyncio.sleep(1)  # Dummy polling
-            self._polling_task = asyncio.create_task(dummy_poll())
-            self._polling_active = True
+        LOG.info("BinanceAdapter stopped (REST-only mode, no polling)")
 
     # PHASE B1: ClientOrderId Ledger Methods
     def register_clientorderid(self, client_order_id: str, order_id: str, symbol: str) -> None:
@@ -336,57 +386,46 @@ class BinanceAdapter(AbstractExchangeAdapter):
         return out
 
     async def _server_time(self) -> int:
-        """
-        Get server time (legacy method for backward compatibility).
-        Uses TimeSyncManager internally.
-        """
-        # Force sync and return timestamp from manager
-        await self._time_sync_manager.sync(force=True)
-        return int(time.time() * 1000) + self._time_sync_manager.offset_ms
+        # Для USDM futures: /fapi/v1/time
+        r = await self.session.get(f"{self.base_url}/fapi/v1/time")
+        r.raise_for_status()
+        data = await _coerce_json(r)
+        # serverTime у мілісекундах
+        return int(data["serverTime"])
 
     async def _sync_time(self, force: bool = False):
-        """
-        Sync time with server (legacy method for backward compatibility).
-        Delegates to TimeSyncManager.
-        """
-        success = await self._time_sync_manager.sync(force=force)
-        if success:
-            # Update legacy state for backward compatibility
-            self._time_offset_ms = self._time_sync_manager.offset_ms
+        # TTL 2 хв за замовчуванням
+        try:
+            if hasattr(self.config, 'time_sync_ttl_sec'):
+                ttl_sec = int(self.config.time_sync_ttl_sec)
+            elif isinstance(self.config, dict):
+                ttl_sec = int(self.config.get("time_sync_ttl_sec", 120))
+            else:
+                ttl_sec = 120
+        except (AttributeError, TypeError, ValueError):
+            ttl_sec = 120
+
+        now_mono = time.monotonic()
+        if not force and (now_mono - self._last_time_sync_monotonic) < ttl_sec:
+            return
+        async with self._time_sync_lock:
+            # Могли вже інші синхронізувати
+            if not force and (time.monotonic() - self._last_time_sync_monotonic) < ttl_sec:
+                return
+            server_ms = await self._server_time()
+            local_ms = int(time.time() * 1000)
+            self._time_offset_ms = server_ms - local_ms
             self._last_time_sync_monotonic = time.monotonic()
-        return success
-
-    async def _ensure_time_sync(self) -> int:
-        """
-        Ensure time is synced and return timestamp for signing.
-        Raises TimeSyncError if sync fails.
-
-        Returns:
-            Timestamp in milliseconds (local_time + offset)
-        """
-        return await self._time_sync_manager.get_timestamp()
 
     def _sign_build(self, base_params: dict) -> tuple[str, dict]:
         """
-        Build signed request parameters.
-        Uses cached offset from TimeSyncManager.
-
         Приймає 'базові' params (без timestamp/recvWindow/signature),
         повертає (encoded_qs_with_signature, final_params_dict).
         """
         base = self._norm_params(base_params)
-
-        # Use timestamp from TimeSyncManager (uses cached offset)
-        if self._time_sync_manager.is_initialized:
-            offset = self._time_sync_manager.offset_ms
-        else:
-            # Fallback to legacy offset if manager not initialized
-            offset = self._time_offset_ms
-
-        ts = int(time.time() * 1000) + int(offset)
+        ts = int(time.time() * 1000) + int(self._time_offset_ms)
         base["timestamp"] = str(ts)
         base.setdefault("recvWindow", str(self._recv_window_ms))
-
         # Строга URL-енкодація й підпис рівно того рядка, що підемо відправляти
         qs = urlencode(base, doseq=True, quote_via=quote_plus)
         sig = hmac.new(self.api_secret, qs.encode(),
@@ -399,43 +438,17 @@ class BinanceAdapter(AbstractExchangeAdapter):
     async def _request(
         self, method: str, path: str, params: dict | None = None, signed: bool = True
     ):
-        """
-        Execute HTTP request with retry logic and proper error classification.
-
-        Features:
-        - Exponential backoff retry on timeout/network errors
-        - Automatic time sync retry on -1021/-1022 errors
-        - Detailed logging with attempt tracking
-        - Error classification for upstream consumers
-
-        Args:
-            method: HTTP method (GET, POST, DELETE, etc.)
-            path: API endpoint path
-            params: Request parameters
-            signed: Whether to sign the request
-
-        Returns:
-            Parsed JSON response
-
-        Raises:
-            BinanceAPIError: For API-level errors
-            httpx.ReadTimeout: After all retries exhausted (re-raised for upstream handling)
-        """
         url = f"{self.base_url}{path}"
         params = params or {}
 
         # Готуємо одразу "базові" params (без підпису) для можливого ретраю
         base_params = dict(params)
 
-        # Get backoff delays from retry config
-        backoff_delays = self._retry_config.get_backoff_delays()
-        max_attempts = 1 + self._retry_config.max_retries
-
-        async def _do_request() -> Any:
-            """Single request attempt."""
+        async def _do(method: str, base_params: dict):
             if signed:
                 await self._sync_time(False)
                 qs, final_params = self._sign_build(base_params)
+                # ВИКОРИСТОВУЄМО self.session — щоб тести могли мокати її
                 r = await self.session.request(method.upper(), url, params=final_params)
                 if r.status_code >= 400:
                     err = await _safe_read_err(r)
@@ -446,138 +459,36 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     method.upper(), url, params=self._norm_params(base_params)
                 )
                 r.raise_for_status()
-                return await _coerce_json(r)
-
-        last_exception: Optional[Exception] = None
-
-        for attempt in range(max_attempts):
-            try:
-                result = await _do_request()
-
-                # Log recovery if this wasn't the first attempt
-                if attempt > 0:
-                    LOG.info(
-                        f"[BinanceAdapter] Request recovered on attempt {attempt + 1}/{max_attempts}: "
-                        f"{method} {path}"
-                    )
-                return result
-
-            except TIMEOUT_EXCEPTIONS as e:
-                last_exception = e
-
-                # Check if we should retry
-                if not self._retry_config.retry_on_timeout:
-                    LOG.error(
-                        f"[BinanceAdapter] TIMEOUT (retry disabled): {method} {path} - {type(e).__name__}"
-                    )
-                    raise
-
-                # Check if we have more attempts
-                if attempt < len(backoff_delays):
-                    delay = backoff_delays[attempt]
-                    LOG.warning(
-                        f"[BinanceAdapter] TIMEOUT on attempt {attempt + 1}/{max_attempts}: "
-                        f"{method} {path} - {type(e).__name__}, "
-                        f"retrying in {delay:.1f}s (read_timeout={self._timeout_config.read}s)"
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    # All retries exhausted
-                    LOG.error(
-                        f"[BinanceAdapter] TIMEOUT_EXHAUSTED after {max_attempts} attempts: "
-                        f"{method} {path} - {type(e).__name__}"
-                    )
-                    raise
-
-            except NETWORK_EXCEPTIONS as e:
-                last_exception = e
-
-                # Check if we should retry
-                if not self._retry_config.retry_on_network:
-                    LOG.error(
-                        f"[BinanceAdapter] NETWORK_ERROR (retry disabled): {method} {path} - {type(e).__name__}"
-                    )
-                    raise
-
-                # Check if we have more attempts
-                if attempt < len(backoff_delays):
-                    delay = backoff_delays[attempt]
-                    LOG.warning(
-                        f"[BinanceAdapter] NETWORK_ERROR on attempt {attempt + 1}/{max_attempts}: "
-                        f"{method} {path} - {type(e).__name__}: {str(e)[:100]}, "
-                        f"retrying in {delay:.1f}s"
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    LOG.error(
-                        f"[BinanceAdapter] NETWORK_ERROR_EXHAUSTED after {max_attempts} attempts: "
-                        f"{method} {path} - {type(e).__name__}"
-                    )
-                    raise
-
-            except BinanceAPIError as e:
-                # Handle specific API errors that warrant retry
-
-                # -1021: Timestamp error - use Error1021RetryConfig for retries
-                if e.code == -1021:
-                    retry_cfg = self._time_sync_config.error_1021
-                    max_ts_retries = retry_cfg.max_retries
-
-                    for ts_attempt in range(max_ts_retries):
-                        backoff = retry_cfg.backoff_base_sec * \
-                            (retry_cfg.backoff_multiplier ** ts_attempt)
-                        LOG.warning(
-                            f"[BinanceAdapter] TIMESTAMP_ERROR (-1021): {method} {path}, "
-                            f"attempt {ts_attempt + 1}/{max_ts_retries}, "
-                            f"force_sync={retry_cfg.force_sync_before_retry}, "
-                            f"backoff={backoff:.2f}s"
-                        )
-
-                        if retry_cfg.force_sync_before_retry:
-                            await self._time_sync_manager.sync(force=True)
-
-                        if backoff > 0:
-                            await asyncio.sleep(backoff)
-
-                        try:
-                            return await _do_request()
-                        except BinanceAPIError as retry_e:
-                            if retry_e.code == -1021 and ts_attempt < max_ts_retries - 1:
-                                continue  # Try again
-                            raise  # Either different error or exhausted retries
-                        except Exception:
-                            raise  # Different exception type - don't retry
-
-                    # Should not reach here, but just in case
-                    raise
-
-                # -1022: Invalid signature - may need re-sign after time sync
-                if e.code == -1022:
-                    LOG.warning(
-                        f"[BinanceAdapter] SIGNATURE_ERROR (-1022): {method} {path}, syncing time and retrying"
-                    )
-                    await self._time_sync_manager.sync(force=True)
-                    try:
-                        return await _do_request()
-                    except Exception:
-                        raise
-
-                # Other API errors - don't retry
-                raise
-
-            except Exception as e:
-                # Unknown exception - don't retry, log and raise
-                LOG.error(
-                    f"[BinanceAdapter] UNEXPECTED_ERROR: {method} {path} - {type(e).__name__}: {e}"
-                )
-                raise
-
-        # Should never reach here, but if we do, raise last exception
-        if last_exception:
-            raise last_exception
-        raise RuntimeError(f"Request failed after {max_attempts} attempts")
+                return await _coerce_json(r)        # 1-й запит
+        try:
+            return await _do(method, base_params)
+        except Exception as e:
+            # Якщо ReadTimeout або ConnectTimeout → спробуємо ретрай (1 раз)
+            import httpx
+            import httpcore
+            timeout_exceptions = (
+                httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException,
+                httpcore.ReadTimeout, httpcore.ConnectTimeout, httpcore.TimeoutException
+            )
+            if isinstance(e, timeout_exceptions):
+                LOG.warning(f"Timeout on {method} {path}, retrying once...")
+                import asyncio
+                await asyncio.sleep(0.5)  # Невелика затримка перед ретраєм
+                return await _do(method, base_params)
+            # Якщо -1021 → жорстка синхронізація і другий запит з НОВОГО base_params
+            msg = str(e)
+            if "code': -1021" in msg or "-1021" in msg:
+                await self._sync_time(True)
+                return await _do(method, base_params)
+            # Якщо -1022 → також спробуємо 1 ретрай з чистої бази (частий кейс "перепідписали")
+            if (
+                "code': -1022" in msg
+                or "-1022" in msg
+                or "Signature for this request is not valid" in msg
+            ):
+                await self._sync_time(True)
+                return await _do(method, base_params)
+            raise
 
     # --- Public API Methods (via AbstractExchangeAdapter interface) ---
 
@@ -729,11 +640,6 @@ class BinanceAdapter(AbstractExchangeAdapter):
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[ExchangeOrderResponse]:
         """
         Get open orders.
-
-        EP-STAB-ADAPT-ORD-META: Returns full Binance metadata including
-        type, reduceOnly, closePosition, stopPrice, workingType, positionSide
-        to support unified ExitOrderKind classification.
-
         Implements AbstractExchangeAdapter.get_open_orders()
         """
         path = "/fapi/v1/openOrders"
@@ -744,7 +650,6 @@ class BinanceAdapter(AbstractExchangeAdapter):
         result = await self._request("GET", path, params)
         orders = []
         for order in result:
-            # EP-STAB-ADAPT-ORD-META: Extract all metadata fields for exit-order classification
             orders.append(ExchangeOrderResponse(
                 order_id=str(order.get("orderId", "")),
                 client_order_id=order.get("clientOrderId"),
@@ -755,13 +660,6 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 price=order.get("price"),
                 status=order.get("status", ""),
                 timestamp_ms=int(order.get("time", 0) or 0),
-                # EP-STAB-ADAPT-ORD-META: New fields for classification
-                order_type=order.get("type") or order.get("origType"),
-                reduce_only=order.get("reduceOnly", False),
-                close_position=order.get("closePosition", False),
-                stop_price=order.get("stopPrice"),
-                working_type=order.get("workingType"),
-                position_side=order.get("positionSide"),
             ))
         return orders
 
@@ -840,28 +738,24 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     side = "LONG" if (amt > 0 and pos_side in (
                         "BOTH", "LONG")) else "SHORT"
 
-                    normalized_position = {
-                        "symbol": p.get("symbol", ""),
-                        "position_side": pos_side,
-                        "side": side,
-                        "position_amount": str(amt_str),
-                        "entry_price": p.get("entryPrice", "0"),
-                        "mark_price": p.get("markPrice", "0"),
-                        "unrealized_profit": p.get("unRealizedProfit", "0"),
-                        "leverage": p.get("leverage", 0),
-                        "margin_type": p.get("marginType", "cross"),
-                        "isolated_margin": p.get("isolatedMargin", 0),
-                        "update_time_ms": p.get("updateTime", 0),
-                    }
-
-                    try:
-                        positions.append(
-                            ExchangePosition.from_payload(normalized_position)
-                        )
-                    except Exception as e:
-                        self.logger.error(
-                            f"Error parsing position {p.get('symbol', 'unknown')}: {e}")
-                        continue
+                    pos_obj = ExchangePosition(
+                        symbol=p.get("symbol", ""),
+                        position_side=pos_side,  # BOTH/LONG/SHORT
+                        side=side,  # LONG/SHORT (зручно для бізнес-логіки)
+                        position_amount=amt_str,  # зберігаємо string для precision
+                        entry_price=entry_str,  # зберігаємо string для precision
+                        mark_price=mark_str,  # зберігаємо string для precision
+                        unrealized_profit=upnl_str,  # зберігаємо string для precision
+                        leverage=lev,
+                        margin_type=p.get("marginType", "cross").upper(),
+                        isolated_margin=float(
+                            p.get("isolatedMargin", "0") or 0),
+                        update_time_ms=int(p.get("updateTime", 0) or 0),
+                    )
+                    positions.append(pos_obj)
+                    # 🔴 DIAGNOSTIC: Log accepted position
+                    self.logger.info(
+                        f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}")
 
                 # 🔴 DIAGNOSTIC: Final summary
                 self.logger.info(
@@ -889,29 +783,6 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         # This should never be reached, but just in case
         raise last_exception
-
-    async def get_positions_notional_usd_shadow(self) -> float:
-        """
-        Get total notional value of all open positions (shadow check).
-
-        Fetches /fapi/v2/positionRisk and sums abs(notional).
-        Used by ExecPosRuntimeV2 for periodic safety audits.
-        """
-        try:
-            # Fetch all positions (no symbol filter)
-            raw = await self._request("GET", "/fapi/v2/positionRisk", {})
-            total_notional = 0.0
-            for p in raw:
-                # notional is provided by Binance Futures
-                # We use abs() because short positions might have negative notional depending on API version,
-                # though usually it's positive value or signed. We want total exposure magnitude.
-                notional = float(p.get("notional", "0"))
-                total_notional += abs(notional)
-            return total_notional
-        except Exception as e:
-            self.logger.error(f"Failed to get shadow notional: {e}")
-            # Return 0.0 on error to avoid crashing the check loop
-            return 0.0
 
     async def get_mark_price(self, symbol: str, ttl_ms: int = 250) -> float:
         """
@@ -1491,9 +1362,408 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Returns:
             List of backoff delays in milliseconds.
         """
-        fallback_policy = resolve_exposure_policy(self.config).fallback
-        sequence = list(fallback_policy.backoff_sequence())
-        return sequence if sequence else [200, 500, 1000]
+        try:
+            if hasattr(self.config, 'trading') and hasattr(self.config.trading, 'execution') and hasattr(self.config.trading.execution, 'fallback'):
+                fallback_config = self.config.trading.execution.fallback or {}
+            elif isinstance(self.config, dict):
+                fallback_config = self.config.get("trading", {}).get(
+                    "execution", {}).get("fallback", {})
+            else:
+                fallback_config = {}
+        except (AttributeError, TypeError):
+            fallback_config = {}
+
+        # Get backoff_ms with defaults
+        backoff_ms = fallback_config.get("backoff_ms", [200, 500, 1000]) if isinstance(
+            fallback_config, dict) else getattr(fallback_config, "backoff_ms", [200, 500, 1000])
+
+        if not isinstance(backoff_ms, list):
+            backoff_ms = [200, 500, 1000]
+
+        return backoff_ms
+
+    # ========== WebSocket USER_DATA_STREAM ==========
+
+    async def start_websocket(self) -> None:
+        """Start WebSocket USER_DATA_STREAM in a background thread."""
+        if self.shadow_mode:
+            self.logger.info("[BinanceAdapter] Shadow mode, skipping WebSocket start")
+            return
+
+        if self.ws_running:
+            self.logger.warning("[BinanceAdapter] WebSocket already running")
+            return
+
+        # Get listen key
+        self.ws_listen_key = await self._get_listen_key()
+        if not self.ws_listen_key:
+            self.logger.error("[BinanceAdapter] Failed to get listen key")
+            return
+
+        self.ws_running = True
+        self.ws_thread = threading.Thread(
+            target=self._websocket_thread_entry,
+            daemon=True,
+            name="BinanceWsThread"
+        )
+        self.ws_thread.start()
+        self.logger.info("[BinanceAdapter] WebSocket thread started")
+
+    def _websocket_thread_entry(self) -> None:
+        """Entry point for WebSocket thread (runs asyncio loop)."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._websocket_loop())
+        except Exception as e:
+            self.logger.error(f"[BinanceAdapter] WebSocket loop error: {e}")
+        finally:
+            loop.close()
+
+    async def _websocket_loop(self) -> None:
+        """Main WebSocket loop with reconnection logic."""
+        import websockets
+
+        while self.ws_running:
+            try:
+                ws_url = self._build_ws_url()
+                self.logger.info(f"[BinanceAdapter] Connecting to {ws_url}")
+
+                async with websockets.connect(ws_url) as ws:
+                    self.ws_reconnect_delay = 1.0  # Reset on success
+                    self.logger.info("[BinanceAdapter] WebSocket connected")
+
+                    # Schedule listen key refresh
+                    asyncio.create_task(self._listen_key_refresh_loop())
+
+                    async for msg_raw in ws:
+                        if not self.ws_running:
+                            break
+                        try:
+                            msg = json.loads(msg_raw)
+                            await self._handle_ws_message(msg)
+                        except json.JSONDecodeError:
+                            self.logger.warning(f"[BinanceAdapter] Invalid JSON: {msg_raw[:100]}")
+
+            except Exception as e:
+                if not self.ws_running:
+                    break
+                self.logger.warning(
+                    f"[BinanceAdapter] WebSocket error: {e}, "
+                    f"reconnecting in {self.ws_reconnect_delay}s"
+                )
+                await asyncio.sleep(self.ws_reconnect_delay)
+                self.ws_reconnect_delay = min(
+                    self.ws_reconnect_delay * 2,
+                    self.ws_max_reconnect_delay
+                )
+                # Refresh listen key on reconnect
+                self.ws_listen_key = await self._get_listen_key()
+
+    def _build_ws_url(self) -> str:
+        """Build WebSocket URL based on environment."""
+        if "testnet" in self.base_url.lower():
+            return f"wss://stream.binancefuture.com/ws/{self.ws_listen_key}"
+        return f"wss://fstream.binance.com/ws/{self.ws_listen_key}"
+
+    async def _get_listen_key(self) -> Optional[str]:
+        """Get a new listen key for USER_DATA_STREAM."""
+        try:
+            resp = await self._request("POST", "/fapi/v1/listenKey", {})
+            return resp.get("listenKey")
+        except Exception as e:
+            self.logger.error(f"[BinanceAdapter] Failed to get listen key: {e}")
+            return None
+
+    async def _refresh_listen_key(self) -> bool:
+        """Refresh listen key to keep it alive (must be done every 30 mins)."""
+        if not self.ws_listen_key:
+            return False
+        try:
+            await self._request("PUT", "/fapi/v1/listenKey", {})
+            self.listen_key_last_refresh = time.time()
+            return True
+        except Exception as e:
+            self.logger.warning(f"[BinanceAdapter] Listen key refresh failed: {e}")
+            return False
+
+    async def _listen_key_refresh_loop(self) -> None:
+        """Periodically refresh listen key every 25 minutes."""
+        while self.ws_running and self.ws_listen_key:
+            await asyncio.sleep(25 * 60)  # 25 minutes
+            await self._refresh_listen_key()
+
+    async def stop_websocket(self) -> None:
+        """Stop WebSocket connection."""
+        self.ws_running = False
+        if self.ws_thread and self.ws_thread.is_alive():
+            self.ws_thread.join(timeout=5.0)
+        self.ws_thread = None
+        self.ws_listen_key = None
+        self.logger.info("[BinanceAdapter] WebSocket stopped")
+
+    async def _handle_ws_message(self, msg: Dict[str, Any]) -> None:
+        """Handle incoming WebSocket message."""
+        event_type = msg.get("e")
+
+        if event_type == "ORDER_TRADE_UPDATE":
+            await self._handle_order_trade_update(msg)
+        elif event_type == "ACCOUNT_UPDATE":
+            await self._handle_account_update(msg)
+        elif event_type == "listenKeyExpired":
+            self.logger.warning("[BinanceAdapter] Listen key expired, refreshing...")
+            self.ws_listen_key = await self._get_listen_key()
+        else:
+            self.logger.debug(f"[BinanceAdapter] Unknown WS event: {event_type}")
+
+    async def _handle_order_trade_update(self, msg: Dict[str, Any]) -> None:
+        """Handle ORDER_TRADE_UPDATE event."""
+        order_data = msg.get("o", {})
+        normalized = self._normalize_order_event(order_data)
+
+        if self.fsm_core:
+            try:
+                from vfoundation.core.protocol import Message
+                event_msg = Message(
+                    event_type="ORDER_UPDATE",
+                    payload=normalized,
+                    source="binance_ws"
+                )
+                await self.fsm_core.emit(event_msg)
+            except ImportError:
+                self.logger.warning("[BinanceAdapter] vfoundation not available for FSM emit")
+        elif self.fsm:
+            # Legacy FSM support
+            if hasattr(self.fsm, 'emit'):
+                await self.fsm.emit("ORDER_UPDATE", normalized)
+
+        self.logger.debug(f"[BinanceAdapter] Order update: {normalized.get('clientOrderId')}")
+
+    async def _handle_account_update(self, msg: Dict[str, Any]) -> None:
+        """Handle ACCOUNT_UPDATE event (balance/position changes)."""
+        account_data = msg.get("a", {})
+        positions = account_data.get("P", [])
+
+        for pos in positions:
+            normalized = {
+                "symbol": pos.get("s"),
+                "positionAmt": float(pos.get("pa", 0)),
+                "entryPrice": float(pos.get("ep", 0)),
+                "unrealizedPnl": float(pos.get("up", 0)),
+                "marginType": pos.get("mt"),
+                "positionSide": pos.get("ps"),
+            }
+
+            if self.fsm_core:
+                try:
+                    from vfoundation.core.protocol import Message
+                    event_msg = Message(
+                        event_type="POSITION_UPDATE",
+                        payload=normalized,
+                        source="binance_ws"
+                    )
+                    await self.fsm_core.emit(event_msg)
+                except ImportError:
+                    pass
+
+    def _normalize_order_event(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize WebSocket order event to standard format."""
+        status_map = {
+            "NEW": "NEW",
+            "PARTIALLY_FILLED": "PARTIALLY_FILLED",
+            "FILLED": "FILLED",
+            "CANCELED": "CANCELED",
+            "EXPIRED": "EXPIRED",
+            "REJECTED": "REJECTED",
+        }
+        raw_status = order_data.get("X", "UNKNOWN")
+        return {
+            "orderId": order_data.get("i"),
+            "clientOrderId": order_data.get("c"),
+            "symbol": order_data.get("s"),
+            "side": order_data.get("S"),
+            "type": order_data.get("o"),
+            "positionSide": order_data.get("ps"),
+            "status": status_map.get(raw_status, raw_status),
+            "price": float(order_data.get("p", 0)),
+            "avgPrice": float(order_data.get("ap", 0)),
+            "origQty": float(order_data.get("q", 0)),
+            "executedQty": float(order_data.get("z", 0)),
+            "reduceOnly": order_data.get("R", False),
+            "timeInForce": order_data.get("f"),
+            "updateTime": order_data.get("T"),
+            "realizedProfit": float(order_data.get("rp", 0)),
+            "commission": float(order_data.get("n", 0)),
+            "commissionAsset": order_data.get("N"),
+        }
+
+    # ========== FSM Message-based Order Methods ==========
+
+    async def place_order_fsm(
+        self,
+        dec_msg: Any,
+        *,
+        slippage_cap_bps: Optional[int] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Place order from FSM Message (DEC payload).
+
+        Args:
+            dec_msg: vfoundation Message with order decision payload
+            slippage_cap_bps: Optional slippage cap override
+            **kwargs: Additional order parameters
+
+        Returns:
+            Dict with order result and metadata
+        """
+        # Extract payload from Message
+        if hasattr(dec_msg, 'payload'):
+            payload = dec_msg.payload
+        else:
+            payload = dec_msg
+
+        symbol = payload.get("symbol")
+        side = payload.get("side")
+        qty = str(payload.get("qty") or payload.get("quantity"))
+        order_type = payload.get("type", "MARKET")
+        price = str(payload.get("price")) if payload.get("price") else None
+        client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
+
+        # Build ExchangeOrderParams
+        params = ExchangeOrderParams(
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=qty,
+            price=price,
+            client_order_id=client_order_id,
+            time_in_force=payload.get("timeInForce", "GTC"),
+            reduce_only=bool(payload.get("reduceOnly")),
+            position_side=payload.get("positionSide"),
+            stop_price=str(payload.get("stopPrice")) if payload.get("stopPrice") else None
+        )
+
+        # Slippage protection for MARKET orders
+        effective_slippage = slippage_cap_bps or self.slippage_cap_bps
+        if order_type == "MARKET" and effective_slippage and price:
+            # Calculate slippage-protected price (not implemented in Binance MARKET)
+            pass
+
+        try:
+            result = await self.create_order(params)
+            return {
+                "success": True,
+                "orderId": result.order_id,
+                "clientOrderId": result.client_order_id,
+                "status": result.status,
+                "symbol": result.symbol,
+                "side": result.side,
+                "qty": result.quantity,
+                "avgPrice": result.price,
+            }
+        except BinanceAPIError as e:
+            # Handle bracket errors with retry
+            if e.code in (-2021, -4016, -4017):
+                return await self._handle_bracket_error(e, payload, params)
+            raise
+
+    async def _handle_bracket_error(
+        self,
+        error: BinanceAPIError,
+        original_payload: Dict[str, Any],
+        params: ExchangeOrderParams,
+    ) -> Dict[str, Any]:
+        """
+        Handle bracket order errors with retry strategies.
+
+        Error codes:
+        - -2021: Order would immediately trigger
+        - -4016: Invalid price vs position side
+        - -4017: ReduceOnly rejected
+        """
+        self.logger.warning(
+            f"[BinanceAdapter] Bracket error {error.code}: {error.msg}, "
+            f"symbol={params.symbol}"
+        )
+
+        # Strategy: retry with adjusted parameters or convert to MARKET
+        if error.code == -2021:
+            # Order would trigger - convert SL/TP to MARKET
+            self.logger.info("[BinanceAdapter] Converting to MARKET order after -2021")
+            params.order_type = "MARKET"
+            params.price = None
+            params.stop_price = None
+            try:
+                result = await self.create_order(params)
+                return {
+                    "success": True,
+                    "orderId": result.order_id,
+                    "fallback": "MARKET_CONVERSION",
+                }
+            except BinanceAPIError:
+                pass
+
+        # Return error
+        return {
+            "success": False,
+            "error_code": error.code,
+            "error_msg": error.msg,
+            "nrr_code": error.nrr_code,
+        }
+
+    async def cancel_order_fsm(
+        self,
+        dec_msg: Any,
+        *,
+        idempotent: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Cancel order from FSM Message with idempotency support.
+
+        Args:
+            dec_msg: vfoundation Message with cancel payload
+            idempotent: If True, absorb -2011 (order not found) errors
+
+        Returns:
+            Dict with cancel result
+        """
+        if hasattr(dec_msg, 'payload'):
+            payload = dec_msg.payload
+        else:
+            payload = dec_msg
+
+        symbol = payload.get("symbol")
+        order_id = payload.get("orderId") or payload.get("order_id")
+        client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
+
+        try:
+            result = await self.cancel_order(
+                symbol=symbol,
+                order_id=order_id,
+                client_order_id=client_order_id,
+            )
+            self.metrics["cancel_idempotent_ok"] += 1
+            return {
+                "success": True,
+                "orderId": result.get("orderId"),
+                "status": "CANCELED",
+            }
+        except BinanceAPIError as e:
+            if idempotent and e.code == -2011:
+                # Order already canceled or doesn't exist
+                self.metrics["cancel_-2011_absorbed"] += 1
+                self.logger.debug(
+                    f"[BinanceAdapter] Idempotent cancel: order not found "
+                    f"(already canceled?), symbol={symbol}"
+                )
+                return {
+                    "success": True,
+                    "orderId": order_id,
+                    "status": "ALREADY_CANCELED",
+                    "idempotent": True,
+                }
+            raise
 
 
 # ---- helpers ----
@@ -1507,13 +1777,6 @@ async def _safe_read_err(resp):
             return {"code": resp.status_code, "msg": resp.text}
         except Exception:
             return {"code": resp.status_code, "msg": "unknown"}
-
-
-def _is_code_1021(err) -> bool:
-    try:
-        return int(err.get("code")) == -1021
-    except Exception:
-        return False
 
 
 def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPIError:
