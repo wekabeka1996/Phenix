@@ -5,10 +5,12 @@ Test script to verify exposure guard configuration allows TP/SL placement for al
 
 import asyncio
 import yaml
+import pytest
 from decimal import Decimal
 from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
 
 
+@pytest.mark.asyncio
 async def test_exposure_guard():
     """Test exposure guard with updated configuration."""
 

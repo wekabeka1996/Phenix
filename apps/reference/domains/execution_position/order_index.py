@@ -6,10 +6,11 @@ rid ↔ idempotent_key ↔ clientOrderId ↔ exchangeOrderId
 """
 
 from __future__ import annotations
+import threading
 from dataclasses import dataclass, field
 from decimal import Decimal
 from time import time
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 
 @dataclass
@@ -38,7 +39,14 @@ class OrderIndex:
     """
 
     def __init__(self, ttl_sec: int = 3600):
+        """
+        Initialize Order Index.
+
+        Args:
+            ttl_sec: Time-to-live for order references in seconds
+        """
         self.ttl = ttl_sec
+        self._lock = threading.RLock()
         self._by_rid: Dict[str, OrderRef] = {}
         self._by_client: Dict[str, OrderRef] = {}
         self._by_exchange: Dict[str, OrderRef] = {}
@@ -67,13 +75,14 @@ class OrderIndex:
         Returns:
             OrderRef instance
         """
-        ref = self._by_rid.get(rid) or OrderRef(rid=rid, idempotent_key=idempotent_key)
-        ref.clientOrderId = clientOrderId or ref.clientOrderId
-        ref.symbol, ref.side, ref.order_type = symbol, side, order_type
-        self._by_rid[rid] = ref
-        if ref.clientOrderId:
-            self._by_client[ref.clientOrderId] = ref
-        return ref
+        with self._lock:
+            ref = self._by_rid.get(rid) or OrderRef(rid=rid, idempotent_key=idempotent_key)
+            ref.clientOrderId = clientOrderId or ref.clientOrderId
+            ref.symbol, ref.side, ref.order_type = symbol, side, order_type
+            self._by_rid[rid] = ref
+            if ref.clientOrderId:
+                self._by_client[ref.clientOrderId] = ref
+            return ref
 
     def attach_exchange_id(
         self, *, clientOrderId: Optional[str], exchangeOrderId: Optional[str]
@@ -88,11 +97,12 @@ class OrderIndex:
         Returns:
             OrderRef if found and updated, None otherwise
         """
-        ref = (clientOrderId and self._by_client.get(clientOrderId)) or None
-        if ref and exchangeOrderId:
-            ref.exchangeOrderId = exchangeOrderId
-            self._by_exchange[exchangeOrderId] = ref
-        return ref
+        with self._lock:
+            ref = (clientOrderId and self._by_client.get(clientOrderId)) or None
+            if ref and exchangeOrderId:
+                ref.exchangeOrderId = exchangeOrderId
+                self._by_exchange[exchangeOrderId] = ref
+            return ref
 
     def get(
         self, *, rid: str = None, clientOrderId: str = None, exchangeOrderId: str = None
@@ -108,13 +118,14 @@ class OrderIndex:
         Returns:
             OrderRef if found, None otherwise
         """
-        if rid:
-            return self._by_rid.get(rid)
-        if clientOrderId:
-            return self._by_client.get(clientOrderId)
-        if exchangeOrderId:
-            return self._by_exchange.get(exchangeOrderId)
-        return None
+        with self._lock:
+            if rid:
+                return self._by_rid.get(rid)
+            if clientOrderId:
+                return self._by_client.get(clientOrderId)
+            if exchangeOrderId:
+                return self._by_exchange.get(exchangeOrderId)
+            return None
 
     def mark_terminal(self, ref: OrderRef) -> None:
         """
@@ -123,7 +134,8 @@ class OrderIndex:
         Args:
             ref: OrderRef to mark as terminal
         """
-        ref.terminal = True
+        with self._lock:
+            ref.terminal = True
 
     def expire(self) -> int:
         """
@@ -144,7 +156,8 @@ class OrderIndex:
             if ref.exchangeOrderId:
                 self._by_exchange.pop(ref.exchangeOrderId, None)
 
-        for ref in list(self._by_rid.values()):
-            if ref.terminal or (now - ref.created_ts) > self.ttl:
-                _kill(ref)
-        return removed
+        with self._lock:
+            for ref in list(self._by_rid.values()):
+                if ref.terminal or (now - ref.created_ts) > self.ttl:
+                    _kill(ref)
+            return removed

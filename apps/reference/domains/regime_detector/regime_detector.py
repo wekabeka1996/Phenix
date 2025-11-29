@@ -159,14 +159,32 @@ class RegimeDetector:
 
         # Heuristic formula: spread / base * multiplier
         # Multiplier of 20.0 empirically tuned for realistic signals
+        confidence_multiplier = Decimal("20.0")
+        if hasattr(self.model_config, "confidence_multiplier"):
+             confidence_multiplier = Decimal(str(self.model_config.confidence_multiplier))
+        elif isinstance(self.model_config, dict):
+             confidence_multiplier = Decimal(str(self.model_config.get("confidence_multiplier", "20.0")))
+
         # For test case: (4050-3900)/3900 = 0.0385 * 20 = 0.77
         spread_ratio = (sma_short - sma_long) / sma_long
-        confidence = spread_ratio * Decimal("20.0")
+        confidence = spread_ratio * confidence_multiplier
 
         # Bound the confidence between floor (0.5) and ceiling (0.95)
         # Using abs() to handle both uptrend and downtrend signals
+        conf_min = Decimal("0.5")
+        conf_max = Decimal("0.95")
+        if hasattr(self.model_config, "confidence_min"):
+             conf_min = Decimal(str(self.model_config.confidence_min))
+        elif isinstance(self.model_config, dict):
+             conf_min = Decimal(str(self.model_config.get("confidence_min", "0.5")))
+        
+        if hasattr(self.model_config, "confidence_max"):
+             conf_max = Decimal(str(self.model_config.confidence_max))
+        elif isinstance(self.model_config, dict):
+             conf_max = Decimal(str(self.model_config.get("confidence_max", "0.95")))
+
         bounded_confidence = min(
-            max(abs(confidence), Decimal("0.5")), Decimal("0.95"))
+            max(abs(confidence), conf_min), conf_max)
         return bounded_confidence
 
     def handle_event(self, event: Message) -> None:
@@ -299,10 +317,20 @@ class RegimeDetector:
                 # Confidence increases with higher volatility ratio
                 # Formula: min(0.95, 0.5 + (ratio - threshold) * 2.0)
                 # Example: ratio=2.14, threshold=2.0 → 0.5 + 0.14*2.0 = 0.78
+                
+                high_vol_conf_mult = Decimal("2.0")
+                try:
+                    if hasattr(volatility_config, 'high_vol_confidence_multiplier'):
+                        high_vol_conf_mult = Decimal(str(volatility_config.high_vol_confidence_multiplier))
+                    elif isinstance(volatility_config, dict):
+                        high_vol_conf_mult = Decimal(str(volatility_config.get("high_vol_confidence_multiplier", "2.0")))
+                except Exception:
+                    pass
+
                 excess_volatility = volatility_ratio - threshold_multiplier
                 confidence = min(
                     Decimal("0.95"), Decimal("0.5") +
-                    excess_volatility * Decimal("2.0")
+                    excess_volatility * high_vol_conf_mult
                 )
 
             # LOW_VOLATILITY: ATR significantly below its long-term average
@@ -313,10 +341,20 @@ class RegimeDetector:
                 # Confidence increases with lower volatility ratio (market calm)
                 # Formula: min(0.95, 0.5 + (threshold - ratio) * 3.0)
                 # Example: ratio=0.43, threshold=0.5 → 0.5 + 0.07*3.0 = 0.71
+                
+                low_vol_conf_mult = Decimal("3.0")
+                try:
+                    if hasattr(volatility_config, 'low_vol_confidence_multiplier'):
+                        low_vol_conf_mult = Decimal(str(volatility_config.low_vol_confidence_multiplier))
+                    elif isinstance(volatility_config, dict):
+                        low_vol_conf_mult = Decimal(str(volatility_config.get("low_vol_confidence_multiplier", "3.0")))
+                except Exception:
+                    pass
+
                 calm_factor = low_vol_multiplier - volatility_ratio
                 confidence = min(
                     Decimal("0.95"), Decimal("0.5") +
-                    calm_factor * Decimal("3.0")
+                    calm_factor * low_vol_conf_mult
                 )
 
         # --- PRIORITY 2: Mean Reversion Detection ---
@@ -374,9 +412,19 @@ class RegimeDetector:
                 tightness = mean_reversion_threshold - max(
                     sma_spread, price_deviation_short, price_deviation_long
                 )
+                
+                mr_conf_mult = Decimal("100.0")
+                try:
+                    if isinstance(mr_cfg, dict):
+                        mr_conf_mult = Decimal(str(mr_cfg.get("confidence_multiplier", "100.0")))
+                    elif hasattr(mr_cfg, 'confidence_multiplier'):
+                        mr_conf_mult = Decimal(str(mr_cfg.confidence_multiplier))
+                except Exception:
+                    pass
+
                 confidence = min(
                     Decimal("0.95"), Decimal("0.5") +
-                    tightness * Decimal("100.0")
+                    tightness * mr_conf_mult
                 )
 
         # --- PRIORITY 3: Trend Detection ---

@@ -52,11 +52,19 @@ import pytest
 
 
 def test_calculate_bracket_prices_buy_and_sell():
-    fsm = ManageFlowFSM()
+    cfg = {
+        "trading": {
+            "execution": {
+                "manage": {
+                    "brackets": {"sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}
+                }
+            }
+        }
+    }
+    fsm = ManageFlowFSM(config=cfg)
     # set entry price and side BUY
     fsm.position_entry_price = Decimal("100")
     fsm.position_side = "BUY"
-    fsm.config = {"brackets": {"sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}}
 
     sl, tp = fsm._calculate_bracket_prices()
     # For BUY, sl = entry*(1 - 50/10000) = 99.5 ; tp = entry*(1 + 100/10000) = 101.0

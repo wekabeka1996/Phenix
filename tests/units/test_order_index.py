@@ -233,3 +233,46 @@ class TestOrderIndex:
         assert by_rid.rid == "r1"
         assert by_rid.clientOrderId == "cid1"
         assert by_rid.exchangeOrderId == "ex1"
+
+    def test_thread_safety(self, order_index):
+        """Test thread safety of OrderIndex operations."""
+        import threading
+        
+        def worker(worker_id):
+            for i in range(100):
+                rid = f"r_{worker_id}_{i}"
+                cid = f"c_{worker_id}_{i}"
+                exid = f"e_{worker_id}_{i}"
+                
+                # Upsert
+                order_index.upsert_from_open(
+                    rid=rid,
+                    idempotent_key=f"idem_{worker_id}_{i}",
+                    clientOrderId=cid,
+                    symbol="BTCUSDT",
+                    side="BUY",
+                    order_type="MARKET"
+                )
+                
+                # Attach
+                order_index.attach_exchange_id(clientOrderId=cid, exchangeOrderId=exid)
+                
+                # Get
+                assert order_index.get(rid=rid) is not None
+                assert order_index.get(clientOrderId=cid) is not None
+                assert order_index.get(exchangeOrderId=exid) is not None
+                
+        threads = []
+        for i in range(10):
+            t = threading.Thread(target=worker, args=(i,))
+            threads.append(t)
+            t.start()
+            
+        for t in threads:
+            t.join()
+            
+        # Verify count
+        # 10 threads * 100 iterations = 1000 orders
+        assert len(order_index._by_rid) == 1000
+        assert len(order_index._by_client) == 1000
+        assert len(order_index._by_exchange) == 1000

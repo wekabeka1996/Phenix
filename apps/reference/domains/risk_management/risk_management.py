@@ -241,28 +241,36 @@ class RiskManagement:
 
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
+        
+        # Default weights
+        delta_price_weight = decimal.Decimal("0.1")
+        obi_weight = decimal.Decimal("0.3")
+        tfi_weight = decimal.Decimal("0.3")
+        absorption_inverse_weight = decimal.Decimal("0.3")
+        
         try:
-            if hasattr(self.config, 'risk_score_weights') and self.config.risk_score_weights:
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
+                weights = self.config.domains.risk_management.risk_score_weights
+                delta_price_weight = decimal.Decimal(str(weights.delta_price_pct))
+                obi_weight = decimal.Decimal(str(weights.obi))
+                tfi_weight = decimal.Decimal(str(weights.tfi))
+                absorption_inverse_weight = decimal.Decimal(str(weights.absorption_inverse))
+            # Fallback to legacy config
+            elif hasattr(self.config, 'risk_score_weights') and self.config.risk_score_weights:
                 score_weights = self.config.risk_score_weights
+                delta_price_weight = _to_dec(getattr(score_weights, 'delta_price_pct', "0.1"))
+                obi_weight = _to_dec(getattr(score_weights, 'obi', "0.3"))
+                tfi_weight = _to_dec(getattr(score_weights, 'tfi', "0.3"))
+                absorption_inverse_weight = _to_dec(getattr(score_weights, 'absorption_inverse', "0.3"))
             elif isinstance(self.config, dict):
                 score_weights = self.config.get("risk_score_weights", {})
-            else:
-                score_weights = {}
+                delta_price_weight = _to_dec(score_weights.get("delta_price_pct", "0.1"))
+                obi_weight = _to_dec(score_weights.get("obi", "0.3"))
+                tfi_weight = _to_dec(score_weights.get("tfi", "0.3"))
+                absorption_inverse_weight = _to_dec(score_weights.get("absorption_inverse", "0.3"))
         except (AttributeError, TypeError):
-            score_weights = {}
-
-        delta_price_weight = _to_dec(
-            score_weights.get("delta_price_pct", "0.1") if isinstance(score_weights, dict)
-            else (getattr(score_weights, 'delta_price_pct', "0.1")
-                  if hasattr(score_weights, 'delta_price_pct') else "0.1"))
-        obi_weight = _to_dec(score_weights.get("obi", "0.3") if isinstance(score_weights, dict) else (
-            getattr(score_weights, 'obi', "0.3") if hasattr(score_weights, 'obi') else "0.3"))
-        tfi_weight = _to_dec(score_weights.get("tfi", "0.3") if isinstance(score_weights, dict) else (
-            getattr(score_weights, 'tfi', "0.3") if hasattr(score_weights, 'tfi') else "0.3"))
-        absorption_inverse_weight = _to_dec(
-            score_weights.get("absorption_inverse", "0.3") if isinstance(score_weights, dict)
-            else (getattr(score_weights, 'absorption_inverse', "0.3")
-                  if hasattr(score_weights, 'absorption_inverse') else "0.3"))
+            pass  # Use defaults
 
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
@@ -287,25 +295,28 @@ class RiskManagement:
         if risk_score > 1:
             risk_score = decimal.Decimal("1")
 
+        # Get max risk score threshold
+        max_risk_score = decimal.Decimal("0.8")
         try:
-            if hasattr(self.config, 'trading') and self.config.trading:
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
+                max_risk_score = decimal.Decimal(str(self.config.domains.risk_management.trading_allowed_thresholds.max_risk_score))
+            # Fallback to legacy config
+            elif hasattr(self.config, 'trading') and self.config.trading:
                 thresholds = (
                     self.config.trading.risk.trading_allowed_thresholds
                     if self.config.trading.risk and self.config.trading.risk
                     else {}
                 )
+                if hasattr(thresholds, 'max_risk_score'):
+                    max_risk_score = _to_dec(thresholds.max_risk_score, "0.8")
             elif isinstance(self.config, dict):
                 thresholds = self.config.get("trading", {}).get(
                     "risk", {}).get("trading_allowed_thresholds", {})
-            else:
-                thresholds = {}
+                max_risk_score = _to_dec(thresholds.get("max_risk_score", "0.8"))
         except (AttributeError, TypeError):
-            thresholds = {}
+            pass  # Use default
 
-        max_risk_score = _to_dec(
-            thresholds.get("max_risk_score", "0.8") if isinstance(thresholds, dict)
-            else (getattr(thresholds, 'max_risk_score', "0.8")
-                  if hasattr(thresholds, 'max_risk_score') else "0.8"))
         is_trading_allowed = risk_score <= max_risk_score
 
         if not is_trading_allowed:

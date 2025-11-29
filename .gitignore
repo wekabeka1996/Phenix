@@ -28,7 +28,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
-
+deepseek_workspace/
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

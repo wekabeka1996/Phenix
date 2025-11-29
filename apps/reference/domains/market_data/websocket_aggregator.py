@@ -44,7 +44,8 @@ class WebSocketAggregator:
                 "ask_size": decimal.Decimal(0),
                 "bid_ask_time": None,
                 # Trade flow data (windowed)
-                "trades_window": deque(),  # (time, is_seller_maker)
+                "trades_window": deque(),  # (time, is_seller_maker, trade_id)
+                "seen_trade_ids": set(),
                 "buy_trades": 0,
                 "sell_trades": 0,
                 "window_start_time": None,
@@ -112,7 +113,7 @@ class WebSocketAggregator:
         )
 
     def on_trade(
-        self, symbol: str, price: str, quantity: str, is_buyer_maker: bool, ts: int
+        self, symbol: str, price: str, quantity: str, is_buyer_maker: bool, ts: int, trade_id: Optional[Any] = None
     ) -> None:
         """
         Process trade stream update.
@@ -123,12 +124,25 @@ class WebSocketAggregator:
             quantity: Trade quantity
             is_buyer_maker: True if buyer is maker (sell), False if seller is maker (buy)
             ts: Timestamp in milliseconds
+            trade_id: Unique trade identifier (to prevent duplicates)
         """
         if symbol not in self.state:
             return
 
         state = self.state[symbol]
-        current_time = datetime.now()
+        
+        # Deduplication check
+        if trade_id is not None:
+            if trade_id in state["seen_trade_ids"]:
+                return
+            state["seen_trade_ids"].add(trade_id)
+
+        # Use provided timestamp if available, otherwise current time
+        # Note: We use datetime for window comparison
+        if ts > 0:
+            current_time = datetime.fromtimestamp(ts / 1000.0)
+        else:
+            current_time = datetime.now()
 
         # Initialize window if needed
         if state["window_start_time"] is None:
@@ -137,14 +151,21 @@ class WebSocketAggregator:
         # Clean up old trades outside window
         window_cutoff = current_time - timedelta(seconds=self.window_seconds)
         while state["trades_window"] and state["trades_window"][0][0] < window_cutoff:
-            old_is_seller_maker = state["trades_window"].popleft()[1]
+            popped = state["trades_window"].popleft()
+            # popped is (time, is_seller_maker, trade_id)
+            old_is_seller_maker = popped[1]
+            old_trade_id = popped[2] if len(popped) > 2 else None
+            
             if old_is_seller_maker:
                 state["sell_trades"] = max(0, state["sell_trades"] - 1)
             else:
                 state["buy_trades"] = max(0, state["buy_trades"] - 1)
+            
+            if old_trade_id is not None and old_trade_id in state["seen_trade_ids"]:
+                state["seen_trade_ids"].remove(old_trade_id)
 
         # Add new trade
-        state["trades_window"].append((current_time, is_buyer_maker))
+        state["trades_window"].append((current_time, is_buyer_maker, trade_id))
         if is_buyer_maker:
             state["sell_trades"] += 1
         else:

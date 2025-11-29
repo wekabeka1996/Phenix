@@ -21,7 +21,7 @@ class MetricsCollector:
     to provide insights into system performance and identify issues.
     """
 
-    def __init__(self, window_size_minutes: int = 60):
+    def __init__(self, window_size_minutes: int = 60, config: Optional[Any] = None):
         """
         Initialize Metrics Collector.
 

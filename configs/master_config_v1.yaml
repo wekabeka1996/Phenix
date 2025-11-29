@@ -46,6 +46,26 @@ trading:
         batch_limit: 50              # Max orders to cancel per cleanup operation
         rate_limit_per_min: 120      # Global per-minute cancel rate limit across symbols (0 disables)
 
+      # Failsafe configuration for execution position FSM
+      failsafe:
+        max_hold_sec: 86400          # Emergency close timer (24h) if no decision is made
+
+  # Decision Making configuration
+  decision_making:
+    roi_exit:
+      enabled: true
+      target_roi_pct: 50.0           # Target ROI percentage to trigger close (e.g. 50.0 = 50%)
+
+  # Domain-specific configurations (NEW STRUCTURE)
+  domains:
+    execution_position:
+      exposure_guard:
+        max_directional_ratio: 20.0
+        max_equity_utilization_pct: 0.30
+        max_long_utilization_pct: 0.15
+        max_short_utilization_pct: 0.15
+        positions_stale_ttl_sec: 15
+
 # Execution timing and Guardian coordination (additive)
 execution:
   preflight_backoff_ms: [120, 250, 400, 800, 1200, 1800]
@@ -64,47 +84,66 @@ guardian:
   emit_tidy_event: true
   ledger_db_path: "data/order_ledger.db"
 
-      # Exposure guard configuration (additive)
-      trading:
-        execution:
-          # OrderGuardian centralized order/position monitor & cleanup
-          order_guardian:
-            poll_interval_ms: 500        # Polling interval for background cleanup (0 disables)
-            batch_limit: 50              # Max orders to cancel per cleanup operation
-            rate_limit_per_min: 120      # Global per-minute cancel rate limit across symbols (0 disables)
+# Exposure guard configuration (additive)
+trading:
+  execution:
+    # OrderGuardian centralized order/position monitor & cleanup
+    order_guardian:
+      poll_interval_ms: 500        # Polling interval for background cleanup (0 disables)
+      batch_limit: 50              # Max orders to cancel per cleanup operation
+      rate_limit_per_min: 120      # Global per-minute cancel rate limit across symbols (0 disables)
 
-          exposure:
-            # Increase stale TTL from 5s to 15s to handle slower portfolio updates
-            positions_stale_ttl_sec: 15
+    exposure:
+      # Increase stale TTL from 5s to 15s to handle slower portfolio updates
+      positions_stale_ttl_sec: 15
 
-            # Increase equity utilization from 20% to 30% to allow more exposure
-            max_equity_utilization_pct: "0.30"
+      # Increase equity utilization from 20% to 30% to allow more exposure
+      max_equity_utilization_pct: "0.30"
 
-            # Per-side utilization limits (increase from 12% to 15%)
-            max_side_utilization_pct:
-              long: "0.15"
-              short: "0.15"
+      # Per-side utilization limits (increase from 12% to 15%)
+      max_side_utilization_pct:
+        long: "0.15"
+        short: "0.15"
 
-            # Directional ratio control (allow up to 3:1 imbalance)
-            max_directional_ratio: "3.0"
+      # Directional ratio control (allow up to 20:1 imbalance)
+      max_directional_ratio: "20.0"
 
-            # Per-symbol concentration limit (8% of equity per symbol)
-            per_symbol_cap_pct: "0.08"
+      # Per-symbol concentration limit (8% of equity per symbol)
+      per_symbol_cap_pct: "0.08"
 
-            # Enable soft clipping instead of hard rejection
-            count_pending_orders: true
-            exclude_reduce_only: true
+      # Enable soft clipping instead of hard rejection
+      count_pending_orders: true
+      exclude_reduce_only: true
 
-          # Fallback mode configuration (PHASE P0)
-          fallback:
-            # Retry backoff for empty position API responses
-            backoff_ms: [200, 500, 1000]  # Retry delays in milliseconds
+    # Fallback mode configuration (PHASE P0)
+    fallback:
+      # Retry backoff for empty position API responses
+      backoff_ms: [200, 500, 1000]  # Retry delays in milliseconds
 
-      # Risk management with soft limits
-      risk:
-        soft_limits:
+  # Risk management with soft limits
+  risk:
+    soft_limits:
           mode: "clip"  # "clip" or "reject"
           clip_min_notional_usdt: 10.0
           directional_ratio_max: 3.0
           side_exposure_usdt: 600.0
           margin_exposure_usdt: 1100.0
+
+models:
+  sma_trend:
+    sma_short_period: 10
+    sma_long_period: 50
+    confidence_multiplier: 20.0
+    confidence_min: 0.5
+    confidence_max: 0.95
+  volatility:
+    enabled: true
+    atr_period: 14
+    atr_sma_length: 100
+    threshold_multiplier: 2.0
+    low_vol_multiplier: 0.5
+    high_vol_confidence_multiplier: 2.0
+    low_vol_confidence_multiplier: 3.0
+  mean_reversion:
+    threshold: 0.005
+    confidence_multiplier: 100.0

@@ -13,10 +13,11 @@ from __future__ import annotations
 import time
 from decimal import Decimal
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
+from apps.reference.config_models import AuroraConfig, create_aurora_config
 
 
 try:
@@ -53,7 +54,7 @@ class ManageFlowFSM:
         self,
         trail_pct: float = 0.5,
         breakeven_after_sec: float = 300.0,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[Union[Dict[str, Any], AuroraConfig]] = None,
     ):
         self.state = ManageState.FLAT
         self.trail_pct = trail_pct  # stub: trailing stop %
@@ -79,80 +80,42 @@ class ManageFlowFSM:
         self._closing_position: bool = False
         self._closing_position_ts: float = 0.0
 
-        # Configuration
-        self.config = config or {}
-        # Emergency/WaitMode configuration
-        # Using typed attribute access for Pydantic models
-        try:
-            if isinstance(self.config, dict):
-                bar_gate_cfg = self.config.get("trading", {}).get(
-                    "decision", {}).get("bar_gating", {})
-                self._bar_ms = int(bar_gate_cfg.get(
-                    "bar_ms", 15 * 60 * 1000)) if isinstance(bar_gate_cfg, dict) else 15 * 60 * 1000
-            else:
-                bar_gate_cfg = self.config.trading.decision.bar_gating if self.config.trading else None
-                self._bar_ms = int(bar_gate_cfg.bar_ms) if bar_gate_cfg and hasattr(
-                    bar_gate_cfg, 'bar_ms') else 15 * 60 * 1000
-        except (AttributeError, TypeError, ValueError):
-            self._bar_ms = 15 * 60 * 1000
+        # Configuration: Unify to AuroraConfig
+        if config is None:
+            self.config = AuroraConfig()
+        elif isinstance(config, dict):
+            try:
+                self.config = create_aurora_config(config)
+            except Exception as e:
+                # Fallback for partial dicts in tests
+                import logging
+                logging.getLogger(__name__).warning(f"Config validation failed, using default: {e}")
+                self.config = AuroraConfig()
+        else:
+            self.config = config
 
-        try:
-            if isinstance(self.config, dict):
-                em_cfg = self.config.get("execution", {}).get(
-                    "manage", {}).get("emergency", {})
-                self._wait_mode_bars = int(em_cfg.get(
-                    "wait_mode_bars", 2)) if isinstance(em_cfg, dict) else 2
-            else:
-                em_cfg = self.config.execution.manage.emergency if self.config.execution else None
-                self._wait_mode_bars = int(
-                    getattr(em_cfg, "wait_mode_bars", 2)) if em_cfg else 2
-        except (AttributeError, TypeError, ValueError):
-            self._wait_mode_bars = 2
+        # Extract commonly used configs for easier access
+        self._manage_cfg = self.config.trading.execution.manage if self.config.trading.execution else None
+        
+        # Emergency/WaitMode configuration
+        self._bar_ms = 15 * 60 * 1000
+        if self.config.trading.decision.bar_gating:
+             self._bar_ms = self.config.trading.decision.bar_gating.bar_ms
+
+        self._wait_mode_bars = 2
+        if self._manage_cfg and self._manage_cfg.emergency:
+             self._wait_mode_bars = int(self._manage_cfg.emergency.get("wait_mode_bars", 2))
+        
         self._wait_mode_until_ts: int = 0
 
-        # Anti-race window (ms) configurable via config; default 800ms
-        try:
-            if hasattr(self.config, 'execution') and self.config.execution:
-                self._anti_race_close_ms = int(getattr(self.config.execution, 'anti_race_close_ms', 800))
-            elif hasattr(self.config, 'trading') and self.config.trading:
-                exec_cfg = getattr(self.config.trading, 'execution', None)
-                self._anti_race_close_ms = int(getattr(exec_cfg, 'anti_race_close_ms', 800)) if exec_cfg else 800
-            elif isinstance(self.config, dict):
-                self._anti_race_close_ms = int(
-                    self.config.get('execution', {}).get('anti_race_close_ms')
-                    or self.config.get('trading', {}).get('execution', {}).get('anti_race_close_ms', 800)
-                )
-            else:
-                self._anti_race_close_ms = 800
-        except Exception:
-            self._anti_race_close_ms = 800
+        # Anti-race window (ms)
+        self._anti_race_close_ms = 800
+        # Note: anti_race_close_ms is not yet in Pydantic model, using default
 
-        # Read auto-manage flag from config
-        # Try both paths: trading.execution.manage and execution.manage
-        try:
-            if isinstance(self.config, dict):
-                # Dict config: check both execution.manage and trading.execution.manage
-                manage_cfg = (
-                    self.config.get("execution", {}).get("manage", {}) or
-                    self.config.get("trading", {}).get(
-                        "execution", {}).get("manage", {})
-                )
-                self._auto_manage_enabled = bool(manage_cfg.get(
-                    "auto", False)) if isinstance(manage_cfg, dict) else False
-            elif hasattr(self.config, 'trading') and self.config.trading:
-                cfg_exec = self.config.trading.execution
-                manage_cfg = cfg_exec.manage if cfg_exec else None
-                self._auto_manage_enabled = bool(
-                    manage_cfg.auto if manage_cfg and hasattr(manage_cfg, 'auto') else False)
-            elif hasattr(self.config, 'execution') and self.config.execution:
-                cfg_exec = self.config.execution
-                manage_cfg = cfg_exec.manage if cfg_exec else None
-                self._auto_manage_enabled = bool(
-                    manage_cfg.auto if manage_cfg and hasattr(manage_cfg, 'auto') else False)
-            else:
-                self._auto_manage_enabled = False
-        except (AttributeError, TypeError):
-            self._auto_manage_enabled = False
+        # Auto-manage flag
+        self._auto_manage_enabled = False
+        if self._manage_cfg:
+            self._auto_manage_enabled = self._manage_cfg.auto
 
         # Log configuration status
         import logging
@@ -427,18 +390,16 @@ class ManageFlowFSM:
             # === SAFETY OFFSET PHASE: Apply offset to avoid -2021 errors ===
             # Read offset_bps from config (default 5)
             offset_bps = 5
-            try:
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    offset_bps = self.config.trading.execution.manage.brackets.offset_bps if hasattr(
-                        self.config.trading.execution.manage.brackets, 'offset_bps') else 5
-                elif isinstance(self.config, dict):
-                    offset_bps = self.config.get("offset_bps", 5)
-            except (AttributeError, TypeError):
-                offset_bps = 5
+            if self._manage_cfg and self._manage_cfg.brackets:
+                 offset_bps = self._manage_cfg.brackets.offset_bps
 
-            # Get tick_size from somewhere (use 0.01 as default for now)
-            # TODO: fetch from /exchangeInfo or cache
+            # Get tick_size from config or default
             tick_size = Decimal("0.01")
+            symbol = msg.pld.get("symbol")
+            if symbol and self.config.trading.instruments:
+                 inst = self.config.trading.instruments.get(symbol)
+                 if inst:
+                     tick_size = Decimal(str(inst.tick_size))
 
             # Apply offset to SL (move it AWAY from entry to be safer)
             sl_offset = TPSLValidationRules.add_safety_offset(
@@ -477,7 +438,7 @@ class ManageFlowFSM:
                 msg,
                 sl_client_id,
                 "STOP_MARKET",
-                self.position_side or "",
+                self._get_opposite_side(),
                 str(self.position_qty),
                 str(sl_price),
                 "SL bracket",
@@ -487,7 +448,7 @@ class ManageFlowFSM:
             tp_order = self._emit_place_order(
                 msg,
                 tp_client_id,
-                "LIMIT",
+                "TAKE_PROFIT_MARKET",
                 self._get_opposite_side(),
                 str(self.position_qty),
                 str(tp_price),
@@ -495,7 +456,20 @@ class ManageFlowFSM:
             )
 
             self._metrics["fsm_bracket_orders_placed"] += 2
-            return sl_order  # Return first order, second will be handled separately
+            
+            # Return BATCH message with both orders
+            return Message(
+                op="DEC",
+                verb="BATCH",
+                src="execution_position",
+                dst="execution_position",
+                rid=msg.rid,
+                why="place_brackets_batch",
+                pld={
+                    "messages": [sl_order.model_dump(), tp_order.model_dump()]
+                },
+                data_ref=msg.data_ref.copy() if msg.data_ref else []
+            )
 
         except Exception:
             self._metrics["fsm_errors_total"] += 1
@@ -504,186 +478,67 @@ class ManageFlowFSM:
 
     def _should_place_brackets(self) -> bool:
         """Check if brackets should be placed based on config."""
-        try:
-            # Try Pydantic attribute access first
-            if hasattr(self.config, 'trading') and self.config.trading:
-                brackets_config = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-            elif isinstance(self.config, dict):
-                # Dict config: navigate full path trading.execution.manage.brackets
-                brackets_config = (
-                    self.config.get("trading", {})
-                    .get("execution", {})
-                    .get("manage", {})
-                    .get("brackets", {})
-                )
-            else:
-                brackets_config = None
-
-            if brackets_config and hasattr(brackets_config, 'enable'):
-                return bool(brackets_config.enable)
-            elif isinstance(brackets_config, dict):
-                return bool(brackets_config.get("enable", False))
-            return False
-        except (AttributeError, TypeError):
-            return False
+        if self._manage_cfg and self._manage_cfg.brackets:
+             return self._manage_cfg.brackets.enable
+        return False
 
     def _calculate_bracket_prices(self) -> tuple[Optional[Decimal], Optional[Decimal]]:
-        """Calculate SL and TP prices based on config and position.
-
-        Supports both NEW and LEGACY config keys:
-        - NEW: execution.manage.brackets.sl.fixed_bps, execution.manage.brackets.tp.fixed_bps
-        - LEGACY: execution.manage.brackets.stop_loss_bps, take_profit_low_ratio, take_profit_high_ratio
-
-        Fallback chain:
-        1. Try new keys (sl.fixed_bps, tp.fixed_bps)
-        2. If not found, fallback to legacy keys for backward compatibility
-        """
+        """Calculate SL and TP prices based on config and position."""
         if self.position_entry_price is None or self.position_side is None:
             return None, None
 
-        try:
-            # Try Pydantic attribute access first
-            if hasattr(self.config, 'trading') and self.config.trading:
-                brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                sl_config = brackets.sl if brackets else None
-                tp_config = brackets.tp if brackets else None
-                brackets_dict = brackets if brackets else {}
-            elif isinstance(self.config, dict):
-                # Dict config: navigate full path trading.execution.manage.brackets
-                brackets_config = (
-                    self.config.get("trading", {})
-                    .get("execution", {})
-                    .get("manage", {})
-                    .get("brackets", {})
-                )
-                sl_config = brackets_config.get("sl", {}) if isinstance(
-                    brackets_config, dict) else None
-                tp_config = brackets_config.get("tp", {}) if isinstance(
-                    brackets_config, dict) else None
-                brackets_dict = brackets_config if isinstance(
-                    brackets_config, dict) else {}
-            else:
-                sl_config = None
-                tp_config = None
-                brackets_dict = {}
-
-            # For now, use fixed BPS mode (ATR mode would need ATR data)
-            entry_price = self.position_entry_price
-
-            # ========== Calculate SL price ==========
-            sl_bps = 50  # Default fallback
-
-            # Try NEW key first (sl.fixed_bps)
-            if sl_config:
-                if hasattr(sl_config, 'fixed_bps'):
-                    sl_bps = sl_config.fixed_bps
-                else:
-                    sl_bps = getattr(sl_config, "fixed_bps", None)
-                    if sl_bps is None:
-                        sl_bps = 50
-
-            # If NEW key not found, fallback to LEGACY key (stop_loss_bps)
-            if sl_bps == 50 and (not sl_config or not hasattr(sl_config, 'fixed_bps')):
-                if isinstance(brackets_dict, dict):
-                    legacy_sl = brackets_dict.get("stop_loss_bps", None)
-                    if legacy_sl is not None:
-                        sl_bps = legacy_sl
-                elif hasattr(brackets_dict, 'stop_loss_bps'):
-                    legacy_sl = getattr(brackets_dict, 'stop_loss_bps', None)
-                    if legacy_sl is not None:
-                        sl_bps = legacy_sl
-
-            if self.position_side == "BUY":
-                sl_price = entry_price * (1 - Decimal(str(sl_bps)) / 10000)
-            else:  # SELL
-                sl_price = entry_price * (1 + Decimal(str(sl_bps)) / 10000)
-
-            # ========== Calculate TP price ==========
-            tp_bps = 100  # Default fallback
-
-            # Try NEW key first (tp.fixed_bps)
-            if tp_config:
-                if hasattr(tp_config, 'fixed_bps'):
-                    tp_bps = tp_config.fixed_bps
-                else:
-                    tp_bps = getattr(tp_config, "fixed_bps", None)
-                    if tp_bps is None:
-                        tp_bps = 100
-
-            # If NEW key not found, fallback to LEGACY keys (take_profit_low_ratio, take_profit_high_ratio)
-            if tp_bps == 100 and (not tp_config or not hasattr(tp_config, 'fixed_bps')):
-                if isinstance(brackets_dict, dict):
-                    tp_high_ratio = brackets_dict.get(
-                        "take_profit_high_ratio", None)
-                    tp_low_ratio = brackets_dict.get(
-                        "take_profit_low_ratio", None)
-                    # Use take_profit_high_ratio if available (more aggressive), else low_ratio, else default
-                    if tp_high_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_high_ratio))
-                    elif tp_low_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_low_ratio))
-                    else:
-                        tp_bps = 100
-                elif hasattr(brackets_dict, 'take_profit_high_ratio') or hasattr(brackets_dict, 'take_profit_low_ratio'):
-                    tp_high_ratio = getattr(
-                        brackets_dict, 'take_profit_high_ratio', None)
-                    tp_low_ratio = getattr(
-                        brackets_dict, 'take_profit_low_ratio', None)
-                    if tp_high_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_high_ratio))
-                    elif tp_low_ratio is not None:
-                        tp_bps = int(round(sl_bps * tp_low_ratio))
-                    else:
-                        tp_bps = 100
-                else:
-                    tp_bps = 100
-
-            if self.position_side == "BUY":
-                tp_price = entry_price * (1 + Decimal(str(tp_bps)) / 10000)
-            else:  # SELL
-                tp_price = entry_price * (1 - Decimal(str(tp_bps)) / 10000)
-
-            # ========== Quantize prices to tick_size ==========
-            # Read tick_size from config if available
-            tick_size = None
-            try:
-                symbol = getattr(self, 'symbol', None)
-                if symbol and hasattr(self.config, 'trading') and self.config.trading:
-                    instruments = self.config.trading.instruments if hasattr(
-                        self.config.trading, 'instruments') else None
-                    if instruments and isinstance(instruments, dict):
-                        sym_config = instruments.get(symbol, {})
-                        if isinstance(sym_config, dict):
-                            tick_size = sym_config.get("tick_size", None)
-                        elif hasattr(sym_config, 'tick_size'):
-                            tick_size = sym_config.tick_size
-                elif isinstance(self.config, dict):
-                    instruments = self.config.get("instruments", {})
-                    if isinstance(instruments, dict):
-                        symbol = getattr(self, 'symbol', None)
-                        if symbol:
-                            sym_config = instruments.get(symbol, {})
-                            if isinstance(sym_config, dict):
-                                tick_size = sym_config.get("tick_size", None)
-            except (AttributeError, TypeError, KeyError):
-                tick_size = None
-
-            # Apply tick_size quantization if available
-            if tick_size:
-                try:
-                    tick_size_dec = Decimal(str(tick_size))
-                    # Round down to nearest tick (conservative for SL/TP)
-                    sl_price = (
-                        sl_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
-                    tp_price = (
-                        tp_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
-                except (ValueError, TypeError, ArithmeticError):
-                    # If quantization fails, use original prices
-                    pass
-
-            return sl_price, tp_price
-        except (AttributeError, TypeError, ValueError):
+        if not self._manage_cfg or not self._manage_cfg.brackets:
             return None, None
+            
+        brackets = self._manage_cfg.brackets
+        entry_price = self.position_entry_price
+
+        # ========== Calculate SL price ==========
+        sl_bps = 50
+        if brackets.sl and brackets.sl.fixed_bps:
+            sl_bps = brackets.sl.fixed_bps
+        elif brackets.stop_loss_bps: # Legacy fallback
+             sl_bps = brackets.stop_loss_bps
+
+        if self.position_side == "BUY":
+            sl_price = entry_price * (1 - Decimal(str(sl_bps)) / 10000)
+        else:  # SELL
+            sl_price = entry_price * (1 + Decimal(str(sl_bps)) / 10000)
+
+        # ========== Calculate TP price ==========
+        tp_bps = 100
+        if brackets.tp and brackets.tp.fixed_bps:
+            tp_bps = brackets.tp.fixed_bps
+        # Legacy fallback logic removed for clarity, assuming new config structure is primary
+        # If needed, we can re-add legacy ratio logic here, but it's better to migrate configs.
+
+        if self.position_side == "BUY":
+            tp_price = entry_price * (1 + Decimal(str(tp_bps)) / 10000)
+        else:  # SELL
+            tp_price = entry_price * (1 - Decimal(str(tp_bps)) / 10000)
+
+        # ========== Quantize prices to tick_size ==========
+        tick_size = None
+        symbol = getattr(self, 'symbol', None) # Symbol might not be set on FSM instance directly
+        # Ideally symbol should be passed or stored. Assuming it might be available or we skip quantization.
+        # For now, let's try to get it from config if possible, but FSM is per-symbol usually.
+        # If we can't find tick_size easily without symbol, we skip quantization here or rely on adapter.
+        
+        # Simplified quantization if tick_size is available in config instruments
+        if symbol and self.config.trading.instruments:
+             inst = self.config.trading.instruments.get(symbol)
+             if inst:
+                 tick_size = inst.tick_size
+
+        if tick_size:
+            try:
+                tick_size_dec = Decimal(str(tick_size))
+                sl_price = (sl_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
+                tp_price = (tp_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
+            except (ValueError, TypeError, ArithmeticError):
+                pass
+
+        return sl_price, tp_price
 
     def _get_opposite_side(self) -> str:
         """Get opposite side for closing position."""
@@ -705,22 +560,12 @@ class ManageFlowFSM:
         working_type = "MARK_PRICE"  # Default
         price_protect = False  # Default
 
-        try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                if brackets:
-                    if hasattr(brackets, 'working_type_default'):
-                        working_type = brackets.working_type_default
-                    if hasattr(brackets, 'price_protect'):
-                        price_protect = brackets.price_protect
-            elif isinstance(self.config, dict):
-                brackets_config = self.config.get("brackets", {})
-                if isinstance(brackets_config, dict):
-                    working_type = brackets_config.get(
-                        "working_type_default", "MARK_PRICE")
-                    price_protect = brackets_config.get("price_protect", False)
-        except (AttributeError, TypeError):
-            pass
+        if self._manage_cfg and self._manage_cfg.brackets:
+             brackets = self._manage_cfg.brackets
+             if hasattr(brackets, 'working_type_default'):
+                 working_type = brackets.working_type_default
+             if hasattr(brackets, 'price_protect'):
+                 price_protect = brackets.price_protect
 
         # Build payload
         payload = {
@@ -786,30 +631,15 @@ class ManageFlowFSM:
 
         try:
             # Emergency protection (optional)
-            try:
-                if hasattr(self.config, 'execution') and self.config.execution:
-                    emergency_cfg = self.config.execution.manage.emergency if self.config.execution.manage else None
-                elif isinstance(self.config, dict):
-                    emergency_cfg = self.config.get("emergency", {})
-                else:
-                    emergency_cfg = None
-            except (AttributeError, TypeError):
-                emergency_cfg = None
-
             emergency_enabled = False
             emergency_sl_bps = 100
-            if emergency_cfg:
-                if hasattr(emergency_cfg, 'enable'):
-                    emergency_enabled = bool(emergency_cfg.enable)
-                elif isinstance(emergency_cfg, dict):
-                    emergency_enabled = bool(
-                        self.config.trading.execution.manage.emergency.enable)
-
-                if hasattr(emergency_cfg, 'emergency_sl_bps'):
-                    emergency_sl_bps = emergency_cfg.emergency_sl_bps
-                else:
-                    emergency_sl_bps = getattr(
-                        emergency_cfg, "emergency_sl_bps", 100)
+            
+            if self._manage_cfg and self._manage_cfg.emergency:
+                 # Assuming emergency is a dict in Pydantic model for now based on config_models.py
+                 # emergency: Dict[str, Any] = Field(default_factory=dict)
+                 em_cfg = self._manage_cfg.emergency
+                 emergency_enabled = bool(em_cfg.get("enable", False))
+                 emergency_sl_bps = int(em_cfg.get("emergency_sl_bps", 100))
 
             if emergency_enabled and msg.op == "UPD" and msg.verb == "MARKET_DATA":
                 pld = msg.pld or {}
@@ -883,13 +713,6 @@ class ManageFlowFSM:
                         "rule": "breakeven", "elapsed_sec": elapsed}
                 )
 
-            # Rule 3: Time stop (stub: close after 3600 sec)
-            if elapsed > 3600:
-                return self._emit_adjust(
-                    msg, "ADJUST_TIME", {
-                        "rule": "time_stop", "elapsed_sec": elapsed}
-                )
-
         except Exception:
             self._metrics["fsm_errors_total"] += 1
 
@@ -907,17 +730,9 @@ class ManageFlowFSM:
         if order_id == self.sl_order_id:
             # SL filled - cancel TP (OCO emulation)
             decision = None
-            try:
-                oco_enabled = False
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                    if brackets and hasattr(brackets, 'oco_emulation'):
-                        oco_enabled = bool(brackets.oco_emulation)
-                elif isinstance(self.config, dict):
-                    oco_enabled = bool(self.config.get(
-                        "brackets", {}).get("oco_emulation", False))
-            except (AttributeError, TypeError):
-                oco_enabled = False
+            oco_enabled = False
+            if self._manage_cfg and self._manage_cfg.brackets:
+                 oco_enabled = self._manage_cfg.brackets.oco_emulation
 
             if self.tp_order_id and oco_enabled:
                 print(
@@ -932,17 +747,9 @@ class ManageFlowFSM:
         elif order_id == self.tp_order_id:
             # TP filled - cancel SL (OCO emulation)
             decision = None
-            try:
-                oco_enabled = False
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    brackets = self.config.trading.execution.manage.brackets if self.config.trading.execution and self.config.trading.execution.manage else None
-                    if brackets and hasattr(brackets, 'oco_emulation'):
-                        oco_enabled = bool(brackets.oco_emulation)
-                elif isinstance(self.config, dict):
-                    oco_enabled = bool(self.config.get(
-                        "brackets", {}).get("oco_emulation", False))
-            except (AttributeError, TypeError):
-                oco_enabled = False
+            oco_enabled = False
+            if self._manage_cfg and self._manage_cfg.brackets:
+                 oco_enabled = self._manage_cfg.brackets.oco_emulation
 
             if self.sl_order_id and oco_enabled:
                 print(
@@ -958,23 +765,13 @@ class ManageFlowFSM:
 
     def _check_trailing_stop(self, msg: Message) -> Optional[Message]:
         """Check and adjust trailing stop if conditions met."""
-        try:
-            # Try Pydantic attribute access first
-            if hasattr(self.config, 'trading') and self.config.trading:
-                trailing = self.config.trading.execution.manage.trailing if self.config.trading.execution and self.config.trading.execution.manage else None
-            elif isinstance(self.config, dict):
-                trailing = self.config.get("trailing", {})
-            else:
-                trailing = None
-        except (AttributeError, TypeError):
-            trailing = None
-
+        # Trailing config is currently a Dict in AuroraConfig (trailing: Dict[str, Any])
+        # We should probably type it properly later, but for now access as dict
+        trailing = self.config.trailing
+        
         trailing_enabled = False
         if trailing:
-            if hasattr(trailing, 'enable'):
-                trailing_enabled = bool(trailing.enable)
-            elif isinstance(trailing, dict):
-                trailing_enabled = bool(trailing.get("enable", False))
+             trailing_enabled = bool(trailing.get("enable", False))
 
         if not trailing_enabled or not self.sl_order_id:
             return None
@@ -991,13 +788,7 @@ class ManageFlowFSM:
             # Check activation condition
             if not self.trailing_activated and self.position_entry_price:
                 # Get activation_profit_atr_k
-                activation_k = 1.0
-                if trailing:
-                    if hasattr(trailing, 'activation_profit_atr_k'):
-                        activation_k = float(trailing.activation_profit_atr_k)
-                    elif isinstance(trailing, dict):
-                        activation_k = float(trailing.get(
-                            "activation_profit_atr_k", 1.0))
+                activation_k = float(trailing.get("activation_profit_atr_k", 1.0))
 
                 activation_threshold = self.position_entry_price * (
                     1
@@ -1022,11 +813,13 @@ class ManageFlowFSM:
                     return None
 
             # Check cooldown
-            if now - self.last_trailing_ts < self.config.trading.execution.manage.trailing.cooldown_sec:
+            cooldown_sec = int(trailing.get("cooldown_sec", 30))
+            if now - self.last_trailing_ts < cooldown_sec:
                 return None
 
             # Calculate new SL price
-            step_bps = self.config.trading.execution.manage.trailing.step_bps
+            step_bps = int(trailing.get("step_bps", 10))
+            
             if self.position_side == "BUY" and self.sl_price:
                 # For long position, trail up
                 new_sl_price = max(

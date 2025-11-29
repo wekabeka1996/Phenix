@@ -124,11 +124,19 @@ def validate_anti_2021(
 
 
 def generate_client_order_id(
-    prefix: str, decision_id: str, extra: str | None = None, *, max_len: int = 32
+    prefix: str, decision_id: str, extra: str | None = None, *, max_len: int = 32, config: Optional[Any] = None
 ) -> str:
     """
     Створює короткий детермінований clientOrderId (Binance: <36 симв.).
     """
+    # Try to get max_len from domains config if provided
+    if config:
+        try:
+            if hasattr(config, 'domains') and hasattr(config.domains, 'execution_position'):
+                max_len = config.domains.execution_position.utils.client_order_id_max_length
+        except (AttributeError, TypeError):
+            pass  # Use provided/default value
+    
     base = f"{prefix}:{decision_id}:{extra or ''}:{int(time.time() * 1000)}"
     h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
     cid = f"{prefix}-{h}"
@@ -168,6 +176,7 @@ def calc_tp_sl_from_mark(
     tp_bps: Any,
     sl_bps: Any,
     tick_size: Optional[float] = None,
+    config: Optional[Any] = None,
 ) -> tuple[float, float]:
     """
     Розрахунок TP/SL від MARK_PRICE.
@@ -179,12 +188,22 @@ def calc_tp_sl_from_mark(
         tp_bps: take-profit в б.п. (100 б.п. = 1%)
         sl_bps: stop-loss в б.п.
         tick_size: опційно — крок квантування ціни.
+        config: опційно — configuration object
 
     Returns:
         (tp_price, sl_price)
     """
     m = _to_float(mark, name="mark")
-    b = 10000.0
+    
+    # Try to get basis_points_base from domains config
+    b = 10000.0  # default
+    if config:
+        try:
+            if hasattr(config, 'domains') and hasattr(config.domains, 'execution_position'):
+                b = config.domains.execution_position.utils.basis_points_base
+        except (AttributeError, TypeError):
+            pass  # Use default
+    
     tp_bps_f = _to_float(tp_bps, name="tp_bps")
     sl_bps_f = _to_float(sl_bps, name="sl_bps")
 

@@ -10,11 +10,12 @@ from apps.reference.domains.execution_position.exposure_guard import ExposureGua
 from apps.reference.domains.execution_position.metrics_aggregator import (
     metrics_logger,
 )
+from apps.reference.config_models import AuroraConfig
 
 
 def make_guard(config: dict | None = None) -> ExposureGuard:
-    cfg = config or {}
-    return ExposureGuard(cfg, fsm=None)
+    cfg = AuroraConfig(**(config or {}))
+    return ExposureGuard(None, cfg)  # fsm_core=None, config=cfg
 
 
 def reset_metrics():
@@ -47,13 +48,13 @@ def test_reject_metrics_side_cap_nrr012_sell_side():
     reset_metrics()
     guard = make_guard()
 
-    # equity=1000 => side_limit(short)=0.12*1000=120
-    # short_margin already 130 (>120), default order_side=SELL => reject
+    # equity=1000 => side_limit(short)=0.20*1000=200 (default in DomainsConfig)
+    # short_margin already 210 (>200), default order_side=SELL => reject
     portfolio_state = {
         "equity_free_usdt": 1000,
         "open_positions_margin_usd": 0,
         "positions_last_ts_ms": int(time.time() * 1000),
-        "positions_by_side": {"long_margin": 0, "short_margin": 130},
+        "positions_by_side": {"long_margin": 0, "short_margin": 210},
     }
 
     res = guard.can_open("ETHUSDT", Decimal("100"), portfolio_state)

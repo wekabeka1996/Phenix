@@ -15,7 +15,7 @@ import logging
 import uuid
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, Optional, Union, Any
 
 from vfoundation.core.protocol import Message
 from .contracts import (
@@ -25,15 +25,13 @@ from .contracts import (
     PRICE_STEP,
 )
 from .metrics_collector import MetricsCollector
+from apps.reference.config_models import AuroraConfig, create_aurora_config
 
 
 class OpenState(str, Enum):
     """FSM states for open flow."""
 
     IDLE = "IDLE"
-    CANDIDATE = "CANDIDATE"
-    READY = "READY"
-    EMIT_DEC_OPEN = "EMIT_DEC_OPEN"
     DONE = "DONE"
     ERROR = "ERROR"
 
@@ -50,13 +48,26 @@ class OpenFlowFSM:
         self,
         cooldown_sec: float = 1.0,
         guard_enabled: bool = True,
-        config: Optional[Dict] = None,
+        config: Optional[Union[Dict[str, Any], AuroraConfig]] = None,
         metrics_collector: Optional[MetricsCollector] = None,
     ):
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
         self.guard_enabled = guard_enabled
-        self.config = config or {}
+        
+        # Configuration: Unify to AuroraConfig
+        if config is None:
+            self.config = AuroraConfig()
+        elif isinstance(config, dict):
+            try:
+                self.config = create_aurora_config(config)
+            except Exception as e:
+                # Fallback for partial dicts in tests
+                logging.getLogger(__name__).warning(f"Config validation failed, using default: {e}")
+                self.config = AuroraConfig()
+        else:
+            self.config = config
+
         self.last_open_ts: float = 0.0
         self.logger = logging.getLogger(__name__)
         self.metrics_collector = metrics_collector
@@ -66,12 +77,11 @@ class OpenFlowFSM:
             "fsm_errors_total": 0,
         }
         self.idempotency_store: Dict[str, float] = {}
+        
+        # Idempotency window from config (default 60s)
         try:
-            if hasattr(self.config, 'idempotency_window_sec'):
-                self.idempotency_window_sec = self.config.idempotency_window_sec
-            elif isinstance(self.config, dict):
-                self.idempotency_window_sec = self.config.get(
-                    "idempotency_window_sec", 60)
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'execution_position'):
+                self.idempotency_window_sec = self.config.domains.execution_position.fsm_open.idempotency_window_sec
             else:
                 self.idempotency_window_sec = 60
         except (AttributeError, TypeError):
@@ -79,35 +89,30 @@ class OpenFlowFSM:
 
     def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
         """Get instrument specifications from config."""
-        try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                instruments = self.config.trading.instruments if hasattr(
-                    self.config.trading, 'instruments') else {}
-            elif isinstance(self.config, dict):
-                instruments = self.config.get(
-                    "trading", {}).get("instruments", {})
-            else:
-                instruments = {}
-        except (AttributeError, TypeError):
-            instruments = {}
+        instruments = self.config.trading.instruments or {}
+        specs = instruments.get(symbol)
 
-        specs = instruments.get(symbol, {}) if isinstance(
-            instruments, dict) else {}
+        # Default values
+        min_qty = MIN_ORDER_QTY
+        step_size = QTY_STEP
+        tick_size = PRICE_STEP
+        min_notional = MIN_NOTIONAL
 
-        # Convert values to Decimal with proper error handling
-        def to_decimal(value, default):
-            if isinstance(value, Decimal):
-                return value
+        if specs:
+            # Pydantic model InstrumentSpec fields are strings, convert to Decimal
             try:
-                return Decimal(str(value))
+                min_qty = Decimal(specs.min_qty)
+                step_size = Decimal(specs.step_size)
+                tick_size = Decimal(specs.tick_size)
+                min_notional = Decimal(specs.min_notional)
             except (ValueError, TypeError, InvalidOperation):
-                return default
+                pass
 
         return {
-            "min_qty": to_decimal(specs.get("min_qty") if isinstance(specs, dict) else specs, MIN_ORDER_QTY),
-            "step_size": to_decimal(specs.get("step_size") if isinstance(specs, dict) else specs, QTY_STEP),
-            "tick_size": to_decimal(specs.get("tick_size") if isinstance(specs, dict) else specs, PRICE_STEP),
-            "min_notional": to_decimal(specs.get("min_notional") if isinstance(specs, dict) else specs, MIN_NOTIONAL),
+            "min_qty": min_qty,
+            "step_size": step_size,
+            "tick_size": tick_size,
+            "min_notional": min_notional,
         }
 
     def _cleanup_idempotency_store(self):
@@ -328,66 +333,7 @@ class OpenFlowFSM:
                     pld={"error": str(e)},
                 )
 
-        elif (
-            msg.op == "EVT"
-            and msg.verb == "READY"
-            and self.state == OpenState.CANDIDATE
-        ):
-            self.state = OpenState.READY
-            return None
-
-        elif (
-            msg.op == "EVT" and msg.verb == "EXECUTE" and self.state == OpenState.READY
-        ):
-            # Generate DEC:OPEN
-            pld = msg.pld or {}
-            symbol = pld.get("symbol")
-            side = pld.get("side")
-            qty = pld.get("qty")
-            price = pld.get("price")
-
-            dec_pld = {
-                "symbol": symbol,
-                "side": side,
-                "qty": str(qty),
-                "order_type": "LIMIT",
-                "tif": "GTC",
-            }
-            if price is not None:
-                dec_pld["price"] = str(price)
-
-            dec = Message(
-                op="DEC",
-                verb="OPEN",
-                src=msg.dst,  # FSM as source
-                dst="execution_position",
-                rid=msg.rid,
-                why="OPEN_OK",
-                idempotent_key=msg.idempotent_key,
-                pld=dec_pld,
-                corr_id=str(uuid.uuid4()),
-                oco_group_id=str(uuid.uuid4()),
-                data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
-            )
-
-            # Update state and metrics
-            self.state = OpenState.DONE
-            self.last_open_ts = time.time()
-            self._metrics["fsm_open_decisions_total"] += 1
-
-            return dec
-
         return None
-
-    def _check_qty_step(self, qty: Decimal) -> bool:
-        """Check if qty is multiple of QTY_STEP."""
-        remainder = qty % QTY_STEP
-        return remainder == 0
-
-    def _check_price_step(self, price: Decimal) -> bool:
-        """Check if price is multiple of PRICE_STEP."""
-        remainder = price % PRICE_STEP
-        return remainder == 0
 
     def _reject(self, msg: Message, why: str, reason: str) -> Message:
         """Generate ERR message for guard failures."""

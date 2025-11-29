@@ -18,7 +18,8 @@ class DummyMsg:
 def test_fill_transitions_to_opened_state():
     f = CloseFlowFSM()
     # simulate incoming fill event which should open the FSM
-    msg = DummyMsg(op="EVT", verb="FILL", pld={"filled_qty": "1"})
+    # Note: fsm_close.py expects "TRADE_EXECUTED" or "PARTIAL_FILL", not "FILL"
+    msg = DummyMsg(op="EVT", verb="TRADE_EXECUTED", pld={"qty": "1"})
     dec = f.handle(msg)
     assert f.state == CloseState.OPENED
     assert f.position_active is True
@@ -41,7 +42,8 @@ def test_check_close_by_timer_triggers_emit():
 
 def test_handle_on_fill_transitions_to_opened_and_no_immediate_close():
     f = CloseFlowFSM(max_hold_sec=60.0)
-    msg = DummyMsg(op="EVT", verb="FILL", pld={"filled_qty": "1"})
+    # Note: fsm_close.py expects "TRADE_EXECUTED" or "PARTIAL_FILL", not "FILL"
+    msg = DummyMsg(op="EVT", verb="TRADE_EXECUTED", pld={"qty": "1"})
     dec = f.handle(msg)
     assert f.state == CloseState.OPENED
     assert f.position_active is True

@@ -17,11 +17,8 @@ class MetricEventType(Enum):
     """Metric event types for structured logging."""
     RISK_CLIP_ORDER = "risk.clip.order"
     RISK_REJECT_ORDER = "risk.reject.order"
-    RISK_CLIP_SUMMARY = "risk.clip.summary"
     ORDER_CANCEL_IDEMPOTENT = "order.cancel.idempotent"
     ORDER_CANCEL_2011_ABSORBED = "order.cancel.2011_absorbed"
-    REGIME_SHIFT = "regime.shift"
-    ORDER_EXECUTE = "order.execute"
 
 
 @dataclass

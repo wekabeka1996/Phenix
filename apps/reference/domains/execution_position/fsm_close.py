@@ -32,13 +32,16 @@ class CloseFlowFSM:
     """
     Close Flow FSM: monitors conditions and emits DEC:CLOSE.
 
-    Shadow-mode: stub rules (time-based, event-driven).
-    Triggers on EVT:FILL|REJECTED|EXPIRED or timer tick.
+    Role:
+    1. Execution: Processes CMD:CLOSE from Decision Making.
+    2. Failsafe: Emergency close on max_hold_sec (default 24h) if Decision fails.
+    3. Technical: Handles REJECTED/EXPIRED events.
     """
 
-    def __init__(self, max_hold_sec: float = 7200.0):
+    def __init__(self, max_hold_sec: float = 86400.0):  # Default 24h failsafe
+        # Note: In production, max_hold_sec should be injected from config (trading.execution.failsafe.max_hold_sec)
         self.state = CloseState.FLAT
-        self.max_hold_sec = max_hold_sec  # stub: max position hold time
+        self.max_hold_sec = max_hold_sec
         self.position_open_ts: float = 0.0
         self.position_active = False
         self._metrics: Dict[str, int] = {
@@ -113,40 +116,14 @@ class CloseFlowFSM:
 
     def _check_close_conditions(self, msg: Message) -> Optional[Message]:
         """
-        Check stub close rules: max_hold_sec, REJECTED, EXPIRED.
+        Check stub close rules.
+        
+        NOTE: Autonomous closing rules (max_hold_sec, REJECTED, EXPIRED) are disabled
+        per "soldier" pattern requirements. This domain only executes CMD:CLOSE.
 
         Returns:
-            DEC:CLOSE if rule triggers, None otherwise.
+            None (autonomous closing disabled).
         """
-        if not self.position_active:
-            return None
-
-        try:
-            # Rule 1: Max hold time (stub)
-            now = time.time()
-            elapsed = now - self.position_open_ts
-            if elapsed > self.max_hold_sec:
-                return self._emit_close(
-                    msg, "CLOSE_RULE", {
-                        "rule": "max_hold_time", "elapsed_sec": elapsed}
-                )
-
-            # Rule 2: Emergency close on REJECTED/EXPIRED
-            if msg.verb in ("REJECTED", "EXPIRED"):
-                return self._emit_close(msg, "CLOSE_EMERGENCY", {"trigger": msg.verb})
-
-            # Rule 3: UPD:TICK (timer check: check every tick if max_hold exceeded)
-            if msg.op == "UPD" and msg.verb == "TICK":
-                if elapsed > self.max_hold_sec:
-                    return self._emit_close(
-                        msg,
-                        "CLOSE_RULE",
-                        {"rule": "timer_check", "elapsed_sec": elapsed},
-                    )
-
-        except Exception:
-            self._metrics["fsm_errors_total"] += 1
-
         return None
 
     def _emit_close(self, msg: Message, why: str, details: Dict[str, Any]) -> Message:

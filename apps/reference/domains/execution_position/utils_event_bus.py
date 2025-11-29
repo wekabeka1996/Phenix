@@ -4,7 +4,10 @@ Local event bus for ExecPosFSM when global FSM is not available.
 Provides a simple pub-sub mechanism for internal event routing.
 """
 
-from typing import Callable, Dict, List, Any
+import logging
+from typing import Callable, Dict, List, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class LocalBus:
@@ -26,13 +29,21 @@ class LocalBus:
             self._listeners[event] = []
         self._listeners[event].append(callback)
 
-    def emit(self, event: str, payload: Any = None) -> None:
+    def emit(
+        self,
+        event: str,
+        payload: Any = None,
+        why: Optional[str] = None,
+        data_ref: Optional[List[str]] = None
+    ) -> None:
         """
         Emit an event to all registered listeners.
 
         Args:
             event: Event name
             payload: Event payload (typically a dict or Message)
+            why: Optional reason/context (for compatibility with FSMCore)
+            data_ref: Optional data references (for compatibility with FSMCore)
         """
         if event in self._listeners:
             for callback in self._listeners[event]:
@@ -43,7 +54,7 @@ class LocalBus:
                         callback()
                 except Exception as e:
                     # Log error but continue processing other listeners
-                    print(f"[LocalBus] Error in callback for {event}: {e}")
+                    logger.error(f"[LocalBus] Error in callback for {event}: {e}", exc_info=True)
 
     def unlisten(self, event: str, callback: Callable) -> None:
         """

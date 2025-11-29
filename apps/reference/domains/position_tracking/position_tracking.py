@@ -86,6 +86,20 @@ class PositionTracking:
         # Manual intervention metrics
         self.manual_intervention_detected_total = 0
 
+        # Load precision parameters from domains config
+        self.quantity_min_threshold = decimal.Decimal("1e-9")
+        self.flat_position_threshold = decimal.Decimal("1e-12")
+        self.decimal_places = 2
+        
+        try:
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'position_tracking'):
+                precision = self.config.domains.position_tracking.precision
+                self.quantity_min_threshold = decimal.Decimal(str(precision.quantity_min_threshold))
+                self.flat_position_threshold = decimal.Decimal(str(precision.flat_position_threshold))
+                self.decimal_places = precision.decimal_places
+        except (AttributeError, TypeError):
+            pass  # Use defaults
+
     def start(self) -> None:
         """Start the position tracking component and emit initial portfolio state."""
         # Emit initial portfolio state with zero positions
@@ -316,7 +330,7 @@ class PositionTracking:
             quantity = _d(pos.get("positionAmt", 0))
             binance_symbols.add(symbol)
 
-            if abs(quantity) > decimal.Decimal("1e-9"):  # Only track non-zero positions
+            if abs(quantity) > self.quantity_min_threshold:  # Only track non-zero positions
                 old_qty = self._positions.get(symbol, {}).get(
                     "quantity", decimal.Decimal("0"))
                 self._positions[symbol] = {
@@ -660,7 +674,7 @@ class PositionTracking:
             quantity = abs(position["quantity"])
             entry_price = position["avg_price"]
 
-            if quantity > decimal.Decimal("1e-9") and entry_price > decimal.Decimal(
+            if quantity > self.quantity_min_threshold and entry_price > decimal.Decimal(
                 "0"
             ):
                 position_notional = quantity * entry_price
@@ -748,7 +762,7 @@ class PositionTracking:
                 quantity = abs(position["quantity"])
                 entry_price = position["avg_price"]
 
-                if quantity > decimal.Decimal("1e-9") and entry_price > decimal.Decimal("0"):
+                if quantity > self.quantity_min_threshold and entry_price > decimal.Decimal("0"):
                     # Calculate notional
                     position_notional = quantity * entry_price
 
@@ -842,7 +856,7 @@ class PositionTracking:
                 quantity = position["quantity"]
                 entry_price = position["avg_price"]
 
-                if abs(quantity) > decimal.Decimal("1e-9") and entry_price > decimal.Decimal("0"):
+                if abs(quantity) > self.quantity_min_threshold and entry_price > decimal.Decimal("0"):
                     # Calculate notional
                     position_notional = abs(quantity) * entry_price
 
@@ -888,7 +902,7 @@ class PositionTracking:
         positions = []
         for symbol, position in self._positions.items():
             if abs(position["quantity"]) > decimal.Decimal(
-                "1e-9"
+                str(self.quantity_min_threshold)
             ):  # Only include non-zero positions
                 positions.append(
                     {
@@ -918,7 +932,7 @@ class PositionTracking:
         positions_state = {}
         for symbol, position in self._positions.items():
             if abs(position["quantity"]) > decimal.Decimal(
-                "1e-9"
+                str(self.quantity_min_threshold)
             ):  # Only include non-zero positions
                 qty = position["quantity"]
                 positions_state[symbol] = {

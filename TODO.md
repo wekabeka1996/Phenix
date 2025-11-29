@@ -1,3 +1,12 @@
+- [x] Refactor `ManageFlowFSM` to use `AuroraConfig` exclusively (remove legacy dict fallbacks). [FSMP-P1]
+- [x] Refactor `ExecPosFSM` to use `AuroraConfig` and remove dead code/syntax errors. [FSMP-P1]
+- [x] Add `offset_bps` to `BracketsConfig` in `config_models.py`. [FSMP-P1]
+- [x] Fix `tests/units/test_manage_flow_fsm_sl_side.py` (enable skipped tests). [FSMP-P1]
+- [x] Fix `tests/units/test_manage_flow_fsm_oco.py` (update config structure). [FSMP-P1]
+- [x] Fix `tests/units/test_manage_flow_fsm_unit.py` (update config structure). [FSMP-P1]
+
+- [x] Refactor `OpenFlowFSM` to use `AuroraConfig` exclusively and remove dead code. [FSMP-P1]
+
 **Мета**
 
 - Зменшити фальшиві ORDER_TIMEOUT під час виконання ордерів за рахунок гібридного WS+REST моніторингу.

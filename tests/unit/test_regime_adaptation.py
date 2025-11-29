@@ -10,27 +10,14 @@ from typing import Optional, List
 from unittest.mock import Mock
 from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
 from apps.reference.domains.execution_position.soft_clip import SoftLimitConfig, RegimeAdaptationConfig
+from apps.reference.config_models import AuroraConfig
 
 
 @pytest.fixture
 def guard():
     """Create a minimal ExposureGuard with test config."""
-    config = {
-        "trading": {
-            "execution": {
-                "exposure": {
-                    "max_equity_utilization_pct": "0.20",
-                    "max_portfolio_fraction": "0.20",
-                    "max_side_utilization_pct": {"long": "0.12", "short": "0.12"},
-                    "max_directional_ratio": "2.0",
-                    "per_symbol_cap_pct": "0.08",
-                    "reserve_margin_pct": "0.10",
-                    "post_fill_hold_ttl_sec": 5,
-                }
-            }
-        }
-    }
-    return ExposureGuard(config)
+    config = AuroraConfig(trading_mode="testnet")
+    return ExposureGuard(None, config)  # fsm_core=None for testing
 
 
 class TestRegimeAdaptation:

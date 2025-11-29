@@ -126,7 +126,7 @@ class TestNoAdapterLogicLeft:
         """Test OrderGuardian initializes correctly without adapter"""
         assert self.guardian.adapter is None
         assert self.guardian.store is not None
-        assert self.guardian.poll_interval_ms == 5000
+        assert self.guardian.poll_interval_ms == 0  # matches setup_method poll_interval_ms=0
         assert self.guardian._poller_task is None
 
     def test_logging_works_without_adapter(self):

@@ -121,7 +121,10 @@ class FeatureEngineering:
             self.macro_sync_enabled = False
 
         try:
-            if hasattr(self.macro_sync_config, 'anchors'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                self.anchor_symbols = self.config.domains.feature_engineering.macro_sync.anchors
+            elif hasattr(self.macro_sync_config, 'anchors'):
                 self.anchor_symbols = self.macro_sync_config.anchors
             else:
                 self.anchor_symbols = ["BTCUSDT", "ETHUSDT"]
@@ -129,7 +132,10 @@ class FeatureEngineering:
             self.anchor_symbols = ["BTCUSDT", "ETHUSDT"]
 
         try:
-            if hasattr(self.macro_sync_config, 'window'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                self.macro_window = self.config.domains.feature_engineering.macro_sync.window
+            elif hasattr(self.macro_sync_config, 'window'):
                 self.macro_window = self.macro_sync_config.window
             else:
                 self.macro_window = 60
@@ -154,7 +160,10 @@ class FeatureEngineering:
     def _init_symbol_state(self, symbol: str) -> None:
         """Initialize state for a new symbol."""
         try:
-            if hasattr(self.ema_config, 'period_short'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                ema_short = self.config.domains.feature_engineering.ema.period_short
+            elif hasattr(self.ema_config, 'period_short'):
                 ema_short = self.ema_config.period_short
             else:
                 ema_short = 3
@@ -162,7 +171,10 @@ class FeatureEngineering:
             ema_short = 3
 
         try:
-            if hasattr(self.ema_config, 'period_long'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                ema_long = self.config.domains.feature_engineering.ema.period_long
+            elif hasattr(self.ema_config, 'period_long'):
                 ema_long = self.ema_config.period_long
             else:
                 ema_long = 7
@@ -170,7 +182,10 @@ class FeatureEngineering:
             ema_long = 7
 
         try:
-            if hasattr(self.volume_config, 'sma_length'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                vol_sma_len = self.config.domains.feature_engineering.volume.sma_length
+            elif hasattr(self.volume_config, 'sma_length'):
                 vol_sma_len = self.volume_config.sma_length
             else:
                 vol_sma_len = 5
@@ -178,7 +193,10 @@ class FeatureEngineering:
             vol_sma_len = 5
 
         try:
-            if hasattr(self.volatility_config, 'sma_length'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                vol_range_sma_len = self.config.domains.feature_engineering.volatility.sma_length
+            elif hasattr(self.volatility_config, 'sma_length'):
                 vol_range_sma_len = self.volatility_config.sma_length
             else:
                 vol_range_sma_len = 10
@@ -237,8 +255,12 @@ class FeatureEngineering:
         state = self.symbol_state[symbol]
         current_ts = current_tick["ts"]
 
+        # Get window size from config
         try:
-            if hasattr(self.volume_config, 'window_sec'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                window_sec = self.config.domains.feature_engineering.volume.window_sec
+            elif hasattr(self.volume_config, 'window_sec'):
                 window_sec = self.volume_config.window_sec
             else:
                 window_sec = 60
@@ -294,7 +316,10 @@ class FeatureEngineering:
         current_ts = current_tick["ts"]
 
         try:
-            if hasattr(self.volatility_config, 'window_sec'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                window_sec = self.config.domains.feature_engineering.volatility.window_sec
+            elif hasattr(self.volatility_config, 'window_sec'):
                 window_sec = self.volatility_config.window_sec
             else:
                 window_sec = 60
@@ -344,8 +369,12 @@ class FeatureEngineering:
 
     def _compute_depth_imbalance(self, bid_size: decimal.Decimal, ask_size: decimal.Decimal) -> decimal.Decimal:
         """Compute depth imbalance from bid/ask sizes."""
+        # Get depth_half from config
         try:
-            if hasattr(self.liquidity_config, 'depth_half'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'feature_engineering'):
+                depth_half = self.config.domains.feature_engineering.liquidity.depth_half
+            elif hasattr(self.liquidity_config, 'depth_half'):
                 depth_half = self.liquidity_config.depth_half
             else:
                 depth_half = 1000

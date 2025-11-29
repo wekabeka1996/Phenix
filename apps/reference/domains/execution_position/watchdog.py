@@ -43,14 +43,17 @@ class OrderTimeoutWatchdog:
 
     def __init__(
         self,
+        config: Optional[Dict[str, Any]] = None,
         ack_ttl_ms: int = 8000,  # 8 seconds for order acknowledgment
         fill_ttl_ms: int = 30000,  # 30 seconds for order fill
         check_interval_ms: int = 1000,  # Check every 1 second
         on_timeout_callback: Optional[Callable[[OrderDeadline], Any]] = None
     ):
-        self.ack_ttl_ms = ack_ttl_ms
-        self.fill_ttl_ms = fill_ttl_ms
-        self.check_interval_ms = check_interval_ms
+        self.config = config or {}
+        # Load from config if available, else use defaults
+        self.ack_ttl_ms = self.config.get("ack_ttl_ms", ack_ttl_ms)
+        self.fill_ttl_ms = self.config.get("fill_ttl_ms", fill_ttl_ms)
+        self.check_interval_ms = self.config.get("check_interval_ms", check_interval_ms)
         self.on_timeout_callback = on_timeout_callback
 
         # Track orders by order_id
@@ -76,7 +79,7 @@ class OrderTimeoutWatchdog:
         self._rest_detected_cancels_total = 0
 
         # 🔧 POLLING FIX: Global RPS throttle for REST polling
-        self._rps_limit = 10  # Max 10 requests per second globally
+        self._rps_limit = self.config.get("rps_limit", 10)  # Max 10 requests per second globally
         self._rps_window_start = 0
         self._rps_request_count = 0
         self._rps_throttle_hits = 0
@@ -210,13 +213,19 @@ class OrderTimeoutWatchdog:
             LOG.debug(
                 f"Order {order_id} filled, removed from timeout tracking")
         elif order_id in self.pending_orders:
+            # BUG FIX: Also remove from pending_orders if fill arrives before ACK
+            del self.pending_orders[order_id]
             LOG.warning(
-                f"Fill received for order {order_id} that was still pending ACK")
+                f"Fill received for order {order_id} that was still pending ACK (removed)")
+        # BUG FIX: Clean up poll metadata to prevent memory leak
+        self._poll_meta.pop(order_id, None)
 
     def on_order_cancel(self, order_id: str):
         """Remove order from timeout tracking on cancellation."""
         self.pending_orders.pop(order_id, None)
         self.acked_orders.pop(order_id, None)
+        # BUG FIX: Clean up poll metadata to prevent memory leak
+        self._poll_meta.pop(order_id, None)
         LOG.debug(f"Order {order_id} cancelled, removed from timeout tracking")
 
     async def _watchdog_loop(self):
@@ -334,6 +343,9 @@ class OrderTimeoutWatchdog:
 
                             if self.emit_fn:
                                 await self.emit_fn("EVT:TRADE_EXECUTED", fill_payload)
+
+                            # BUG FIX: Stop timeout tracking immediately!
+                            self.on_order_fill(order_id)
 
                             # Mark as terminal to prevent duplicate processing
                             meta['terminal'] = True

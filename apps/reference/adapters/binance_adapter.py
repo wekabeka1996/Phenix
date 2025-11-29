@@ -29,12 +29,6 @@ from vfoundation.core.adapters.base import (
 )
 
 LOG = logging.getLogger(__name__)
-# забезпечуємо саме таку змінну, яку патчить тест
-log = logging.getLogger(__name__)
-
-
-# +++ add near imports
-
 
 async def _coerce_json(obj):
     """
@@ -104,14 +98,14 @@ class BinanceAdapter(AbstractExchangeAdapter):
         self.base_url = base_url.rstrip("/")
         self.config = config or {}
         self._timeout = timeout
-        # 🔴 ADD: logger for diagnostics
         self.logger = logging.getLogger(__name__)
 
-        # NEW: time sync state
+        # Time sync state
         self._time_offset_ms = 0
         self._last_time_sync_monotonic = 0.0
         self._time_sync_lock = asyncio.Lock()
-        # recvWindow (ms). Для ф'ючерсів максимум 60000.
+        
+        # recvWindow (ms). Max 60000 for Futures.
         try:
             if hasattr(self.config, 'recv_window_ms'):
                 self._recv_window_ms = int(self.config.recv_window_ms)
@@ -123,23 +117,20 @@ class BinanceAdapter(AbstractExchangeAdapter):
         except (AttributeError, TypeError, ValueError):
             self._recv_window_ms = 20000
 
-        # Сумісність із тестами: публічне поле .session завжди існує
+        # Public session field for compatibility
         self.session: httpx.AsyncClient = session or httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self._timeout,
             headers={"X-MBX-APIKEY": self.api_key},
         )
 
-        # PHASE B1: ClientOrderId ledger for -4116 idempotency
+        # ClientOrderId ledger for idempotency
         # Format: {clientOrderId: (timestamp_ms: int, order_id: str, symbol: str)}
         self._clientorderid_ledger: Dict[str, Tuple[int, str, str]] = {}
 
         self._mark_price_cache: Dict[
             str, Dict[str, Any]
         ] = {}  # symbol -> {'price': float, 'timestamp': float}
-
-        # Logger reference for diagnostics
-        self.logger = logging.getLogger(__name__)
 
     # опційно: контекст-менеджер для акуратного закриття
     async def __aenter__(self) -> "BinanceAdapter":
@@ -174,7 +165,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         """
         LOG.info("BinanceAdapter stopped (REST-only mode, no polling)")
 
-    # PHASE B1: ClientOrderId Ledger Methods
+    # ClientOrderId Ledger Methods
     def register_clientorderid(self, client_order_id: str, order_id: str, symbol: str) -> None:
         """
         Register a successful order in ClientOrderId ledger.
@@ -188,7 +179,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         self._clientorderid_ledger[client_order_id] = (
             timestamp_ms, order_id, symbol)
         LOG.debug(
-            f"✅ [B1] Registered ClientOrderId {client_order_id} → {order_id} ({symbol})")
+            f"Registered ClientOrderId {client_order_id} -> {order_id} ({symbol})")
 
     def check_clientorderid_reuse(self, symbol: str, client_order_id: str) -> Optional[str]:
         """
@@ -210,14 +201,14 @@ class BinanceAdapter(AbstractExchangeAdapter):
         age_ms = int(time.time() * 1000) - timestamp_ms
         if ledger_symbol == symbol and age_ms < 24 * 3600 * 1000:
             LOG.info(
-                f"🔄 [B1] REUSING ClientOrderId {client_order_id} → {order_id} ({symbol}) - age {age_ms/1000:.0f}s")
+                f"Reusing ClientOrderId {client_order_id} -> {order_id} ({symbol}) - age {age_ms/1000:.0f}s")
             return order_id
 
         # Stale entry: remove from ledger
         if age_ms >= 24 * 3600 * 1000:
             del self._clientorderid_ledger[client_order_id]
             LOG.debug(
-                f"🗑️ [B1] Cleaned stale ClientOrderId {client_order_id} (age {age_ms/3600000:.1f}h)")
+                f"Cleaned stale ClientOrderId {client_order_id} (age {age_ms/3600000:.1f}h)")
 
         return None
 
@@ -292,14 +283,14 @@ class BinanceAdapter(AbstractExchangeAdapter):
         url = f"{self.base_url}{path}"
         params = params or {}
 
-        # Готуємо одразу "базові" params (без підпису) для можливого ретраю
+        # Prepare base params (without signature) for potential retry
         base_params = dict(params)
 
         async def _do(method: str, base_params: dict):
             if signed:
                 await self._sync_time(False)
                 qs, final_params = self._sign_build(base_params)
-                # ВИКОРИСТОВУЄМО self.session — щоб тести могли мокати її
+                # Use self.session to allow mocking in tests
                 r = await self.session.request(method.upper(), url, params=final_params)
                 if r.status_code >= 400:
                     err = await _safe_read_err(r)
@@ -310,11 +301,12 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     method.upper(), url, params=self._norm_params(base_params)
                 )
                 r.raise_for_status()
-                return await _coerce_json(r)        # 1-й запит
+                return await _coerce_json(r)
+
         try:
             return await _do(method, base_params)
         except Exception as e:
-            # Якщо ReadTimeout або ConnectTimeout → спробуємо ретрай (1 раз)
+            # Retry on timeout
             import httpx
             import httpcore
             timeout_exceptions = (
@@ -323,15 +315,16 @@ class BinanceAdapter(AbstractExchangeAdapter):
             )
             if isinstance(e, timeout_exceptions):
                 LOG.warning(f"Timeout on {method} {path}, retrying once...")
-                import asyncio
-                await asyncio.sleep(0.5)  # Невелика затримка перед ретраєм
+                await asyncio.sleep(0.5)
                 return await _do(method, base_params)
-            # Якщо -1021 → жорстка синхронізація і другий запит з НОВОГО base_params
+            
+            # Retry on timestamp error (-1021)
             msg = str(e)
             if "code': -1021" in msg or "-1021" in msg:
                 await self._sync_time(True)
                 return await _do(method, base_params)
-            # Якщо -1022 → також спробуємо 1 ретрай з чистої бази (частий кейс "перепідписали")
+            
+            # Retry on signature error (-1022)
             if (
                 "code': -1022" in msg
                 or "-1022" in msg
@@ -516,20 +509,19 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     async def get_open_positions(self, symbol: Optional[str] = None) -> List[ExchangePosition]:
         """
-        USDT-M Futures: повертає тільки відкриті (non-zero) позиції.
-        Працює і в ONE_WAY (positionSide='BOTH'), і в HEDGE (LONG/SHORT).
+        Retrieve open positions (optionally filtered by symbol).
+        Only returns non-zero positions.
+        
         Implements AbstractExchangeAdapter.get_open_positions()
-
-        PHASE P0: Added retry/backoff for empty API responses to handle network/API failures.
         """
         params: Dict[str, Any] = {}
         if symbol:
             params["symbol"] = symbol
 
-        # PHASE P0: Get fallback retry configuration
+        # Get fallback retry configuration
         fallback_backoff_ms = self._get_fallback_backoff_ms()
 
-        # PHASE P0: Retry logic for empty responses
+        # Retry logic for empty responses
         max_retries = len(fallback_backoff_ms)
         last_exception = None
 
@@ -538,50 +530,33 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 # signed GET /fapi/v2/positionRisk
                 raw = await self._request("GET", "/fapi/v2/positionRisk", params)
 
-                # 🔴 DIAGNOSTIC: Log raw API response
-                self.logger.debug(
-                    f"🌐 BinanceAdapter.get_open_positions() attempt={attempt+1}/{max_retries+1} raw response type: {type(raw)}, len: {len(raw) if isinstance(raw, list) else 'N/A'}")
                 if not isinstance(raw, list) or len(raw) == 0:
                     if attempt < max_retries:
                         self.logger.warning(
-                            f"⚠️ API /fapi/v2/positionRisk returned empty/non-list on attempt {attempt+1}, retrying in {fallback_backoff_ms[attempt]}ms: {raw}")
+                            f"API /fapi/v2/positionRisk returned empty/non-list on attempt {attempt+1}, retrying in {fallback_backoff_ms[attempt]}ms: {raw}")
                         await asyncio.sleep(fallback_backoff_ms[attempt] / 1000.0)
                         continue
                     else:
                         self.logger.error(
-                            f"❌ API /fapi/v2/positionRisk still empty after {max_retries+1} attempts, returning empty positions")
+                            f"API /fapi/v2/positionRisk still empty after {max_retries+1} attempts, returning empty positions")
                 else:
                     if attempt > 0:
                         self.logger.info(
-                            f"✅ API /fapi/v2/positionRisk recovered after {attempt+1} attempts, returned {len(raw)} total records")
-                    else:
-                        self.logger.info(
-                            f"✅ API /fapi/v2/positionRisk returned {len(raw)} total records")
+                            f"API /fapi/v2/positionRisk recovered after {attempt+1} attempts, returned {len(raw)} total records")
 
                 positions: List[ExchangePosition] = []
                 for p in raw:
-                    # Binance віддає числа як строки — зберігаємо precision, конвертуємо тільки коли потрібно
+                    # Binance returns numbers as strings - keep precision
                     amt_str = p.get("positionAmt", "0")
                     amt = float(amt_str)
                     symbol = p.get('symbol', 'UNKNOWN')
 
-                    # 🔴 DIAGNOSTIC: Log ALL positions from API
-                    if abs(amt) > 0.0001:
-                        self.logger.info(
-                            f"  ✅ API Position: {symbol} {p.get('positionSide', 'BOTH')} {amt} @ entry={p.get('entryPrice', 'N/A')}, mark={p.get('markPrice', 'N/A')}, unPnL={p.get('unRealizedProfit', 'N/A')}")
-
                     if abs(amt) <= 0.0:
-                        # 🔴 DIAGNOSTIC: Log filtered positions
-                        self.logger.debug(
-                            f"  ❌ Skipping zero position for {symbol}: positionAmt={amt_str}")
-                        continue  # пропускаємо нульові
+                        continue  # Skip zero positions
 
                     entry_str = p.get("entryPrice", "0") or "0"
-                    entry = float(entry_str)
                     mark_str = p.get("markPrice", "0") or "0"
-                    mark = float(mark_str)
                     upnl_str = p.get("unRealizedProfit", "0") or "0"
-                    upnl = float(upnl_str)
                     lev = int(float(p.get("leverage", "0") or 0))
 
                     # Hedge: 'LONG'/'SHORT'; One-way: 'BOTH'
@@ -592,11 +567,11 @@ class BinanceAdapter(AbstractExchangeAdapter):
                     pos_obj = ExchangePosition(
                         symbol=p.get("symbol", ""),
                         position_side=pos_side,  # BOTH/LONG/SHORT
-                        side=side,  # LONG/SHORT (зручно для бізнес-логіки)
-                        position_amount=amt_str,  # зберігаємо string для precision
-                        entry_price=entry_str,  # зберігаємо string для precision
-                        mark_price=mark_str,  # зберігаємо string для precision
-                        unrealized_profit=upnl_str,  # зберігаємо string для precision
+                        side=side,  # LONG/SHORT (convenient for business logic)
+                        position_amount=amt_str,
+                        entry_price=entry_str,
+                        mark_price=mark_str,
+                        unrealized_profit=upnl_str,
                         leverage=lev,
                         margin_type=p.get("marginType", "cross").upper(),
                         isolated_margin=float(
@@ -604,17 +579,9 @@ class BinanceAdapter(AbstractExchangeAdapter):
                         update_time_ms=int(p.get("updateTime", 0) or 0),
                     )
                     positions.append(pos_obj)
-                    # 🔴 DIAGNOSTIC: Log accepted position
-                    self.logger.info(
-                        f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}")
 
-                # 🔴 DIAGNOSTIC: Final summary
-                self.logger.info(
-                    f"🎯 get_open_positions() returning {len(positions)} non-zero positions")
-
-                # PHASE P0: If we got empty positions after successful API call, enter fallback mode
+                # If we got empty positions after successful API call, enter fallback mode
                 if not positions and isinstance(raw, list) and len(raw) == 0:
-                    # Log warning about empty position response
                     self.logger.warning(
                         "FALLBACK_TRIGGER: Empty positions response detected - this may trigger fallback mode in ExposureGuard"
                     )
@@ -625,12 +592,29 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 last_exception = e
                 if attempt < max_retries:
                     self.logger.warning(
-                        f"⚠️ get_open_positions() attempt {attempt+1} failed: {e}, retrying in {fallback_backoff_ms[attempt]}ms")
+                        f"get_open_positions() attempt {attempt+1} failed: {e}, retrying in {fallback_backoff_ms[attempt]}ms")
                     await asyncio.sleep(fallback_backoff_ms[attempt] / 1000.0)
                 else:
                     self.logger.error(
-                        f"❌ get_open_positions() failed after {max_retries+1} attempts: {e}")
+                        f"get_open_positions() failed after {max_retries+1} attempts: {e}")
                     raise last_exception
+
+    async def get_positions_notional_usd_shadow(self) -> float:
+        """
+        Calculate total notional value (USD) of all open positions directly from exchange.
+        Used for shadow/safety checks.
+        """
+        positions = await self.get_open_positions()
+        total_notional = 0.0
+        for p in positions:
+            # notional = abs(amount * mark_price)
+            try:
+                notional = abs(float(p.position_amount) * float(p.mark_price))
+                total_notional += notional
+            except (ValueError, TypeError):
+                self.logger.warning(f"Could not calculate notional for position {p.symbol}: amt={p.position_amount}, price={p.mark_price}")
+                continue
+        return total_notional
 
         # This should never be reached, but just in case
         raise last_exception
@@ -785,67 +769,61 @@ class BinanceAdapter(AbstractExchangeAdapter):
         params = {"symbol": symbol, "interval": interval, "limit": limit}
         return await self._request("GET", path, params)
 
-    def _to_decimal(self, value: Any) -> Decimal:
+    async def get_book_ticker(self, symbol: str) -> Dict[str, Any]:
         """
-        Convert value to Decimal, handling dict (price/markPrice), str, int, float.
-        Raises ValueError if None or invalid.
-        """
-        if value is None:
-            raise ValueError("Value cannot be None")
-        if isinstance(value, dict):
-            # For mark price dict, use 'markPrice' or 'price'
-            price = value.get("markPrice") or value.get("price")
-            if price is None:
-                raise ValueError(
-                    f"Dict has no 'markPrice' or 'price': {value}")
-            return Decimal(str(price))
-        if isinstance(value, (str, int, float)):
-            return Decimal(str(value))
-        raise ValueError(f"Cannot convert {type(value)} to Decimal: {value}")
-
-    def _round_step(
-        self, qty: Decimal, step_size: Decimal, round_mode: str = ROUND_DOWN
-    ) -> Decimal:
-        """
-        Round quantity to step size.
-        round_mode: ROUND_DOWN (default) or ROUND_UP.
-        """
-        if step_size == 0:
-            return qty
-        return (qty / step_size).quantize(Decimal("1"), rounding=round_mode) * step_size
-
-    async def _find_symbol_by_order_id(self, order_id: Optional[str] = None, client_order_id: Optional[str] = None) -> Optional[str]:
-        """
-        Find symbol for an order by scanning all open orders (fallback for cancel_order).
+        Get current book ticker (bid/ask prices and sizes).
 
         Args:
-            order_id: Binance order ID to search for.
-            client_order_id: Client order ID to search for.
+            symbol: The trading symbol (e.g., BTCUSDT).
 
         Returns:
-            Symbol if found, None otherwise.
+            Book ticker data with bid/ask prices and sizes.
         """
-        if not order_id and not client_order_id:
-            return None
+        path = "/fapi/v1/ticker/bookTicker"
+        params = {"symbol": symbol}
+        return await self._request("GET", path, params)
 
-        try:
-            # Scan all open orders without symbol filter (returns all symbols)
-            open_orders = await self._request("GET", "/fapi/v1/openOrders", {})
+    async def get_recent_trades(self, symbol: str, limit: int = 100) -> list:
+        """
+        Get recent trades for a symbol.
 
-            for order in open_orders:
-                if order_id and str(order.get("orderId", "")) == str(order_id):
-                    return order.get("symbol")
-                if client_order_id and order.get("clientOrderId") == client_order_id:
-                    return order.get("symbol")
+        Args:
+            symbol: The trading symbol (e.g., BTCUSDT).
+            limit: Number of recent trades to retrieve (max 1000).
 
-            LOG.debug(
-                f"[_find_symbol_by_order_id] Order {order_id or client_order_id} not found in {len(open_orders)} open orders")
-            return None
+        Returns:
+            A list of recent trade data.
+        """
+        path = "/fapi/v1/trades"
+        params = {"symbol": symbol, "limit": min(limit, 1000)}
+        return await self._request("GET", path, params)
 
-        except Exception as e:
-            LOG.warning(
-                f"[_find_symbol_by_order_id] Error scanning open orders: {e}")
-            return None
+    async def get_mark_price_data(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get mark price for a symbol.
+
+        Args:
+            symbol: The trading symbol (e.g., BTCUSDT).
+
+        Returns:
+            Mark price data.
+        """
+        path = "/fapi/v1/premiumIndex"
+        params = {"symbol": symbol}
+        return await self._request("GET", path, params)
+
+    async def create_stop_market_order(self, order_params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a STOP_MARKET order.
+
+        Args:
+            order_params: Order parameters.
+
+        Returns:
+            Order response.
+        """
+        path = "/fapi/v1/order"
+        return await self._request("POST", path, order_params)
 
     async def place_market_entry(
         self, symbol: str, side: str, quantity: str, new_client_order_id: Optional[str] = None
@@ -1142,73 +1120,38 @@ class BinanceAdapter(AbstractExchangeAdapter):
             else:
                 raise
 
-    async def close_session(self):
-        """Close the httpx session."""
-        try:
-            await self.session.aclose()
-            LOG.info("BinanceAdapter httpx session closed.")
-        except Exception:
-            pass
-
-    async def get_book_ticker(self, symbol: str) -> Dict[str, Any]:
+    def _to_decimal(self, value: Any) -> Decimal:
         """
-        Get current book ticker (bid/ask prices and sizes).
-
-        Args:
-            symbol: The trading symbol (e.g., BTCUSDT).
-
-        Returns:
-            Book ticker data with bid/ask prices and sizes.
+        Convert value to Decimal, handling dict (price/markPrice), str, int, float.
+        Raises ValueError if None or invalid.
         """
-        path = "/fapi/v1/ticker/bookTicker"
-        params = {"symbol": symbol}
-        return await self._request("GET", path, params)
+        if value is None:
+            raise ValueError("Value cannot be None")
+        if isinstance(value, dict):
+            # For mark price dict, use 'markPrice' or 'price'
+            price = value.get("markPrice") or value.get("price")
+            if price is None:
+                raise ValueError(
+                    f"Dict has no 'markPrice' or 'price': {value}")
+            return Decimal(str(price))
+        if isinstance(value, (str, int, float)):
+            return Decimal(str(value))
+        raise ValueError(f"Cannot convert {type(value)} to Decimal: {value}")
 
-    async def get_recent_trades(self, symbol: str, limit: int = 100) -> list:
+    def _round_step(
+        self, qty: Decimal, step_size: Decimal, round_mode: str = ROUND_DOWN
+    ) -> Decimal:
         """
-        Get recent trades for a symbol.
-
-        Args:
-            symbol: The trading symbol (e.g., BTCUSDT).
-            limit: Number of recent trades to retrieve (max 1000).
-
-        Returns:
-            A list of recent trade data.
+        Round quantity to step size.
+        round_mode: ROUND_DOWN (default) or ROUND_UP.
         """
-        path = "/fapi/v1/trades"
-        params = {"symbol": symbol, "limit": min(limit, 1000)}
-        return await self._request("GET", path, params)
-
-    async def get_mark_price_data(self, symbol: str) -> Dict[str, Any]:
-        """
-        Get mark price for a symbol.
-
-        Args:
-            symbol: The trading symbol (e.g., BTCUSDT).
-
-        Returns:
-            Mark price data.
-        """
-        path = "/fapi/v1/premiumIndex"
-        params = {"symbol": symbol}
-        return await self._request("GET", path, params)
-
-    async def create_stop_market_order(self, order_params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create a STOP_MARKET order.
-
-        Args:
-            order_params: Order parameters.
-
-        Returns:
-            Order response.
-        """
-        path = "/fapi/v1/order"
-        return await self._request("POST", path, order_params)
+        if step_size == 0:
+            return qty
+        return (qty / step_size).quantize(Decimal("1"), rounding=round_mode) * step_size
 
     def _get_fallback_backoff_ms(self) -> List[int]:
         """
-        PHASE P0: Get fallback backoff configuration for retry logic.
+        Get fallback backoff configuration for retry logic.
 
         Returns:
             List of backoff delays in milliseconds.
@@ -1233,10 +1176,6 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         return backoff_ms
 
-
-# ---- helpers ----
-
-
 async def _safe_read_err(resp):
     try:
         return await resp.json()
@@ -1245,14 +1184,6 @@ async def _safe_read_err(resp):
             return {"code": resp.status_code, "msg": resp.text}
         except Exception:
             return {"code": resp.status_code, "msg": "unknown"}
-
-
-def _is_code_1021(err) -> bool:
-    try:
-        return int(err.get("code")) == -1021
-    except Exception:
-        return False
-
 
 def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPIError:
     # support both call styles: (_resp, err) and (code, msg)
@@ -1278,9 +1209,8 @@ def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPI
     rejection_codes = {-1013, -1021, -2010}
     nrr = "NRR-018" if code in rejection_codes else None
 
-    # ГАРАНТОВАНО для rejection-кодів: викликаємо через модульну змінну log
     if nrr == "NRR-018":
-        log.warning(
+        LOG.warning(
             "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr)
 
     return BinanceAPIError(code=code, msg=msg, nrr_code=nrr)

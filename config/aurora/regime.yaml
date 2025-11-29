@@ -18,3 +18,22 @@ hotreload_whitelist:
   - hmm.sticky_kappa
   - hmm.update_interval
   - hmm.change_conf_min
+
+models:
+  sma_trend:
+    sma_short_period: 10
+    sma_long_period: 50
+    confidence_multiplier: 20.0
+    confidence_min: 0.5
+    confidence_max: 0.95
+  volatility:
+    enabled: true
+    atr_period: 14
+    atr_sma_length: 100
+    threshold_multiplier: 2.0
+    low_vol_multiplier: 0.5
+    high_vol_confidence_multiplier: 2.0
+    low_vol_confidence_multiplier: 3.0
+  mean_reversion:
+    threshold: 0.005
+    confidence_multiplier: 100.0

@@ -106,6 +106,11 @@ class OrderGuardian:
     async def stop(self):
         return await self._impl.stop()
 
+    @property
+    def poll_interval_ms(self) -> int:
+        """Expose poll_interval_ms from underlying implementation."""
+        return self._impl.poll_interval_ms
+
     def update_known_symbols(self, symbols: set[str]) -> None:
         """Best-effort propagation of configured symbols into services guardian."""
         try:

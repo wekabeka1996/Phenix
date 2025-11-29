@@ -59,24 +59,39 @@ def test_should_place_brackets_and_place_flow():
     assert fsm._should_place_brackets() is True
 
     msg = make_fill_msg()
-    # simulate a fill -> handle should place brackets and return first order DEC
+    # simulate a fill -> handle should place brackets and return BATCH message
     dec = fsm.handle(msg)
-    # Either None (if something went wrong) or a DEC PLACE_ORDER message
+    # Either None (if something went wrong) or a DEC BATCH message
     if dec is not None:
         assert dec.op == "DEC"
-        assert dec.verb in (
-            "PLACE_ORDER", "CANCEL_ORDER") or dec.verb == "PLACE_ORDER"
+        assert dec.verb in ("BATCH", "PLACE_ORDER")
 
 
 def test_calculate_bracket_prices_and_get_opposite():
-    fsm = ManageFlowFSM()
+    # Mock config structure to match what _calculate_bracket_prices expects
+    cfg = {
+        "trading": {
+            "execution": {
+                "manage": {
+                    "brackets": {
+                        "sl": {"fixed_bps": 50}, 
+                        "tp": {"fixed_bps": 100},
+                        "stop_loss_bps": 50 # Legacy fallback
+                    }
+                }
+            }
+        }
+    }
+    fsm = ManageFlowFSM(config=cfg)
     fsm.position_entry_price = Decimal("100")
     # _get_opposite_side() expects position_side to be "BUY"/"SELL"
     fsm.position_side = "BUY"
     fsm.position_qty = Decimal("1")
-    fsm.config = {"brackets": {
-        "sl": {"fixed_bps": 50}, "tp": {"fixed_bps": 100}}}
-
+    
+    # Manually set _manage_cfg to ensure it's picked up if config parsing fails in init
+    # (Though init should handle it if we pass correct structure)
+    # But let's just rely on the config passed to init.
+    
     sl, tp = fsm._calculate_bracket_prices()
     assert sl is not None and tp is not None
     # When position_side="BUY", opposite side is "SELL"

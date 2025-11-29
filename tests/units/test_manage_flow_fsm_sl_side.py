@@ -7,17 +7,20 @@ from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
 
 
-@pytest.mark.skip(reason="ManageFlowFSM.handle() returns None for FILL events - needs investigation")
 def test_sl_side_is_opposite_for_long():
     # Config enables auto-manage and brackets
     cfg = {
-        "execution": {
-            "manage": {"auto": True},
-            "brackets": {
-                "enable": True,
-                "sl": {"fixed_bps": 50},
-                "tp": {"fixed_bps": 100},
-            },
+        "trading": {
+            "execution": {
+                "manage": {
+                    "auto": True,
+                    "brackets": {
+                        "enable": True,
+                        "sl": {"fixed_bps": 50},
+                        "tp": {"fixed_bps": 100},
+                    },
+                }
+            }
         }
     }
     fsm = ManageFlowFSM(config=cfg)
@@ -42,16 +45,19 @@ def test_sl_side_is_opposite_for_long():
         "side") == "SELL", "SL side must be opposite to BUY position"
 
 
-@pytest.mark.skip(reason="ManageFlowFSM.handle() returns None for FILL events - needs investigation")
 def test_sl_side_is_opposite_for_short():
     cfg = {
-        "execution": {
-            "manage": {"auto": True},
-            "brackets": {
-                "enable": True,
-                "sl": {"fixed_bps": 50},
-                "tp": {"fixed_bps": 100},
-            },
+        "trading": {
+            "execution": {
+                "manage": {
+                    "auto": True,
+                    "brackets": {
+                        "enable": True,
+                        "sl": {"fixed_bps": 50},
+                        "tp": {"fixed_bps": 100},
+                    },
+                }
+            }
         }
     }
     fsm = ManageFlowFSM(config=cfg)

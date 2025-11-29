@@ -603,8 +603,13 @@ class OrderGuardian:
         Check if brackets (TP/SL) should be placed for the given entry order.
 
         Returns True if brackets can be placed, False otherwise.
-        This is a safety check to prevent placing brackets when position is closing
-        or other conflicting conditions exist.
+        
+        NOTE: Position existence is validated upstream by ExecPosFSM._preflight_position_check()
+        with retry logic to handle REST API lag. This method only checks for conflicting
+        metadata conditions that would prevent bracket placement.
+        
+        FIX: Removed redundant position check that was causing race condition and blocking
+        TP/SL orders when REST API lag prevented immediate position visibility.
         """
         if not self.adapter:
             LOG.debug(
@@ -612,37 +617,10 @@ class OrderGuardian:
             return True
 
         try:
-            # Check if position exists for this symbol
-            positions = await self.adapter.get_open_positions()
-            position_amt = 0.0
-
-            for pos in positions:
-                # Handle both dict and ExchangePosition objects
-                if hasattr(pos, 'symbol'):
-                    pos_symbol = pos.symbol  # type: ignore[union-attr]
-                    # type: ignore[union-attr]
-                    pos_amt = float(pos.position_amount)
-                else:
-                    # type: ignore[union-attr]
-                    pos_symbol = pos.get("symbol", "")
-                    pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
-                                    or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
-
-                if pos_symbol == symbol:
-                    position_amt = pos_amt
-                    break
-
-            has_position = abs(position_amt) >= 1e-10
-
-            if not has_position:
-                LOG.warning(
-                    f"OrderGuardian: No position found for {symbol}, blocking bracket placement")
-                return False
-
             # Check if we have entry order metadata
             entry_meta = self.store.get(f"order:{entry_order_id}")
             if not entry_meta:
-                LOG.warning(
+                LOG.debug(
                     f"OrderGuardian: No entry metadata found for order {entry_order_id}, allowing bracket placement")
                 return True
 
@@ -772,6 +750,88 @@ class OrderGuardian:
 
             # Get open orders to find our brackets
             open_orders = await self.adapter.get_open_orders(symbol)
+
+            # Optimization: Check if we have any potential candidates before waiting
+            has_candidates = False
+            for raw_order in open_orders:
+                order = self._normalize_order_payload(raw_order)
+                if not order:
+                    continue
+
+                client_order_id = order.get("clientOrderId")
+                is_reduce_only_raw = order.get("reduceOnly", False)
+                is_close_position_raw = order.get("closePosition", False)
+                is_reduce_only = str(is_reduce_only_raw).lower() == "true" if isinstance(
+                    is_reduce_only_raw, str) else bool(is_reduce_only_raw)
+                is_close_position = str(is_close_position_raw).lower() == "true" if isinstance(
+                    is_close_position_raw, str) else bool(is_close_position_raw)
+                guardian_like = self._is_guardian_client_order_id(
+                    client_order_id)
+
+                if is_reduce_only or is_close_position or guardian_like:
+                    has_candidates = True
+                    break
+
+            if not has_candidates:
+                return 0
+
+            # Grace period check: verify if position is truly gone
+            # 3 checks * 8 seconds = 24 seconds grace period
+            if not hard and not has_position:
+                max_retries = 3
+                retry_interval = 8.0
+
+                for i in range(max_retries):
+                    LOG.info(
+                        f"[GUARD] Position missing for {symbol or 'ALL'}, re-checking in {retry_interval}s (attempt {i+1}/{max_retries})...")
+                    await asyncio.sleep(retry_interval)
+
+                    # Re-fetch positions
+                    try:
+                        positions = await self.adapter.get_open_positions()
+                    except Exception as e:
+                        LOG.warning(
+                            f"[GUARD] Failed to re-fetch positions on attempt {i+1}: {e}")
+                        continue
+
+                    position_amt = 0.0
+
+                    if symbol:
+                        # Find position for specific symbol
+                        for pos in positions:
+                            # Handle both dict and ExchangePosition objects
+                            if hasattr(pos, 'symbol'):
+                                pos_symbol = pos.symbol  # type: ignore[union-attr]
+                                # type: ignore[union-attr]
+                                pos_amt = float(pos.position_amount)
+                            else:
+                                # type: ignore[union-attr]
+                                pos_symbol = pos.get("symbol", "")
+                                pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
+                                                or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
+
+                            if pos_symbol == symbol:
+                                position_amt = pos_amt
+                                break
+                    else:
+                        for pos in positions:
+                            if hasattr(pos, 'position_amount'):
+                                # type: ignore[union-attr]
+                                pos_amt = float(pos.position_amount)
+                            else:
+                                pos_amt = float(pos.get("position_amount")  # type: ignore[union-attr]
+                                                or pos.get("positionAmt") or 0)  # type: ignore[union-attr]
+                            position_amt += pos_amt
+
+                    has_position = abs(position_amt) >= 1e-10
+
+                    if has_position:
+                        LOG.info(
+                            f"[GUARD] Position reappeared for {symbol or 'ALL'} on attempt {i+1}! Skipping cleanup.")
+                        return 0
+
+                LOG.warning(
+                    f"[GUARD] Position confirmed missing for {symbol or 'ALL'} after {max_retries} retries. Proceeding with cleanup.")
 
             LOG.info("[GUARD] Starting orphan cleanup", extra={
                 "event_type": "cleanup_start",

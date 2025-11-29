@@ -179,6 +179,8 @@ class ConfigLoader:
         try:
             system_config = self._load_yaml("system.yaml")
             trading_config = self._load_yaml("trading.yaml")
+            regime_config = self._load_yaml("regime.yaml")
+            domains_config = self._load_yaml("domains.yaml")  # NEW: Load domains config
         except FileNotFoundError as e:
             LOG.error(f"Config file error: {e}")
             raise
@@ -187,6 +189,23 @@ class ConfigLoader:
         merged_config: Dict[str, Any] = {}
         deep_merge(system_config, merged_config)  # Copy system first
         deep_merge(trading_config, merged_config)  # Overlay trading
+        deep_merge(regime_config, merged_config)   # Overlay regime (models, hmm, etc.)
+        
+        # Merge domains config into root (and optionally trading.domains for backward compat if needed)
+        if 'domains' in domains_config:
+            merged_config['domains'] = domains_config['domains']
+            
+            # Also keep in trading.domains for consistency if TradingConfig has it
+            if 'trading' not in merged_config:
+                merged_config['trading'] = {}
+            merged_config['trading']['domains'] = domains_config['domains']
+        else:
+            # If domains.yaml doesn't have top-level 'domains' key, merge all content as domains
+            merged_config['domains'] = domains_config
+            
+            if 'trading' not in merged_config:
+                merged_config['trading'] = {}
+            merged_config['trading']['domains'] = domains_config
 
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)

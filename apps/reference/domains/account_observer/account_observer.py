@@ -125,20 +125,34 @@ class AccountObserver:
 
         self.correlation_store = CorrelationStore()
 
-        # Polling interval (seconds) - from config
-        if isinstance(account_observer_config, dict):
-            poll_interval = account_observer_config.get("poll_interval", 5)
-        else:
-            poll_interval = getattr(
-                account_observer_config, "poll_interval", 5)
+        # Polling interval (seconds) - from domains config first, then account_observer config
+        poll_interval = 5  # default
+        try:
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'account_observer'):
+                poll_interval = self.config.domains.account_observer.poll_interval_sec
+            # Fallback to legacy account_observer config
+            elif isinstance(account_observer_config, dict):
+                poll_interval = account_observer_config.get("poll_interval", 5)
+            else:
+                poll_interval = getattr(account_observer_config, "poll_interval", 5)
+        except (AttributeError, TypeError):
+            pass  # Use default
         self.poll_interval = poll_interval
 
-        # Symbols to monitor - use trading.symbols_to_track if account_observer.symbols not set
-        # This ensures we monitor all symbols being traded, not a hardcoded list
-        if isinstance(account_observer_config, dict):
-            explicit_symbols = account_observer_config.get("symbols", [])
-        else:
-            explicit_symbols = getattr(account_observer_config, "symbols", [])
+        # Symbols to monitor - domains config > account_observer config > trading.symbols_to_track
+        explicit_symbols = []
+        try:
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'account_observer'):
+                explicit_symbols = self.config.domains.account_observer.symbols
+            # Fallback to legacy account_observer config
+            elif isinstance(account_observer_config, dict):
+                explicit_symbols = account_observer_config.get("symbols", [])
+            else:
+                explicit_symbols = getattr(account_observer_config, "symbols", [])
+        except (AttributeError, TypeError):
+            pass  # Will use trading.symbols_to_track as fallback
 
         if explicit_symbols:
             self.symbols = explicit_symbols
@@ -149,7 +163,6 @@ class AccountObserver:
                 if isinstance(self.config, dict)
                 else self.config.trading
             )
-            # TODO: This might need to be added to Pydantic model as symbols_to_track
             default_symbols = ["BTCUSDT", "ETHUSDT"]
             if isinstance(trading_config, dict):
                 self.symbols = trading_config.get(

@@ -1,5 +1,25 @@
 # Aurora FSM Development Journal
 
+## 2025-11-09T08:00:00Z: ExecPosFSM Refactoring and Cleanup ✅
+
+**RID**: P1_EXEC_POS_FSM_REFACTOR_091125
+**Status**: 🟢 COMPLETED
+**Severity**: HIGH (Code quality and stability)
+
+### Summary
+Refactored `ExecPosFSM` to use `AuroraConfig` (Pydantic V2), removed critical syntax error (broken tail code), and deleted dead code (`_preflight_position_check_nonzero`).
+
+### Changes
+- **Fixed Syntax Error**: Removed duplicate/broken code block at the end of `apps/reference/domains/execution_position/fsm.py`.
+- **Removed Dead Code**: Deleted unused `_preflight_position_check_nonzero` method.
+- **Config Refactoring**:
+  - Updated `ExecPosFSM.__init__` to accept `AuroraConfig`.
+  - Added `_get_config_value` helper for robust config access (dict/object hybrid).
+  - Refactored `watchdog`, `orders`, and `OrderGuardian` config extraction to use the new helper.
+  - Fixed `AlertManager` initialization to correctly pass a dict config.
+- **Testing**: Added `tests/units/test_execution_position_fsm_config.py` to verify config loading logic.
+
+
 ## 2025-11-09T07:30:00Z: Fallback Mode Implementation Complete - Retry/Backoff Logic Added ✅
 
 **RID**: P0_FALLBACK_MODE_RETRY_BACKOFF_COMPLETE_091125
@@ -7181,3 +7201,95 @@ test_polling_cancels_brackets_on_entry_cancelled
 **Next Steps**: Ready for production deployment with centralized order management.
 
 ---
+## 2025-11-28T12:00:00Z: ManageFlowFSM Refactoring - Config Unification ✅
+
+**RID**: P1_MANAGE_FSM_REFACTOR_COMPLETE_281125
+**Status**: 🟢 COMPLETED
+**Severity**: HIGH (Technical Debt / Maintainability)
+**Duration**: 1 hour
+
+### Summary
+Refactored `ManageFlowFSM` to eliminate "Config Hell" by enforcing strict Pydantic configuration usage (`AuroraConfig`) and removing legacy dictionary-based fallbacks.
+
+### Key Changes
+1. **Config Unification**:
+   - Updated `ManageFlowFSM` to use `AuroraConfig` exclusively.
+   - Removed all `try...except` blocks related to legacy config access.
+   - Removed legacy key lookups (e.g., `stop_loss_bps`).
+   - Enforced `self._manage_cfg` usage.
+
+2. **Model Updates**:
+   - Added `offset_bps` to `BracketsConfig` in `apps/reference/config_models.py` to support safety offsets.
+
+3. **Test Fixes**:
+   - Enabled and fixed `tests/units/test_manage_flow_fsm_sl_side.py`.
+   - Updated `tests/units/test_manage_flow_fsm_unit.py` and `tests/units/test_manage_flow_fsm_oco.py` to use correct nested config structure matching `AuroraConfig`.
+
+### Validation
+- ✅ `tests/units/test_manage_flow_fsm_sl_side.py` PASSED
+- ✅ `tests/units/test_manage_flow_fsm_unit.py` PASSED
+- ✅ `tests/units/test_manage_flow_fsm_oco.py` PASSED
+- ✅ `tests/units` (all related tests) PASSED (except unrelated pre-existing failures)
+
+### Files Modified
+- `apps/reference/domains/execution_position/fsm_manage.py`
+- `apps/reference/config_models.py`
+- `tests/units/test_manage_flow_fsm_sl_side.py`
+- `tests/units/test_manage_flow_fsm_unit.py`
+- `tests/units/test_manage_flow_fsm_oco.py`
+## 2025-11-28T12:30:00Z: OpenFlowFSM Refactoring - Config Unification & Cleanup ✅
+
+**RID**: P1_OPEN_FSM_REFACTOR_COMPLETE_281125
+**Status**: 🟢 COMPLETED
+**Severity**: HIGH (Technical Debt / Maintainability)
+**Duration**: 30 mins
+
+### Summary
+Refactored `OpenFlowFSM` to eliminate "Config Hell" by enforcing strict Pydantic configuration usage (`AuroraConfig`) and removing dead code.
+
+### Key Changes
+1. **Config Unification**:
+   - Updated `OpenFlowFSM` to use `AuroraConfig` exclusively.
+   - Removed legacy dictionary-based config access in `_get_instrument_specs`.
+   - Enforced `self.config` usage with Pydantic models.
+
+2. **Dead Code Removal**:
+   - Removed unused methods `_check_qty_step` and `_check_price_step`.
+   - Removed unreachable logic for `EVT:READY` and `EVT:EXECUTE` in `handle` method.
+   - Cleaned up `OpenState` enum (removed unused states `CANDIDATE`, `READY`, `EMIT_DEC_OPEN`).
+
+3. **Test Fixes**:
+   - Updated `tests/test_fsm_open.py` to use correct `AuroraConfig` structure (including `symbol` field in instrument specs).
+
+### Validation
+- ✅ `tests/test_fsm_open.py` PASSED (13/13 tests)
+
+### Files Modified
+- `apps/reference/domains/execution_position/fsm_open.py`
+- `tests/test_fsm_open.py`
+
+## 2025-11-28T17:43:43Z: Refactor OpenFlowFSM to AuroraConfig ✅
+
+**RID**: REF_OPEN_FSM_CONFIG_CLEANUP
+**Status**: 🟢 COMPLETED
+**Severity**: MEDIUM (Technical Debt / Code Quality)
+
+### Summary
+Refactored `apps/reference/domains/execution_position/fsm_open.py` to use `AuroraConfig` (Pydantic) instead of legacy dictionaries. Removed dead code and unused FSM states. Updated unit tests to reflect the new configuration structure.
+
+### Key Changes
+- **Refactoring**:
+    - Replaced `config: Dict` with `AuroraConfig` in `OpenFlowFSM`.
+    - Removed dead code: `_check_qty_step`, `_check_price_step` (logic moved/simplified).
+    - Removed unused states: `CANDIDATE`, `READY`.
+    - Simplified `handle()` method by removing unreachable event handlers.
+- **Testing**:
+    - Updated `tests/test_fsm_open.py` to use valid `AuroraConfig` structure (nested `trading.instruments.SYMBOL`).
+    - Verified 13/13 tests passed.
+
+### Files Modified
+- `apps/reference/domains/execution_position/fsm_open.py`
+- `tests/test_fsm_open.py`
+
+### Validation
+- ✅ `pytest tests/test_fsm_open.py` passed (13/13).

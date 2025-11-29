@@ -63,7 +63,7 @@ def test_oco_emulation_disabled_by_default():
     Test 1: OCO emulation is disabled by default.
     When oco_emulation=false, filling one bracket does NOT cancel the other.
     """
-    fsm = ManageFlowFSM(config={"brackets": {"oco_emulation": False}})
+    fsm = ManageFlowFSM(config={"trading": {"execution": {"manage": {"brackets": {"oco_emulation": False}}}}})
 
     # Setup position with both brackets
     fsm.position_qty = Decimal("1.0")
@@ -112,11 +112,17 @@ def test_oco_emulation_tp_filled_cancels_sl():
     """
     fsm = ManageFlowFSM(
         config={
-            "brackets": {
-                "oco_emulation": True,  # ENABLED
-                "enable": True,
-                "sl": {"fixed_bps": 50},
-                "tp": {"fixed_bps": 100},
+            "trading": {
+                "execution": {
+                    "manage": {
+                        "brackets": {
+                            "oco_emulation": True,  # ENABLED
+                            "enable": True,
+                            "sl": {"fixed_bps": 50},
+                            "tp": {"fixed_bps": 100},
+                        }
+                    }
+                }
             }
         }
     )
@@ -165,11 +171,17 @@ def test_oco_emulation_sl_filled_cancels_tp():
     """
     fsm = ManageFlowFSM(
         config={
-            "brackets": {
-                "oco_emulation": True,  # ENABLED
-                "enable": True,
-                "sl": {"fixed_bps": 50},
-                "tp": {"fixed_bps": 100},
+            "trading": {
+                "execution": {
+                    "manage": {
+                        "brackets": {
+                            "oco_emulation": True,  # ENABLED
+                            "enable": True,
+                            "sl": {"fixed_bps": 50},
+                            "tp": {"fixed_bps": 100},
+                        }
+                    }
+                }
             }
         }
     )
@@ -213,9 +225,15 @@ def test_oco_non_bracket_order_ignored():
     """
     fsm = ManageFlowFSM(
         config={
-            "brackets": {
-                "oco_emulation": True,
-                "enable": True,
+            "trading": {
+                "execution": {
+                    "manage": {
+                        "brackets": {
+                            "oco_emulation": True,
+                            "enable": True,
+                        }
+                    }
+                }
             }
         }
     )
@@ -246,7 +264,7 @@ def test_oco_no_brackets_placed_yet():
 
     Edge case: message arrives before brackets placed.
     """
-    fsm = ManageFlowFSM(config={"brackets": {"oco_emulation": True}})
+    fsm = ManageFlowFSM(config={"trading": {"execution": {"manage": {"brackets": {"oco_emulation": True}}}}})
 
     # No brackets placed yet
     fsm.sl_order_id = None
@@ -268,7 +286,7 @@ def test_oco_partial_bracket_state():
 
     If only SL is tracked, filling a non-existent TP shouldn't crash.
     """
-    fsm = ManageFlowFSM(config={"brackets": {"oco_emulation": True}})
+    fsm = ManageFlowFSM(config={"trading": {"execution": {"manage": {"brackets": {"oco_emulation": True}}}}})
 
     fsm.sl_order_id = "sl_order_123"
     fsm.tp_order_id = None  # TP not yet placed
@@ -297,13 +315,19 @@ def test_oco_integration_scenario():
     5. SL must be cancelled
     """
     cfg = {
-        "execution": {"manage": {"auto": True}},
-        "brackets": {
-            "enable": True,
-            "oco_emulation": True,
-            "sl": {"fixed_bps": 50},
-            "tp": {"fixed_bps": 100},
-        },
+        "trading": {
+            "execution": {
+                "manage": {
+                    "auto": True,
+                    "brackets": {
+                        "enable": True,
+                        "oco_emulation": True,
+                        "sl": {"fixed_bps": 50},
+                        "tp": {"fixed_bps": 100},
+                    }
+                }
+            }
+        }
     }
     fsm = ManageFlowFSM(config=cfg)
 

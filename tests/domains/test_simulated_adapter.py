@@ -1,4 +1,4 @@
-from apps.reference.domains.execution_position.simulated_adapter import (
+from apps.reference.adapters.simulated_adapter import (
     SimulatedExecutionAdapter,
 )
 from vfoundation.core.protocol import Message
@@ -75,7 +75,7 @@ def mock_config():
 @pytest.fixture
 def adapter(mock_fsm, mock_config):
     """Fixture providing a SimulatedExecutionAdapter instance."""
-    from apps.reference.domains.execution_position.simulated_adapter import (
+    from apps.reference.adapters.simulated_adapter import (
         SimulatedExecutionAdapter,
     )
 

@@ -7,7 +7,7 @@ import asyncio
 import hashlib
 import time
 from decimal import Decimal
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Callable, Awaitable
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -144,8 +144,8 @@ class IdempotentCancelHelper:
         self,
         symbol: str,
         order_id: str,
-        cancel_func,
-        get_order_func,
+        cancel_func: Callable[[str, str], Awaitable[Dict[str, Any]]],
+        get_order_func: Callable[[str, str], Awaitable[Dict[str, Any]]],
         max_retries: int = 2
     ) -> IdempotentCancelResult:
         """

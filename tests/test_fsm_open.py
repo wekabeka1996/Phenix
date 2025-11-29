@@ -19,10 +19,11 @@ def test_open_flow_valid_market_order():
         "trading": {
             "instruments": {
                 "BTCUSDT": {
-                    "min_qty": 0.001,
-                    "step_size": 0.001,
-                    "tick_size": 0.01,
-                    "min_notional": 5.0,
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.001",
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "5.0",
                 }
             }
         }
@@ -66,10 +67,11 @@ def test_open_flow_qty_rounding():
         "trading": {
             "instruments": {
                 "BTCUSDT": {
-                    "min_qty": 0.001,
-                    "step_size": 0.001,
-                    "tick_size": 0.01,
-                    "min_notional": 5.0,
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.001",
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "5.0",
                 }
             }
         }
@@ -108,10 +110,11 @@ def test_open_flow_qty_below_min():
         "trading": {
             "instruments": {
                 "BTCUSDT": {
-                    "min_qty": 0.1,  # Higher min_qty
-                    "step_size": 0.001,
-                    "tick_size": 0.01,
-                    "min_notional": 5.0,
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.1",  # Higher min_qty
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "5.0",
                 }
             }
         }
@@ -149,10 +152,11 @@ def test_open_flow_market_min_notional():
         "trading": {
             "instruments": {
                 "BTCUSDT": {
-                    "min_qty": 0.001,
-                    "step_size": 0.001,
-                    "tick_size": 0.01,
-                    "min_notional": 100.0,  # High min_notional
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.001",
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "100.0",  # High min_notional
                 }
             }
         }
@@ -185,15 +189,16 @@ def test_open_flow_market_min_notional():
 
 
 def test_open_flow_valid_limit_order():
-    """Test valid LIMIT order with price generates DEC:OPEN."""
+    """Test valid LIMIT order generates DEC:OPEN."""
     config = {
         "trading": {
             "instruments": {
                 "ETHUSDT": {
-                    "min_qty": 0.001,
-                    "step_size": 0.001,
-                    "tick_size": 0.01,
-                    "min_notional": 5.0,
+                    "symbol": "ETHUSDT",
+                    "min_qty": "0.01",
+                    "step_size": "0.01",
+                    "tick_size": "0.01",
+                    "min_notional": "5.0",
                 }
             }
         }
@@ -315,10 +320,11 @@ def test_open_flow_guard_qty_step_rounding():
         "trading": {
             "instruments": {
                 "BTCUSDT": {
-                    "min_qty": 0.001,
-                    "step_size": 0.001,
-                    "tick_size": 0.01,
-                    "min_notional": 5.0,
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.001",
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "5.0",
                 }
             }
         }
@@ -351,7 +357,20 @@ def test_open_flow_guard_qty_step_rounding():
 
 def test_open_flow_guard_fail_min_notional():
     """Test guard failure: notional < MIN_NOTIONAL → ERR."""
-    fsm = OpenFlowFSM()
+    config = {
+        "trading": {
+            "instruments": {
+                "BTCUSDT": {
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.001",
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "10.0",
+                }
+            }
+        }
+    }
+    fsm = OpenFlowFSM(config=config)
 
     cmd = Message(
         op="CMD",
@@ -379,7 +398,20 @@ def test_open_flow_guard_fail_min_notional():
 
 def test_open_flow_guard_fail_cooldown():
     """Test guard failure: cooldown active → ERR."""
-    fsm = OpenFlowFSM(cooldown_sec=10.0)
+    config = {
+        "trading": {
+            "instruments": {
+                "BTCUSDT": {
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.001",
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "5.0",
+                }
+            }
+        }
+    }
+    fsm = OpenFlowFSM(cooldown_sec=10.0, config=config)
 
     # First request succeeds
     cmd1 = Message(
@@ -438,7 +470,20 @@ def test_open_flow_non_open_message():
 
 def test_open_flow_metrics():
     """Test metrics tracking."""
-    fsm = OpenFlowFSM(cooldown_sec=0.1)
+    config = {
+        "trading": {
+            "instruments": {
+                "BTCUSDT": {
+                    "symbol": "BTCUSDT",
+                    "min_qty": "0.001",
+                    "step_size": "0.001",
+                    "tick_size": "0.01",
+                    "min_notional": "5.0",
+                }
+            }
+        }
+    }
+    fsm = OpenFlowFSM(cooldown_sec=0.1, config=config)
 
     # 2 valid, 1 reject
     valid_cmd = Message(

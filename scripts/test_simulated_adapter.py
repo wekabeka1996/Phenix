@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root / "vfoundation" / "vfoundation"))
 sys.path.insert(0, str(project_root / "apps"))
 
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.simulated_adapter import (
+from apps.reference.adapters.simulated_adapter import (
     SimulatedExecutionAdapter,
 )
 
@@ -27,7 +27,7 @@ def test_simulated_adapter():
     print("🧪 Running SimulatedExecutionAdapter smoke tests...")
     print()
 
-    adapter = SimulatedExecutionAdapter()
+    adapter = SimulatedExecutionAdapter(fsm=None, config={})
 
     # Test 1: place_order returns ACCEPTED with correct structure
     print("Test 1: place_order")

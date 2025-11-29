@@ -18,7 +18,7 @@ from apps.reference.domains.risk_management.risk_management import RiskManagemen
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.simulated_adapter import (
+from apps.reference.adapters.simulated_adapter import (
     SimulatedExecutionAdapter,
 )
 

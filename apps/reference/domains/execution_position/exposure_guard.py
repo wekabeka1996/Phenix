@@ -12,12 +12,14 @@ import time
 import logging
 import asyncio
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 
 from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.domains.execution_position.soft_clip import SoftClipEngine as SoftClipEngineImpl
 from apps.reference.domains.execution_position.metrics_aggregator import metrics_logger
+from apps.reference.domain_config import DomainConfigResolver
+from apps.reference.config_models import AuroraConfig
 
 
 @dataclass
@@ -77,166 +79,34 @@ class ExposureGuard:
     - Shadow notional validation for safety
     """
 
-    def __init__(self, config: Dict[str, Any], fsm: Optional[Any] = None):
+    def __init__(self, fsm_core: Any, config: AuroraConfig):
+        self.fsm = fsm_core
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
-        self.fsm = fsm  # Store FSM reference for event emission
 
-        # Configuration: Pydantic-first with fallback for backward compatibility
-        try:
-            if hasattr(config, 'trading') and config.trading and hasattr(config.trading, 'execution') and config.trading.execution and hasattr(config.trading.execution, 'exposure') and config.trading.execution.exposure:
-                exposure_config = config.trading.execution.exposure
-            elif isinstance(config, dict):
-                exposure_config = config.get("trading", {}).get(
-                    "execution", {}).get("exposure", {})
-            else:
-                exposure_config = {}
-        except (AttributeError, TypeError):
-            exposure_config = {}
+        # =====================================================================
+        # PHASE 2: Use DomainConfigResolver for clean config access
+        # =====================================================================
+        resolver = DomainConfigResolver(config)
+        eg_config = resolver.get_exposure_guard()
 
-        # EXP-LEVERAGE-001: New margin-based limit (backward compatible)
-        try:
-            if hasattr(exposure_config, 'max_equity_utilization_pct'):
-                max_eq_util = exposure_config.max_equity_utilization_pct or "0.20"
-            else:
-                max_eq_util = getattr(
-                    exposure_config, "max_equity_utilization_pct", "0.20")
-        except (AttributeError, TypeError):
-            max_eq_util = "0.20"
-        self.max_equity_utilization_pct = Decimal(str(max_eq_util))
-
-        # Legacy field for backward compatibility
-        try:
-            if hasattr(exposure_config, 'max_portfolio_fraction'):
-                max_port_frac = exposure_config.max_portfolio_fraction or "0.20"
-            elif isinstance(exposure_config, dict):
-                max_port_frac = exposure_config.get(
-                    'max_portfolio_fraction', "0.20")
-            else:
-                max_port_frac = "0.20"
-        except (AttributeError, TypeError):
-            max_port_frac = "0.20"
-        self.max_portfolio_fraction = Decimal(str(max_port_frac))
-
-        # EXP-DIRECTION: Per-side utilization limits
-        try:
-            if hasattr(exposure_config, 'max_side_utilization_pct'):
-                side_config = exposure_config.max_side_utilization_pct or {}
-            elif isinstance(exposure_config, dict):
-                side_config = exposure_config.get(
-                    'max_side_utilization_pct', {})
-            else:
-                side_config = {}
-        except (AttributeError, TypeError):
-            side_config = {}
-
-        try:
-            if isinstance(side_config, dict):
-                long_pct = side_config.get('long', "0.12")
-            elif hasattr(side_config, 'long'):
-                long_pct = side_config.long or "0.12"
-            else:
-                long_pct = "0.12"
-        except (AttributeError, TypeError):
-            long_pct = "0.12"
-        self.max_long_utilization_pct = Decimal(str(long_pct))
-
-        try:
-            if isinstance(side_config, dict):
-                short_pct = side_config.get('short', "0.12")
-            elif hasattr(side_config, 'short'):
-                short_pct = side_config.short or "0.12"
-            else:
-                short_pct = "0.12"
-        except (AttributeError, TypeError):
-            short_pct = "0.12"
-        self.max_short_utilization_pct = Decimal(str(short_pct))
-
-        # EXP-DIRECTION: Directional imbalance control
-        try:
-            if hasattr(exposure_config, 'max_directional_ratio'):
-                max_dir_ratio = exposure_config.max_directional_ratio or "2.0"
-            elif isinstance(exposure_config, dict):
-                max_dir_ratio = exposure_config.get(
-                    'max_directional_ratio', "2.0")
-            else:
-                max_dir_ratio = "2.0"
-        except (AttributeError, TypeError):
-            max_dir_ratio = "2.0"
-        self.max_directional_ratio = Decimal(str(max_dir_ratio))
-
-        # EXP-CONCENTRATION: Per-symbol cap
-        try:
-            if hasattr(exposure_config, 'per_symbol_cap_pct'):
-                per_sym_cap = exposure_config.per_symbol_cap_pct or "0.08"
-            elif isinstance(exposure_config, dict):
-                per_sym_cap = self.config.trading.exposure.per_symbol_cap_pct
-            else:
-                per_sym_cap = "0.08"
-        except (AttributeError, TypeError):
-            per_sym_cap = "0.08"
-        self.per_symbol_cap_pct = Decimal(str(per_sym_cap))
+        # Core limits from domains.execution_position.exposure_guard
+        self.max_equity_utilization_pct = Decimal(str(eg_config.max_equity_utilization_pct))
+        self.max_portfolio_fraction = Decimal(str(eg_config.max_portfolio_fraction))
+        self.max_long_utilization_pct = Decimal(str(eg_config.max_long_utilization_pct))
+        self.max_short_utilization_pct = Decimal(str(eg_config.max_short_utilization_pct))
+        self.max_directional_ratio = Decimal(str(eg_config.max_directional_ratio))
+        self.max_concentration_pct = Decimal(str(eg_config.max_concentration_pct))
 
         # TTL configurations
-        try:
-            if hasattr(exposure_config, 'pending_ttl_sec'):
-                pending_ttl = exposure_config.pending_ttl_sec or 90
-            elif isinstance(exposure_config, dict):
-                pending_ttl = self.config.trading.exposure.pending_ttl_sec
-            else:
-                pending_ttl = 90
-        except (AttributeError, TypeError):
-            pending_ttl = 90
-        self.pending_ttl_sec = pending_ttl
+        self.pending_ttl_sec = eg_config.pending_ttl_sec
+        self.post_fill_hold_ttl_sec = eg_config.post_fill_ttl_sec
+        self.positions_stale_ttl_sec = eg_config.stale_ttl_sec
 
-        try:
-            if hasattr(exposure_config, 'post_fill_hold_ttl_sec'):
-                post_fill_ttl = exposure_config.post_fill_hold_ttl_sec or 5
-            elif isinstance(exposure_config, dict):
-                post_fill_ttl = exposure_config.get(
-                    'post_fill_hold_ttl_sec', 5)
-            else:
-                post_fill_ttl = 5
-        except (AttributeError, TypeError):
-            post_fill_ttl = 5
-        self.post_fill_hold_ttl_sec = int(post_fill_ttl)
-
-        try:
-            if hasattr(exposure_config, 'positions_stale_ttl_sec'):
-                stale_ttl = exposure_config.positions_stale_ttl_sec or 5
-            elif isinstance(exposure_config, dict):
-                stale_ttl = self.config.trading.exposure.positions_stale_ttl_sec
-            else:
-                stale_ttl = 5
-        except (AttributeError, TypeError):
-            stale_ttl = 5
-        self.positions_stale_ttl_sec = stale_ttl
-
-        # count_pending_orders flag
-        try:
-            if hasattr(exposure_config, 'count_pending_orders'):
-                count_pending = exposure_config.count_pending_orders
-            elif isinstance(exposure_config, dict):
-                count_pending = exposure_config.get(
-                    'count_pending_orders', True)
-            else:
-                count_pending = True
-        except (AttributeError, TypeError):
-            count_pending = True
-        self.count_pending_orders = count_pending
-
-        # exclude_reduce_only flag
-        try:
-            if hasattr(exposure_config, 'exclude_reduce_only'):
-                exclude_ro = exposure_config.exclude_reduce_only
-            elif isinstance(exposure_config, dict):
-                exclude_ro = exposure_config.get('exclude_reduce_only', True)
-            else:
-                exclude_ro = True
-        except (AttributeError, TypeError):
-            exclude_ro = True
-        self.exclude_reduce_only = exclude_ro
+        # Flags (with legacy fallback for now)
+        self.count_pending_orders = self._get_legacy_flag('count_pending_orders', True)
+        self.exclude_reduce_only = self._get_legacy_flag('exclude_reduce_only', True)
 
         # PHASE 2: Soft-limit configuration (read from trading.risk.soft_limits)
         self.soft_limit_config = self._load_soft_limit_config()
@@ -258,7 +128,9 @@ class ExposureGuard:
 
         # 🧹 STARTUP: Log initial state (for debugging)
         self.logger.info(
-            f"🆕 ExposureGuard initialized: pending_exposure=empty, postfill=empty"
+            f"🆕 ExposureGuard initialized: "
+            f"max_eq_util={self.max_equity_utilization_pct}, "
+            f"pending_ttl={self.pending_ttl_sec}s"
         )
 
         # Metrics
@@ -274,6 +146,17 @@ class ExposureGuard:
             "fallback_blocks_total": 0,
             "fallback_duration_ms_total": 0,
         }
+
+    def _get_legacy_flag(self, flag_name: str, default: bool) -> bool:
+        """Get flag from legacy trading.execution.exposure config."""
+        try:
+            if hasattr(self.config, 'trading') and self.config.trading:
+                if hasattr(self.config.trading, 'execution') and self.config.trading.execution:
+                    if hasattr(self.config.trading.execution, 'exposure') and self.config.trading.execution.exposure:
+                        return getattr(self.config.trading.execution.exposure, flag_name, default)
+        except (AttributeError, TypeError):
+            pass
+        return default
 
     def _load_soft_limit_config(self) -> SoftLimitConfig:
         """
@@ -292,27 +175,22 @@ class ExposureGuard:
             soft_limits_dict = {}
 
         # Parse values with defaults
-        mode = soft_limits_dict.get("mode", "clip") if isinstance(
-            soft_limits_dict, dict) else getattr(soft_limits_dict, "mode", "clip")
-        clip_min = Decimal(str(soft_limits_dict.get("clip_min_notional_usdt", "10") if isinstance(
-            soft_limits_dict, dict) else getattr(soft_limits_dict, "clip_min_notional_usdt", "10")))
-        dir_ratio = Decimal(str(soft_limits_dict.get("directional_ratio_max", "3.0") if isinstance(
-            soft_limits_dict, dict) else getattr(soft_limits_dict, "directional_ratio_max", "3.0")))
-        side_exp = Decimal(str(soft_limits_dict.get("side_exposure_usdt", "600") if isinstance(
-            soft_limits_dict, dict) else getattr(soft_limits_dict, "side_exposure_usdt", "600")))
-        margin_exp = Decimal(str(soft_limits_dict.get("margin_exposure_usdt", "1100") if isinstance(
-            soft_limits_dict, dict) else getattr(soft_limits_dict, "margin_exposure_usdt", "1100")))
+        mode = soft_limits_dict.get("mode", "clip") if isinstance(soft_limits_dict, dict) else "clip"
+        clip_min = Decimal(str(soft_limits_dict.get("clip_min_notional_usdt", "10"))) if isinstance(soft_limits_dict, dict) else Decimal("10")
+        dir_max = Decimal(str(soft_limits_dict.get("directional_ratio_max", "3.0"))) if isinstance(soft_limits_dict, dict) else Decimal("3.0")
+        side_exp = Decimal(str(soft_limits_dict.get("side_exposure_usdt", "600"))) if isinstance(soft_limits_dict, dict) else Decimal("600")
+        margin_exp = Decimal(str(soft_limits_dict.get("margin_exposure_usdt", "1100"))) if isinstance(soft_limits_dict, dict) else Decimal("1100")
 
         config = SoftLimitConfig(
             mode=mode,
             clip_min_notional_usdt=clip_min,
-            directional_ratio_max=dir_ratio,
+            directional_ratio_max=dir_max,
             side_exposure_usdt=side_exp,
             margin_exposure_usdt=margin_exp,
         )
         self.logger.info(
             f"SOFT_LIMIT_CONFIG loaded: mode={mode}, "
-            f"clip_min={clip_min}, dir_ratio_max={dir_ratio}, "
+            f"clip_min={clip_min}, dir_ratio_max={dir_max}, "
             f"side_exp={side_exp}, margin_exp={margin_exp}"
         )
         return config
@@ -334,12 +212,9 @@ class ExposureGuard:
             fallback_config = {}
 
         # Parse configuration with defaults
-        policy = fallback_config.get("policy", "fail_closed") if isinstance(
-            fallback_config, dict) else getattr(fallback_config, "policy", "fail_closed")
-        risk_reduction_pct = Decimal(str(fallback_config.get("risk_reduction_pct", "0.5") if isinstance(
-            fallback_config, dict) else getattr(fallback_config, "risk_reduction_pct", "0.5")))
-        backoff_ms = fallback_config.get("backoff_ms", [200, 500, 1000]) if isinstance(
-            fallback_config, dict) else getattr(fallback_config, "backoff_ms", [200, 500, 1000])
+        policy = fallback_config.get("policy", "fail_closed") if isinstance(fallback_config, dict) else "fail_closed"
+        risk_reduction_pct = Decimal(str(fallback_config.get("risk_reduction_pct", "0.5"))) if isinstance(fallback_config, dict) else Decimal("0.5")
+        backoff_ms = fallback_config.get("backoff_ms", [200, 500, 1000]) if isinstance(fallback_config, dict) else [200, 500, 1000]
 
         config = {
             "policy": policy,

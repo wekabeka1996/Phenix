@@ -186,29 +186,35 @@ class DecisionMaking:
         except (AttributeError, TypeError):
             sizing_config = {}
 
-        # Min position size
+        # Min position size (domains config takes priority over legacy decision config)
+        min_size = 10  # default
         try:
-            if isinstance(sizing_config, dict):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                min_size = self.config.domains.decision_making.position_sizing.min_position_size_usd
+            # Fallback to legacy decision.position_sizing
+            elif isinstance(sizing_config, dict):
                 min_size = sizing_config.get('min_position_size_usd', 10)
             elif hasattr(sizing_config, 'min_position_size_usd'):
                 min_size = sizing_config.min_position_size_usd or 10
-            else:
-                min_size = 10
         except (AttributeError, TypeError):
-            min_size = 10
+            pass  # Use default
 
         self.min_pos_size_usd = decimal.Decimal(str(min_size))
 
-        # Liquidity cap
+        # Liquidity cap (domains config takes priority)
+        liq_cap = 10000  # default
         try:
-            if isinstance(sizing_config, dict):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                liq_cap = self.config.domains.decision_making.position_sizing.liquidity_based_cap_usd
+            # Fallback to legacy decision.position_sizing
+            elif isinstance(sizing_config, dict):
                 liq_cap = sizing_config.get('liquidity_based_cap_usd', 10000)
             elif hasattr(sizing_config, 'liquidity_based_cap_usd'):
                 liq_cap = sizing_config.liquidity_based_cap_usd or 10000
-            else:
-                liq_cap = 10000
         except (AttributeError, TypeError):
-            liq_cap = 10000
+            pass  # Use default
 
         self.liq_cap_usd = decimal.Decimal(str(liq_cap))
 
@@ -223,42 +229,49 @@ class DecisionMaking:
         except (AttributeError, TypeError):
             qos_config = {}
 
-        # QoS exposure cooldown
+        # QoS exposure cooldown (domains config takes priority)
+        exp_cooldown = 10  # default
         try:
-            if hasattr(qos_config, 'exposure_block_cooldown_sec'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                exp_cooldown = self.config.domains.decision_making.qos.exposure_block_cooldown_sec
+            # Fallback to legacy decision.qos
+            elif hasattr(qos_config, 'exposure_block_cooldown_sec'):
                 exp_cooldown = qos_config.exposure_block_cooldown_sec or 10
             elif isinstance(qos_config, dict):
-                exp_cooldown = qos_config.get(
-                    "exposure_block_cooldown_sec", 10)
-            else:
-                exp_cooldown = 10
+                exp_cooldown = qos_config.get("exposure_block_cooldown_sec", 10)
         except (AttributeError, TypeError):
-            exp_cooldown = 10
+            pass  # Use default
         self.qos_exposure_block_cooldown_sec = int(exp_cooldown)
 
-        # QoS symbol cooldown
+        # QoS symbol cooldown (domains config takes priority)
+        sym_cooldown = 3  # default
         try:
-            if hasattr(qos_config, 'symbol_cooldown_sec'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                sym_cooldown = self.config.domains.decision_making.qos.symbol_cooldown_sec
+            # Fallback to legacy decision.qos
+            elif hasattr(qos_config, 'symbol_cooldown_sec'):
                 sym_cooldown = qos_config.symbol_cooldown_sec or 3
             elif isinstance(qos_config, dict):
-                sym_cooldown = self.config.trading.decision.qos.symbol_cooldown_sec
-            else:
-                sym_cooldown = 3
+                sym_cooldown = qos_config.get("symbol_cooldown_sec", 3)
         except (AttributeError, TypeError):
-            sym_cooldown = 3
+            pass  # Use default
         self.qos_symbol_cooldown_sec = int(sym_cooldown)
 
-        # QoS max intents
+        # QoS max intents (domains config takes priority)
+        max_intents = 6  # default
         try:
-            if hasattr(qos_config, 'max_intents_per_minute_per_symbol'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                max_intents = self.config.domains.decision_making.qos.max_intents_per_minute_per_symbol
+            # Fallback to legacy decision.qos
+            elif hasattr(qos_config, 'max_intents_per_minute_per_symbol'):
                 max_intents = qos_config.max_intents_per_minute_per_symbol or 6
             elif isinstance(qos_config, dict):
-                max_intents = qos_config.get(
-                    "max_intents_per_minute_per_symbol", 6)
-            else:
-                max_intents = 6
+                max_intents = qos_config.get("max_intents_per_minute_per_symbol", 6)
         except (AttributeError, TypeError):
-            max_intents = 6
+            pass  # Use default
         self.qos_max_intents_per_minute_per_symbol = int(max_intents)
 
         # QoS mode: shadow=only metrics, defer=delay intents, enforce=block intents
@@ -285,26 +298,30 @@ class DecisionMaking:
             qos_enforce_val = False
         self.qos_enforce = bool(qos_enforce_val)
 
-        # Features TTL configuration
+        # Features TTL configuration (domains config takes priority)
+        features_ttl = 5  # default
         try:
-            if hasattr(decision_config, 'features'):
-                features_config = decision_config.features or {}
-            elif isinstance(decision_config, dict):
-                features_config = self.config.trading.decision.features
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                features_ttl = self.config.domains.decision_making.features.ttl_sec
+            # Fallback to legacy decision.features
             else:
-                features_config = {}
-        except (AttributeError, TypeError):
-            features_config = {}
+                try:
+                    if hasattr(decision_config, 'features'):
+                        features_config = decision_config.features or {}
+                    elif isinstance(decision_config, dict):
+                        features_config = self.config.trading.decision.features
+                    else:
+                        features_config = {}
+                except (AttributeError, TypeError):
+                    features_config = {}
 
-        try:
-            if isinstance(features_config, dict):
-                features_ttl = features_config.get('ttl_sec', 5)
-            elif hasattr(features_config, 'ttl_sec'):
-                features_ttl = features_config.ttl_sec or 5
-            else:
-                features_ttl = 5
+                if isinstance(features_config, dict):
+                    features_ttl = features_config.get('ttl_sec', 5)
+                elif hasattr(features_config, 'ttl_sec'):
+                    features_ttl = features_config.ttl_sec or 5
         except (AttributeError, TypeError):
-            features_ttl = 5
+            pass  # Use default
         self.features_ttl_sec = int(features_ttl)
 
         self.logger.info(
@@ -340,15 +357,19 @@ class DecisionMaking:
             bar_enable = False
         self._bar_gating_enabled: bool = bool(bar_enable)
 
+        # Bar gating bar_ms (domains config takes priority)
+        bar_ms_val = 15 * 60 * 1000  # default: 15 minutes
         try:
-            if hasattr(bar_gate_cfg, 'bar_ms'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                bar_ms_val = self.config.domains.decision_making.bar_gating.bar_ms
+            # Fallback to legacy decision.bar_gating
+            elif hasattr(bar_gate_cfg, 'bar_ms'):
                 bar_ms_val = bar_gate_cfg.bar_ms or (15 * 60 * 1000)
             elif isinstance(bar_gate_cfg, dict):
                 bar_ms_val = self.config.trading.decision.bar_gating.bar_ms
-            else:
-                bar_ms_val = 15 * 60 * 1000
         except (AttributeError, TypeError):
-            bar_ms_val = 15 * 60 * 1000
+            pass  # Use default
         self._bar_ms: int = int(bar_ms_val)
         self._last_bar_index: dict[str, int] = {}
 
@@ -376,25 +397,33 @@ class DecisionMaking:
             behavior_enable = False
         self._behavior_enabled: bool = bool(behavior_enable)
 
+        # Behavior FSM high vol multiplier (domains config takes priority)
+        high_vol = 2.0  # default
         try:
-            if hasattr(behavior_cfg, 'high_vol_multiplier'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                high_vol = self.config.domains.decision_making.behavior_fsm.high_vol_multiplier
+            # Fallback to legacy decision.behavior_fsm
+            elif hasattr(behavior_cfg, 'high_vol_multiplier'):
                 high_vol = behavior_cfg.high_vol_multiplier or 2.0
             elif isinstance(behavior_cfg, dict):
                 high_vol = self.config.trading.decision.behavior_fsm.high_vol_multiplier
-            else:
-                high_vol = 2.0
         except (AttributeError, TypeError):
-            high_vol = 2.0
+            pass  # Use default
 
+        # Behavior FSM low vol multiplier (domains config takes priority)
+        low_vol = 0.5  # default
         try:
-            if hasattr(behavior_cfg, 'low_vol_multiplier'):
+            # Try domains config first
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                low_vol = self.config.domains.decision_making.behavior_fsm.low_vol_multiplier
+            # Fallback to legacy decision.behavior_fsm
+            elif hasattr(behavior_cfg, 'low_vol_multiplier'):
                 low_vol = behavior_cfg.low_vol_multiplier or 0.5
             elif isinstance(behavior_cfg, dict):
                 low_vol = self.config.trading.decision.behavior_fsm.low_vol_multiplier
-            else:
-                low_vol = 0.5
         except (AttributeError, TypeError):
-            low_vol = 0.5
+            pass  # Use default
 
         self._behavior_thresholds = {
             "high_vol_multiplier": float(high_vol),

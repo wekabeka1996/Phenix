@@ -264,110 +264,141 @@ class MarketDataConnector:
         we now fetch REAL bid/ask sizes and REAL trade volumes.
         """
         LOG.debug("🔄 Starting data fetch cycle")
-        for symbol in self.symbols:
-            try:
-                LOG.debug(f"📡 Fetching data for {symbol}")
-
-                # Fetch REAL bid/ask sizes from bookTicker
-                book_data = await self.adapter.get_book_ticker(symbol=symbol)
-                if book_data:
-                    LOG.debug(f"📗 BookTicker for {symbol}: {book_data}")
-                    bid_price = book_data.get("bidPrice", "0")
-                    bid_size = book_data.get("bidQty", "0")
-                    ask_price = book_data.get("askPrice", "0")
-                    ask_size = book_data.get("askQty", "0")
-                    ts = int(time.time() * 1000)
-
-                    # Feed data to aggregator
-                    self.aggregator.on_book_ticker(
-                        symbol, bid_price, bid_size, ask_price, ask_size, ts
-                    )
-                else:
-                    LOG.warning(f"❌ No bookTicker data for {symbol}")
-
-                # Fetch REAL recent trades
-                trades_data = await self.adapter.get_recent_trades(
-                    symbol=symbol, limit=50
-                )
-                if trades_data:
-                    LOG.debug(f"📈 Got {len(trades_data)} trades for {symbol}")
-                    for trade in trades_data:
-                        self.aggregator.on_trade(
-                            symbol,
-                            price=trade.get("price", "0"),
-                            quantity=trade.get("qty", "0"),
-                            is_buyer_maker=trade.get(
-                                "m", True
-                            ),  # m=True means buyer is maker (sell)
-                            ts=trade.get("time", int(time.time() * 1000)),
-                        )
-                else:
-                    LOG.warning(f"❌ No trades data for {symbol}")
-
-                # Fetch klines for delta_price calculation
-                klines = await self.adapter.get_klines(
-                    symbol=symbol, interval="1m", limit=2
-                )
-                if klines and len(klines) >= 2:
-                    LOG.debug(f"📊 Got {len(klines)} klines for {symbol}")
-                    # Update price history
-                    for kline in klines:
-                        price = kline[4]  # close price
-                        ts = kline[6]  # close time
-                        self.aggregator.on_trade(
-                            symbol,
-                            price=str(price),
-                            quantity="0",
-                            is_buyer_maker=False,
-                            ts=ts,
-                        )
-                else:
-                    LOG.warning(f"❌ No klines data for {symbol}")
-
-                # Get aggregated market tick with REAL features
-                tick = self.aggregator.get_market_tick(symbol)
-                if tick:
-                    LOG.debug(f"✅ Got tick for {symbol}: {tick}")
-                    self._emit_market_tick(symbol, tick)
-                else:
-                    LOG.debug(f"⏳ Not enough data yet for {symbol}")
-
-            except Exception as e:
-                LOG.error(
-                    f"❌ Failed to fetch data for {symbol}: {e}", exc_info=True)
-
-        # 🆕 FIX #1: Fetch anchor prices (non-blocking, parallel with main symbols)
+        
+        tasks = [self._fetch_symbol_data(symbol) for symbol in self.symbols]
+        
         if self.anchors:
             LOG.debug(f"📌 Fetching anchor prices: {self.anchors}")
-            for anchor in self.anchors:
-                try:
-                    LOG.debug(f"📡 Fetching anchor {anchor}")
-                    book_data = await self.adapter.get_book_ticker(symbol=anchor)
-                    if book_data:
-                        bid_price = float(book_data.get("bidPrice", "0"))
-                        ask_price = float(book_data.get("askPrice", "0"))
-                        mid_price = (bid_price + ask_price) / 2.0
-                        ts = int(time.time() * 1000)
+            tasks.extend([self._fetch_anchor_data(anchor) for anchor in self.anchors])
+            
+        await asyncio.gather(*tasks)
 
-                        # Feed anchor data to aggregator
-                        self.aggregator.on_book_ticker(
-                            anchor,
-                            bid_price=str(bid_price),
-                            bid_size=book_data.get("bidQty", "0"),
-                            ask_price=str(ask_price),
-                            ask_size=book_data.get("askQty", "0"),
-                            ts=ts
-                        )
+    async def _fetch_symbol_data(self, symbol: str) -> None:
+        try:
+            LOG.debug(f"📡 Fetching data for {symbol}")
 
-                        # Trigger callback to FeatureEngineering
-                        await self._on_anchor_update(anchor, str(mid_price))
-                        LOG.debug(
-                            f"✅ Anchor {anchor} price updated: {mid_price}")
-                    else:
-                        LOG.warning(
-                            f"❌ No bookTicker data for anchor {anchor}")
-                except Exception as e:
-                    LOG.warning(f"❌ Failed to fetch anchor {anchor}: {e}")
+            # Fetch REAL bid/ask sizes from bookTicker
+            book_data = await self.adapter.get_book_ticker(symbol=symbol)
+            if book_data:
+                LOG.debug(f"📗 BookTicker for {symbol}: {book_data}")
+                bid_price = book_data.get("bidPrice", "0")
+                bid_size = book_data.get("bidQty", "0")
+                ask_price = book_data.get("askPrice", "0")
+                ask_size = book_data.get("askQty", "0")
+                ts = int(time.time() * 1000)
+
+                # Feed data to aggregator
+                self.aggregator.on_book_ticker(
+                    symbol, bid_price, bid_size, ask_price, ask_size, ts
+                )
+            else:
+                LOG.warning(f"❌ No bookTicker data for {symbol}")
+
+            # Fetch REAL recent trades
+            limit = 50
+            try:
+                if hasattr(self.config, "market_data") and self.config.market_data:
+                    limit = self.config.market_data.api_call_limits.get_recent_trades
+                elif isinstance(self.config, dict):
+                    limit = self.config.get("market_data", {}).get("api_call_limits", {}).get("get_recent_trades", 50)
+            except Exception:
+                pass
+
+            trades_data = await self.adapter.get_recent_trades(
+                symbol=symbol, limit=limit
+            )
+            if trades_data:
+                LOG.debug(f"📈 Got {len(trades_data)} trades for {symbol}")
+                for trade in trades_data:
+                    self.aggregator.on_trade(
+                        symbol,
+                        price=trade.get("price", "0"),
+                        quantity=trade.get("qty", "0"),
+                        is_buyer_maker=trade.get(
+                            "m", True
+                        ),  # m=True means buyer is maker (sell)
+                        ts=trade.get("time", int(time.time() * 1000)),
+                        trade_id=trade.get("id")
+                    )
+            else:
+                LOG.warning(f"❌ No trades data for {symbol}")
+
+            # Fetch klines for delta_price calculation
+            kline_interval = "1m"
+            kline_limit = 2
+            try:
+                if hasattr(self.config, "market_data") and self.config.market_data:
+                    klines_cfg = self.config.market_data.api_call_limits.get_klines
+                    if isinstance(klines_cfg, dict):
+                        kline_interval = klines_cfg.get("interval", "1m")
+                        kline_limit = klines_cfg.get("limit", 2)
+                elif isinstance(self.config, dict):
+                        klines_cfg = self.config.get("market_data", {}).get("api_call_limits", {}).get("get_klines", {})
+                        kline_interval = klines_cfg.get("interval", "1m")
+                        kline_limit = klines_cfg.get("limit", 2)
+            except Exception:
+                pass
+
+            klines = await self.adapter.get_klines(
+                symbol=symbol, interval=kline_interval, limit=kline_limit
+            )
+            if klines and len(klines) >= 2:
+                LOG.debug(f"📊 Got {len(klines)} klines for {symbol}")
+                # Update price history
+                for kline in klines:
+                    price = kline[4]  # close price
+                    ts = kline[6]  # close time
+                    self.aggregator.on_trade(
+                        symbol,
+                        price=str(price),
+                        quantity="0",
+                        is_buyer_maker=False,
+                        ts=ts,
+                    )
+            else:
+                LOG.warning(f"❌ No klines data for {symbol}")
+
+            # Get aggregated market tick with REAL features
+            tick = self.aggregator.get_market_tick(symbol)
+            if tick:
+                LOG.debug(f"✅ Got tick for {symbol}: {tick}")
+                self._emit_market_tick(symbol, tick)
+            else:
+                LOG.debug(f"⏳ Not enough data yet for {symbol}")
+
+        except Exception as e:
+            LOG.error(
+                f"❌ Failed to fetch data for {symbol}: {e}", exc_info=True)
+
+    async def _fetch_anchor_data(self, anchor: str) -> None:
+        try:
+            LOG.debug(f"📡 Fetching anchor {anchor}")
+            book_data = await self.adapter.get_book_ticker(symbol=anchor)
+            if book_data:
+                bid_price = float(book_data.get("bidPrice", "0"))
+                ask_price = float(book_data.get("askPrice", "0"))
+                mid_price = (bid_price + ask_price) / 2.0
+                ts = int(time.time() * 1000)
+
+                # Feed anchor data to aggregator
+                self.aggregator.on_book_ticker(
+                    anchor,
+                    bid_price=str(bid_price),
+                    bid_size=book_data.get("bidQty", "0"),
+                    ask_price=str(ask_price),
+                    ask_size=book_data.get("askQty", "0"),
+                    ts=ts
+                )
+
+                # Trigger callback to FeatureEngineering
+                await self._on_anchor_update(anchor, str(mid_price))
+                LOG.debug(
+                    f"✅ Anchor {anchor} price updated: {mid_price}")
+            else:
+                LOG.warning(
+                    f"❌ No bookTicker data for anchor {anchor}")
+        except Exception as e:
+            LOG.warning(f"❌ Failed to fetch anchor {anchor}: {e}")
 
     def _emit_market_tick(self, symbol: str, tick: dict[str, Any]) -> None:
         """Emit a market tick event with real feature data."""

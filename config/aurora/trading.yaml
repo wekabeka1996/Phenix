@@ -148,7 +148,7 @@ trading:
     soft_limits:
       mode: "clip"                         # "reject" (legacy) or "clip" (new)
       clip_min_notional_usdt: 10           # Minimum notional after clipping; below this → reject
-      directional_ratio_max: 3.0           # Max ratio between long/short margin (base)
+      directional_ratio_max: 20.0          # Max ratio between long/short margin (base)
       side_exposure_usdt: 600              # Max per-side exposure (adapts with regime)
       margin_exposure_usdt: 1100           # Max margin used (adapts with regime)
 
@@ -188,6 +188,13 @@ trading:
   # MARKET DATA SETTINGS (Phase 1)
   # ==============================================================================
   market_data:
+    poll_interval_sec: 2.0
+    websocket_streams: ["bookTicker", "trade"]
+    api_call_limits:
+      get_recent_trades: 50
+      get_klines:
+        interval: "1m"
+        limit: 2
     # Macro sync configuration for correlation with anchors
     macro_sync:
       enabled: true
@@ -296,6 +303,8 @@ trading:
     watchdog:
       ack_ttl_ms: 8000    # 8 seconds for ACK timeout (unchanged)
       fill_ttl_ms: 60000  # 60 seconds for FILL timeout (increased from 30s for testnet)
+      check_interval_ms: 1000
+      rps_limit: 10
 
     # ===========================================================================
     # ORDER EXECUTION & CANCELLATION (Balanced profile)

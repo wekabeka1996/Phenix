@@ -167,3 +167,67 @@ class TestOrderTimeoutNRR019:
 
         assert hasattr(OrderStatus, 'EXPIRED')
         assert OrderStatus.EXPIRED == "EXPIRED"
+
+    def test_on_order_fill_removes_from_pending_orders(self, fsm_config):
+        """
+        BUG FIX TEST: on_order_fill should remove order from pending_orders
+        if fill arrives before ACK (edge case).
+        """
+        fsm = ExecPosFSM(fsm_config, None, shadow_mode=True)
+
+        # Track order (goes to pending_orders)
+        fsm.watchdog.track_order_placed("early_fill_order", "client_early", "BTCUSDT")
+        assert "early_fill_order" in fsm.watchdog.pending_orders
+
+        # Fill arrives BEFORE ACK (edge case - fast exchange)
+        fsm.watchdog.on_order_fill("early_fill_order")
+
+        # Order should be removed from pending_orders
+        assert "early_fill_order" not in fsm.watchdog.pending_orders
+        assert "early_fill_order" not in fsm.watchdog.acked_orders
+
+    def test_poll_meta_cleanup_on_order_cancel(self, fsm_config):
+        """
+        BUG FIX TEST: _poll_meta should be cleaned up when order is cancelled
+        to prevent memory leak.
+        """
+        fsm = ExecPosFSM(fsm_config, None, shadow_mode=True)
+
+        # Track order
+        fsm.watchdog.track_order_placed("poll_order", "client_poll", "BTCUSDT")
+
+        # Simulate poll metadata being added (as if polling occurred)
+        fsm.watchdog._poll_meta["poll_order"] = {
+            'next_poll_at': 12345,
+            'attempts': 2,
+            'backoff_ms': 2000
+        }
+
+        # Cancel order
+        fsm.watchdog.on_order_cancel("poll_order")
+
+        # _poll_meta should be cleaned up
+        assert "poll_order" not in fsm.watchdog._poll_meta
+
+    def test_poll_meta_cleanup_on_order_fill(self, fsm_config):
+        """
+        BUG FIX TEST: _poll_meta should be cleaned up when order is filled.
+        """
+        fsm = ExecPosFSM(fsm_config, None, shadow_mode=True)
+
+        # Track and ACK order
+        fsm.watchdog.track_order_placed("fill_poll_order", "client_fill_poll", "BTCUSDT")
+        fsm.watchdog.on_order_ack("fill_poll_order")
+
+        # Simulate poll metadata
+        fsm.watchdog._poll_meta["fill_poll_order"] = {
+            'next_poll_at': 12345,
+            'attempts': 1,
+            'backoff_ms': 1000
+        }
+
+        # Fill order
+        fsm.watchdog.on_order_fill("fill_poll_order")
+
+        # _poll_meta should be cleaned up
+        assert "fill_poll_order" not in fsm.watchdog._poll_meta

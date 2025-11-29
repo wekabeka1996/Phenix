@@ -68,24 +68,41 @@ class OrderLedger:
 
     def __init__(self, db_path: str = ":memory:"):
         self.db_path = db_path
-        self._local = threading.local()  # Thread-local storage for connections
+        self._is_memory = (db_path == ":memory:")
+        
+        if self._is_memory:
+            # Shared connection for in-memory DB to support multi-threading
+            self._shared_conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._shared_conn.row_factory = sqlite3.Row
+            self._lock = threading.RLock()
+        else:
+            self._local = threading.local()  # Thread-local storage for connections
+            
         self._init_db()
 
     @contextmanager
     def _get_connection(self):
-        """Get thread-local database connection"""
-        if not hasattr(self._local, 'conn'):
-            self._local.conn = sqlite3.connect(self.db_path)
-            self._local.conn.row_factory = sqlite3.Row
-        try:
-            yield self._local.conn
-        except Exception:
-            if hasattr(self._local, 'conn'):
-                self._local.conn.rollback()
-            raise
-        finally:
-            # Don't close - keep connection alive for thread
-            pass
+        """Get database connection (thread-local or shared for memory)"""
+        if self._is_memory:
+            with self._lock:
+                try:
+                    yield self._shared_conn
+                except Exception:
+                    self._shared_conn.rollback()
+                    raise
+        else:
+            if not hasattr(self._local, 'conn'):
+                self._local.conn = sqlite3.connect(self.db_path)
+                self._local.conn.row_factory = sqlite3.Row
+            try:
+                yield self._local.conn
+            except Exception:
+                if hasattr(self._local, 'conn'):
+                    self._local.conn.rollback()
+                raise
+            finally:
+                # Don't close - keep connection alive for thread
+                pass
 
     def _init_db(self):
         """Initialize database schema"""

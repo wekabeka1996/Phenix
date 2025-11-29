@@ -1,104 +1,78 @@
-"""Pytest configuration for vfoundation tests."""
-
-import sys
 import pytest
-from pathlib import Path
+from unittest.mock import MagicMock
+from apps.reference.config_models import AuroraConfig, DomainsConfig
+from apps.reference.config_loader import ConfigLoader
 
-# Add project root, apps and vfoundation to path for imports BEFORE any tests run
-project_root = Path(__file__).parent
-apps_root = project_root / "apps"
-# CRITICAL: vfoundation package root (where vfoundation/ module lives)
-vfoundation_package_root = project_root / "vfoundation"
-vfoundation_apps_root = project_root / "vfoundation" / "apps"
+@pytest.fixture
+def mock_fsm():
+    """Mock FSM Core."""
+    fsm = MagicMock()
+    fsm.listen = MagicMock()
+    fsm.emit = MagicMock()
+    return fsm
 
+@pytest.fixture
+def domains_config():
+    """Load the real domains.yaml config."""
+    loader = ConfigLoader()
+    return loader.load_config()
 
-aurora_root = project_root / "aurora"
+class MockAuroraConfig:
+    """Custom mock config to avoid MagicMock auto-creation issues."""
+    def __init__(self, domains_config):
+        self.domains = domains_config.domains
+        
+        # Legacy mocks
+        self.trading = MagicMock()
+        self.trading.risk = MagicMock()
+        self.trading.risk.trading_allowed_thresholds = {}
+        
+        self.decision = MagicMock()
+        self.decision.position_sizing.min_position_size_usd = "10"
+        self.decision.position_sizing.liquidity_based_cap_usd = "10000"
+        self.decision.qos.exposure_block_cooldown_sec = "10"
+        self.decision.qos.symbol_cooldown_sec = "3"
+        self.decision.qos.max_intents_per_minute_per_symbol = "6"
+        self.decision.features.ttl_sec = "5"
+        self.decision.bar_gating.bar_ms = "900000"
+        self.decision.behavior_fsm.high_vol_multiplier = "2.0"
+        self.decision.behavior_fsm.low_vol_multiplier = "0.5"
+        
+        self.tca_prefs = MagicMock()
+        self.risk_budgets = MagicMock()
+        
+        self.execution = MagicMock()
+        self.execution.max_equity_utilization_pct = "0.95"
+        self.execution.max_portfolio_fraction = "0.95"
+        self.execution.max_long_utilization_pct = "0.95"
+        self.execution.max_short_utilization_pct = "0.95"
+        self.execution.max_directional_ratio = "2.0"
+        self.execution.max_concentration_pct = "0.10"
+        self.execution.watchdog.ack_ttl_ms = "8000"
+        self.execution.watchdog.fill_ttl_ms = "30000"
+        self.execution.watchdog.rps_limit = "10"
+        
+        self.feature_engineering = MagicMock()
+        self.feature_engineering.ema.period_short = 3
+        self.feature_engineering.ema.period_long = 7
+        self.feature_engineering.volume.sma_length = 5
+        self.feature_engineering.volume.window_sec = 60
+        self.feature_engineering.volatility.sma_length = 10
+        self.feature_engineering.volatility.window_sec = 60
+        self.feature_engineering.liquidity.depth_half = 1000
+        self.feature_engineering.macro_sync.window = 60
+        self.feature_engineering.macro_sync.anchors = ["BTCUSDT", "ETHUSDT"]
+        
+        self.risk_score_weights = {}
 
-# Add to sys.path only once at the beginning
-# NOTE: apps_root MUST come before vfoundation paths to use updated FSM implementations
-for root_path in [
-    project_root,
-    apps_root,
-    vfoundation_package_root,
-    vfoundation_apps_root,
-    aurora_root,
-]:
-    if str(root_path) not in sys.path:
-        sys.path.insert(0, str(root_path))
+    def __contains__(self, key):
+        return hasattr(self, key)
 
+    def get(self, key, default=None):
+        return getattr(self, key, default)
 
-def pytest_collection_modifyitems(config, items):
-    """
-    Reorder tests to run test_fsm_shadow_roundtrip FIRST.
-
-    This ensures it runs before other tests cache the apps/ version of FSM modules.
-    """
-    shadow_tests = []
-    other_tests = []
-
-    for item in items:
-        if "test_fsm_shadow_roundtrip.py" in str(item.fspath):
-            shadow_tests.append(item)
-        else:
-            other_tests.append(item)
-
-    # Shadow tests first, then everything else
-    items[:] = shadow_tests + other_tests
-
-
-def pytest_configure(config):
-    """
-    Force correct sys.path order BEFORE pytest starts collecting tests.
-
-    This ensures apps/ is prioritized over vfoundation/apps for updated implementations.
-    """
-    # Ensure apps paths come BEFORE vfoundation paths for updated implementations
-    vf_apps = str(vfoundation_apps_root)
-    vf_pkg = str(vfoundation_package_root)
-    apps = str(apps_root)
-
-    # Remove all occurrences
-    for path in [vf_apps, vf_pkg, apps, project_root]:
-        while path in sys.path:
-            sys.path.remove(path)
-
-    # Re-add in correct order: project root first, then apps, then vfoundation
-    sys.path.insert(0, vf_pkg)
-    sys.path.insert(0, vf_apps)
-    sys.path.insert(0, apps)
-    sys.path.insert(0, project_root)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def cleanup_background_tasks():
-    """Ensure all background tasks are cleaned up after test session."""
-    yield
-    # Force cleanup of any asyncio tasks or threads
-    import asyncio
-    import threading
-
-    # Cancel any pending asyncio tasks
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            pending = asyncio.all_tasks(loop)
-            for task in pending:
-                task.cancel()
-    except RuntimeError:
-        pass
-
-    # Log active threads for debugging
-    active_threads = threading.enumerate()
-    if len(active_threads) > 1:  # Main thread always exists
-        print(f"\nWarning: {len(active_threads)} threads still active at test end")
-        for thread in active_threads:
-            if thread != threading.main_thread():
-                print(f"   - {thread.name} (daemon={thread.daemon})")
-
-
-@pytest.fixture(scope="function", autouse=True)
-def reset_singletons():
-    """Reset singleton instances between tests to prevent state leakage."""
-    yield
-    # Clear any cached singletons or global state
-    # This prevents test interference
+@pytest.fixture
+def root_mock_config(domains_config):
+    """Mock configuration object with domains loaded."""
+    print("DEBUG: mock_config fixture in tests/conftest.py CALLED")
+    return MockAuroraConfig(domains_config)
