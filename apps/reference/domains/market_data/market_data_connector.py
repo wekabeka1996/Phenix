@@ -77,8 +77,11 @@ class MarketDataConnector:
                 instruments = {}
         except Exception:
             instruments = {}
-        self.symbols = list(instruments.keys()) if instruments else [
-            "SOLUSDT", "ETHUSDT"]
+            
+        if instruments:
+            self.symbols = list(instruments.keys())
+        else:
+            raise ValueError("No trading instruments configured in 'trading.instruments'!")
 
         # Get anchor symbols from config.market_data.macro_sync.anchors
         macro_sync_config = trading_section.get(

@@ -5,6 +5,7 @@ import time
 import uuid
 
 Op = Literal["ASK", "DEC", "CMD", "EVT", "UPD", "ERR"]
+IntentType = Literal["INQUIRY", "COMMAND", "PROPOSAL", "OBSERVATION", "DECLARATION"]
 
 
 def truncate_why(why_text: Optional[str], max_len: int = 80) -> Optional[str]:
@@ -35,6 +36,7 @@ class Message(BaseModel):
     pld: Dict[str, Any] = Field(default_factory=dict)
     why: Optional[str] = None
     why_explain_ref: Optional[str] = None
+    intent: Optional[IntentType] = None  # Message intent classification (v2.2)
     data_ref: List[str] = Field(default_factory=list)
     sig: Optional[str] = None
     mode: str = "live"  # Domain-level trading mode: live, backtest, paper

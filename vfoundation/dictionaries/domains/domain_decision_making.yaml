@@ -1,0 +1,44 @@
+domain: decision_making
+version: "1.0"
+description: "Trade intent generation based on risk assessment and market features"
+
+modules:
+  - decision_making.py
+  - roi_exit_strategy.py
+
+imports:
+  - op: EVT
+    verb: FEATURES_CALCULATED
+    from: feature_engineering
+    description: "Market features for decision making"
+  
+  - op: DEC
+    verb: RISK_ASSESSMENT_COMPLETED
+    from: risk_management
+    description: "Risk evaluation result with position sizing"
+  
+  - op: EVT
+    verb: PORTFOLIO_STATE_UPDATED
+    from: position_tracking
+    description: "Current portfolio status for freshness checks"
+
+exports:
+  - op: EVT
+    verb: TRADE_INTENT_PROPOSED
+    to: aurora_bridge
+    description: "Proposed trade with side, instrument, and order details"
+  
+  - op: EVT
+    verb: INTENT_DEFERRED
+    to: aurora_bridge
+    description: "Trade intent deferred due to QoS or portfolio staleness"
+
+critical_paths:
+  - "feature_engineering -> decision_making (EVT:FEATURES_CALCULATED)"
+  - "risk_management -> decision_making (DEC:RISK_ASSESSMENT_COMPLETED)"
+  - "decision_making -> aurora_bridge (EVT:TRADE_INTENT_PROPOSED)"
+
+qos_policies:
+  - cooldown_per_symbol_sec: 60
+  - max_qos_defer_retries: 3
+  - defer_wait_sec: 1.0

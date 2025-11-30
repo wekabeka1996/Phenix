@@ -200,12 +200,10 @@ class AccountConnector:
 
                     # 🔴 DIAGNOSTIC: Check for divergence (API empty but internal has data)
                     if api_position_count == 0:
-                        LOG.warning(
-                            "🚨 CRITICAL: API returned EMPTY positions! Will trigger FALLBACK in margin calculation")
-                        LOG.warning(
-                            "   → This means system will use internal self._positions (if any)")
-                        LOG.warning(
-                            "   → Check: Are orders filled on Binance? Is API key valid?")
+                        LOG.info(
+                            "ℹ️ API returned EMPTY positions list (no open positions on exchange).")
+                        LOG.debug(
+                            "   → System will clear internal position state.")
 
                     # Always emit positions update, even if empty
                     self._emit_positions_update(positions_list)

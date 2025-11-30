@@ -298,80 +298,288 @@ class DecisionMakingDomainConfig(BaseModel):
     signals: SignalsConfig = Field(default_factory=SignalsConfig)
 
 
-# Feature Engineering Domain
+# ============================================================================
+# FEATURE ENGINEERING DOMAIN - Full Pydantic Validation
+# ============================================================================
+
 class EmaConfigDetailed(BaseModel):
-    """EMA calculation configuration."""
-    model_config = ConfigDict(extra='allow')
+    """EMA calculation configuration with validation."""
+    model_config = ConfigDict(extra='forbid')
     
-    period_short: int = Field(default=3)
-    period_long: int = Field(default=7)
+    period_short: int = Field(
+        default=3,
+        ge=1, le=50,
+        description="Short EMA period (EMA3 default). Must be < period_long."
+    )
+    period_long: int = Field(
+        default=7,
+        ge=2, le=200,
+        description="Long EMA period (EMA7 default). Must be > period_short."
+    )
+    
+    @field_validator('period_long')
+    @classmethod
+    def validate_period_long_greater(cls, v: int, info) -> int:
+        """Ensure period_long > period_short."""
+        period_short = info.data.get('period_short', 3)
+        if v <= period_short:
+            raise ValueError(f"period_long ({v}) must be > period_short ({period_short})")
+        return v
 
 
 class VolumeConfigDetailed(BaseModel):
-    """Volume metrics configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Volume metrics configuration with validation."""
+    model_config = ConfigDict(extra='forbid')
     
-    sma_length: int = Field(default=5)
-    window_sec: int = Field(default=60)
+    sma_length: int = Field(
+        default=5,
+        ge=2, le=100,
+        description="SMA length for volume spike calculation"
+    )
+    window_sec: int = Field(
+        default=60,
+        ge=1, le=3600,
+        description="Volume aggregation window in seconds"
+    )
 
 
 class VolatilityConfigDetailed(BaseModel):
-    """Volatility metrics configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Volatility metrics configuration with validation."""
+    model_config = ConfigDict(extra='forbid')
     
-    sma_length: int = Field(default=10)
-    window_sec: int = Field(default=60)
+    sma_length: int = Field(
+        default=10,
+        ge=2, le=100,
+        description="SMA length for volatility state calculation"
+    )
+    window_sec: int = Field(
+        default=60,
+        ge=1, le=3600,
+        description="Range window for volatility calculation in seconds"
+    )
 
 
 class LiquidityConfigDetailed(BaseModel):
-    """Liquidity metrics configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Liquidity metrics configuration with validation."""
+    model_config = ConfigDict(extra='forbid')
     
-    depth_half: int = Field(default=1000)
-    kappa_min: float = Field(default=0.3)
-    kappa_max: float = Field(default=1.0)
+    depth_half: float = Field(
+        default=1000.0,
+        gt=0, le=1_000_000,
+        description="Half-depth parameter for liquidity kappa and depth imbalance (USD)"
+    )
+    kappa_min: float = Field(
+        default=0.3,
+        ge=0.0, le=1.0,
+        description="Minimum liquidity kappa value"
+    )
+    kappa_max: float = Field(
+        default=1.0,
+        ge=0.0, le=1.0,
+        description="Maximum liquidity kappa value"
+    )
+    
+    @field_validator('kappa_max')
+    @classmethod
+    def validate_kappa_max(cls, v: float, info) -> float:
+        """Ensure kappa_max >= kappa_min."""
+        kappa_min = info.data.get('kappa_min', 0.3)
+        if v < kappa_min:
+            raise ValueError(f"kappa_max ({v}) must be >= kappa_min ({kappa_min})")
+        return v
 
 
 class EmaBiasConfig(BaseModel):
-    """EMA bias calculation configuration."""
-    model_config = ConfigDict(extra='allow')
+    """EMA bias calculation configuration with validation."""
+    model_config = ConfigDict(extra='forbid')
     
-    clamp_min: float = Field(default=-0.02)
-    clamp_max: float = Field(default=0.02)
+    clamp_min: float = Field(
+        default=-0.02,
+        ge=-1.0, le=0.0,
+        description="Minimum clamp for EMA bias (typically -2%)"
+    )
+    clamp_max: float = Field(
+        default=0.02,
+        ge=0.0, le=1.0,
+        description="Maximum clamp for EMA bias (typically +2%)"
+    )
+    
+    @field_validator('clamp_max')
+    @classmethod
+    def validate_clamp_symmetry(cls, v: float, info) -> float:
+        """Ensure clamp_max is positive opposite of clamp_min for symmetry."""
+        clamp_min = info.data.get('clamp_min', -0.02)
+        if abs(v + clamp_min) > 0.001:  # Allow small tolerance
+            # Warning only, not an error - asymmetric is allowed
+            pass
+        return v
 
 
 class VolumeSpikeConfig(BaseModel):
-    """Volume spike calculation configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Volume spike calculation configuration with validation."""
+    model_config = ConfigDict(extra='forbid')
     
-    cap_max: float = Field(default=3.0)
+    cap_max: float = Field(
+        default=3.0,
+        gt=1.0, le=10.0,
+        description="Maximum cap for volume spike ratio (e.g., 3.0 = 300% of average)"
+    )
 
 
 class MacroSyncMetricsConfig(BaseModel):
-    """Macro sync metrics configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Macro sync metrics configuration with validation."""
+    model_config = ConfigDict(extra='forbid')
     
-    time_diff_threshold_ms: int = Field(default=5000)
-    min_buffer_size: int = Field(default=3)
-    window: int = Field(default=60)
-    anchors: List[str] = Field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    enabled: bool = Field(
+        default=True,
+        description="Enable macro sync correlation calculation"
+    )
+    time_diff_threshold_ms: int = Field(
+        default=5000,
+        ge=100, le=60000,
+        description="Maximum time difference (ms) between ticks for return calculation"
+    )
+    min_buffer_size: int = Field(
+        default=3,
+        ge=2, le=100,
+        description="Minimum buffer size before computing correlation"
+    )
+    window: int = Field(
+        default=60,
+        ge=10, le=1000,
+        description="Rolling window size for correlation calculation"
+    )
+    anchors: List[str] = Field(
+        default_factory=lambda: ["BTCUSDT", "ETHUSDT"],
+        min_length=1,
+        description="Anchor symbols for correlation (market leaders)"
+    )
+    
+    @field_validator('anchors')
+    @classmethod
+    def validate_anchors(cls, v: List[str]) -> List[str]:
+        """Ensure anchors are valid symbol format."""
+        for anchor in v:
+            if not anchor.endswith("USDT"):
+                raise ValueError(f"Anchor '{anchor}' must end with 'USDT'")
+        return v
+
+
+class VolatilityStateConfig(BaseModel):
+    """Volatility state normalization configuration."""
+    model_config = ConfigDict(extra='forbid')
+    
+    cap_max: float = Field(
+        default=3.0,
+        gt=1.0, le=10.0,
+        description="Maximum cap for volatility ratio normalization"
+    )
+
+
+class DepthImbalanceConfig(BaseModel):
+    """Depth imbalance calculation configuration."""
+    model_config = ConfigDict(extra='forbid')
+    
+    use_laplace_smoothing: bool = Field(
+        default=True,
+        description="Use Laplace smoothing (depth_half) in calculation"
+    )
+
+
+class DeltaPriceConfig(BaseModel):
+    """Delta price calculation configuration."""
+    model_config = ConfigDict(extra='forbid')
+    
+    spike_filter_ms: int = Field(
+        default=5000,
+        ge=100, le=60000,
+        description="Time gap (ms) above which delta_price is zeroed to filter spikes"
+    )
+
+
+class FeatureDefaultsConfig(BaseModel):
+    """
+    Default/neutral values for features.
+    
+    These values are returned when:
+    - Insufficient data to compute feature
+    - Division by zero would occur
+    - Feature is in initialization phase
+    
+    All features are normalized to [0, 1] range, so 0.5 = neutral.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    neutral_value: float = Field(
+        default=0.5,
+        ge=0.0, le=1.0,
+        description="Default neutral value for all normalized features (0.5 = center of [0,1])"
+    )
+    zero_value: float = Field(
+        default=0.0,
+        ge=0.0, le=1.0,
+        description="Value for truly zero/absent features (absorption placeholder)"
+    )
+    correlation_default: float = Field(
+        default=0.0,
+        ge=-1.0, le=1.0,
+        description="Default correlation value when insufficient data"
+    )
+    ms_per_sec: int = Field(
+        default=1000,
+        ge=1000, le=1000,
+        description="Milliseconds per second (constant for clarity)"
+    )
 
 
 class FeatureEngineeringDomainConfig(BaseModel):
-    """Complete feature engineering domain configuration."""
-    model_config = ConfigDict(extra='allow')
+    """
+    Complete feature engineering domain configuration.
     
-    enable_new_metrics: bool = Field(default=True)
+    All 9 features are configured here:
+    - Base: OBI, TFI, delta_price, liquidity_kappa
+    - Phase 1: ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    # Master switch for Phase 1 metrics
+    enable_new_metrics: bool = Field(
+        default=True,
+        description="Enable Phase 1 metrics (ema_bias, volume_spike, etc.)"
+    )
+    
+    # Feature calculation configs
     ema: EmaConfigDetailed = Field(default_factory=EmaConfigDetailed)
     volume: VolumeConfigDetailed = Field(default_factory=VolumeConfigDetailed)
     volatility: VolatilityConfigDetailed = Field(default_factory=VolatilityConfigDetailed)
     liquidity: LiquidityConfigDetailed = Field(default_factory=LiquidityConfigDetailed)
+    
+    # Normalization configs
     ema_bias: EmaBiasConfig = Field(default_factory=EmaBiasConfig)
     volume_spike: VolumeSpikeConfig = Field(default_factory=VolumeSpikeConfig)
+    volatility_state: VolatilityStateConfig = Field(default_factory=VolatilityStateConfig)
+    depth_imbalance: DepthImbalanceConfig = Field(default_factory=DepthImbalanceConfig)
+    delta_price: DeltaPriceConfig = Field(default_factory=DeltaPriceConfig)
+    
+    # Macro sync config
     macro_sync: MacroSyncMetricsConfig = Field(default_factory=MacroSyncMetricsConfig)
+    
+    # Default/neutral values for edge cases
+    defaults: FeatureDefaultsConfig = Field(default_factory=FeatureDefaultsConfig)
+    
+    def get_ema_alpha(self, period: str) -> float:
+        """Calculate EMA alpha for given period."""
+        if period == "short":
+            n = self.ema.period_short
+        else:
+            n = self.ema.period_long
+        return 2.0 / (n + 1)
 
 
+# ============================================================================
 # Risk Management Domain
+# ============================================================================
+
 class RiskScoreWeightsConfig(BaseModel):
     """Risk score weights configuration."""
     model_config = ConfigDict(extra='allow')
@@ -543,6 +751,7 @@ class TradingConfig(BaseModel):
     decision: DecisionConfig = Field(default_factory=DecisionConfig)
     execution: Optional[ExecutionConfig] = Field(default=None)
     instruments: Dict[str, InstrumentSpec] = Field(default_factory=dict)
+    symbols_to_track: List[str] = Field(default_factory=list, description="List of symbols to track for multi-TF aggregation")
     market_data: Optional[MarketDataConfig] = Field(default=None)
     feature_engineering: Optional[FeatureEngineeringConfig] = Field(
         default=None)

@@ -1,0 +1,32 @@
+domain: market_data
+version: "1.0"
+description: "Real-time market data collection from Binance WebSocket"
+
+modules:
+  - market_data_connector.py
+
+imports: []  # No imports - source of market data
+
+exports:
+  - op: EVT
+    verb: MARKET_TICK_RECEIVED
+    to: [feature_engineering]
+    description: "Real-time market tick with bid/ask/last price"
+  
+  - op: EVT
+    verb: MARKET_DATA_CONNECTED
+    to: ["*"]
+    description: "WebSocket connection established"
+  
+  - op: EVT
+    verb: MARKET_DATA_DISCONNECTED
+    to: ["*"]
+    description: "WebSocket connection lost"
+
+critical_paths:
+  - "market_data -> feature_engineering (EVT:MARKET_TICK_RECEIVED)"
+
+configuration:
+  - symbols: ["XRPUSDT", "BTCUSDT"]
+  - update_frequency_ms: 100
+  - websocket_reconnect_delay_sec: 5

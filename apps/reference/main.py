@@ -442,6 +442,7 @@ class AuroraBridge:
             src="decision_making",  # Source is decision_making
             dst="execution_position",
             parent_span_id=intent_msg.span_id,  # Link to parent event for tracing
+            intent="COMMAND",  # v2.2: Classify as command
             why=bridge_why,  # Preserve first WHY for backward compatibility
             pld=command_payload,
             data_ref=event_why_chain or [],  # Full WHY chain
@@ -600,6 +601,20 @@ def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: di
     if alert_stats["active_alerts"] > 5:
         # Assume CB active if many alerts
         alert_manager.check_circuit_breaker(True, 300)
+    
+    # Check entropy spike (NEW)
+    try:
+        if 'entropy_monitor' in globals():
+            spike_detected, reason = entropy_monitor.detect_spike()
+            if spike_detected:
+                alert_manager.trigger_alert(
+                    severity="CRITICAL",
+                    message=f"System anomaly detected: {reason}",
+                    context=entropy_monitor.get_metrics()
+                )
+                LOG.critical(f"🚨 ENTROPY SPIKE: {reason}")
+    except Exception as e:
+        LOG.error(f"Error checking entropy: {e}")
 
     # Check risk gate (placeholder - would need actual risk metrics)
     # This would typically come from risk_management domain
@@ -870,6 +885,15 @@ def main() -> None:
     alert_manager = AlertManager(config=config.to_dict(), logger=LOG)
     LOG.info("✅ Alert Manager initialized")
 
+    # Initialize EntropyMonitor for system anomaly detection
+    from vfoundation.obs.entropy_monitor import EntropyMonitor
+    entropy_monitor = EntropyMonitor(
+        window_sec=60,  # 1-minute sliding window
+        volume_threshold=100,  # Alert if >100 events/min
+        error_rate_threshold=0.5  # Alert if >50% errors
+    )
+    LOG.info("✅ EntropyMonitor initialized")
+
     # FSMP-P3-T01: Pre-flight check for hybrid coherence
     is_coherent, reasons = check_hybrid_coherence(config.to_dict())
     if not is_coherent:
@@ -884,6 +908,28 @@ def main() -> None:
     LOG.info("Initializing FSM Core...")
     global fsm
     fsm = FSMCore()
+    
+    # Wrap FSMCore.emit to track events with EntropyMonitor
+    original_emit = fsm.emit
+    def emit_with_monitoring(event_name: str, payload: dict, why: str, data_ref=None):
+        """Emit with entropy monitoring"""
+        # Track event for anomaly detection
+        from vfoundation.core.protocol import Message
+        tracking_msg = Message(
+            op=event_name.split(":")[0] if ":" in event_name else "EVT",
+            verb=event_name.split(":")[1] if ":" in event_name else event_name,
+            src="fsm_core",
+            dst="any",
+            pld=payload,
+            why=why
+        )
+        entropy_monitor.track_event(tracking_msg)
+        
+        # Call original emit
+        return original_emit(event_name, payload, why, data_ref)
+    
+    fsm.emit = emit_with_monitoring
+    LOG.info("✅ FSMCore initialized with EntropyMonitor tracking")
 
     # Step 2: Create event listeners
     LOG.info("Setting up event listeners...")
@@ -931,11 +977,23 @@ def main() -> None:
 
     # Initialize Multi-TF aggregator now that feature_store exists
     try:
-        symbols_cfg = config.to_dict().get("trading", {}).get("symbols_to_track", [])
+        trading_cfg = config.to_dict().get("trading", {})
+        symbols_cfg = trading_cfg.get("symbols_to_track", [])
+        
+        # Fallback to instruments keys if symbols_to_track is not set
+        if not symbols_cfg:
+            instruments = trading_cfg.get("instruments", {})
+            if instruments:
+                symbols_cfg = list(instruments.keys())
+                
         if not symbols_cfg or not isinstance(symbols_cfg, list):
-            symbols_cfg = ["BTCUSDT", "ETHUSDT"]
-    except Exception:
-        symbols_cfg = ["BTCUSDT", "ETHUSDT"]
+            error_msg = "No symbols configured for Multi-TF rollup! Check 'trading.symbols_to_track' or 'trading.instruments'."
+            LOG.critical(error_msg)
+            raise ValueError(error_msg)
+            
+    except Exception as e:
+        LOG.critical(f"Failed to configure Multi-TF rollup symbols: {e}")
+        raise
 
     multi_tf_thread = start_multi_tf_rollup(feature_store, symbols_cfg)
     LOG.info("✅ Multi-TF Feature Aggregation Scheduler initialized")

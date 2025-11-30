@@ -3,6 +3,8 @@ DecisionMaking domain component.
 
 Aggregates features, risk assessment, and portfolio state to make trading decisions
 and emit EVT:TRADE_INTENT_PROPOSED events.
+
+FTR-07: Refactored to use DecisionContext for type-safe feature access.
 """
 
 import decimal
@@ -10,6 +12,7 @@ import logging
 import time
 import uuid
 from collections import defaultdict
+from decimal import Decimal
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
@@ -20,6 +23,9 @@ from .deferred_scheduler import DeferredIntentScheduler
 from .dm_log_adapter import (
     DecisionLog,
 )
+# FTR-07: Import DecisionContext for typed feature access
+from .decision_context import DecisionContext, create_decision_context
+
 from apps.reference.telemetry.metrics import inc_decision_deferred
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
 from apps.reference.telemetry.order_logger import order_logger
@@ -1017,6 +1023,10 @@ class DecisionMaking:
         risk_params = context["risk_params"]["risk_parameters"]
         portfolio = context["portfolio"]
 
+        # FTR-07: Create typed DecisionContext for semantic feature access
+        ts_ms = int(time.time() * 1000)
+        ctx = create_decision_context(symbol, ts_ms, features_data)
+
         # QoS check (PACK EXP-4) - check rate limits and cooldowns
         qos_allowed, qos_reject_reason = self._qos_allow(
             symbol, is_exposure_block=False
@@ -1228,6 +1238,7 @@ class DecisionMaking:
         self.logger.info(f"DEBUG signal_weights: {signal_weights}")
 
         # Compute signal score; optionally normalize components into [0,1]
+        # FTR-07: Use DecisionContext for typed access to features
         psi_vector: Dict[str, Any] = {}
         if self._normalize_signals:
             def _to_dec(val: Any) -> decimal.Decimal:
@@ -1236,18 +1247,27 @@ class DecisionMaking:
                 except Exception:
                     return decimal.Decimal("0")
 
-            price_dec = _to_dec(features_data.get("price", 0))
-            obi_raw = _to_dec(features_data.get("obi", 0))
-            tfi_raw = _to_dec(features_data.get("tfi", 0))
-            dp_raw = _to_dec(features_data.get("delta_price", 0))
+            # FTR-07: Use ctx.price property instead of raw dict access
+            price_dec = ctx.price
 
-            # Phase 1 new metrics (already normalized to [0,1] by FeatureEngineering)
-            ema_bias_phi = _to_dec(features_data.get("ema_bias", 0))
-            volume_spike_phi = _to_dec(features_data.get("volume_spike", 0))
-            volatility_state_phi = _to_dec(
-                features_data.get("volatility_state", 0))
-            depth_imbalance_phi = _to_dec(
-                features_data.get("depth_imbalance", 0))
+            # FTR-07: Use FlowView for OBI/TFI (already Decimal)
+            obi_raw = ctx.flow.obi
+            tfi_raw = ctx.flow.tfi
+
+            # FTR-07: Use TrendView for delta_price
+            dp_raw = ctx.trend.delta_price
+
+            # FTR-07: Use TrendView for ema_bias (already [0,1])
+            ema_bias_phi = ctx.trend.ema_bias
+
+            # FTR-07: Use VolatilityView for volume/volatility metrics
+            volume_spike_phi = ctx.volatility.volume_spike
+            volatility_state_phi = ctx.volatility.volatility_state
+
+            # FTR-07: Use LiquidityView for depth_imbalance
+            depth_imbalance_phi = ctx.liquidity.depth_imbalance
+
+            # macro_sync still from raw dict (not in Views yet)
             macro_sync_phi = _to_dec(features_data.get("macro_sync", 0))
 
             def _norm_m11_to_01(x: decimal.Decimal) -> decimal.Decimal:
@@ -1288,7 +1308,8 @@ class DecisionMaking:
                 decimal.Decimal(str(w))
                 for f, w in signal_weights.items()
             )
-            # Expand psi_vector with Phase 1 metrics
+
+            # FTR-07: Add DecisionContext summary to psi_vector for XAI
             psi_vector = {
                 "phi_OBI": float(obi_phi),
                 "phi_TFI": float(tfi_phi),
@@ -1299,6 +1320,15 @@ class DecisionMaking:
                 "phi_Depth_Imbalance": float(depth_imbalance_phi),
                 "phi_Macro_Sync": float(macro_sync_phi),
                 "weights": {k: float(v) for k, v in signal_weights.items()},
+                # FTR-07: Semantic signals from DecisionContext
+                "ctx_trend_bullish": ctx.trend.is_bullish,
+                "ctx_trend_bearish": ctx.trend.is_bearish,
+                "ctx_flow_buy_pressure": ctx.flow.is_buy_pressure,
+                "ctx_flow_sell_pressure": ctx.flow.is_sell_pressure,
+                "ctx_high_volatility": ctx.volatility.is_high_volatility,
+                "ctx_illiquid": ctx.liquidity.is_illiquid,
+                "ctx_crowded_long": ctx.crowding.is_crowded_long,
+                "ctx_crowded_short": ctx.crowding.is_crowded_short,
             }
         else:
             signal_score = sum(
@@ -1419,6 +1449,82 @@ class DecisionMaking:
                 }
             })
 
+            self.clear_internal_state_for_symbol(symbol)
+            return
+
+        # FTR-07: Crowding Filter using DecisionContext (V2 Futures features)
+        # Block entries into crowded positions to reduce adverse selection
+        if side == "buy" and ctx.crowding.is_crowded_long:
+            reject_reason = "crowding_filter_long_crowded"
+            self.logger.warning(
+                f"[{symbol}] Trade intent ({side}) rejected: funding rate indicates crowded LONG "
+                f"(funding_normalized={ctx.crowding.funding_rate_normalized})"
+            )
+            self.dlog.write(
+                "DECISION_SKIP", rid, {
+                    "symbol": symbol, "reason": "CROWDING_FILTER", "side": side,
+                    "funding_normalized": str(ctx.crowding.funding_rate_normalized)}
+            )
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": side.upper(),
+                "nrr_code": None,
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "CROWDING_FILTER_LONG"}
+            })
+            self.clear_internal_state_for_symbol(symbol)
+            return
+
+        if side == "sell" and ctx.crowding.is_crowded_short:
+            reject_reason = "crowding_filter_short_crowded"
+            self.logger.warning(
+                f"[{symbol}] Trade intent ({side}) rejected: funding rate indicates crowded SHORT "
+                f"(funding_normalized={ctx.crowding.funding_rate_normalized})"
+            )
+            self.dlog.write(
+                "DECISION_SKIP", rid, {
+                    "symbol": symbol, "reason": "CROWDING_FILTER", "side": side,
+                    "funding_normalized": str(ctx.crowding.funding_rate_normalized)}
+            )
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": side.upper(),
+                "nrr_code": None,
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "CROWDING_FILTER_SHORT"}
+            })
+            self.clear_internal_state_for_symbol(symbol)
+            return
+
+        # FTR-07: Liquidity Filter using DecisionContext
+        # Block trades in illiquid markets
+        if ctx.liquidity.is_illiquid:
+            reject_reason = "liquidity_filter_illiquid_market"
+            self.logger.warning(
+                f"[{symbol}] Trade intent ({side}) rejected: market is illiquid "
+                f"(kappa={ctx.liquidity.liquidity_kappa}, spread={ctx.liquidity.effective_spread}bps)"
+            )
+            self.dlog.write(
+                "DECISION_SKIP", rid, {
+                    "symbol": symbol, "reason": "LIQUIDITY_FILTER", "side": side,
+                    "kappa": str(ctx.liquidity.liquidity_kappa)}
+            )
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": side.upper(),
+                "nrr_code": None,
+                "why": reject_reason[:80],
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": "LIQUIDITY_FILTER"}
+            })
             self.clear_internal_state_for_symbol(symbol)
             return
 
@@ -1625,6 +1731,14 @@ class DecisionMaking:
                 sizing_meta["kelly_fraction"] = kelly_fraction
         except Exception:
             pass
+
+        # FTR-07: Use DecisionContext for volatility state in sizing
+        if ctx.volatility.is_high_volatility:
+            sizing_meta["volatility_state"] = "HIGH_VOL"
+        elif ctx.volatility.is_low_volatility:
+            sizing_meta["volatility_state"] = "LOW_VOL"
+        else:
+            sizing_meta["volatility_state"] = "NORMAL"
 
         # Call sizing with optional meta
         context["_sizing_meta"] = sizing_meta

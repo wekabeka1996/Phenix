@@ -1,18 +1,32 @@
 {
   "domain_name": "feature_engineering",
-  "description": "                                                                                                                                             (      )                                           .",
+  "description": "Signal component that transforms raw market tick data into normalized features (OBI, TFI, EMA bias, volume spike, volatility, depth imbalance, macro sync) for downstream decision making.",
+  "version": "1.1.0",
   "schema_version": "1.0",
   "schema_path": "schemas/features_calculated_v1.json",
+  "docs_path": "docs/",
   "imports": [
     {
       "event_name": "EVT:MARKET_TICK_RECEIVED",
-      "description": "                                                                           ."
+      "source": "market_data",
+      "description": "Raw tick data with price, bid/ask sizes, buy/sell volumes",
+      "required_fields": ["symbol", "ts", "price", "bid_size", "ask_size", "buy_volume", "sell_volume"]
     }
   ],
   "exports": [
     {
       "event_name": "EVT:FEATURES_CALCULATED",
-      "description": "          ,                                                                                                        ."
+      "destinations": ["decision_making", "risk_strategy", "analyzer", "feature_store"],
+      "description": "Computed features including OBI, TFI, delta_price, liquidity_kappa, and Phase 1 metrics (ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync)",
+      "payload_fields": ["ts", "symbol", "features"]
     }
+  ],
+  "features_computed": {
+    "base": ["obi", "tfi", "delta_price", "liquidity_kappa", "price", "absorption"],
+    "phase1": ["ema_bias", "volume_spike", "volatility_state", "depth_imbalance", "macro_sync"]
+  },
+  "config_paths": [
+    "domains.feature_engineering",
+    "trading.feature_engineering"
   ]
 }

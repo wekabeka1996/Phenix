@@ -59,6 +59,30 @@
 
 ## JOURNAL Entries (RID-based)
 
+### 2025-11-29 | RID: FTR_DESIGN_01_ADAPT_AURORA_291125 | WHY: Адаптація дизайну Gemini під Aurora/Phenix
+- **Task:** FTR-DESIGN-01-FEATURES-V2-ADAPT-AURORA
+- **Artifacts:** apps/reference/domains/feature_engineering/docs/FTR_FEATURES_FUTURES_V2_DESIGN.md (переписано ~600 LOC)
+- **Корекції:**
+  - EVT:MARKET_TICK → EVT:MARKET_TICK_RECEIVED
+  - Додано FTR-00 (Freeze v1 Behaviour) перед FTR-01
+  - volume_spike (ratio) = default, volume_zscore (Welford) = advanced optional
+  - liquidity_impact_index потребує extended market_data (risk documented)
+  - Hot/Cold State scope уточнено (internal domain state)
+  - Feature Semantics таблиця з group/range/monotonicity/usage
+  - Config в стилі features.yaml (адитивні розширення)
+- **Invariants:** ✅ No runtime changes, ✅ Contract-first, ✅ Additive-only
+- **Status:** ✅ Completed
+
+### 2025-11-30 | RID: FTR_DESIGN_01_FEATURES_V2_301125 | WHY: Дизайн futures-grade features v2 без runtime змін
+- **Task:** FTR-DESIGN-01-FEATURES-V2
+- **Artifacts:** apps/reference/domains/feature_engineering/docs/FTR_FEATURES_FUTURES_V2_DESIGN.md
+- **Аудит:** feature_engineering (612 LOC, 9 features), regime_detector (461 LOC), decision_making (2068 LOC)
+- **Знайдений gap:** regime_detector очікує sma_short/sma_long фічі, які feature_engineering НЕ надає
+- **Дизайн:** 10 нових futures фіч (FR, OFI, VPIN, MO_Imbalance, VolumeProfile_POC, Greeks_Exposure тощо)
+- **Контракти:** FeatureSemantics (metadata), Regime Integration, Decision Integration (FeatureEnvelope)
+- **Roadmap:** FTR-01 → FTR-05, 3 фази, 7 спринтів
+- **Status:** ✅ Completed
+
 ### 2025-01-XX | RID: FSMP-P0-T02-METRICS | WHY:                  /metrics endpoint        SLO tracking
 - **Artifacts:** vfoundation/obs/debug_api.py (GET /metrics with router_p95_ms, timeout_rate, queue_depth)
 - **Artifacts:** tests/test_metrics_smoke.py (4 tests        p95 calculation)

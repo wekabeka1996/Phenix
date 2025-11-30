@@ -53,9 +53,10 @@ def get_trading_symbols() -> List[str]:
     except Exception as e:
         logger.debug(f"Approach 2 (vfoundation.config) failed: {e}")
 
-    # Last resort fallback
-    logger.warning("Using hardcoded fallback symbols: SOLUSDT, ETHUSDT")
-    return ["SOLUSDT", "ETHUSDT"]
+    # Last resort fallback - FAIL FAST
+    error_msg = "No trading symbols configured! Please check 'trading.instruments' in your config."
+    logger.critical(error_msg)
+    raise ValueError(error_msg)
 
 
 def get_first_symbol() -> str:
@@ -63,7 +64,7 @@ def get_first_symbol() -> str:
     Get the first configured trading symbol.
 
     Returns:
-        First configured symbol (default: 'SOLUSDT')
+        First configured symbol
 
     Example:
         >>> symbol = get_first_symbol()
@@ -71,7 +72,7 @@ def get_first_symbol() -> str:
         'SOLUSDT'
     """
     symbols = get_trading_symbols()
-    return symbols[0] if symbols else "SOLUSDT"
+    return symbols[0]
 
 
 def get_symbol_config(symbol: str) -> Optional[dict]:

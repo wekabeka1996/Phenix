@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "features_calculated_v1.json",
   "title": "Features Calculated Event",
   "description": "Schema for EVT:FEATURES_CALCULATED event payload",
@@ -7,7 +7,7 @@
   "properties": {
     "ts": {
       "type": "integer",
-      "description": "Timestamp of feature calculation in milliseconds"
+      "description": "Timestamp of feature calculation in milliseconds epoch"
     },
     "symbol": {
       "type": "string",
@@ -20,26 +20,61 @@
         "obi": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
-          "description": "Order Book Imbalance indicator (string-encoded Decimal for precision)"
+          "description": "Order Book Imbalance [-1, 1] (string-encoded Decimal)"
         },
         "tfi": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
-          "description": "Trade Flow Imbalance indicator (string-encoded Decimal for precision)"
+          "description": "Trade Flow Imbalance [-1, 1] (string-encoded Decimal)"
         },
         "delta_price": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
-          "description": "Price change delta (string-encoded Decimal for precision)"
+          "description": "Price change delta, filtered if time gap > 5s (string-encoded Decimal)"
         },
         "absorption": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
-          "description": "Market absorption indicator (string-encoded Decimal for precision)"
+          "description": "Market absorption indicator - placeholder, always '0.0'"
+        },
+        "price": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "Current price (string-encoded Decimal)"
+        },
+        "liquidity_kappa": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "Normalized liquidity [0.3, 1.0] (string-encoded Decimal)"
+        },
+        "ema_bias": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "EMA3/EMA7 trend bias normalized to [0, 1] (Phase 1)"
+        },
+        "volume_spike": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "Volume spike ratio normalized to [0, 1] (Phase 1)"
+        },
+        "volatility_state": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "Current vs historical volatility [0, 1] (Phase 1)"
+        },
+        "depth_imbalance": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "Depth imbalance normalized to [0, 1] (Phase 1)"
+        },
+        "macro_sync": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "Correlation with anchor symbols (BTC/ETH) [0, 1] (Phase 1)"
         }
       },
       "required": ["obi", "tfi", "delta_price", "absorption"],
-      "additionalProperties": false
+      "additionalProperties": true
     }
   },
   "required": ["ts", "symbol", "features"],

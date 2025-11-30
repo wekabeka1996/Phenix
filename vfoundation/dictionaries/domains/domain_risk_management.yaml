@@ -1,0 +1,37 @@
+domain: risk_management
+version: "1.0"
+description: "Position sizing and risk assessment based on account balance and volatility"
+
+modules:
+  - risk_management.py
+
+imports:
+  - op: EVT
+    verb: FEATURES_CALCULATED
+    from: feature_engineering
+    description: "Market features including volatility metrics"
+  
+  - op: EVT
+    verb: ACCOUNT_BALANCE_UPDATED
+    from: account_balance
+    description: "Current account balance for risk calculations"
+
+exports:
+  - op: DEC
+    verb: RISK_ASSESSMENT_COMPLETED
+    to: decision_making
+    description: "Risk evaluation with recommended position size and TP/SL levels"
+  
+  - op: DEC
+    verb: RISK_REJECTED
+    to: decision_making
+    description: "Trade rejected due to excessive risk"
+
+critical_paths:
+  - "feature_engineering -> risk_management (EVT:FEATURES_CALCULATED)"
+  - "risk_management -> decision_making (DEC:RISK_ASSESSMENT_COMPLETED)"
+
+risk_parameters:
+  - max_position_size_pct: 10.0  # Max 10% of balance per position
+  - min_risk_reward_ratio: 2.0   # Minimum RR ratio
+  - max_leverage: 3.0

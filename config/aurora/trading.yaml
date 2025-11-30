@@ -14,6 +14,7 @@ trading:
     signal_threshold: 0.10
     # Signal thresholds (Balanced profile)
     neutral_threshold: 0.18              # Below this → treat as neutral (reduced clip attempts)
+  symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
   instruments:
     ETHUSDT:
       symbol: "ETHUSDT"

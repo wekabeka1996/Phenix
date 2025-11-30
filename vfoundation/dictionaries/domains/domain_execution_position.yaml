@@ -1,0 +1,63 @@
+domain: execution_position
+version: "1.0"
+description: "Manages order placement, tracking, and position lifecycle with TP/SL brackets"
+
+modules:
+  - fsm.py
+  - fsm_open.py
+  - fsm_close.py
+  - fsm_manage.py
+  - exposure_guard.py
+  - drift_monitor.py
+  - order_index.py
+
+imports:
+  - op: CMD
+    verb: OPEN
+    from: decision_making
+    description: "Open new position with TP/SL brackets"
+  
+  - op: CMD
+    verb: CLOSE
+    from: decision_making
+    description: "Close existing position manually"
+  
+  - op: EVT
+    verb: ORDER_FILLED
+    from: binance_adapter
+    description: "Exchange order fill notification"
+  
+  - op: EVT
+    verb: ORDER_CANCELLED
+    from: binance_adapter
+    description: "Exchange order cancellation notification"
+
+exports:
+  - op: EVT
+    verb: POSITION_OPENED
+    to: [position_tracking, account_observer]
+    description: "New position successfully opened with entry order filled"
+  
+  - op: EVT
+    verb: POSITION_CLOSED
+    to: [position_tracking, account_observer]
+    description: "Position closed (TP/SL hit or manual close)"
+  
+  - op: ERR
+    verb: INSUFFICIENT_BALANCE
+    to: decision_making
+    description: "Not enough balance for position size"
+  
+  - op: ERR
+    verb: MIN_NOTIONAL_NOT_MET
+    to: decision_making
+    description: "Order size below minimum notional value"
+
+critical_paths:
+  - "decision_making -> execution_position (CMD:OPEN)"
+  - "execution_position -> position_tracking (EVT:POSITION_OPENED)"
+  - "execution_position -> position_tracking (EVT:POSITION_CLOSED)"
+
+dependencies:
+  - binance_adapter: "Order execution and status updates"
+  - order_guardian: "Bracket order lifecycle management"

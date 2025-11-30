@@ -1,28 +1,67 @@
 {
   "domain_name": "decision_making",
-  "description": "                                                                                      ,                                                           .                                           .",
+  "description": "Core trading decision engine that aggregates alpha signals, applies risk controls and QoS, and generates executable trade intents based on portfolio state, market regime, and risk budgets.",
+  "version": "1.2.0",
+  "status": "production",
   "imports": [
     {
       "event_name": "EVT:FEATURES_CALCULATED",
       "schema_path": "schemas/features_calculated_v1.json",
-      "description": "                                   feature_engineering             "
+      "source_domain": "feature_engineering",
+      "description": "Fresh feature vectors for trading analysis"
     },
     {
       "event_name": "EVT:RISK_ASSESSMENT_COMPLETED",
       "schema_path": "schemas/risk_assessment_v1.json",
-      "description": "                             risk_management             "
+      "source_domain": "risk_management",
+      "description": "Risk parameters and trading allowance status"
     },
     {
       "event_name": "EVT:PORTFOLIO_STATE_UPDATED",
       "schema_path": "schemas/portfolio_state_v1.json",
-      "description": "                             position_tracking             "
+      "source_domain": "position_tracking",
+      "description": "Portfolio equity, positions, and margin state"
+    },
+    {
+      "event_name": "EVT:REGIME_DETECTED",
+      "schema_path": "schemas/regime_v1.json",
+      "source_domain": "regime_detector",
+      "description": "Market regime classification (TREND_UP/DOWN, HIGH_VOL, etc.)"
+    },
+    {
+      "event_name": "EVT:EXPOSURE_SUMMARY_UPDATED",
+      "schema_path": "schemas/exposure_summary_v1.json",
+      "source_domain": "risk_management",
+      "description": "Portfolio exposure limits and utilization"
     }
   ],
   "exports": [
     {
       "event_name": "EVT:TRADE_INTENT_PROPOSED",
       "schema_path": "schemas/trade_intent_v1.json",
-      "description": "                                                                              "
+      "target_domains": ["execution_position", "monitoring"],
+      "description": "Trade intent with sizing, risk budgets, TCA constraints, and WHY chain"
+    },
+    {
+      "event_name": "EVT:ALPHA_SCORE_CALCULATED",
+      "schema_path": null,
+      "target_domains": ["monitoring"],
+      "description": "Alpha model scores for traceability and analysis"
+    },
+    {
+      "event_name": "CMD:CLOSE",
+      "schema_path": null,
+      "target_domains": ["execution_position"],
+      "description": "ROI exit command when position meets target ROI"
     }
-  ]
+  ],
+  "components": [
+    "DecisionMaking",
+    "NormalizedRejectReasons",
+    "DeferredIntentScheduler",
+    "ROIExitStrategy",
+    "WhyCodes",
+    "DecisionLog"
+  ],
+  "documentation": "docs/README.md"
 }
