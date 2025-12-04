@@ -1,0 +1,349 @@
+# ==================================================================================
+# 3m/5m Aurora Strategy - Best Optuna Configurations
+# ==================================================================================
+# Generated: 2025-12-03
+# Optimizer: Optuna (1500 trials per asset with fine-grained steps)
+# Validation Period: January 2024
+# Portfolio PnL: +$283.30/month
+#
+# STRATEGY IMPROVEMENT SUMMARY:
+# ══════════════════════════════════════════════════════════════════════════════
+# Version 1 (600 trials, 3m only, no OBI/TFI):
+#   - SOL: +$130.04, XRP: +$23.17, DOGE: +$3.98
+#   - ETH/BTC: NEGATIVE (failed on 3m)
+#
+# Version 2 (600 trials, 3m, WITH OBI/TFI):
+#   - Breakthrough: Order Flow metrics enabled profitable trading
+#
+# Version 3 (1500 trials, 3m/5m mixed, fine steps):
+#   - SOL: +$173.73 (3m) - EMA + TFI hybrid
+#   - ETH: +$76.12 (5m) - Pure Order Flow (TFI/OBI = 0.92 weight)
+#   - XRP: +$28.95 (3m) - Balanced
+#   - DOGE: +$5.20 (3m) - Low volatility scalping
+#   - BTC: -$3.77 (5m) - Macro anchor (acceptable)
+#
+# KEY INSIGHTS:
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. TFI (Trade Flow Imbalance) is the alpha:
+#    - SOL: weight 0.36, ETH: weight 0.47
+#    - Measures aggressive buying/selling, confirms trend quality
+#
+# 2. 5m works for efficient markets (ETH, BTC):
+#    - Reduces noise, increases signal quality
+#    - ETH win rate: 67.7% on 5m
+#
+# 3. 3m works for volatile altcoins (SOL, XRP, DOGE):
+#    - Fast reaction to micro-trends
+#    - SOL captures TREND_DOWN crashes
+#
+# 4. Regime filtering is critical:
+#    - TREND_DOWN > LOW_VOLATILITY > TREND_UP (priority)
+#    - TREND_UP consistently loses money
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+strategy:
+  name: "Aurora Multi-Timeframe"
+  version: "v4.0-optuna-obi-tfi"
+  description: "Mixed 3m/5m strategy with Order Flow (OBI/TFI) integration"
+  
+  # Global Settings
+  global:
+    position_size_usd: 1000
+    maker_fee: 0.0002  # 0.02%
+    taker_fee: 0.0005  # 0.05%
+    slippage: 0.0001   # 0.01%
+    cost_basis: 0.0008 # maker + taker + slippage
+    
+  # Risk Management
+  risk:
+    max_concurrent_positions: 5
+    daily_loss_limit_usd: 500
+    per_asset_exposure_pct: 20  # 20% of capital per asset
+    
+  # Asset Configurations (Optimized via 1500-trial Optuna)
+  assets:
+    
+    # ──────────────────────────────────────────────────────────────────────
+    # SOLUSDT (3m) - The Cash Cow 🐮
+    # ──────────────────────────────────────────────────────────────────────
+    SOLUSDT:
+      enabled: true
+      timeframe: "3m"
+      
+      # EMA Configuration
+      ema_period_short: 7
+      ema_period_long: 25
+      
+      # Volume Spike Detection
+      volume_window_sec: 280
+      volume_sma_length: 16
+      volume_cap_max: 3.439
+      
+      # Liquidity Assessment
+      liquidity_depth_half: 3000.0
+      liquidity_kappa_min: 0.345
+      
+      # Order Flow (OBI/TFI) - KEY ALPHA
+      obi_window_sec: 70
+      tfi_window_sec: 160
+      
+      # Decision Weights (normalized internally)
+      weight_ema: 0.467        # Price structure
+      weight_volume: 0.242     # Activity
+      weight_macro: 0.138      # BTC correlation
+      weight_liquidity: 0.138  # Market depth
+      weight_obi: 0.344        # Order book pressure
+      weight_tfi: 0.363        # Trade flow aggression (CRITICAL)
+      
+      # Signal & Risk Filters
+      signal_threshold: 0.110
+      max_risk_score: 0.784
+      
+      # Risk Management
+      sl_pct: 0.526  # 0.526% stop loss
+      max_hold_sec: 660  # 11 minutes max hold
+      
+      # Regime Filter
+      allowed_regimes:
+        - TREND_DOWN  # Primary edge: shorting crashes
+        
+      # Expected Performance
+      metrics:
+        expected_pnl: 173.73
+        win_rate: 0.508
+        calmar: 3.08
+        trades_per_month: 199
+        max_drawdown: -56.47
+        
+    # ──────────────────────────────────────────────────────────────────────
+    # ETHUSDT (5m) - The New Star 🌟
+    # ──────────────────────────────────────────────────────────────────────
+    ETHUSDT:
+      enabled: true
+      timeframe: "5m"
+      
+      # EMA Configuration (almost no weight)
+      ema_period_short: 5
+      ema_period_long: 5
+      
+      # Volume Spike Detection (fast window)
+      volume_window_sec: 40
+      volume_sma_length: 11
+      volume_cap_max: 3.087
+      
+      # Liquidity Assessment
+      liquidity_depth_half: 3750.0
+      liquidity_kappa_min: 0.494
+      
+      # Order Flow (OBI/TFI) - DOMINANT ALPHA (92% weight)
+      obi_window_sec: 150
+      tfi_window_sec: 80
+      
+      # Decision Weights
+      weight_ema: 0.174        # Price structure (LOW - ignored!)
+      weight_volume: 0.236     # Activity
+      weight_macro: 0.382      # BTC correlation
+      weight_liquidity: 0.350  # Market depth
+      weight_obi: 0.453        # Order book pressure (CRITICAL)
+      weight_tfi: 0.471        # Trade flow aggression (CRITICAL)
+      
+      # Signal & Risk Filters
+      signal_threshold: 0.160
+      max_risk_score: 0.567
+      
+      # Risk Management
+      sl_pct: 1.591  # 1.591% stop loss (wider for 5m)
+      max_hold_sec: 720  # 12 minutes max hold
+      
+      # Regime Filter
+      allowed_regimes:
+        - TREND_DOWN  # Pure shorting strategy
+        
+      # Expected Performance
+      metrics:
+        expected_pnl: 76.12
+        win_rate: 0.677  # HIGHEST WIN RATE!
+        calmar: 9.31
+        trades_per_month: 62
+        max_drawdown: -8.17
+        
+    # ──────────────────────────────────────────────────────────────────────
+    # XRPUSDT (3m) - High Win Rate 🎯
+    # ──────────────────────────────────────────────────────────────────────
+    XRPUSDT:
+      enabled: true
+      timeframe: "3m"
+      
+      # EMA Configuration
+      ema_period_short: 12
+      ema_period_long: 14
+      
+      # Volume Spike Detection
+      volume_window_sec: 150
+      volume_sma_length: 6
+      volume_cap_max: 4.649
+      
+      # Liquidity Assessment
+      liquidity_depth_half: 4750.0
+      liquidity_kappa_min: 0.471
+      
+      # Order Flow (OBI/TFI)
+      obi_window_sec: 120
+      tfi_window_sec: 240
+      
+      # Decision Weights
+      weight_ema: 0.427
+      weight_volume: 0.385
+      weight_macro: 0.411      # Strong BTC correlation
+      weight_liquidity: 0.199
+      weight_obi: 0.120
+      weight_tfi: 0.402        # TFI is key
+      
+      # Signal & Risk Filters
+      signal_threshold: 0.236
+      max_risk_score: 0.831
+      
+      # Risk Management
+      sl_pct: 1.671  # 1.671% stop loss
+      max_hold_sec: 660  # 11 minutes max hold
+      
+      # Regime Filter
+      allowed_regimes:
+        - TREND_DOWN
+        - LOW_VOLATILITY  # Also trades quiet markets
+        
+      # Expected Performance
+      metrics:
+        expected_pnl: 28.95
+        win_rate: 0.623
+        calmar: 2.94
+        trades_per_month: 61
+        max_drawdown: -9.85
+        
+    # ──────────────────────────────────────────────────────────────────────
+    # DOGEUSDT (3m) - Low Volatility Scalper
+    # ──────────────────────────────────────────────────────────────────────
+    DOGEUSDT:
+      enabled: true
+      timeframe: "3m"
+      
+      # EMA Configuration
+      ema_period_short: 7
+      ema_period_long: 6  # Tight EMA cross
+      
+      # Volume Spike Detection
+      volume_window_sec: 180
+      volume_sma_length: 4
+      volume_cap_max: 3.370
+      
+      # Liquidity Assessment
+      liquidity_depth_half: 3250.0
+      liquidity_kappa_min: 0.239
+      
+      # Order Flow (OBI/TFI)
+      obi_window_sec: 50
+      tfi_window_sec: 100
+      
+      # Decision Weights
+      weight_ema: 0.185
+      weight_volume: 0.375
+      weight_macro: 0.326
+      weight_liquidity: 0.242
+      weight_obi: 0.146
+      weight_tfi: 0.153
+      
+      # Signal & Risk Filters
+      signal_threshold: 0.172
+      max_risk_score: 0.883
+      
+      # Risk Management
+      sl_pct: 0.614  # 0.614% stop loss (tight)
+      max_hold_sec: 660  # 11 minutes max hold
+      
+      # Regime Filter
+      allowed_regimes:
+        - LOW_VOLATILITY  # Only trades quiet markets (no regimes!)
+        
+      # Expected Performance
+      metrics:
+        expected_pnl: 5.20
+        win_rate: 0.479
+        calmar: 0.22
+        trades_per_month: 73
+        max_drawdown: -23.66
+        
+    # ──────────────────────────────────────────────────────────────────────
+    # BTCUSDT (5m) - Macro Anchor (Optional)
+    # ──────────────────────────────────────────────────────────────────────
+    BTCUSDT:
+      enabled: false  # Disabled by default (breakeven, low value)
+      timeframe: "5m"
+      
+      # EMA Configuration
+      ema_period_short: 8
+      ema_period_long: 20
+      
+      # Volume Spike Detection
+      volume_window_sec: 240
+      volume_sma_length: 5
+      volume_cap_max: 4.618
+      
+      # Liquidity Assessment
+      liquidity_depth_half: 750.0
+      liquidity_kappa_min: 0.152
+      
+      # Order Flow (OBI/TFI)
+      obi_window_sec: 290
+      tfi_window_sec: 80
+      
+      # Decision Weights
+      weight_ema: 0.233
+      weight_volume: 0.367
+      weight_macro: 0.277
+      weight_liquidity: 0.182
+      weight_obi: 0.187
+      weight_tfi: 0.277
+      
+      # Signal & Risk Filters
+      signal_threshold: 0.220
+      max_risk_score: 0.526
+      
+      # Risk Management
+      sl_pct: 0.683  # 0.683% stop loss
+      max_hold_sec: 720  # 12 minutes max hold
+      
+      # Regime Filter
+      allowed_regimes:
+        - TREND_UP
+        - TREND_DOWN
+        
+      # Expected Performance
+      metrics:
+        expected_pnl: -3.77  # Breakeven
+        win_rate: 0.480
+        calmar: -0.20
+        trades_per_month: 50
+        max_drawdown: -18.71
+        
+  # Execution
+  execution:
+    order_type: "MARKET"
+    entry_fee_type: "MAKER"
+    exit_fee_type: "TAKER"
+    
+  # Performance Summary (Jan 2024)
+  performance:
+    total_portfolio_pnl: 283.30  # SOL + ETH + XRP + DOGE
+    assets_profitable: 4
+    avg_win_rate: 0.572
+    avg_calmar: 3.90
+    total_trades: 395
+    
+  # Recommended Deployment
+  deployment:
+    recommended_assets: ["SOLUSDT", "ETHUSDT", "XRPUSDT"]  # Top 3
+    optional_assets: ["DOGEUSDT"]  # Low profit but positive
+    excluded_assets: ["BTCUSDT"]  # Breakeven
+    expected_monthly_pnl: 278.10  # SOL + ETH + XRP
+    min_capital_usd: 50000  # For 2% risk per trade

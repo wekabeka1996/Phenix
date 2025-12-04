@@ -161,6 +161,7 @@ checkpoints/
 *.pth
 *.pt
 *.ckpt
+data/
 data/raw/
 data/interim/
 data/processed/*.parquet
@@ -200,3 +201,9 @@ gha-creds-*.json
 .git.orig/
 
 .git.orig/
+
+# Data files
+*.csv
+best_aurora*.json
+regime_filters*.json
+best_metrics*.json

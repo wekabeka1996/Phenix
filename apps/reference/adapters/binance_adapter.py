@@ -393,7 +393,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         # Ensure symbol is not empty (fallback if needed)
         if not symbol or symbol.strip() == "":
             LOG.warning(
-                f"[cancel_order] Empty symbol, attempting to scan open orders")
+                "[cancel_order] Empty symbol, attempting to scan open orders")
             # Fallback: scan open orders to find symbol by order_id/client_order_id
             symbol = await self._find_symbol_by_order_id(order_id, client_order_id)
             if not symbol:
@@ -615,9 +615,6 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 self.logger.warning(f"Could not calculate notional for position {p.symbol}: amt={p.position_amount}, price={p.mark_price}")
                 continue
         return total_notional
-
-        # This should never be reached, but just in case
-        raise last_exception
 
     async def get_mark_price(self, symbol: str, ttl_ms: int = 250) -> float:
         """

@@ -150,7 +150,7 @@ trading:
       # Bracket parameters (SL/TP used by Kelly calculation and sizing)
       brackets:
         enable: true  # Enable bracket order management with atomic close and cancellation
-        stop_loss_bps: 50      # Stop-loss in basis points (default 50 bps = 0.5%)
+        stop_loss_bps: 40      # Stop-loss in basis points (default 50 bps = 0.5%)
         take_profit_low_ratio: 0.5   # k₁: TP_low = k₁ × SL_bps
         take_profit_high_ratio: 1.0  # k₂: TP_high = k₂ × SL_bps
         # Note: TP_bps computed at runtime from these ratios (SSOT for Kelly payoff_r)

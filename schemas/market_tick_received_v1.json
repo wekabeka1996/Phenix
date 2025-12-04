@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phenix.aurora/schemas/market_tick_received_v1.json",
+  "title": "EVT:MARKET_TICK_RECEIVED Payload",
+  "description": "Real-time market tick event payload emitted by market_data domain",
+  "type": "object",
+  "required": [
+    "ts",
+    "symbol",
+    "price",
+    "bid",
+    "ask",
+    "mid",
+    "bid_size",
+    "ask_size",
+    "buy_volume",
+    "sell_volume",
+    "data_type",
+    "data_source"
+  ],
+  "properties": {
+    "ts": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds",
+      "minimum": 0,
+      "examples": [1700000000000]
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol (e.g., BTCUSDT, SOLUSDT)",
+      "pattern": "^[A-Z]{2,10}USDT$",
+      "examples": ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    },
+    "price": {
+      "type": "string",
+      "description": "Latest trade price as string decimal",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "examples": ["50000.00", "100.55"]
+    },
+    "bid": {
+      "type": "string",
+      "description": "Best bid price as string decimal",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "examples": ["49999.50"]
+    },
+    "ask": {
+      "type": "string",
+      "description": "Best ask price as string decimal",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "examples": ["50000.50"]
+    },
+    "mid": {
+      "type": "string",
+      "description": "Mid price = (bid + ask) / 2 as string decimal",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "examples": ["50000.00"]
+    },
+    "bid_size": {
+      "type": "string",
+      "description": "Best bid quantity as string decimal (for OBI calculation)",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "examples": ["10.5", "100"]
+    },
+    "ask_size": {
+      "type": "string",
+      "description": "Best ask quantity as string decimal (for OBI calculation)",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "examples": ["8.3", "95"]
+    },
+    "buy_volume": {
+      "type": "string",
+      "description": "Number of buy trades in window as string (for TFI calculation)",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "examples": ["50", "120"]
+    },
+    "sell_volume": {
+      "type": "string",
+      "description": "Number of sell trades in window as string (for TFI calculation)",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "examples": ["45", "80"]
+    },
+    "data_type": {
+      "type": "string",
+      "description": "Type of market data aggregation",
+      "enum": ["market_tick_aggregated", "kline_1m"],
+      "examples": ["market_tick_aggregated"]
+    },
+    "data_source": {
+      "type": "string",
+      "description": "Source environment for the data",
+      "enum": ["live", "testnet", "websocket_live"],
+      "examples": ["websocket_live", "testnet"]
+    },
+    "debug_info": {
+      "type": "string",
+      "description": "Optional debug information for logging",
+      "examples": ["BID/ASK: 10/8, Trades: BUY:50 SELL:45"]
+    }
+  },
+  "additionalProperties": false
+}

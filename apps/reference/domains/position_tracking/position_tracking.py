@@ -61,6 +61,12 @@ class PositionTracking:
         self.fsm.listen("EVT:ACCOUNT_UPDATE_RECEIVED", self.on_account_update)
         self.fsm.listen("EVT:BALANCE_UPDATE_RECEIVED", self.on_balance_update)
 
+        # P1: Optional subscription to EVT:MARKET_TICK_RECEIVED for real-time mark prices
+        self._market_tick_subscription_enabled = self._should_subscribe_market_tick()
+        if self._market_tick_subscription_enabled:
+            self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
+            self.logger.info("Market tick subscription enabled for real-time unrealized PnL")
+
         # Initialize AlertManager for manual intervention alerts
         self.alert_manager: Optional[AlertManager] = None
         if ALERT_MANAGER_AVAILABLE:
@@ -82,6 +88,11 @@ class PositionTracking:
         self._initial_balance: Optional[decimal.Decimal] = (
             None  # Initial wallet balance (AURORA_STATE_SYNC_V1)
         )
+        
+        # Market prices cache for unrealized PnL calculation
+        # symbol -> {"mark_price": Decimal, "ts_ms": int}
+        self._mark_prices: Dict[str, Dict[str, Any]] = {}
+        self._mark_price_stale_ms: int = 5000  # 5 seconds staleness threshold
 
         # Manual intervention metrics
         self.manual_intervention_detected_total = 0
@@ -99,6 +110,53 @@ class PositionTracking:
                 self.decimal_places = precision.decimal_places
         except (AttributeError, TypeError):
             pass  # Use defaults
+
+    def _should_subscribe_market_tick(self) -> bool:
+        """
+        Check if market tick subscription should be enabled.
+
+        P1: Config-gated subscription to EVT:MARKET_TICK_RECEIVED for real-time mark prices.
+
+        Returns:
+            bool: True if subscription should be enabled
+        """
+        try:
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'position_tracking'):
+                return bool(getattr(self.config.domains.position_tracking, 'enable_market_tick_subscription', False))
+            elif isinstance(self.config, dict):
+                return bool(
+                    self.config.get("domains", {})
+                    .get("position_tracking", {})
+                    .get("enable_market_tick_subscription", False)
+                )
+        except (AttributeError, TypeError):
+            pass
+        return False
+
+    def on_market_tick(self, event: Message) -> None:
+        """
+        Handle incoming market tick event to update mark price cache.
+
+        P1: Updates cached mark prices for unrealized PnL calculation.
+
+        Args:
+            event: FSM event with market tick payload
+        """
+        try:
+            payload = event.pld
+            symbol = payload.get("symbol")
+            
+            # Use mid price as mark price approximation
+            # In production, this could come from a dedicated mark price stream
+            mid_price = payload.get("mid") or payload.get("price")
+            ts = payload.get("ts") or int(time.time() * 1000)
+
+            if symbol and mid_price:
+                mark_price = _d(mid_price)
+                if mark_price > decimal.Decimal("0"):
+                    self.update_mark_price(symbol, mark_price, ts_ms=ts)
+        except Exception as e:
+            self.logger.warning(f"Error processing market tick: {e}")
 
     def start(self) -> None:
         """Start the position tracking component and emit initial portfolio state."""
@@ -644,20 +702,96 @@ class PositionTracking:
             "venues": venues,
         }
 
-    def _calculate_unrealized_pnl(self) -> decimal.Decimal:
+    def _calculate_unrealized_pnl(self, positions: Optional[List[Dict[str, Any]]] = None) -> decimal.Decimal:
         """
         Calculate total unrealized P&L for all positions.
 
-        Note: This is a simplified calculation since we don't have current market prices
-        in the position tracking domain. In production, this should be calculated using
-        current mark prices from market data.
+        Uses mark prices from:
+        1. positionRisk API data (if provided) - contains markPrice per position
+        2. Cached mark prices from EVT:MARKET_TICK_RECEIVED (if subscribed)
+        3. Falls back to entry price if no mark price available (returns 0 PnL)
+
+        Formula: unrealized_pnl = Σ((mark_price - entry_price) * quantity)
+        - For LONG (qty > 0): profit when mark_price > entry_price
+        - For SHORT (qty < 0): profit when mark_price < entry_price
+
+        Args:
+            positions: Optional list of position dicts from positionRisk API
+                       containing 'markPrice', 'entryPrice', 'positionAmt'
 
         Returns:
             decimal.Decimal: Total unrealized P&L
         """
-        # For now, return 0 since we don't have current market prices
-        # In production, this would be: sum((current_price - avg_entry_price) * quantity for each position)
-        return decimal.Decimal("0")
+        total_unrealized_pnl = decimal.Decimal("0")
+        now_ms = int(time.time() * 1000)
+
+        if positions:
+            # Use positionRisk API data (most accurate)
+            for p in positions:
+                symbol = p.get("symbol", "unknown")
+                position_amt = _d(p.get("positionAmt", "0"))
+                entry_price = _d(p.get("entryPrice", "0"))
+                mark_price = _d(p.get("markPrice", "0"))
+
+                if abs(position_amt) > self.quantity_min_threshold and mark_price > decimal.Decimal("0"):
+                    # unrealized_pnl = (mark_price - entry_price) * position_amt
+                    position_pnl = (mark_price - entry_price) * position_amt
+                    total_unrealized_pnl += position_pnl
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: mark={mark_price}, entry={entry_price}, "
+                        f"qty={position_amt}, pnl={position_pnl}"
+                    )
+        else:
+            # Fallback to internal positions with cached mark prices
+            for symbol, position in self._positions.items():
+                quantity = position["quantity"]
+                entry_price = position["avg_price"]
+
+                if abs(quantity) <= self.quantity_min_threshold:
+                    continue
+
+                # Try to get mark price from cache
+                mark_price_data = self._mark_prices.get(symbol, {})
+                mark_price = _d(mark_price_data.get("mark_price", "0"))
+                mark_ts = mark_price_data.get("ts_ms", 0)
+
+                # Check if mark price is fresh enough
+                if mark_price > decimal.Decimal("0") and (now_ms - mark_ts) < self._mark_price_stale_ms:
+                    position_pnl = (mark_price - entry_price) * quantity
+                    total_unrealized_pnl += position_pnl
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: mark={mark_price}, entry={entry_price}, "
+                        f"qty={quantity}, pnl={position_pnl} (from cache)"
+                    )
+                else:
+                    # No fresh mark price available - PnL for this position is 0
+                    self.logger.debug(
+                        f"No fresh mark price for {symbol}, unrealized PnL = 0"
+                    )
+
+        return total_unrealized_pnl.quantize(decimal.Decimal("0.01"))
+
+    def update_mark_price(self, symbol: str, mark_price: decimal.Decimal, ts_ms: Optional[int] = None) -> None:
+        """
+        Update cached mark price for a symbol.
+
+        Called externally when EVT:MARKET_TICK_RECEIVED is received.
+
+        Args:
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            mark_price: Current mark/mid price
+            ts_ms: Timestamp in milliseconds (defaults to current time)
+        """
+        if ts_ms is None:
+            ts_ms = int(time.time() * 1000)
+
+        self._mark_prices[symbol] = {
+            "mark_price": mark_price,
+            "ts_ms": ts_ms,
+        }
+        self.logger.debug(f"Updated mark price for {symbol}: {mark_price} @ {ts_ms}")
 
     def _calculate_open_positions_notional(self) -> decimal.Decimal:
         """
@@ -725,37 +859,12 @@ class PositionTracking:
                 f"🔴 _calc_margin_used_usd() FALLBACK MODE: API returned empty, using {len(self._positions)} internal positions from self._positions")
             self.logger.warning(
                 f"   Internal positions: {list(self._positions.keys())}")
-            try:
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    leverage_config = (
-                        self.config.trading.execution.exposure.leverage_defaults
-                        if self.config.trading.execution and
-                        self.config.trading.execution.exposure
-                        else {}
-                    )
-                elif isinstance(self.config, dict):
-                    leverage_config = (
-                        self.config.get("trading", {})
-                        .get("execution", {})
-                        .get("exposure", {})
-                        .get("leverage_defaults", {})
-                    )
-                else:
-                    leverage_config = {}
-            except (AttributeError, TypeError):
-                leverage_config = {}
+            
+            # EXP-LEVERAGE-002: Use centralized leverage extraction
+            leverage_config = self._get_leverage_config()
 
-            # Safe extraction of default leverage
-            if isinstance(leverage_config, dict):
-                default_leverage_val = leverage_config.get(
-                    "default", "20") or "20"
-            elif hasattr(leverage_config, 'default'):
-                default_leverage_val = leverage_config.default or "20"
-            elif hasattr(leverage_config, '__default__'):
-                default_leverage_val = leverage_config.__default__ or "20"
-            else:
-                default_leverage_val = "20"
-
+            # EXP-LEVERAGE-002: Use unified default resolution (__default__ first, then "default")
+            default_leverage_val = self._resolve_default_leverage(leverage_config)
             default_leverage = decimal.Decimal(str(default_leverage_val))
 
             for symbol, position in self._positions.items():
@@ -766,17 +875,10 @@ class PositionTracking:
                     # Calculate notional
                     position_notional = quantity * entry_price
 
-                    # Get leverage for this symbol (safe extraction)
-                    if isinstance(leverage_config, dict):
-                        symbol_leverage_val = leverage_config.get(
-                            symbol) or default_leverage
-                    else:
-                        symbol_leverage_val = getattr(
-                            leverage_config, symbol, default_leverage)
-
-                    symbol_leverage = decimal.Decimal(str(symbol_leverage_val))
-                    if symbol_leverage <= 0:
-                        symbol_leverage = decimal.Decimal("1")
+                    # EXP-LEVERAGE-002: Use unified symbol leverage resolution
+                    symbol_leverage = self._resolve_symbol_leverage(
+                        leverage_config, symbol, default_leverage
+                    )
 
                     # Calculate margin
                     margin = position_notional / symbol_leverage
@@ -827,29 +929,9 @@ class PositionTracking:
                 elif amount < 0:
                     short_margin += margin
         else:
-            # Fallback to internal position data
-            try:
-                if hasattr(self.config, 'trading') and self.config.trading:
-                    leverage_config = self.config.trading.execution.exposure.leverage_defaults if self.config.trading.execution and self.config.trading.execution.exposure else {}
-                elif isinstance(self.config, dict):
-                    leverage_config = self.config.get("trading", {}).get(
-                        "execution", {}).get("exposure", {}).get("leverage_defaults", {})
-                else:
-                    leverage_config = {}
-            except (AttributeError, TypeError):
-                leverage_config = {}
-
-            # Safe extraction of default leverage
-            if isinstance(leverage_config, dict):
-                default_leverage_val = leverage_config.get(
-                    "default", "20") or "20"
-            elif hasattr(leverage_config, 'default'):
-                default_leverage_val = leverage_config.default or "20"
-            elif hasattr(leverage_config, '__default__'):
-                default_leverage_val = leverage_config.__default__ or "20"
-            else:
-                default_leverage_val = "20"
-
+            # EXP-LEVERAGE-002: Use centralized leverage extraction
+            leverage_config = self._get_leverage_config()
+            default_leverage_val = self._resolve_default_leverage(leverage_config)
             default_leverage = decimal.Decimal(str(default_leverage_val))
 
             for symbol, position in self._positions.items():
@@ -860,17 +942,10 @@ class PositionTracking:
                     # Calculate notional
                     position_notional = abs(quantity) * entry_price
 
-                    # Get leverage for this symbol (safe extraction)
-                    if isinstance(leverage_config, dict):
-                        symbol_leverage_val = leverage_config.get(
-                            symbol) or default_leverage
-                    else:
-                        symbol_leverage_val = getattr(
-                            leverage_config, symbol, default_leverage)
-
-                    symbol_leverage = decimal.Decimal(str(symbol_leverage_val))
-                    if symbol_leverage <= 0:
-                        symbol_leverage = decimal.Decimal("1")
+                    # EXP-LEVERAGE-002: Use unified symbol leverage resolution
+                    symbol_leverage = self._resolve_symbol_leverage(
+                        leverage_config, symbol, default_leverage
+                    )
 
                     # Calculate margin
                     margin = position_notional / symbol_leverage
@@ -894,6 +969,99 @@ class PositionTracking:
             "equity_usd": float(self._equity),
             "realized_pnl_usd": float(self._realized_pnl)
         }
+
+    def _get_leverage_config(self) -> Any:
+        """
+        Extract leverage_defaults config with Pydantic and dict support.
+
+        EXP-LEVERAGE-002: Centralized leverage config extraction.
+
+        Returns:
+            Dict or Pydantic model with leverage_defaults
+        """
+        try:
+            if hasattr(self.config, 'trading') and self.config.trading:
+                if hasattr(self.config.trading, 'execution') and self.config.trading.execution:
+                    if hasattr(self.config.trading.execution, 'exposure') and self.config.trading.execution.exposure:
+                        return self.config.trading.execution.exposure.leverage_defaults or {}
+                return {}
+            elif isinstance(self.config, dict):
+                return (
+                    self.config.get("trading", {})
+                    .get("execution", {})
+                    .get("exposure", {})
+                    .get("leverage_defaults", {})
+                )
+            return {}
+        except (AttributeError, TypeError):
+            return {}
+
+    def _resolve_default_leverage(self, leverage_config: Any) -> str:
+        """
+        Resolve default leverage value from config.
+
+        EXP-LEVERAGE-002: Unified default leverage resolution.
+        Checks keys in order: __default__ (config_models.py standard) -> default (legacy) -> "20" (fallback)
+
+        Args:
+            leverage_config: Dict or Pydantic model with leverage values
+
+        Returns:
+            str: Default leverage value (e.g., "125" or "20")
+        """
+        DEFAULT_FALLBACK = "20"
+
+        if isinstance(leverage_config, dict):
+            # Check __default__ first (config_models.py standard), then "default" (legacy)
+            val = leverage_config.get("__default__")
+            if val is not None:
+                return str(val)
+            val = leverage_config.get("default")
+            if val is not None:
+                return str(val)
+            return DEFAULT_FALLBACK
+        elif hasattr(leverage_config, '__default__'):
+            val = getattr(leverage_config, '__default__', None)
+            if val is not None:
+                return str(val)
+        elif hasattr(leverage_config, 'default'):
+            val = getattr(leverage_config, 'default', None)
+            if val is not None:
+                return str(val)
+
+        return DEFAULT_FALLBACK
+
+    def _resolve_symbol_leverage(
+        self, leverage_config: Any, symbol: str, default_leverage: decimal.Decimal
+    ) -> decimal.Decimal:
+        """
+        Resolve leverage for a specific symbol.
+
+        EXP-LEVERAGE-002: Unified symbol leverage resolution.
+
+        Args:
+            leverage_config: Dict or Pydantic model with leverage values
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            default_leverage: Fallback leverage value
+
+        Returns:
+            decimal.Decimal: Leverage value >= 1
+        """
+        symbol_leverage_val = None
+
+        if isinstance(leverage_config, dict):
+            symbol_leverage_val = leverage_config.get(symbol)
+        elif leverage_config is not None:
+            symbol_leverage_val = getattr(leverage_config, symbol, None)
+
+        if symbol_leverage_val is not None:
+            try:
+                symbol_leverage = decimal.Decimal(str(symbol_leverage_val))
+                return max(symbol_leverage, decimal.Decimal("1"))
+            except (decimal.InvalidOperation, ValueError):
+                pass
+
+        return max(default_leverage, decimal.Decimal("1"))
 
     def _get_positions_snapshot(self) -> List[Dict[str, Any]]:
         """

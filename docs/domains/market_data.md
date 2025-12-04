@@ -88,15 +88,8 @@ _poll_loop() -> _fetch_and_emit_data()
 - **                        :**                                                                (OBI, TFI, delta_price)
 - **              :**                             (5                         )
 
-#### Decision Making
-- **        :** EVT:MARKET_TICK_RECEIVED
-- **                        :**                                                                              
-- **              :**                             (5                         )
-
-#### Risk Management
-- **        :** EVT:MARKET_TICK_RECEIVED
-- **                        :**                                                                                     
-- **              :**                             (5                         )
+> **Note:** Risk Management та Decision Making НЕ споживають EVT:MARKET_TICK_RECEIVED напряму.
+> Вони працюють з EVT:FEATURES_CALCULATED, який генерує Feature Engineering.
 
 ###                                          
                                                                                                                       .

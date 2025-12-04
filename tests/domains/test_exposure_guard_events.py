@@ -8,6 +8,7 @@ import pytest
 from apps.reference.domains.execution_position.exposure_guard import (
     ExposureGuard,
 )
+from apps.reference.config_models import create_aurora_config
 
 
 @pytest.fixture
@@ -42,7 +43,8 @@ def mock_fsm():
 @pytest.fixture
 def exposure_guard(exposure_guard_config, mock_fsm):
     """Create ExposureGuard instance with mocked FSM."""
-    return ExposureGuard(exposure_guard_config, fsm=mock_fsm)
+    config = create_aurora_config(exposure_guard_config)
+    return ExposureGuard(fsm_core=mock_fsm, config=config)
 
 
 def test_order_rejected_event_emission(exposure_guard, mock_fsm):

@@ -13,9 +13,20 @@ def _msg(verb, pld=None):
 
 
 def test_emergency_trips_and_wait_mode_blocks():
+    # Config must match Pydantic AuroraConfig structure:
+    # trading.execution.manage and trading.decision.bar_gating
     cfg = {
-        "execution": {"manage": {"auto": True, "emergency": {"enable": True, "emergency_sl_bps": 10, "wait_mode_bars": 1}}},
-        "trading": {"decision": {"bar_gating": {"bar_ms": 900000}}}
+        "trading": {
+            "execution": {
+                "manage": {
+                    "auto": True,
+                    "emergency": {"enable": True, "emergency_sl_bps": 10, "wait_mode_bars": 1}
+                }
+            },
+            "decision": {
+                "bar_gating": {"bar_ms": 900000}
+            }
+        }
     }
     fsm = ManageFlowFSM(config=cfg)
 

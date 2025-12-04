@@ -1,0 +1,16 @@
+{
+    "w_tfi": 1.0,
+    "w_tob": 0.5,
+    "w_bs": 0.3,
+    "w_bl": 0.2,
+    "w_macro": 0.4,
+    "threshold": 0.5,
+    "sl_pct": 0.004,
+    "sl_tp_ratio": 2.0,
+    "funding_threshold_long": 0.001,
+    "max_holding_secs": 300,
+    "position_size": 200.0,
+    "commission": 0.0005,
+    "slippage": 0.0001,
+    "spread_half": 0.0001
+}

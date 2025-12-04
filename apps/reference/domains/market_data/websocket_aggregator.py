@@ -107,10 +107,7 @@ class WebSocketAggregator:
         state["ask_size"] = decimal.Decimal(ask_size)
         state["bid_ask_time"] = ts
 
-        LOG.debug(
-            f"BookTicker {symbol}: bid={bid_price}@{bid_size}, "
-            f"ask={ask_price}@{ask_size}"
-        )
+        # Removed LOG.debug for hot path optimization
 
     def on_trade(
         self, symbol: str, price: str, quantity: str, is_buyer_maker: bool, ts: int, trade_id: Optional[Any] = None
@@ -148,11 +145,39 @@ class WebSocketAggregator:
         if state["window_start_time"] is None:
             state["window_start_time"] = current_time
 
-        # Clean up old trades outside window
+        # OPTIMIZATION: Don't clean up on every trade!
+        # Just append. We will clean up lazily in periodic_emit or get_market_tick.
+        
+        # Add new trade
+        state["trades_window"].append((current_time, is_buyer_maker, trade_id))
+        if is_buyer_maker:
+            state["sell_trades"] += 1
+        else:
+            state["buy_trades"] += 1
+
+        # Update price (Use float for speed, convert to Decimal only when needed)
+        # state["latest_price"] = decimal.Decimal(price) 
+        state["latest_price"] = float(price)
+        state["prices"].append(state["latest_price"])
+
+        # Trigger anchor update callback if this is an anchor
+        if symbol in self.anchors and self.on_anchor_update_callback:
+            try:
+                # We'll call it asynchronously later (from async context)
+                pass  # Async callback will be handled in periodic_emit
+            except Exception as e:
+                LOG.error(f"Error in anchor callback for {symbol}: {e}")
+
+        # Removed LOG.debug for hot path optimization
+
+    def _cleanup_window(self, symbol: str) -> None:
+        """Lazy cleanup of old trades from the window."""
+        state = self.state[symbol]
+        current_time = datetime.now()
         window_cutoff = current_time - timedelta(seconds=self.window_seconds)
+        
         while state["trades_window"] and state["trades_window"][0][0] < window_cutoff:
             popped = state["trades_window"].popleft()
-            # popped is (time, is_seller_maker, trade_id)
             old_is_seller_maker = popped[1]
             old_trade_id = popped[2] if len(popped) > 2 else None
             
@@ -163,31 +188,6 @@ class WebSocketAggregator:
             
             if old_trade_id is not None and old_trade_id in state["seen_trade_ids"]:
                 state["seen_trade_ids"].remove(old_trade_id)
-
-        # Add new trade
-        state["trades_window"].append((current_time, is_buyer_maker, trade_id))
-        if is_buyer_maker:
-            state["sell_trades"] += 1
-        else:
-            state["buy_trades"] += 1
-
-        # Update price
-        state["latest_price"] = decimal.Decimal(price)
-        state["prices"].append(decimal.Decimal(price))
-
-        # Trigger anchor update callback if this is an anchor
-        if symbol in self.anchors and self.on_anchor_update_callback:
-            try:
-                # We'll call it asynchronously later (from async context)
-                pass  # Async callback will be handled in periodic_emit
-            except Exception as e:
-                LOG.error(f"Error in anchor callback for {symbol}: {e}")
-
-        LOG.debug(
-            f"Trade {symbol}: price={price}, qty={quantity}, "
-            f"is_seller_maker={is_buyer_maker}, "
-            f"buy_trades={state['buy_trades']}, sell_trades={state['sell_trades']}"
-        )
 
     def get_market_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
@@ -202,11 +202,34 @@ class WebSocketAggregator:
         if symbol not in self.state:
             return None
 
+        # Perform lazy cleanup before calculation
+        self._cleanup_window(symbol)
+
         state = self.state[symbol]
 
         # Need both bookTicker and trade data
         if state["bid_ask_time"] is None or not state["prices"]:
             return None
+
+        # LAZY CLEANUP: Clean up old trades now, before calculation
+        current_time = datetime.now()
+        window_cutoff = current_time - timedelta(seconds=self.window_seconds)
+        
+        # This loop is O(k) where k is number of EXPIRED trades. 
+        # Since we do this 1/sec, k will be roughly (trades_per_sec * 1).
+        # Much better than doing it on every trade!
+        while state["trades_window"] and state["trades_window"][0][0] < window_cutoff:
+            popped = state["trades_window"].popleft()
+            old_is_seller_maker = popped[1]
+            old_trade_id = popped[2] if len(popped) > 2 else None
+            
+            if old_is_seller_maker:
+                state["sell_trades"] = max(0, state["sell_trades"] - 1)
+            else:
+                state["buy_trades"] = max(0, state["buy_trades"] - 1)
+            
+            if old_trade_id is not None and old_trade_id in state["seen_trade_ids"]:
+                state["seen_trade_ids"].remove(old_trade_id)
 
         # Calculate features
         bid_size = state["bid_size"]
@@ -228,16 +251,17 @@ class WebSocketAggregator:
             else decimal.Decimal(0)
         )
 
-        # delta_price
+        # delta_price (Handle float/Decimal mix)
         if len(state["prices"]) >= 2:
-            prev_price = state["prices"][-2]
+            prev_price = float(state["prices"][-2])
+            curr_price = float(state["latest_price"])
             delta_price = (
-                (state["latest_price"] - prev_price) / prev_price
+                (curr_price - prev_price) / prev_price
                 if prev_price > 0
-                else decimal.Decimal(0)
+                else 0.0
             )
         else:
-            delta_price = decimal.Decimal(0)
+            delta_price = 0.0
 
         return {
             "ts": state["bid_ask_time"],

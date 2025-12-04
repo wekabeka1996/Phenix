@@ -37,8 +37,8 @@ async def test_fetch_handles_empty_positions_response(mock_fsm, mock_config, cap
     Test that _fetch_and_emit_account_data handles an empty list response
     for positions data by logging a warning and emitting the empty list.
     """
-    # Set log level to WARNING to capture the specific log
-    caplog.set_level(logging.WARNING)
+    # Set log level to INFO to capture the specific log (changed from WARNING)
+    caplog.set_level(logging.INFO)
     
     connector = AccountConnector(fsm=mock_fsm, config=mock_config)
 
@@ -56,17 +56,16 @@ async def test_fetch_handles_empty_positions_response(mock_fsm, mock_config, cap
 
     await connector._fetch_and_emit_account_data()
 
-    # 1. Verify the CRITICAL warning is logged
+    # 1. Verify the INFO message about empty positions is logged
+    # Note: Log message was changed from "CRITICAL" to informational
     assert any(
-        "CRITICAL: API returned EMPTY positions" in record.message 
+        "API returned EMPTY positions list" in record.message 
         for record in caplog.records
-    )
+    ), f"Expected 'API returned EMPTY positions list' in logs. Got: {[r.message for r in caplog.records]}"
     
-    # 2. Verify the misleading "internal self._positions" warning is also logged
-    assert any(
-        "system will use internal self._positions" in record.message 
-        for record in caplog.records
-    )
+    # 2. Verify proper handling - connector processes empty list correctly
+    # The "clear internal position state" message is DEBUG level, so we check
+    # that the empty positions were processed by verifying emitted event
 
     # 3. Verify that EVT:ACCOUNT_UPDATE_RECEIVED IS emitted with empty positions
     emit_calls = mock_fsm.emit.call_args_list

@@ -102,6 +102,9 @@ class FeatureEngineering:
             self.fsm.listen("EVT:OI_UPDATE", self._on_oi_update)
             self.logger.info("Futures features enabled: listening for EVT:FUNDING_UPDATE, EVT:OI_UPDATE")
         
+        # FSMP-ARCH-01: Register anchor update listener (replaces direct method call)
+        self.fsm.listen("EVT:ANCHOR_UPDATED", self._on_anchor_updated_event)
+        
         self.logger.info(
             f"FeatureEngineering initialized: "
             f"new_metrics={self.cfg.enable_new_metrics}, "
@@ -118,6 +121,21 @@ class FeatureEngineering:
                 self.logger.debug(f"Updated anchor {anchor} price: {price}")
         except Exception as e:
             self.logger.error(f"Error updating anchor price {anchor}: {e}")
+
+    def _on_anchor_updated_event(self, event: Message) -> None:
+        """
+        Handle EVT:ANCHOR_UPDATED event from MarketData.
+        
+        FSMP-ARCH-01: Replaces direct method call from MarketDataConnector.
+        This enables loose coupling and multiprocess-safe anchor updates.
+        """
+        try:
+            anchor = event.pld.get("anchor")
+            price = event.pld.get("price")
+            if anchor and price:
+                self.update_anchor_price(anchor, price)
+        except Exception as e:
+            self.logger.error(f"Error processing EVT:ANCHOR_UPDATED: {e}")
 
     def _get_symbol_state(self, symbol: str) -> SymbolFeatureState:
         """
@@ -360,7 +378,9 @@ class FeatureEngineering:
             )
 
             # Liquidity Kappa [kappa_min, kappa_max]
-            liq_ratio = depth / (depth + self.cfg.depth_half) if (depth + self.cfg.depth_half) > 0 else decimal.Decimal(0)
+            # FTR-FIX: Convert depth to USD to match depth_half (1000 USD)
+            depth_usd = depth * price
+            liq_ratio = depth_usd / (depth_usd + self.cfg.depth_half) if (depth_usd + self.cfg.depth_half) > 0 else decimal.Decimal(0)
             liq_ratio = max(decimal.Decimal(0), min(decimal.Decimal(1), liq_ratio))
             liq_kappa = max(self.cfg.kappa_min, min(self.cfg.kappa_max, liq_ratio))
 
@@ -389,8 +409,8 @@ class FeatureEngineering:
                 self._update_volatility_state(symbol, price, current_tick)
                 features["volatility_state"] = str(self._compute_volatility_state(symbol))
 
-                # Depth Imbalance
-                features["depth_imbalance"] = str(self._compute_depth_imbalance(bid_size, ask_size))
+                # Depth Imbalance (Convert to USD for smoothing consistency)
+                features["depth_imbalance"] = str(self._compute_depth_imbalance(bid_size * price, ask_size * price))
 
                 # Macro Sync
                 self._update_macro_sync_buffer(symbol, price, time_diff)

@@ -14,7 +14,7 @@ trading:
     signal_threshold: 0.10
     # Signal thresholds (Balanced profile)
     neutral_threshold: 0.18              # Below this → treat as neutral (reduced clip attempts)
-  symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]
   instruments:
     ETHUSDT:
       symbol: "ETHUSDT"
@@ -189,8 +189,12 @@ trading:
   # MARKET DATA SETTINGS (Phase 1)
   # ==============================================================================
   market_data:
-    poll_interval_sec: 2.0
+    poll_interval_sec: 5.0
     websocket_streams: ["bookTicker", "trade"]
+    # FSMP-ARCH-01: Enable multiprocessing for market data isolation
+    # When true, market data runs in a separate OS process to prevent
+    # event loop starvation in the main process (OrderGuardian, DecisionMaking)
+    use_multiprocessing: true  # ENABLED - isolated worker process
     api_call_limits:
       get_recent_trades: 50
       get_klines:
@@ -220,7 +224,7 @@ trading:
         oco_emulation: true  # Enable OCO emulation: when SL or TP fills, cancel the counterpart
 
         # === LEGACY KEYS (for backward compatibility, used by Kelly/decision_making) ===
-        stop_loss_bps: 50      # Stop-loss in basis points (default 50 bps = 0.5%)
+        stop_loss_bps: 40      # Stop-loss in basis points (default 50 bps = 0.5%)
         take_profit_low_ratio: 0.5   # k₁: TP_low = k₁ × SL_bps
         take_profit_high_ratio: 1.0  # k₂: TP_high = k₂ × SL_bps
         # Note: TP_bps computed at runtime from these ratios (SSOT for Kelly payoff_r)
@@ -228,9 +232,9 @@ trading:
         # === NEW KEYS (for FSM _calculate_bracket_prices / validation) ===
         # Structure: sl/tp nodes with fixed_bps for direct SL/TP calculation
         sl:
-          fixed_bps: 50        # SL offset (basis points) — used by fsm_manage._calculate_bracket_prices()
+          fixed_bps: 40        # SL offset (basis points) — used by fsm_manage._calculate_bracket_prices()
         tp:
-          fixed_bps: 100       # TP offset (basis points) — used by fsm_manage._calculate_bracket_prices()
+          fixed_bps: 80        # TP offset (basis points) — used by fsm_manage._calculate_bracket_prices()
 
         # === VALIDATION & SAFETY PARAMETERS ===
         offset_bps: 5          # Safety offset to apply before placing SL/TP (avoids -2021 errors)
@@ -386,7 +390,7 @@ binance_api:
       depth_half: 1000   # Half-depth for liquidity kappa (tune per venue)
 
 execution:
-  allow_trade_with_guardian_tidy_only: true
+  allow_trade_with_guardian_tidy_only: false  # Disabled: blocks all entries on cold start (no tidy history)
   fsm_periodic_cleanup_enabled: false
   preflight_backoff_ms: [120, 250, 400, 800, 1200, 1800]
   anti_race_close_ms: 800

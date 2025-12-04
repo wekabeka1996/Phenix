@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import time
 
 from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+from apps.reference.config_models import create_aurora_config
 
 
 @pytest.fixture
@@ -43,7 +44,8 @@ def exposure_guard_config():
 @pytest.fixture
 def exposure_guard(exposure_guard_config):
     """Fixture for ExposureGuard instance."""
-    return ExposureGuard(exposure_guard_config, fsm=None)
+    config = create_aurora_config(exposure_guard_config)
+    return ExposureGuard(fsm_core=None, config=config)
 
 
 def test_total_margin_cap(exposure_guard):

@@ -31,9 +31,11 @@ from apps.reference.domains.risk_management.risk_management import RiskManagemen
 from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
 )
+# FSMP-ARCH-01: Import both MarketDataConnector and MarketDataProxy
+# The actual class used is determined by feature flag at runtime
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
+from apps.reference.domains.market_data.proxy import MarketDataProxy
 from apps.reference.data.feature_store import FeatureStore
-from vfoundation.dr import wal
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from apps.reference.telemetry.alerts import AlertManager
@@ -147,6 +149,11 @@ class AuroraBridge:
         # Register QoS cooldown
         self._qos_next_allowed_ts_per_symbol[symbol] = next_allowed_ts
 
+        # FIX: Ignore PORTFOLIO_STALE reason to prevent infinite loop
+        # PORTFOLIO_STALE is handled by local retry task in on_trade_intent_proposed
+        if reason == "PORTFOLIO_STALE":
+            return
+
         self.logger.info(
             f"BRIDGE: QoS defer registered for {symbol} until {next_allowed_ts} (reason: {reason})")
 
@@ -234,6 +241,7 @@ class AuroraBridge:
                     "reason": "QOS_COOLDOWN",
                     "symbol": symbol,
                     "idempotent_key": event.pld.get("idempotent_key"),
+                    "next_allowed_ts": self._qos_next_allowed_ts_per_symbol.get(symbol, 0),
                 },
                 why="bridge_qoS_blocked",
             )
@@ -459,16 +467,69 @@ class AuroraBridge:
                 self.logger.info(
                     f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}"
                 )
-                # Emit the result for downstream listeners
-                import asyncio
-                asyncio.create_task(emit_compat(
-                    self.fsm, result, logger=self.logger))
+                # Emit the result synchronously via fsm.emit
+                try:
+                    event_name = f"{result.op}:{result.verb}"
+                    self.fsm.emit(event_name, result.pld or {}, result.why or "bridge_result", result.data_ref)
+                except Exception as e:
+                    self.logger.error(f"BRIDGE: Error emitting result: {e}")
+                
                 if result.op == "ERR":
                     self.logger.error(
                         f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}"
                     )
         else:
             self.logger.error("BRIDGE: execution_position FSM not initialized")
+
+    # ========== SYNCHRONOUS VERSIONS OF HANDLERS ==========
+    
+    def on_trade_intent_proposed_sync(self, event: Message) -> None:
+        """
+        Synchronous handler for trade intent.
+        Checks QoS and portfolio freshness, dispatches CMD:OPEN if OK.
+        """
+        symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
+        
+        # Check for forbidden LIMIT entry
+        order_details = event.pld.get("order", {})
+        if order_details.get("order_type") == "LIMIT":
+            self.logger.error("BRIDGE: LIMIT entry forbidden. Only MARKET entry allowed.")
+            return
+        
+        # Check QoS first
+        if not self._is_qos_allowed(symbol):
+            self.logger.info(f"BRIDGE: QoS blocked for {symbol}, skipping (no defer in sync mode)")
+            return
+        
+        # Check portfolio freshness
+        if not self._is_portfolio_fresh():
+            self.logger.info(f"BRIDGE: Portfolio stale for {symbol}, skipping (no defer in sync mode)")
+            return
+        
+        # Both OK - dispatch
+        self._dispatch_open(event)
+    
+    def on_portfolio_state_updated_sync(self, event: Message) -> None:
+        """Synchronous handler for portfolio updates."""
+        self._last_portfolio = event.pld or {}
+        self._last_portfolio_ts = int(
+            self._last_portfolio.get("positions_last_ts_ms", 0)
+        ) or int(time.time() * 1000)
+        # No deferred flush in sync mode - intents not deferred
+    
+    def on_intent_deferred_sync(self, event: Message) -> None:
+        """Synchronous handler for intent deferral."""
+        symbol = event.pld.get("symbol")
+        reason = event.pld.get("reason", "unknown")
+        next_allowed_ts = event.pld.get("next_allowed_ts", 0)
+        
+        if not symbol:
+            self.logger.warning(f"BRIDGE: INTENT_DEFERRED missing symbol: {event.pld}")
+            return
+        
+        # Register QoS cooldown
+        self._qos_next_allowed_ts_per_symbol[symbol] = next_allowed_ts
+        self.logger.info(f"BRIDGE: QoS defer registered for {symbol} until {next_allowed_ts} (reason: {reason})")
 
 
 # Global bridge instance for backward compatibility
@@ -478,15 +539,16 @@ _bridge_instance: AuroraBridge | None = None
 def on_trade_intent_proposed(event: Message) -> None:
     """Global handler for TRADE_INTENT_PROPOSED events - delegates to bridge."""
     global _bridge_instance
+    LOG.info(f"BRIDGE_HANDLER: on_trade_intent_proposed called for {event.pld.get('instrument', 'unknown')}")
     if _bridge_instance is not None:
-        # Run async method in sync context
-        import asyncio
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_bridge_instance.on_trade_intent_proposed(event))
-        except RuntimeError:
-            # No running loop, create new one
-            asyncio.run(_bridge_instance.on_trade_intent_proposed(event))
+            # Call synchronous method directly
+            _bridge_instance.on_trade_intent_proposed_sync(event)
+            LOG.info("BRIDGE_HANDLER: Task completed")
+        except Exception as e:
+            LOG.error(f"BRIDGE_HANDLER: Error: {e}")
+            import traceback
+            LOG.error(traceback.format_exc())
     else:
         LOG.error(
             "BRIDGE: No bridge instance available for on_trade_intent_proposed")
@@ -496,15 +558,11 @@ def on_portfolio_state_updated(event: Message) -> None:
     """Global handler for PORTFOLIO_STATE_UPDATED events - delegates to bridge."""
     global _bridge_instance
     if _bridge_instance is not None:
-        # Run async method in sync context
-        import asyncio
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(
-                _bridge_instance.on_portfolio_state_updated(event))
-        except RuntimeError:
-            # No running loop, create new one
-            asyncio.run(_bridge_instance.on_portfolio_state_updated(event))
+            # Call synchronous method directly
+            _bridge_instance.on_portfolio_state_updated_sync(event)
+        except Exception as e:
+            LOG.error(f"BRIDGE: Error in on_portfolio_state_updated: {e}")
     else:
         LOG.error(
             "BRIDGE: No bridge instance available for on_portfolio_state_updated")
@@ -514,18 +572,13 @@ def on_intent_deferred(event: Message) -> None:
     """Global handler for INTENT_DEFERRED events - delegates to bridge."""
     global _bridge_instance
     if _bridge_instance is not None:
-        # Run async method in sync context
-        import asyncio
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_bridge_instance.on_intent_deferred(event))
-        except RuntimeError:
-            # No running loop, create new one
-            asyncio.run(_bridge_instance.on_intent_deferred(event))
+            # Call synchronous method directly
+            _bridge_instance.on_intent_deferred_sync(event)
+        except Exception as e:
+            LOG.error(f"BRIDGE: Error in on_intent_deferred: {e}")
     else:
         LOG.error("BRIDGE: No bridge instance available for on_intent_deferred")
-
-
 # Local FSMCore mock has been removed. The real FSMCore from vfoundation is now used.
 
 
@@ -603,14 +656,18 @@ def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: di
         alert_manager.check_circuit_breaker(True, 300)
     
     # Check entropy spike (NEW)
+    # Note: entropy_monitor is initialized in initialize_domains()
+    # This function is called from guardian_loop which runs after domains are initialized
     try:
-        if 'entropy_monitor' in globals():
-            spike_detected, reason = entropy_monitor.detect_spike()
+        # Use globals().get() to safely access entropy_monitor
+        em = globals().get('entropy_monitor')
+        if em is not None:
+            spike_detected, reason = em.detect_spike()
             if spike_detected:
                 alert_manager.trigger_alert(
                     severity="CRITICAL",
                     message=f"System anomaly detected: {reason}",
-                    context=entropy_monitor.get_metrics()
+                    context=em.get_metrics()
                 )
                 LOG.critical(f"🚨 ENTROPY SPIKE: {reason}")
     except Exception as e:
@@ -964,9 +1021,17 @@ def main() -> None:
     account_observer = AccountObserver(
         fsm=fsm, config=config.to_dict(), environment=risk_portfolio_source)
 
-    # Market Data Connector (source of market ticks)
-    # Pass full config dict to access both system.yaml (trading section) and use_testnet
-    market_data = MarketDataConnector(fsm=fsm, config=config.to_dict())
+    # FSMP-ARCH-01: Market Data Connector with Multiprocessing Feature Flag
+    # Feature flag: trading.market_data.use_multiprocessing (default: False for safety)
+    market_data_cfg = config.to_dict().get("trading", {}).get("market_data", {})
+    use_multiprocessing = market_data_cfg.get("use_multiprocessing", False)
+    
+    if use_multiprocessing:
+        LOG.info("🚀 Using MarketDataProxy (multiprocessing mode)")
+        market_data = MarketDataProxy(fsm=fsm, config=config)
+    else:
+        LOG.info("📊 Using MarketDataConnector (legacy single-process mode)")
+        market_data = MarketDataConnector(fsm=fsm, config=config)
 
     # Feature Store (stores historical features for backtesting)
     feature_store = FeatureStore(
@@ -1200,7 +1265,20 @@ def main() -> None:
     account_observer.start()
 
     LOG.info("Starting market data connector...")
-    market_data.start()
+    # MarketDataConnector requires async loop - use guardian_loop
+    if guardian_loop is not None and guardian_loop.is_running():
+        try:
+            market_data_future = asyncio.run_coroutine_threadsafe(
+                market_data.start_async(),
+                guardian_loop,
+            )
+            market_data_future.result(timeout=10)  # Wait up to 10s for startup
+            LOG.info("✅ MarketDataConnector started via async loop")
+        except Exception as e:
+            LOG.error(f"Failed to start MarketDataConnector: {e}")
+    else:
+        LOG.warning(
+            "⚠️ No async loop available for MarketDataConnector - market data will not be available")
 
     LOG.info("Starting feature engineering...")
     feature_engineering.start()

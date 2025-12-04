@@ -1088,8 +1088,13 @@ class ExecPosFSM:
                 if (not self.shadow_mode and self.adapter) or (result.verb == "CLOSE" and self.adapter):
                     # Asynchronously execute the trade decision
                     loop = self._get_async_loop()
+                    LOG.info(f"🔄 ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
                     if loop:
                         self._submit_async(self._execute_decision(result), loop)
+                    else:
+                        LOG.error(f"❌ ExecPosFSM: No async loop available for DEC:{result.verb}! Order will NOT be executed!")
+                else:
+                    LOG.info(f"⏭️ ExecPosFSM: Skipping execution for DEC:{result.verb} (shadow_mode={self.shadow_mode}, adapter={self.adapter is not None})")
 
         return result
 

@@ -11,9 +11,9 @@ brackets:
   enable: true
   oco_emulation: true  # CRITICAL: Enables OCO (One-Cancels-Other) emulation - when one bracket fills, cancel the other
   sl:
-    fixed_bps: 50  # Stop loss in basis points (0.5%)
+    fixed_bps: 40  # Stop loss in basis points (0.5%)
   tp:
-    fixed_bps: 100  # Take profit in basis points (1%)
+    fixed_bps: 80  # Take profit in basis points (1%)
 
 ##############################
 # New structured config (additive-only)
@@ -27,9 +27,9 @@ trading:
         enable: true                 # Enable bracket management (SL/TP)
         oco_emulation: true          # Enable OCO emulation: when SL or TP fills, the counterpart is cancelled
         sl:
-          fixed_bps: 50              # Stop Loss distance in basis points (0.5%)
+          fixed_bps: 40              # Stop Loss distance in basis points (0.5%)
         tp:
-          fixed_bps: 100             # Take Profit distance in basis points (1.0%)
+          fixed_bps: 80              # Take Profit distance in basis points (1.0%)
 
       # Orphaned bracket monitor (periodic/self-cleaning of reduceOnly/closePosition orders when no position exists)
       orphan_monitor:
@@ -71,7 +71,7 @@ execution:
   preflight_backoff_ms: [120, 250, 400, 800, 1200, 1800]
   anti_race_close_ms: 800
   min_post_interval_per_symbol_ms: 300
-  allow_trade_with_guardian_tidy_only: true
+  allow_trade_with_guardian_tidy_only: false  # Disabled: blocks all entries on cold start
   fsm_periodic_cleanup_enabled: false
 
 # Guardian cleanup pacing (additive)
