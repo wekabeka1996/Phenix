@@ -137,6 +137,10 @@ class MRStrategyConfig:
     tp_to_mid: bool = True
     
     cooldown_sec: int = 60  # 1 minute cooldown
+    
+    # Whitelist of allowed Flat regimes (e.g., ["FLAT_LOW", "FLAT_NORMAL"])
+    # If empty, all Flat regimes are allowed.
+    allowed_regimes: List[str] = field(default_factory=list)
 
 
 # Maximum bars to keep in memory per symbol (prevents memory leak)
@@ -315,6 +319,13 @@ class MeanReversion1mStrategy:
             return self._neutral_signal(
                 symbol, price, timestamp_ms, 
                 f"regime_not_flat:{regime}"
+            )
+            
+        # Check whitelist if configured
+        if self.config.allowed_regimes and flat_regime.name not in self.config.allowed_regimes:
+            return self._neutral_signal(
+                symbol, price, timestamp_ms,
+                f"regime_not_allowed:{flat_regime.name}"
             )
         
         # Get MR parameters for this regime (with config override support)

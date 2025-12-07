@@ -58,6 +58,51 @@ class SignalsConfig(BaseModel):
     enable_new_metrics: bool = Field(default=False)
 
 
+class SolRegimeMultipliersConfig(BaseModel):
+    """Regime multipliers for SOL position sizing.
+    
+    Used in Risk-Sizing V1 to adjust SOL position size based on volatility regime.
+    - calm: low-volatility / trend regime → larger positions
+    - storm: high-volatility regime → smaller positions
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    calm: float = Field(default=1.0, description="Multiplier for low-vol/calm regime")
+    storm: float = Field(default=1.0, description="Multiplier for high-vol/storm regime")
+
+
+class RiskContractV1Config(BaseModel):
+    """Risk-Sizing V1 configuration contract.
+    
+    ETAP1: Config-only, enabled=False by default.
+    Describes target margin fractions and notional sizes for deposit ≈500 USDT, leverage ~x10.
+    
+    Will be used in ETAP2+ for runtime position sizing.
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    enabled: bool = Field(default=False, description="Enable Risk-Sizing V1 (ETAP1: disabled)")
+    effective_leverage: float = Field(default=10.0, description="Assumed leverage for notional calculation")
+    
+    # Per-symbol margin fractions (margin_fraction * Equity * L ≈ target_notional)
+    per_symbol_margin_fraction: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Target margin fraction per symbol (e.g., BTCUSDT: 0.04)"
+    )
+    
+    # Fixed notional targets in USD (for MR/classic strategies)
+    fixed_notional_usd: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Fixed target notional USD per symbol"
+    )
+    
+    # SOL-specific regime multipliers
+    sol_regime_multipliers: SolRegimeMultipliersConfig = Field(
+        default_factory=SolRegimeMultipliersConfig,
+        description="SOL regime-based sizing multipliers"
+    )
+
+
 class PositionSizingConfig(BaseModel):
     """Position sizing configuration."""
     model_config = ConfigDict(extra='allow')
@@ -67,6 +112,13 @@ class PositionSizingConfig(BaseModel):
     risk_fraction_q: Optional[float] = Field(default=None)
     liquidity_kappa: float = Field(default=1.0)
     kappa_mode: str = Field(default="passive")
+    
+    # Risk-Sizing V1 contract (ETAP1: config-only, not used in runtime)
+    risk_contract_v1: Optional[RiskContractV1Config] = Field(
+        default=None,
+        description="Risk-Sizing V1 contract (ETAP1: disabled by default)"
+    )
+
 
 
 class KellyConfig(BaseModel):
@@ -201,6 +253,12 @@ class MeanReversion1mStrategyConfig(BaseModel):
     
     # Regime sizing (regime_name → multipliers)
     regime_sizing: Dict[str, MRRegimeSizingConfig] = Field(default_factory=dict)
+    
+    # Global allowed regimes whitelist (can be overridden per-asset in assets.X.allowed_regimes)
+    allowed_regimes: List[str] = Field(
+        default_factory=lambda: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
+        description="Whitelist of Flat regimes to trade in (global default)"
+    )
     
     # Risk management
     risk: MRRiskConfig = Field(default_factory=MRRiskConfig)

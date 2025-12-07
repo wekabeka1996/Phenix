@@ -14,17 +14,16 @@ trading:
     signal_threshold: 0.10
     # Signal thresholds (Balanced profile)
     neutral_threshold: 0.18              # Below this → treat as neutral (reduced clip attempts)
-  symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"]
-  instruments:
-    ETHUSDT:
-      symbol: "ETHUSDT"
-      step_size: "0.001"
-      tick_size: "0.01"
+    
+    # Symbols to track for decision making
+    symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"]
+    
     # Minimal behavior FSM mapped from regimes
     behavior_fsm:
       enable: false
       high_vol_multiplier: 2.0
       low_vol_multiplier: 0.5
+    
     # Regime-based threshold multipliers (Δθ). Factors multiply signal_threshold.
     regime_threshold_multipliers:
       HIGH_VOLATILITY: 1.20   # stricter in high vol
@@ -41,28 +40,67 @@ trading:
     side_bias_penalty_factor: 0.50            # If oversold, raise threshold by 50%
 
     cooldown_sec: 10           # Increase pause between decisions
+    
     position_sizing:
       min_position_size_usd: 10
       liquidity_based_cap_usd: 10000
       # Risk-based sizing (optional). If set, overrides legacy 10% equity rule:
       # notional_usd = q * Equity / (SL_bps/1e4) * kappa, capped by liquidity_based_cap_usd
-    # Risk-based sizing (optional). If set, overrides legacy 10% equity rule:
       # notional_usd = q * Equity / (SL_bps/1e4) * kappa, capped by liquidity_based_cap_usd
       risk_fraction_q: 0.05     # Risk per trade (Increased to 5% for ~10% utilization)
       liquidity_kappa: 1.0      # Liquidity/micro-account cap factor (0..1]
       liquidity_kappa_mode: dynamic  # Use dynamic depth-based kappa when available
+
+      # ============================================================================
+      # Risk-Sizing V1 (ETAP1: контракт для депозиту ≈500 USDT, плече ~x10)
+      # УВАГА: enabled=false означає, що ці поля НЕ використовуються в runtime.
+      #        Це лише опис майбутнього контракту для ETAP2+.
+      # ============================================================================
+      risk_contract_v1:
+        enabled: false           # ETAP1: тільки опис, не використовується runtime
+
+        # Ефективне плече (те, що виставлено на біржі).
+        # Використовуватиметься для розрахунку notional = margin * effective_leverage
+        effective_leverage: 10.0
+
+        # Цільова частка маржі від equity для кожного інструменту.
+        # margin_fraction_i * Equity * L ≈ target_notional_i
+        # Приклад: при E=500 USDT, L=10, margin_fraction=0.05 → notional ≈ 250$
+        per_symbol_margin_fraction:
+          BTCUSDT: 0.04   # ~4% маржі → при E=500, L=10 → notional ≈ 200$
+          ETHUSDT: 0.055  # ~5.5% → ≈ 275$
+          XRPUSDT: 0.04   # ~4% → ≈ 200$
+          DOGEUSDT: 0.05  # ~5% → ≈ 250$
+          SOLUSDT: 0.06   # ~6% → ≈ 300$
+
+        # Базові фіксовані розміри позицій у USD для монет з MR/класичним підходом.
+        # Використовуватиметься пізніше в runtime як таргетний notional.
+        fixed_notional_usd:
+          BTCUSDT: 200.0   # Mean reversion BTC
+          ETHUSDT: 250.0   # Smart trend ETH
+          XRPUSDT: 200.0   # MR XRP
+          DOGEUSDT: 200.0  # MR DOGE
+
+        # Режимні множники для SOL: змінюють target_notional залежно від волатильності.
+        # calm = low-vol / трендовий режим, storm = high-vol / "шторм"
+        sol_regime_multipliers:
+          calm: 1.5   # low-vol → до 300$ notional
+          storm: 0.5  # high-vol → зменшення до ~100$
+
     # Regime-adaptive sizing modifiers (applied by DecisionMaking domain)
     sizing_modifiers:
       HIGH_VOLATILITY: "0.60"   # -40% position size in high volatility regimes
       LOW_VOLATILITY: "1.20"    # +20% position size in low volatility (calm market)
       MEAN_REVERSION: "0.50"    # -50% position size in ranging/mean reversion
       UNCERTAIN: "0.50"         # -50% position size when regime confidence is low
+    
     # Kelly criterion sizing (optional; if enabled, min(q, Kelly) path is used)
     kelly:
       base_probability: 0.50    # Base probability for Kelly formula (55% = edge)
       kelly_cap: 0.25           # Maximum Kelly fraction (conservative cap)
       kelly_alpha: 0.8          # Fractional Kelly: use 80% of full Kelly
       payoff_ratio_r: 1.5       # Payoff ratio (TP_bps / SL_bps); overrideable per trade
+    
     qos:
       mode: "defer"        # QoS mode: defer intents instead of blocking
       enforce: false       # Legacy: disable QoS enforcement
@@ -166,6 +204,9 @@ trading:
         trail_pct: 0.006
         min_update_interval_sec: 5
 
+      # Regime Gating - ETH "Universal" from optimization reports
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY"]
+
     # SOLUSDT - Phase 3 Optuna optimized parameters
     # KEY INSIGHT: SOL should NOT have side-bias penalty (penalty_factor: 0.0)
     SOLUSDT:
@@ -199,12 +240,113 @@ trading:
         tp_high_ratio: 0.80       # TP2 = 0.8x risk
         partial_exit_pct: 0.31    # 31% at TP1
 
+      # Regime Gating - SOL "Bear" from optimization reports (CRITICAL: TREND_UP excluded!)
+      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL"]
+
       # Phase A3: Trailing stop configuration
       trailing_stop:
         enabled: true
         activation_pct: 0.046     # Activate at 4.6% profit
         trail_pct: 0.018          # Trail 1.8% behind peak
         min_update_interval_sec: 5
+
+    # DOGEUSDT - Phase 3+ derived from Mean Reversion optimization
+    # Source: config/aurora/strategies/mean_reversion_1m.yaml (CHAMPION asset)
+    # Audit: Previously missing, causing fallback to global 40/80 bps brackets
+    DOGEUSDT:
+      weights:
+        # Derived from global weights (no momentum optimization exists for DOGE)
+        ema: 0.15
+        volume: 0.15
+        macro: 0.10
+        liquidity: 0.20
+        obi: 0.15
+        tfi: 0.12
+        volatility: 0.08
+        depth_imbalance: 0.15
+        delta_price: 0.15
+
+      side_bias:
+        penalty_factor: 0.3       # Moderate - DOGE trends can persist
+        window_sec: 300
+        target_ratio: 0.6
+
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.5      # Stricter in high vol (DOGE pumps hard)
+        LOW_VOLATILITY: 0.85
+        MEAN_REVERSION: 0.9       # Slightly looser for MR (champion asset)
+        DEFAULT: 1.0
+
+      regime_sizing:
+        HIGH_VOLATILITY: 0.4      # Very conservative in high vol
+        LOW_VOLATILITY: 1.5       # Moderate aggressive in low vol
+        MEAN_REVERSION: 1.2       # Slightly larger for MR plays
+
+      exit:
+        sl_pct: 0.0197            # 1.97% from MR optimization (widest = safest)
+        max_hold_sec: 660         # 11 minutes
+
+      take_profit:
+        tp_low_ratio: 0.5         # TP1 = 0.5x risk (≈1% profit target)
+        tp_high_ratio: 1.0        # TP2 = 1x risk (≈2% profit target)
+        partial_exit_pct: 0.6     # 60% at TP1
+
+      trailing_stop:
+        enabled: true             # DOGE benefits from trailing (momentum coin)
+        activation_pct: 0.015     # Activate at 1.5% profit
+        trail_pct: 0.008          # Trail 0.8% behind peak
+        min_update_interval_sec: 5
+
+      # Regime Gating - DOGE works best in FLAT regimes (MR champion)
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "LOW_VOLATILITY"]
+
+    # XRPUSDT - Phase 3+ from Optuna optimization
+    # Source: config/aurora/strategies/aurora_phase3_production.yaml (line 266-382)
+    # Audit: Previously missing, causing fallback to global 40/80 bps brackets
+    XRPUSDT:
+      weights:
+        ema: 0.427
+        volume: 0.385
+        macro: 0.469
+        liquidity: 0.199
+        obi: 0.120
+        tfi: 0.402
+        volatility: 0.367
+        depth_imbalance: 0.392
+        delta_price: 0.028
+
+      side_bias:
+        penalty_factor: 0.4       # Moderate penalty (from Phase 3)
+        window_sec: 600
+        target_ratio: 0.6
+
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.9      # 90% STRICTER (MAXIMUM filter)
+        LOW_VOLATILITY: 0.95
+        DEFAULT: 1.0
+
+      regime_sizing:
+        HIGH_VOLATILITY: 0.1      # 90% SMALLER (almost stop trading!)
+        LOW_VOLATILITY: 1.7       # 70% LARGER
+        MEAN_REVERSION: 0.8
+
+      exit:
+        sl_pct: 0.0144            # 1.44% from MR optimization
+        max_hold_sec: 660         # 11 minutes (from Phase 3)
+
+      take_profit:
+        tp_low_ratio: 0.5         # TP1 = 0.5x risk
+        tp_high_ratio: 1.0        # TP2 = 1x risk
+        partial_exit_pct: 0.5     # 50% at TP1
+
+      trailing_stop:
+        enabled: false            # XRP: extreme vol sensitivity, static TP safer
+        activation_pct: 0.02
+        trail_pct: 0.01
+        min_update_interval_sec: 5
+
+      # Regime Gating - XRP from Phase 3 optimization + FLAT regimes for MR
+      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_LOW", "FLAT_NORMAL"]
 
   # ==============================================================================
   # MEAN REVERSION 1M STRATEGY (Phase 3 Track B)
@@ -225,7 +367,9 @@ trading:
           tp_to_mid: false     # False for outer band target
           cooldown_sec: 210
         # Asset-specific overrides
-        sl_pct: 0.019          # Stop Loss 1.9%
+        # sl_pct: 0.019          # REMOVED: Enable dynamic ATR-based SL
+        # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for "жирні" угоди
+        allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
         risk: {position_size_usd: 150}
 
       # --- BTC (BRONZE 🥉) ---
@@ -238,7 +382,9 @@ trading:
           entry_threshold: 0.05
           tp_to_mid: true      # Default behavior
           cooldown_sec: 0      # No cooldown
-        sl_pct: 0.015
+        # sl_pct: 0.015          # REMOVED: Enable dynamic ATR-based SL
+        # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
+        allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL"]
         risk: {position_size_usd: 150}
       
       # --- XRP (SILVER 🥈) ---
@@ -251,7 +397,9 @@ trading:
           entry_threshold: 0.05
           tp_to_mid: true
           cooldown_sec: 165
-        sl_pct: 0.024
+        # sl_pct: 0.024          # REMOVED: Enable dynamic ATR-based SL
+        # Regime Gating - XRP stable (+$121) - similar to DOGE
+        allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
         risk: {position_size_usd: 150}
 
   # TCA (Transaction Cost Analysis) Preferences

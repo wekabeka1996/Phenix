@@ -161,7 +161,10 @@ class MeanReversionHandler:
             config.rsi_overbought = Decimal(str(base_strat_cfg.rsi_overbought))
             config.sl_atr_mult = Decimal(str(base_strat_cfg.sl_atr_mult))
             config.tp_to_mid = base_strat_cfg.tp_to_mid
+            config.sl_atr_mult = Decimal(str(base_strat_cfg.sl_atr_mult))
+            config.tp_to_mid = base_strat_cfg.tp_to_mid
             config.cooldown_sec = base_strat_cfg.cooldown_sec
+            config.allowed_regimes = list(self._mr_config.allowed_regimes or [])
             
             # Apply asset-specific overrides
             asset_cfg = self._mr_config.assets.get(symbol)
@@ -173,6 +176,7 @@ class MeanReversionHandler:
                 if strat_override.min_bb_width is not None: config.min_bb_width = Decimal(str(strat_override.min_bb_width))
                 if strat_override.cooldown_sec is not None: config.cooldown_sec = strat_override.cooldown_sec
                 if strat_override.sl_atr_mult is not None: config.sl_atr_mult = Decimal(str(strat_override.sl_atr_mult))
+                if strat_override.allowed_regimes is not None: config.allowed_regimes = list(strat_override.allowed_regimes)
                 # Add other overrides as needed...
 
             self._strategies[symbol] = MeanReversion1mStrategy(
@@ -261,6 +265,15 @@ class MeanReversionHandler:
         sl_pct = self._get_asset_sl_pct(symbol)
         position_size_usd = self._get_position_size_usd()
         
+        # FIX: Calculate qty = position_size_usd / entry_price
+        # This is required for execution_position to know how much to trade
+        qty = Decimal("0")
+        if signal.entry_price and signal.entry_price > 0:
+            qty = position_size_usd / signal.entry_price
+            # Apply regime sizing multiplier if available
+            if signal.mr_params and signal.mr_params.sizing_mult:
+                qty = qty * Decimal(str(signal.mr_params.sizing_mult))
+        
         # Calculate SL price from sl_pct if configured
         if sl_pct is not None:
             if side == "BUY":
@@ -277,6 +290,7 @@ class MeanReversionHandler:
             "stop_price": str(stop_price),
             "target_price": str(signal.target_price),
             "position_size_usd": float(position_size_usd),
+            "qty": str(qty),  # FIX: Include calculated qty
             "strategy": "mean_reversion_1m",
             "regime": signal.flat_regime.name if signal.flat_regime else "UNKNOWN",
             "confidence": float(signal.confidence),

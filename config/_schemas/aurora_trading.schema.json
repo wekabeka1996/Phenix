@@ -678,7 +678,7 @@
         },
         "position_sizing": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "min_position_size_usd": {
               "type": "number",
@@ -687,6 +687,68 @@
             "liquidity_based_cap_usd": {
               "type": "number",
               "minimum": 0
+            },
+            "risk_fraction_q": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "liquidity_kappa": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "liquidity_kappa_mode": {
+              "type": "string",
+              "enum": [
+                "passive",
+                "dynamic"
+              ]
+            },
+            "risk_contract_v1": {
+              "type": "object",
+              "description": "Risk-Sizing V1 contract (ETAP1: config-only, not used in runtime)",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "effective_leverage": {
+                  "type": "number",
+                  "minimum": 1,
+                  "default": 10
+                },
+                "per_symbol_margin_fraction": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "fixed_notional_usd": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "sol_regime_multipliers": {
+                  "type": "object",
+                  "properties": {
+                    "calm": {
+                      "type": "number",
+                      "minimum": 0,
+                      "default": 1
+                    },
+                    "storm": {
+                      "type": "number",
+                      "minimum": 0,
+                      "default": 1
+                    }
+                  }
+                }
+              }
             }
           }
         },
