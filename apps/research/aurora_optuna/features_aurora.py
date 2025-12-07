@@ -320,6 +320,22 @@ def build_aurora_features(df, btc_df, params, bar_seconds=60):
     from apps.research.aurora_optuna.regime_labeling import add_regime_labels_aurora
     df = add_regime_labels_aurora(df, params)
     
+    # 12. Bollinger Bands (Mean Reversion)
+    if 'bb_window' in params:
+        bb_window = params.get('bb_window', 20)
+        std_dev = params.get('bb_std_dev', 2.0)
+        
+        close_col = get_col_name(df, 'close')
+        
+        # Calculate BB
+        sma = df[close_col].rolling(window=bb_window).mean()
+        std = df[close_col].rolling(window=bb_window).std()
+        
+        df[f'bb_mid_{bb_window}'] = sma
+        df[f'bb_upper_{bb_window}'] = sma + (std * std_dev)
+        df[f'bb_lower_{bb_window}'] = sma - (std * std_dev)
+        df[f'bb_width_{bb_window}'] = (df[f'bb_upper_{bb_window}'] - df[f'bb_lower_{bb_window}']) / (sma + 1e-9)
+    
     # Add close_5s for backtest engine (using close column as proxy if not 5s)
     close_col = get_col_name(df, 'close')
     if 'close_5s' not in df.columns:

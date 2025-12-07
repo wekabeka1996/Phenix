@@ -14,7 +14,7 @@ trading:
     signal_threshold: 0.10
     # Signal thresholds (Balanced profile)
     neutral_threshold: 0.18              # Below this → treat as neutral (reduced clip attempts)
-  symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]
+  symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"]
   instruments:
     ETHUSDT:
       symbol: "ETHUSDT"
@@ -46,7 +46,9 @@ trading:
       liquidity_based_cap_usd: 10000
       # Risk-based sizing (optional). If set, overrides legacy 10% equity rule:
       # notional_usd = q * Equity / (SL_bps/1e4) * kappa, capped by liquidity_based_cap_usd
-      risk_fraction_q: 0.01     # Risk per trade (e.g., 1%)
+    # Risk-based sizing (optional). If set, overrides legacy 10% equity rule:
+      # notional_usd = q * Equity / (SL_bps/1e4) * kappa, capped by liquidity_based_cap_usd
+      risk_fraction_q: 0.05     # Risk per trade (Increased to 5% for ~10% utilization)
       liquidity_kappa: 1.0      # Liquidity/micro-account cap factor (0..1]
       liquidity_kappa_mode: dynamic  # Use dynamic depth-based kappa when available
     # Regime-adaptive sizing modifiers (applied by DecisionMaking domain)
@@ -99,11 +101,158 @@ trading:
       step_size: "0.001"   # Binance BTCUSDT step_size
       tick_size: "0.10"    # Price tick size (for TP/SL quantization)
       min_notional: "10"
-    BNBUSDT:
-      symbol: "BNBUSDT"    # Binance Coin
-      step_size: "0.01"    # Binance BNBUSDT step_size
-      tick_size: "0.01"    # Price tick size (for TP/SL quantization)
+    DOGEUSDT:
+      symbol: "DOGEUSDT"   # Dogecoin
+      step_size: "1"       # Binance DOGE step_size (check!)
+      tick_size: "0.00001" # Price tick size
       min_notional: "10"
+    XRPUSDT:
+      symbol: "XRPUSDT"    # Ripple
+      step_size: "0.1"     # Binance XRP step_size
+      tick_size: "0.0001"  # Price tick size
+      min_notional: "10"
+
+  # ==============================================================================
+  # AURORA PER-INSTRUMENT CONFIGURATION (Phase 0 / Phase A1)
+  # Per-asset overrides for Aurora strategy parameters from Optuna optimization
+  # Fallback chain: aurora_instruments.<SYMBOL>.* → decision.* (global)
+  # ==============================================================================
+  aurora_instruments:
+    # ETHUSDT - Phase 3+ Optuna optimized parameters
+    # Source: aurora_optimal_full_v1.yaml, aurora_phase3_production.yaml
+    ETHUSDT:
+      weights:
+        ema: 0.058
+        volume: 0.241
+        macro: 0.131
+        liquidity: 0.341
+        obi: 0.155
+        tfi: 0.093
+        volatility: 0.036
+        depth_imbalance: 0.256
+        delta_price: 0.253
+
+      side_bias:
+        penalty_factor: 0.9       # MAXIMUM penalty - ETH benefits most from side-bias
+        window_sec: 600
+        target_ratio: 0.6
+
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.3
+        LOW_VOLATILITY: 0.85
+        MEAN_REVERSION: 1.05
+        DEFAULT: 1.0
+
+      regime_sizing:
+        HIGH_VOLATILITY: 0.3      # Very conservative in high vol
+        LOW_VOLATILITY: 1.9       # Aggressive in low vol
+        MEAN_REVERSION: 0.8
+
+      exit:
+        sl_pct: 0.019             # 1.9% stop-loss
+        max_hold_sec: 900         # 15 minutes max hold
+
+      # Phase A2: TP1/TP2 partial exit configuration
+      take_profit:
+        tp_low_ratio: 0.4         # TP1 = 0.4x risk (Aggressive)
+        tp_high_ratio: 1.4        # TP2 = 1.4x risk
+        partial_exit_pct: 0.7     # 70% at TP1
+
+      # Phase A3: Trailing stop configuration
+      # Note: Phase 3+ report indicates static TP is better for ETH ($180.84 vs $130.50)
+      trailing_stop:
+        enabled: false
+        activation_pct: 0.003
+        trail_pct: 0.006
+        min_update_interval_sec: 5
+
+    # SOLUSDT - Phase 3 Optuna optimized parameters
+    # KEY INSIGHT: SOL should NOT have side-bias penalty (penalty_factor: 0.0)
+    SOLUSDT:
+      weights:
+        ema: 0.12
+        volume: 0.18
+        macro: 0.10
+        liquidity: 0.25
+        obi: 0.14
+        tfi: 0.09
+        volatility: 0.05
+        depth_imbalance: 0.20
+        delta_price: 0.22
+
+      side_bias:
+        penalty_factor: 0.0       # DISABLED - SOL performs better without side-bias
+        window_sec: 300
+        target_ratio: 0.5
+      
+      regime_sizing:
+        HIGH_VOLATILITY: 0.6      # Reduce risk in high vol
+        LOW_VOLATILITY: 2.0       # Aggressive sizing in low vol
+
+      exit:
+        sl_pct: 0.027             # 2.7% stop-loss
+        max_hold_sec: 180         # 3 minutes max hold (Scalping Mode)
+
+      # Phase A2: TP1/TP2 partial exit configuration
+      take_profit:
+        tp_low_ratio: 0.48        # TP1 = 0.48x risk
+        tp_high_ratio: 0.80       # TP2 = 0.8x risk
+        partial_exit_pct: 0.31    # 31% at TP1
+
+      # Phase A3: Trailing stop configuration
+      trailing_stop:
+        enabled: true
+        activation_pct: 0.046     # Activate at 4.6% profit
+        trail_pct: 0.018          # Trail 1.8% behind peak
+        min_update_interval_sec: 5
+
+  # ==============================================================================
+  # MEAN REVERSION 1M STRATEGY (Phase 3 Track B)
+  # ==============================================================================
+  mean_reversion_1m:
+    enabled: true
+    assets:
+      # --- DOGE (CHAMPION 🥇) ---
+      DOGEUSDT:
+        enabled: true
+        strategy:
+          bb_window: 20
+          bb_num_std: 2.1
+          min_bb_width: 0.005  # (min_vol_atr from report)
+          entry_threshold: 0.05
+          # Exit parameters
+          sl_atr_mult: 1.5     # Base, overridden below
+          tp_to_mid: false     # False for outer band target
+          cooldown_sec: 210
+        # Asset-specific overrides
+        sl_pct: 0.019          # Stop Loss 1.9%
+        risk: {position_size_usd: 150}
+
+      # --- BTC (BRONZE 🥉) ---
+      BTCUSDT:
+        enabled: true
+        strategy:
+          bb_window: 40
+          bb_num_std: 2.3
+          min_bb_width: 0.006
+          entry_threshold: 0.05
+          tp_to_mid: true      # Default behavior
+          cooldown_sec: 0      # No cooldown
+        sl_pct: 0.015
+        risk: {position_size_usd: 150}
+      
+      # --- XRP (SILVER 🥈) ---
+      XRPUSDT:
+        enabled: true
+        strategy:
+          bb_window: 40
+          bb_num_std: 2.5
+          min_bb_width: 0.007
+          entry_threshold: 0.05
+          tp_to_mid: true
+          cooldown_sec: 165
+        sl_pct: 0.024
+        risk: {position_size_usd: 150}
 
   # TCA (Transaction Cost Analysis) Preferences
   tca_prefs:
@@ -276,7 +425,7 @@ trading:
         short: 1.50                    # Testnet: allow 150% for testing
 
       # Directional imbalance control
-      max_directional_ratio: 2.0       # Max ratio between long and short margin (2:1)
+      max_directional_ratio: 50.0       # Max ratio between long and short margin (Relaxed to 50:1)
 
       # Per-symbol cap (prevent concentration in single instrument)
       per_symbol_cap_pct: 0.08         # Max 8% of equity per symbol per side
@@ -284,10 +433,13 @@ trading:
       count_pending_orders: true
       exclude_reduce_only: true
       pending_reservation_ttl_sec: 45  # Reduced from 90 for faster cleanup on testnet
-      leverage_defaults:  # Leverage per symbol - testnet high leverage
-        SOLUSDT: 125
-        ETHUSDT: 125
-        __default__: 125
+      leverage_defaults:  # Leverage per symbol - MATCH WITH BINANCE SETTINGS
+        BTCUSDT: 20
+        ETHUSDT: 20
+        SOLUSDT: 20
+        XRPUSDT: 20
+        DOGEUSDT: 20
+        __default__: 20
 
     # Default order type for opening positions.
     # Valid types: LIMIT, MARKET, STOP, STOP_MARKET, TAKE_PROFIT, TAKE_PROFIT_MARKET

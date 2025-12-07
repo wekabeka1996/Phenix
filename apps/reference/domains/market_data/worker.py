@@ -204,10 +204,12 @@ class MarketDataWorker:
             try:
                 dropped = self._queue.get_nowait()
                 self._ticks_dropped += 1
-                self._logger.warning(
-                    f"Queue full, dropped: type={dropped.get('type')} "
-                    f"symbol={dropped.get('symbol')} (total dropped: {self._ticks_dropped})"
-                )
+                # THROTTLED LOGGING: Only log every 1000 drops to avoid I/O overhead
+                if self._ticks_dropped % 1000 == 0:
+                    self._logger.warning(
+                        f"Queue full, dropped {self._ticks_dropped} total "
+                        f"(latest: type={dropped.get('type')} symbol={dropped.get('symbol')})"
+                    )
                 self._queue.put_nowait(msg)
                 return True
             except queue.Empty:

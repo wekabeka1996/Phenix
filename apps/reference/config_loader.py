@@ -184,12 +184,31 @@ class ConfigLoader:
         except FileNotFoundError as e:
             LOG.error(f"Config file error: {e}")
             raise
+        
+        # Load strategy configs (optional, don't fail if missing)
+        mr_1m_config: Dict[str, Any] = {}
+        try:
+            strategies_dir = self.config_dir / "strategies"
+            if strategies_dir.exists():
+                mr_1m_path = strategies_dir / "mean_reversion_1m.yaml"
+                if mr_1m_path.exists():
+                    with open(mr_1m_path, "r", encoding="utf-8-sig", errors="replace") as f:
+                        mr_1m_raw = yaml.safe_load(f)
+                    if isinstance(mr_1m_raw, dict) and "mean_reversion_1m" in mr_1m_raw:
+                        mr_1m_config = mr_1m_raw["mean_reversion_1m"]
+                        LOG.info(f"Loaded Mean Reversion 1m config from {mr_1m_path}")
+        except Exception as e:
+            LOG.warning(f"Failed to load mean_reversion_1m.yaml: {e}")
 
         # Merge: trading_config (source) → system_config (destination)
         merged_config: Dict[str, Any] = {}
         deep_merge(system_config, merged_config)  # Copy system first
         deep_merge(trading_config, merged_config)  # Overlay trading
         deep_merge(regime_config, merged_config)   # Overlay regime (models, hmm, etc.)
+        
+        # Add Mean Reversion 1m config at root level
+        if mr_1m_config:
+            merged_config["mean_reversion_1m"] = mr_1m_config
         
         # Merge domains config into root (and optionally trading.domains for backward compat if needed)
         if 'domains' in domains_config:

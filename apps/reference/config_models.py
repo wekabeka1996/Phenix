@@ -97,6 +97,114 @@ class FailsafeConfig(BaseModel):
     max_hold_sec: int = Field(default=86400)
 
 
+class MeanReversionConfig(BaseModel):
+    """Configuration for Mean Reversion strategy (legacy/minimal)."""
+    model_config = ConfigDict(extra='allow')
+    
+    enabled: bool = Field(default=False)
+    bb_window: int = Field(default=20)
+    bb_std_dev: float = Field(default=2.0)
+    min_vol_atr: float = Field(default=0.001)
+    allowed_regimes: List[str] = Field(default_factory=lambda: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"])
+
+
+# ============================================================================
+# Mean Reversion 1m Strategy Configuration (Track B)
+# ============================================================================
+
+class MRStrategyParamsConfig(BaseModel):
+    """Strategy parameters for Mean Reversion 1m."""
+    model_config = ConfigDict(extra='allow')
+    
+    bb_window: int = Field(default=20, description="Bollinger Bands window")
+    bb_num_std: float = Field(default=2.0, description="BB standard deviations")
+    atr_window: int = Field(default=14, description="ATR window for stops")
+    rsi_window: int = Field(default=14, description="RSI window")
+    
+    entry_threshold: float = Field(default=0.05, description="%B threshold for entry")
+    rsi_oversold: float = Field(default=30.0, description="RSI oversold level")
+    rsi_overbought: float = Field(default=70.0, description="RSI overbought level")
+    
+    min_bars: int = Field(default=25, description="Min bars before trading")
+    min_bb_width: float = Field(default=0.001, description="Min BB width")
+    max_bb_width: float = Field(default=0.05, description="Max BB width")
+    
+    sl_atr_mult: float = Field(default=1.5, description="SL as ATR multiplier")
+    tp_to_mid: bool = Field(default=True, description="Target mid BB")
+    cooldown_sec: int = Field(default=60, description="Cooldown between signals")
+
+
+class MRRegimeThresholdsConfig(BaseModel):
+    """Regime thresholds for FLAT regime classification."""
+    model_config = ConfigDict(extra='allow')
+    
+    high_vol_pct: float = Field(default=0.003, description="ATR% for FLAT_HIGH")
+    low_vol_pct: float = Field(default=0.001, description="ATR% for FLAT_LOW")
+
+
+class MRAssetConfig(BaseModel):
+    """Per-asset configuration for Mean Reversion 1m."""
+    model_config = ConfigDict(extra='allow')
+    
+    enabled: bool = Field(default=False)
+    bb_window: Optional[int] = Field(default=None)
+    min_vol_atr: Optional[float] = Field(default=None)
+    sl_pct: Optional[float] = Field(default=None, description="SL as percent (e.g., 0.0068 = 0.68%)")
+    allowed_regimes: List[str] = Field(
+        default_factory=lambda: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+    )
+
+
+class MRRegimeSizingConfig(BaseModel):
+    """Sizing/stop/target multipliers for a specific FLAT regime."""
+    model_config = ConfigDict(extra='allow')
+    
+    sizing_mult: float = Field(default=1.0)
+    stop_mult: float = Field(default=1.0)
+    target_mult: float = Field(default=1.0)
+
+
+class MRRiskConfig(BaseModel):
+    """Risk management for Mean Reversion 1m."""
+    model_config = ConfigDict(extra='allow')
+    
+    position_size_usd: float = Field(default=100.0)
+    max_concurrent_positions: int = Field(default=3)
+    daily_loss_limit_usd: float = Field(default=50.0)
+    expected_pnl_multiplier: float = Field(default=1.5)
+    fees_pct: float = Field(default=0.0004)
+    slippage_pct: float = Field(default=0.0002)
+
+
+class MeanReversion1mStrategyConfig(BaseModel):
+    """
+    Full configuration for Mean Reversion 1m Strategy.
+    
+    Loaded from config/aurora/strategies/mean_reversion_1m.yaml
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    # Master enable flag (feature flag)
+    enabled: bool = Field(default=False, description="Enable MR 1m strategy")
+    
+    # Timeframe
+    timeframe_sec: int = Field(default=60, description="Bar timeframe in seconds")
+    
+    # Strategy parameters
+    strategy: MRStrategyParamsConfig = Field(default_factory=MRStrategyParamsConfig)
+    
+    # Regime thresholds
+    regime_thresholds: MRRegimeThresholdsConfig = Field(default_factory=MRRegimeThresholdsConfig)
+    
+    # Per-asset configurations (symbol → config)
+    assets: Dict[str, MRAssetConfig] = Field(default_factory=dict)
+    
+    # Regime sizing (regime_name → multipliers)
+    regime_sizing: Dict[str, MRRegimeSizingConfig] = Field(default_factory=dict)
+    
+    # Risk management
+    risk: MRRiskConfig = Field(default_factory=MRRiskConfig)
+
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides)."""
     model_config = ConfigDict(extra='allow')
@@ -116,6 +224,7 @@ class DecisionConfig(BaseModel):
     bar_gating: Optional[BarGatingConfig] = Field(default=None)
     behavior_fsm: Optional[BehaviorFsmConfig] = Field(default=None)
     roi_exit: Optional[ROIExitConfig] = Field(default=None)
+    mean_reversion: Optional[MeanReversionConfig] = Field(default=None)
 
     sizing_modifiers: Dict[str, float] = Field(
         default_factory=dict, description="Regime-specific multipliers")
@@ -207,7 +316,6 @@ class ExecutionConfig(BaseModel):
 
     manage: Optional[ManageConfig] = Field(default=None)
     exposure: Optional[ExposureConfig] = Field(default=None)
-    exposure: Optional[ExposureConfig] = Field(default=None)
     watchdog: Dict[str, Any] = Field(default_factory=dict)  # Kept as dict for flexibility, but we'll validate keys in code
 
 
@@ -250,24 +358,8 @@ class FeatureEngineeringConfig(BaseModel):
 # Domain-Specific Configuration Models
 # ============================================================================
 
-# Decision Making Domain
-class PositionSizingConfig(BaseModel):
-    """Position sizing configuration for decision making."""
-    model_config = ConfigDict(extra='allow')
-    
-    min_position_size_usd: float = Field(default=10)
-    liquidity_based_cap_usd: float = Field(default=10000)
-
-
-class QoSConfig(BaseModel):
-    """Quality of Service configuration for decision making."""
-    model_config = ConfigDict(extra='allow')
-    
-    exposure_block_cooldown_sec: int = Field(default=10)
-    symbol_cooldown_sec: int = Field(default=3)
-    max_intents_per_minute_per_symbol: int = Field(default=6)
-    mode: str = Field(default="defer")  # defer, enforce, shadow
-    enforce: bool = Field(default=False)
+# Note: PositionSizingConfig, QosConfig, SignalsConfig are defined above
+# and reused here to avoid duplication.
 
 
 class FeaturesTtlConfig(BaseModel):
@@ -279,19 +371,13 @@ class FeaturesTtlConfig(BaseModel):
 
 # Note: BarGatingConfig and BehaviorFsmConfig already exist above
 
-class SignalsConfig(BaseModel):
-    """Signals processing configuration."""
-    model_config = ConfigDict(extra='allow')
-    
-    normalize: bool = Field(default=False)
-
 
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
     model_config = ConfigDict(extra='allow')
     
     position_sizing: PositionSizingConfig = Field(default_factory=PositionSizingConfig)
-    qos: QoSConfig = Field(default_factory=QoSConfig)
+    qos: QosConfig = Field(default_factory=QosConfig)
     features: FeaturesTtlConfig = Field(default_factory=FeaturesTtlConfig)
     bar_gating: BarGatingConfig = Field(default_factory=BarGatingConfig)
     behavior_fsm: BehaviorFsmConfig = Field(default_factory=BehaviorFsmConfig)
@@ -742,6 +828,159 @@ class FeatureEngineeringConfig(BaseModel):
     macro_sync: Dict[str, Any] = Field(default_factory=dict)
 
 
+# ============================================================================
+# Aurora Per-Instrument Configuration (Phase 0)
+# ============================================================================
+
+class AuroraSideBiasConfig(BaseModel):
+    """Aurora side bias configuration per instrument."""
+    model_config = ConfigDict(extra='allow')
+
+    penalty_factor: Optional[float] = Field(
+        default=None,
+        description="Penalty multiplier for counter-bias trades"
+    )
+    window_sec: Optional[int] = Field(
+        default=None,
+        description="Rolling window in seconds for side bias calculation"
+    )
+    target_ratio: Optional[float] = Field(
+        default=None,
+        description="Target long/short ratio (e.g., 0.5 = balanced)"
+    )
+
+
+class AuroraExitConfig(BaseModel):
+    """Aurora exit/stop-loss configuration per instrument."""
+    model_config = ConfigDict(extra='allow')
+
+    sl_pct: Optional[float] = Field(
+        default=None,
+        description="Stop-loss as percentage from entry (e.g., 0.005 = 0.5%)"
+    )
+    max_hold_sec: Optional[int] = Field(
+        default=None,
+        description="Maximum position hold time in seconds"
+    )
+
+
+class AuroraTakeProfitConfig(BaseModel):
+    """Aurora take-profit configuration per instrument."""
+    model_config = ConfigDict(extra='allow')
+
+    tp_low_ratio: Optional[float] = Field(
+        default=None,
+        description="TP1 as ratio to ATR or fixed percent"
+    )
+    tp_high_ratio: Optional[float] = Field(
+        default=None,
+        description="TP2 as ratio to ATR or fixed percent"
+    )
+    partial_exit_pct: Optional[float] = Field(
+        default=None,
+        description="Percentage to exit at TP1 (e.g., 0.7 = 70%)"
+    )
+
+
+class AuroraTrailingStopConfig(BaseModel):
+    """Aurora trailing stop configuration per instrument."""
+    model_config = ConfigDict(extra='allow')
+
+    enabled: Optional[bool] = Field(
+        default=None,
+        description="Enable trailing stop"
+    )
+    activation_pct: Optional[float] = Field(
+        default=None,
+        description="Activate trailing after this profit % (e.g., 0.003 = 0.3%)"
+    )
+    trail_pct: Optional[float] = Field(
+        default=None,
+        description="Trail distance as % from high-water mark"
+    )
+    min_update_interval_sec: Optional[int] = Field(
+        default=5,
+        description="Minimum seconds between SL updates (rate limit)"
+    )
+
+
+class AuroraExecutionConfig(BaseModel):
+    """Aurora execution-specific configuration per instrument."""
+    model_config = ConfigDict(extra='allow')
+
+    order_type: Optional[str] = Field(
+        default=None,
+        description="Order type: LIMIT, MARKET"
+    )
+    post_only: Optional[bool] = Field(
+        default=None,
+        description="Use post-only orders for maker fees"
+    )
+    max_slippage_bps: Optional[int] = Field(
+        default=None,
+        description="Max allowed slippage in basis points"
+    )
+
+
+class AuroraInstrumentConfig(BaseModel):
+    """
+    Complete per-instrument configuration for Aurora strategy.
+
+    Fallback chain:
+    1. aurora_instruments.<SYMBOL>.<param> (this config)
+    2. trading.decision.<param> (global fallback)
+    """
+    model_config = ConfigDict(extra='allow')
+
+    # Signal weights (Phase 3+ Optuna results)
+    weights: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Per-feature signal weights from Optuna"
+    )
+
+    # Side bias
+    side_bias: Optional[AuroraSideBiasConfig] = Field(
+        default=None,
+        description="Side bias configuration"
+    )
+
+    # Regime-based thresholds
+    regime_thresholds: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Threshold multipliers per regime (TREND, VOLATILE, FLAT)"
+    )
+
+    # Regime-based position sizing
+    regime_sizing: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Position size multipliers per regime"
+    )
+
+    # Exit configuration
+    exit: Optional[AuroraExitConfig] = Field(
+        default=None,
+        description="Stop-loss and max hold time"
+    )
+
+    # Take profit configuration
+    take_profit: Optional[AuroraTakeProfitConfig] = Field(
+        default=None,
+        description="TP1/TP2 partial exit settings"
+    )
+
+    # Trailing stop configuration
+    trailing_stop: Optional[AuroraTrailingStopConfig] = Field(
+        default=None,
+        description="Trailing stop settings"
+    )
+
+    # Execution configuration
+    execution: Optional[AuroraExecutionConfig] = Field(
+        default=None,
+        description="Order execution settings"
+    )
+
+
 class TradingConfig(BaseModel):
     """Main trading configuration (with mode overrides)."""
     model_config = ConfigDict(extra='allow')
@@ -751,6 +990,10 @@ class TradingConfig(BaseModel):
     decision: DecisionConfig = Field(default_factory=DecisionConfig)
     execution: Optional[ExecutionConfig] = Field(default=None)
     instruments: Dict[str, InstrumentSpec] = Field(default_factory=dict)
+    aurora_instruments: Dict[str, AuroraInstrumentConfig] = Field(
+        default_factory=dict,
+        description="Per-instrument Aurora strategy configuration (Optuna results)"
+    )
     symbols_to_track: List[str] = Field(default_factory=list, description="List of symbols to track for multi-TF aggregation")
     market_data: Optional[MarketDataConfig] = Field(default=None)
     feature_engineering: Optional[FeatureEngineeringConfig] = Field(
@@ -835,6 +1078,12 @@ class AuroraConfig(BaseModel):
     
     # Domain configs (New)
     domains: Optional[DomainsConfig] = Field(default=None, description="Domain-specific configurations")
+    
+    # Strategy configs (Track B)
+    mean_reversion_1m: Optional[MeanReversion1mStrategyConfig] = Field(
+        default=None, 
+        description="Mean Reversion 1m strategy config (loaded from strategies/mean_reversion_1m.yaml)"
+    )
 
     # App-specific overrides
     decision: Optional[DecisionConfig] = Field(

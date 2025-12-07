@@ -35,9 +35,10 @@ class BacktestEngineAurora:
     Phase 3+: Added TP, Trailing Stop, Partial Exits, Cooldown
     """
     
-    def __init__(self, df_features: pd.DataFrame, params: Dict):
+    def __init__(self, df_features: pd.DataFrame, params: Dict, strategy_mode='weighted_signal'):
         self.df = df_features.copy()
         self.params = params
+        self.strategy_mode = strategy_mode  # 'weighted_signal' or 'mean_reversion'
         self.trades: List[Trade] = []
         self.cost_basis = 0.0006  # 0.06% per side (taker fee)
         self.last_trade_exit_ts = None  # For cooldown tracking
@@ -48,6 +49,13 @@ class BacktestEngineAurora:
         
         # Phase 3+: Cooldown parameter
         cooldown_sec = self.params.get('cooldown_sec', 0)
+        
+        # Pre-calculate BB columns if in mean_reversion mode
+        bb_window = self.params.get('bb_window', 20)
+        col_mid = f'bb_mid_{bb_window}'
+        col_upper = f'bb_upper_{bb_window}'
+        col_lower = f'bb_lower_{bb_window}'
+        col_width = f'bb_width_{bb_window}'
         
         for i in range(len(self.df)):
             row = self.df.iloc[i]
@@ -67,8 +75,7 @@ class BacktestEngineAurora:
                 if time_since_exit < cooldown_sec:
                     continue  # Skip (in cooldown period)
             
-            # Entry logic (existing Phase 3)
-            signal = self._compute_signal(row)
+            # Entry logic
             regime = row.get('regime', 'UNKNOWN')
             risk_score = row.get('risk_score', 0.0)
             
@@ -81,43 +88,77 @@ class BacktestEngineAurora:
             if risk_score > max_risk:
                 continue
             
-            # Entry decision with Phase 3 adaptive thresholds
-            threshold_multiplier = 1.0
-            if regime == 'HIGH_VOLATILITY':
-                threshold_multiplier = self.params.get('regime_threshold_high_vol', 1.0)
-            elif regime == 'LOW_VOLATILITY':
-                threshold_multiplier = self.params.get('regime_threshold_low_vol', 1.0)
-            elif regime == 'TREND_UP' or regime == 'TREND_DOWN':
-                threshold_multiplier = self.params.get('regime_threshold_trend', 1.0)
+            signal = 0.0
             
-            base_threshold = self.params['signal_threshold']
-            adjusted_threshold = base_threshold * threshold_multiplier
-            
-            # Side-Bias Penalty
-            side_bias_penalty = 0.0
-            bias_window = self.params.get('side_bias_window_sec', 0)
-            
-            if bias_window > 0 and len(self.trades) > 0:
-                current_ts = row['ts']
-                window_start = current_ts - pd.Timedelta(seconds=bias_window)
+            if self.strategy_mode == 'mean_reversion':
+                # Mean Reversion Logic (BB)
+                price = row['close_5s']
+                min_vol_atr = self.params.get('min_vol_atr', 0.001)
                 
-                recent_trades = [t for t in self.trades if t.exit_ts and t.exit_ts > window_start]
-                if recent_trades:
-                    longs = sum(1 for t in recent_trades if t.side == 'LONG')
-                    shorts = sum(1 for t in recent_trades if t.side == 'SHORT')
-                    total = longs + shorts
+                # Check BB columns exist
+                if col_lower not in row or pd.isna(row[col_lower]):
+                    continue
                     
-                    if total > 0:
-                        if signal > 0:
-                            ratio = longs / total
-                            if ratio > 0.6:
-                                side_bias_penalty = (ratio - 0.5) * self.params.get('side_bias_penalty_factor', 0.0)
-                        elif signal < 0:
-                            ratio = shorts / total
-                            if ratio > 0.6:
-                                side_bias_penalty = (ratio - 0.5) * self.params.get('side_bias_penalty_factor', 0.0)
-            
-            final_threshold = adjusted_threshold * (1.0 + side_bias_penalty)
+                bb_width = row.get(col_width, 0)
+                if bb_width < min_vol_atr:
+                    continue
+                
+                dist_to_mean = 0.0
+                if price < row[col_lower]:
+                    dist_to_mean = (row[col_mid] - price) / price
+                    if dist_to_mean > (self.cost_basis * 1.5):
+                        signal = 1.0 # LONG
+                elif price > row[col_upper]:
+                    dist_to_mean = (price - row[col_mid]) / price
+                    if dist_to_mean > (self.cost_basis * 1.5):
+                        signal = -1.0 # SHORT
+                
+                # Mean reversion doesn't use threshold multiplier logic the same way, 
+                # but we can reuse the final_threshold check by setting signal to +/- 1.0
+                # and ensuring threshold < 1.0
+                final_threshold = 0.5 # Arbitrary low threshold since signal is binary 1/-1
+                
+            else:
+                # Weighted Signal Logic (Original Aurora)
+                signal = self._compute_signal(row)
+                
+                # Entry decision with Phase 3 adaptive thresholds
+                threshold_multiplier = 1.0
+                if regime == 'HIGH_VOLATILITY':
+                    threshold_multiplier = self.params.get('regime_threshold_high_vol', 1.0)
+                elif regime == 'LOW_VOLATILITY':
+                    threshold_multiplier = self.params.get('regime_threshold_low_vol', 1.0)
+                elif regime == 'TREND_UP' or regime == 'TREND_DOWN':
+                    threshold_multiplier = self.params.get('regime_threshold_trend', 1.0)
+                
+                base_threshold = self.params['signal_threshold']
+                adjusted_threshold = base_threshold * threshold_multiplier
+                
+                # Side-Bias Penalty
+                side_bias_penalty = 0.0
+                bias_window = self.params.get('side_bias_window_sec', 0)
+                
+                if bias_window > 0 and len(self.trades) > 0:
+                    current_ts = row['ts']
+                    window_start = current_ts - pd.Timedelta(seconds=bias_window)
+                    
+                    recent_trades = [t for t in self.trades if t.exit_ts and t.exit_ts > window_start]
+                    if recent_trades:
+                        longs = sum(1 for t in recent_trades if t.side == 'LONG')
+                        shorts = sum(1 for t in recent_trades if t.side == 'SHORT')
+                        total = longs + shorts
+                        
+                        if total > 0:
+                            if signal > 0:
+                                ratio = longs / total
+                                if ratio > 0.6:
+                                    side_bias_penalty = (ratio - 0.5) * self.params.get('side_bias_penalty_factor', 0.0)
+                            elif signal < 0:
+                                ratio = shorts / total
+                                if ratio > 0.6:
+                                    side_bias_penalty = (ratio - 0.5) * self.params.get('side_bias_penalty_factor', 0.0)
+                
+                final_threshold = adjusted_threshold * (1.0 + side_bias_penalty)
             
             # Regime-Adaptive Sizing
             size_multiplier = 1.0

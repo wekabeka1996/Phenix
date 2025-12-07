@@ -92,7 +92,10 @@ def test_calculate_bracket_prices_and_get_opposite():
     # (Though init should handle it if we pass correct structure)
     # But let's just rely on the config passed to init.
     
-    sl, tp = fsm._calculate_bracket_prices()
-    assert sl is not None and tp is not None
+    # Phase A2: returns (sl, tp1, tp2)
+    sl, tp1, tp2 = fsm._calculate_bracket_prices()
+    assert sl is not None and tp1 is not None
+    # tp2 is None without take_profit config
+    assert tp2 is None
     # When position_side="BUY", opposite side is "SELL"
     assert fsm._get_opposite_side() == "SELL"

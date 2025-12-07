@@ -1,0 +1,157 @@
+# ==================================================================================
+# 1m Mean Reversion Strategy Configuration
+# ==================================================================================
+# Phase B4: Production configuration for Mean Reversion 1m strategy
+#
+# This config defines parameters for the bar-based MR strategy that uses:
+# - Bollinger Bands for entry signals
+# - FLAT regime filtering
+# - ATR-based stops adjusted by regime type
+#
+# Source: Optuna R&D (500 trials per asset, January 2024)
+# ==================================================================================
+
+mean_reversion_1m:
+  # Global enable/disable (default: false for safety)
+  enabled: false
+  
+  # Timeframe for bar aggregation
+  timeframe_sec: 60  # 1 minute bars
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Strategy Parameters (global defaults)
+  # ─────────────────────────────────────────────────────────────────────────────
+  strategy:
+    # Bollinger Bands
+    bb_window: 20
+    bb_num_std: 2.0
+    
+    # Other indicators
+    atr_window: 14
+    rsi_window: 14
+    
+    # Entry thresholds
+    entry_threshold: 0.05      # %B threshold (5% inside band)
+    rsi_oversold: 30
+    rsi_overbought: 70
+    
+    # Minimum bars before generating signals
+    min_bars: 25
+    
+    # BB width filters (avoid too tight/wide ranges)
+    min_bb_width: 0.001        # 0.1%
+    max_bb_width: 0.05         # 5%
+    
+    # Stop loss (ATR multiple)
+    sl_atr_mult: 1.5
+    
+    # Take profit: target mid BB
+    tp_to_mid: true
+    
+    # Cooldown between signals (seconds)
+    cooldown_sec: 60
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # FLAT Regime Thresholds (for regime classification)
+  # ─────────────────────────────────────────────────────────────────────────────
+  regime_thresholds:
+    high_vol_pct: 0.003        # 0.3% ATR → FLAT_HIGH
+    low_vol_pct: 0.001         # 0.1% ATR → FLAT_LOW
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Per-Asset Configurations
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Optuna-optimized parameters per asset
+  # Source: config/trading_1m_best_optuna.yaml
+  
+  assets:
+    BTCUSDT:
+      enabled: true
+      bb_window: 20
+      min_vol_atr: 0.008       # min BB width to trade
+      sl_pct: 0.0068           # 0.68% stop loss
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      # R&D metrics: PnL ≈ +$45, Win Rate ≈ 65.7%
+    
+    ETHUSDT:
+      enabled: true
+      bb_window: 120           # Wider window for ETH
+      min_vol_atr: 0.025       # Higher vol threshold
+      sl_pct: 0.0282           # 2.82% stop loss (conservative)
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      # R&D metrics: PnL ≈ +$37, Win Rate ≈ 69.7%
+    
+    XRPUSDT:
+      enabled: true
+      bb_window: 20
+      min_vol_atr: 0.010
+      sl_pct: 0.0144           # 1.44% stop loss
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      # R&D metrics: PnL ≈ +$31, Win Rate ≈ 62.6%
+    
+    DOGEUSDT:
+      enabled: true
+      bb_window: 20
+      min_vol_atr: 0.010
+      sl_pct: 0.0197           # 1.97% stop loss (widest)
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      # R&D metrics: PnL ≈ +$88, Win Rate ≈ 64.4% (BEST)
+    
+    SOLUSDT:
+      enabled: false           # Break-even in R&D, disabled
+      bb_window: 60
+      min_vol_atr: 0.020
+      sl_pct: 0.0156
+      allowed_regimes:
+        - FLAT_LOW
+        - FLAT_NORMAL
+        - FLAT_HIGH
+      # R&D metrics: PnL ≈ +$1.5 (skip)
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Regime Sizing Multipliers
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Adjust position size based on FLAT regime type
+  
+  regime_sizing:
+    FLAT_LOW:
+      sizing_mult: 0.8         # Smaller size in low vol
+      stop_mult: 0.6           # Tighter stops
+      target_mult: 0.8         # Smaller targets
+    
+    FLAT_NORMAL:
+      sizing_mult: 1.0         # Standard size
+      stop_mult: 1.0           # Standard stops
+      target_mult: 1.0         # Standard targets
+    
+    FLAT_HIGH:
+      sizing_mult: 0.7         # Smaller size in high vol
+      stop_mult: 1.5           # Wider stops
+      target_mult: 1.2         # Larger targets
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Risk Management
+  # ─────────────────────────────────────────────────────────────────────────────
+  risk:
+    position_size_usd: 100     # Base position size
+    max_concurrent_positions: 3
+    daily_loss_limit_usd: 50
+    
+    # Fee-aware expected PnL filter
+    expected_pnl_multiplier: 1.5  # expected_pnl > cost * 1.5
+    
+    # Slippage and fees (for expected PnL calculation)
+    fees_pct: 0.0004           # 0.04% taker fee
+    slippage_pct: 0.0002       # 0.02% estimated slippage

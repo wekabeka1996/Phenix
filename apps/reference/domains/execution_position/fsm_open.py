@@ -280,6 +280,14 @@ class OpenFlowFSM:
                 if price_dec is not None:
                     dec_pld["price"] = str(price_dec)
 
+                # Pass through TP/SL intent data (PHASE A2 fix)
+                if "stop_price" in pld:
+                    dec_pld["stop_price"] = str(pld["stop_price"])
+                if "target_price" in pld:
+                    dec_pld["target_price"] = str(pld["target_price"])
+                if "sl_pct" in pld:
+                    dec_pld["sl_pct"] = str(pld["sl_pct"])
+
                 # Pass through idempotent_key from CMD:OPEN payload (AURORA_IDEMPOTENCY_V1)
                 if "idempotent_key" in msg.pld:
                     dec_pld["idempotent_key"] = msg.pld["idempotent_key"]

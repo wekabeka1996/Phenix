@@ -153,6 +153,10 @@ class ExecPosFSM:
             "gate_entry_blocked_tidy": 0,
             "gate_entry_allowed_tidy": 0,
         }
+        
+        # TP/SL Intent Data Cache (PHASE A2 fix)
+        # Stores intent params from DEC:OPEN to be injected into Manage flow on FILL
+        self._pending_intent_data: Dict[str, Dict[str, Any]] = {}
 
         # Orphan-monitor configuration (additive, safe defaults)
         orphan_cfg = {}
@@ -789,6 +793,22 @@ class ExecPosFSM:
         LOG.debug(
             f"[FILL] Processing FILL for {symbol} order {order_id}, qty={filled_qty} (rid={rid})")
 
+        # PHASE A2 FIX: Inject cached intent data into ManageFlowFSM
+        if rid in self._pending_intent_data:
+            intent_data = self._pending_intent_data[rid]
+            manage_flow = self.manage_flows.get(symbol)
+            if manage_flow:
+                LOG.info(f"INJECTING_INTENT_DATA for {symbol} (rid={rid}): {intent_data}")
+                sl_price = intent_data.get("stop_price")
+                tp_price = intent_data.get("target_price")
+                if sl_price:
+                    manage_flow.set_intent_prices(sl_price=sl_price, tp_price=tp_price)
+                
+                # Cleanup cache after injection
+                self._pending_intent_data.pop(rid, None)
+            else:
+                LOG.warning(f"Could not inject intent data: ManageFlow not found for {symbol}")
+
         # Create post-fill hold in exposure guard
         if hasattr(self, "exposure_guard"):
             postfill_key = f"postfill_{symbol}_{order_id}"
@@ -1039,6 +1059,25 @@ class ExecPosFSM:
             if self._check_exposure_fail_closed(msg):
                 return None  # Error already emitted
             result = open_flow.handle(msg)
+            
+            # PHASE A2 FIX: Capture TP/SL intent data if present
+            if result and result.op == "DEC" and result.verb == "OPEN":
+                try:
+                    pld = result.pld or {}
+                    # If we have special intent data, cache it
+                    if "stop_price" in pld or "target_price" in pld or "sl_pct" in pld:
+                        # Use rid as key (same rid used for fill)
+                        # Or specific field if needed. Here we trust rid linkage.
+                        intent_data = {
+                            "stop_price": pld.get("stop_price"),
+                            "target_price": pld.get("target_price"),
+                            "sl_pct": pld.get("sl_pct"),
+                            "timestamp": time.time()
+                        }
+                        self._pending_intent_data[result.rid] = intent_data
+                        LOG.info(f"CAPTURED_INTENT_DATA for {result.rid}: {intent_data}")
+                except Exception as e:
+                    LOG.error(f"Failed to capture intent data: {e}")
         elif msg.verb == "ORDER_STATE_CHANGED":
             # Handle cancel/expire from Watchdog REST polling
             self._handle_cancel_event(msg)

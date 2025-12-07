@@ -8,6 +8,10 @@ try:
 except Exception:  # fail-closed: заглушки якщо либ немає
 
     class _D:
+        def __init__(self, *_, **__):
+            # Accept any args to mirror prometheus_client constructor signature
+            pass
+
         def __getattr__(self, _):
             return self
 

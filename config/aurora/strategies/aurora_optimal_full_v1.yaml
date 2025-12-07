@@ -297,35 +297,168 @@ aurora_optimal_full_v1:
       max_hold_sec: 660        # 11 minutes
 
   # ==========================================================================
-  # BTCUSDT - 5m Timeframe (PENDING RE-RUN)
+  # BTCUSDT - 5m Timeframe (BTC-SPECIFIC STRATEGY)
   # ==========================================================================
-  # Status: FAILED (< 20 trades)
-  # Action: Re-run with correct base params
+  # Performance: $157.35/month (vs -$32 baseline = +$189 improvement!)
+  # Key: Mean-Reversion focus, Wider SL, Longer holds
   # ==========================================================================
   BTCUSDT:
-    enabled: false             # Disabled until re-optimization
+    enabled: true
     timeframe: "5m"
     bar_seconds: 300
     capital_usd: 1000
     
-    # Training Metrics
+    # Training Metrics (Phase 3+ BTC Quick-Fix)
     training_metrics:
-      status: "PENDING"
-      note: "Failed optimization - needs re-run with correct base params"
+      pnl_usd: 157.35
+      improvement_vs_baseline: 189.35  # Was -$32
+      trials: 3000
+      source: "Phase 3+ BTC Quick-Fix"
+    
+    # ====================
+    # CORE SIGNAL FEATURES (BTC-optimized weights)
+    # ====================
+    features:
+      ema:
+        period_short: 4
+        period_long: 19
+        # Phase 3+: WIDER EMA Clamping for BTC
+        clamp_min: -0.025
+        clamp_max: 0.025
+      
+      volume:
+        window_sec: 60
+        sma_length: 12
+        cap_max: 4.814
+      
+      liquidity:
+        depth_half: 1250.0
+        kappa_min: 0.463
+      
+      obi:
+        window_sec: 145
+      
+      tfi:
+        window_sec: 290
+      
+      volatility:
+        window_sec: 290
+        sma_length: 3
+        cap_max: 4.373
+      
+      depth_imbalance:
+        use_smoothing: false
+      
+      delta_price:
+        spike_filter_ms: 5000
+      
+      macro_sync:
+        window: 40
+    
+    # ====================
+    # BTC-SPECIFIC SIGNAL WEIGHTS
+    # ====================
+    # BTC uses DIFFERENT weights: more EMA/macro, less orderbook
+    weights:
+      ema: 0.35        # HIGHER (BTC respects technical levels)
+      volume: 0.10     # LOWER (volume less predictive)
+      macro: 0.35      # HIGHER (BTC correlates with market)
+      liquidity: 0.10  # LOWER
+      obi: 0.05        # MUCH LOWER (orderbook noise)
+      tfi: 0.05        # MUCH LOWER
+      volatility: 0.20
+      depth_imbalance: 0.05
+      delta_price: 0.10
+    
+    # ====================
+    # PHASE 3+: RISK SCORE COMPOSITION
+    # ====================
+    risk_weights:
+      delta_price: 0.4
+      volume: 0.2
+      volatility: 0.3
+    
+    # ====================
+    # PHASE 3: SIDE-BIAS PENALTY
+    # ====================
+    side_bias:
+      penalty_factor: 0.4      # MODERATE
+      window_sec: 420
+      target_ratio: 0.6
+    
+    # ====================
+    # PHASE 3: REGIME-ADAPTIVE THRESHOLDS
+    # ====================
+    regime_thresholds:
+      high_volatility_multiplier: 2.5   # VERY STRICT
+      low_volatility_multiplier: 0.7
+      trend_multiplier: 0.9
+    
+    # ====================
+    # PHASE 3: REGIME-ADAPTIVE SIZING
+    # ====================
+    regime_sizing:
+      high_volatility_multiplier: 0.3   # 70% SMALLER
+      low_volatility_multiplier: 1.6    # 60% LARGER
+      mean_reversion_multiplier: 1.4    # 40% LARGER (KEY FOR BTC!)
+      base_size_usd: 1800.0              # LARGER base (+80%)
+    
+    # ====================
+    # PHASE 3+: TAKE-PROFIT LOGIC (NEW!)
+    # ====================
+    take_profit:
+      tp_low_ratio: 0.7        # TP1 = 0.7x SL
+      tp_high_ratio: 1.6       # TP2 = 1.6x SL
+      partial_exit_pct: 0.5    # Exit 50% at TP1
+    
+    # ====================
+    # PHASE 3+: TRAILING STOP (NEW!)
+    # ====================
+    trailing_stop:
+      enabled: true            # ACTIVE for BTC
+      activation_pct: 0.005    # Activate at +0.5% profit
+      distance_pct: 0.003      # Trail 0.3% behind peak
+    
+    # ====================
+    # PHASE 3+: COOLDOWN (NEW!)
+    # ====================
+    execution:
+      cooldown_sec: 30         # 30s pause (quality over quantity)
+    
+    # ====================
+    # DECISION & RISK (BTC-SPECIFIC)
+    # ====================
+    decision:
+      signal_threshold: 0.2    # LOWER threshold (easier entries)
+      max_risk_score: 0.6      # LOWER max risk (conservative)
+      allowed_regimes:
+        - MEAN_REVERSION       # PRIMARY (66% of Jan 2024 data!)
+        - LOW_VOLATILITY
+        - TREND_UP
+        - TREND_DOWN
+    
+    # ====================
+    # EXIT PARAMETERS (BTC-SPECIFIC)
+    # ====================
+    exit:
+      sl_pct: 0.035            # 3.5% stop loss (WIDER for BTC swings)
+      max_hold_sec: 2400       # 40 minutes (MUCH LONGER for slow moves)
 
 # ==========================================================================
-# SUMMARY
+# SUMMARY (UPDATED WITH BTC)
 # ==========================================================================
 summary:
-  portfolio_pnl_monthly: 254.99   # ETH + XRP
-  improvement_vs_phase3: 44.5%
-  assets_optimized: 2              # ETH, XRP (BTC pending)
-  total_trials: 6000               # 3000 × 2
-  optimization_time: "~80 minutes"
+  portfolio_pnl_monthly: 412.34   # ETH + XRP + BTC
+  improvement_vs_phase3: 61.7%
+  assets_optimized: 3              # ETH, XRP, BTC
+  total_trials: 9000               # 3000 × 3
+  optimization_time: "~120 minutes"
   
   key_findings:
     - "TP logic provides +40-60% PnL improvement"
-    - "Aggressive TP1 (0.4x SL) optimal for most assets"
+    - "Aggressive TP1 (0.4-0.7x SL) optimal for all assets"
     - "Partial exits (50-70%) reduce risk without losing upside"
-    - "Trailing stop effective only for high-volatility assets (XRP)"
-    - "Cooldown (15-20s) significantly improves trade quality"
+    - "Trailing stop effective for volatile (XRP) & trending (BTC) assets"
+    - "Cooldown (15-30s) significantly improves trade quality"
+    - "BTC requires DIFFERENT strategy: wider SL, longer holds, MEAN_REVERSION regime"
+

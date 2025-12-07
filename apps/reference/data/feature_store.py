@@ -184,8 +184,9 @@ class FeatureStore:
                 """, [symbol, delete_start, delete_end])
 
                 # Aggregate features using time_bucket
+                # FIX: Use INSERT OR REPLACE for extra safety against race conditions
                 query = f"""
-                    INSERT INTO features_{timeframe}
+                    INSERT OR REPLACE INTO features_{timeframe}
                     SELECT
                         bucket_ts as timestamp,
                         symbol,
@@ -335,6 +336,9 @@ class FeatureStore:
         """
         Store features from EVT:FEATURES_CALCULATED event.
 
+        Uses INSERT OR REPLACE to handle duplicate ticks gracefully
+        (e.g., after reconnect or system restart).
+
         Args:
             payload: Event payload with ts, symbol, and features
         """
@@ -342,8 +346,9 @@ class FeatureStore:
             record = FeatureRecord.from_event_payload(payload)
 
             with self._lock, duckdb.connect(str(self.db_path)) as conn:
+                # FIX: Use INSERT OR REPLACE to handle duplicate ticks after reconnect
                 conn.execute("""
-                    INSERT INTO features (timestamp, symbol, features)
+                    INSERT OR REPLACE INTO features (timestamp, symbol, features)
                     VALUES (?, ?, ?)
                 """, [
                     record.timestamp,

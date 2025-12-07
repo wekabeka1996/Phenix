@@ -2,7 +2,7 @@
 FSMP-P1-T02: Manage Flow FSM for execution_position domain.
 
 States: FLAT|OPENED → TRACKING → EMIT_DEC_ADJUST → TRACKING
-Rules (stubs): trail_pct, breakeven, time_stop
+Rules: per-instrument trailing_stop, max_hold_time, TP1/TP2 partial exit
 Output: DEC:ADJUST(tp?, sl?, move_to_be?)
 
 Shadow-mode: decisions only, no live modifications.
@@ -10,14 +10,17 @@ Shadow-mode: decisions only, no live modifications.
 
 from __future__ import annotations
 
+import logging
 import time
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from enum import Enum
 from typing import Dict, Any, Optional, Union
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
-from apps.reference.config_models import AuroraConfig, create_aurora_config
+from apps.reference.config_models import AuroraConfig, create_aurora_config, AuroraInstrumentConfig
+
+LOG = logging.getLogger(__name__)
 
 
 try:
@@ -46,21 +49,18 @@ class ManageFlowFSM:
     """
     Manage Flow FSM: tracks open positions and manages brackets/trailing stops.
 
-    Shadow-mode: stub rules (trail/breakeven/time_stop).
+    Per-instrument config with fallback: aurora_instruments.<SYM> → global → default.
     Rules execute on EVT:PARTIAL_FILL|FILL|UPD:*.
     """
 
     def __init__(
         self,
-        trail_pct: float = 0.5,
-        breakeven_after_sec: float = 300.0,
         config: Optional[Union[Dict[str, Any], AuroraConfig]] = None,
     ):
         self.state = ManageState.FLAT
-        self.trail_pct = trail_pct  # stub: trailing stop %
-        self.breakeven_after_sec = breakeven_after_sec  # stub: move to BE after X sec
 
         # Position tracking
+        self.symbol: Optional[str] = None  # Phase 0: track symbol for per-instrument config
         self.position_qty: Optional[Decimal] = None
         self.position_entry_price: Optional[Decimal] = None
         self.position_open_ts: float = 0.0
@@ -69,12 +69,26 @@ class ManageFlowFSM:
         # Bracket orders tracking
         self.sl_order_id: Optional[str] = None
         self.tp_order_id: Optional[str] = None
-        self.sl_price: Optional[Decimal] = None
-        self.tp_price: Optional[Decimal] = None
+        self.tp1_order_id: Optional[str] = None
+        self.tp2_order_id: Optional[str] = None
 
-        # Trailing stop tracking
+        # Intent data (injected via set_intent_prices)
+        self._intent_sl_price: Optional[Decimal] = None
+        self._intent_tp_price: Optional[Decimal] = None
+
+        self.sl_price: Optional[Decimal] = None
+        self.tp_price: Optional[Decimal] = None  # TP1 price (primary)
+        
+        # Phase A2: TP1/TP2 partial exit support
+        self.tp2_order_id: Optional[str] = None
+        self.tp1_price: Optional[Decimal] = None
+        self.tp2_price: Optional[Decimal] = None
+        self.partial_exit_pct: Optional[float] = None  # e.g., 0.7 = 70% at TP1
+
+        # Phase A3: Trailing stop tracking
         self.trailing_activated: bool = False
         self.last_trailing_ts: float = 0.0
+        self.peak_price: Optional[Decimal] = None  # High-water mark for trailing
 
         # PHASE A2: Anti-race flag - prevents bracket placement during CLOSE
         self._closing_position: bool = False
@@ -130,6 +144,230 @@ class ManageFlowFSM:
             "fsm_errors_total": 0,
         }
 
+    # =========================================================================
+    # Phase 0: Per-Instrument Aurora Configuration Helpers
+    # =========================================================================
+
+    def _get_aurora_instr_cfg(self, symbol: Optional[str] = None) -> Optional[AuroraInstrumentConfig]:
+        """
+        Get per-instrument Aurora configuration for current or specified symbol.
+
+        Fallback chain:
+        1. self.symbol (from position tracking)
+        2. Passed symbol argument
+        3. Return None if no symbol available
+
+        Supports both Pydantic config and legacy dict format for consistency
+        with DecisionMaking._get_aurora_instrument_cfg().
+
+        Args:
+            symbol: Trading pair symbol (optional, uses self.symbol if not provided)
+
+        Returns:
+            AuroraInstrumentConfig or None if not configured
+        """
+        target_symbol = symbol or self.symbol
+        if not target_symbol:
+            return None
+
+        # Try Pydantic config (new format)
+        if self.config and hasattr(self.config, 'trading'):
+            trading = self.config.trading
+            if hasattr(trading, 'aurora_instruments'):
+                aurora_instruments = trading.aurora_instruments
+                if isinstance(aurora_instruments, dict) and target_symbol in aurora_instruments:
+                    instr_cfg = aurora_instruments[target_symbol]
+                    # Return if already Pydantic model
+                    if isinstance(instr_cfg, AuroraInstrumentConfig):
+                        return instr_cfg
+                    # Try to convert dict to Pydantic model (legacy support)
+                    elif isinstance(instr_cfg, dict):
+                        try:
+                            return AuroraInstrumentConfig(**instr_cfg)
+                        except Exception:
+                            pass
+
+        return None
+
+    def _get_exit_param(self, param: str, default: Any, symbol: Optional[str] = None) -> Any:
+        """
+        Get exit parameter with per-instrument override support.
+
+        Fallback chain:
+        1. aurora_instruments.<SYMBOL>.exit.<param>
+        2. trading.execution.manage.brackets.sl/tp.* (global, param name mapped)
+        3. default value
+
+        Param mapping for global fallback:
+        - sl_pct → brackets.sl.fixed_bps (converted: bps/10000)
+        - max_hold_sec → None (no global equivalent)
+
+        Args:
+            param: Parameter name (e.g., 'sl_pct', 'max_hold_sec')
+            default: Default value if not found
+            symbol: Optional symbol override
+
+        Returns:
+            Parameter value from per-instrument or global config
+        """
+        # 1. Try per-instrument config
+        instr_cfg = self._get_aurora_instr_cfg(symbol)
+        if instr_cfg is not None and instr_cfg.exit is not None:
+            value = getattr(instr_cfg.exit, param, None)
+            if value is not None:
+                return value
+
+        # 2. Fallback to global via _manage_cfg (with param name mapping)
+        if self._manage_cfg and self._manage_cfg.brackets:
+            brackets = self._manage_cfg.brackets
+            
+            # Map param names to global config structure
+            if param == "sl_pct" and brackets.sl and brackets.sl.fixed_bps:
+                # Convert bps to percentage (50 bps → 0.005)
+                return brackets.sl.fixed_bps / 10000.0
+            
+            # max_hold_sec has no global equivalent - return default
+        
+        # 3. Return default
+        return default
+
+    def _get_take_profit_params(
+        self, symbol: Optional[str] = None
+    ) -> tuple[Optional[float], Optional[float], Optional[float]]:
+        """
+        Get TP1/TP2 parameters from per-instrument config.
+
+        Returns (tp_low_ratio, tp_high_ratio, partial_exit_pct) for symbol.
+
+        Args:
+            symbol: Trading pair symbol (optional, uses self.symbol if not provided)
+
+        Returns:
+            Tuple of (tp_low_ratio, tp_high_ratio, partial_exit_pct).
+            Any value may be None if not configured.
+        """
+        instr_cfg = self._get_aurora_instr_cfg(symbol)
+        if instr_cfg is not None and getattr(instr_cfg, 'take_profit', None) is not None:
+            tp = instr_cfg.take_profit
+            return (
+                getattr(tp, 'tp_low_ratio', None),
+                getattr(tp, 'tp_high_ratio', None),
+                getattr(tp, 'partial_exit_pct', None),
+            )
+        return None, None, None
+
+    def set_intent_prices(self, sl_price: Union[str, float, Decimal], tp_price: Optional[Union[str, float, Decimal]] = None) -> None:
+        """
+        Inject specific TP/SL prices from TradeIntent (Strategy calculation).
+        Called by ExecPosFSM before bracket placement.
+        """
+        try:
+            if sl_price:
+                self._intent_sl_price = Decimal(str(sl_price))
+            if tp_price:
+                self._intent_tp_price = Decimal(str(tp_price))
+            LOG.info(f"SET_INTENT_PRICES: SL={self._intent_sl_price}, TP={self._intent_tp_price}")
+        except Exception as e:
+            LOG.error(f"Failed to set intent prices: {e}")
+
+
+    def _get_trailing_stop_params(
+        self, symbol: Optional[str] = None
+    ) -> tuple[bool, Optional[float], Optional[float], int]:
+        """
+        Get trailing stop parameters from per-instrument config.
+
+        Phase A3: Per-instrument trailing with global fallback.
+
+        Args:
+            symbol: Trading pair symbol (optional, uses self.symbol if not provided)
+
+        Returns:
+            Tuple of (enabled, activation_pct, trail_pct, min_update_interval_sec).
+        """
+        # 1. Try per-instrument config
+        instr_cfg = self._get_aurora_instr_cfg(symbol)
+        if instr_cfg is not None and getattr(instr_cfg, 'trailing_stop', None) is not None:
+            ts = instr_cfg.trailing_stop
+            return (
+                getattr(ts, 'enabled', False) or False,
+                getattr(ts, 'activation_pct', None),
+                getattr(ts, 'trail_pct', None),
+                getattr(ts, 'min_update_interval_sec', 5) or 5,
+            )
+
+        # 2. Fallback to global trailing dict
+        trailing = getattr(self.config, 'trailing', None) or {}
+        if isinstance(trailing, dict):
+            return (
+                bool(trailing.get("enable", False)),
+                trailing.get("activation_profit_atr_k"),  # Legacy name
+                trailing.get("step_bps"),  # Legacy: bps not pct
+                int(trailing.get("cooldown_sec", 5)),
+            )
+
+        return False, None, None, 5
+
+    def _get_max_hold_sec(self, symbol: Optional[str] = None) -> Optional[int]:
+        """
+        Get max hold time from per-instrument exit config.
+
+        Phase A4: Returns max_hold_sec for forced position exit.
+
+        Args:
+            symbol: Trading pair symbol (optional, uses self.symbol if not provided)
+
+        Returns:
+            max_hold_sec or None if not configured.
+        """
+        instr_cfg = self._get_aurora_instr_cfg(symbol)
+        if instr_cfg is not None and getattr(instr_cfg, 'exit', None) is not None:
+            return getattr(instr_cfg.exit, 'max_hold_sec', None)
+        return None
+
+    def _check_max_hold_time(self, msg: Message, elapsed_sec: float) -> Optional[Message]:
+        """
+        Check if position exceeded max hold time and should be closed.
+
+        Phase A4: Per-instrument max_hold_sec watchdog.
+        Forces market close when position held too long.
+
+        Args:
+            msg: Current message for context
+            elapsed_sec: Seconds since position open
+
+        Returns:
+            DEC:CLOSE_POSITION message if timeout, None otherwise.
+        """
+        max_hold_sec = self._get_max_hold_sec(self.symbol)
+        if max_hold_sec is None:
+            return None
+
+        if elapsed_sec >= max_hold_sec:
+            self._metrics["fsm_max_hold_timeouts"] = self._metrics.get(
+                "fsm_max_hold_timeouts", 0) + 1
+
+            # Emit close position message
+            return Message(
+                op="DEC",
+                verb="CLOSE_POSITION",
+                src="execution_position",
+                dst="execution_position",
+                rid=msg.rid,
+                why=f"max_hold_timeout_{int(elapsed_sec)}s",
+                pld={
+                    "symbol": self.symbol or (msg.pld or {}).get("symbol", ""),
+                    "side": self._get_opposite_side(),
+                    "qty": str(self.position_qty),
+                    "reason": "MAX_HOLD_TIME_EXCEEDED",
+                    "elapsed_sec": elapsed_sec,
+                    "max_hold_sec": max_hold_sec,
+                },
+                data_ref=msg.data_ref.copy() if msg.data_ref else [],
+            )
+
+        return None
+
     def set_bracket_ids(self, sl_order_id: Optional[str], tp_order_id: Optional[str]) -> None:
         """
         Directly set bracket IDs from ExecPosFSM after placement.
@@ -144,8 +382,6 @@ class ManageFlowFSM:
         self.sl_order_id = sl_order_id
         self.tp_order_id = tp_order_id
         # Log synchronization for debugging
-        import logging
-        LOG = logging.getLogger(__name__)
         LOG.debug(f"✅ Synced bracket IDs: SL={sl_order_id}, TP={tp_order_id}")
 
     def handle(self, msg: Message) -> Optional[Message]:
@@ -186,7 +422,8 @@ class ManageFlowFSM:
             pld = msg.pld or {}
             ts_value = pld.get("ts") if isinstance(pld, dict) else None
             now_ts = int(ts_value) if ts_value else int(time.time() * 1000)
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as e:
+            LOG.debug(f"Failed to parse timestamp from message: {e}")
             now_ts = int(time.time() * 1000)
 
         if self.state == ManageState.WAIT_MODE:
@@ -221,9 +458,9 @@ class ManageFlowFSM:
             is_reduce_only = str(pld.get("reduceOnly", "")).lower() == "true"
 
             # 🔍 DIAGNOSTIC: Log all FILL events in FLAT state
-            print(f"[ManageFlowFSM] 📋 FILL event in FLAT: verb={msg.verb}, "
-                  f"type={order_type}, closePos={close_position}, reduceOnly={is_reduce_only}, "
-                  f"pld_keys={list(pld.keys())}")
+            LOG.debug(f"FILL event in FLAT: verb={msg.verb}, "
+                      f"type={order_type}, closePos={close_position}, reduceOnly={is_reduce_only}, "
+                      f"pld_keys={list(pld.keys())}")
 
             # EXIT orders: TAKE_PROFIT_MARKET, STOP_MARKET, or LIMIT with closePosition=true
             is_exit_order = (order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]) or \
@@ -231,11 +468,12 @@ class ManageFlowFSM:
 
             if is_exit_order:
                 # ⚠️ Position is CLOSING via TP/SL - do NOT create new TP/SL!
-                print(
-                    f"[ManageFlowFSM] ⚠️ EXIT fill detected ({order_type}), position closing, NOT placing brackets")
+                LOG.info(
+                    f"EXIT fill detected ({order_type}), position closing, NOT placing brackets")
                 self.position_qty = None
                 self.position_entry_price = None
                 self.position_side = None
+                self.symbol = None  # Phase 0: clear symbol on position close
                 self.sl_price = None
                 self.tp_price = None
                 # Stay in FLAT, return without placing new brackets
@@ -245,18 +483,16 @@ class ManageFlowFSM:
                 # HOTFIX: Auto-clear closing flag on ENTRY (we're opening, not closing)
                 if self._closing_position:
                     self._closing_position = False
-                    import logging
-                    LOG = logging.getLogger(__name__)
                     LOG.info("[BRK] ENTRY detected → closing_flag=False")
 
-                print(
-                    f"[ManageFlowFSM] 📈 ENTRY fill - creating position from {msg.verb}")
+                LOG.info(
+                    f"ENTRY fill - creating position from {msg.verb}")
                 self._on_fill(msg)
                 self.state = (
                     ManageState.BRACKETS_PENDING
                 )  # Place brackets after position opens
-                print(
-                    f"[ManageFlowFSM] Position opened, placing brackets on {msg.verb}")
+                LOG.info(
+                    f"Position opened, placing brackets on {msg.verb}")
                 # Place bracket orders immediately
                 return self._place_brackets(msg)
 
@@ -277,11 +513,13 @@ class ManageFlowFSM:
             qty = Decimal(str(pld.get("qty", 0)))
             price = Decimal(str(pld.get("price", 0)))
             side = pld.get("side")  # BUY or SELL
+            symbol = pld.get("symbol")  # Phase 0: extract symbol from fill event
 
             if self.position_qty is None:
                 self.position_qty = qty
                 self.position_entry_price = price
                 self.position_side = side
+                self.symbol = symbol  # Phase 0: track symbol for per-instrument config
                 self.position_open_ts = time.time()
             else:
                 # Average down (stub logic)
@@ -297,7 +535,8 @@ class ManageFlowFSM:
                 self.position_entry_price = avg_price
                 # Keep original side for position
 
-        except Exception:
+        except (ValueError, TypeError, KeyError) as e:
+            LOG.warning(f"Failed to process fill event: {e}")
             self._metrics["fsm_errors_total"] += 1
 
     def _place_brackets(self, msg: Message) -> Optional[Message]:
@@ -308,8 +547,6 @@ class ManageFlowFSM:
             elapsed_s = time.time() - self._closing_position_ts
             if elapsed_s < (self._anti_race_close_ms / 1000.0):  # configurable anti-race window
                 # Position close still in progress, skip bracket placement
-                import logging
-                LOG = logging.getLogger(__name__)
                 LOG.info(
                     f"[BRK] skip:closing_flag elapsed={elapsed_s:.3f}s (<{self._anti_race_close_ms/1000.0:.1f}s)")
                 self.state = ManageState.TRACKING
@@ -317,8 +554,6 @@ class ManageFlowFSM:
             else:
                 # Timeout: assume close finished, clear flag
                 self._closing_position = False
-                import logging
-                LOG = logging.getLogger(__name__)
                 LOG.info(
                     f"[BRK] clearing closing_flag after {elapsed_s:.3f}s")
 
@@ -327,29 +562,32 @@ class ManageFlowFSM:
         # Here we do local dedup: if IDs are set but we're in FLAT->ENTRY transition,
         # clear them (they're phantoms from previous trade)
         # DO THIS BEFORE _should_place_brackets() check so IDs are always cleared
-        import logging
-        LOG = logging.getLogger(__name__)
 
-        if self.sl_order_id or self.tp_order_id:
+        if self.sl_order_id or self.tp_order_id or self.tp1_order_id or self.tp2_order_id:
             # Local IDs present - likely phantoms if we're placing new brackets
             LOG.info(
-                f"[BRK] local bracket IDs present (SL={self.sl_order_id}, TP={self.tp_order_id}) → clearing phantoms")
+                f"[BRK] local bracket IDs present (SL={self.sl_order_id}, TP={self.tp_order_id}, "
+                f"TP1={self.tp1_order_id}, TP2={self.tp2_order_id}) → clearing phantoms")
             self.sl_order_id = None
             self.tp_order_id = None
+            self.tp1_order_id = None
+            self.tp2_order_id = None
 
         if not self._should_place_brackets():
             self.state = ManageState.TRACKING
             return None
 
         try:
-            # Calculate bracket prices
-            sl_price, tp_price = self._calculate_bracket_prices()
-            if sl_price is None or tp_price is None:
+            # Calculate bracket prices (Phase A2: returns sl, tp1, tp2)
+            sl_price, tp1_price, tp2_price = self._calculate_bracket_prices()
+            if sl_price is None or tp1_price is None:
                 self.state = ManageState.TRACKING
                 return None
 
             self.sl_price = sl_price
-            self.tp_price = tp_price
+            self.tp1_price = tp1_price
+            self.tp2_price = tp2_price
+            self.tp_price = tp1_price  # Backward compat: legacy single TP = TP1
 
             # === VALIDATION PHASE: Check SL/TP prices before submission ===
             # Get current mark price (use entry price as proxy if not available)
@@ -374,18 +612,32 @@ class ManageFlowFSM:
                 self.state = ManageState.TRACKING
                 return None
 
-            # Validate TP price
-            is_tp_valid, tp_reason = TPSLValidationRules.validate_stop_price_for_side(
+            # Validate TP1 price
+            is_tp1_valid, tp1_reason = TPSLValidationRules.validate_stop_price_for_side(
                 position_side=validation_side,
                 current_mark=current_mark,
-                stop_price=tp_price,
+                stop_price=tp1_price,
                 is_take_profit=True,
             )
-            if not is_tp_valid:
+            if not is_tp1_valid:
                 self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
                     "fsm_bracket_validation_failed", 0) + 1
                 self.state = ManageState.TRACKING
                 return None
+
+            # Validate TP2 price if present
+            if tp2_price is not None:
+                is_tp2_valid, tp2_reason = TPSLValidationRules.validate_stop_price_for_side(
+                    position_side=validation_side,
+                    current_mark=current_mark,
+                    stop_price=tp2_price,
+                    is_take_profit=True,
+                )
+                if not is_tp2_valid:
+                    self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
+                        "fsm_bracket_validation_failed", 0) + 1
+                    self.state = ManageState.TRACKING
+                    return None
 
             # === SAFETY OFFSET PHASE: Apply offset to avoid -2021 errors ===
             # Read offset_bps from config (default 5)
@@ -405,59 +657,102 @@ class ManageFlowFSM:
             sl_offset = TPSLValidationRules.add_safety_offset(
                 sl_price, tick_size, offset_bps)
             if self.position_side == "BUY":
-                # SL is below entry, move it further down (subtract offset)
                 sl_price = sl_price - sl_offset
             else:
-                # SL is above entry, move it further up (add offset)
                 sl_price = sl_price + sl_offset
 
-            # Apply offset to TP (move it AWAY from entry to be safer)
-            tp_offset = TPSLValidationRules.add_safety_offset(
-                tp_price, tick_size, offset_bps)
+            # Apply offset to TP1 (move it AWAY from entry to be safer)
+            tp1_offset = TPSLValidationRules.add_safety_offset(
+                tp1_price, tick_size, offset_bps)
             if self.position_side == "BUY":
-                # TP is above entry, move it further up (add offset)
-                tp_price = tp_price + tp_offset
+                tp1_price = tp1_price + tp1_offset
             else:
-                # TP is below entry, move it further down (subtract offset)
-                tp_price = tp_price - tp_offset
+                tp1_price = tp1_price - tp1_offset
+
+            # Apply offset to TP2 if present
+            if tp2_price is not None:
+                tp2_offset = TPSLValidationRules.add_safety_offset(
+                    tp2_price, tick_size, offset_bps)
+                if self.position_side == "BUY":
+                    tp2_price = tp2_price + tp2_offset
+                else:
+                    tp2_price = tp2_price - tp2_offset
 
             # Update stored prices
             self.sl_price = sl_price
-            self.tp_price = tp_price
+            self.tp1_price = tp1_price
+            self.tp2_price = tp2_price
+            self.tp_price = tp1_price  # Backward compat
             self._metrics["fsm_bracket_offset_applied"] = self._metrics.get(
                 "fsm_bracket_offset_applied", 0) + 1
+
+            # === QUANTITY CALCULATION: TP1 partial, TP2 remainder ===
+            total_qty = self.position_qty
+            if tp2_price is not None and self.partial_exit_pct is not None:
+                # Phase A2: Split qty between TP1 (partial) and TP2 (remainder)
+                partial_pct = Decimal(str(self.partial_exit_pct))
+                tp1_qty = (total_qty * partial_pct).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+                tp2_qty = total_qty - tp1_qty
+            else:
+                # Single TP mode: all qty on TP1
+                tp1_qty = total_qty
+                tp2_qty = Decimal("0")
 
             # Generate unique client order IDs
             position_id = f"{msg.rid}_{int(self.position_open_ts)}"
             sl_client_id = f"{position_id}_sl"
-            tp_client_id = f"{position_id}_tp"
+            tp1_client_id = f"{position_id}_tp1"
+            tp2_client_id = f"{position_id}_tp2"
 
             # === EMISSION PHASE: Place validated bracket orders ===
-            # Emit SL order
+            orders = []
+
+            # Emit SL order (full qty)
             sl_order = self._emit_place_order(
                 msg,
                 sl_client_id,
                 "STOP_MARKET",
                 self._get_opposite_side(),
-                str(self.position_qty),
+                str(total_qty),
                 str(sl_price),
                 "SL bracket",
             )
+            orders.append(sl_order.model_dump())
 
-            # Emit TP order
-            tp_order = self._emit_place_order(
+            # Emit TP1 order
+            tp1_order = self._emit_place_order(
                 msg,
-                tp_client_id,
+                tp1_client_id,
                 "TAKE_PROFIT_MARKET",
                 self._get_opposite_side(),
-                str(self.position_qty),
-                str(tp_price),
-                "TP bracket",
+                str(tp1_qty),
+                str(tp1_price),
+                "TP1 bracket (partial)" if tp2_price else "TP bracket",
             )
+            orders.append(tp1_order.model_dump())
+            self.tp1_order_id = tp1_client_id
 
-            self._metrics["fsm_bracket_orders_placed"] += 2
+            # Emit TP2 order if configured
+            if tp2_price is not None and tp2_qty > Decimal("0"):
+                tp2_order = self._emit_place_order(
+                    msg,
+                    tp2_client_id,
+                    "TAKE_PROFIT_MARKET",
+                    self._get_opposite_side(),
+                    str(tp2_qty),
+                    str(tp2_price),
+                    "TP2 bracket (remainder)",
+                )
+                orders.append(tp2_order.model_dump())
+                self.tp2_order_id = tp2_client_id
+                self._metrics["fsm_bracket_orders_placed"] += 3
+            else:
+                self._metrics["fsm_bracket_orders_placed"] += 2
+
+            # Backward compat: set legacy tp_order_id to TP1
+            self.tp_order_id = tp1_client_id
             
-            # Return BATCH message with both orders
+            # Return BATCH message with all orders
             return Message(
                 op="DEC",
                 verb="BATCH",
@@ -466,12 +761,13 @@ class ManageFlowFSM:
                 rid=msg.rid,
                 why="place_brackets_batch",
                 pld={
-                    "messages": [sl_order.model_dump(), tp_order.model_dump()]
+                    "messages": orders
                 },
                 data_ref=msg.data_ref.copy() if msg.data_ref else []
             )
 
-        except Exception:
+        except (ValueError, TypeError, KeyError) as e:
+            LOG.warning(f"Failed to place brackets: {e}")
             self._metrics["fsm_errors_total"] += 1
             self.state = ManageState.TRACKING
             return None
@@ -482,63 +778,168 @@ class ManageFlowFSM:
              return self._manage_cfg.brackets.enable
         return False
 
-    def _calculate_bracket_prices(self) -> tuple[Optional[Decimal], Optional[Decimal]]:
-        """Calculate SL and TP prices based on config and position."""
+    def _calculate_bracket_prices(
+        self
+    ) -> tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]:
+        """
+        Calculate SL, TP1, TP2 prices for current position.
+        
+        Phase A2: Uses per-instrument config with global fallback.
+        Returns (sl_price, tp1_price, tp2_price).
+        TP2 may be None if not configured (single TP mode).
+        
+        Fallback chain:
+        - Intent Injection: self._intent_sl_price (from Strategy)
+        - Config Lookup: aurora_instruments.<SYMBOL>.exit.sl_pct → brackets.sl.fixed_bps
+        - TP: self._intent_tp_price (from Strategy) -> ...
+        """
         if self.position_entry_price is None or self.position_side is None:
-            return None, None
+            return None, None, None
 
-        if not self._manage_cfg or not self._manage_cfg.brackets:
-            return None, None
-            
-        brackets = self._manage_cfg.brackets
+        # PHASE A2 FIX: Prioritize injected intent prices (Strategy calculation)
+        if self._intent_sl_price:
+             LOG.info(f"USING_INTENT_SL for calculation: {self._intent_sl_price}")
+             sl_price = self._intent_sl_price
+             # Consume it
+             self._intent_sl_price = None
+             
+             # If we have SL, check for TP
+             tp1_price = None
+             if self._intent_tp_price:
+                 LOG.info(f"USING_INTENT_TP for calculation: {self._intent_tp_price}")
+                 tp1_price = self._intent_tp_price
+                 self._intent_tp_price = None
+             
+             # Return early with strategy values (quantized)
+             return self._quantize_prices(self.symbol, sl_price, tp1_price, None)
+             
         entry_price = self.position_entry_price
+        symbol = self.symbol  # Phase 0: use tracked symbol
+
+        # ========== Get per-instrument config ==========
+        sl_pct: Optional[float] = None
+        tp_low_ratio: Optional[float] = None
+        tp_high_ratio: Optional[float] = None
+        partial_exit_pct: Optional[float] = None
+
+        instr_cfg = self._get_aurora_instr_cfg(symbol)
+        if instr_cfg is not None:
+            # Get exit config (SL)
+            if getattr(instr_cfg, 'exit', None) is not None:
+                sl_pct = getattr(instr_cfg.exit, 'sl_pct', None)
+            # Get take_profit config (TP1/TP2)
+            tp_low_ratio, tp_high_ratio, partial_exit_pct = self._get_take_profit_params(symbol)
+
+        # Store partial_exit_pct for bracket placement
+        self.partial_exit_pct = partial_exit_pct
 
         # ========== Calculate SL price ==========
-        sl_bps = 50
-        if brackets.sl and brackets.sl.fixed_bps:
-            sl_bps = brackets.sl.fixed_bps
-        elif brackets.stop_loss_bps: # Legacy fallback
-             sl_bps = brackets.stop_loss_bps
+        if sl_pct is not None:
+            sl_price = self._calculate_sl_from_pct(entry_price, sl_pct)
+        else:
+            sl_price = self._calculate_sl_from_bps(entry_price)
 
-        if self.position_side == "BUY":
-            sl_price = entry_price * (1 - Decimal(str(sl_bps)) / 10000)
-        else:  # SELL
-            sl_price = entry_price * (1 + Decimal(str(sl_bps)) / 10000)
+        # ========== Calculate TP1/TP2 prices ==========
+        tp1_price: Optional[Decimal] = None
+        tp2_price: Optional[Decimal] = None
 
-        # ========== Calculate TP price ==========
-        tp_bps = 100
-        if brackets.tp and brackets.tp.fixed_bps:
-            tp_bps = brackets.tp.fixed_bps
-        # Legacy fallback logic removed for clarity, assuming new config structure is primary
-        # If needed, we can re-add legacy ratio logic here, but it's better to migrate configs.
+        if sl_pct is not None and tp_low_ratio is not None:
+            # Phase A2: Risk-ratio based TP1/TP2
+            risk_pct = Decimal(str(sl_pct))  # SL distance as risk unit
+            tp1_off = risk_pct * Decimal(str(tp_low_ratio))
 
-        if self.position_side == "BUY":
-            tp_price = entry_price * (1 + Decimal(str(tp_bps)) / 10000)
-        else:  # SELL
-            tp_price = entry_price * (1 - Decimal(str(tp_bps)) / 10000)
+            if self.position_side == "BUY":
+                tp1_price = entry_price * (Decimal("1") + tp1_off)
+            else:
+                tp1_price = entry_price * (Decimal("1") - tp1_off)
+
+            # TP2 is optional (further target)
+            if tp_high_ratio is not None:
+                tp2_off = risk_pct * Decimal(str(tp_high_ratio))
+                if self.position_side == "BUY":
+                    tp2_price = entry_price * (Decimal("1") + tp2_off)
+                else:
+                    tp2_price = entry_price * (Decimal("1") - tp2_off)
+        else:
+            # Fallback: single TP from bps
+            tp1_price = self._calculate_tp_from_bps(entry_price)
 
         # ========== Quantize prices to tick_size ==========
+        sl_price, tp1_price, tp2_price = self._quantize_prices(symbol, sl_price, tp1_price, tp2_price)
+
+        return sl_price, tp1_price, tp2_price
+
+    def _calculate_sl_from_pct(self, entry_price: Decimal, sl_pct: float) -> Decimal:
+        """Calculate SL price from percentage."""
+        sl_pct_dec = Decimal(str(sl_pct))
+        if self.position_side == "BUY":
+            return entry_price * (Decimal("1") - sl_pct_dec)
+        else:
+            return entry_price * (Decimal("1") + sl_pct_dec)
+
+    def _calculate_sl_from_bps(self, entry_price: Decimal) -> Decimal:
+        """
+        Fallback: calculate SL using existing bps config.
+        Reads from: trading.execution.manage.brackets.sl.fixed_bps
+        """
+        sl_bps = 50  # default
+        if self._manage_cfg and self._manage_cfg.brackets:
+            brackets = self._manage_cfg.brackets
+            if brackets.sl and brackets.sl.fixed_bps:
+                sl_bps = brackets.sl.fixed_bps
+            elif brackets.stop_loss_bps:  # Legacy fallback
+                sl_bps = brackets.stop_loss_bps
+
+        if self.position_side == "BUY":
+            return entry_price * (1 - Decimal(str(sl_bps)) / 10000)
+        else:
+            return entry_price * (1 + Decimal(str(sl_bps)) / 10000)
+
+    def _calculate_tp_from_bps(self, entry_price: Decimal) -> Optional[Decimal]:
+        """
+        Fallback: calculate TP using existing bps config.
+        Reads from: trading.execution.manage.brackets.tp.fixed_bps
+        """
+        tp_bps = 100  # default
+        if self._manage_cfg and self._manage_cfg.brackets:
+            brackets = self._manage_cfg.brackets
+            if brackets.tp and brackets.tp.fixed_bps:
+                tp_bps = brackets.tp.fixed_bps
+
+        if self.position_side == "BUY":
+            return entry_price * (1 + Decimal(str(tp_bps)) / 10000)
+        else:
+            return entry_price * (1 - Decimal(str(tp_bps)) / 10000)
+
+    def _quantize_prices(
+        self,
+        symbol: Optional[str],
+        sl_price: Optional[Decimal],
+        tp1_price: Optional[Decimal],
+        tp2_price: Optional[Decimal],
+    ) -> tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]:
+        """Quantize prices to tick_size from instruments config."""
         tick_size = None
-        symbol = getattr(self, 'symbol', None) # Symbol might not be set on FSM instance directly
-        # Ideally symbol should be passed or stored. Assuming it might be available or we skip quantization.
-        # For now, let's try to get it from config if possible, but FSM is per-symbol usually.
-        # If we can't find tick_size easily without symbol, we skip quantization here or rely on adapter.
-        
-        # Simplified quantization if tick_size is available in config instruments
-        if symbol and self.config.trading.instruments:
-             inst = self.config.trading.instruments.get(symbol)
-             if inst:
-                 tick_size = inst.tick_size
+        if symbol and self.config and hasattr(self.config, 'trading'):
+            instruments = getattr(self.config.trading, 'instruments', None)
+            if instruments:
+                inst = instruments.get(symbol)
+                if inst:
+                    tick_size = getattr(inst, 'tick_size', None)
 
         if tick_size:
             try:
                 tick_size_dec = Decimal(str(tick_size))
-                sl_price = (sl_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
-                tp_price = (tp_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
+                if sl_price is not None:
+                    sl_price = (sl_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
+                if tp1_price is not None:
+                    tp1_price = (tp1_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
+                if tp2_price is not None:
+                    tp2_price = (tp2_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
             except (ValueError, TypeError, ArithmeticError):
                 pass
 
-        return sl_price, tp_price
+        return sl_price, tp1_price, tp2_price
 
     def _get_opposite_side(self) -> str:
         """Get opposite side for closing position."""
@@ -613,15 +1014,17 @@ class ManageFlowFSM:
             # Check if both brackets are placed
             if self.sl_order_id and self.tp_order_id:
                 self.state = ManageState.BRACKETS_PLACED
-                print(
-                    f"[ManageFlowFSM] Both brackets placed: SL={self.sl_order_id}, TP={self.tp_order_id}"
+                LOG.info(
+                    f"Both brackets placed: SL={self.sl_order_id}, TP={self.tp_order_id}"
                 )
 
         return None
 
     def _check_rules(self, msg: Message) -> Optional[Message]:
         """
-        Check management rules: brackets, trailing stop, breakeven, time_stop.
+        Check management rules: brackets, trailing stop, max hold time.
+
+        Uses per-instrument config with fallback to global defaults.
 
         Returns:
             DEC:PLACE_ORDER, DEC:CANCEL_ORDER, or DEC:ADJUST if rule triggers, None otherwise.
@@ -681,7 +1084,7 @@ class ManageFlowFSM:
                 if bracket_action:
                     return bracket_action
 
-            # Handle trailing stop
+            # Handle trailing stop (per-instrument config)
             if msg.op == "UPD" and msg.verb == "MARKET_DATA":
                 trailing_action = self._check_trailing_stop(msg)
                 if trailing_action:
@@ -690,90 +1093,131 @@ class ManageFlowFSM:
             now = time.time()
             elapsed = now - self.position_open_ts
 
-            # Rule 1: Trail (stub: check if current price > entry + trail_pct%)
-            pld = msg.pld or {}
-            current_price = pld.get("price")
-            if current_price is not None:
-                current_price_dec = Decimal(str(current_price))
-                trail_trigger = self.position_entry_price * (
-                    1 + Decimal(str(self.trail_pct / 100))
-                )
+            # Phase A4: Max hold time watchdog (per-instrument config)
+            max_hold_action = self._check_max_hold_time(msg, elapsed)
+            if max_hold_action:
+                return max_hold_action
 
-                if current_price_dec > trail_trigger:
-                    return self._emit_adjust(
-                        msg,
-                        "ADJUST_TRAIL",
-                        {"rule": "trail", "trigger_price": str(trail_trigger)},
-                    )
-
-            # Rule 2: Breakeven (stub: move SL to BE after X seconds)
-            if elapsed > self.breakeven_after_sec:
-                return self._emit_adjust(
-                    msg, "ADJUST_BE", {
-                        "rule": "breakeven", "elapsed_sec": elapsed}
-                )
-
-        except Exception:
+        except (ValueError, TypeError, KeyError, ArithmeticError) as e:
+            LOG.warning(f"Error in _check_rules: {e}")
             self._metrics["fsm_errors_total"] += 1
 
         return None
 
     def _handle_bracket_fill(self, msg: Message) -> Optional[Message]:
-        """Handle SL/TP bracket fills and perform OCO emulation."""
+        """
+        Handle SL/TP bracket fills and perform OCO emulation.
+        
+        Phase A2: Supports TP1/TP2 partial exit:
+        - TP1 fill: reduces position_qty by partial_exit_pct, keeps TP2 and adjusts SL
+        - TP2 fill: closes remaining position, cancels SL
+        - SL fill: cancels all remaining TP orders
+        """
         pld = msg.pld or {}
         order_id = pld.get("orderId")
+        client_order_id = pld.get("clientOrderId", "")
 
         if not order_id:
             return None
 
-        # Check if this is a bracket fill
-        if order_id == self.sl_order_id:
-            # SL filled - cancel TP (OCO emulation)
-            decision = None
-            oco_enabled = False
-            if self._manage_cfg and self._manage_cfg.brackets:
-                 oco_enabled = self._manage_cfg.brackets.oco_emulation
+        oco_enabled = False
+        if self._manage_cfg and self._manage_cfg.brackets:
+            oco_enabled = self._manage_cfg.brackets.oco_emulation
 
-            if self.tp_order_id and oco_enabled:
-                print(
-                    f"[ManageFlowFSM] SL filled, cancelling TP: {self.tp_order_id}")
-                decision = self._emit_cancel_order(
-                    msg, self.tp_order_id, "OCO_SL_filled")
+        # === SL FILLED ===
+        if order_id == self.sl_order_id or "_sl" in client_order_id:
+            LOG.info(f"[ManageFlowFSM] SL filled: {order_id}")
+            decisions = []
+            
+            # Cancel all TP orders (OCO emulation)
+            if oco_enabled:
+                if self.tp1_order_id:
+                    decisions.append(self._emit_cancel_order(msg, self.tp1_order_id, "OCO_SL_filled_tp1"))
+                if self.tp2_order_id:
+                    decisions.append(self._emit_cancel_order(msg, self.tp2_order_id, "OCO_SL_filled_tp2"))
+                # Legacy fallback
+                elif self.tp_order_id and self.tp_order_id != self.tp1_order_id:
+                    decisions.append(self._emit_cancel_order(msg, self.tp_order_id, "OCO_SL_filled"))
 
-            # Always clear the filled order from tracking
+            # Clear all bracket tracking
             self.sl_order_id = None
+            self.tp_order_id = None
+            self.tp1_order_id = None
+            self.tp2_order_id = None
+            
+            # Return first cancel decision (others handled in next cycle)
+            return decisions[0] if decisions else None
+
+        # === TP1 FILLED (partial exit) ===
+        if order_id == self.tp1_order_id or "_tp1" in client_order_id:
+            LOG.info(f"[ManageFlowFSM] TP1 filled (partial exit): {order_id}")
+            
+            # Update position qty (reduce by partial_exit_pct)
+            if self.position_qty and self.partial_exit_pct:
+                filled_pct = Decimal(str(self.partial_exit_pct))
+                filled_qty = self.position_qty * filled_pct
+                self.position_qty = self.position_qty - filled_qty
+                LOG.info(f"[ManageFlowFSM] Position reduced: filled={filled_qty}, remaining={self.position_qty}")
+                self._metrics["fsm_partial_exits_total"] = self._metrics.get("fsm_partial_exits_total", 0) + 1
+
+            # Clear TP1, keep TP2 as "runner"
+            self.tp1_order_id = None
+            
+            # If no TP2 configured, this was single-TP mode - cancel SL
+            if not self.tp2_order_id and oco_enabled and self.sl_order_id:
+                LOG.info(f"[ManageFlowFSM] Single TP mode, cancelling SL: {self.sl_order_id}")
+                decision = self._emit_cancel_order(msg, self.sl_order_id, "OCO_TP1_filled_no_tp2")
+                self.sl_order_id = None
+                self.tp_order_id = None
+                return decision
+            
+            # TODO: Consider adjusting SL to breakeven after TP1 (optional feature)
+            return None
+
+        # === TP2 FILLED (remainder/runner) ===
+        if order_id == self.tp2_order_id or "_tp2" in client_order_id:
+            LOG.info(f"[ManageFlowFSM] TP2 filled (runner closed): {order_id}")
+            decision = None
+            
+            # Cancel SL (OCO emulation) - position fully closed
+            if oco_enabled and self.sl_order_id:
+                LOG.info(f"[ManageFlowFSM] TP2 filled, cancelling SL: {self.sl_order_id}")
+                decision = self._emit_cancel_order(msg, self.sl_order_id, "OCO_TP2_filled")
+
+            # Clear all bracket tracking
+            self.sl_order_id = None
+            self.tp_order_id = None
+            self.tp1_order_id = None
+            self.tp2_order_id = None
+            self.position_qty = Decimal("0")
+            
             return decision
 
-        elif order_id == self.tp_order_id:
-            # TP filled - cancel SL (OCO emulation)
+        # === Legacy TP (backward compat) ===
+        if order_id == self.tp_order_id:
+            LOG.info(f"[ManageFlowFSM] Legacy TP filled: {order_id}")
             decision = None
-            oco_enabled = False
-            if self._manage_cfg and self._manage_cfg.brackets:
-                 oco_enabled = self._manage_cfg.brackets.oco_emulation
+            
+            if oco_enabled and self.sl_order_id:
+                decision = self._emit_cancel_order(msg, self.sl_order_id, "OCO_TP_filled")
 
-            if self.sl_order_id and oco_enabled:
-                print(
-                    f"[ManageFlowFSM] TP filled, cancelling SL: {self.sl_order_id}")
-                decision = self._emit_cancel_order(
-                    msg, self.sl_order_id, "OCO_TP_filled")
-
-            # Always clear the filled order from tracking
             self.tp_order_id = None
+            self.sl_order_id = None
             return decision
 
         return None
 
     def _check_trailing_stop(self, msg: Message) -> Optional[Message]:
-        """Check and adjust trailing stop if conditions met."""
-        # Trailing config is currently a Dict in AuroraConfig (trailing: Dict[str, Any])
-        # We should probably type it properly later, but for now access as dict
-        trailing = self.config.trailing
-        
-        trailing_enabled = False
-        if trailing:
-             trailing_enabled = bool(trailing.get("enable", False))
+        """
+        Check and adjust trailing stop if conditions met.
 
-        if not trailing_enabled or not self.sl_order_id:
+        Phase A3: Uses per-instrument trailing_stop config with global fallback.
+        Implements high-water mark trailing with CANCEL+NEW flow.
+        """
+        # Get trailing params from per-instrument or global config
+        enabled, activation_pct, trail_pct, min_update_sec = self._get_trailing_stop_params(self.symbol)
+
+        if not enabled or not self.sl_order_id:
             return None
 
         try:
@@ -785,65 +1229,74 @@ class ManageFlowFSM:
             current_price_dec = Decimal(str(current_price))
             now = time.time()
 
+            # Update peak price (high-water mark)
+            if self.peak_price is None:
+                self.peak_price = current_price_dec
+            elif self.position_side == "BUY" and current_price_dec > self.peak_price:
+                self.peak_price = current_price_dec
+            elif self.position_side == "SELL" and current_price_dec < self.peak_price:
+                self.peak_price = current_price_dec
+
             # Check activation condition
             if not self.trailing_activated and self.position_entry_price:
-                # Get activation_profit_atr_k
-                activation_k = float(trailing.get("activation_profit_atr_k", 1.0))
+                if activation_pct is None:
+                    activation_pct = 0.003  # Default 0.3%
 
-                activation_threshold = self.position_entry_price * (
-                    1
-                    + Decimal(str(activation_k))
-                    * Decimal("0.01")  # Simplified ATR
-                )
-                if (
-                    self.position_side == "BUY"
-                    and current_price_dec >= activation_threshold
-                ):
-                    self.trailing_activated = True
-                    print(
-                        f"[ManageFlowFSM] Trailing stop activated at {current_price}")
-                elif (
-                    self.position_side == "SELL"
-                    and current_price_dec <= activation_threshold
-                ):
-                    self.trailing_activated = True
-                    print(
-                        f"[ManageFlowFSM] Trailing stop activated at {current_price}")
-                else:
-                    return None
+                if self.position_side == "BUY":
+                    activation_threshold = self.position_entry_price * (
+                        Decimal("1") + Decimal(str(activation_pct))
+                    )
+                    if current_price_dec >= activation_threshold:
+                        self.trailing_activated = True
+                        self.peak_price = current_price_dec
+                    else:
+                        return None
+                elif self.position_side == "SELL":
+                    activation_threshold = self.position_entry_price * (
+                        Decimal("1") - Decimal(str(activation_pct))
+                    )
+                    if current_price_dec <= activation_threshold:
+                        self.trailing_activated = True
+                        self.peak_price = current_price_dec
+                    else:
+                        return None
 
-            # Check cooldown
-            cooldown_sec = int(trailing.get("cooldown_sec", 30))
-            if now - self.last_trailing_ts < cooldown_sec:
+            # Rate limit: minimum interval between updates
+            if now - self.last_trailing_ts < min_update_sec:
                 return None
 
-            # Calculate new SL price
-            step_bps = int(trailing.get("step_bps", 10))
-            
-            if self.position_side == "BUY" and self.sl_price:
-                # For long position, trail up
-                new_sl_price = max(
-                    self.sl_price,
-                    current_price_dec * (1 - Decimal(str(step_bps)) / 10000),
-                )
+            # Calculate new SL price based on trail_pct from peak
+            if trail_pct is None:
+                trail_pct = 0.006  # Default 0.6%
+
+            trail_pct_dec = Decimal(str(trail_pct))
+
+            if self.position_side == "BUY" and self.sl_price and self.peak_price:
+                # BUY: SL trails below peak
+                new_sl_price = self.peak_price * (Decimal("1") - trail_pct_dec)
+                # Only update if new SL is higher (tighter)
                 if new_sl_price > self.sl_price:
                     return self._adjust_trailing_stop(msg, new_sl_price)
-            elif self.position_side == "SELL" and self.sl_price:
-                # For short position, trail down
-                new_sl_price = min(
-                    self.sl_price,
-                    current_price_dec * (1 + Decimal(str(step_bps)) / 10000),
-                )
+
+            elif self.position_side == "SELL" and self.sl_price and self.peak_price:
+                # SELL: SL trails above peak (peak is low point)
+                new_sl_price = self.peak_price * (Decimal("1") + trail_pct_dec)
+                # Only update if new SL is lower (tighter)
                 if new_sl_price < self.sl_price:
                     return self._adjust_trailing_stop(msg, new_sl_price)
 
-        except Exception:
+        except (ValueError, TypeError, KeyError, ArithmeticError) as e:
+            LOG.warning(f"Trailing stop check failed: {e}")
             self._metrics["fsm_errors_total"] += 1
 
         return None
 
     def _adjust_trailing_stop(self, msg: Message, new_sl_price: Decimal) -> Message:
-        """Adjust trailing stop by cancelling old and placing new."""
+        """
+        Adjust trailing stop by cancelling old and placing new.
+
+        Phase A3: CANCEL+NEW flow for trailing stop modification.
+        """
         self.last_trailing_ts = time.time()
         self.sl_price = new_sl_price
         self._metrics["fsm_trailing_adjustments"] += 1
@@ -856,17 +1309,21 @@ class ManageFlowFSM:
         position_id = f"{msg.rid}_{int(self.position_open_ts)}"
         new_client_id = f"{position_id}_sl_trail_{int(time.time())}"
 
+        # Use opposite side for SL order (to close position)
         new_sl_msg = self._emit_place_order(
             msg,
             new_client_id,
             "STOP_MARKET",
-            self.position_side or "",
+            self._get_opposite_side(),
             str(self.position_qty),
             str(new_sl_price),
             "trailing_stop_adjust",
         )
 
-        # For simplicity, return cancel first - new order will be placed on next cycle
+        # Update SL order ID to new one
+        self.sl_order_id = new_client_id
+
+        # Return cancel first - new order will be placed on next cycle
         return cancel_msg
 
     def _emit_cancel_order(self, msg: Message, order_id: str, why: str) -> Message:
@@ -947,19 +1404,29 @@ class ManageFlowFSM:
                 self.state = ManageState.FLAT
 
         except (ValueError, TypeError, KeyError) as e:
-            print(f"Failed to hydrate ManageFlowFSM: {e}")
+            LOG.error(f"Failed to hydrate ManageFlowFSM: {e}")
             self.state = ManageState.ERROR
 
     def reset(self):
         """Reset FSM state (for testing)."""
         self.state = ManageState.FLAT
+        self.symbol = None  # Phase 0: clear symbol on reset
         self.position_qty = None
         self.position_entry_price = None
         self.position_open_ts = 0.0
         self.position_side = None
+        # Bracket orders (legacy)
         self.sl_order_id = None
         self.tp_order_id = None
         self.sl_price = None
         self.tp_price = None
+        # Phase A2: TP1/TP2
+        self.tp1_order_id = None
+        self.tp2_order_id = None
+        self.tp1_price = None
+        self.tp2_price = None
+        self.partial_exit_pct = None
+        # Phase A3: Trailing stop
         self.trailing_activated = False
         self.last_trailing_ts = 0.0
+        self.peak_price = None

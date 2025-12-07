@@ -297,10 +297,10 @@ class TestFeatureEngineeringV1Snapshot:
         # Price: last tick price
         assert features.price == Decimal("100.01")
         
-        # Liquidity kappa: depth / (depth + depth_half)
-        # depth = 1000, depth_half = 1000 → 1000/2000 = 0.5
-        # But clamped to [0.3, 1.0]
-        assert features.liquidity_kappa == Decimal("0.5")
+        # Liquidity kappa uses depth in USD vs depth_half (1000 USD)
+        # depth_usd = (500 + 500) * 100.01 ≈ 100_010
+        # ratio = depth_usd / (depth_usd + depth_half) → ~0.99 (clamped [0.3, 1])
+        assert Decimal("0.98") < features.liquidity_kappa < Decimal("1")
         
         # Depth imbalance: balanced book → ~0.5
         # Formula: ((ask + half) / (bid + half) - 1) / (ratio + 1) / 2 + 0.5

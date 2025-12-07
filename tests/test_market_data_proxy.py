@@ -296,8 +296,8 @@ class TestProxyBatchProcessing:
         
         proxy = MarketDataProxy(fsm=fsm, config=config)
         
-        assert proxy.BATCH_SIZE == 50
-        assert proxy.QUEUE_MAXSIZE == 1000
+        assert proxy.BATCH_SIZE == 100
+        assert proxy.QUEUE_MAXSIZE == 10000
 
     @pytest.mark.asyncio
     async def test_consume_queue_processes_ticks(self):

@@ -43,8 +43,8 @@ class MarketDataProxy:
     """
     
     # Batch processing configuration
-    BATCH_SIZE = 50  # Process up to 50 items before yielding
-    QUEUE_MAXSIZE = 5000  # Maximum queue size (increased for burst handling)
+    BATCH_SIZE = 100  # Process up to 100 items before yielding (was 50)
+    QUEUE_MAXSIZE = 10000  # Maximum queue size (increased for burst handling)
     
     def __init__(self, fsm: "FSMCore", config: Any) -> None:
         """
@@ -181,8 +181,8 @@ class MarketDataProxy:
             # Process up to BATCH_SIZE items
             while items_processed < self.BATCH_SIZE:
                 try:
-                    # Blocking get with timeout
-                    msg = self._ipc_queue.get(timeout=0.1)
+                    # Blocking get with shorter timeout for faster response
+                    msg = self._ipc_queue.get(timeout=0.01)  # 10ms timeout (was 100ms)
                     msg_type = msg.get("type")
                     
                     if msg_type == MarketDataWorker.MSG_TYPE_TICK:

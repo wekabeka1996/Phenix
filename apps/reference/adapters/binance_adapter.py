@@ -707,15 +707,17 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         qty_d = self._to_decimal(qty)
         q = self._round_step(qty_d, step_size, ROUND_DOWN)
-        if q <= 0:
-            raise ValueError("Quantity rounds to zero with stepSize")
-
-        # check minQty if available
+        
+        # Check minQty if available
         min_qty = lot.get("minQty")
         if min_qty:
             min_qty_d = Decimal(str(min_qty))
             if q < min_qty_d:
+                # Clamp to minimum quantity to avoid zero-quantity error
                 q = min_qty_d
+
+        if q <= 0:
+            raise ValueError(f"Quantity {qty_d} rounds to zero with stepSize {step_size}")
 
         # check min notional if available
         # try common key names

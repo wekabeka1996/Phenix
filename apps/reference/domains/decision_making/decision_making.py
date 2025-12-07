@@ -30,6 +30,17 @@ from apps.reference.telemetry.metrics import inc_decision_deferred
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
 from apps.reference.telemetry.order_logger import order_logger
 
+# Phase 0: Import Aurora per-instrument config
+from apps.reference.config_models import AuroraInstrumentConfig
+
+# Track B: Import Mean Reversion handler
+try:
+    from .mean_reversion_handler import MeanReversionHandler
+    MEAN_REVERSION_AVAILABLE = True
+except ImportError:
+    MEAN_REVERSION_AVAILABLE = False
+    MeanReversionHandler = None  # type: ignore
+
 # Import AlertManager for risk gating
 try:
     from apps.reference.telemetry.alerts import AlertManager
@@ -470,6 +481,68 @@ class DecisionMaking:
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
         self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED",
                         self.update_exposure_cache)
+        
+        # Track B: Initialize Mean Reversion handler (feature-flagged)
+        self._mr_handler: Optional[MeanReversionHandler] = None
+        if MEAN_REVERSION_AVAILABLE:
+            try:
+                self._mr_handler = MeanReversionHandler(
+                    fsm=self.fsm,
+                    config=self.config,
+                    decision_making=self
+                )
+                if self._mr_handler.enabled:
+                    self.logger.info(
+                        f"✅ MeanReversionHandler enabled for symbols: "
+                        f"{list(self._mr_handler._enabled_symbols)}"
+                    )
+                    # Listen for tick events for MR processing
+                    self.fsm.listen("EVT:TICK_RECEIVED", self._on_tick_for_mr)
+                else:
+                    self.logger.info("MeanReversionHandler initialized but disabled by config")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize MeanReversionHandler: {e}")
+                self._mr_handler = None
+        else:
+            self.logger.debug("MeanReversion module not available")
+
+    def _on_tick_for_mr(self, event: Message) -> None:
+        """
+        Forward tick events to Mean Reversion handler.
+        
+        Track B: Wiring tick → BarResampler → MRSignal → TradeIntent
+        """
+        if not self._mr_handler or not self._mr_handler.enabled:
+            return
+        
+        try:
+            pld = event.pld
+            if isinstance(pld, dict):
+                symbol = pld.get("symbol", "")
+                price = Decimal(str(pld.get("price", 0)))
+                volume = Decimal(str(pld.get("volume", 0)))
+                timestamp_ms = int(pld.get("timestamp_ms", 0))
+            elif hasattr(pld, 'symbol'):
+                symbol = pld.symbol
+                price = Decimal(str(getattr(pld, 'price', 0)))
+                volume = Decimal(str(getattr(pld, 'volume', 0)))
+                timestamp_ms = int(getattr(pld, 'timestamp_ms', 0))
+            else:
+                return
+            
+            if not symbol or not self._mr_handler.is_symbol_enabled(symbol):
+                return
+            
+            # Get current regime for this symbol
+            regime = None
+            if self.latest_regime and isinstance(self.latest_regime, dict):
+                regime = self.latest_regime.get(symbol) or self.latest_regime.get("overall_regime")
+            
+            # Process tick through MR handler
+            self._mr_handler.on_tick(symbol, price, volume, timestamp_ms, regime)
+            
+        except Exception as e:
+            self.logger.warning(f"Error processing tick for MR: {e}")
 
     def _qos_allow(
         self, symbol: str, is_exposure_block: bool = False
@@ -674,6 +747,164 @@ class DecisionMaking:
         self.logger.warning(
             f"[{symbol}] Exposure block recorded at {current_time}")
 
+    # =========================================================================
+    # Phase 0: Per-Instrument Aurora Configuration Helpers
+    # =========================================================================
+
+    def _get_aurora_instrument_cfg(self, symbol: str) -> Optional[AuroraInstrumentConfig]:
+        """
+        Get per-instrument Aurora configuration for a symbol.
+
+        Fallback chain:
+        1. trading.aurora_instruments.<SYMBOL> (Pydantic config)
+        2. None (caller falls back to global trading.decision.*)
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+
+        Returns:
+            AuroraInstrumentConfig or None if not configured
+        """
+        # Try Pydantic config first (new format)
+        trading_cfg = self._safe_config_get("trading")
+        if trading_cfg and hasattr(trading_cfg, 'aurora_instruments'):
+            aurora_instruments = trading_cfg.aurora_instruments
+            if isinstance(aurora_instruments, dict) and symbol in aurora_instruments:
+                return aurora_instruments[symbol]
+
+        # Try dict config (legacy format)
+        aurora_instruments_dict = self._safe_config_get("trading", "aurora_instruments")
+        if isinstance(aurora_instruments_dict, dict) and symbol in aurora_instruments_dict:
+            instr_cfg = aurora_instruments_dict[symbol]
+            if isinstance(instr_cfg, AuroraInstrumentConfig):
+                return instr_cfg
+            elif isinstance(instr_cfg, dict):
+                # Convert dict to Pydantic model
+                try:
+                    return AuroraInstrumentConfig(**instr_cfg)
+                except (TypeError, ValueError) as e:
+                    self.logger.debug(f"Failed to convert legacy dict config for {symbol}: {e}")
+
+        return None
+
+    def _get_param(self, symbol: str, param: str, default: Any) -> Any:
+        """
+        Get configuration parameter with per-instrument override support.
+
+        Fallback chain:
+        1. aurora_instruments.<SYMBOL>.<param>
+        2. trading.decision.<param> (global)
+        3. default value
+
+        Args:
+            symbol: Trading pair symbol
+            param: Parameter name (e.g., 'signal_weights', 'side_bias')
+            default: Default value if not found
+
+        Returns:
+            Parameter value from per-instrument or global config
+        """
+        # 1. Try per-instrument config
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg is not None:
+            value = getattr(instr_cfg, param, None)
+            if value is not None:
+                return value
+
+        # 2. Fallback to global trading.decision.*
+        global_value = self._safe_config_get("trading", "decision", param, default=default)
+        return global_value if global_value is not None else default
+
+    def _get_side_bias_params(self, symbol: str) -> tuple:
+        """
+        Get side_bias parameters with per-instrument override.
+
+        Fallback chain:
+        1. aurora_instruments.<SYMBOL>.side_bias.* (per-instrument)
+        2. trading.decision.side_bias_* (global)
+        3. defaults
+
+        Returns:
+            (penalty_factor, window_sec, target_ratio)
+        """
+        # Defaults
+        default_penalty = 0.50
+        default_window = 60
+        default_target = 0.60
+
+        # 1. Try per-instrument config
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg is not None and getattr(instr_cfg, 'side_bias', None) is not None:
+            sb = instr_cfg.side_bias
+            penalty = getattr(sb, 'penalty_factor', None)
+            window = getattr(sb, 'window_sec', None)
+            target = getattr(sb, 'target_ratio', None)
+            return (
+                penalty if penalty is not None else default_penalty,
+                window if window is not None else default_window,
+                target if target is not None else default_target
+            )
+
+        # 2. Fallback to global
+        penalty = self._safe_config_get("trading", "decision", "side_bias_penalty_factor", default=default_penalty)
+        window = self._safe_config_get("trading", "decision", "side_bias_window_sec", default=default_window)
+        target = self._safe_config_get("trading", "decision", "side_bias_target_ratio", default=default_target)
+        return (penalty, window, target)
+
+    def _get_regime_thresholds(self, symbol: str) -> dict:
+        """
+        Get regime threshold multipliers with per-instrument override.
+
+        Fallback chain:
+        1. aurora_instruments.<SYMBOL>.regime_thresholds
+        2. trading.decision.regime_threshold_multipliers (global)
+        3. empty dict
+
+        Returns:
+            Dict mapping regime names to threshold multipliers
+        """
+        # 1. Try per-instrument config
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg is not None:
+            thresholds = getattr(instr_cfg, 'regime_thresholds', None)
+            if thresholds is not None:
+                return thresholds
+
+        # 2. Fallback to global
+        global_thresholds = self._safe_config_get(
+            "trading", "decision", "regime_threshold_multipliers", default={}
+        )
+        return global_thresholds or {}
+
+    def _get_regime_sizing(self, symbol: str) -> dict:
+        """
+        Get regime sizing multipliers with per-instrument override.
+
+        Fallback chain:
+        1. aurora_instruments.<SYMBOL>.regime_sizing
+        2. trading.decision.sizing_modifiers (global)
+        3. empty dict
+
+        Returns:
+            Dict mapping regime names to sizing multipliers
+        """
+        # 1. Try per-instrument config
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg is not None:
+            sizing = getattr(instr_cfg, 'regime_sizing', None)
+            if sizing is not None:
+                # Convert Pydantic model to dict if needed
+                if hasattr(sizing, 'model_dump'):
+                    return sizing.model_dump(exclude_none=True)
+                elif isinstance(sizing, dict):
+                    return sizing
+
+        # 2. Fallback to global
+        global_sizing = self._safe_config_get(
+            "trading", "decision", "sizing_modifiers", default={}
+        )
+        return global_sizing or {}
+
     def on_features(self, event: Message) -> None:
         try:
             if isinstance(event.pld, dict):
@@ -866,6 +1097,19 @@ class DecisionMaking:
 
     def on_regime(self, event: Message) -> None:
         self.latest_regime = event.pld
+        
+        # Track B: Forward regime to MR handler
+        if self._mr_handler and self._mr_handler.enabled:
+            try:
+                pld = event.pld
+                if isinstance(pld, dict):
+                    symbol = pld.get("symbol")
+                    regime = pld.get("regime") or pld.get("overall_regime")
+                    if symbol and regime:
+                        self._mr_handler.on_regime(symbol, regime)
+            except Exception as e:
+                self.logger.debug(f"Error forwarding regime to MR handler: {e}")
+        
         # Minimal behavior FSM mapping (if enabled)
         if self._behavior_enabled and event and event.pld:
             try:
@@ -1007,10 +1251,10 @@ class DecisionMaking:
         )
 
         # Busy guard: prevent infinite defer loops during cooldown
-        current_time = time.time()
-        next_allowed = self._qos_next_allowed_ts.get(symbol, 0)
-        if current_time < next_allowed:
-            remaining_sec = next_allowed - current_time
+        current_time_ms = int(time.time() * 1000)  # Convert to milliseconds for comparison
+        next_allowed = self._qos_next_allowed_ts.get(symbol, 0)  # Already in milliseconds
+        if current_time_ms < next_allowed:
+            remaining_sec = (next_allowed - current_time_ms) / 1000.0  # Convert back to seconds for logging
             self.logger.warning(
                 f"[{symbol}] Busy guard active: decision blocked for {remaining_sec:.1f}s (cooldown active)"
             )
@@ -1222,10 +1466,15 @@ class DecisionMaking:
 
         if isinstance(trading_config, dict):
             decision_config = trading_config.get("decision", {})
-            signal_weights = decision_config.get("signal_weights", {})
+            global_signal_weights = decision_config.get("signal_weights", {})
         else:
             decision_config = {}
-            signal_weights = {}
+            global_signal_weights = {}
+
+        # Phase A1: Per-instrument signal weights with global fallback
+        signal_weights = self._get_param(symbol, "weights", global_signal_weights)
+        if signal_weights is None:
+            signal_weights = global_signal_weights
 
         # DEBUG: Log full trading_config structure
         try:
@@ -1235,7 +1484,7 @@ class DecisionMaking:
         except (AttributeError, TypeError):
             pass
         self.logger.info(f"DEBUG decision_config: {decision_config}")
-        self.logger.info(f"DEBUG signal_weights: {signal_weights}")
+        self.logger.info(f"DEBUG signal_weights for {symbol}: {signal_weights}")
 
         # Compute signal score; optionally normalize components into [0,1]
         # FTR-07: Use DecisionContext for typed access to features
@@ -1340,9 +1589,8 @@ class DecisionMaking:
         base_threshold = decimal.Decimal(
             str(decision_config.get("signal_threshold", "0.1")))
         # Regime-based threshold multiplier (Δθ); defaults to 1.0 if not configured or regime missing
-        regime_thresholds_cfg = self._safe_config_get(
-            "trading", "decision", "regime_threshold_multipliers", default={}
-        ) or {}
+        # Phase A1: Per-instrument regime thresholds with global fallback
+        regime_thresholds_cfg = self._get_regime_thresholds(symbol)
         regime_name = (regime or {}).get("regime") if regime else None
         try:
             # Use regime_threshold_multipliers config (already loaded above as regime_thresholds_cfg)
@@ -1357,17 +1605,10 @@ class DecisionMaking:
         signal_threshold = base_threshold * threshold_factor
 
         # EXP-DIRECTION: Calculate side-bias penalty (Δθ_bias)
-        # Count recent SELL vs BUY intents in a sliding window
+        # Phase A1: Per-instrument side_bias with global fallback
         current_time = time.time()
-        bias_window_sec = self._safe_config_get(
-            "trading", "decision", "side_bias_window_sec", default=60)
-        # Target 60% SELL max
-        sell_target_ratio = self._safe_config_get(
-            "trading", "decision", "side_bias_target_ratio", default=0.60)
-        sell_bias_penalty_factor = decimal.Decimal(str(
-            self._safe_config_get("trading", "decision",
-                                  "side_bias_penalty_factor", default=0.50)
-        ))  # Increase threshold by 50% if oversold
+        sell_bias_penalty_factor_raw, bias_window_sec, sell_target_ratio = self._get_side_bias_params(symbol)
+        sell_bias_penalty_factor = decimal.Decimal(str(sell_bias_penalty_factor_raw))
 
         # Track intents per side (you can also extract from order_logger if needed)
         if symbol not in getattr(self, '_side_intent_window', {}):
@@ -1629,10 +1870,9 @@ class DecisionMaking:
 
         # Prepare sizing meta: regime multiplier and Kelly fraction (optional)
         sizing_meta: dict[str, Any] = {}
-        # Regime multiplier from config decision.sizing_modifiers
+        # Phase A1: Regime multiplier with per-instrument fallback
         try:
-            sizing_mods = self._safe_config_get(
-                "trading", "decision", "sizing_modifiers", default={}) or {}
+            sizing_mods = self._get_regime_sizing(symbol)
             if regime_name and regime_name in sizing_mods:
                 sizing_meta["regime_multiplier"] = decimal.Decimal(
                     str(sizing_mods.get(regime_name, "1.0")))

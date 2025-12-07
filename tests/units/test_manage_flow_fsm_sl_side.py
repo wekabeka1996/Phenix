@@ -37,12 +37,16 @@ def test_sl_side_is_opposite_for_long():
     )
 
     dec = fsm.handle(fill_msg)
-    assert dec is not None, "ManageFlowFSM should emit DEC for first bracket"
-    assert dec.op == "DEC" and dec.verb == "PLACE_ORDER"
-    assert dec.pld.get("order_type") == "STOP_MARKET", "SL must be STOP_MARKET"
-    assert dec.pld.get("reduceOnly") is True, "SL must be reduceOnly"
-    assert dec.pld.get(
-        "side") == "SELL", "SL side must be opposite to BUY position"
+    assert dec is not None, "ManageFlowFSM should emit DEC:BATCH for brackets"
+    assert dec.op == "DEC" and dec.verb == "BATCH", "Expected DEC:BATCH for bracket orders"
+    
+    # Extract SL message from batch
+    messages = dec.pld.get("messages", [])
+    sl_msg = next((m for m in messages if m.get("why") == "SL bracket"), None)
+    assert sl_msg is not None, "Batch should contain SL bracket"
+    assert sl_msg.get("pld", {}).get("order_type") == "STOP_MARKET", "SL must be STOP_MARKET"
+    assert sl_msg.get("pld", {}).get("reduceOnly") is True, "SL must be reduceOnly"
+    assert sl_msg.get("pld", {}).get("side") == "SELL", "SL side must be opposite to BUY position"
 
 
 def test_sl_side_is_opposite_for_short():
@@ -73,8 +77,12 @@ def test_sl_side_is_opposite_for_short():
     )
 
     dec = fsm.handle(fill_msg)
-    assert dec is not None and dec.op == "DEC" and dec.verb == "PLACE_ORDER"
-    assert dec.pld.get("order_type") == "STOP_MARKET"
-    assert dec.pld.get("reduceOnly") is True
-    assert dec.pld.get(
-        "side") == "BUY", "SL side must be opposite to SELL position"
+    assert dec is not None and dec.op == "DEC" and dec.verb == "BATCH"
+    
+    # Extract SL message from batch
+    messages = dec.pld.get("messages", [])
+    sl_msg = next((m for m in messages if m.get("why") == "SL bracket"), None)
+    assert sl_msg is not None, "Batch should contain SL bracket"
+    assert sl_msg.get("pld", {}).get("order_type") == "STOP_MARKET"
+    assert sl_msg.get("pld", {}).get("reduceOnly") is True
+    assert sl_msg.get("pld", {}).get("side") == "BUY", "SL side must be opposite to SELL position"

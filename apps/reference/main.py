@@ -419,6 +419,10 @@ class AuroraBridge:
             "price_ref": order_details.get(
                 "price_ref"
             ),  # Pass current market price for min_notional checks
+            # TP/SL Intent Data Propagation (PHASE A2 fix)
+            "stop_price": intent_msg.pld.get("stop_price"),
+            "target_price": intent_msg.pld.get("target_price"),
+            "sl_pct": intent_msg.pld.get("sl_pct"),
         }
 
         # XAI instrumentation: exec_open_enter

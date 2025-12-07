@@ -66,17 +66,20 @@ def test_calculate_bracket_prices_buy_and_sell():
     fsm.position_entry_price = Decimal("100")
     fsm.position_side = "BUY"
 
-    sl, tp = fsm._calculate_bracket_prices()
+    sl, tp1, tp2 = fsm._calculate_bracket_prices()
     # For BUY, sl = entry*(1 - 50/10000) = 99.5 ; tp = entry*(1 + 100/10000) = 101.0
     assert float(sl) == pytest.approx(100 * (1 - 50 / 10000))
-    assert float(tp) == pytest.approx(100 * (1 + 100 / 10000))
+    assert float(tp1) == pytest.approx(100 * (1 + 100 / 10000))
+    # No TP2 since no per-instrument config with tp_high_ratio
+    assert tp2 is None
 
     # SELL side
     fsm.position_side = "SELL"
-    sl2, tp2 = fsm._calculate_bracket_prices()
+    sl2, tp1_2, tp2_2 = fsm._calculate_bracket_prices()
     # For SELL, sl = entry*(1 + 50/10000), tp = entry*(1 - 100/10000)
     assert float(sl2) == pytest.approx(100 * (1 + 50 / 10000))
-    assert float(tp2) == pytest.approx(100 * (1 - 100 / 10000))
+    assert float(tp1_2) == pytest.approx(100 * (1 - 100 / 10000))
+    assert tp2_2 is None
 
 
 def test_emit_place_order_message_contains_expected_fields():
