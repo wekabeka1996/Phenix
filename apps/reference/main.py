@@ -28,6 +28,7 @@ from apps.reference.domains.account_balance.account_connector import AccountConn
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.risk_management.risk_management import RiskManagement
+from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
 )
@@ -35,7 +36,8 @@ from apps.reference.domains.feature_engineering.feature_engineering import (
 # The actual class used is determined by feature flag at runtime
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
 from apps.reference.domains.market_data.proxy import MarketDataProxy
-from apps.reference.data.feature_store import FeatureStore
+# NOTE: FeatureStore DISABLED — synchronous DB writes block tick processing
+# from apps.reference.data.feature_store import FeatureStore
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from apps.reference.telemetry.alerts import AlertManager
@@ -53,6 +55,7 @@ from typing import Any, Optional
 from logging.handlers import RotatingFileHandler
 import asyncio
 import threading
+import concurrent.futures
 
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -70,6 +73,387 @@ def _run_async_loop(loop: asyncio.AbstractEventLoop) -> None:
 # Import telemetry
 
 # Import config loader
+
+
+# =============================================================================
+# RELIABLE RETRY SCHEDULER (D2 - Plan v1)
+# =============================================================================
+
+class RetryScheduler:
+    """
+    Reliable retry scheduler for EVT:INTENT_DEFERRED events.
+    
+    Features:
+    - Stores deferred intents with retry_key for idempotency
+    - Schedules re-emission of original_event after next_allowed_ts
+    - Tracks attempt count and drops after max_attempts
+    - Emits EVT:INTENT_DROPPED when giving up
+    - Default restart behavior: drop all pending (fail-closed)
+    
+    Compliant with schemas/intent_deferred_v1.json and intent_dropped_v1.json.
+    """
+    
+    def __init__(
+        self, 
+        fsm: FSMCore, 
+        logger: logging.Logger | None = None,
+        default_max_attempts: int = 5,
+        min_retry_delay_ms: int = 500,
+    ):
+        self.fsm = fsm
+        self.logger = logger or logging.getLogger("RetryScheduler")
+        self.default_max_attempts = default_max_attempts
+        self.min_retry_delay_ms = min_retry_delay_ms
+        
+        # Pending deferred intents: retry_key -> deferred payload dict
+        self._pending: dict[str, dict[str, Any]] = {}
+        
+        # Active retry tasks: retry_key -> concurrent future (scheduled on bound loop)
+        self._retry_tasks: dict[str, concurrent.futures.Future] = {}
+        
+        # Lock for thread-safety
+        self._lock = threading.Lock()
+
+        # Bound async loop for scheduling retries (must be running)
+        self._loop: asyncio.AbstractEventLoop | None = None
+        
+        self.logger.info("RetryScheduler initialized (default_max_attempts=%d)", default_max_attempts)
+
+    def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """
+        Bind scheduler to a running asyncio loop (typically Aurora async loop thread).
+
+        Safe to call multiple times; will schedule any already-pending intents.
+        """
+        self._loop = loop
+        with self._lock:
+            pending_keys = list(self._pending.keys())
+        for retry_key in pending_keys:
+            next_allowed_ts = int(self._pending.get(retry_key, {}).get("next_allowed_ts", 0))
+            if next_allowed_ts > 0:
+                self._schedule_retry(retry_key, next_allowed_ts)
+    
+    def register_deferred(self, deferred_payload: dict[str, Any]) -> bool:
+        """
+        Register a deferred intent for retry.
+        
+        Args:
+            deferred_payload: Dict matching intent_deferred_v1.json schema
+            
+        Returns:
+            True if registered, False if already exists or invalid
+        """
+        retry_key = deferred_payload.get("retry_key")
+        if not retry_key:
+            self.logger.warning("RetryScheduler: deferred_payload missing retry_key, ignoring")
+            return False
+        
+        symbol = deferred_payload.get("symbol", "UNKNOWN")
+        reason = deferred_payload.get("reason", "unknown")
+        next_allowed_ts = deferred_payload.get("next_allowed_ts", 0)
+        attempt = deferred_payload.get("attempt", 1)
+        max_attempts = deferred_payload.get("max_attempts", self.default_max_attempts)
+        original_event = deferred_payload.get("original_event")
+        
+        if not original_event:
+            self.logger.warning("RetryScheduler: deferred_payload missing original_event for %s", retry_key)
+            return False
+        
+        with self._lock:
+            # Check if already pending with same key (idempotency)
+            if retry_key in self._pending:
+                existing = self._pending[retry_key]
+                existing_attempt = existing.get("attempt", 1)
+                if attempt <= existing_attempt:
+                    self.logger.debug(
+                        "RetryScheduler: %s already pending (attempt %d >= new %d), ignoring duplicate",
+                        retry_key, existing_attempt, attempt
+                    )
+                    return False
+            
+            # Store pending
+            self._pending[retry_key] = {
+                "retry_key": retry_key,
+                "symbol": symbol,
+                "reason": reason,
+                "next_allowed_ts": next_allowed_ts,
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "original_event": original_event,
+                "why_chain": deferred_payload.get("why_chain", []),
+                "created_ts": deferred_payload.get("created_ts", int(time.time() * 1000)),
+            }
+            
+            self.logger.info(
+                "RetryScheduler: Registered %s (symbol=%s, reason=%s, attempt=%d/%d, next_ts=%d)",
+                retry_key, symbol, reason, attempt, max_attempts, next_allowed_ts
+            )
+        
+        # Schedule retry task
+        self._schedule_retry(retry_key, next_allowed_ts)
+        return True
+    
+    def _schedule_retry(self, retry_key: str, next_allowed_ts: int) -> None:
+        """Schedule async task to retry after next_allowed_ts."""
+        # Cancel existing task if any
+        if retry_key in self._retry_tasks:
+            old_future = self._retry_tasks.pop(retry_key)
+            try:
+                old_future.cancel()
+            except Exception:
+                pass
+        
+        async def _do_retry():
+            # Calculate delay
+            now_ms = int(time.time() * 1000)
+            delay_ms = max(next_allowed_ts - now_ms, self.min_retry_delay_ms)
+            delay_sec = delay_ms / 1000.0
+            
+            self.logger.debug("RetryScheduler: %s sleeping %.2fs before retry", retry_key, delay_sec)
+            await asyncio.sleep(delay_sec)
+            
+            # Execute retry
+            await self._execute_retry(retry_key)
+
+        # Preferred: schedule onto a known running loop (AuroraAsyncLoop thread)
+        if self._loop is not None and self._loop.is_running():
+            try:
+                fut = asyncio.run_coroutine_threadsafe(_do_retry(), self._loop)
+                self._retry_tasks[retry_key] = fut
+                return
+            except Exception as e:
+                self.logger.error(
+                    "RetryScheduler: Failed to schedule %s on bound loop: %r", retry_key, e
+                )
+
+        # Fallback: schedule onto current running loop (if any)
+        try:
+            loop = asyncio.get_running_loop()
+            self._retry_tasks[retry_key] = loop.create_task(_do_retry())  # type: ignore[assignment]
+            return
+        except RuntimeError:
+            pass
+
+        # Fail-closed: keep pending but do not silently claim success
+        self.logger.error(
+            "RetryScheduler: No running asyncio loop bound; %s registered but retry NOT scheduled",
+            retry_key,
+        )
+    
+    async def _execute_retry(self, retry_key: str) -> None:
+        """Execute retry for a pending deferred intent."""
+        with self._lock:
+            pending = self._pending.get(retry_key)
+            if not pending:
+                self.logger.debug("RetryScheduler: %s no longer pending, skip retry", retry_key)
+                return
+            
+            attempt = pending.get("attempt", 1)
+            max_attempts = pending.get("max_attempts", self.default_max_attempts)
+            symbol = pending.get("symbol", "UNKNOWN")
+            original_event = pending.get("original_event", {})
+            why_chain = pending.get("why_chain", [])
+            created_ts = pending.get("created_ts", 0)
+        
+        # Check if max attempts exceeded
+        if attempt >= max_attempts:
+            self._drop_intent(
+                retry_key=retry_key,
+                symbol=symbol,
+                drop_reason="MAX_ATTEMPTS_EXCEEDED",
+                original_reason=pending.get("reason", "unknown"),
+                attempt=attempt,
+                max_attempts=max_attempts,
+                original_event=original_event,
+                why_chain=why_chain + ["max_attempts_exceeded"],
+                created_ts=created_ts,
+            )
+            return
+        
+        # Re-emit original event
+        event_name = original_event.get("event_name", "")
+        payload_min = original_event.get("payload_min", {})
+        
+        if not event_name or not payload_min:
+            self.logger.error(
+                "RetryScheduler: %s has invalid original_event, dropping",
+                retry_key
+            )
+            self._drop_intent(
+                retry_key=retry_key,
+                symbol=symbol,
+                drop_reason="STALE_INTENT",
+                original_reason=pending.get("reason", "unknown"),
+                attempt=attempt,
+                max_attempts=max_attempts,
+                original_event=original_event,
+                why_chain=why_chain + ["invalid_original_event"],
+                created_ts=created_ts,
+            )
+            return
+        
+        # Build re-emit message
+        # Parse event_name: "EVT:MR_SIGNAL_PRODUCED" -> op="EVT", verb="MR_SIGNAL_PRODUCED"
+        if ":" in event_name:
+            op, verb = event_name.split(":", 1)
+        else:
+            op, verb = "EVT", event_name
+        
+        retry_msg = Message(
+            op=op,
+            verb=verb,
+            src="retry_scheduler",
+            dst="decision_making",
+            rid=payload_min.get("rid", f"retry_{retry_key}_{attempt}"),
+            pld=payload_min,
+            why=f"retry_attempt_{attempt}_of_{max_attempts}",
+        )
+        
+        self.logger.info(
+            "RetryScheduler: Re-emitting %s for %s (attempt %d/%d)",
+            event_name, symbol, attempt, max_attempts
+        )
+        
+        # Remove from pending (will be re-added if deferred again)
+        with self._lock:
+            self._pending.pop(retry_key, None)
+            self._retry_tasks.pop(retry_key, None)
+        
+        # Emit
+        await emit_compat(self.fsm, retry_msg, logger=self.logger)
+    
+    def _drop_intent(
+        self,
+        retry_key: str,
+        symbol: str,
+        drop_reason: str,
+        original_reason: str,
+        attempt: int,
+        max_attempts: int,
+        original_event: dict,
+        why_chain: list,
+        created_ts: int,
+    ) -> None:
+        """Drop a deferred intent and emit EVT:INTENT_DROPPED."""
+        dropped_ts = int(time.time() * 1000)
+        
+        drop_payload = {
+            "retry_key": retry_key,
+            "symbol": symbol,
+            "drop_reason": drop_reason,
+            "original_reason": original_reason,
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+            "original_event": original_event,
+            "why_chain": why_chain,
+            "created_ts": created_ts,
+            "dropped_ts": dropped_ts,
+        }
+        
+        drop_msg = Message(
+            op="EVT",
+            verb="INTENT_DROPPED",
+            src="retry_scheduler",
+            dst="*",
+            rid=f"drop_{retry_key}",
+            pld=drop_payload,
+            why=f"dropped_{drop_reason}",
+        )
+        
+        self.logger.warning(
+            "RetryScheduler: Dropping %s (reason=%s, attempts=%d/%d)",
+            retry_key, drop_reason, attempt, max_attempts
+        )
+        
+        # Remove from pending
+        with self._lock:
+            self._pending.pop(retry_key, None)
+            self._retry_tasks.pop(retry_key, None)
+        
+        # Emit synchronously (called from async context, but emit_compat handles both)
+        try:
+            self.fsm.emit(drop_msg.op + ":" + drop_msg.verb, drop_msg.pld)
+        except Exception as e:
+            self.logger.error("RetryScheduler: Failed to emit INTENT_DROPPED: %s", e)
+    
+    def cancel_pending(self, retry_key: str) -> bool:
+        """Cancel a pending deferred intent."""
+        with self._lock:
+            if retry_key not in self._pending:
+                return False
+            
+            pending = self._pending.pop(retry_key)
+            symbol = pending.get("symbol", "UNKNOWN")
+        
+        # Cancel task
+        if retry_key in self._retry_tasks:
+            task = self._retry_tasks.pop(retry_key)
+            if not task.done():
+                task.cancel()
+        
+        self.logger.info("RetryScheduler: Cancelled %s for %s", retry_key, symbol)
+        return True
+    
+    def clear_all_pending(self, emit_dropped: bool = True, drop_reason: str = "RESTART_NO_PERSISTENCE") -> int:
+        """
+        Clear all pending deferred intents (fail-closed on restart).
+        
+        Args:
+            emit_dropped: If True, emit EVT:INTENT_DROPPED for each
+            drop_reason: Reason to use in dropped events
+            
+        Returns:
+            Number of intents cleared
+        """
+        with self._lock:
+            pending_copy = dict(self._pending)
+            self._pending.clear()
+            
+            # Cancel all tasks
+            for task in self._retry_tasks.values():
+                if not task.done():
+                    task.cancel()
+            self._retry_tasks.clear()
+        
+        if not pending_copy:
+            return 0
+        
+        self.logger.warning(
+            "RetryScheduler: Clearing %d pending intents (reason=%s)",
+            len(pending_copy), drop_reason
+        )
+        
+        if emit_dropped:
+            dropped_ts = int(time.time() * 1000)
+            for retry_key, pending in pending_copy.items():
+                drop_payload = {
+                    "retry_key": retry_key,
+                    "symbol": pending.get("symbol", "UNKNOWN"),
+                    "drop_reason": drop_reason,
+                    "original_reason": pending.get("reason", "unknown"),
+                    "attempt": pending.get("attempt", 1),
+                    "max_attempts": pending.get("max_attempts", self.default_max_attempts),
+                    "original_event": pending.get("original_event", {}),
+                    "why_chain": pending.get("why_chain", []) + [drop_reason.lower()],
+                    "created_ts": pending.get("created_ts", 0),
+                    "dropped_ts": dropped_ts,
+                }
+                try:
+                    self.fsm.emit("EVT:INTENT_DROPPED", drop_payload)
+                except Exception as e:
+                    self.logger.error("RetryScheduler: Failed to emit INTENT_DROPPED for %s: %s", retry_key, e)
+        
+        return len(pending_copy)
+    
+    def get_pending_count(self) -> int:
+        """Get count of pending deferred intents."""
+        with self._lock:
+            return len(self._pending)
+    
+    def get_pending_for_symbol(self, symbol: str) -> list[str]:
+        """Get retry_keys for pending intents on a symbol."""
+        with self._lock:
+            return [k for k, v in self._pending.items() if v.get("symbol") == symbol]
 
 
 class AuroraBridge:
@@ -100,6 +484,15 @@ class AuroraBridge:
             "positions_stale_ttl_sec", 5))
         self._retry_delay_sec = 0.5
         self._max_retries = 2
+        
+        # D2: Initialize reliable retry scheduler
+        retry_config = config.get("bridge", {}).get("retry_scheduler", {})
+        self._retry_scheduler = RetryScheduler(
+            fsm=fsm,
+            logger=self.logger,
+            default_max_attempts=retry_config.get("max_attempts", 5),
+            min_retry_delay_ms=retry_config.get("min_retry_delay_ms", 500),
+        )
 
         # Register event listeners
         # Note: We register global handlers that properly handle async calls
@@ -108,6 +501,31 @@ class AuroraBridge:
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
                         on_portfolio_state_updated)
         self.fsm.listen("EVT:INTENT_DEFERRED", on_intent_deferred)
+        
+        self.logger.info(
+            "AuroraBridge initialized (ttl_sec=%d, retry_scheduler_max_attempts=%d)",
+            self._ttl_sec, self._retry_scheduler.default_max_attempts
+        )
+    
+    @property
+    def retry_scheduler(self) -> RetryScheduler:
+        """Get the retry scheduler instance."""
+        return self._retry_scheduler
+    
+    def clear_pending_on_restart(self) -> int:
+        """
+        D6: Clear all pending deferred intents on restart (fail-closed default).
+        
+        Emits EVT:INTENT_DROPPED with reason=RESTART_NO_PERSISTENCE for each.
+        Call this during startup to ensure clean state.
+        
+        Returns:
+            Number of intents dropped
+        """
+        return self._retry_scheduler.clear_all_pending(
+            emit_dropped=True,
+            drop_reason="RESTART_NO_PERSISTENCE"
+        )
 
     def _is_portfolio_fresh(self) -> bool:
         """Check if portfolio data is fresh (within TTL)."""
@@ -399,6 +817,15 @@ class AuroraBridge:
 
         # Extract order details from nested structure
         order_details = intent_msg.pld.get("order", {})
+        # Accept multiple upstream shapes (legacy + MR handler)
+        order_type_raw = order_details.get("order_type") or order_details.get("type")
+        price_ref = (
+            order_details.get("price_ref")
+            or intent_msg.pld.get("price_ref")
+            or intent_msg.pld.get("entry_price")
+            or order_details.get("price")
+            or intent_msg.pld.get("price")
+        )
 
         command_payload = {
             # Pass through request ID for tracing
@@ -411,14 +838,12 @@ class AuroraBridge:
             "price": order_details.get(
                 "price"
             ),  # Get price from order.price (as string)
-            "order_type": "LIMIT",  # Use LIMIT orders with specified price
+            "order_type": order_type_raw or "LIMIT",
             "tif": "GTC",  # Good-Till-Cancel
             "idempotent_key": intent_msg.pld.get(
                 "idempotent_key"
             ),  # Pass through for deduplication
-            "price_ref": order_details.get(
-                "price_ref"
-            ),  # Pass current market price for min_notional checks
+            "price_ref": price_ref,  # Pass current market price for min_notional/exposure checks
             # TP/SL Intent Data Propagation (PHASE A2 fix)
             "stop_price": intent_msg.pld.get("stop_price"),
             "target_price": intent_msg.pld.get("target_price"),
@@ -438,8 +863,21 @@ class AuroraBridge:
         self.logger.debug(
             f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
 
-        # Preserve XAI chain: pass full WHY chain in data_ref
-        event_why_chain = intent_msg.pld.get("why", [])
+        # Preserve XAI chain: pass full WHY chain in data_ref.
+        # SSOT: Message.data_ref must be list[str]; some upstreams still send pld["why"] as str.
+        event_why_chain: list[str] = []
+        pld_why = intent_msg.pld.get("why", [])
+        if isinstance(intent_msg.data_ref, list) and intent_msg.data_ref:
+            event_why_chain = [str(x) for x in intent_msg.data_ref if x is not None]
+            # If upstream also provided a human WHY string (e.g., MR), preserve it as an additional ref.
+            if isinstance(pld_why, str) and pld_why.strip() and pld_why.strip() not in event_why_chain:
+                event_why_chain.append(pld_why.strip())
+        else:
+            if isinstance(pld_why, list):
+                event_why_chain = [str(x) for x in pld_why if x is not None]
+            elif isinstance(pld_why, str) and pld_why.strip():
+                event_why_chain = [pld_why.strip()]
+
         # Pick a safe short WHY (<=80 chars). Prefer a known short code, else truncate.
         default_why = "exec_open_enter"
         bridge_why = default_why
@@ -457,7 +895,7 @@ class AuroraBridge:
             intent="COMMAND",  # v2.2: Classify as command
             why=bridge_why,  # Preserve first WHY for backward compatibility
             pld=command_payload,
-            data_ref=event_why_chain or [],  # Full WHY chain
+            data_ref=event_why_chain,  # Full WHY chain (validated list[str])
         )
 
         self.logger.info(
@@ -491,8 +929,10 @@ class AuroraBridge:
         """
         Synchronous handler for trade intent.
         Checks QoS and portfolio freshness, dispatches CMD:OPEN if OK.
+        If portfolio stale, defers intent for retry on next portfolio update.
         """
         symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
+        rid = event.pld.get("rid", "unknown")
         
         # Check for forbidden LIMIT entry
         order_details = event.pld.get("order", {})
@@ -502,38 +942,108 @@ class AuroraBridge:
         
         # Check QoS first
         if not self._is_qos_allowed(symbol):
-            self.logger.info(f"BRIDGE: QoS blocked for {symbol}, skipping (no defer in sync mode)")
+            self.logger.info(f"BRIDGE: QoS blocked for {symbol}, skipping")
             return
         
         # Check portfolio freshness
         if not self._is_portfolio_fresh():
-            self.logger.info(f"BRIDGE: Portfolio stale for {symbol}, skipping (no defer in sync mode)")
+            # Defer intent for retry on next portfolio update (sync mode)
+            idempotent_key = f"{symbol}_{rid}"
+            if idempotent_key not in self._deferred:
+                self._deferred[idempotent_key] = event
+                self._deferred_tries[idempotent_key] = 0
+                self.logger.info(f"BRIDGE: Portfolio stale for {symbol}, deferring intent (rid={rid})")
+            else:
+                self.logger.debug(f"BRIDGE: Intent already deferred for {symbol} (rid={rid})")
             return
         
         # Both OK - dispatch
         self._dispatch_open(event)
     
     def on_portfolio_state_updated_sync(self, event: Message) -> None:
-        """Synchronous handler for portfolio updates."""
+        """Synchronous handler for portfolio updates. Flushes deferred intents."""
         self._last_portfolio = event.pld or {}
         self._last_portfolio_ts = int(
             self._last_portfolio.get("positions_last_ts_ms", 0)
         ) or int(time.time() * 1000)
-        # No deferred flush in sync mode - intents not deferred
+        
+        # Flush deferred intents now that portfolio is fresh
+        if self._deferred:
+            self.logger.info(f"BRIDGE: Portfolio updated, flushing {len(self._deferred)} deferred intents")
+            to_remove = []
+            for key, deferred_event in list(self._deferred.items()):
+                self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+                if self._deferred_tries[key] > self._max_retries:
+                    self.logger.warning(f"BRIDGE: Deferred intent {key} exceeded max retries, dropping")
+                    to_remove.append(key)
+                    continue
+                    
+                symbol = deferred_event.pld.get("instrument") or deferred_event.pld.get("symbol") or ""
+                if not self._is_qos_allowed(symbol):
+                    self.logger.info(f"BRIDGE: Deferred intent {key} still QoS blocked, keeping")
+                    continue
+                
+                # Dispatch and mark for removal
+                self._dispatch_open(deferred_event)
+                to_remove.append(key)
+            
+            # Clean up processed intents
+            for key in to_remove:
+                self._deferred.pop(key, None)
+                self._deferred_tries.pop(key, None)
     
     def on_intent_deferred_sync(self, event: Message) -> None:
-        """Synchronous handler for intent deferral."""
-        symbol = event.pld.get("symbol")
-        reason = event.pld.get("reason", "unknown")
-        next_allowed_ts = event.pld.get("next_allowed_ts", 0)
+        """
+        Synchronous handler for intent deferral.
+        
+        D2: Supports both legacy format and intent_deferred_v1.json compliant format.
+        If payload has retry_key and original_event, uses RetryScheduler.
+        Otherwise, falls back to legacy QoS cooldown registration.
+        """
+        pld = event.pld or {}
+        symbol = pld.get("symbol")
+        reason = pld.get("reason", "unknown")
+        next_allowed_ts = pld.get("next_allowed_ts", 0)
         
         if not symbol:
-            self.logger.warning(f"BRIDGE: INTENT_DEFERRED missing symbol: {event.pld}")
+            self.logger.warning(f"BRIDGE: INTENT_DEFERRED missing symbol: {pld}")
             return
         
-        # Register QoS cooldown
+        # Register QoS cooldown (always, for both legacy and v1)
         self._qos_next_allowed_ts_per_symbol[symbol] = next_allowed_ts
-        self.logger.info(f"BRIDGE: QoS defer registered for {symbol} until {next_allowed_ts} (reason: {reason})")
+        
+        # D2: Check if v1-compliant payload with retry_key and original_event
+        retry_key = pld.get("retry_key")
+        original_event = pld.get("original_event")
+        
+        if retry_key and original_event:
+            # V1-compliant: use RetryScheduler for reliable retry
+            deferred_payload = {
+                "retry_key": retry_key,
+                "symbol": symbol,
+                "reason": reason,
+                "next_allowed_ts": next_allowed_ts,
+                "attempt": pld.get("attempt", 1),
+                "max_attempts": pld.get("max_attempts", 5),
+                "original_event": original_event,
+                "why_chain": pld.get("why_chain", []),
+                "created_ts": pld.get("created_ts", int(time.time() * 1000)),
+            }
+            registered = self._retry_scheduler.register_deferred(deferred_payload)
+            if registered:
+                self.logger.info(
+                    f"BRIDGE: V1 deferred registered via RetryScheduler for {symbol} "
+                    f"(retry_key={retry_key}, reason={reason})"
+                )
+            else:
+                self.logger.debug(
+                    f"BRIDGE: V1 deferred already pending or invalid for {symbol} (retry_key={retry_key})"
+                )
+        else:
+            # Legacy format: just log QoS registration (no reliable retry)
+            self.logger.info(
+                f"BRIDGE: Legacy QoS defer registered for {symbol} until {next_allowed_ts} (reason={reason})"
+            )
 
 
 # Global bridge instance for backward compatibility
@@ -775,6 +1285,20 @@ em_handler.addFilter(
 domain_handlers["execution_management"] = em_handler
 root_logger.addHandler(em_handler)
 
+# Regime Detector domain logs
+rd_log_file = logs_dir / "domain_regime_detector.log"
+rd_handler = RotatingFileHandler(
+    rd_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
+rd_handler.setLevel(logging.DEBUG)
+rd_handler.setFormatter(file_formatter)
+rd_handler.addFilter(
+    lambda record: record.name.startswith(
+        "apps.reference.domains.regime_detector")
+)
+domain_handlers["regime_detector"] = rd_handler
+root_logger.addHandler(rd_handler)
+
 # Event Chain structured logs (JSON format)
 chain_log_file = logs_dir / "event_chain.log"
 chain_handler = RotatingFileHandler(
@@ -849,6 +1373,9 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     decision_making = DecisionMaking(fsm, config_dict.get("trading", {}))
     account_balance = AccountConnector(fsm, config_dict)
     account_observer = AccountObserver(fsm, config_dict)
+    # RegimeDetector: Analyzes market features to detect trading regimes
+    # Emits EVT:REGIME_DETECTED for decision_making to use
+    regime_detector = RegimeDetector(config_dict, fsm)
     # snapshot_scheduler = SnapshotScheduler(fsm, config_dict)  # Moved to main()
 
     # 4. Register domains in the FSM core for inter-domain communication if needed
@@ -859,6 +1386,7 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     fsm.register_domain("decision_making", decision_making)
     fsm.register_domain("account_balance", account_balance)
     fsm.register_domain("account_observer", account_observer)
+    fsm.register_domain("regime_detector", regime_detector)
     # fsm.register_domain("snapshot_scheduler", snapshot_scheduler)  # Moved to main()
     fsm.register_domain("execution_position", execution_position)
 
@@ -893,54 +1421,9 @@ def main() -> None:
     from threading import Thread
     import time as time_module
 
-    def _multi_tf_rollup_worker(feature_store: FeatureStore, symbols: list[str], interval_sec: int) -> None:
-        """Background worker for multi-timeframe feature aggregation.
-
-        Args:
-            feature_store: FeatureStore instance
-            symbols: list of symbols to roll up (from config)
-            interval_sec: sleep interval between rollups
-        """
-        while not hasattr(_multi_tf_rollup_worker, '_stop') or not _multi_tf_rollup_worker._stop:
-            try:
-                # Get symbols that have recent features (last 24h)
-                end_time = datetime.now()
-                start_time = end_time - timedelta(hours=24)
-
-                # Aggregate configured symbols
-                symbols_to_rollup = symbols or []
-
-                for symbol in symbols_to_rollup:
-                    try:
-                        # Rollup to higher timeframes
-                        feature_store.aggregate_all_timeframes(
-                            symbol=symbol,
-                            start_time=start_time,
-                            end_time=end_time
-                        )
-                        LOG.debug(f"Completed multi-TF rollup for {symbol}")
-                    except Exception as e:
-                        LOG.warning(
-                            f"Error in multi-TF rollup for {symbol}: {e}")
-
-            except Exception as e:
-                LOG.error(f"Error in multi-TF rollup worker: {e}")
-
-            time_module.sleep(interval_sec)
-
-    # Start multi-TF rollup thread (every 15 minutes)
-    def start_multi_tf_rollup(feature_store: FeatureStore, symbols: list[str]) -> Thread:
-        thread = Thread(
-            target=_multi_tf_rollup_worker,
-            args=(feature_store, symbols, 900),  # 15 minutes
-            daemon=True,
-            name="Multi-TF-Rollup"
-        )
-        thread.start()
-        return thread
-
-    # multi_tf_thread will be initialized later after feature_store is created
-    multi_tf_thread = None
+    # NOTE: Multi-TF rollup DISABLED — FeatureStore removed for max tick throughput
+    # def _multi_tf_rollup_worker(...) — REMOVED
+    # def start_multi_tf_rollup(...) — REMOVED
 
     # Initialize Alert Manager
     alert_manager = AlertManager(config=config.to_dict(), logger=LOG)
@@ -997,20 +1480,33 @@ def main() -> None:
     # Initialize AuroraBridge (handles TRADE_INTENT_PROPOSED → CMD:OPEN with freshness gate)
     bridge = AuroraBridge(fsm=fsm, config=config.to_dict(), logger=LOG)
 
+    # D6: Fail-closed restart behavior - clear any pending deferred intents
+    # This ensures clean state after restart/crash, emitting EVT:INTENT_DROPPED for each
+    dropped_count = bridge.clear_pending_on_restart()
+    if dropped_count > 0:
+        LOG.warning(f"🗑️ D6: Cleared {dropped_count} pending deferred intents on restart (fail-closed)")
+    else:
+        LOG.info("✅ D6: No pending deferred intents on restart (clean state)")
+
     # Set global bridge instance for backward compatibility
     global _bridge_instance
     _bridge_instance = bridge
 
-    # Add debug listener for all events (optional, can be removed for production)
-    debug_events = [
-        "EVT:MARKET_TICK_RECEIVED",
-        "EVT:FEATURES_CALCULATED",
-        "EVT:RISK_ASSESSMENT_COMPLETED",
-        "EVT:PORTFOLIO_STATE_UPDATED",
-        "EVT:TRADE_INTENT_PROPOSED",
-    ]
-    for event_name in debug_events:
-        fsm.listen(event_name, debug_event_listener)
+    # P2 FIX: Gate debug listener with environment variable to avoid hot-path prints in production
+    # Set AURORA_DEBUG_EVENTS=1 to enable debug event logging
+    if os.environ.get("AURORA_DEBUG_EVENTS", "0") == "1":
+        debug_events = [
+            "EVT:MARKET_TICK_RECEIVED",
+            "EVT:FEATURES_CALCULATED",
+            "EVT:RISK_ASSESSMENT_COMPLETED",
+            "EVT:PORTFOLIO_STATE_UPDATED",
+            "EVT:TRADE_INTENT_PROPOSED",
+        ]
+        for event_name in debug_events:
+            fsm.listen(event_name, debug_event_listener)
+        LOG.info("🐛 Debug event listener ENABLED (AURORA_DEBUG_EVENTS=1)")
+    else:
+        LOG.debug("Debug event listener DISABLED (set AURORA_DEBUG_EVENTS=1 to enable)")
 
     # Step 3: Initialize all domain components
     LOG.info("Initializing domain components...")
@@ -1038,38 +1534,13 @@ def main() -> None:
         market_data = MarketDataConnector(fsm=fsm, config=config)
 
     # Feature Store (stores historical features for backtesting)
-    feature_store = FeatureStore(
-        db_path=str(project_root / "data" / "features.db"),
-        retention_days=90
-    )
-    LOG.info("✅ Feature Store initialized")
+    # NOTE: FeatureStore DISABLED — synchronous DB writes block tick processing!
+    # All feature_store code removed for maximum tick throughput.
+    LOG.info("⚡ Feature Store DISABLED — no DB writes, maximum tick throughput")
 
-    # Initialize Multi-TF aggregator now that feature_store exists
-    try:
-        trading_cfg = config.to_dict().get("trading", {})
-        symbols_cfg = trading_cfg.get("symbols_to_track", [])
-        
-        # Fallback to instruments keys if symbols_to_track is not set
-        if not symbols_cfg:
-            instruments = trading_cfg.get("instruments", {})
-            if instruments:
-                symbols_cfg = list(instruments.keys())
-                
-        if not symbols_cfg or not isinstance(symbols_cfg, list):
-            error_msg = "No symbols configured for Multi-TF rollup! Check 'trading.symbols_to_track' or 'trading.instruments'."
-            LOG.critical(error_msg)
-            raise ValueError(error_msg)
-            
-    except Exception as e:
-        LOG.critical(f"Failed to configure Multi-TF rollup symbols: {e}")
-        raise
-
-    multi_tf_thread = start_multi_tf_rollup(feature_store, symbols_cfg)
-    LOG.info("✅ Multi-TF Feature Aggregation Scheduler initialized")
-
-    # Feature Engineering (calculates trading features)
+    # Feature Engineering (calculates trading features) — NO feature_store
     feature_engineering = FeatureEngineering(
-        fsm=fsm, config=config.to_dict(), feature_store=feature_store)
+        fsm=fsm, config=config.to_dict(), feature_store=None)
 
     # Risk Management (assesses position risk)
     # Extract domain-specific config with correct mode overrides
@@ -1199,6 +1670,14 @@ def main() -> None:
     execution_position.set_async_loop(guardian_loop)
     guardian_loop_thread.start()
 
+    # Bind Bridge RetryScheduler to the running Aurora async loop (loop-safe scheduling).
+    try:
+        if _bridge_instance is not None and guardian_loop is not None:
+            _bridge_instance.retry_scheduler.bind_loop(guardian_loop)
+            LOG.info("✅ Bound RetryScheduler to AuroraAsyncLoop")
+    except Exception as e:
+        LOG.warning(f"Failed to bind RetryScheduler to AuroraAsyncLoop: {e}")
+
     try:
         sync_fn = getattr(
             execution_position,
@@ -1237,17 +1716,16 @@ def main() -> None:
 
     # Decision Making (generates trade intents) - execution_position already initialized in initialize_domains()
     decision_making = DecisionMaking(fsm=fsm, config=config.to_dict())
+    
+    # RegimeDetector: Analyzes market features to detect trading regimes (TREND_UP, TREND_DOWN, etc.)
+    # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing
+    regime_detector = RegimeDetector(config=config.to_dict(), fsm=fsm)
+    LOG.info("✅ RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
 
-    # Register all domains in FSM core for cross-domain access
-    # NOTE: Temporarily commented out - register_domain not yet implemented in FSMCore
-    # fsm.register_domain('account_balance', account_balance)
-    # fsm.register_domain('account_observer', account_observer)
-    # fsm.register_domain('market_data', market_data)
-    # fsm.register_domain('feature_engineering', feature_engineering)
-    # fsm.register_domain('risk_management', risk_management)
-    # fsm.register_domain('position_tracking', position_tracking)
-    # fsm.register_domain('decision_making', decision_making)
-    # fsm.register_domain('execution_position', execution_position)
+
+    # P2 CLEANUP: register_domain calls are now done in initialize_domains()
+    # These commented lines preserved for historical reference only:
+    # Domain registration moved to initialize_domains() at lines 906-916
 
     # Initialize Snapshot Scheduler (DR - Phase L4)
     LOG.info("Initializing snapshot scheduler (DR)...")
@@ -1259,7 +1737,6 @@ def main() -> None:
     # snapshot_scheduler = SnapshotScheduler(
     #     fsm=fsm, config=snapshot_scheduler_config)
     snapshot_scheduler = None  # Temporarily disabled
-    # fsm.register_domain('snapshot_scheduler', snapshot_scheduler)
 
     # Step 4: Start all components
     LOG.info("Starting account connector...")
@@ -1295,6 +1772,16 @@ def main() -> None:
 
     LOG.info("Starting decision making...")
     decision_making.start()
+
+    LOG.info("Starting regime detector...")
+    try:
+        if hasattr(regime_detector, "start"):
+            regime_detector.start()
+            LOG.info("✅ RegimeDetector started")
+        else:
+            LOG.info("ℹ️ RegimeDetector has no start() method (purely reactive)")
+    except Exception as e:
+        LOG.error(f"Failed to start RegimeDetector: {e}")
 
     LOG.info("Starting snapshot scheduler (DR)...")
     # snapshot_scheduler.start()
@@ -1377,13 +1864,7 @@ def main() -> None:
         except Exception as e:
             LOG.error(f"Error stopping WAL GC: {e}")
 
-        # Optimize Feature Store before shutdown
-        try:
-            if 'feature_store' in locals():
-                feature_store.optimize()
-                LOG.info("Feature Store optimized.")
-        except Exception as e:
-            LOG.error(f"Error optimizing Feature Store: {e}")
+        # NOTE: FeatureStore DISABLED — no cleanup needed
 
         LOG.info("All components stopped or shutdown attempted. Exiting.")
         print("Aurora Core shutdown complete.")
