@@ -1,0 +1,210 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "schemas/intent_deferred_v1.json",
+    "title": "EVT:INTENT_DEFERRED",
+    "description": "Intent deferral event. During migration, this schema is additive: it accepts both legacy payloads (v0) and v1 payloads. Reliable retry/idempotency is guaranteed only for v1 payloads that include retry_key + original_event.",
+    "oneOf": [
+        { "$ref": "#/$defs/legacy_v0" },
+        { "$ref": "#/$defs/v1" }
+    ],
+    "$defs": {
+        "legacy_v0": {
+            "type": "object",
+            "required": ["symbol", "reason"],
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "pattern": "^[A-Z]+USDT$",
+                    "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)"
+                },
+                "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Deferral reason code (legacy emitters may use non-enum values during migration)"
+                },
+                "rid": { "type": "string" },
+                "missing": { "type": "string" },
+                "why_chain": { "type": "array", "items": { "type": "string" } },
+                "next_allowed_ts": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": true,
+            "not": { "required": ["retry_key"] }
+        },
+        "v1": {
+            "type": "object",
+            "required": [
+                "retry_key",
+                "symbol",
+                "reason",
+                "next_allowed_ts",
+                "attempt",
+                "max_attempts",
+                "original_event"
+            ],
+            "properties": {
+                "retry_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Stable unique identifier for this retry transaction. Used for idempotency (e.g., 'flip:BTCUSDT:1702500000000')"
+                },
+                "symbol": {
+                    "type": "string",
+                    "pattern": "^[A-Z]+USDT$",
+                    "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)"
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "NRR-PORTFOLIO-UNKNOWN",
+                        "NRR-PORTFOLIO-STALE",
+                        "NRR-RISK-STALE",
+                        "FLIP_CLOSE_PENDING",
+                        "COOLDOWN",
+                        "QOS_BLOCKED",
+                        "EXPOSURE_EXCEEDED",
+                        "REGIME_BLOCKED"
+                    ],
+                    "description": "Reason code for deferral (NRR = No Reliable Reason)"
+                },
+                "next_allowed_ts": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Earliest timestamp (ms) when retry is allowed"
+                },
+                "attempt": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Current retry attempt number (1-based)"
+                },
+                "max_attempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 5,
+                    "description": "Maximum retry attempts before dropping"
+                },
+                "original_event": {
+                    "type": "object",
+                    "required": [
+                        "event_name",
+                        "payload_min"
+                    ],
+                    "properties": {
+                        "event_name": {
+                            "type": "string",
+                            "description": "Original event name (e.g., EVT:MR_SIGNAL_PRODUCED, EVT:TRADE_INTENT_PROPOSED)"
+                        },
+                        "payload_min": {
+                            "type": "object",
+                            "required": [
+                                "symbol",
+                                "side"
+                            ],
+                            "properties": {
+                                "symbol": {
+                                    "type": "string",
+                                    "pattern": "^[A-Z]+USDT$"
+                                },
+                                "side": {
+                                    "type": "string",
+                                    "enum": ["BUY", "SELL"]
+                                },
+                                "qty_hint": {
+                                    "oneOf": [
+                                        {"type": "string"},
+                                        {"type": "number"}
+                                    ],
+                                    "description": "Suggested quantity (optional)"
+                                },
+                                "price_ctx": {
+                                    "oneOf": [
+                                        {"type": "string"},
+                                        {"type": "number"}
+                                    ],
+                                    "description": "Price context at signal time (optional)"
+                                },
+                                "strategy_id": {
+                                    "type": "string",
+                                    "description": "Strategy identifier (e.g., 'MR', 'AURORA')"
+                                },
+                                "cooldown_class": {
+                                    "type": "string",
+                                    "enum": ["flip", "signal", "error", "default"],
+                                    "description": "Cooldown class for QoS"
+                                },
+                                "rid": {
+                                    "type": "string",
+                                    "description": "Original request ID for tracing"
+                                }
+                            },
+                            "additionalProperties": true,
+                            "description": "Minimal stable payload from original event"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "description": "Original event to re-emit on retry"
+                },
+                "why_chain": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Debug chain of reasons leading to deferral"
+                },
+                "created_ts": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Timestamp (ms) when deferral was created"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context string for debugging (optional)"
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "examples": [
+        {
+            "retry_key": "flip:BTCUSDT:1702500000000",
+            "symbol": "BTCUSDT",
+            "reason": "FLIP_CLOSE_PENDING",
+            "next_allowed_ts": 1702500005000,
+            "attempt": 1,
+            "max_attempts": 5,
+            "original_event": {
+                "event_name": "EVT:MR_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "BTCUSDT",
+                    "side": "BUY",
+                    "qty_hint": 0.01,
+                    "price_ctx": 50000.0,
+                    "strategy_id": "MR",
+                    "cooldown_class": "flip",
+                    "rid": "uuid-1234"
+                }
+            },
+            "why_chain": ["position_exists", "opposite_side", "close_emitted"],
+            "created_ts": 1702500000000
+        },
+        {
+            "retry_key": "mr:DOGEUSDT:1702500100000",
+            "symbol": "DOGEUSDT",
+            "reason": "NRR-PORTFOLIO-UNKNOWN",
+            "next_allowed_ts": 1702500105000,
+            "attempt": 2,
+            "max_attempts": 5,
+            "original_event": {
+                "event_name": "EVT:MR_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "DOGEUSDT",
+                    "side": "SELL",
+                    "strategy_id": "MR"
+                }
+            },
+            "why_chain": ["portfolio_unknown", "fail_closed"],
+            "created_ts": 1702500100000,
+            "context": "mr_gateway_flat_check"
+        }
+    ]
+}
