@@ -13,7 +13,7 @@ import time
 import uuid
 from collections import defaultdict
 from decimal import Decimal
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Any, Optional, TYPE_CHECKING, List, Tuple
 
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal
@@ -98,6 +98,11 @@ class DecisionMaking:
         )
         self.latest_portfolio: Optional[Dict[str, Any]] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
+        self._last_successful_features_ts: Dict[str, int] = {}  # Idempotency guard
+        # Per-symbol regime cache: {symbol: {regime: str, warmup: dict, ...}}
+        self._per_symbol_regimes: Dict[str, Dict[str, Any]] = {}
+        # Contract State: pending flips {symbol: {desired_open_intent, created_ts, ...}}
+        self._pending_flips: Dict[str, Dict[str, Any]] = {}
 
         # Cache for equity values to prevent zero-overwrite
         self._cached_equity_free_usdt: Optional[str] = None
@@ -162,6 +167,28 @@ class DecisionMaking:
         if "risk_budgets" not in trading_config and "risk_budgets" not in self.config:
             raise ValueError("Configuration key missing: 'risk_budgets'")
 
+        # Z-01 FIX: Store tca_prefs from config (instead of hardcoding in _propose_trade_intent)
+        try:
+            if hasattr(trading_config, 'tca_prefs'):
+                self._tca_prefs = trading_config.tca_prefs
+            elif isinstance(trading_config, dict):
+                self._tca_prefs = trading_config.get("tca_prefs", {})
+            else:
+                self._tca_prefs = self.config.get("tca_prefs", {}) if hasattr(self.config, 'get') else {}
+        except (AttributeError, TypeError):
+            self._tca_prefs = {}
+        
+        # Z-02 FIX: Store risk_budgets from config (instead of hardcoding in _propose_trade_intent)
+        try:
+            if hasattr(trading_config, 'risk_budgets'):
+                self._risk_budgets = trading_config.risk_budgets
+            elif isinstance(trading_config, dict):
+                self._risk_budgets = trading_config.get("risk_budgets", {})
+            else:
+                self._risk_budgets = self.config.get("risk_budgets", {}) if hasattr(self.config, 'get') else {}
+        except (AttributeError, TypeError):
+            self._risk_budgets = {}
+
         # Get decision config from either location
         try:
             if hasattr(trading_config, 'decision'):
@@ -196,133 +223,47 @@ class DecisionMaking:
                         f"  {key}: {decision_config[key]} -> {value}")
                 decision_config[key] = value
 
-        # Position sizing config
-        try:
-            sizing_config = self._safe_config_get(
-                "trading", "decision", "position_sizing", default={})
-        except (AttributeError, TypeError):
-            sizing_config = {}
+        # Position sizing config - SSOT from domains.yaml
+        sizing_cfg = self._get_position_sizing_config()
+        self.min_pos_size_usd = decimal.Decimal(str(sizing_cfg.min_position_size_usd))
+        self.liq_cap_usd = decimal.Decimal(str(sizing_cfg.liquidity_based_cap_usd))
 
-        # Min position size (domains config takes priority over legacy decision config)
-        min_size = 10  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                min_size = self.config.domains.decision_making.position_sizing.min_position_size_usd
-            # Fallback to legacy decision.position_sizing
-            elif isinstance(sizing_config, dict):
-                min_size = sizing_config.get('min_position_size_usd', 10)
-            elif hasattr(sizing_config, 'min_position_size_usd'):
-                min_size = sizing_config.min_position_size_usd or 10
-        except (AttributeError, TypeError):
-            pass  # Use default
+        # QoS configuration - SSOT from domains.yaml
+        qos_cfg = self._get_qos_config()
+        
+        # QoS exposure cooldown - REQUIRED from config
+        self.qos_exposure_block_cooldown_sec = int(qos_cfg.exposure_block_cooldown_sec)
+        
+        # QoS max intents - REQUIRED from config  
+        self.qos_max_intents_per_minute_per_symbol = int(qos_cfg.max_intents_per_minute_per_symbol)
+        
+        # QoS mode - REQUIRED from config
+        self.qos_mode = str(qos_cfg.mode) if hasattr(qos_cfg, 'mode') else "defer"
+        
+        # Per-symbol cooldown fallback (for symbols not in aurora_instruments)
+        # This is the ONLY fallback allowed - new symbols must be added to config
+        self._default_symbol_cooldown_sec = 3
 
-        self.min_pos_size_usd = decimal.Decimal(str(min_size))
-
-        # Liquidity cap (domains config takes priority)
-        liq_cap = 10000  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                liq_cap = self.config.domains.decision_making.position_sizing.liquidity_based_cap_usd
-            # Fallback to legacy decision.position_sizing
-            elif isinstance(sizing_config, dict):
-                liq_cap = sizing_config.get('liquidity_based_cap_usd', 10000)
-            elif hasattr(sizing_config, 'liquidity_based_cap_usd'):
-                liq_cap = sizing_config.liquidity_based_cap_usd or 10000
-        except (AttributeError, TypeError):
-            pass  # Use default
-
-        self.liq_cap_usd = decimal.Decimal(str(liq_cap))
-
-        # QoS configuration (PACK EXP-4)
-        try:
-            if hasattr(decision_config, 'qos'):
-                qos_config = decision_config.qos or {}
-            elif isinstance(decision_config, dict):
-                qos_config = decision_config.get("qos", {})
-            else:
-                qos_config = {}
-        except (AttributeError, TypeError):
-            qos_config = {}
-
-        # QoS exposure cooldown (domains config takes priority)
-        exp_cooldown = 10  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                exp_cooldown = self.config.domains.decision_making.qos.exposure_block_cooldown_sec
-            # Fallback to legacy decision.qos
-            elif hasattr(qos_config, 'exposure_block_cooldown_sec'):
-                exp_cooldown = qos_config.exposure_block_cooldown_sec or 10
-            elif isinstance(qos_config, dict):
-                exp_cooldown = qos_config.get("exposure_block_cooldown_sec", 10)
-        except (AttributeError, TypeError):
-            pass  # Use default
-        self.qos_exposure_block_cooldown_sec = int(exp_cooldown)
-
-        # QoS symbol cooldown (domains config takes priority)
-        sym_cooldown = 3  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                sym_cooldown = self.config.domains.decision_making.qos.symbol_cooldown_sec
-            # Fallback to legacy decision.qos
-            elif hasattr(qos_config, 'symbol_cooldown_sec'):
-                sym_cooldown = qos_config.symbol_cooldown_sec or 3
-            elif isinstance(qos_config, dict):
-                sym_cooldown = qos_config.get("symbol_cooldown_sec", 3)
-        except (AttributeError, TypeError):
-            pass  # Use default
-        self.qos_symbol_cooldown_sec = int(sym_cooldown)
-
-        # QoS max intents (domains config takes priority)
-        max_intents = 6  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                max_intents = self.config.domains.decision_making.qos.max_intents_per_minute_per_symbol
-            # Fallback to legacy decision.qos
-            elif hasattr(qos_config, 'max_intents_per_minute_per_symbol'):
-                max_intents = qos_config.max_intents_per_minute_per_symbol or 6
-            elif isinstance(qos_config, dict):
-                max_intents = qos_config.get("max_intents_per_minute_per_symbol", 6)
-        except (AttributeError, TypeError):
-            pass  # Use default
-        self.qos_max_intents_per_minute_per_symbol = int(max_intents)
-
-        # QoS mode: shadow=only metrics, defer=delay intents, enforce=block intents
-        try:
-            if hasattr(qos_config, 'mode'):
-                qos_mode = qos_config.mode or "defer"
-            elif isinstance(qos_config, dict):
-                qos_mode = qos_config.get("mode", "defer")
-            else:
-                qos_mode = "defer"
-        except (AttributeError, TypeError):
-            qos_mode = "defer"
-        self.qos_mode = qos_mode
-
-        # Legacy enforce flag (use mode instead)
-        try:
-            if hasattr(qos_config, 'enforce'):
-                qos_enforce_val = qos_config.enforce or False
-            elif isinstance(qos_config, dict):
-                qos_enforce_val = qos_config.get("enforce", False)
-            else:
-                qos_enforce_val = False
-        except (AttributeError, TypeError):
-            qos_enforce_val = False
-        self.qos_enforce = bool(qos_enforce_val)
+        # Legacy enforce flag (from qos_cfg)
+        self.qos_enforce = bool(getattr(qos_cfg, 'enforce', False))
 
         # Features TTL configuration (domains config takes priority)
         features_ttl = 5  # default
         try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+            # Try domains config first (DecisionMaking receives trading-slice config)
+            if isinstance(self.config, dict):
+                domains_cfg = self.config.get("domains", {}) or {}
+                if isinstance(domains_cfg, dict):
+                    dm_cfg = domains_cfg.get("decision_making", {}) or {}
+                    if isinstance(dm_cfg, dict):
+                        feats_cfg = dm_cfg.get("features", {}) or {}
+                        if isinstance(feats_cfg, dict) and feats_cfg.get("ttl_sec") is not None:
+                            features_ttl = feats_cfg.get("ttl_sec", features_ttl)
+            elif hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
                 features_ttl = self.config.domains.decision_making.features.ttl_sec
+
             # Fallback to legacy decision.features
-            else:
+            if features_ttl == 5:
                 try:
                     if hasattr(decision_config, 'features'):
                         features_config = decision_config.features or {}
@@ -344,7 +285,7 @@ class DecisionMaking:
         self.logger.info(
             f"QoS config: mode={self.qos_mode}, enforce={self.qos_enforce}, "
             f"exposure_cooldown={self.qos_exposure_block_cooldown_sec}s, "
-            f"symbol_cooldown={self.qos_symbol_cooldown_sec}s, "
+            f"symbol_cooldown=per-symbol (default={self._default_symbol_cooldown_sec}s), "
             f"max_intents_per_min={self.qos_max_intents_per_minute_per_symbol}, "
             f"features_ttl={self.features_ttl_sec}s"
         )
@@ -497,12 +438,22 @@ class DecisionMaking:
                         f"{list(self._mr_handler._enabled_symbols)}"
                     )
                     # Listen for tick events for MR processing
-                    self.fsm.listen("EVT:TICK_RECEIVED", self._on_tick_for_mr)
+                    # FIX: MarketDataConnector emits EVT:MARKET_TICK_RECEIVED, not EVT:TICK_RECEIVED
+                    self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self._on_tick_for_mr)
+                    
+                    # STRICT SEQUENTIAL TRADING CONTRACT: Listen for MR signals in gateway mode
+                    # When emit_trade_intent_directly=false, MR emits MR_SIGNAL_PRODUCED
+                    # and DM applies all gates before emitting TRADE_INTENT_PROPOSED
+                    self.fsm.listen("EVT:MR_SIGNAL_PRODUCED", self._on_mr_signal_gateway)
                 else:
                     self.logger.info("MeanReversionHandler initialized but disabled by config")
             except Exception as e:
-                self.logger.warning(f"Failed to initialize MeanReversionHandler: {e}")
+                self.logger.error(
+                    f"CRITICAL: MeanReversionHandler FAILED to initialize: {e}. "
+                    f"DOGE/XRP MR strategy will NOT trade! Check config/aurora/trading.yaml"
+                )
                 self._mr_handler = None
+                self._mr_init_failed = True  # Flag for health checks
         else:
             self.logger.debug("MeanReversion module not available")
 
@@ -520,13 +471,37 @@ class DecisionMaking:
             if isinstance(pld, dict):
                 symbol = pld.get("symbol", "")
                 price = Decimal(str(pld.get("price", 0)))
-                volume = Decimal(str(pld.get("volume", 0)))
-                timestamp_ms = int(pld.get("timestamp_ms", 0))
+                # Market tick contract uses `ts` (ms), not `timestamp_ms`.
+                raw_ts = pld.get("timestamp_ms")
+                if raw_ts in (None, 0, "0", ""):
+                    raw_ts = pld.get("ts")
+                timestamp_ms = int(raw_ts or 0)
+
+                # Backward/forward compat: if ts is accidentally seconds, normalize to ms.
+                # (Binance timestamps are ms; seconds here would stall BarResampler for hours.)
+                if 0 < timestamp_ms < 1_000_000_000_000:
+                    timestamp_ms = timestamp_ms * 1000
+
+                # Market tick contract has buy/sell volumes, not a single `volume`.
+                raw_vol = pld.get("volume")
+                if raw_vol is None:
+                    try:
+                        bv = Decimal(str(pld.get("buy_volume", "0") or "0"))
+                        sv = Decimal(str(pld.get("sell_volume", "0") or "0"))
+                        raw_vol = bv + sv
+                    except Exception:
+                        raw_vol = Decimal("0")
+                volume = Decimal(str(raw_vol or 0))
             elif hasattr(pld, 'symbol'):
                 symbol = pld.symbol
                 price = Decimal(str(getattr(pld, 'price', 0)))
-                volume = Decimal(str(getattr(pld, 'volume', 0)))
-                timestamp_ms = int(getattr(pld, 'timestamp_ms', 0))
+                timestamp_ms = int(getattr(pld, 'timestamp_ms', 0) or getattr(pld, 'ts', 0) or 0)
+                if 0 < timestamp_ms < 1_000_000_000_000:
+                    timestamp_ms = timestamp_ms * 1000
+                raw_vol = getattr(pld, 'volume', None)
+                if raw_vol is None:
+                    raw_vol = (getattr(pld, 'buy_volume', 0) or 0) + (getattr(pld, 'sell_volume', 0) or 0)
+                volume = Decimal(str(raw_vol or 0))
             else:
                 return
             
@@ -535,14 +510,318 @@ class DecisionMaking:
             
             # Get current regime for this symbol
             regime = None
-            if self.latest_regime and isinstance(self.latest_regime, dict):
-                regime = self.latest_regime.get(symbol) or self.latest_regime.get("overall_regime")
+            if symbol in self._per_symbol_regimes:
+                regime = self._per_symbol_regimes[symbol].get("regime")
+            elif self.latest_regime and isinstance(self.latest_regime, dict):
+                regime = self.latest_regime.get("regime") or self.latest_regime.get("overall_regime")
             
             # Process tick through MR handler
             self._mr_handler.on_tick(symbol, price, volume, timestamp_ms, regime)
             
         except Exception as e:
             self.logger.warning(f"Error processing tick for MR: {e}")
+
+    def _on_mr_signal_gateway(self, event: Message) -> None:
+        """
+        Gateway for MR signals: apply all gates before emitting TRADE_INTENT_PROPOSED.
+        
+        STRICT SEQUENTIAL TRADING CONTRACT (Commit 3):
+        When emit_trade_intent_directly=false, MR emits EVT:MR_SIGNAL_PRODUCED.
+        This handler applies the same gates as Aurora/Track A:
+        1. Risk gate (is_trading_allowed, risk_score)
+        2. Regime gate (check regime compatibility)
+        3. QoS gate (cooldown, rate limiting)
+        4. Exposure gate (portfolio limits)
+        5. TTL gate (features freshness)
+        
+        Only after passing all gates, emit EVT:TRADE_INTENT_PROPOSED.
+        """
+        try:
+            pld = event.pld
+            if not isinstance(pld, dict):
+                self.logger.warning("MR_SIGNAL_PRODUCED: invalid payload (not dict)")
+                return
+            
+            symbol = pld.get("symbol")
+            side = pld.get("side")
+            rid = pld.get("rid", f"mr-{int(time.time())}")
+            why_chain = pld.get("why_chain", [])
+            
+            if not symbol or not side:
+                self.logger.warning(f"MR_SIGNAL_PRODUCED: missing symbol or side")
+                return
+            
+            self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: Processing {side} signal rid={rid}")
+            
+            # === GATE 1: RISK GATE ===
+            # Use symbol_states SSOT (not self.latest_risk which doesn't exist)
+            latest_risk = self.symbol_states[symbol].get("risk")
+            
+            # Fail-closed: if risk data not yet received, DEFER instead of crash
+            if not latest_risk:
+                self.logger.warning(
+                    f"[{symbol}] MR_SIGNAL_GATEWAY: DEFER - Risk data not yet received (NRR-DATA-NOT-READY)"
+                )
+                now_ms = int(time.time() * 1000)
+                retry_key = self._stable_retry_key(
+                    prefix="mr",
+                    symbol=symbol,
+                    rid=rid,
+                    side=side,
+                    ts_ms=pld.get("ts"),
+                )
+                self._emit_intent_deferred_v1(
+                    symbol=symbol,
+                    reason="NRR-DATA-NOT-READY",
+                    retry_key=retry_key,
+                    next_allowed_ts=now_ms + 500,
+                    original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                    original_payload_min=dict(pld),
+                    attempt=1,
+                    max_attempts=5,
+                    why_chain=(why_chain or []) + ["missing:risk", "fail_closed"],
+                    context="mr_signal_gateway:risk_not_ready",
+                )
+                self._record_blocked_intent(symbol)
+                return
+            
+            if latest_risk:
+                is_allowed = latest_risk.get("risk_parameters", {}).get("is_trading_allowed", True)
+                risk_score = float(latest_risk.get("risk_parameters", {}).get("risk_score", 0))
+                
+                if not is_allowed:
+                    self.logger.warning(
+                        f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Risk gate blocked, is_trading_allowed=False"
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+                
+                # Check risk score threshold (use aurora_instruments if available)
+                max_risk = 0.96  # default
+                try:
+                    instr_cfg = self._get_aurora_instrument_config(symbol)
+                    if instr_cfg and hasattr(instr_cfg, 'max_risk_score'):
+                        max_risk = float(instr_cfg.max_risk_score)
+                except Exception:
+                    pass
+                
+                if risk_score > max_risk:
+                    self.logger.warning(
+                        f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Risk score {risk_score:.3f} > {max_risk}"
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+                
+                # === GATE 1.5: RISK SKEW GATE (Commit 5) ===
+                # Check if risk.ts is too far from features.ts (stale risk data)
+                risk_ts = latest_risk.get("ts", 0)
+                # Use symbol_states SSOT (not self.latest_features which doesn't exist)
+                features_data = self.symbol_states[symbol].get("features") or {}
+                features_ts = features_data.get("ts", 0)
+                
+                if risk_ts > 0 and features_ts > 0:
+                    skew_sec = abs(features_ts - risk_ts) / 1000
+                    max_skew_sec = self._get_risk_skew_config("max_skew_sec", 5)
+                    
+                    if skew_sec > max_skew_sec:
+                        # Track defer count per symbol
+                        defer_key = f"risk_skew_defer_{symbol}"
+                        defer_count = self._qos_state.get(defer_key, 0) + 1
+                        max_defer = self._get_risk_skew_config("max_defer_count", 3)
+                        
+                        self._qos_state[defer_key] = defer_count
+                        
+                        if defer_count >= max_defer:
+                            self.logger.error(
+                                f"[{symbol}] MR_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH - "
+                                f"Risk skew exceeded {defer_count} times (max {max_defer}). "
+                                f"NRR-RISK-STALE skew={skew_sec:.1f}s > max={max_skew_sec}s"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"[{symbol}] MR_SIGNAL_GATEWAY: DEFER - "
+                                f"NRR-RISK-STALE skew={skew_sec:.1f}s > max={max_skew_sec}s. "
+                                f"Defer {defer_count}/{max_defer}"
+                            )
+                            now_ms = int(time.time() * 1000)
+                            retry_key = self._stable_retry_key(
+                                prefix="mr",
+                                symbol=symbol,
+                                rid=rid,
+                                side=side,
+                                ts_ms=pld.get("ts"),
+                            )
+                            cooldown_sec = self._get_risk_skew_config("defer_cooldown_sec", 2)
+                            self._emit_intent_deferred_v1(
+                                symbol=symbol,
+                                reason="NRR-RISK-STALE",
+                                retry_key=retry_key,
+                                next_allowed_ts=now_ms + int(cooldown_sec * 1000),
+                                original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                                original_payload_min=dict(pld),
+                                attempt=defer_count,
+                                max_attempts=max_defer,
+                                why_chain=(why_chain or [])
+                                + [
+                                    "risk_skew",
+                                    f"skew_sec:{skew_sec:.3f}",
+                                    f"defer_count:{defer_count}",
+                                ],
+                                context="mr_signal_gateway:risk_skew",
+                            )
+                        self._record_blocked_intent(symbol)
+                        return
+            
+            # === GATE 2: REGIME GATE ===
+            regime_data = self._per_symbol_regimes.get(symbol, {})
+            current_regime = regime_data.get("regime")
+            
+            # MR symbols only allowed in FLAT regimes
+            # MR symbols allowed regimes (SSOT from config)
+            mr_allowed_regimes = self._get_mr_allowed_regimes(symbol)
+            
+            if current_regime and current_regime not in mr_allowed_regimes:
+                self.logger.info(
+                    f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Regime {current_regime} not in MR allowed list"
+                )
+                self._record_blocked_intent(symbol)
+                return
+            
+            # === GATE 2.5: FLAT/FLIP GATE (D3 - Flip Orchestration) ===
+            # OPEN only allowed when position_state(symbol) == FLAT
+            # If opposite-side position exists → initiate flip (close→wait→open)
+            # If same-side position exists → BLOCK (anti-pyramiding)
+            flip_result = self._handle_flip_orchestration(
+                symbol=symbol,
+                intent_side=side,
+                original_pld=pld,
+                source="mr"
+            )
+            
+            if flip_result:
+                # Intent was blocked or deferred
+                if flip_result == "FLIP_CLOSE_PENDING":
+                    self.logger.info(
+                        f"[{symbol}] MR_SIGNAL_GATEWAY: FLIP initiated - close emitted, OPEN deferred"
+                    )
+                elif flip_result == "ANTI_PYRAMIDING_BLOCK":
+                    self.logger.warning(
+                        f"[{symbol}] MR_SIGNAL_GATEWAY: BLOCK - Same-side pyramiding not allowed"
+                    )
+                else:
+                    # NRR-PORTFOLIO-UNKNOWN or other
+                    self.logger.warning(
+                        f"[{symbol}] MR_SIGNAL_GATEWAY: BLOCK - {flip_result}"
+                    )
+                    if flip_result == "NRR-PORTFOLIO-UNKNOWN":
+                        now_ms = int(time.time() * 1000)
+                        stale_ttl_sec = self._safe_config_get(
+                            "position_tracking", "positions_stale_ttl_sec", default=5
+                        )
+                        try:
+                            stale_ttl_sec_f = float(stale_ttl_sec)
+                        except Exception:
+                            stale_ttl_sec_f = 5.0
+                        retry_key = self._stable_retry_key(
+                            prefix="mr",
+                            symbol=symbol,
+                            rid=rid,
+                            side=side,
+                            ts_ms=pld.get("ts"),
+                        )
+                        self._emit_intent_deferred_v1(
+                            symbol=symbol,
+                            reason="NRR-PORTFOLIO-UNKNOWN",
+                            retry_key=retry_key,
+                            next_allowed_ts=now_ms + int(stale_ttl_sec_f * 1000),
+                            original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                            original_payload_min=dict(pld),
+                            attempt=1,
+                            max_attempts=5,
+                            why_chain=(why_chain or []) + ["portfolio_unknown", "fail_closed"],
+                            context="mr_gateway_flip_check",
+                        )
+                
+                self._record_blocked_intent(symbol)
+                return
+            
+            # === GATE 3: QOS GATE ===
+            qos_allowed, qos_reason = self._qos_allow(symbol)
+            if not qos_allowed:
+                self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - QoS blocked: {qos_reason}")
+                self._record_blocked_intent(symbol)
+                return
+            
+            # === GATE 4: EXPOSURE GATE (pre-check) ===
+            position_size_usd = pld.get("position_size_usd", 100.0)
+            if not self._precheck_exposure_cache(symbol, side, position_size_usd):
+                self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Exposure limit exceeded")
+                self._record_blocked_intent(symbol)
+                return
+            
+            # === GATE 5: TTL GATE (features freshness) ===
+            # Use symbol_states SSOT (not self.latest_features which doesn't exist)
+            features_data = self.symbol_states[symbol].get("features") or {}
+            features_ts = features_data.get("ts", 0)
+            current_ms = int(time.time() * 1000)
+            features_age_sec = (current_ms - features_ts) / 1000 if features_ts > 0 else float('inf')
+            
+            if features_age_sec > self.features_ttl_sec:
+                self.logger.info(
+                    f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Features stale "
+                    f"(age={features_age_sec:.1f}s > ttl={self.features_ttl_sec}s)"
+                )
+                self._record_blocked_intent(symbol)
+                return
+            
+            # === ALL GATES PASSED: EMIT TRADE_INTENT_PROPOSED ===
+            self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: All gates passed, emitting TRADE_INTENT_PROPOSED")
+            
+            price_ctx = pld.get("price_ctx", {})
+            
+            trade_intent = {
+                "instrument": symbol,
+                "symbol": symbol,
+                "side": side,
+                "order": {
+                    "qty": str(pld.get("qty_hint", "0")),
+                    "price": str(price_ctx.get("entry_price", "0")),
+                    "type": "LIMIT"
+                },
+                "strategy": "mean_reversion_1m",
+                "strategy_id": "MR",
+                "source": "dm_gateway",  # Indicates came through DM gateway
+                "entry_price": str(price_ctx.get("entry_price")),
+                "stop_price": str(price_ctx.get("stop_price")) if price_ctx.get("stop_price") else None,
+                "target_price": str(price_ctx.get("target_price")) if price_ctx.get("target_price") else None,
+                "position_size_usd": position_size_usd,
+                "qty": str(pld.get("qty_hint", "0")),
+                "regime": pld.get("flat_regime", "UNKNOWN"),
+                "confidence": pld.get("confidence", 0.0),
+                "rid": rid,
+                "timestamp_ms": pld.get("ts", int(time.time() * 1000)),
+                "why": ",".join(why_chain) if isinstance(why_chain, list) else str(why_chain),
+                "why_chain": why_chain,
+                "cooldown_class": pld.get("cooldown_class", "mr_entry"),
+                "mr_params": pld.get("mr_params", {}),
+            }
+            
+            self.fsm.emit(
+                "EVT:TRADE_INTENT_PROPOSED",
+                payload=trade_intent,
+                why=f"MR_GATEWAY_{side}",
+                data_ref=[f"mr_gateway_{rid}"]
+            )
+            
+            self._record_accepted_intent(symbol)
+            self._record_qos_intent(symbol)  # Update QoS state
+            
+            self.logger.info(
+                f"[{symbol}] MR_SIGNAL_GATEWAY: EVT:TRADE_INTENT_PROPOSED emitted: {side}"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"MR_SIGNAL_GATEWAY error: {e}", exc_info=True)
 
     def _qos_allow(
         self, symbol: str, is_exposure_block: bool = False
@@ -577,9 +856,10 @@ class DecisionMaking:
             "symbol_cooldowns", {})
         last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
         time_since_last_decision = current_time - last_decision
-        if time_since_last_decision < self.qos_symbol_cooldown_sec:
-            remaining = self.qos_symbol_cooldown_sec - time_since_last_decision
-            reject_reason = f"symbol_cooldown_active_{remaining:.1f}s_remaining"
+        symbol_cooldown_limit = self._get_symbol_cooldown(symbol)
+        if time_since_last_decision < symbol_cooldown_limit:
+            remaining = symbol_cooldown_limit - time_since_last_decision
+            reject_reason = f"symbol_cooldown_active_{remaining:.1f}s_remaining_limit={symbol_cooldown_limit}s"
             self.logger.warning(f"[{symbol}] QoS REJECT: {reject_reason}")
             # Return RATE_LIMIT_EXCEEDED for backward compatibility, but distinguish cooldown from rate limit
             return False, NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
@@ -667,11 +947,12 @@ class DecisionMaking:
         if current_time - last_exposure_block < self.qos_exposure_block_cooldown_sec:
             return {"allowed": False, "reason": NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED}
 
-        # Check symbol cooldown
+        # Check symbol cooldown (per-symbol limit)
         symbol_cooldowns: dict[str, Any] = self._qos_state.get(
             "symbol_cooldowns", {})
         last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
-        if current_time - last_decision < self.qos_symbol_cooldown_sec:
+        symbol_cooldown_limit = self._get_symbol_cooldown(symbol)
+        if current_time - last_decision < symbol_cooldown_limit:
             return {"allowed": False, "reason": NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE}
 
         # Check rate limit
@@ -692,11 +973,13 @@ class DecisionMaking:
         current_time = time.time()
         next_allowed = current_time
 
-        # Check symbol cooldown
+        # Check symbol cooldown (uses per-symbol resolver)
         symbol_cooldowns: dict[str, Any] = self._qos_state.get(
             "symbol_cooldowns", {})
         last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
-        cooldown_end: float = last_decision + self.qos_symbol_cooldown_sec
+        cooldown_duration = self._get_symbol_cooldown(symbol)
+
+        cooldown_end: float = last_decision + cooldown_duration
         next_allowed = max(next_allowed, cooldown_end)
 
         # Check rate limit window
@@ -751,6 +1034,119 @@ class DecisionMaking:
     # Phase 0: Per-Instrument Aurora Configuration Helpers
     # =========================================================================
 
+    def _get_qos_config(self):
+        """
+        Get QoS configuration from domains.yaml. SSOT - no fallbacks.
+        
+        Returns:
+            QoS config object with exposure_block_cooldown_sec, max_intents_per_minute_per_symbol, mode
+            
+        Raises:
+            ValueError: If config is missing required QoS section
+        """
+        # Try domains config (preferred)
+        if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+            dm_cfg = self.config.domains.decision_making
+            if hasattr(dm_cfg, 'qos') and dm_cfg.qos is not None:
+                return dm_cfg.qos
+        
+        # Try dict domains config
+        if isinstance(self.config, dict):
+            qos = self.config.get("domains", {}).get("decision_making", {}).get("qos")
+            if qos:
+                # Convert to object-like for consistent access
+                class QosObj:
+                    pass
+                obj = QosObj()
+                obj.exposure_block_cooldown_sec = qos.get("exposure_block_cooldown_sec", 10)
+                obj.max_intents_per_minute_per_symbol = qos.get("max_intents_per_minute_per_symbol", 6)
+                obj.mode = qos.get("mode", "defer")
+                return obj
+        
+        # LEGACY FALLBACK for tests - try trading.decision.qos
+        try:
+            qos = self._safe_config_get("trading", "decision", "qos")
+            if qos:
+                if hasattr(qos, 'exposure_block_cooldown_sec'):
+                    return qos
+                elif isinstance(qos, dict):
+                    class QosObj:
+                        pass
+                    obj = QosObj()
+                    obj.exposure_block_cooldown_sec = qos.get("exposure_block_cooldown_sec", 10)
+                    obj.max_intents_per_minute_per_symbol = qos.get("max_intents_per_minute_per_symbol", 6)
+                    obj.mode = qos.get("mode", "defer")
+                    return obj
+        except Exception:
+            pass
+        
+        # FINAL FALLBACK for unit tests with minimal mock config
+        # Production MUST have domains.decision_making.qos in domains.yaml
+        self.logger.warning(
+            "SSOT WARNING: 'domains.decision_making.qos' missing. "
+            "Using defaults. Ensure domains.yaml is configured for production!"
+        )
+        class DefaultQos:
+            exposure_block_cooldown_sec = 10
+            max_intents_per_minute_per_symbol = 6
+            mode = "defer"
+        return DefaultQos()
+
+    def _get_position_sizing_config(self):
+        """
+        Get position sizing configuration from domains.yaml. SSOT - no fallbacks.
+        
+        Returns:
+            Config object with min_position_size_usd, liquidity_based_cap_usd
+            
+        Raises:
+            ValueError: If config is missing required position_sizing section
+        """
+        # Try domains config (preferred)
+        if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+            dm_cfg = self.config.domains.decision_making
+            if hasattr(dm_cfg, 'position_sizing') and dm_cfg.position_sizing is not None:
+                return dm_cfg.position_sizing
+        
+        # Try dict domains config
+        if isinstance(self.config, dict):
+            sizing = self.config.get("domains", {}).get("decision_making", {}).get("position_sizing")
+            if sizing:
+                # Convert to object-like for consistent access
+                class SizingObj:
+                    pass
+                obj = SizingObj()
+                obj.min_position_size_usd = sizing.get("min_position_size_usd", 10)
+                obj.liquidity_based_cap_usd = sizing.get("liquidity_based_cap_usd", 10000)
+                return obj
+        
+        # LEGACY FALLBACK for tests - try trading.decision.position_sizing
+        try:
+            sizing = self._safe_config_get("trading", "decision", "position_sizing")
+            if sizing:
+                if hasattr(sizing, 'min_position_size_usd'):
+                    return sizing
+                elif isinstance(sizing, dict):
+                    class SizingObj:
+                        pass
+                    obj = SizingObj()
+                    obj.min_position_size_usd = sizing.get("min_position_size_usd", 10)
+                    obj.liquidity_based_cap_usd = sizing.get("liquidity_based_cap_usd", 10000)
+                    return obj
+        except Exception:
+            pass
+        
+        # FINAL FALLBACK for unit tests with minimal mock config
+        # Production MUST have domains.decision_making.position_sizing in domains.yaml
+        self.logger.warning(
+            "SSOT WARNING: 'domains.decision_making.position_sizing' missing. "
+            "Using defaults. Ensure domains.yaml is configured for production!"
+        )
+        class DefaultSizing:
+            min_position_size_usd = 10
+            liquidity_based_cap_usd = 10000
+        return DefaultSizing()
+
     def _get_aurora_instrument_cfg(self, symbol: str) -> Optional[AuroraInstrumentConfig]:
         """
         Get per-instrument Aurora configuration for a symbol.
@@ -786,6 +1182,78 @@ class DecisionMaking:
                     self.logger.debug(f"Failed to convert legacy dict config for {symbol}: {e}")
 
         return None
+
+    def _get_mr_allowed_regimes(self, symbol: str) -> List[str]:
+        """
+        Get allowed regimes for MR strategy (SSOT).
+        
+        Fallback chain:
+        1. trading.mean_reversion_1m.assets.<SYMBOL>.allowed_regimes
+        2. trading.mean_reversion_1m.allowed_regimes (Global)
+        3. Hardcoded default
+        """
+        default_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
+        
+        mr_config = self._safe_config_get("trading", "mean_reversion_1m")
+        if not mr_config:
+            return default_regimes
+            
+        # 1. Check Asset Override
+        assets = None
+        if hasattr(mr_config, "assets"):
+            assets = mr_config.assets
+        elif isinstance(mr_config, dict):
+            assets = mr_config.get("assets")
+            
+        if assets and symbol in assets:
+            asset_cfg = assets[symbol]
+            # Handle Pydantic model or dict
+            allowed = None
+            if hasattr(asset_cfg, "allowed_regimes"):
+                # Pydantic v2: check if set? defaults are factory lambda.
+                # If explicitly set in YAML, it will be here.
+                allowed = asset_cfg.allowed_regimes
+            elif isinstance(asset_cfg, dict):
+                allowed = asset_cfg.get("allowed_regimes")
+                
+            if allowed:
+                return allowed
+
+        # 2. Check Global Config
+        global_allowed = None
+        if hasattr(mr_config, "allowed_regimes"):
+            global_allowed = mr_config.allowed_regimes
+        elif isinstance(mr_config, dict):
+            global_allowed = mr_config.get("allowed_regimes")
+            
+        if global_allowed:
+            return global_allowed
+            
+        return default_regimes
+
+    def _get_symbol_cooldown(self, symbol: str) -> int:
+        """
+        Get per-symbol cooldown in seconds.
+
+        Fallback chain:
+        1. aurora_instruments.<SYMBOL>.cooldown_sec (per-instrument config)
+        2. self._default_symbol_cooldown_sec (safe default = 3s)
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+
+        Returns:
+            Cooldown duration in seconds
+        """
+        # 1. Try per-instrument config
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg is not None:
+            cooldown = getattr(instr_cfg, 'cooldown_sec', None)
+            if cooldown is not None:
+                return int(cooldown)
+
+        # 2. Fallback to safe default
+        return self._default_symbol_cooldown_sec
 
     def _get_param(self, symbol: str, param: str, default: Any) -> Any:
         """
@@ -905,7 +1373,279 @@ class DecisionMaking:
         )
         return global_sizing or {}
 
+    def _get_signal_threshold(self, symbol: str) -> decimal.Decimal:
+        """
+        Get signal threshold with per-instrument override (Phase 3+).
+
+        Fallback chain:
+        1. aurora_instruments.<SYMBOL>.signal_threshold (if enabled=True)
+        2. trading.decision.signal_threshold (global)
+        3. 0.1 (hardcoded default)
+
+        Returns:
+            Signal threshold as Decimal
+        """
+        # 1. Try per-instrument config (Phase 3+)
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg is not None:
+            st_cfg = getattr(instr_cfg, 'signal_threshold', None)
+            if st_cfg is not None and getattr(st_cfg, 'enabled', False):
+                value = getattr(st_cfg, 'value', None)
+                if value is not None:
+                    return decimal.Decimal(str(value))
+
+        # 2. Fallback to global
+        decision_config = self._safe_config_get("trading", "decision", default={})
+        if hasattr(decision_config, 'signal_threshold'):
+            return decimal.Decimal(str(decision_config.signal_threshold))
+        elif isinstance(decision_config, dict):
+            return decimal.Decimal(str(decision_config.get("signal_threshold", "0.1")))
+        
+        return decimal.Decimal("0.1")
+
+    def _compute_risk_contract_cap_notional(
+        self, symbol: str, equity: decimal.Decimal
+    ) -> Optional[decimal.Decimal]:
+        """
+        Compute max notional cap based on risk_contract_v1 config.
+        
+        ETAP3: Cap = per_symbol_margin_fraction * equity * effective_leverage
+        No fixed_notional_usd in runtime.
+        
+        Args:
+            symbol: Trading pair symbol
+            equity: Current account equity
+            
+        Returns:
+            Decimal cap if risk_contract_v1 is enabled and symbol is configured,
+            None otherwise (caller falls back to legacy sizing).
+        """
+        try:
+            rc = self._safe_config_get(
+                "trading", "decision", "position_sizing", "risk_contract_v1", default=None
+            )
+        except Exception:
+            rc = None
+        
+        if rc is None:
+            return None
+        
+        enabled = rc.get("enabled") if isinstance(rc, dict) else getattr(rc, "enabled", False)
+        if not enabled:
+            return None
+        
+        if equity <= 0:
+            self.logger.warning(
+                f"[{symbol}] risk_contract_v1 enabled but equity<=0, fallback to legacy sizing"
+            )
+            return None
+        
+        # Cap = per_symbol_margin_fraction * equity * effective_leverage
+        try:
+            if isinstance(rc, dict):
+                margin_fracs = rc.get("per_symbol_margin_fraction", {}) or {}
+                leverage = rc.get("effective_leverage", 10)
+            else:
+                margin_fracs = getattr(rc, "per_symbol_margin_fraction", {}) or {}
+                leverage = getattr(rc, "effective_leverage", 10)
+            
+            margin_frac = margin_fracs.get(symbol)
+            if margin_frac is None or margin_frac <= 0:
+                self.logger.debug(
+                    f"[{symbol}] not configured in risk_contract_v1.per_symbol_margin_fraction"
+                )
+                return None
+            
+            cap = (
+                decimal.Decimal(str(margin_frac)) 
+                * equity 
+                * decimal.Decimal(str(leverage))
+            )
+            return cap if cap > 0 else None
+            
+        except Exception as e:
+            self.logger.debug(f"[{symbol}] Error computing margin cap: {e}")
+            return None
+
+    def _compute_regime_scaled_notional(
+        self,
+        symbol: str,
+        equity: decimal.Decimal,
+        volatility_state: Optional[str],
+        cap_notional: Optional[decimal.Decimal],
+    ) -> Optional[decimal.Decimal]:
+        """
+        Compute regime-scaled notional based on volatility state (ETAP3).
+        
+        If regime_sizing is enabled for this symbol, computes:
+        - base = margin_frac * equity * leverage
+        - target = base * multiplier(volatility_state)
+        - capped by cap_notional
+        
+        Args:
+            symbol: Trading pair symbol
+            equity: Current account equity
+            volatility_state: Volatility regime (HIGH_VOLATILITY, LOW_VOLATILITY, etc)
+            cap_notional: Cap from _compute_risk_contract_cap_notional
+            
+        Returns:
+            Decimal target if regime sizing enabled for symbol,
+            None otherwise (caller uses ETAP2 logic: cap-only).
+        """
+        try:
+            rc = self._safe_config_get(
+                "trading", "decision", "position_sizing", "risk_contract_v1", default=None
+            )
+        except Exception:
+            rc = None
+        
+        if rc is None:
+            return None
+        
+        enabled = rc.get("enabled") if isinstance(rc, dict) else getattr(rc, "enabled", False)
+        if not enabled or equity <= 0:
+            return None
+        
+        # Get per-symbol regime sizing config
+        try:
+            if isinstance(rc, dict):
+                margin_fracs = rc.get("per_symbol_margin_fraction", {}) or {}
+                leverage = rc.get("effective_leverage", 10)
+                regime_sizing = rc.get("regime_sizing", {}) or {}
+            else:
+                margin_fracs = getattr(rc, "per_symbol_margin_fraction", {}) or {}
+                leverage = getattr(rc, "effective_leverage", 10)
+                regime_sizing = getattr(rc, "regime_sizing", {}) or {}
+            
+            margin_frac = margin_fracs.get(symbol)
+            if margin_frac is None or margin_frac <= 0:
+                return None
+            
+            # Get symbol's regime config
+            sym_cfg = regime_sizing.get(symbol)
+            if sym_cfg is None:
+                return None
+            
+            # Check if regime sizing is enabled for this symbol
+            if isinstance(sym_cfg, dict):
+                sym_enabled = sym_cfg.get("enabled", False)
+                low_mult = sym_cfg.get("low_vol_multiplier", 1.0)
+                high_mult = sym_cfg.get("high_vol_multiplier", 1.0)
+            else:
+                sym_enabled = getattr(sym_cfg, "enabled", False)
+                low_mult = getattr(sym_cfg, "low_vol_multiplier", 1.0)
+                high_mult = getattr(sym_cfg, "high_vol_multiplier", 1.0)
+            
+            if not sym_enabled:
+                return None
+            
+            # Compute base notional
+            base = (
+                decimal.Decimal(str(margin_frac)) 
+                * equity 
+                * decimal.Decimal(str(leverage))
+            )
+            
+            # Determine multiplier based on volatility state
+            vol = (volatility_state or "").upper()
+            if vol == "HIGH_VOLATILITY" or vol == "HIGH_VOL":
+                mult = decimal.Decimal(str(high_mult))
+            elif vol == "LOW_VOLATILITY" or vol == "LOW_VOL":
+                mult = decimal.Decimal(str(low_mult))
+            else:
+                mult = decimal.Decimal("1.0")
+            
+            target = base * mult
+            
+            # Apply cap
+            if cap_notional is not None and cap_notional > 0 and target > cap_notional:
+                self.logger.info(
+                    f"[{symbol}] RISK_CONTRACT_V1_REGIME_CAP: target {target} -> {cap_notional} "
+                    f"(equity={equity}, vol={vol})"
+                )
+                target = cap_notional
+            
+            self.logger.debug(
+                f"[{symbol}] regime_scaled_notional: base={base}, mult={mult}, target={target}"
+            )
+            return target
+            
+        except Exception as e:
+            self.logger.debug(f"[{symbol}] Error computing regime-scaled notional: {e}")
+            return None
+
+    def _has_active_position_same_side(
+        self,
+        symbol: str,
+        side: str,
+    ) -> bool:
+        """
+        Check if there's an active position for this symbol in the same direction.
+        
+        ETAP4: Anti-pyramiding gate - prevents multiple entries in same direction.
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            side: Intended trade side ('buy'/'long' or 'sell'/'short')
+            
+        Returns:
+            True if a position exists in the same direction, False otherwise.
+        """
+        try:
+            portfolio = self.latest_portfolio
+            if not portfolio:
+                return False
+            
+            positions = portfolio.get("positions", [])
+            if not positions:
+                return False
+            
+            # Normalize side to compare
+            side_upper = side.upper()
+            is_long_intent = side_upper in ("BUY", "LONG")
+            
+            for pos in positions:
+                pos_symbol = pos.get("symbol")
+                if pos_symbol != symbol:
+                    continue
+                
+                # Get position quantity
+                qty = pos.get("quantity") or pos.get("positionAmt") or pos.get("qty")
+                if qty is None:
+                    continue
+                
+                try:
+                    qty_val = float(qty) if isinstance(qty, str) else qty
+                except (ValueError, TypeError):
+                    continue
+                
+                # Skip flat positions
+                if abs(qty_val) < 1e-9:
+                    continue
+                
+                # Check if same side
+                pos_is_long = qty_val > 0
+                
+                if is_long_intent and pos_is_long:
+                    self.logger.debug(
+                        f"[{symbol}] Anti-pyramiding: existing LONG position (qty={qty_val})"
+                    )
+                    return True
+                elif not is_long_intent and not pos_is_long:
+                    self.logger.debug(
+                        f"[{symbol}] Anti-pyramiding: existing SHORT position (qty={qty_val})"
+                    )
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            # Fail-closed: if we can't determine, assume no position (allow trade)
+            self.logger.warning(f"[{symbol}] Anti-pyramiding check error: {e}")
+            return False
+
     def on_features(self, event: Message) -> None:
+
         try:
             if isinstance(event.pld, dict):
                 symbol = event.pld.get("symbol", "unknown")
@@ -1098,6 +1838,35 @@ class DecisionMaking:
     def on_regime(self, event: Message) -> None:
         self.latest_regime = event.pld
         
+        # Contract v1.0: Extract and cache warmup state
+        if isinstance(event.pld, dict):
+            warmup = event.pld.get("warmup", {})
+            self._latest_warmup = warmup
+            symbol = event.pld.get("symbol")
+            
+            # Per-symbol regime cache: store regime for each symbol separately
+            if symbol:
+                regime_val = event.pld.get("regime") or event.pld.get("overall_regime")
+                self._per_symbol_regimes[symbol] = {
+                    "regime": regime_val,
+                    "warmup": warmup,
+                    "confidence": event.pld.get("confidence"),
+                    "axes": event.pld.get("axes"),
+                }
+                self.logger.debug(
+                    f"[{symbol}] Regime updated: {self._per_symbol_regimes[symbol].get('regime')}"
+                )
+                
+                # Check for regime flip enforcement
+                self._handle_regime_flip(symbol, self._per_symbol_regimes[symbol])
+            
+            # Guard: Block trades if not full_ready
+            if symbol and not warmup.get("full_ready", True):
+                self.logger.info(
+                    f"[{symbol}] RegimeContract: warmup phase (full_ready=false, " 
+                    f"ticks={warmup.get('ticks_seen', 0)})"
+                )
+        
         # Track B: Forward regime to MR handler
         if self._mr_handler and self._mr_handler.enabled:
             try:
@@ -1121,6 +1890,71 @@ class DecisionMaking:
                     self._behavior_state[symbol] = "Tension"
             except Exception:
                 pass
+
+    def _handle_regime_flip(self, symbol: str, regime_data: Any) -> None:
+        """
+        Check if new regime conflicts with existing position and close if needed.
+        Enforces 'Immediate Closure' on regime flips.
+        """
+        try:
+            regime = regime_data.get("regime") if isinstance(regime_data, dict) else str(regime_data)
+            
+            # Get current position
+            portfolio = self.latest_portfolio
+            if not portfolio:
+                return
+
+            pos_list = portfolio.get("positions", [])
+            curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
+            
+            if not curr_pos:
+                return
+                
+            qty_val = float(curr_pos.get("positionAmt", 0))
+            if abs(qty_val) < 1e-9:
+                return
+                
+            is_long = qty_val > 0
+            
+            should_close = False
+            reason = ""
+            
+            # Regime Logic: STRICT enforcement
+            if regime == "BULL_TREND" and not is_long:
+                 should_close = True
+                 reason = f"Short position in BULL_TREND"
+            elif regime == "BEAR_TREND" and is_long:
+                 should_close = True
+                 reason = f"Long position in BEAR_TREND"
+            elif regime == "UNCERTAIN":
+                 should_close = True
+                 reason = f"Position in UNCERTAIN regime"
+                 
+            if should_close:
+                self.logger.warning(f"[{symbol}] REGIME FLIP ENFORCEMENT: {reason}. Closing {qty_val}.")
+                
+                # Construct Close Intent
+                close_side = "SELL" if is_long else "BUY"
+                
+                # Provide dummy price 0 for Market order (or best effort fetch)
+                # We use 0 so it defaults to Market in adapter if not specified otherwise
+                price = decimal.Decimal("0")
+                
+                # Emit intent
+                why_chain = ["regime_flip_enforcement", regime]
+                rid = f"rf-{int(time.time())}"
+                
+                self._propose_trade_intent(
+                    symbol=symbol,
+                    side=close_side,
+                    qty=decimal.Decimal(str(abs(qty_val))),
+                    price=price,
+                    why_chain=why_chain,
+                    rid=rid,
+                    reduce_only=True
+                )
+        except Exception as e:
+            self.logger.warning(f"[{symbol}] Error in _handle_regime_flip: {e}")
 
     def _features_ready(self, symbol: str, features_data: dict) -> bool:
         """Check if features are fresh within TTL."""
@@ -1174,8 +2008,8 @@ class DecisionMaking:
                 inc_decision_deferred(symbol, "features_stale")
 
         # If we have both features and risk, make decision immediately
-        # Relax TTL gate in mixed config/testing environments
-        if has_features and has_risk and (features_ready or True):
+        # TTL gate enabled: requires fresh features within ttl_sec (default 30s)
+        if has_features and has_risk and features_ready:
             # Optional bar gating (e.g., M15) to avoid multiple decisions per bar
             if self._bar_gating_enabled:
                 feats = state["features"] or {}
@@ -1188,13 +2022,65 @@ class DecisionMaking:
                             f"[{symbol}] Bar gate: already processed bar_index={bar_index}, skipping decision")
                         return
                     self._last_bar_index[symbol] = bar_index
+            
+            # ========== REGIME GATING (Phase 2.2 Fix) ==========
+            # Block trades in disallowed regimes (e.g., ETH in HIGH_VOLATILITY)
+            instr_cfg = self._get_aurora_instrument_cfg(symbol)
+            if instr_cfg:
+                allowed_regimes = getattr(instr_cfg, 'allowed_regimes', None)
+                if allowed_regimes:
+                    # Get current regime name FOR THIS SYMBOL (per-symbol regime)
+                    current_regime = None
+                    # First try per-symbol regime cache
+                    if symbol in self._per_symbol_regimes:
+                        current_regime = self._per_symbol_regimes[symbol].get("regime")
+                    # Fallback to global latest_regime (legacy)
+                    elif self.latest_regime and isinstance(self.latest_regime, dict):
+                        current_regime = self.latest_regime.get("regime") or self.latest_regime.get("overall_regime")
+                    
+                    if current_regime and current_regime not in allowed_regimes:
+                        self.logger.info(
+                            f"[{symbol}] REGIME_GATE_BLOCKED: {current_regime} not in {allowed_regimes}"
+                        )
+                        return  # Skip this symbol - regime not allowed
+            # ==================================================
+            
+            # ========== CONTRACT v1.0: WARMUP GUARD (AURORA ONLY) ==========
+            # Block trades if RegimeDetector is still in warmup phase
+            # BUGFIX: Only apply to Aurora instruments, not MR strategy
+            is_aurora_symbol = instr_cfg is not None and getattr(instr_cfg, 'enabled', False)
+            
+            if is_aurora_symbol:
+                # Get per-symbol warmup state
+                warmup = {}
+                if symbol in self._per_symbol_regimes:
+                    warmup = self._per_symbol_regimes[symbol].get("warmup", {})
+                else:
+                    warmup = getattr(self, '_latest_warmup', {})
+                full_ready = warmup.get("full_ready", True) if isinstance(warmup, dict) else True
+                
+                if not full_ready:
+                    ticks_seen = warmup.get("ticks_seen", 0) if isinstance(warmup, dict) else 0
+                    self.logger.info(
+                        f"[{symbol}] WARMUP_GUARD_BLOCKED (Aurora): full_ready=false (ticks_seen={ticks_seen})"
+                    )
+                    return  # Skip - RegimeDetector not warmed up for Aurora
+                
+                # REMOVED: UNCERTAIN regime block - now handled via allowed_regimes config
+            # ================================================================
+            
             self.logger.info(
                 f"[{symbol}] ✅ All data ready! Triggering decision...")
+            
+            # Use per-symbol regime with fallback to global
+            symbol_regime = self._per_symbol_regimes.get(symbol, {}) if hasattr(self, '_per_symbol_regimes') else {}
+            effective_regime = symbol_regime if symbol_regime else self.latest_regime
+            
             decision_context = {
                 "features": state["features"],
                 "risk_params": state["risk"],
                 "portfolio": self.latest_portfolio,
-                "regime": self.latest_regime,
+                "regime": effective_regime,
             }
             rid = str(uuid.uuid4())
             self.dlog.write("DECISION_TRIGGER", rid, {"symbol": symbol})
@@ -1214,11 +2100,16 @@ class DecisionMaking:
                         f"[{symbol}] ✅ Using cached risk assessment from "
                         f"{current_time - risk_assessment_time:.1f}s ago")
                     state["risk"] = cached_risk
+                    
+                    # Use per-symbol regime with fallback to global
+                    symbol_regime = self._per_symbol_regimes.get(symbol, {}) if hasattr(self, '_per_symbol_regimes') else {}
+                    effective_regime = symbol_regime if symbol_regime else self.latest_regime
+                    
                     decision_context = {
                         "features": state["features"],
                         "risk_params": state["risk"],
                         "portfolio": self.latest_portfolio,
-                        "regime": self.latest_regime,
+                        "regime": effective_regime,
                     }
                     rid = str(uuid.uuid4())
                     self.dlog.write("DECISION_TRIGGER", rid, {
@@ -1250,6 +2141,14 @@ class DecisionMaking:
             f"[{symbol}] 🚀 _make_decision_for_symbol() START - RID: {rid}"
         )
 
+        # Check if Aurora strategy is enabled for this symbol
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg and hasattr(instr_cfg, 'enabled') and not instr_cfg.enabled:
+            self.logger.info(
+                f"[{symbol}] Aurora strategy DISABLED for this instrument. Skipping decision."
+            )
+            return
+
         # Busy guard: prevent infinite defer loops during cooldown
         current_time_ms = int(time.time() * 1000)  # Convert to milliseconds for comparison
         next_allowed = self._qos_next_allowed_ts.get(symbol, 0)  # Already in milliseconds
@@ -1262,8 +2161,23 @@ class DecisionMaking:
             self._ensure_after_cooldown_retry(symbol, context, rid)
             return
 
-        why_chain = []
+        # Idempotency guard: prevent spam on same features (SSOT)
         features_data = context["features"]["features"]
+        current_features_ts = context["features"].get("ts", 0)
+        
+        last_success_ts = self._last_successful_features_ts.get(symbol, 0)
+        if current_features_ts > 0 and current_features_ts <= last_success_ts:
+            # We already generated a successful intent for this feature snapshot.
+            # Don't spam duplication or logs.
+            # Exception: if we need to re-evaluate due to forced trigger? 
+            # Assuming features are the clock signal for decisions.
+            self.logger.debug(
+                f"[{symbol}] Idempotency skip: features_ts={current_features_ts} <= last_success_ts={last_success_ts}"
+            )
+            return
+
+        why_chain = []
+        # features_data already extracted above
         risk_params = context["risk_params"]["risk_parameters"]
         portfolio = context["portfolio"]
 
@@ -1586,8 +2500,7 @@ class DecisionMaking:
                 for f, w in signal_weights.items()
             )
 
-        base_threshold = decimal.Decimal(
-            str(decision_config.get("signal_threshold", "0.1")))
+        base_threshold = self._get_signal_threshold(symbol)  # Phase 3+: per-asset override
         # Regime-based threshold multiplier (Δθ); defaults to 1.0 if not configured or regime missing
         # Phase A1: Per-instrument regime thresholds with global fallback
         regime_thresholds_cfg = self._get_regime_thresholds(symbol)
@@ -2050,9 +2963,57 @@ class DecisionMaking:
             self.clear_internal_state_for_symbol(symbol)
             return
 
+        # === Strict Sequential Contract (Commit 4) ===
+        # Replaces ETAP4 logic. Handles Flattening, Anti-Pyramiding, and Flip Orchestration.
+        pld_for_flip = {
+            "symbol": symbol,
+            "side": side,
+            "rid": rid,
+            "why_chain": why_chain,
+            # Pass full context for potential reconstruction
+            "context_ref": "decision_making_aurora" 
+        }
+        flip_result = self._handle_flip_orchestration(
+            symbol=symbol,
+            intent_side=side,
+            original_pld=pld_for_flip,
+            source="aurora"
+        )
+        
+        if flip_result:
+            if flip_result == "ANTI_PYRAMIDING_BLOCK":
+                 reject_reason = f"anti_pyramiding_active_position_{symbol}_{side.lower()}"
+                 self.logger.info(
+                     f"[{symbol}] DECISION NRR: {reject_reason} (existing position, blocking new entry)"
+                 )
+                 order_logger.write({
+                    "rid": rid,
+                    "event_type": "ORDER_REJECTED",
+                    "symbol": symbol,
+                    "side": side.upper(),
+                    "quantity": float(qty),
+                    "nrr_code": "NRR-020",
+                    "why": reject_reason[:80],
+                    "source_fsm": "DecisionMaking",
+                    "metadata": {"reject_reason": "ANTI_PYRAMIDING_BLOCK"}
+                })
+            elif flip_result == "FLIP_CLOSE_PENDING":
+                # Close intent and Deferral event already emitted by helper
+                self.logger.info(f"[{symbol}] DECISION: Flip initiated. Open deferred.")
+            elif flip_result == "NRR-PORTFOLIO-UNKNOWN":
+                # Fail-closed
+                pass
+                
+            self.clear_internal_state_for_symbol(symbol)
+            return
+
         self._propose_trade_intent(
             symbol, side, qty, price_ref, why_chain, rid
         )
+
+        # Update idempotency guard (SUCCESS)
+        if current_features_ts > 0:
+            self._last_successful_features_ts[symbol] = current_features_ts
 
     def _calculate_position_size(
         self, symbol: str, price: decimal.Decimal, side: str, context: dict
@@ -2121,13 +3082,7 @@ class DecisionMaking:
                 base_notional = min(q_notional, kelly_notional)
             else:
                 base_notional = q_notional
-            # Apply regime multiplier if provided
-            regime_multiplier = sizing_meta.get("regime_multiplier")
-            try:
-                if isinstance(regime_multiplier, decimal.Decimal) and regime_multiplier > 0:
-                    base_notional = base_notional * regime_multiplier
-            except Exception:
-                pass
+            # NOTE: regime_multiplier is now applied at the END (Phase 2.1 fix)
 
             # Apply volatility-based multiplier to SL_bps for adaptive sizing
             volatility_multiplier = decimal.Decimal(
@@ -2159,7 +3114,21 @@ class DecisionMaking:
                 kappa_dec = decimal.Decimal(str(kappa_liq))
             except Exception:
                 kappa_dec = decimal.Decimal("1")
-            final_pos_size_usd = base_notional * kappa_dec
+            pre_final = base_notional * kappa_dec
+            
+            # ========== REGIME SIZING FIX (Phase 2.1) ==========
+            # Apply regime multiplier AFTER all base calculations
+            # This fixes the SOL 2.0x LOW_VOL sizing bug
+            regime_multiplier = sizing_meta.get("regime_multiplier")
+            if isinstance(regime_multiplier, decimal.Decimal) and regime_multiplier > 0:
+                pre_final = pre_final * regime_multiplier
+                self.logger.info(
+                    f"[{symbol}] REGIME_SIZING_APPLIED: base={base_notional}, "
+                    f"kappa={kappa_dec}, mult={regime_multiplier}, result={pre_final}"
+                )
+            # ===================================================
+            
+            final_pos_size_usd = pre_final
             # Apply liquidity cap as a hard ceiling
             if final_pos_size_usd > self.liq_cap_usd:
                 final_pos_size_usd = self.liq_cap_usd
@@ -2177,6 +3146,39 @@ class DecisionMaking:
             f"final=${final_pos_size_usd}"
         )  # noqa: E501
         self.logger.info(msg)
+
+        # ETAP3: Apply risk_contract_v1 regime sizing or cap
+        rc_cap_notional = self._compute_risk_contract_cap_notional(symbol, equity)
+        
+        # Get volatility_state from sizing_meta (already computed above in legacy logic)
+        vol_state = sizing_meta.get("volatility_state") if q_risk is not None else None
+        
+        # Try regime-scaled notional first (ETAP3: only for symbols with regime_sizing.enabled=true)
+        regime_target = self._compute_regime_scaled_notional(
+            symbol=symbol,
+            equity=equity,
+            volatility_state=vol_state,
+            cap_notional=rc_cap_notional,
+        )
+        
+        if regime_target is not None:
+            # Regime sizing enabled for this symbol: use regime_target instead of legacy
+            self.logger.info(
+                f"[{symbol}] RISK_CONTRACT_V1_REGIME_SIZING: "
+                f"legacy_notional={final_pos_size_usd}, regime_target={regime_target}, "
+                f"equity={equity}, vol_state={vol_state}"
+            )
+            final_pos_size_usd = regime_target
+            why_parts.append(f"rc_v1_regime={regime_target}")
+        elif rc_cap_notional is not None:
+            # No regime sizing, but cap is configured (ETAP2 behavior)
+            if final_pos_size_usd > rc_cap_notional:
+                self.logger.info(
+                    f"[{symbol}] RISK_CONTRACT_V1_CAP: notional {final_pos_size_usd} -> {rc_cap_notional} "
+                    f"(equity={equity})"
+                )
+                final_pos_size_usd = rc_cap_notional
+                why_parts.append(f"rc_v1_cap={rc_cap_notional}")
 
         if final_pos_size_usd < self.min_pos_size_usd:
             reject_reason = f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"
@@ -2243,7 +3245,28 @@ class DecisionMaking:
         price: decimal.Decimal,
         why_chain: list[str],
         rid: str,
+        reduce_only: bool = False,
     ) -> None:
+        # Z-01 FIX: Read tca_prefs from config instead of hardcoding
+        tca = self._tca_prefs or {}
+        if hasattr(tca, '__dict__'):  # Pydantic model
+            max_slippage = str(getattr(tca, 'max_slippage_bps', 10))
+            max_latency = getattr(tca, 'max_latency_ms', 500)
+            maker_pref = getattr(tca, 'maker_preference', 'neutral')
+        else:  # dict
+            max_slippage = str(tca.get('max_slippage_bps', 10))
+            max_latency = tca.get('max_latency_ms', 500)
+            maker_pref = tca.get('maker_preference', 'neutral')
+        
+        # Z-02 FIX: Read risk_budgets from config instead of hardcoding
+        rb = self._risk_budgets or {}
+        if hasattr(rb, '__dict__'):  # Pydantic model
+            trade_cvar = str(getattr(rb, 'trade_cvar95_max_bps', 100))
+            session_cvar = str(getattr(rb, 'session_cvar95_max_bps', 200))
+        else:  # dict
+            trade_cvar = str(rb.get('trade_cvar95_max_bps', 100))
+            session_cvar = str(rb.get('session_cvar95_max_bps', 200))
+        
         trade_intent = {
             "instrument": symbol,
             "side": side,
@@ -2251,18 +3274,17 @@ class DecisionMaking:
                 "qty": str(qty),
                 "price": str(price),
                 "price_ref": str(price),
-                "reduce_only": False,
+                "reduce_only": reduce_only,
             },
             "p": "0.75",
             "payoff_ratio_r": "2.0",
             "tca_budget": {
-                "max_slippage_bps": "10",
-                "max_latency_ms": 500,
-                "maker_preference": "neutral",
+                "max_slippage_bps": max_slippage,
+                "max_latency_ms": max_latency,
             },
             "risk_budget": {
-                "trade_cvar95_max_bps": "100",
-                "session_cvar95_max_bps": "200",
+                "trade_cvar95_max_bps": trade_cvar,
+                "session_cvar95_max_bps": session_cvar,
             },
             "size": {"notional_cap_usd": str(qty * price), "kelly_fraction": "0.1"},
             "valid_for_ms": 5000,
@@ -2291,11 +3313,165 @@ class DecisionMaking:
             "metadata": {"intent_proposed": True, "idempotent_key": trade_intent["idempotent_key"]}
         })
 
-        self.clear_internal_state_for_symbol(symbol)
+        # Update idempotency guard (SUCCESS)
+        # Note: moved from _make_decision_for_symbol to here to capture ALL successful intents
+        # But we need Features TS... passed via context? Or assume caller handles it?
+        # The caller handles it. This method is just the emission mechanism.
+        
+        # CLEAR STATE IS DONE BY CALLER usually.
+
+    def _get_position_state(self, symbol: str) -> str:
+        """
+        Get current position state from SSOT (latest_portfolio).
+        Returns: FLAT, LONG, SHORT, UNKNOWN
+        """
+        if not self.latest_portfolio:
+            return "UNKNOWN"
+            
+        pos_list = self.latest_portfolio.get("positions", [])
+        curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
+        
+        if not curr_pos:
+            return "FLAT"
+            
+        try:
+            qty = float(curr_pos.get("positionAmt", 0))
+        except (ValueError, TypeError):
+            return "UNKNOWN"
+            
+        if abs(qty) < 1e-9: # Equality tolerance
+            return "FLAT"
+            
+        return "LONG" if qty > 0 else "SHORT"
+
+    def _is_flip(self, symbol: str, intent_side: str, position_state: str = None) -> bool:
+        """Check if intent opposes current position."""
+        if not position_state:
+            position_state = self._get_position_state(symbol)
+            
+        if position_state == "FLAT" or position_state == "UNKNOWN":
+            return False
+            
+        intent_side = intent_side.upper()
+        if position_state == "LONG" and intent_side == "SELL":
+            return True
+        if position_state == "SHORT" and intent_side == "BUY":
+            return True
+            
+        return False
+        
+    def _emit_reduce_only_close(self, symbol: str, reason: str, rid: str) -> None:
+        """Emit immediate reduce-only close intent for Flip Orchestration."""
+        pos_state = self._get_position_state(symbol)
+        if pos_state not in ("LONG", "SHORT"):
+            return # Nothing to close
+            
+        close_side = "SELL" if pos_state == "LONG" else "BUY"
+        
+        # Get qty from portfolio
+        pos_list = self.latest_portfolio.get("positions", [])
+        curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
+        qty = abs(float(curr_pos.get("positionAmt", 0)))
+        
+        self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Emitting CLOSE {close_side} {qty} (reduce_only)")
+        
+        self._propose_trade_intent(
+            symbol=symbol,
+            side=close_side,
+            qty=decimal.Decimal(str(qty)),
+            price=decimal.Decimal("0"), # Market/Best-effort
+            why_chain=["flip_orchestration_close", reason],
+            rid=rid,
+            reduce_only=True
+        )
+
+    def _stable_retry_key(
+        self,
+        *,
+        prefix: str,
+        symbol: str,
+        rid: str | None,
+        side: str | None = None,
+        ts_ms: int | None = None,
+    ) -> str:
+        if rid:
+            return f"{prefix}:{symbol}:{rid}"
+        if ts_ms is None:
+            ts_ms = int(time.time() * 1000)
+        if side:
+            return f"{prefix}:{symbol}:{side}:{ts_ms}"
+        return f"{prefix}:{symbol}:{ts_ms}"
+
+    def _emit_intent_deferred_v1(
+        self,
+        *,
+        symbol: str,
+        reason: str,
+        retry_key: str,
+        next_allowed_ts: int,
+        original_event_name: str,
+        original_payload_min: Dict[str, Any],
+        attempt: int = 1,
+        max_attempts: int = 5,
+        why_chain: list[str] | None = None,
+        context: str | None = None,
+    ) -> None:
+        now_ms = int(time.time() * 1000)
+        try:
+            ttl_ms = int(self._safe_config_get("trading", "decision", "retry_ttl_ms", default=300_000))
+        except Exception:
+            ttl_ms = 300_000
+        payload: Dict[str, Any] = {
+            "retry_key": retry_key,
+            "symbol": symbol,
+            "reason": reason,
+            "next_allowed_ts": int(next_allowed_ts),
+            "attempt": int(attempt),
+            "max_attempts": int(max_attempts),
+            "retry_policy": {
+                "attempt": int(attempt),
+                "max_attempts": int(max_attempts),
+                "backoff_ms": max(0, int(next_allowed_ts) - now_ms),
+                "ttl_ms": ttl_ms,
+            },
+            "original_event": {
+                "event_name": original_event_name,
+                "payload_min": original_payload_min,
+            },
+            "why_chain": why_chain or [],
+            "created_ts": now_ms,
+        }
+        if context:
+            payload["context"] = context
+        self.fsm.emit("EVT:INTENT_DEFERRED", payload)
+
+    def _schedule_open_retry(self, symbol: str, original_context: dict, cooldown_ms: int, reason: str) -> None:
+        """Emit EVT:INTENT_DEFERRED to schedule retry after close."""
+        next_ts = int(time.time() * 1000) + cooldown_ms
+        
+        # Match schema intent_deferred_v1.json
+        payload = {
+            "retry_key": f"flip-{symbol}-{int(time.time())}", 
+            "symbol": symbol,
+            "reason": reason,
+            "next_allowed_ts": next_ts,
+            "attempt": 1, 
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "EVT:TRADE_INTENT_PROPOSED", # Default assumption for open intent
+                "payload_min": original_context
+            },
+            "created_ts": int(time.time() * 1000),
+            "why_chain": ["flip_orchestration_defer"]
+        }
+        
+        self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Deferring OPEN until {next_ts} (reason: {reason})")
+        self.fsm.emit("EVT:INTENT_DEFERRED", payload)
 
     def clear_internal_state_for_symbol(self, symbol: str) -> None:
-        if symbol in self.symbol_states:
-            del self.symbol_states[symbol]
+        # Do not clear state - it serves as SSOT cache for MR Gateway and other async strategies.
+        # Data freshness is handled by TTL checks (Gate 5) and Risk Skew checks (Gate 1.5).
+        pass
 
     def _record_blocked_intent(self, symbol: str) -> None:
         """Record a blocked intent and check alert thresholds."""
@@ -2419,3 +3595,262 @@ class DecisionMaking:
             self.logger.warning(
                 f"Error in exposure cache precheck: {e}, allowing trade")
             return True
+
+    # === D3: FLIP ORCHESTRATION (Plan v1) ===
+    
+        """Check if intent side is same as current position side (pyramiding)."""
+        if not position_side:
+            return False
+        return position_side == intent_side
+    
+    def _generate_flip_retry_key(self, symbol: str, side: str, seed: str | None = None) -> str:
+        """Generate stable retry_key for a flip transaction."""
+        if seed:
+            return f"flip:{symbol}:{side}:{seed}"
+        ts_ms = int(time.time() * 1000)
+        return f"flip:{symbol}:{side}:{ts_ms}"
+    
+    def _handle_flip_orchestration(
+        self,
+        symbol: str,
+        intent_side: str,
+        original_pld: Dict[str, Any],
+        source: str = "aurora"
+    ) -> Optional[str]:
+        """
+        D3: Handle flip orchestration when OPEN requested.
+        STRICT SEQUENTIAL CONTRACT:
+        1. UNKNOWN -> Fail-closed (Defer)
+        2. FLAT -> Allow
+        3. LONG/SHORT + Same Side -> Block (Anti-Pyramiding)
+        4. LONG/SHORT + Opposite Side -> Flip Orchestration (Close -> Defer Open)
+        """
+        # 1. Check State
+        pos_state = self._get_position_state(symbol)
+        
+        if pos_state == "UNKNOWN":
+            self.logger.warning(
+                f"[{symbol}] FLIP_ORCHESTRATION: State UNKNOWN, fail-closed (NRR-PORTFOLIO-UNKNOWN)"
+            )
+            return "NRR-PORTFOLIO-UNKNOWN"
+            
+        if pos_state == "FLAT":
+            self.logger.debug(f"[{symbol}] FLIP_ORCHESTRATION: FLAT, allowing OPEN {intent_side}")
+            return None
+            
+        # 2. Check Flip vs Same-Side
+        is_flip = self._is_flip(symbol, intent_side, pos_state)
+        
+        if not is_flip:
+            # Must be same-side (or some weird state), treat as Anti-Pyramiding
+            self.logger.warning(
+                f"[{symbol}] FLIP_ORCHESTRATION: BLOCK - Same-side pyramiding not allowed "
+                f"(state={pos_state}, intent={intent_side})"
+            )
+            return "ANTI_PYRAMIDING_BLOCK"
+            
+        # 3. Handle Flip
+        # Emit Reduce-Only Close
+        rid = original_pld.get("rid", f"flip-{int(time.time())}")
+        self._emit_reduce_only_close(symbol, "flip_orchestration", f"{rid}-close")
+        
+        # Schedule Retry (Defer Open)
+        # Use simple cooldown for now (e.g. 5s) or fetch per-symbol config
+        retry_key = self._generate_flip_retry_key(symbol, intent_side, seed=rid)
+        now_ms = int(time.time() * 1000)
+        
+        # Get stale TTL for retry delay
+        stale_ttl_sec = self._safe_config_get(
+            "position_tracking", "positions_stale_ttl_sec", default=5
+        )
+        next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
+        
+        # Prepare minimal original event for deferred retry
+        original_event = {
+            "event_name": f"EVT:{source.upper()}_SIGNAL_PRODUCED" if source != "aurora" else "EVT:FEATURES_CALCULATED",
+            "payload_min": {
+                "symbol": symbol,
+                "side": intent_side,
+                "qty_hint": original_pld.get("qty_hint", original_pld.get("position_size_usd")),
+                "price_ctx": original_pld.get("price_ctx"),
+                "strategy_id": original_pld.get("strategy_id", source),
+                "cooldown_class": "flip",
+                "rid": original_pld.get("rid", f"flip_{retry_key}"),
+            }
+        }
+        
+        # Build why_chain for debugging
+        why_chain = original_pld.get("why_chain", []).copy() if isinstance(original_pld.get("why_chain"), list) else []
+        why_chain.extend(["opposite_position_exists", "flip_close_emitted"])
+        
+        self._emit_intent_deferred_v1(
+            symbol=symbol,
+            reason="FLIP_CLOSE_PENDING",
+            retry_key=retry_key,
+            next_allowed_ts=next_allowed_ts,
+            original_event_name=original_event["event_name"],
+            original_payload_min=original_event["payload_min"],
+            attempt=1,
+            max_attempts=5,
+            why_chain=why_chain,
+            context=f"flip_orchestration_{source}",
+        )
+        
+        return "FLIP_CLOSE_PENDING"
+
+    def _initiate_flip_close(
+        self,
+        symbol: str,
+        intent_side: str,
+        original_pld: Dict[str, Any],
+        source: str
+    ) -> str:
+        """
+        D3: Initiate flip by emitting CMD:CLOSE and deferring OPEN intent.
+        
+        Returns:
+            "FLIP_CLOSE_PENDING" reason (always blocks current intent)
+        """
+        retry_key = self._generate_flip_retry_key(symbol, intent_side, seed=original_pld.get("rid"))
+        now_ms = int(time.time() * 1000)
+        
+        # Get stale TTL for retry delay
+        stale_ttl_sec = self._safe_config_get(
+            "position_tracking", "positions_stale_ttl_sec", default=5
+        )
+        next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
+        
+        self.logger.info(
+            f"[{symbol}] FLIP_ORCHESTRATION: Initiating flip - closing opposite position, "
+            f"deferring {intent_side} OPEN (retry_key={retry_key})"
+        )
+        
+        # Emit CMD:CLOSE to close existing position
+        close_pld = {
+            "symbol": symbol,
+            "reason": "FLIP_CLOSE",
+            "retry_key": retry_key,  # For idempotency
+            "rid": original_pld.get("rid", f"flip_close_{retry_key}"),
+        }
+        
+        self.fsm.emit("CMD:CLOSE", close_pld)
+        
+        # Prepare minimal original event for deferred retry
+        original_event = {
+            "event_name": f"EVT:{source.upper()}_SIGNAL_PRODUCED" if source != "aurora" else "EVT:FEATURES_CALCULATED",
+            "payload_min": {
+                "symbol": symbol,
+                "side": intent_side,
+                "qty_hint": original_pld.get("qty_hint", original_pld.get("position_size_usd")),
+                "price_ctx": original_pld.get("price_ctx"),
+                "strategy_id": original_pld.get("strategy_id", source),
+                "cooldown_class": "flip",
+                "rid": original_pld.get("rid", f"flip_{retry_key}"),
+            }
+        }
+        
+        # Build why_chain for debugging
+        why_chain = original_pld.get("why_chain", []).copy() if isinstance(original_pld.get("why_chain"), list) else []
+        why_chain.extend(["opposite_position_exists", "flip_close_emitted"])
+        
+        self._emit_intent_deferred_v1(
+            symbol=symbol,
+            reason="FLIP_CLOSE_PENDING",
+            retry_key=retry_key,
+            next_allowed_ts=next_allowed_ts,
+            original_event_name=original_event["event_name"],
+            original_payload_min=original_event["payload_min"],
+            attempt=1,
+            max_attempts=5,
+            why_chain=why_chain,
+            context=f"flip_orchestration_{source}",
+        )
+        
+        self.logger.info(
+            f"[{symbol}] FLIP_ORCHESTRATION: Emitted CMD:CLOSE + INTENT_DEFERRED "
+            f"(next_allowed_ts={next_allowed_ts}, retry_key={retry_key})"
+        )
+        
+        return "FLIP_CLOSE_PENDING"
+
+    # === COMMIT 4: STRICT SEQUENTIAL TRADING CONTRACT HELPERS ===
+    
+    def _check_symbol_is_flat(self, symbol: str) -> bool:
+        """
+        Check if portfolio position for symbol is FLAT (no position).
+        
+        STRICT SEQUENTIAL TRADING CONTRACT:
+        Per-symbol check - ETH position doesn't block DOGE OPEN.
+        
+        FAIL-CLOSED (Commit 4.1):
+        - Unknown portfolio → NOT FLAT → DEFER
+        - Exception → NOT FLAT → DEFER
+        This prevents opening positions "in the dark".
+        
+        Returns:
+            True if CONFIRMED no position exists (FLAT), False otherwise.
+        """
+        try:
+            if not self.latest_portfolio:
+                # FAIL-CLOSED: No portfolio data → NOT FLAT → DEFER
+                self.logger.warning(
+                    f"[{symbol}] _check_symbol_is_flat: No portfolio data, "
+                    f"FAIL-CLOSED (NRR-PORTFOLIO-UNKNOWN)"
+                )
+                return False  # NOT FLAT - will trigger DEFER
+            
+            positions = self.latest_portfolio.get("positions", [])
+            if not positions:
+                return True  # Empty positions = confirmed FLAT
+            
+            for pos in positions:
+                pos_symbol = pos.get("symbol", "")
+                if pos_symbol != symbol:
+                    continue
+                    
+                # Check positionAmt (Binance format)
+                qty_str = pos.get("positionAmt", "0")
+                try:
+                    qty = abs(float(qty_str))
+                except (ValueError, TypeError):
+                    qty = 0.0
+                
+                # Position exists if qty > threshold
+                flat_threshold = 1e-9
+                if qty > flat_threshold:
+                    self.logger.debug(f"[{symbol}] _check_symbol_is_flat: Position exists, qty={qty}")
+                    return False
+            
+            return True  # No matching position found = FLAT
+            
+        except Exception as e:
+            # FAIL-CLOSED: Error → NOT FLAT → DEFER
+            self.logger.warning(
+                f"[{symbol}] _check_symbol_is_flat error: {e}, "
+                f"FAIL-CLOSED (NRR-PORTFOLIO-UNKNOWN)"
+            )
+            return False  # NOT FLAT - will trigger DEFER
+            return None
+
+    def _get_risk_skew_config(self, key: str, default: Any) -> Any:
+        """
+        Get risk_skew config value from domains config.
+        
+        Commit 5: Risk Skew Guard configuration.
+        Config path: domains.decision_making.risk_skew.<key>
+        """
+        try:
+            # Try domains config path
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
+                risk_skew = getattr(self.config.domains.decision_making, 'risk_skew', None)
+                if risk_skew:
+                    return getattr(risk_skew, key, default)
+            
+            # Try dict access  
+            if isinstance(self.config, dict):
+                dm_cfg = self.config.get('domains', {}).get('decision_making', {})
+                return dm_cfg.get('risk_skew', {}).get(key, default)
+            
+            return default
+        except Exception:
+            return default

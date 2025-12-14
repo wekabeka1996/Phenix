@@ -55,6 +55,7 @@
                 "reason": {
                     "type": "string",
                     "enum": [
+                        "NRR-DATA-NOT-READY",
                         "NRR-PORTFOLIO-UNKNOWN",
                         "NRR-PORTFOLIO-STALE",
                         "NRR-RISK-STALE",
@@ -65,6 +66,18 @@
                         "REGIME_BLOCKED"
                     ],
                     "description": "Reason code for deferral (NRR = No Reliable Reason)"
+                },
+                "retry_policy": {
+                    "type": "object",
+                    "required": ["attempt", "max_attempts", "backoff_ms", "ttl_ms"],
+                    "properties": {
+                        "attempt": { "type": "integer", "minimum": 1 },
+                        "max_attempts": { "type": "integer", "minimum": 1 },
+                        "backoff_ms": { "type": "integer", "minimum": 0 },
+                        "ttl_ms": { "type": "integer", "minimum": 0 }
+                    },
+                    "additionalProperties": false,
+                    "description": "Retry policy snapshot (informational; scheduler may use top-level attempt/max_attempts)"
                 },
                 "next_allowed_ts": {
                     "type": "integer",
