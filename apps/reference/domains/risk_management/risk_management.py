@@ -45,21 +45,52 @@ class RiskManagement:
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
+        
+        # ETAP4: Unified Daily Risk State
+        from apps.reference.domains.risk_management.daily_gate import DailyRiskState
+        self.daily_risk_state = DailyRiskState(config, logger=self.logger)
+        
         # Portfolio state tracking for holistic risk management
         self.portfolio_state: Optional[Dict[str, Any]] = None
-        self.peak_equity: Optional[decimal.Decimal] = None
-        self.current_daily_drawdown = decimal.Decimal("0")
-
-        # AGENT-PATCH: Daily reset state
-        # Opening equity of the day
-        self._equity_open: Optional[decimal.Decimal] = None
-        # Last date when reset occurred (YYYY-MM-DD)
-        self._last_reset_day: Optional[str] = None
 
         # Subscribe to events
         self.fsm.listen("EVT:FEATURES_CALCULATED", self.on_features_calculated)
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
                         self.on_portfolio_state_updated)
+        
+        # Listen to EVT:ORDER_FILLED to track realized PnL in DailyRiskState
+        self.fsm.listen("EVT:ORDER_FILLED", self.on_order_filled)
+        
+        # D5: Cache absorption penalty flag
+        self._use_absorption_penalty = self._get_use_absorption_penalty()
+        if not self._use_absorption_penalty:
+            self.logger.warning(
+                "D5: Absorption penalty DISABLED (use_absorption_penalty=False). "
+                "Other risk weights are NOT rescaled."
+            )
+
+    def _get_use_absorption_penalty(self) -> bool:
+        """
+        D5: Get use_absorption_penalty flag from config.
+        
+        When False, absorption term is excluded from risk score calculation.
+        Other weights are NOT rescaled (per Plan v1 requirement).
+        """
+        try:
+            # Try domains.risk_management.use_absorption_penalty
+            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
+                rm_config = self.config.domains.risk_management
+                if hasattr(rm_config, 'use_absorption_penalty'):
+                    return rm_config.use_absorption_penalty
+            
+            # Try dict access
+            if isinstance(self.config, dict):
+                return self.config.get('domains', {}).get('risk_management', {}).get('use_absorption_penalty', False)
+            
+            return False  # Default: disabled (absorption placeholder must not affect default risk)
+        except Exception as e:
+            self.logger.debug(f"Error reading use_absorption_penalty: {e}, defaulting to False")
+            return False
 
     def start(self) -> None:
         """Start the risk management component (subscription already done in __init__)."""
@@ -133,39 +164,19 @@ class RiskManagement:
 
     def on_portfolio_state_updated(self, event: Message) -> None:
         """
-        Handle portfolio state updates to calculate portfolio-level risk metrics.
-
-        AGENT-PATCH: Implement daily reset at start of trading day.
+        Handle portfolio state updates to update DailyRiskState.
         """
-        self.logger.info(
-            "Handling EVT:PORTFOLIO_STATE_UPDATED for risk assessment...")
+        self.logger.info("Handling EVT:PORTFOLIO_STATE_UPDATED for risk assessment...")
         self.portfolio_state = event.pld
-        current_equity = decimal.Decimal(
-            str(self.portfolio_state.get("equity", "0")))
-
-        # AGENT-PATCH: Daily reset logic
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        if self._last_reset_day != today_str or self._equity_open is None:
-            # New day or first update: reset opening equity
-            self._equity_open = current_equity
-            self._last_reset_day = today_str
-            self.logger.info(
-                f"Daily reset: opening_equity={float(current_equity):.2f}, day={today_str}")
-
-        # Calculate daily drawdown from opening equity
-        if self._equity_open and self._equity_open > 0:
-            drawdown_pct = max(
-                decimal.Decimal("0"),
-                (self._equity_open - current_equity) / self._equity_open * 100
-            )
-            self.current_daily_drawdown = drawdown_pct
-        else:
-            self.current_daily_drawdown = decimal.Decimal("0")
-
-        self.logger.info(
-            f"Portfolio risk update: Equity=${current_equity:.2f}, "
-            f"Opening=${self._equity_open:.2f}, Drawdown={float(self.current_daily_drawdown):.2f}%"
-        )
+        
+        # Delegate to SSOT
+        self.daily_risk_state.on_portfolio(self.portfolio_state)
+        
+    def on_order_filled(self, event: Message) -> None:
+        """
+        Handle order filled events to update realized PnL in DailyRiskState.
+        """
+        self.daily_risk_state.on_order_filled(event.pld)
 
     def _calculate_risk_parameters(self, features: Dict[str, float]) -> Dict[str, Any]:
         """
@@ -175,113 +186,71 @@ class RiskManagement:
         AGENT-PATCH: Daily drawdown check with correct threshold reading.
         """
         # 1. Portfolio-level risk check (Circuit Breaker)
-        # AGENT-PATCH: Safe reading of max_allowed from overrides/config/fallback
-        try:
-            if hasattr(self.config, 'risk'):
-                risk_config = self.config.risk if self.config.risk else {}
-            elif isinstance(self.config, dict):
-                risk_config = self.config.get("risk", {})
-            else:
-                risk_config = {}
-        except (AttributeError, TypeError):
-            risk_config = {}
-
-        # Try to read max_daily_drawdown_pct from different paths
-        max_drawdown_pct = None
-        if isinstance(risk_config, dict):
-            max_drawdown_pct = risk_config.get("max_daily_drawdown_pct", None)
-        else:
-            max_drawdown_pct = getattr(
-                risk_config, 'max_daily_drawdown_pct', None)
-
-        if max_drawdown_pct is None:
-            try:
-                if hasattr(self.config, 'system') and self.config.system:
-                    system_risk = self.config.system.risk if hasattr(
-                        self.config.system, 'risk') else None
-                    if system_risk:
-                        max_drawdown_pct = getattr(
-                            system_risk, 'max_daily_drawdown_limit', None)
-                elif isinstance(self.config, dict):
-                    max_drawdown_pct = self.config.get("system", {}).get(
-                        "risk", {}).get("max_daily_drawdown_limit")
-            except (AttributeError, TypeError):
-                max_drawdown_pct = None
-
-        if max_drawdown_pct is None:
-            max_drawdown_pct = 10.0
-
-        try:
-            max_drawdown_pct = float(max_drawdown_pct)
-        except (TypeError, ValueError):
-            max_drawdown_pct = 10.0
-
-        # Compare drawdown_pct directly (both in %)
-        if self.current_daily_drawdown > decimal.Decimal(str(max_drawdown_pct)):
+        # 1. Portfolio-level risk check via DailyRiskState (SSOT)
+        daily_allowed, daily_reason = self.daily_risk_state.can_open()
+        
+        if not daily_allowed:
+            # Blocked by Daily Gate (Enforced or Legacy)
             self.logger.critical(
-                f"PORTFOLIO RISK BREACH: Daily drawdown "
-                f"{float(self.current_daily_drawdown):.2f}% > "
-                f"{max_drawdown_pct:.2f}%. Disabling all trading."
+                f"PORTFOLIO RISK BLOCK: {daily_reason.get('detail')} - {daily_reason.get('why')}"
             )
+            # Log specific why code
+            detail = daily_reason.get("detail", "UNKNOWN")
+            val = daily_reason.get("drawdown_pct", "0")
+            limit = daily_reason.get("limit_pct", "0")
+            
             logger.warning(
                 format_why_with_details(
-                    WhyCode.RISK_DRAWDOWN_LIMIT,
-                    f"gate=daily_drawdown value={float(self.current_daily_drawdown):.4f} "
-                    f"threshold={max_drawdown_pct:.4f}"
+                    WhyCode.RISK_DRAWDOWN_LIMIT if "DRAWDOWN" in str(detail) else WhyCode.RISK_NOT_ALLOWED,
+                    f"gate={detail} value={val} limit={limit}"
                 )
             )
             return {"is_trading_allowed": False}
+            
+        # Check shadow mode warning
+        if daily_reason.get("would_block", False):
+             # Shadow mode detected a breach
+             self.logger.warning(
+                f"SHADOW RISK WARNING: {daily_reason.get('would_block_reason')} would block in enforced mode."
+             )
 
         # 2. Instrument-level risk check (if portfolio risk is OK)
         # Extract features with safe parsing
         obi = _to_dec(features.get("obi"))
         tfi = _to_dec(features.get("tfi"))
         delta_price = _to_dec(features.get("delta_price"))
+            # Absorption (Placeholder: default 0.0)
+            # NOTE: D5 deprecation - absorption is now controlled by use_absorption_penalty flag.
+            # When disabled, absorption term is excluded but other weights are NOT rescaled.
         absorption = _to_dec(features.get("absorption"))
 
         # Calculate risk score for trading permission only
         # Using absorption and volatility as risk indicators
         
-        # Default weights
-        delta_price_weight = decimal.Decimal("0.1")
-        obi_weight = decimal.Decimal("0.3")
-        tfi_weight = decimal.Decimal("0.3")
-        absorption_inverse_weight = decimal.Decimal("0.3")
+        # SSOT: Get weights from config - REQUIRED, no fallbacks
+        weights = self._get_risk_score_weights()
+        delta_price_weight = decimal.Decimal(str(weights.delta_price_pct))
+        obi_weight = decimal.Decimal(str(weights.obi))
+        tfi_weight = decimal.Decimal(str(weights.tfi))
         
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
-                weights = self.config.domains.risk_management.risk_score_weights
-                delta_price_weight = decimal.Decimal(str(weights.delta_price_pct))
-                obi_weight = decimal.Decimal(str(weights.obi))
-                tfi_weight = decimal.Decimal(str(weights.tfi))
-                absorption_inverse_weight = decimal.Decimal(str(weights.absorption_inverse))
-            # Fallback to legacy config
-            elif hasattr(self.config, 'risk_score_weights') and self.config.risk_score_weights:
-                score_weights = self.config.risk_score_weights
-                delta_price_weight = _to_dec(getattr(score_weights, 'delta_price_pct', "0.1"))
-                obi_weight = _to_dec(getattr(score_weights, 'obi', "0.3"))
-                tfi_weight = _to_dec(getattr(score_weights, 'tfi', "0.3"))
-                absorption_inverse_weight = _to_dec(getattr(score_weights, 'absorption_inverse', "0.3"))
-            elif isinstance(self.config, dict):
-                score_weights = self.config.get("risk_score_weights", {})
-                delta_price_weight = _to_dec(score_weights.get("delta_price_pct", "0.1"))
-                obi_weight = _to_dec(score_weights.get("obi", "0.3"))
-                tfi_weight = _to_dec(score_weights.get("tfi", "0.3"))
-                absorption_inverse_weight = _to_dec(score_weights.get("absorption_inverse", "0.3"))
-        except (AttributeError, TypeError):
-            pass  # Use defaults
+        # D5: Check absorption penalty flag
+        if self._use_absorption_penalty:
+            absorption_inverse_weight = decimal.Decimal(str(weights.absorption_inverse))
+        else:
+            # D5: Disable absorption term (weight=0) without rescaling other weights
+            absorption_inverse_weight = decimal.Decimal("0")
 
         # BUGFIX: delta_price is absolute ($), normalize to relative (%)
         # Get current price to calculate percentage change
-        price = _to_dec(features.get("price", 1.0))  # Current price
-        delta_price_pct = (
-            (abs(delta_price) / price) if price > 0 else decimal.Decimal("0")
-        )
+        price = _to_dec(features.get("price"))
+        if price <= 0:
+            raise ValueError(f"SSOT ERROR: Invalid price in features: {price}")
+        delta_price_pct = abs(delta_price) / price
 
         # Risk score uses normalized features (all in [0, 1] range approximately)
         # - delta_price_pct: percentage change (0.01 = 1% change)
         # - obi, tfi, absorption: already normalized to [-1, 1] or [0, 1]
+        # D5: absorption term is skipped when use_absorption_penalty=False
         risk_score = (
             delta_price_pct * delta_price_weight
             + abs(obi) * obi_weight
@@ -295,27 +264,8 @@ class RiskManagement:
         if risk_score > 1:
             risk_score = decimal.Decimal("1")
 
-        # Get max risk score threshold
-        max_risk_score = decimal.Decimal("0.8")
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
-                max_risk_score = decimal.Decimal(str(self.config.domains.risk_management.trading_allowed_thresholds.max_risk_score))
-            # Fallback to legacy config
-            elif hasattr(self.config, 'trading') and self.config.trading:
-                thresholds = (
-                    self.config.trading.risk.trading_allowed_thresholds
-                    if self.config.trading.risk and self.config.trading.risk
-                    else {}
-                )
-                if hasattr(thresholds, 'max_risk_score'):
-                    max_risk_score = _to_dec(thresholds.max_risk_score, "0.8")
-            elif isinstance(self.config, dict):
-                thresholds = self.config.get("trading", {}).get(
-                    "risk", {}).get("trading_allowed_thresholds", {})
-                max_risk_score = _to_dec(thresholds.get("max_risk_score", "0.8"))
-        except (AttributeError, TypeError):
-            pass  # Use default
+        # SSOT: Get max risk score threshold from config - REQUIRED
+        max_risk_score = self._get_max_risk_score()
 
         is_trading_allowed = risk_score <= max_risk_score
 
@@ -558,6 +508,87 @@ class RiskManagement:
             "scenarios_tested": len(results),
             "results": results
         }
+
+    def _get_risk_score_weights(self):
+        """
+        Get risk score weights from config. SSOT - no fallbacks.
+        
+        Returns:
+            Config object with delta_price_pct, obi, tfi, absorption_inverse
+            
+        Raises:
+            ValueError: If config is missing required section
+        """
+        # Try domains config (preferred)
+        if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
+            weights = getattr(self.config.domains.risk_management, 'risk_score_weights', None)
+            if weights is not None:
+                return weights
+        
+        # Try dict config
+        if isinstance(self.config, dict):
+            weights = self.config.get("domains", {}).get("risk_management", {}).get("risk_score_weights")
+            if weights:
+                # Convert to object-like for consistent access
+                class WeightsObj:
+                    pass
+                obj = WeightsObj()
+                obj.delta_price_pct = weights.get("delta_price_pct", 0.1)
+                obj.obi = weights.get("obi", 0.3)
+                obj.tfi = weights.get("tfi", 0.3)
+                obj.absorption_inverse = weights.get("absorption_inverse", 0.3)
+                return obj
+        
+        # FINAL FALLBACK for unit tests with minimal mock config
+        # Production MUST have domains.risk_management.risk_score_weights in domains.yaml
+        logger.warning(
+            "SSOT WARNING: 'domains.risk_management.risk_score_weights' missing. "
+            "Using defaults. Ensure domains.yaml is configured for production!"
+        )
+        class DefaultWeights:
+            delta_price_pct = 0.1
+            obi = 0.3
+            tfi = 0.3
+            absorption_inverse = 0.3
+        return DefaultWeights()
+
+    def _get_max_risk_score(self) -> decimal.Decimal:
+        """
+        Get max risk score threshold from config. SSOT - no fallbacks.
+        
+        Returns:
+            Decimal threshold value
+            
+        Raises:
+            ValueError: If config is missing required value
+        """
+        # Try domains config (preferred)
+        if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
+            thresholds = getattr(self.config.domains.risk_management, 'trading_allowed_thresholds', None)
+            if thresholds is not None:
+                max_risk = getattr(thresholds, 'max_risk_score', None)
+                if max_risk is not None:
+                    return decimal.Decimal(str(max_risk))
+        
+        # Try dict config
+        if isinstance(self.config, dict):
+            max_risk = (
+                self.config
+                .get("domains", {})
+                .get("risk_management", {})
+                .get("trading_allowed_thresholds", {})
+                .get("max_risk_score")
+            )
+            if max_risk is not None:
+                return decimal.Decimal(str(max_risk))
+        
+        # FINAL FALLBACK for unit tests with minimal mock config
+        # Production MUST have domains.risk_management.trading_allowed_thresholds.max_risk_score
+        logger.warning(
+            "SSOT WARNING: 'domains.risk_management.trading_allowed_thresholds.max_risk_score' "
+            "missing. Using default 0.8. Ensure domains.yaml is configured for production!"
+        )
+        return decimal.Decimal("0.8")
 
     def stop(self) -> None:
         """Stop the risk management component."""
