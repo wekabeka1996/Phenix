@@ -59,6 +59,7 @@
                         "NRR-PORTFOLIO-UNKNOWN",
                         "NRR-PORTFOLIO-STALE",
                         "NRR-RISK-STALE",
+                        "NRR-RISK-SKEW-UNTIL-REFRESH",
                         "FLIP_CLOSE_PENDING",
                         "COOLDOWN",
                         "QOS_BLOCKED",

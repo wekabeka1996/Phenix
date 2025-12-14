@@ -552,6 +552,37 @@ class DecisionMaking:
                 return
             
             self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: Processing {side} signal rid={rid}")
+
+            # Risk-skew limiter escalation state (Commit 5):
+            # if until_refresh is active, fail-closed for this symbol until a new risk/features refresh clears it.
+            guard_state = self.symbol_states[symbol].get("risk_skew_guard") or {}
+            if guard_state.get("until_refresh"):
+                now_ms = int(time.time() * 1000)
+                retry_key = self._stable_retry_key(
+                    prefix="mr",
+                    symbol=symbol,
+                    rid=rid,
+                    side=side,
+                    ts_ms=pld.get("ts"),
+                )
+                retry_sec = self._get_risk_skew_config("until_refresh_retry_sec", 30)
+                self.logger.error(
+                    f"[{symbol}] MR_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH (risk_skew_guard active)"
+                )
+                self._emit_intent_deferred_v1(
+                    symbol=symbol,
+                    reason="NRR-RISK-SKEW-UNTIL-REFRESH",
+                    retry_key=retry_key,
+                    next_allowed_ts=now_ms + int(retry_sec * 1000),
+                    original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                    original_payload_min=dict(pld),
+                    attempt=1,
+                    max_attempts=5,
+                    why_chain=(why_chain or []) + ["NO_TRADE_UNTIL_REFRESH", "risk_skew_guard"],
+                    context="mr_signal_gateway:risk_skew_until_refresh",
+                )
+                self._record_blocked_intent(symbol)
+                return
             
             # === GATE 1: RISK GATE ===
             # Use symbol_states SSOT (not self.latest_risk which doesn't exist)
@@ -624,14 +655,35 @@ class DecisionMaking:
                     max_skew_sec = self._get_risk_skew_config("max_skew_sec", 5)
                     
                     if skew_sec > max_skew_sec:
-                        # Track defer count per symbol
-                        defer_key = f"risk_skew_defer_{symbol}"
-                        defer_count = self._qos_state.get(defer_key, 0) + 1
                         max_defer = self._get_risk_skew_config("max_defer_count", 3)
-                        
-                        self._qos_state[defer_key] = defer_count
+
+                        # Track limiter state per symbol in symbol_states (SSOT)
+                        now_ms = int(time.time() * 1000)
+                        window_sec = self._get_risk_skew_config("defer_window_sec", 60)
+                        state = self.symbol_states[symbol].setdefault(
+                            "risk_skew_guard",
+                            {"defer_count": 0, "window_start_ms": now_ms, "until_refresh": False},
+                        )
+
+                        try:
+                            window_start_ms = int(state.get("window_start_ms", now_ms))
+                        except Exception:
+                            window_start_ms = now_ms
+                            state["window_start_ms"] = now_ms
+
+                        if now_ms - window_start_ms > int(window_sec * 1000):
+                            state["defer_count"] = 0
+                            state["window_start_ms"] = now_ms
+
+                        try:
+                            state["defer_count"] = int(state.get("defer_count", 0)) + 1
+                        except Exception:
+                            state["defer_count"] = 1
+
+                        defer_count = int(state.get("defer_count", 1))
                         
                         if defer_count >= max_defer:
+                            state["until_refresh"] = True
                             self.logger.error(
                                 f"[{symbol}] MR_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH - "
                                 f"Risk skew exceeded {defer_count} times (max {max_defer}). "
@@ -1659,6 +1711,20 @@ class DecisionMaking:
 
         self.logger.info(f"✅ on_features() called for {symbol}")
         self.symbol_states[symbol]["features"] = event.pld
+
+        # Commit 5: Clear risk-skew until-refresh state on data refresh
+        try:
+            guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
+            if guard.get("until_refresh"):
+                self.symbol_states[symbol]["risk_skew_guard"] = {
+                    "defer_count": 0,
+                    "window_start_ms": int(time.time() * 1000),
+                    "until_refresh": False,
+                }
+                self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on features refresh")
+        except Exception:
+            pass
+
         self._check_and_trigger_decision_for_symbol(symbol)
 
         try:
@@ -1754,6 +1820,19 @@ class DecisionMaking:
         self.logger.info(
             f"✅ on_risk() called for {symbol}. Risk params: {event.pld}")
         self.symbol_states[symbol]["risk"] = event.pld
+
+        # Commit 5: Clear risk-skew until-refresh state on data refresh
+        try:
+            guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
+            if guard.get("until_refresh"):
+                self.symbol_states[symbol]["risk_skew_guard"] = {
+                    "defer_count": 0,
+                    "window_start_ms": int(time.time() * 1000),
+                    "until_refresh": False,
+                }
+                self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on risk refresh")
+        except Exception:
+            pass
 
         # Cache risk data and timestamp for race condition handling
         if symbol not in self.symbol_states:

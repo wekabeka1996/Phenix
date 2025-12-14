@@ -149,15 +149,16 @@ class TestRiskSkewDefer:
         
         # First defer
         dm._on_mr_signal_gateway(mr_signal_event)
-        assert dm._qos_state.get("risk_skew_defer_DOGEUSDT") == 1
+        assert dm.symbol_states["DOGEUSDT"]["risk_skew_guard"]["defer_count"] == 1
         
         # Second defer
         dm._on_mr_signal_gateway(mr_signal_event)
-        assert dm._qos_state.get("risk_skew_defer_DOGEUSDT") == 2
+        assert dm.symbol_states["DOGEUSDT"]["risk_skew_guard"]["defer_count"] == 2
         
         # Third defer
         dm._on_mr_signal_gateway(mr_signal_event)
-        assert dm._qos_state.get("risk_skew_defer_DOGEUSDT") == 3
+        assert dm.symbol_states["DOGEUSDT"]["risk_skew_guard"]["defer_count"] == 3
+        assert dm.symbol_states["DOGEUSDT"]["risk_skew_guard"]["until_refresh"] is True
     
     def test_after_max_defer_escalates_to_no_trade(self, mock_fsm, base_config, mr_signal_event, caplog):
         """After max_defer_count, should escalate to NO_TRADE_UNTIL_REFRESH."""
@@ -181,10 +182,37 @@ class TestRiskSkewDefer:
             for _ in range(3):
                 dm._on_mr_signal_gateway(mr_signal_event)
         
-        # Should have logged NO_TRADE_UNTIL_REFRESH on the 3rd attempt
-        assert dm._qos_state.get("risk_skew_defer_DOGEUSDT") == 3
+        # Should have logged NO_TRADE_UNTIL_REFRESH and set until_refresh
+        assert dm.symbol_states["DOGEUSDT"]["risk_skew_guard"]["defer_count"] == 3
+        assert dm.symbol_states["DOGEUSDT"]["risk_skew_guard"]["until_refresh"] is True
         assert "NO_TRADE_UNTIL_REFRESH" in caplog.text
         assert "NRR-RISK-STALE" in caplog.text
+
+        # Subsequent intents must fail-closed with explicit reason
+        dm._on_mr_signal_gateway(mr_signal_event)
+        deferred = [e for e in mock_fsm.emitted_events if e["event"] == "EVT:INTENT_DEFERRED"]
+        assert deferred[-1]["payload"]["reason"] == "NRR-RISK-SKEW-UNTIL-REFRESH"
+
+        # Risk/features refresh clears until_refresh and trading resumes
+        dm._check_and_trigger_decision_for_symbol = MagicMock()
+        dm.on_risk(
+            Message(
+                op="EVT",
+                verb="RISK_ASSESSMENT_COMPLETED",
+                src="test",
+                dst="decision_making",
+                pld={
+                    "symbol": "DOGEUSDT",
+                    "ts": current_ts,
+                    "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.3},
+                },
+            )
+        )
+        assert dm.symbol_states["DOGEUSDT"]["risk_skew_guard"]["until_refresh"] is False
+
+        dm._on_mr_signal_gateway(mr_signal_event)
+        emitted = [e["event"] for e in mock_fsm.emitted_events]
+        assert "EVT:TRADE_INTENT_PROPOSED" in emitted
 
 
 class TestGetRiskSkewConfig:
