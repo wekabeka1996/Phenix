@@ -187,6 +187,9 @@ caller_*.txt
 *_output.txt
 safety_guard_dump_*.json
 
+# Keep the debug API module (used by tests and local dev)
+!vfoundation/obs/debug_api.py
+
 # Coverage
 coverage*.xml
 .coverage*

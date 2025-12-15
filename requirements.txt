@@ -1,5 +1,7 @@
 httpx
+fastapi>=0.110.0
 pytest-aiohttp
+trio>=0.25.0
 prometheus_client>=0.20.0
 pydantic==2.12.3
 PyYAML>=6.0
@@ -9,3 +11,5 @@ duckdb>=0.8.0
 websockets==11.0.3
 # FSMP-ARCH-01: Fast JSON parsing for market data worker
 orjson>=3.9.0
+# Dev dependencies for testing
+pytest-cov>=4.0.0

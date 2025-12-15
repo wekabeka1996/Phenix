@@ -6,7 +6,7 @@ All models are designed to fail fast (startup validation) rather than silently a
 """
 
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
@@ -58,49 +58,48 @@ class SignalsConfig(BaseModel):
     enable_new_metrics: bool = Field(default=False)
 
 
-class SolRegimeMultipliersConfig(BaseModel):
-    """Regime multipliers for SOL position sizing.
+class RegimeSizingSymbolConfig(BaseModel):
+    """Per-symbol regime sizing configuration (ETAP3).
     
-    Used in Risk-Sizing V1 to adjust SOL position size based on volatility regime.
-    - calm: low-volatility / trend regime → larger positions
-    - storm: high-volatility regime → smaller positions
+    Controls volatility-based position sizing multipliers for a specific symbol.
+    When enabled, position size = base * multiplier(volatility_state).
+    
+    base_notional = per_symbol_margin_fraction * equity * effective_leverage
     """
     model_config = ConfigDict(extra='allow')
     
-    calm: float = Field(default=1.0, description="Multiplier for low-vol/calm regime")
-    storm: float = Field(default=1.0, description="Multiplier for high-vol/storm regime")
+    enabled: bool = Field(default=False, description="Enable regime-based sizing for this symbol")
+    low_vol_multiplier: float = Field(default=1.0, description="Multiplier for LOW_VOLATILITY regime (calm)")
+    high_vol_multiplier: float = Field(default=1.0, description="Multiplier for HIGH_VOLATILITY regime (storm)")
 
 
 class RiskContractV1Config(BaseModel):
     """Risk-Sizing V1 configuration contract.
     
-    ETAP1: Config-only, enabled=False by default.
-    Describes target margin fractions and notional sizes for deposit ≈500 USDT, leverage ~x10.
+    ETAP3: All sizing via % of equity, no fixed USD in runtime.
     
-    Will be used in ETAP2+ for runtime position sizing.
+    Formulas:
+    - base_notional = per_symbol_margin_fraction[symbol] * equity * effective_leverage
+    - regime_target = base_notional * multiplier(volatility_state)
+    - cap_notional = base_notional (same %)
     """
     model_config = ConfigDict(extra='allow')
     
-    enabled: bool = Field(default=False, description="Enable Risk-Sizing V1 (ETAP1: disabled)")
+    enabled: bool = Field(default=False, description="Enable Risk-Sizing V1")
     effective_leverage: float = Field(default=10.0, description="Assumed leverage for notional calculation")
     
-    # Per-symbol margin fractions (margin_fraction * Equity * L ≈ target_notional)
+    # Per-symbol margin fractions (% of equity → notional)
     per_symbol_margin_fraction: Dict[str, float] = Field(
         default_factory=dict,
         description="Target margin fraction per symbol (e.g., BTCUSDT: 0.04)"
     )
     
-    # Fixed notional targets in USD (for MR/classic strategies)
-    fixed_notional_usd: Dict[str, float] = Field(
+    # Per-symbol regime sizing config (ETAP3)
+    regime_sizing: Dict[str, RegimeSizingSymbolConfig] = Field(
         default_factory=dict,
-        description="Fixed target notional USD per symbol"
+        description="Per-symbol regime-based sizing config"
     )
-    
-    # SOL-specific regime multipliers
-    sol_regime_multipliers: SolRegimeMultipliersConfig = Field(
-        default_factory=SolRegimeMultipliersConfig,
-        description="SOL regime-based sizing multipliers"
-    )
+
 
 
 class PositionSizingConfig(BaseModel):
@@ -132,7 +131,8 @@ class KellyConfig(BaseModel):
 class QosConfig(BaseModel):
     """Quality of Service configuration for rate limiting."""
     exposure_block_cooldown_sec: int = Field(default=60)
-    symbol_cooldown_sec: int = Field(default=3)
+    # Global fallback for per-symbol cooldown (aurora_instruments.<SYMBOL>.cooldown_sec takes priority)
+    symbol_cooldown_sec: int = Field(default=3, description="Global fallback cooldown. Per-symbol config takes priority.")
     max_intents_per_minute_per_symbol: int = Field(default=10)
     mode: str = Field(default="defer", description="defer | block")
     enforce: bool = Field(default=False)
@@ -194,16 +194,67 @@ class MRRegimeThresholdsConfig(BaseModel):
     low_vol_pct: float = Field(default=0.001, description="ATR% for FLAT_LOW")
 
 
+class MRStrategyOverrideConfig(BaseModel):
+    """Per-asset strategy parameter overrides for MR.
+    
+    These override the global MRStrategyParamsConfig values for a specific symbol.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    bb_window: Optional[int] = Field(default=None, description="BB window size")
+    bb_num_std: Optional[float] = Field(default=None, description="BB std multiplier")
+    min_bb_width: Optional[float] = Field(default=None, description="Min BB width filter")
+    entry_threshold: Optional[float] = Field(default=None, description="Entry distance threshold")
+    tp_to_mid: Optional[bool] = Field(default=None, description="TP to mid vs outer band")
+    sl_atr_mult: Optional[float] = Field(default=None, description="SL ATR multiplier override")
+    cooldown_sec: Optional[int] = Field(default=None, description="Cooldown between trades")
+
+
+class MRAssetRiskConfig(BaseModel):
+    """Per-asset risk configuration for MR.
+    
+    Overrides global MRRiskConfig values for a specific symbol.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    position_size_usd: Optional[float] = Field(default=None, description="Position size in USD")
+    max_risk_score: Optional[float] = Field(default=None, description="Max risk score threshold")
+
+
 class MRAssetConfig(BaseModel):
-    """Per-asset configuration for Mean Reversion 1m."""
-    model_config = ConfigDict(extra='allow')
+    """Per-asset configuration for Mean Reversion 1m.
+    
+    UPDATED: Now supports typed strategy/risk overrides.
+    """
+    model_config = ConfigDict(extra='allow')  # Keep 'allow' during YAML migration
     
     enabled: bool = Field(default=False)
+    
+    # NEW: Typed strategy overrides
+    strategy: Optional[MRStrategyOverrideConfig] = Field(
+        default=None,
+        description="Strategy parameter overrides for this symbol"
+    )
+    
+    # NEW: Typed risk config
+    risk: Optional[MRAssetRiskConfig] = Field(
+        default=None,
+        description="Risk configuration for this symbol"
+    )
+    
+    # Legacy flat fields (kept for backward compatibility, will be deprecated)
     bb_window: Optional[int] = Field(default=None)
     min_vol_atr: Optional[float] = Field(default=None)
-    sl_pct: Optional[float] = Field(default=None, description="SL as percent (e.g., 0.0068 = 0.68%)")
+    sl_pct: Optional[float] = Field(default=None, description="SL as percent (e.g., 0.019 = 1.9%)")
+    
     allowed_regimes: List[str] = Field(
-        default_factory=lambda: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+        default_factory=lambda: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
+        description="Regimes where trading is allowed"
+    )
+
+    position_mode: Literal["STRICT", "DYNAMIC"] = Field(
+        default="DYNAMIC",
+        description="STRICT = No pyramiding (1 trade only), DYNAMIC = Pyramiding allowed up to cap"
     )
 
 
@@ -232,7 +283,7 @@ class MeanReversion1mStrategyConfig(BaseModel):
     """
     Full configuration for Mean Reversion 1m Strategy.
     
-    Loaded from config/aurora/strategies/mean_reversion_1m.yaml
+    Config is provided via trading.mean_reversion_1m or root.mean_reversion_1m.
     """
     model_config = ConfigDict(extra='allow')
     
@@ -262,6 +313,14 @@ class MeanReversion1mStrategyConfig(BaseModel):
     
     # Risk management
     risk: MRRiskConfig = Field(default_factory=MRRiskConfig)
+    
+    # Strict Sequential Trading Contract: MR emission mode
+    # true (default) = MR emits EVT:TRADE_INTENT_PROPOSED directly (legacy behavior)
+    # false = MR emits EVT:MR_SIGNAL_PRODUCED, DecisionMaking applies gates
+    emit_trade_intent_directly: bool = Field(
+        default=True, 
+        description="If true, MR emits trade intent directly (legacy). If false, emits MR_SIGNAL for DM gateway."
+    )
 
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides)."""
@@ -271,7 +330,8 @@ class DecisionConfig(BaseModel):
     testnet: Optional[Dict[str, Any]] = Field(default=None)
     production: Optional[Dict[str, Any]] = Field(default=None)
 
-    signal_threshold: float = Field(default=0.2)
+    # IMPORTANT: Default exists for test compatibility, but production MUST override
+    signal_threshold: float = Field(default=0.2, description="Signal score threshold. PRODUCTION MUST OVERRIDE in trading.yaml!")
     signal_weights: SignalWeights = Field(default_factory=SignalWeights)
     signals: SignalsConfig = Field(default_factory=SignalsConfig)
     position_sizing: PositionSizingConfig = Field(
@@ -352,6 +412,59 @@ class WatchdogConfig(BaseModel):
     rps_limit: int = Field(default=10)
 
 
+class SMARegimeModelConfig(BaseModel):
+    """Configuration for SMA-based trend regime detection.
+    
+    Detects TREND_UP, TREND_DOWN, MEAN_REVERSION based on SMA crossover.
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    sma_short_period: int = Field(default=10, ge=2, description="Short SMA period for trend detection")
+    sma_long_period: int = Field(default=50, ge=5, description="Long SMA period for trend detection")
+    confidence_multiplier: float = Field(default=20.0, ge=1.0, description="Confidence scaling factor")
+    confidence_min: float = Field(default=0.5, ge=0.0, le=1.0, description="Minimum confidence value")
+    confidence_max: float = Field(default=0.95, ge=0.0, le=1.0, description="Maximum confidence value")
+
+
+class VolatilityRegimeModelConfig(BaseModel):
+    """Configuration for ATR-based volatility regime detection.
+    
+    Detects HIGH_VOLATILITY, LOW_VOLATILITY based on ATR vs historical average.
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    enabled: bool = Field(default=True, description="Enable volatility regime detection")
+    atr_period: int = Field(default=14, ge=1, description="ATR calculation period")
+    atr_sma_length: int = Field(default=100, ge=10, description="ATR SMA length for baseline")
+    threshold_multiplier: float = Field(default=2.0, ge=1.0, description="High vol threshold (ATR > threshold_mult * avg)")
+    low_vol_multiplier: float = Field(default=0.5, ge=0.0, le=1.0, description="Low vol threshold (ATR < low_vol_mult * avg)")
+    high_vol_confidence_multiplier: float = Field(default=2.0, ge=1.0, description="Confidence scaling for high vol")
+    low_vol_confidence_multiplier: float = Field(default=3.0, ge=1.0, description="Confidence scaling for low vol")
+
+
+class MeanReversionRegimeModelConfig(BaseModel):
+    """Configuration for mean reversion regime detection.
+    
+    Detects MEAN_REVERSION when price is close to both SMAs.
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    threshold: float = Field(default=0.005, ge=0.0, description="Max price deviation from SMAs for MR regime")
+    confidence_multiplier: float = Field(default=100.0, ge=1.0, description="Confidence scaling factor")
+
+
+class RegimeModelsConfig(BaseModel):
+    """Container for all regime detection model configurations.
+    
+    Loaded from regime.yaml 'models' section.
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    sma_trend: SMARegimeModelConfig = Field(default_factory=SMARegimeModelConfig, description="SMA trend model")
+    volatility: VolatilityRegimeModelConfig = Field(default_factory=VolatilityRegimeModelConfig, description="Volatility model")
+    mean_reversion: MeanReversionRegimeModelConfig = Field(default_factory=MeanReversionRegimeModelConfig, description="Mean reversion model")
+
+
 class RegimeModelConfig(BaseModel):
     """Base configuration for regime detection models."""
     model_config = ConfigDict(extra='allow')
@@ -365,7 +478,7 @@ class RegimeDetectorConfig(BaseModel):
     """Regime detector configuration."""
     model_config = ConfigDict(extra='allow')
     
-    models: Dict[str, Any] = Field(default_factory=dict)
+    models: RegimeModelsConfig = Field(default_factory=RegimeModelsConfig, description="Regime detection models config")
 
 
 class ExecutionConfig(BaseModel):
@@ -379,10 +492,24 @@ class ExecutionConfig(BaseModel):
 
 class MacroSyncConfig(BaseModel):
     """Macro sync configuration for market data."""
+    enabled: bool = Field(default=True, description="Enable macro sync (anchor subscription and events)")
     anchors: List[str] = Field(
         default_factory=list, description="Anchor symbols for macro alignment")
     window: int = Field(default=60, description="Window in seconds")
-    emit_abs: bool = Field(default=False)
+    emit_abs: bool = Field(default=False, description="DEPRECATED: Not implemented. Planned removal: v2.0")
+    
+    # D4 Phase 1: Alignment mode for correlation calculation
+    align_mode: str = Field(
+        default="strict_len",
+        description="Alignment mode: 'strict_len' (exact match) or 'tail_min_len' (use min overlap tail)"
+    )
+    min_buffer_size: int = Field(default=10, description="Min samples in buffer for correlation")
+    time_diff_threshold_ms: int = Field(
+        default=5000, description="Max time diff (ms) between ticks for return calculation"
+    )
+    anchor_update_from_ticks: bool = Field(
+        default=True, description="Update anchor buffers from symbol ticks (false = EVT:ANCHOR_UPDATED only)"
+    )
 
 
 class ApiCallLimits(BaseModel):
@@ -484,6 +611,11 @@ class VolumeConfigDetailed(BaseModel):
         default=60,
         ge=1, le=3600,
         description="Volume aggregation window in seconds"
+    )
+    min_window_volume_usd: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Minimum volume threshold for active signal (Commit 6)"
     )
 
 
@@ -599,6 +731,19 @@ class MacroSyncMetricsConfig(BaseModel):
         description="Anchor symbols for correlation (market leaders)"
     )
     
+    # P0-6 FIX: Add align_mode for length mismatch handling
+    align_mode: str = Field(
+        default="strict_len",
+        pattern="^(strict_len|tail_min_len)$",
+        description="Alignment mode: 'strict_len' (require exact match) or 'tail_min_len' (use shorter tail)"
+    )
+    
+    # P0-6 FIX: Add anchor_update_from_ticks to control double-update
+    anchor_update_from_ticks: bool = Field(
+        default=True,
+        description="Update anchor buffers from symbol ticks (set false to avoid double-count when anchor is also trade symbol)"
+    )
+    
     @field_validator('anchors')
     @classmethod
     def validate_anchors(cls, v: List[str]) -> List[str]:
@@ -692,6 +837,13 @@ class FeatureEngineeringDomainConfig(BaseModel):
         description="Enable Phase 1 metrics (ema_bias, volume_spike, etc.)"
     )
     
+    # P0-5 FIX: Volume input mode for avoiding double-counting
+    volume_input_mode: str = Field(
+        default="integrate",
+        pattern="^(integrate|sample_window_total)$",
+        description="Volume input mode: 'integrate' (sum ticks) or 'sample_window_total' (treat tick as pre-windowed sample)"
+    )
+    
     # Feature calculation configs
     ema: EmaConfigDetailed = Field(default_factory=EmaConfigDetailed)
     volume: VolumeConfigDetailed = Field(default_factory=VolumeConfigDetailed)
@@ -738,7 +890,8 @@ class TradingAllowedThresholdsConfig(BaseModel):
     """Trading allowed thresholds configuration."""
     model_config = ConfigDict(extra='allow')
     
-    max_risk_score: float = Field(default=0.8)
+    # IMPORTANT: Default exists for test compatibility, but production MUST override
+    max_risk_score: float = Field(default=0.8, description="Max risk score. PRODUCTION MUST OVERRIDE in domains.yaml!")
 
 
 class RiskValidationConfig(BaseModel):
@@ -756,6 +909,15 @@ class RiskManagementDomainConfig(BaseModel):
     risk_score_weights: RiskScoreWeightsConfig = Field(default_factory=RiskScoreWeightsConfig)
     trading_allowed_thresholds: TradingAllowedThresholdsConfig = Field(default_factory=TradingAllowedThresholdsConfig)
     validation: RiskValidationConfig = Field(default_factory=RiskValidationConfig)
+    
+    # D5: Absorption deprecation flag
+    # When False, absorption term is excluded from risk score calculation
+    # NOTE: Other weights are NOT rescaled when absorption is disabled (per Plan v1)
+    use_absorption_penalty: bool = Field(
+        default=True,  # Backward compatible default
+        description="Whether to include absorption penalty in risk score. "
+                    "Set to False to disable deprecated absorption feature."
+    )
 
 
 # Position Tracking Domain
@@ -980,6 +1142,35 @@ class AuroraExecutionConfig(BaseModel):
     )
 
 
+# ============================================================================
+# PHASE 3+ Per-Instrument Override Config Classes
+# ============================================================================
+
+class EmaClampConfig(BaseModel):
+    """Per-asset EMA clamp range override (Phase 3+)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=False, description="Enable per-asset clamp override")
+    clamp_min: Optional[float] = Field(default=None, description="Override global ema_bias.clamp_min")
+    clamp_max: Optional[float] = Field(default=None, description="Override global ema_bias.clamp_max")
+
+
+class SignalThresholdConfig(BaseModel):
+    """Per-asset signal threshold override (Phase 3+)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=False, description="Enable per-asset threshold override")
+    value: Optional[float] = Field(default=None, description="Override global signal_threshold")
+
+
+class MaxRiskScoreConfig(BaseModel):
+    """Per-asset max risk score override (Phase 3+)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=False, description="Enable per-asset max_risk_score override")
+    value: Optional[float] = Field(default=None, description="Max risk score threshold for entry filtering")
+
+
 class AuroraInstrumentConfig(BaseModel):
     """
     Complete per-instrument configuration for Aurora strategy.
@@ -989,6 +1180,12 @@ class AuroraInstrumentConfig(BaseModel):
     2. trading.decision.<param> (global fallback)
     """
     model_config = ConfigDict(extra='allow')
+
+    # Strategy enable/disable flag
+    enabled: bool = Field(
+        default=True,
+        description="Enable Aurora strategy for this instrument (default: True for backward compat)"
+    )
 
     # Signal weights (Phase 3+ Optuna results)
     weights: Optional[Dict[str, float]] = Field(
@@ -1000,6 +1197,11 @@ class AuroraInstrumentConfig(BaseModel):
     side_bias: Optional[AuroraSideBiasConfig] = Field(
         default=None,
         description="Side bias configuration"
+    )
+
+    position_mode: Literal["STRICT", "DYNAMIC"] = Field(
+        default="DYNAMIC",
+        description="STRICT = No pyramiding (1 trade only), DYNAMIC = Pyramiding allowed up to cap"
     )
 
     # Regime-based thresholds
@@ -1038,6 +1240,122 @@ class AuroraInstrumentConfig(BaseModel):
         description="Order execution settings"
     )
 
+    # Phase 3+ per-asset overrides
+    ema_clamp: Optional[EmaClampConfig] = Field(
+        default=None,
+        description="Per-asset EMA clamp range (Phase 3+)"
+    )
+    signal_threshold: Optional[SignalThresholdConfig] = Field(
+        default=None,
+        description="Per-asset signal threshold (Phase 3+)"
+    )
+    max_risk_score: Optional[MaxRiskScoreConfig] = Field(
+        default=None,
+        description="Per-asset max risk score (Phase 3+)"
+    )
+
+    cooldown_sec: Optional[int] = Field(
+        default=None,
+        description="Per-instrument cooldown in seconds (overrides global qos.symbol_cooldown_sec)"
+    )
+
+    # Phase 3+ Recovery: Regime gating
+    allowed_regimes: Optional[List[str]] = Field(
+        default=None,
+        description="If set, only trade when current regime is in this list (Phase 3+ regime gating)"
+    )
+
+    # Phase 1.5 Recovery: Per-instrument timeframe
+    timeframe_sec: Optional[int] = Field(
+        default=None,
+        description="Bar timeframe in seconds for this instrument. SOL=180 (3m), BTC/ETH=300 (5m)"
+    )
+
+    # Position Control (Anti-pyramiding)
+    position_mode: Optional[str] = Field(
+        default="ONE_SIDE",
+        description="Position constraint mode: 'STRICT' (1 pos total), 'ONE_SIDE' (1 pos per side/allow reduce), 'HEDGE' (allow all)"
+    )
+
+
+class OpsConfig(BaseModel):
+    """Operations configuration (killswitch, quiet hours, monitoring)."""
+    model_config = ConfigDict(extra='allow')
+
+    # Emergency controls (A-01 fix)
+    panic_killswitch: bool = Field(
+        default=False, 
+        description="Emergency kill switch - blocks all new CMD:OPEN when True"
+    )
+    panic_ttl_sec: Optional[int] = Field(
+        default=None,
+        description="Optional TTL in seconds for panic_killswitch; if set, killswitch auto-expires after this many seconds"
+    )
+    quiet_hours_utc: List[str] = Field(
+        default_factory=list,
+        description="Time windows in UTC when trading is blocked (e.g., ['22:00-06:00'])"
+    )
+    allowlist_symbols: List[str] = Field(
+        default_factory=list,
+        description="If non-empty, only these symbols can trade. Empty = no restrictions"
+    )
+    
+    # Monitoring
+    metrics_url: str = Field(default="http://127.0.0.1:8000/metrics")
+    reports_dir: str = Field(default="reports")
+
+
+# ==============================================================================
+# DOMAIN CONFIGURATION (Hybrid Mode: live data → testnet execution)
+# ==============================================================================
+class DomainModeConfig(BaseModel):
+    """Configuration for a single domain's trading mode."""
+    model_config = ConfigDict(extra='allow')
+    
+    trading_mode: Literal["live", "testnet"] = Field(
+        ...,  # REQUIRED - no default!
+        description="Trading mode for this domain: 'live' or 'testnet'"
+    )
+
+
+class DomainConfigurationConfig(BaseModel):
+    """
+    Domain-level mode configuration for hybrid trading.
+    
+    Hybrid mode allows:
+    - Data domains (market_data, feature_engineering, decision_making) → LIVE
+    - Execution domains (execution_position, risk_management) → TESTNET
+    
+    CRITICAL: For production, explicitly set each domain's mode!
+    Default is all-testnet for safety in tests.
+    """
+    model_config = ConfigDict(extra='allow')
+    
+    market_data: DomainModeConfig = Field(
+        default_factory=lambda: DomainModeConfig(trading_mode="testnet"),
+        description="Market data source mode (should be 'live' for real prices)"
+    )
+    feature_engineering: DomainModeConfig = Field(
+        default_factory=lambda: DomainModeConfig(trading_mode="testnet"),
+        description="Feature engineering mode (should match market_data)"
+    )
+    decision_making: DomainModeConfig = Field(
+        default_factory=lambda: DomainModeConfig(trading_mode="testnet"),
+        description="Decision making mode (should match market_data)"
+    )
+    risk_management: DomainModeConfig = Field(
+        default_factory=lambda: DomainModeConfig(trading_mode="testnet"),
+        description="Risk management mode (testnet for safety)"
+    )
+    execution_position: DomainModeConfig = Field(
+        default_factory=lambda: DomainModeConfig(trading_mode="testnet"),
+        description="Execution mode (MUST be 'testnet' for testing!)"
+    )
+    audit_trail: DomainModeConfig = Field(
+        default_factory=lambda: DomainModeConfig(trading_mode="testnet"),
+        description="Audit trail mode (usually 'live' for logging)"
+    )
+
 
 class TradingConfig(BaseModel):
     """Main trading configuration (with mode overrides)."""
@@ -1057,6 +1375,25 @@ class TradingConfig(BaseModel):
     feature_engineering: Optional[FeatureEngineeringConfig] = Field(
         default=None)
     domains: DomainsConfig = Field(default_factory=DomainsConfig)  # NEW: Domain-specific configurations
+    
+    # Mean Reversion 1m Strategy (Track B, configured under trading.mean_reversion_1m)
+    mean_reversion_1m: Optional[MeanReversion1mStrategyConfig] = Field(
+        default=None,
+        description="Mean Reversion 1m strategy config (from trading.mean_reversion_1m)"
+    )
+    
+    # Ops configuration (killswitch, quiet hours)
+    ops: Optional[OpsConfig] = Field(
+        default=None,
+        description="Operations config (panic killswitch, quiet hours, allowlist)"
+    )
+    
+    # CRITICAL: Domain-level mode configuration (Hybrid Mode)
+    # Default is all-testnet for safety. Production MUST explicitly set live modes!
+    domain_configuration: DomainConfigurationConfig = Field(
+        default_factory=DomainConfigurationConfig,
+        description="Domain-level trading mode configuration for hybrid mode (live data + testnet execution)"
+    )
 
 
 class BinanceApiEnv(BaseModel):
@@ -1082,14 +1419,6 @@ class AccountObserverConfig(BaseModel):
         default=30, description="Polling interval in seconds")
 
 
-class OpsConfig(BaseModel):
-    """Operations configuration (monitoring, logging)."""
-    model_config = ConfigDict(extra='allow')
-
-    metrics_url: str = Field(default="http://127.0.0.1:8000/metrics")
-    reports_dir: str = Field(default="reports")
-
-
 class LoggingConfig(BaseModel):
     """Logging configuration."""
     model_config = ConfigDict(extra='allow')
@@ -1099,6 +1428,16 @@ class LoggingConfig(BaseModel):
     format: str = Field(default="json")
     rotation: Dict[str, int] = Field(default_factory=lambda: {
                                      "max_bytes": 10 * 1024 * 1024, "backup_count": 5})
+    
+    
+class SystemMarketDataConfig(BaseModel):
+    """System-level Market Data configuration."""
+    model_config = ConfigDict(extra='allow')
+    
+    queue_maxsize: int = Field(..., description="Max size of IPC queue (worker → proxy)")
+    local_queue_maxsize: int = Field(..., description="Max size of local queue (proxy internal)")
+    emit_workers: int = Field(..., description="Thread pool size for non-blocking FSM.emit()")
+    tick_ttl_ms: int = Field(..., description="Max age of tick data in ms — older ticks are DROPPED")
 
 
 class SystemConfig(BaseModel):
@@ -1106,6 +1445,7 @@ class SystemConfig(BaseModel):
     model_config = ConfigDict(extra='allow')
 
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    market_data: Optional[SystemMarketDataConfig] = Field(default=None, description="Market data system settings")
 
 
 class AuroraConfig(BaseModel):
@@ -1137,10 +1477,10 @@ class AuroraConfig(BaseModel):
     # Domain configs (New)
     domains: Optional[DomainsConfig] = Field(default=None, description="Domain-specific configurations")
     
-    # Strategy configs (Track B)
+    # Strategy configs (Track B, optional root-level overrides)
     mean_reversion_1m: Optional[MeanReversion1mStrategyConfig] = Field(
         default=None, 
-        description="Mean Reversion 1m strategy config (loaded from strategies/mean_reversion_1m.yaml)"
+        description="Mean Reversion 1m strategy config (root-level override for trading.mean_reversion_1m)"
     )
 
     # App-specific overrides
@@ -1152,8 +1492,8 @@ class AuroraConfig(BaseModel):
     brackets: Optional[BracketsConfig] = Field(default=None)
     trailing: Dict[str, Any] = Field(default_factory=dict)
     
-    # Regime Detector Config (loaded from regime.yaml usually, but can be part of main config)
-    models: Optional[Dict[str, Any]] = Field(default=None)
+    # Regime Detector Config (loaded from regime.yaml, Pydantic-validated)
+    models: Optional[RegimeModelsConfig] = Field(default=None, description="Regime detection models from regime.yaml")
 
     @field_validator('trading_mode')
     @classmethod
@@ -1185,3 +1525,8 @@ def create_aurora_config(config_dict: Dict[str, Any]) -> AuroraConfig:
     Raises pydantic.ValidationError on invalid config.
     """
     return AuroraConfig(**config_dict)
+
+
+# Backward-compat imports for tests/legacy modules
+AuroraTradingConfig = TradingConfig
+AuroraExposureConfig = ExposureConfig

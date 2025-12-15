@@ -2,9 +2,15 @@
 Test script to collect feature parameters (obi, tfi, delta_price) from Binance for ETHUSDT and BTCUSDT over 30 seconds.
 """
 
+import os
+import pytest
+
+# This is a live-data utility; skip by default in CI/unit runs.
+if os.environ.get("RUN_LIVE_TESTS", "0") != "1":
+    pytest.skip("live Binance websocket test (set RUN_LIVE_TESTS=1 to enable)", allow_module_level=True)
+
 import decimal
 import logging
-import os
 import time
 from collections import defaultdict
 from typing import Dict
