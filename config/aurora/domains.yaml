@@ -44,7 +44,7 @@ feature_engineering:
     sma_length: 5
     window_sec: 60
     # Commit 6: Low-volume neutral for volume_spike
-    min_window_volume_usd: 0.0  # If total volume < this, volume_spike=0.5 (neutral)
+    min_window_volume_usd: 1000.0  # If total volume < this, volume_spike=0.5 (neutral)
   
   volatility:
     sma_length: 10
