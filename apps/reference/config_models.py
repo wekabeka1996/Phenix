@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator, ConfigD
 class InstrumentSpec(BaseModel):
     """Specification for a trading instrument (e.g., BTCUSDT)."""
     model_config = ConfigDict(
-        extra='allow')  # Allow additional fields from YAML
+        extra='forbid')
 
     symbol: str = Field(...)
     step_size: str = Field(default="0.001", description="Quantity precision")
@@ -39,8 +39,11 @@ class InstrumentPrecisionSpec(BaseModel):
 
 
 class SignalWeights(BaseModel):
-    """Weights for signal calculation (OBI, TFI, etc)."""
-    model_config = ConfigDict(extra='allow')
+    """Weights for signal calculation (OBI, TFI, etc).
+    
+    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
+    """
+    model_config = ConfigDict(extra='forbid')
 
     obi: float = Field(default=0.2)
     tfi: float = Field(default=0.2)
@@ -79,8 +82,10 @@ class RegimeSizingSymbolConfig(BaseModel):
     When enabled, position size = base * multiplier(volatility_state).
     
     base_notional = per_symbol_margin_fraction * equity * effective_leverage
+    
+    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
     """
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')
     
     enabled: bool = Field(default=False, description="Enable regime-based sizing for this symbol")
     low_vol_multiplier: float = Field(default=1.0, description="Multiplier for LOW_VOLATILITY regime (calm)")
@@ -167,8 +172,11 @@ class FailsafeConfig(BaseModel):
 
 
 class MeanReversionConfig(BaseModel):
-    """Configuration for Mean Reversion strategy (legacy/minimal)."""
-    model_config = ConfigDict(extra='allow')
+    """Configuration for Mean Reversion regime model (regime.yaml SSOT).
+    
+    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema, no runtime surprises).
+    """
+    model_config = ConfigDict(extra='forbid')
     
     enabled: bool = Field(default=False)
     bb_window: int = Field(default=20)
@@ -182,8 +190,11 @@ class MeanReversionConfig(BaseModel):
 # ============================================================================
 
 class MRStrategyParamsConfig(BaseModel):
-    """Strategy parameters for Mean Reversion 1m."""
-    model_config = ConfigDict(extra='allow')
+    """Strategy parameters for Mean Reversion 1m.
+    
+    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
+    """
+    model_config = ConfigDict(extra='forbid')
     
     bb_window: int = Field(default=20, description="Bollinger Bands window")
     bb_num_std: float = Field(default=2.0, description="BB standard deviations")
@@ -204,8 +215,11 @@ class MRStrategyParamsConfig(BaseModel):
 
 
 class MRRegimeThresholdsConfig(BaseModel):
-    """Regime thresholds for FLAT regime classification."""
-    model_config = ConfigDict(extra='allow')
+    """Regime thresholds for FLAT regime classification.
+    
+    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
+    """
+    model_config = ConfigDict(extra='forbid')
     
     high_vol_pct: float = Field(default=0.003, description="ATR% for FLAT_HIGH")
     low_vol_pct: float = Field(default=0.001, description="ATR% for FLAT_LOW")
@@ -243,7 +257,7 @@ class MRAssetConfig(BaseModel):
     
     UPDATED: Now supports typed strategy/risk overrides.
     """
-    model_config = ConfigDict(extra='allow')  # Keep 'allow' during YAML migration
+    model_config = ConfigDict(extra='forbid')  # CFG-LEGACY-SUNSET-11: YAML migration complete
     
     enabled: bool = Field(default=False)
     
@@ -276,8 +290,11 @@ class MRAssetConfig(BaseModel):
 
 
 class MRRegimeSizingConfig(BaseModel):
-    """Sizing/stop/target multipliers for a specific FLAT regime."""
-    model_config = ConfigDict(extra='allow')
+    """Sizing/stop/target multipliers for a specific FLAT regime.
+    
+    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
+    """
+    model_config = ConfigDict(extra='forbid')
     
     sizing_mult: float = Field(default=1.0)
     stop_mult: float = Field(default=1.0)
@@ -285,8 +302,11 @@ class MRRegimeSizingConfig(BaseModel):
 
 
 class MRRiskConfig(BaseModel):
-    """Risk management for Mean Reversion 1m."""
-    model_config = ConfigDict(extra='allow')
+    """Risk management for Mean Reversion 1m.
+    
+    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
+    """
+    model_config = ConfigDict(extra='forbid')
     
     position_size_usd: float = Field(default=100.0)
     max_concurrent_positions: int = Field(default=3)
@@ -300,7 +320,7 @@ class MeanReversion1mStrategyConfig(BaseModel):
     """
     Full configuration for Mean Reversion 1m Strategy.
     
-    Config is provided via trading.mean_reversion_1m or root.mean_reversion_1m.
+    Config is provided via root.mean_reversion_1m (loaded from strategy profile SSOT).
     """
     model_config = ConfigDict(extra='allow')
     
@@ -415,16 +435,44 @@ class StrategiesRegistryConfig(BaseModel):
         return self
 
 
-class DecisionConfig(BaseModel):
-    """Decision making configuration (testnet/production overrides)."""
-    model_config = ConfigDict(extra='allow')
+class DecisionModeOverrideConfig(BaseModel):
+    """Mode-specific decision overrides (testnet/production).
+    
+    CFG-DICT-ANY-BURN-13: Typed config for mode overrides.
+    Allows ANY field from DecisionConfig to be overridden.
+    extra='allow' justified: config_loader merges ANY override key.
+    """
+    model_config = ConfigDict(extra='allow')  # Justified: dynamic merge
+    
+    # Common overrides (known patterns from config_loader.py L120-140)
+    signal_threshold: Optional[float] = Field(default=None)
+    # Other DecisionConfig fields can be overridden dynamically
 
-    # Mode-specific configs
-    testnet: Optional[Dict[str, Any]] = Field(default=None)
-    production: Optional[Dict[str, Any]] = Field(default=None)
+
+class DecisionConfig(BaseModel):
+    """Decision making configuration (testnet/production overrides).
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Converted to extra='forbid' (all fields explicit).
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    # Mode-specific configs (typed, not Dict[str, Any])
+    testnet: Optional[DecisionModeOverrideConfig] = Field(default=None)
+    production: Optional[DecisionModeOverrideConfig] = Field(default=None)
 
     # IMPORTANT: Default exists for test compatibility, but production MUST override
     signal_threshold: float = Field(default=0.2, description="Signal score threshold. PRODUCTION MUST OVERRIDE in trading.yaml!")
+    cooldown_sec: Optional[int] = Field(default=None, description="Global cooldown (deprecated, use per-instrument)")
+    side_bias_min_score: Optional[float] = Field(default=None, description="Min score for side bias")
+    side_bias_penalty_factor: Optional[float] = Field(default=None, description="Side bias penalty factor")
+    side_bias_target_ratio: Optional[float] = Field(default=None, description="Side bias target ratio")
+    side_bias_window_sec: Optional[int] = Field(default=None, description="Side bias window (seconds)")
+    
+    # Retry configuration (formerly legacy defaults)
+    retry_ttl_ms: int = Field(default=300_000, description="Retry TTL in ms")
+    retry_max_count: int = Field(default=3, description="Max retry attempts")
+    retry_backoff_factor: float = Field(default=2.0, description="Retry backoff multiplier")
+
     signal_weights: SignalWeights = Field(default_factory=SignalWeights)
     signals: SignalsConfig = Field(default_factory=SignalsConfig)
     position_sizing: PositionSizingConfig = Field(
@@ -441,6 +489,10 @@ class DecisionConfig(BaseModel):
         default_factory=dict, description="Regime-specific multipliers")
     regime_thresholds: Dict[str, float] = Field(
         default_factory=dict, description="Regime-specific signal thresholds")
+    regime_threshold_multipliers: Dict[str, float] = Field(
+        default_factory=dict, description="Regime threshold multipliers")
+    symbols_to_track: Optional[List[str]] = Field(default=None, description="DEPRECATED: Use instruments SSOT")
+    neutral_threshold: Optional[float] = Field(default=None, description="Neutral zone threshold")
 
 
 class SLConfig(BaseModel):
@@ -467,20 +519,49 @@ class BracketsConfig(BaseModel):
     offset_bps: int = Field(default=5, description="Safety offset in bps")
 
 
+class EmergencyConfig(BaseModel):
+    """Emergency stop-loss configuration (margin-based).
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Added wait_mode_bars (fsm_manage.py:120).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=False, description="Enable emergency SL")
+    wait_mode_bars: int = Field(default=2, description="Wait mode bars before resuming")
+
+
+class OrphanMonitorConfig(BaseModel):
+    """Orphan bracket monitor configuration.
+    
+    CFG-DICT-ANY-BURN-13: Typed config (consumption in fsm.py L166, but keys unknown).
+    extra='allow' temporary until consumption analysis complete.
+    """
+    model_config = ConfigDict(extra='allow')  # TODO: Convert to forbid when keys known
+    
+    enabled: bool = Field(default=False, description="Enable orphan monitoring")
+    # Add fields when consumption patterns are documented
+
+
 class ManageConfig(BaseModel):
-    """Order management configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Order management configuration.
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Converted to extra='forbid' (all fields typed).
+    """
+    model_config = ConfigDict(extra='forbid')
 
     brackets: Optional[BracketsConfig] = Field(default=None)
-    emergency: Dict[str, Any] = Field(default_factory=dict)
+    emergency: Optional[EmergencyConfig] = Field(default=None)
     auto: bool = Field(default=False)
-    orphan_monitor: Dict[str, Any] = Field(default_factory=dict)
+    orphan_monitor: Optional[OrphanMonitorConfig] = Field(default=None)
     failsafe: Optional[FailsafeConfig] = Field(default=None)
 
 
 class ExposureConfig(BaseModel):
-    """Exposure guard configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Exposure guard configuration.
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Converted to extra='forbid' (all fields known).
+    """
+    model_config = ConfigDict(extra='forbid')
 
     max_equity_utilization_pct: float = Field(default=0.20)
     max_portfolio_fraction: float = Field(default=0.20)
@@ -489,10 +570,13 @@ class ExposureConfig(BaseModel):
     max_directional_ratio: float = Field(default=2.0)
     per_symbol_cap_pct: float = Field(default=0.08)
     pending_ttl_sec: int = Field(default=90)
+    pending_reservation_ttl_sec: int = Field(default=45, description="Reservation TTL")
     post_fill_hold_ttl_sec: int = Field(default=30)
     positions_stale_ttl_sec: int = Field(default=120)
     leverage_defaults: Dict[str, int] = Field(
         default_factory=lambda: {"__default__": 20})
+    count_pending_orders: bool = Field(default=False, description="Count pending orders in exposure")
+    exclude_reduce_only: bool = Field(default=False, description="Exclude reduce-only from exposure")
 
 
 class WatchdogConfig(BaseModel):
@@ -576,13 +660,63 @@ class RegimeDetectorConfig(BaseModel):
     models: RegimeModelsConfig = Field(default_factory=RegimeModelsConfig, description="Regime detection models config")
 
 
+class FallbackConfig(BaseModel):
+    """Fallback configuration for execution.
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Typed (binance_adapter.py:1160, exposure_guard.py:205).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    # Add fields when consumption patterns documented (currently used as empty dict)
+
+
+class LimitOrdersConfig(BaseModel):
+    """Limit orders configuration.
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Typed (limit_order_monitor.py:93).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    # Add fields when consumption patterns documented
+
+
+class OrdersConfig(BaseModel):
+    """Orders configuration (TTL, retries, etc.).
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Typed (fsm.py:282 default_ttl_seconds).
+    """
+    model_config = ConfigDict(extra='allow')  # Temporary: market/cancel sub-configs unknown
+    
+    default_ttl_seconds: int = Field(default=120, description="Default order TTL")
+
+
 class ExecutionConfig(BaseModel):
-    """Execution configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Execution configuration.
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Converted to extra='forbid' (all fields explicit).
+    """
+    model_config = ConfigDict(extra='forbid')
 
     manage: Optional[ManageConfig] = Field(default=None)
     exposure: Optional[ExposureConfig] = Field(default=None)
-    watchdog: Dict[str, Any] = Field(default_factory=dict)  # Kept as dict for flexibility, but we'll validate keys in code
+    watchdog: Optional[WatchdogConfig] = Field(default=None)  # Typed (ack_ttl_ms, fill_ttl_ms, rps_limit)
+    
+    # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Newly typed configs
+    fallback: Optional[FallbackConfig] = Field(default=None)
+    limit_orders: Optional[LimitOrdersConfig] = Field(default=None)
+    orders: Optional[OrdersConfig] = Field(default=None)
+    
+    # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Explicit runtime fields (consumption proven)
+    fsm_periodic_cleanup_enabled: bool = Field(default=True, description="FSM periodic cleanup")
+    anti_race_close_ms: int = Field(default=800, description="Anti-race window (ms)")
+    
+    # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Dead fields (no consumption, keep for backward compat)
+    open_order_type: Optional[str] = Field(default=None, description="DEPRECATED: No consumption found")
+    order_params: Optional[Dict[str, Any]] = Field(default=None, description="DEPRECATED: No consumption found")
+    preflight_backoff_ms: Optional[List[int]] = Field(default=None, description="DEPRECATED: No consumption found")
+    min_post_interval_per_symbol_ms: Optional[int] = Field(default=None, description="DEPRECATED")
+    allow_trade_with_guardian_tidy_only: Optional[bool] = Field(default=None, description="DEPRECATED")
+    order_guardian: Optional[Dict[str, Any]] = Field(default=None, description="DEPRECATED: Guardian not config")
 
 
 class MacroSyncConfig(BaseModel):
@@ -607,17 +741,37 @@ class MacroSyncConfig(BaseModel):
     )
 
 
+class KlinesConfig(BaseModel):
+    """Klines API call configuration.
+    
+    CFG-DICT-ANY-BURN-13: Typed config (no consumption found, default values only).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    interval: str = Field(default="1m", description="Kline interval")
+    limit: int = Field(default=2, description="Max klines to fetch")
+
+
 class ApiCallLimits(BaseModel):
-    """API call limits configuration."""
+    """API call limits configuration.
+    
+    CFG-DICT-ANY-BURN-13: Converted to extra='forbid' (known schema).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
     get_recent_trades: int = Field(default=50)
-    get_klines: Dict[str, Any] = Field(default_factory=lambda: {"interval": "1m", "limit": 2})
+    get_klines: KlinesConfig = Field(default_factory=KlinesConfig)
 
 
 class MarketDataConfig(BaseModel):
-    """Market data configuration."""
-    model_config = ConfigDict(extra='allow')
+    """Market data configuration.
+    
+    CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Converted to extra='forbid' (all fields known).
+    """
+    model_config = ConfigDict(extra='forbid')
 
     poll_interval_sec: float = Field(default=2.0)
+    use_multiprocessing: bool = Field(default=False, description="Enable multiprocessing")
     websocket_streams: List[str] = Field(default_factory=lambda: ["bookTicker", "trade"])
     api_call_limits: ApiCallLimits = Field(default_factory=ApiCallLimits)
     macro_sync: Optional[MacroSyncConfig] = Field(default=None)
@@ -625,7 +779,7 @@ class MarketDataConfig(BaseModel):
 
 class FeatureEngineeringConfig(BaseModel):
     """Feature engineering configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')
 
     ema: Dict[str, Any] = Field(default_factory=dict)
     volume: Dict[str, Any] = Field(default_factory=dict)
@@ -661,6 +815,15 @@ class FeaturesTtlConfig(BaseModel):
 # Note: BarGatingConfig and BehaviorFsmConfig already exist above
 
 
+class ArmingConfig(BaseModel):
+    """Arming/Warmup configuration for DecisionMaking."""
+    model_config = ConfigDict(extra='forbid')
+    
+    require_regime_warmup: bool = Field(default=False)
+    retry_backoff_ms: int = Field(default=1000)
+    max_attempts: int = Field(default=120)
+
+
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -672,6 +835,7 @@ class DecisionMakingDomainConfig(BaseModel):
     behavior_fsm: BehaviorFsmConfig = Field(default_factory=BehaviorFsmConfig)
     signals: SignalsConfig = Field(default_factory=SignalsConfig)
     risk_skew: RiskSkewConfig = Field(default_factory=RiskSkewConfig)
+    arming: ArmingConfig = Field(default_factory=ArmingConfig)
 
 
 # ============================================================================
@@ -1049,6 +1213,10 @@ class PositionTrackingDomainConfig(BaseModel):
     precision: PrecisionConfig = Field(default_factory=PrecisionConfig)
     thread_timeouts: ThreadTimeoutsConfig = Field(default_factory=ThreadTimeoutsConfig)
     positions_stale_ttl_sec: int = Field(default=15, description="Portfolio freshness TTL for AuroraBridge gate")
+    enable_market_tick_subscription: bool = Field(
+        default=False,
+        description="Enable EVT:MARKET_TICK_RECEIVED subscription for mark-price PnL (optional)",
+    )
 
 
 # Account Observer Domain
@@ -1140,18 +1308,6 @@ class DomainsConfig(BaseModel):
     position_tracking: PositionTrackingDomainConfig = Field(default_factory=PositionTrackingDomainConfig)
     account_observer: AccountObserverDomainConfig = Field(default_factory=AccountObserverDomainConfig)
     execution_position: ExecutionPositionDomainConfig = Field(default_factory=ExecutionPositionDomainConfig)
-
-
-# Legacy FeatureEngineeringConfig for backward compatibility
-class FeatureEngineeringConfig(BaseModel):
-    """Feature engineering configuration (legacy, simplified)."""
-    model_config = ConfigDict(extra='allow')
-
-    ema: Dict[str, Any] = Field(default_factory=dict)
-    volume: Dict[str, Any] = Field(default_factory=dict)
-    volatility: Dict[str, Any] = Field(default_factory=dict)
-    liquidity: Dict[str, Any] = Field(default_factory=dict)
-    macro_sync: Dict[str, Any] = Field(default_factory=dict)
 
 
 # ============================================================================
@@ -1465,7 +1621,7 @@ class DomainConfigurationConfig(BaseModel):
 
 class TradingConfig(BaseModel):
     """Main trading configuration (with mode overrides)."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')
 
     mode: str = Field(default="testnet",
                       description="testnet | production | live")
@@ -1482,11 +1638,15 @@ class TradingConfig(BaseModel):
         default=None)
     domains: DomainsConfig = Field(default_factory=DomainsConfig)  # NEW: Domain-specific configurations
     
-    # Mean Reversion 1m Strategy (Track B, configured under trading.mean_reversion_1m)
-    mean_reversion_1m: Optional[MeanReversion1mStrategyConfig] = Field(
-        default=None,
-        description="Mean Reversion 1m strategy config (from trading.mean_reversion_1m)"
-    )
+    # Legacy risk config (still used by DailyRiskState etc)
+    risk: Dict[str, Any] = Field(default_factory=dict, description="Legacy risk configuration (daily gate, etc)")
+    
+    # TCA and Risk Budgets (Dicts for now but typed access via field)
+    tca_prefs: Dict[str, Any] = Field(default_factory=dict, description="TCA Preferences")
+    risk_budgets: Dict[str, Any] = Field(default_factory=dict, description="Risk Budgeting Configuration")
+
+    # Risk management data sources (used for hybrid/live/testnet wiring)
+    risk_management: "TradingRiskManagementConfig" = Field(...)
     
     # Ops configuration (killswitch, quiet hours)
     ops: Optional[OpsConfig] = Field(
@@ -1504,7 +1664,7 @@ class TradingConfig(BaseModel):
 
 class BinanceApiEnv(BaseModel):
     """Binance API configuration for a single environment."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')
 
     api_key: Optional[str] = Field(default=None)
     api_secret: Optional[str] = Field(default=None)
@@ -1514,8 +1674,39 @@ class BinanceApiEnv(BaseModel):
 
 class BinanceApiConfig(BaseModel):
     """Binance API configuration (live + testnet)."""
+    model_config = ConfigDict(extra='forbid')
     live: BinanceApiEnv = Field(default_factory=BinanceApiEnv)
     testnet: BinanceApiEnv = Field(default_factory=BinanceApiEnv)
+
+
+class RetrySchedulerConfig(BaseModel):
+    """AuroraBridge retry scheduler configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    max_attempts: int = Field(..., description="Max retry attempts for deferred intents")
+    min_retry_delay_ms: int = Field(..., description="Minimum retry delay (ms)")
+
+
+class BridgeConfig(BaseModel):
+    """AuroraBridge configuration (strict object config)."""
+    model_config = ConfigDict(extra='forbid')
+
+    retry_scheduler: RetrySchedulerConfig = Field(...)
+
+
+class RiskManagementDataSourcesConfig(BaseModel):
+    """Runtime data source selection for risk management."""
+    model_config = ConfigDict(extra='forbid')
+
+    market_data: Literal["live", "testnet"] = Field(...)
+    portfolio_state: Literal["live", "testnet", "follow_execution"] = Field(...)
+
+
+class TradingRiskManagementConfig(BaseModel):
+    """Trading-level risk management config (legacy location in trading.yaml)."""
+    model_config = ConfigDict(extra='forbid')
+
+    data_sources: RiskManagementDataSourcesConfig = Field(...)
 
 
 class AccountObserverConfig(BaseModel):
@@ -1554,6 +1745,33 @@ class SystemConfig(BaseModel):
     market_data: Optional[SystemMarketDataConfig] = Field(default=None, description="Market data system settings")
 
 
+class SystemRuntimeMeta(BaseModel):
+    """Runtime metadata captured during config load."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    config_name: Optional[str] = Field(default=None, description="Identifier of the loaded config profile")
+    config_dir: Optional[str] = Field(default=None, description="Filesystem path of the config directory in use")
+
+
+class SystemMetaConfig(BaseModel):
+    """Service/runtime metadata preserved under a dedicated namespace."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    system_config_version: Optional[str] = Field(default=None)
+    regime_config_version: Optional[str] = Field(default=None)
+    sequential_tests: Dict[str, Any] = Field(default_factory=dict)
+    risk_core: Dict[str, Any] = Field(default_factory=dict)
+    kelly: Dict[str, Any] = Field(default_factory=dict)
+    calibrator: Dict[str, Any] = Field(default_factory=dict)
+    hawkes: Dict[str, Any] = Field(default_factory=dict)
+    hotreload_whitelist: List[Any] = Field(default_factory=list)
+    hardening: Dict[str, Any] = Field(default_factory=dict)
+    position_tracking: Dict[str, Any] = Field(default_factory=dict)
+    runtime: SystemRuntimeMeta = Field(default_factory=SystemRuntimeMeta)
+
+
 class AuroraConfig(BaseModel):
     """
     Root configuration model for AuroraTrader.
@@ -1561,8 +1779,7 @@ class AuroraConfig(BaseModel):
     This replaces the old dict-based AuroraConfig class with full type validation.
     Pydantic V2 validates on instantiation, raising ValidationError immediately if config is invalid.
     """
-    model_config = ConfigDict(
-        extra='allow')  # Allow additional top-level fields
+    model_config = ConfigDict(extra='forbid')
 
     # Core app configs
     trading_mode: str = Field(
@@ -1576,9 +1793,11 @@ class AuroraConfig(BaseModel):
 
     # System configs
     system: SystemConfig = Field(default_factory=SystemConfig)
-    # System configs
-    system: SystemConfig = Field(default_factory=SystemConfig)
+    system_meta: SystemMetaConfig = Field(default_factory=SystemMetaConfig)
     ops: OpsConfig = Field(default_factory=OpsConfig)
+
+    # Bridge config (AuroraBridge retry scheduler)
+    bridge: BridgeConfig = Field(...)
     
     # Domain configs (New)
     domains: Optional[DomainsConfig] = Field(default=None, description="Domain-specific configurations")
@@ -1605,7 +1824,7 @@ class AuroraConfig(BaseModel):
     # Strategy configs (Track B, optional root-level overrides)
     mean_reversion_1m: Optional[MeanReversion1mStrategyConfig] = Field(
         default=None, 
-        description="Mean Reversion 1m strategy config (root-level override for trading.mean_reversion_1m)"
+        description="Mean Reversion 1m strategy config (loaded from strategy profile SSOT)"
     )
 
     # App-specific overrides
@@ -1614,11 +1833,18 @@ class AuroraConfig(BaseModel):
     execution: Optional[ExecutionConfig] = Field(
         default=None, description="Override trading.execution if set")
     brackets: Optional[BracketsConfig] = Field(default=None)
-    brackets: Optional[BracketsConfig] = Field(default=None)
     trailing: Dict[str, Any] = Field(default_factory=dict)
     
     # Regime Detector Config (loaded from regime.yaml, Pydantic-validated)
     models: Optional[RegimeModelsConfig] = Field(default=None, description="Regime detection models from regime.yaml")
+
+    # Legacy root-level configs (to be migrated to system_meta)
+    logging: Optional[Dict[str, Any]] = Field(default=None, description="Logging configuration")
+    hmm: Optional[Dict[str, Any]] = Field(default=None, description="HMM regime detector config")
+    features: Optional[Dict[str, Any]] = Field(default=None, description="Feature engineering config")
+    hotreload_whitelist: Optional[List[str]] = Field(default=None, description="Hot-reload allowlist")
+    aurora: Optional[Dict[str, Any]] = Field(default=None, description="Aurora strategy global config")
+    runtime: Optional[Dict[str, Any]] = Field(default=None, description="Runtime configuration")
 
     @field_validator('trading_mode')
     @classmethod

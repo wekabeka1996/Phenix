@@ -5,10 +5,15 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import yaml
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        pass
 from pydantic import ValidationError
 
 from .config_models import AuroraConfig as PydanticAuroraConfig
+from .config_contract import ConfigContractError
 
 LOG = logging.getLogger(__name__)
 
@@ -27,19 +32,11 @@ def deep_merge(source, destination):
 # Legacy wrapper for backwards compatibility
 class AuroraConfig(PydanticAuroraConfig):
     """
-    AuroraConfig wrapper that provides both Pydantic V2 validation and legacy .get() interface.
+    AuroraConfig wrapper that provides Pydantic V2 validation with strict fail-closed behavior.
 
-    This class allows gradual migration of code from dict-based .get() calls to typed attributes.
-    Eventually all code should use typed attributes directly.
+    All config access must use typed attributes directly (e.g., config.trading.decision.signal_threshold).
+    No .get() fallback interface - missing fields cause AttributeError at startup.
     """
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Legacy dict-like .get() interface for backwards compatibility."""
-        try:
-            # Try to get as Pydantic field
-            return getattr(self, key, default)
-        except AttributeError:
-            return default
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for debugging/serialization."""
@@ -64,9 +61,27 @@ class ConfigLoader:
             tests_dir = project_root / "tests" / "config" / "aurora"
             default_dir = Path(__file__).resolve().parent.parent.parent / "config" / "aurora"
             self.config_dir = tests_dir if tests_dir.exists() else default_dir
+        
+        # CFG-RUNTIME-BOOTSTRAP-07: Store config name for diagnostic logging
+        self.config_name = "aurora"  # Default config name
+        
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
             load_dotenv(env_path)
+    
+    @staticmethod
+    def _get_strict_mode() -> bool:
+        """
+        Get strict config validation mode.
+        
+        CFG-FREEZE-SSOT-06: Strict mode by default (opt-out for migrations).
+        - Default: STRICT (STRICT_CONFIG_CONFLICTS not set or ="1")
+        - Opt-out: export STRICT_CONFIG_CONFLICTS=0
+        
+        Returns:
+            True if strict mode enabled (default), False otherwise.
+        """
+        return os.getenv("STRICT_CONFIG_CONFLICTS", "1").strip() in ("1", "true", "True", "yes")
 
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         config_path = self.config_dir / filename
@@ -86,6 +101,33 @@ class ConfigLoader:
                 lambda m: os.environ.get(m.group(1), m.group(0)), config_part
             )
         return config_part
+
+    @staticmethod
+    def _extract_system_meta(system_config: Dict[str, Any], regime_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Isolate service/runtime metadata from root to allow extra='forbid'."""
+
+        meta: Dict[str, Any] = {}
+
+        if isinstance(system_config, dict):
+            mapping = {
+                "config_version": "system_config_version",
+                "sequential_tests": "sequential_tests",
+                "risk_core": "risk_core",
+                "kelly": "kelly",
+                "calibrator": "calibrator",
+                "hawkes": "hawkes",
+                "hotreload_whitelist": "hotreload_whitelist",
+                "hardening": "hardening",
+                "position_tracking": "position_tracking",
+            }
+            for src_key, dst_key in mapping.items():
+                if src_key in system_config:
+                    meta[dst_key] = system_config.pop(src_key)
+
+        if isinstance(regime_config, dict) and "config_version" in regime_config:
+            meta["regime_config_version"] = regime_config.pop("config_version")
+
+        return meta
 
     def _resolve_mode_overrides(self, config: Dict[str, Any]) -> None:
         """Apply mode-specific decision overrides from decision[mode] → decision.
@@ -208,7 +250,7 @@ class ConfigLoader:
         """
         import os
         
-        strict_mode = os.getenv("STRICT_CONFIG_CONFLICTS", "0").strip() in ("1", "true", "True", "yes")
+        strict_mode = self._get_strict_mode()
         
         conflicts_found = []
         
@@ -299,13 +341,15 @@ class ConfigLoader:
         except FileNotFoundError as e:
             LOG.error(f"Config file error: {e}")
             raise
+
+        system_meta = self._extract_system_meta(system_config, regime_config)
         
         # Load domains.yaml (optional if trading.yaml has domains)
         domains_config: Dict[str, Any] = {}
         try:
             domains_config = self._load_yaml("domains.yaml")
         except FileNotFoundError:
-            LOG.info("domains.yaml not found, will check trading.domains as fallback")
+            LOG.info("domains.yaml not found")
         
         # =========================================================================
         # DEPRECATED FILE DETECTION (CFG-FEATURES-REGIME-SSOT-04)
@@ -314,7 +358,7 @@ class ConfigLoader:
         # Detect its presence and fail/warn based on strict mode
         # =========================================================================
         import os
-        strict_mode = os.getenv("STRICT_CONFIG_CONFLICTS", "0").strip() in ("1", "true", "True", "yes")
+        strict_mode = self._get_strict_mode()
         
         features_yaml_path = self.config_dir / "features.yaml"
         if features_yaml_path.exists():
@@ -324,11 +368,60 @@ class ConfigLoader:
                 "Feature engineering config is read from domains.yaml (SSOT). "
                 "Action required: Remove features.yaml or migrate to domains.yaml."
             )
+            raise ConfigContractError(path="features.yaml", why=msg)
+        
+        # =========================================================================
+        # DEPRECATED MR DETECTION (CFG-STRATEGIES-SSOT-05-MR-TRADING-YAML-BURN-DOWN)
+        # =========================================================================
+        # mean_reversion_1m is DEPRECATED in trading.yaml (SSOT: strategy profile)
+        # Detect its presence and fail/warn based on strict mode
+        # =========================================================================
+        if isinstance(trading_config, dict) and "mean_reversion_1m" in trading_config:
+            mr_section = trading_config.get("mean_reversion_1m")
+            if isinstance(mr_section, dict) and mr_section:
+                msg = (
+                    "⚠️  DEPRECATED: mean_reversion_1m detected in trading.yaml! "
+                    "This section is IGNORED (strategy profiles have priority). "
+                    "SSOT for MR config: config/aurora/strategies/mean_reversion_1m.yaml. "
+                    "Action required: Remove mean_reversion_1m from trading.yaml."
+                )
+                raise ConfigContractError(path="trading.mean_reversion_1m", why=msg)
+        
+        # =========================================================================
+        # DEPRECATED FEATURE_ENGINEERING DETECTION (CFG-FREEZE-SSOT-06)
+        # =========================================================================
+        # feature_engineering is DEPRECATED in trading.yaml (SSOT: domains.yaml)
+        # Detect its presence and fail/warn based on strict mode
+        # =========================================================================
+        # Check multiple locations where feature_engineering might appear in trading.yaml
+        feature_eng_found = False
+        feature_eng_locations = []
+        
+        if isinstance(trading_config, dict):
+            # Check root level: trading.feature_engineering
+            if "feature_engineering" in trading_config:
+                fe_section = trading_config.get("feature_engineering")
+                if isinstance(fe_section, dict) and fe_section:
+                    feature_eng_found = True
+                    feature_eng_locations.append("trading.feature_engineering (root level)")
             
-            if strict_mode:
-                raise ValueError(msg)
-            else:
-                LOG.warning(msg)
+            # Check nested in trading: trading.trading.feature_engineering
+            nested_trading = trading_config.get("trading", {})
+            if isinstance(nested_trading, dict) and "feature_engineering" in nested_trading:
+                fe_section = nested_trading.get("feature_engineering")
+                if isinstance(fe_section, dict) and fe_section:
+                    feature_eng_found = True
+                    feature_eng_locations.append("trading.trading.feature_engineering (nested)")
+        
+        if feature_eng_found:
+            locations_str = ", ".join(feature_eng_locations)
+            msg = (
+                f"⚠️  DEPRECATED: feature_engineering detected in trading.yaml at: {locations_str}! "
+                "This section is IGNORED (domains.yaml has priority). "
+                "SSOT for feature_engineering: config/aurora/domains.yaml. "
+                "Action required: Remove feature_engineering from trading.yaml."
+            )
+            raise ConfigContractError(path="trading.feature_engineering", why=msg)
 
         # Merge: trading_config (source) → system_config (destination)
         merged_config: Dict[str, Any] = {}
@@ -361,19 +454,12 @@ class ConfigLoader:
         
         # CFG-TRADING-YAML-BURN-DOWN-02: Detect deprecated trading.domains and FAIL in strict mode
         if 'trading' in merged_config and 'domains' in merged_config.get('trading', {}):
-            import os
-            strict_mode = os.getenv("STRICT_CONFIG_CONFLICTS", "0").strip() in ("1", "true", "True", "yes")
-            
             msg = (
                 "⚠️  DEPRECATED: trading.domains detected! "
                 "This section is IGNORED. SSOT is config/aurora/domains.yaml. "
                 "Remove trading.domains from trading.yaml."
             )
-            
-            if strict_mode:
-                raise ValueError(msg)
-            else:
-                LOG.warning(msg)
+            raise ConfigContractError(path="trading.domains", why=msg)
         
         # Consistency check
         if not merged_config.get('domains'):
@@ -425,19 +511,12 @@ class ConfigLoader:
         trading_instruments = trading_block.get("instruments")
         
         if isinstance(trading_instruments, dict) and trading_instruments:
-            import os
-            strict_mode = os.getenv("STRICT_CONFIG_CONFLICTS", "0").strip() in ("1", "true", "True", "yes")
-            
             msg = (
                 "⚠️  DEPRECATED: trading.instruments detected! "
                 "This section is IGNORED. SSOT is config/aurora/instruments.yaml. "
                 "Remove trading.instruments from trading.yaml."
             )
-            
-            if strict_mode:
-                raise ValueError(msg)
-            else:
-                LOG.warning(msg)
+            raise ConfigContractError(path="trading.instruments", why=msg)
 
         if not merged_config.get("instruments"):
             raise ValueError("❌ CRITICAL: instruments config is empty after merge!")
@@ -453,7 +532,7 @@ class ConfigLoader:
         # Strict mode: missing file → ValueError
         # =========================================================================
         import os
-        strict_mode = os.getenv("STRICT_CONFIG_CONFLICTS", "0").strip() in ("1", "true", "True", "yes")
+        strict_mode = self._get_strict_mode()
         
         strategies_yaml_present = False
         strategies_payload: Dict[str, Any] = {}
@@ -559,10 +638,7 @@ class ConfigLoader:
                     "This section is IGNORED. SSOT is config/aurora/aurora_instruments.yaml. "
                     "Remove trading.aurora_instruments from trading.yaml."
                 )
-                if strict_mode:
-                    raise ValueError(msg)
-                else:
-                    LOG.warning(msg)
+                raise ConfigContractError(path="trading.aurora_instruments", why=msg)
 
         # STEP 2: Load aurora_instruments.yaml (CANONICAL SSOT)
         aurora_instruments_yaml_present = False
@@ -601,6 +677,27 @@ class ConfigLoader:
         # END CANONICAL aurora_instruments.yaml LOGIC
         # =========================================================================
 
+        # Enforce service key hygiene before validation
+        for key in list(merged_config.keys()):
+            if isinstance(key, str) and key.startswith("_config_"):
+                raise ConfigContractError(
+                    path=f"root.{key}",
+                    why="Service/migration keys with prefix '_config_' are forbidden at root (CFG-ROOT-STRICT-FREEZE-NO-EXTRAS-P1-19)",
+                )
+
+        # Migrate legacy root.guardian block into execution.order_guardian to satisfy strict root schema
+        guardian_block = merged_config.pop("guardian", None)
+        if isinstance(guardian_block, dict):
+            exec_block = merged_config.setdefault("execution", {})
+            if isinstance(exec_block, dict):
+                exec_block.setdefault("order_guardian", guardian_block)
+
+        # Attach system_meta (service/runtime data) under dedicated namespace
+        system_meta.setdefault("runtime", {})
+        system_meta["runtime"].setdefault("config_name", self.config_name)
+        system_meta["runtime"].setdefault("config_dir", str(self.config_dir))
+        merged_config["system_meta"] = system_meta
+
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)
 
@@ -627,6 +724,20 @@ class ConfigLoader:
                         resolved_config['execution'] = tr.get('execution')
             except Exception:
                 pass
+            
+            # CFG-RUNTIME-BOOTSTRAP-07: Add metadata for diagnostic logging
+            # Store config source information under system_meta.runtime (strict-safe)
+            try:
+                if isinstance(resolved_config, dict):
+                    system_meta_block = resolved_config.setdefault("system_meta", {})
+                    if isinstance(system_meta_block, dict):
+                        runtime_block = system_meta_block.setdefault("runtime", {})
+                        if isinstance(runtime_block, dict):
+                            runtime_block.setdefault("config_name", self.config_name)
+                            runtime_block.setdefault("config_dir", str(self.config_dir))
+            except Exception:
+                pass
+            
             # Convert back to our legacy-compatible wrapper
             return AuroraConfig(**resolved_config)
         except ValidationError as e:
