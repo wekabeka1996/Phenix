@@ -16,18 +16,29 @@ def create_minimal_config(config_dir: Path):
     # system.yaml
     system_yaml = {
         "trading_mode": "testnet",
+        "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
         "binance_api": {
             "testnet": {
                 "api_key": "test",
-                "api_secret": "test"
-            }
+                "api_secret": "test",
+                "rest_url": "https://test",
+            },
+            "live": {
+                "api_key": "test",
+                "api_secret": "test",
+                "rest_url": "https://live",
+            },
         }
     }
     (config_dir / "system.yaml").write_text(yaml.dump(system_yaml))
     
     # trading.yaml
     trading_yaml = {
-        "trading": {}
+        "trading": {
+            "mode": "testnet",
+            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
+            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
+        }
     }
     (config_dir / "trading.yaml").write_text(yaml.dump(trading_yaml))
     
@@ -105,7 +116,8 @@ class TestFeaturesYamlDeprecated:
         try:
             loader = ConfigLoader(config_dir=config_dir)
             
-            with pytest.raises(ValueError) as exc_info:
+            from apps.reference.config_contract import ConfigContractError
+            with pytest.raises(ConfigContractError) as exc_info:
                 loader.load_config()
             
             # VERIFY: error message mentions deprecated
@@ -115,11 +127,9 @@ class TestFeaturesYamlDeprecated:
         finally:
             os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
     
-    def test_features_yaml_exists_non_strict_warns(self, tmp_path, caplog):
+    def test_features_yaml_exists_non_strict_still_fails(self, tmp_path):
         """
-        Test NON-STRICT MODE: features.yaml exists → WARNING logged.
-        
-        CFG-FEATURES-REGIME-SSOT-04: Non-strict mode allows boot but warns.
+        Test NON-STRICT MODE: features.yaml exists → still fails (no soft mode).
         """
         config_dir = tmp_path / "config" / "aurora"
         config_dir.mkdir(parents=True)
@@ -136,17 +146,12 @@ class TestFeaturesYamlDeprecated:
         (config_dir / "features.yaml").write_text(yaml.dump(features_yaml))
         
         # Ensure NON-strict mode
-        os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
+        os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
         
         loader = ConfigLoader(config_dir=config_dir)
-        config = loader.load_config()
-        
-        # VERIFY: config loaded successfully
-        assert config is not None
-        
-        # VERIFY: warning was logged
-        assert any("features.yaml" in rec.message.lower() for rec in caplog.records)
-        assert any("deprecated" in rec.message.lower() or "orphaned" in rec.message.lower() for rec in caplog.records)
+        from apps.reference.config_contract import ConfigContractError
+        with pytest.raises(ConfigContractError):
+            loader.load_config()
     
     def test_features_yaml_missing_no_error(self, tmp_path):
         """

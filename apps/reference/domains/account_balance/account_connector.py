@@ -13,6 +13,8 @@ import time
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from apps.reference.adapters.binance_adapter import BinanceAdapter
+from apps.reference.config_contract import ConfigContractError
+from apps.reference.config_loader import AuroraConfig
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -25,75 +27,46 @@ class AccountConnector:
     Connects to Binance REST API via BinanceAdapter to retrieve account data.
     """
 
-    def __init__(self, fsm: "FSMCore", config: Dict[str, Any]) -> None:
+    def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         """
         Initialize connector.
 
         Args:
             fsm: FSM core instance for event emission.
-            config: Configuration dictionary with API credentials.
+            config: AuroraConfig (strict object config).
         """
         self.fsm = fsm
+        if isinstance(config, dict):
+            raise TypeError("AccountConnector requires AuroraConfig, got dict")
         self.config = config
         self.thread: Optional[threading.Thread] = None
         self.running = False
 
         # Extract account_observer config for polling interval
-        # Handle both dict and Pydantic object access patterns
-        account_observer_config = (
-            self.config.get("account_observer", {})
-            if isinstance(self.config, dict)
-            else self.config.account_observer
-        )
-        poll_interval = (
-            account_observer_config.get("poll_interval", 30)
-            if isinstance(account_observer_config, dict)
-            else account_observer_config.poll_interval
-        )
-        self.update_interval = poll_interval
+        self.update_interval = int(self.config.account_observer.poll_interval)
 
         # Initialize the BinanceAdapter based on the trading_mode
-        mode = (
-            self.config.get("trading_mode", "testnet")
-            if isinstance(self.config, dict)
-            else self.config.trading_mode
-        )
-        api_config = (
-            self.config.get("binance_api", {})
-            if isinstance(self.config, dict)
-            else self.config.binance_api
-        )
+        mode = str(self.config.trading_mode)
+        api_config = self.config.binance_api
 
-        env_config = {}
         if mode == "live":
-            if isinstance(api_config, dict):
-                env_config = api_config.get("live", {})
-            else:
-                env_config = api_config.live
+            env_config = api_config.live
             LOG.info(
                 "AccountConnector is configured for LIVE execution environment.")
-        else:  # 'testnet' or 'hybrid_live_data_testnet_exec'
-            if isinstance(api_config, dict):
-                env_config = api_config.get("testnet", {})
-            else:
-                env_config = api_config.testnet
+        else:  # testnet or hybrid
+            env_config = api_config.testnet
             LOG.info(
                 f"AccountConnector is configured for TESTNET execution environment (mode: {mode})."
             )
 
         # Extract API credentials from env_config
-        if isinstance(env_config, dict):
-            api_key = env_config.get("api_key", "")
-            api_secret = env_config.get("api_secret", "")
-            rest_url = env_config.get("rest_url", "")
-        else:
-            api_key = env_config.api_key
-            api_secret = env_config.api_secret
-            rest_url = env_config.rest_url
-
-        if not all([api_key, api_secret, rest_url]):
-            raise ValueError(
-                f"API configuration for account connection in '{mode}' mode is incomplete."
+        api_key = env_config.api_key
+        api_secret = env_config.api_secret
+        rest_url = env_config.rest_url
+        if not api_key or not api_secret or not rest_url:
+            raise ConfigContractError(
+                path=f"binance_api.{mode}",
+                why="API configuration incomplete (api_key, api_secret, rest_url required).",
             )
 
         self.adapter = BinanceAdapter(

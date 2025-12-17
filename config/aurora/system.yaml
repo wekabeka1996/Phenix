@@ -3,6 +3,12 @@ config_version: 1.0.1
 # Options: "live", "testnet", "hybrid_live_data_testnet_exec"
 trading_mode: "hybrid_live_data_testnet_exec"
 
+# AuroraBridge (required)
+bridge:
+  retry_scheduler:
+    max_attempts: 5
+    min_retry_delay_ms: 500
+
 # NOTE: binance_api is now defined in trading.yaml with correct env var names
 # pointing to .env file (BINANCE_FUTURES_API_KEY_LIVE, BINANCE_TESTNET_API_KEY, etc.)
 

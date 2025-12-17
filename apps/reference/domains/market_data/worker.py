@@ -27,7 +27,10 @@ from multiprocessing import Queue
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import aiohttp
+try:
+    import aiohttp  # type: ignore
+except ImportError:  # pragma: no cover
+    aiohttp = None  # type: ignore
 
 # Try to use orjson for faster JSON parsing (recommended)
 try:
@@ -132,9 +135,13 @@ class MarketDataWorker:
         self._last_heartbeat = 0
         
         # Parse config
+        # CFG-RUNTIME-INSTRUMENTS-SSOT-ALIGN-10: Use canonical config.instruments (not trading.instruments)
+        instruments_canonical = config_dict.get("instruments", {})
+        self._symbols = list(instruments_canonical.keys())
+        
+        # Legacy path (for diagnostics only, not used for decisions)
         trading = config_dict.get("trading", {})
-        instruments = trading.get("instruments", {})
-        self._symbols = list(instruments.keys())
+        instruments_legacy = trading.get("instruments", {})
         
         market_data_cfg = trading.get("market_data", {})
         macro_sync = market_data_cfg.get("macro_sync", {})
@@ -147,10 +154,70 @@ class MarketDataWorker:
         md_config = domain_config.get("market_data", {})
         self._mode = md_config.get("trading_mode", "testnet")
         
-        # CFG-TRADING-YAML-BURN-DOWN-02: Fail-fast validation for symbols
+        # CFG-RUNTIME-BOOTSTRAP-07: Startup proof logging
+        # Log config source and symbols count BEFORE fail-fast check
+        config_name = config_dict.get("_config_name", "<unknown>")
+        config_dir = config_dict.get("_config_dir", "<unknown>")
+        symbols_count = len(self._symbols)
+        symbols_preview = self._symbols[:10] if symbols_count > 10 else self._symbols
+        
+        self._logger.info(
+            f"📋 BOOTSTRAP PROOF:\n"
+            f"  config_name: {config_name}\n"
+            f"  config_dir: {config_dir}\n"
+            f"  symbols_count: {symbols_count}\n"
+            f"  symbols_preview: {symbols_preview}\n"
+            f"  anchors: {self._anchors}\n"
+            f"  mode: {self._mode}"
+        )
+        
+        # CFG-RUNTIME-BOOTSTRAP-07: Enhanced fail-fast validation
         if not self._symbols:
-            raise ValueError(
-                "No symbols configured! Please check config/aurora/instruments.yaml (SSOT)."
+            # Provide diagnostic information for empty symbols
+            import os
+            from pathlib import Path
+            
+            instruments_yaml_path = Path(config_dir) / "instruments.yaml" if config_dir != "<unknown>" else None
+            instruments_exists = instruments_yaml_path.exists() if instruments_yaml_path else "unknown"
+            
+            # CFG-RUNTIME-INSTRUMENTS-SSOT-ALIGN-10: Show both canonical and legacy for drift detection
+            canonical_count = len(instruments_canonical)
+            legacy_count = len(instruments_legacy)
+            
+            error_msg = (
+                "❌ BOOTSTRAP FAILED: No symbols configured!\n\n"
+                "Diagnostic information:\n"
+                f"  config_name: {config_name}\n"
+                f"  config_dir: {config_dir}\n"
+                f"  config.instruments (canonical SSOT): {canonical_count} symbols → {list(instruments_canonical.keys())[:5]}\n"
+                f"  config.trading.instruments (legacy): {legacy_count} symbols → {list(instruments_legacy.keys())[:5]}\n"
+                f"  instruments.yaml exists: {instruments_exists}\n"
+                f"  instruments.yaml path: {instruments_yaml_path}\n\n"
+                "Probable causes:\n"
+                "  1. config/aurora/instruments.yaml is empty or missing\n"
+                "  2. instruments.yaml structure is invalid (check YAML syntax)\n"
+                "  3. ConfigLoader failed to load instruments.yaml\n\n"
+                "Action required:\n"
+                "  - Check config/aurora/instruments.yaml exists and contains symbols\n"
+                "  - Run: python -c 'from apps.reference.config_loader import get_config; c=get_config(); print(list(c.instruments.keys()))'\n"
+                "  - See docs/CFG_FREEZE_SSOT_MAP.md for SSOT structure"
+            )
+            
+            self._logger.critical(error_msg)
+            raise ValueError(error_msg)
+        
+        # CFG-RUNTIME-INSTRUMENTS-SSOT-ALIGN-10: Drift detection warning
+        # If canonical and legacy differ, warn but proceed with canonical
+        if instruments_legacy and set(instruments_canonical.keys()) != set(instruments_legacy.keys()):
+            canonical_only = set(instruments_canonical.keys()) - set(instruments_legacy.keys())
+            legacy_only = set(instruments_legacy.keys()) - set(instruments_canonical.keys())
+            self._logger.warning(
+                f"⚠️  CONFIG DRIFT DETECTED: config.instruments != config.trading.instruments\n"
+                f"  Canonical (instruments.yaml): {len(instruments_canonical)} symbols\n"
+                f"  Legacy (trading.instruments): {len(instruments_legacy)} symbols\n"
+                f"  Canonical-only symbols: {canonical_only}\n"
+                f"  Legacy-only symbols: {legacy_only}\n"
+                f"  Worker will use CANONICAL instruments.yaml (SSOT)."
             )
         
         # Initialize aggregator
@@ -161,8 +228,8 @@ class MarketDataWorker:
         )
         
         # WebSocket state
-        self._session: Optional[aiohttp.ClientSession] = None
-        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._session: Optional[Any] = None
+        self._ws: Optional[Any] = None
         
         self._logger.info(
             f"MarketDataWorker initialized: symbols={self._symbols}, "
@@ -291,6 +358,8 @@ class MarketDataWorker:
         
         while self._running:
             if self._session is None or self._session.closed:
+                if aiohttp is None:
+                    raise ImportError("aiohttp is required for MarketDataWorker WebSocket connections")
                 self._session = aiohttp.ClientSession()
             
             ws_url = self._get_ws_url()

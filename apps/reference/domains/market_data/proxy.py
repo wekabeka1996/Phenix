@@ -71,8 +71,8 @@ class MarketDataProxy:
         self._worker_alive = False
         
         # Extract symbols for logging
-        trading = self._get_config_dict().get("trading", {})
-        instruments = trading.get("instruments", {})
+        cfg_dict = self._get_config_dict()
+        instruments = cfg_dict.get("instruments", {})
         self._symbols = list(instruments.keys())
         
         LOG.info(
@@ -81,19 +81,29 @@ class MarketDataProxy:
         )
     
     def _get_config_dict(self) -> Dict[str, Any]:
-        """Convert config to dict for serialization to worker process."""
+        """Convert config to dict for serialization to worker process.
+        
+        CFG-RUNTIME-BOOTSTRAP-07: Add metadata for diagnostic logging.
+        """
         if hasattr(self._config, "model_dump"):
             # Pydantic V2
-            return self._config.model_dump(mode="json")
+            config_dict = self._config.model_dump(mode="json")
         elif hasattr(self._config, "dict"):
             # Pydantic V1
-            return self._config.dict()
+            config_dict = self._config.dict()
         elif hasattr(self._config, "to_dict"):
-            return self._config.to_dict()
+            config_dict = self._config.to_dict()
         elif isinstance(self._config, dict):
-            return self._config
+            config_dict = self._config.copy()
         else:
             raise ValueError(f"Cannot serialize config of type {type(self._config)}")
+        
+        # CFG-RUNTIME-BOOTSTRAP-07: Add metadata for worker diagnostic logging
+        # This allows worker to log WHERE config came from (bootstrap proof)
+        config_dict["_config_name"] = getattr(self._config, "_config_name", "aurora")
+        config_dict["_config_dir"] = getattr(self._config, "_config_dir", "config/aurora")
+        
+        return config_dict
     
     def set_feature_engineering(self, fe: Any) -> None:
         """

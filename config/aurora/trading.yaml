@@ -136,60 +136,6 @@ trading:
   # must be configured in aurora_instruments.yaml
   # ==============================================================================
 
-  # ==============================================================================
-  # MEAN REVERSION 1M STRATEGY (Phase 3 Track B)
-  # ==============================================================================
-  mean_reversion_1m:
-    enabled: true
-    assets:
-      # --- DOGE (CHAMPION 🥇) ---
-      DOGEUSDT:
-        enabled: true
-        strategy:
-          bb_window: 20
-          bb_num_std: 2.1
-          min_bb_width: 0.005  # (min_vol_atr from report)
-          entry_threshold: 0.05
-          # Exit parameters
-          sl_atr_mult: 1.5     # Base, overridden below
-          tp_to_mid: false     # False for outer band target
-          cooldown_sec: 210
-        # Asset-specific overrides
-        # sl_pct: 0.019          # REMOVED: Enable dynamic ATR-based SL
-        # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for "жирні" угоди
-        allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
-        risk: {position_size_usd: 150}
-
-      # --- BTC (BRONZE 🥉) ---
-      BTCUSDT:
-        enabled: true
-        strategy:
-          bb_window: 40
-          bb_num_std: 2.3
-          min_bb_width: 0.006
-          entry_threshold: 0.05
-          tp_to_mid: true      # Default behavior
-          cooldown_sec: 0      # No cooldown
-        # sl_pct: 0.015          # REMOVED: Enable dynamic ATR-based SL
-        # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
-        allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL"]
-        risk: {position_size_usd: 150}
-      
-      # --- XRP (SILVER 🥈) ---
-      XRPUSDT:
-        enabled: true
-        strategy:
-          bb_window: 40
-          bb_num_std: 2.5
-          min_bb_width: 0.007
-          entry_threshold: 0.05
-          tp_to_mid: true
-          cooldown_sec: 165
-        # sl_pct: 0.024          # REMOVED: Enable dynamic ATR-based SL
-        # Regime Gating - XRP stable (+$121) - similar to DOGE
-        allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
-        risk: {position_size_usd: 150}
-
   # TCA (Transaction Cost Analysis) Preferences
   tca_prefs:
     max_slippage_pct: 0.5
@@ -249,26 +195,6 @@ trading:
     feature_flags:
       dynamic_ratio: true                  # Enable regime-based ratio adaptation
       clipping_enabled: true               # Enable soft-limit clipping
-
-  # ==============================================================================
-  # FEATURE ENGINEERING SETTINGS (Phase 1)
-  # ==============================================================================
-  feature_engineering:
-    # Window sizes for metric computation
-    ema:
-      period_short: 3   # EMA3 for ema_bias
-      period_long: 7    # EMA7 for ema_bias
-    volume:
-      window_sec: 60    # Volume window (seconds)
-      sma_length: 5     # SMA length for volume spike
-    volatility:
-      window_sec: 60    # Range window (seconds)
-      sma_length: 10    # SMA length for volatility state
-    liquidity:
-      depth_half: 1000  # Depth parameter for imbalance calc (USD or count)
-    # New metrics control (Phase 1)
-    enable_new_metrics: true
-    compute_all: true   # Compute all 5 new metrics
 
   # ==============================================================================
   # MARKET DATA SETTINGS (Phase 1)
@@ -439,17 +365,6 @@ trading:
       trading_mode: "live"  # Log from live data
 
   # ==============================================================================
-  # MARKET REGIME DETECTION (RegimeDetector Domain)
-  # ==============================================================================
-  models:
-    volatility:
-      enabled: true
-      atr_period: 14
-      threshold_multiplier: 2.0    # HIGH_VOLATILITY: ATR > 2.0 × SMA(ATR_14)
-      low_vol_multiplier: 0.5      # LOW_VOLATILITY: ATR < 0.5 × SMA(ATR_14)
-    mean_reversion:
-      threshold: 0.005             # MEAN_REVERSION: price/SMAs within ±0.5%
-
   risk_management:
     data_sources:
       portfolio_state: "testnet"   # ["live"|"testnet"], default: follow-execution
@@ -472,10 +387,6 @@ binance_api:
     api_secret: "${BINANCE_TESTNET_API_SECRET}"
     rest_url: "https://testnet.binancefuture.com"
     ws_url: "wss://stream.testnet.binancefuture.com"
-  # Feature engineering parameters
-  feature_engineering:
-    liquidity:
-      depth_half: 1000   # Half-depth for liquidity kappa (tune per venue)
 
 execution:
   allow_trade_with_guardian_tidy_only: false  # Disabled: blocks all entries on cold start (no tidy history)

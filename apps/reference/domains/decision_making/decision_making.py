@@ -15,6 +15,7 @@ import uuid
 from collections import defaultdict
 from decimal import Decimal
 from typing import Dict, Any, Optional, TYPE_CHECKING, List, Tuple
+from apps.reference.config_contract import ConfigContractError
 
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal
@@ -30,9 +31,10 @@ from .decision_context import DecisionContext, create_decision_context
 # CFG-DOMAINS-STEP-02: Import AuroraConfig for type enforcement
 from apps.reference.config_models import AuroraConfig
 
-from apps.reference.telemetry.metrics import inc_decision_deferred
+from apps.reference.telemetry.metrics import inc_decision_deferred, inc_config_contract_violation
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.contracts.reject_reasons import RejectReason, normalize_config_error
 
 # CFG-DOMAINS-STEP-02: Import DomainConfigResolver for canonical config access
 from apps.reference.domain_config import DomainConfigResolver
@@ -105,55 +107,15 @@ class DecisionMaking:
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
 
-        # Helper method for safe config access (supports both dict and Pydantic objects)
-        def safe_config_get(*keys, default=None):
-            current = self.config
-            for key in keys:
-                if hasattr(current, key):
-                    current = getattr(current, key)
-                elif isinstance(current, dict):
-                    current = current.get(key, default)
-                else:
-                    return default
-            return current
-
-        self._safe_config_get = safe_config_get
+        self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {"features": None, "risk": None}
+        )
 
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
             lambda: {"features": None, "risk": None}
         )
 
-    def _get_precision(self, symbol: str) -> tuple[float, float]:
-        """Return (tick_size, step_size) from canonical config.instruments; fail-closed.
-        
-        CANONICAL: config.instruments only (SSOT from config/aurora/instruments.yaml).
-        CFG-INSTRUMENTS-STEP-02-DM-PRECISION
-        
-        Args:
-            symbol: Trading symbol (e.g., 'BTCUSDT')
-            
-        Returns:
-            (tick_size, step_size) as floats
-            
-        Raises:
-            ValueError: If symbol missing or precision fields not set
-        """
-        instruments = self.config.instruments
-        if not instruments or symbol not in instruments:
-            raise ValueError(
-                f"Missing instrument config for {symbol} in config.instruments (SSOT)"
-            )
-        
-        spec = instruments[symbol]
-        tick_size = getattr(spec, 'tick_size', None)
-        step_size = getattr(spec, 'step_size', None)
-        
-        if tick_size is None or step_size is None:
-            raise ValueError(
-                f"Missing precision for {symbol}: tick_size={tick_size}, step_size={step_size}"
-            )
-        
-        return float(tick_size), float(step_size)
+        # NOTE: __init__ continues below (keep attribute initialization contiguous).
         self.latest_portfolio: Optional[Dict[str, Any]] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
         self._last_successful_features_ts: Dict[str, int] = {}  # Idempotency guard
@@ -221,88 +183,29 @@ class DecisionMaking:
         else:
             self.logger.warning("Strategies registry not configured - multi-strategy arbitration disabled")
 
-        # Support both old (config['trading']['decision']) and new (config['decision']) formats
-        try:
-            trading_config = self._safe_config_get("trading")
-            if not trading_config:
-                trading_config = self.config
-        except (AttributeError, TypeError):
-            trading_config = self.config
-
-        # CFG-DOMAINS-STEP-02-RUNTIME-FIX: AuroraConfig is Pydantic model, not dict
-        if not hasattr(trading_config, 'decision') and not hasattr(self.config, 'decision'):
-            raise ValueError("Configuration key missing: 'decision'")
-        if not hasattr(trading_config, 'tca_prefs') and not hasattr(self.config, 'tca_prefs'):
-            raise ValueError("Configuration key missing: 'tca_prefs'")
-        if not hasattr(trading_config, 'risk_budgets') and not hasattr(self.config, 'risk_budgets'):
-            raise ValueError("Configuration key missing: 'risk_budgets'")
-
-        # Z-01 FIX: Store tca_prefs from config (instead of hardcoding in _propose_trade_intent)
-        try:
-            if hasattr(trading_config, 'tca_prefs'):
-                self._tca_prefs = trading_config.tca_prefs
-            elif isinstance(trading_config, dict):
-                self._tca_prefs = trading_config.get("tca_prefs", {})
-            else:
-                self._tca_prefs = self.config.get("tca_prefs", {}) if hasattr(self.config, 'get') else {}
-        except (AttributeError, TypeError):
-            self._tca_prefs = {}
+        # CFG-DOMAINS-STEP-02-FIX: Strict Config Access (Task 18)
+        # Direct Pydantic access - overrides handled by ConfigLoader
+        trading_config = self.config.trading
         
-        # Z-02 FIX: Store risk_budgets from config (instead of hardcoding in _propose_trade_intent)
-        try:
-            if hasattr(trading_config, 'risk_budgets'):
-                self._risk_budgets = trading_config.risk_budgets
-            elif isinstance(trading_config, dict):
-                self._risk_budgets = trading_config.get("risk_budgets", {})
-            else:
-                self._risk_budgets = self.config.get("risk_budgets", {}) if hasattr(self.config, 'get') else {}
-        except (AttributeError, TypeError):
-            self._risk_budgets = {}
+        # TCA Preferences (Dict)
+        self._tca_prefs = trading_config.tca_prefs
+        if not self._tca_prefs:
+             self.logger.warning("tca_prefs missing/empty - using conservative TCA mode")
 
-        # Get decision config from either location
-        try:
-            if hasattr(trading_config, 'decision'):
-                decision_config = trading_config.decision
-            elif isinstance(trading_config, dict):
-                decision_config = trading_config.get("decision", {})
-            else:
-                decision_config = {}
-        except (AttributeError, TypeError):
-            decision_config = {}
+        # Risk Budgets (Dict)
+        self._risk_budgets = trading_config.risk_budgets
+        if not self._risk_budgets:
+             self.logger.warning("risk_budgets missing/empty - using conservative sizing mode")
 
-        # Get mode and apply mode-specific settings
-        try:
-            mode = self._safe_config_get(
-                "trading", "mode", default="production")
-        except (AttributeError, TypeError):
-            mode = "production"
-
-        # Get mode config with Pydantic-first
-        try:
-            mode_config = self._safe_config_get(
-                "trading", "decision", mode, default={})
-        except (AttributeError, TypeError):
-            mode_config = {}
-
-        # Apply mode-specific overrides
-        if mode_config and isinstance(decision_config, dict):
-            self.logger.info(f"Applying {mode} mode decision settings")
-            for key, value in mode_config.items():
-                if key in decision_config:
-                    self.logger.info(
-                        f"  {key}: {decision_config[key]} -> {value}")
-                decision_config[key] = value
-
-        # Position sizing config - SSOT from domains.yaml
-        sizing_cfg = self._get_position_sizing_config()
-        self.min_pos_size_usd = decimal.Decimal(str(sizing_cfg.min_position_size_usd))
-        self.liq_cap_usd = decimal.Decimal(str(sizing_cfg.liquidity_based_cap_usd))
-
-        # CFG-DOMAINS-STEP-02: QoS configuration via DomainConfigResolver (CANONICAL)
-        # Replace _get_qos_config() with direct resolver access
+        # CFG-DOMAINS-STEP-02: Domain configuration via DomainConfigResolver (CANONICAL)
         resolver = DomainConfigResolver(self.config)
         dm_cfg = resolver.get_decision_making()
         qos_cfg = dm_cfg.qos
+
+        # Position sizing config - SSOT from domains.yaml
+        sizing_cfg = dm_cfg.position_sizing
+        self.min_pos_size_usd = decimal.Decimal(str(sizing_cfg.min_position_size_usd))
+        self.liq_cap_usd = decimal.Decimal(str(sizing_cfg.liquidity_based_cap_usd))
         
         # QoS exposure cooldown - from canonical domains
         self.qos_exposure_block_cooldown_sec = int(qos_cfg.exposure_block_cooldown_sec)
@@ -320,72 +223,14 @@ class DecisionMaking:
         # Legacy enforce flag (from qos_cfg)
         self.qos_enforce = bool(qos_cfg.enforce)
 
-        # P0-W1: Warmup/arming gate (additive, off by default).
-        # When enabled, Aurora symbols must have RegimeDetector warmup.full_ready=true,
-        # otherwise we emit EVT:INTENT_DEFERRED(v1) fail-closed.
-        self.arming_require_regime_warmup = bool(
-            self._safe_config_get(
-                "domains",
-                "decision_making",
-                "arming",
-                "require_regime_warmup",
-                default=False,
-            )
-        )
-        self.arming_retry_backoff_ms = int(
-            self._safe_config_get(
-                "domains",
-                "decision_making",
-                "arming",
-                "retry_backoff_ms",
-                default=1000,
-            )
-        )
-        self.arming_max_attempts = int(
-            self._safe_config_get(
-                "domains",
-                "decision_making",
-                "arming",
-                "max_attempts",
-                default=120,
-            )
-        )
-
-        # Features TTL configuration (domains config takes priority)
-        features_ttl = 5  # default
-        try:
-            # Try domains config first (DecisionMaking receives trading-slice config)
-            if isinstance(self.config, dict):
-                domains_cfg = self.config.get("domains", {}) or {}
-                if isinstance(domains_cfg, dict):
-                    dm_cfg = domains_cfg.get("decision_making", {}) or {}
-                    if isinstance(dm_cfg, dict):
-                        feats_cfg = dm_cfg.get("features", {}) or {}
-                        if isinstance(feats_cfg, dict) and feats_cfg.get("ttl_sec") is not None:
-                            features_ttl = feats_cfg.get("ttl_sec", features_ttl)
-            elif hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                features_ttl = self.config.domains.decision_making.features.ttl_sec
-
-            # Fallback to legacy decision.features
-            if features_ttl == 5:
-                try:
-                    if hasattr(decision_config, 'features'):
-                        features_config = decision_config.features or {}
-                    elif isinstance(decision_config, dict):
-                        features_config = self.config.trading.decision.features
-                    else:
-                        features_config = {}
-                except (AttributeError, TypeError):
-                    features_config = {}
-
-                if isinstance(features_config, dict):
-                    features_ttl = features_config.get('ttl_sec', 5)
-                elif hasattr(features_config, 'ttl_sec'):
-                    features_ttl = features_config.ttl_sec or 5
-        except (AttributeError, TypeError):
-            pass  # Use default
-        self.features_ttl_sec = int(features_ttl)
-
+        # P0-W1: Warmup/arming gate (from domain config)
+        self.arming_require_regime_warmup = dm_cfg.arming.require_regime_warmup
+        self.arming_retry_backoff_ms = dm_cfg.arming.retry_backoff_ms
+        self.arming_max_attempts = dm_cfg.arming.max_attempts
+        
+        # Features TTL (from domain config)
+        self.features_ttl_sec = dm_cfg.features.ttl_sec
+        
         self.logger.info(
             f"QoS config: mode={self.qos_mode}, enforce={self.qos_enforce}, "
             f"exposure_cooldown={self.qos_exposure_block_cooldown_sec}s, "
@@ -393,127 +238,22 @@ class DecisionMaking:
             f"max_intents_per_min={self.qos_max_intents_per_minute_per_symbol}, "
             f"features_ttl={self.features_ttl_sec}s"
         )
-
-        # --- Optional behavior/gating extensions (disabled by default) ---
-        try:
-            if hasattr(decision_config, 'bar_gating'):
-                bar_gate_cfg = decision_config.bar_gating or {}
-            elif isinstance(decision_config, dict):
-                bar_gate_cfg = self.config.trading.decision.bar_gating
-            else:
-                bar_gate_cfg = {}
-        except (AttributeError, TypeError):
-            bar_gate_cfg = {}
-
-        if not isinstance(bar_gate_cfg, dict) and not hasattr(bar_gate_cfg, '__dict__'):
-            bar_gate_cfg = {}
-
-        try:
-            if hasattr(bar_gate_cfg, 'enable'):
-                bar_enable = bar_gate_cfg.enable or False
-            elif isinstance(bar_gate_cfg, dict):
-                bar_enable = self.config.trading.decision.bar_gating.enable
-            else:
-                bar_enable = False
-        except (AttributeError, TypeError):
-            bar_enable = False
-        self._bar_gating_enabled: bool = bool(bar_enable)
-
-        # Bar gating bar_ms (domains config takes priority)
-        bar_ms_val = 15 * 60 * 1000  # default: 15 minutes
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                bar_ms_val = self.config.domains.decision_making.bar_gating.bar_ms
-            # Fallback to legacy decision.bar_gating
-            elif hasattr(bar_gate_cfg, 'bar_ms'):
-                bar_ms_val = bar_gate_cfg.bar_ms or (15 * 60 * 1000)
-            elif isinstance(bar_gate_cfg, dict):
-                bar_ms_val = self.config.trading.decision.bar_gating.bar_ms
-        except (AttributeError, TypeError):
-            pass  # Use default
-        self._bar_ms: int = int(bar_ms_val)
+        
+        # Bar Gating (Strict Object)
+        self._bar_gating_enabled = dm_cfg.bar_gating.enable
+        self._bar_ms = int(dm_cfg.bar_gating.bar_ms)
         self._last_bar_index: dict[str, int] = {}
-
-        try:
-            if hasattr(decision_config, 'behavior_fsm'):
-                behavior_cfg = decision_config.behavior_fsm or {}
-            elif isinstance(decision_config, dict):
-                behavior_cfg = self.config.trading.decision.behavior_fsm
-            else:
-                behavior_cfg = {}
-        except (AttributeError, TypeError):
-            behavior_cfg = {}
-
-        if not isinstance(behavior_cfg, dict) and not hasattr(behavior_cfg, '__dict__'):
-            behavior_cfg = {}
-
-        try:
-            if hasattr(behavior_cfg, 'enable'):
-                behavior_enable = behavior_cfg.enable or False
-            elif isinstance(behavior_cfg, dict):
-                behavior_enable = self.config.trading.decision.behavior_fsm.enable
-            else:
-                behavior_enable = False
-        except (AttributeError, TypeError):
-            behavior_enable = False
-        self._behavior_enabled: bool = bool(behavior_enable)
-
-        # Behavior FSM high vol multiplier (domains config takes priority)
-        high_vol = 2.0  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                high_vol = self.config.domains.decision_making.behavior_fsm.high_vol_multiplier
-            # Fallback to legacy decision.behavior_fsm
-            elif hasattr(behavior_cfg, 'high_vol_multiplier'):
-                high_vol = behavior_cfg.high_vol_multiplier or 2.0
-            elif isinstance(behavior_cfg, dict):
-                high_vol = self.config.trading.decision.behavior_fsm.high_vol_multiplier
-        except (AttributeError, TypeError):
-            pass  # Use default
-
-        # Behavior FSM low vol multiplier (domains config takes priority)
-        low_vol = 0.5  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                low_vol = self.config.domains.decision_making.behavior_fsm.low_vol_multiplier
-            # Fallback to legacy decision.behavior_fsm
-            elif hasattr(behavior_cfg, 'low_vol_multiplier'):
-                low_vol = behavior_cfg.low_vol_multiplier or 0.5
-            elif isinstance(behavior_cfg, dict):
-                low_vol = self.config.trading.decision.behavior_fsm.low_vol_multiplier
-        except (AttributeError, TypeError):
-            pass  # Use default
-
+        
+        # Behavior FSM (Strict Object)
+        self._behavior_enabled = dm_cfg.behavior_fsm.enable
         self._behavior_thresholds = {
-            "high_vol_multiplier": float(high_vol),
-            "low_vol_multiplier": float(low_vol),
+            "high_vol_multiplier": float(dm_cfg.behavior_fsm.high_vol_multiplier),
+            "low_vol_multiplier": float(dm_cfg.behavior_fsm.low_vol_multiplier),
         }
         self._behavior_state: Dict[str, str] = {}
 
-        try:
-            if hasattr(decision_config, 'signals'):
-                signals_cfg = decision_config.signals or {}
-            elif isinstance(decision_config, dict):
-                signals_cfg = self.config.trading.decision.signals
-            else:
-                signals_cfg = {}
-        except (AttributeError, TypeError):
-            signals_cfg = {}
-
-        try:
-            if hasattr(signals_cfg, 'normalize'):
-                normalize_val = signals_cfg.normalize or False
-            elif isinstance(signals_cfg, dict):
-                normalize_val = self.config.trading.decision.signals.normalize
-            else:
-                normalize_val = False
-        except (AttributeError, TypeError):
-            normalize_val = False
-
-        self._normalize_signals: bool = bool(normalize_val)
+        # Signals Config (Strict Object)
+        self._normalize_signals = bool(dm_cfg.signals.normalize)
 
         # Exposure cache for pre-checking exposure limits
         self._exposure_cache: Optional[Dict[str, Any]] = None
@@ -742,13 +482,42 @@ class DecisionMaking:
                     return
                 
                 # Check risk score threshold (use aurora_instruments if available)
-                max_risk = 0.96  # default
+                # Check risk score threshold (use aurora_instruments if available)
+                # Check risk score threshold (use aurora_instruments if available)
+                # P1 FIX: No hardcoded default (was 0.96). Fail closed if config missing.
+                # Must check GLOBAL SSOT if instrument override is missing.
+                # If both missing -> BLOCK.
+                max_risk = -1.0
                 try:
                     instr_cfg = self._get_aurora_instrument_config(symbol)
                     if instr_cfg and hasattr(instr_cfg, 'max_risk_score'):
                         max_risk = float(instr_cfg.max_risk_score)
-                except Exception:
-                    pass
+                    else:
+                        # Fallback to Global SSOT (Config Contract)
+                        # We must fetch the global max_risk_score from config
+                        try:
+                             # Access global config via self.config (passed in init)
+                             # self.config is likely AuroraConfig or dict
+                             # But DecisionMaking stores self.config
+                             # Let's inspect self.config structure or assume Pydantic path
+                             # Based on risk_management.py: domains.risk_management.trading_allowed_thresholds.max_risk_score
+                             # We need to access it safely.
+                             g_cfg = self.config
+                             if hasattr(g_cfg, 'domains'):
+                                 max_risk = float(g_cfg.domains.risk_management.trading_allowed_thresholds.max_risk_score)
+                             else:
+                                 # Dict access fallback
+                                 max_risk = float(g_cfg["domains"]["risk_management"]["trading_allowed_thresholds"]["max_risk_score"])
+                        except Exception as e:
+                             raise ConfigContractError(
+                                 path="domains.risk_management.trading_allowed_thresholds.max_risk_score",
+                                 why=f"Global fallback missing: {e}",
+                                 symbol=symbol
+                             )
+                except Exception as e:
+                    self.logger.error(f"Config Contract Violation: {e}")
+                    self._record_blocked_intent(symbol)
+                    return # BLOCK TRADE
                 
                 if risk_score > max_risk:
                     self.logger.warning(
@@ -881,13 +650,8 @@ class DecisionMaking:
                     )
                     if flip_result == "NRR-PORTFOLIO-UNKNOWN":
                         now_ms = int(time.time() * 1000)
-                        stale_ttl_sec = self._safe_config_get(
-                            "position_tracking", "positions_stale_ttl_sec", default=5
-                        )
-                        try:
-                            stale_ttl_sec_f = float(stale_ttl_sec)
-                        except Exception:
-                            stale_ttl_sec_f = 5.0
+                        # Position Tracking Stale TTL (Strict)
+                        stale_ttl_sec_f = float(getattr(self.config.domains.position_tracking, 'positions_stale_ttl_sec', 5.0))
                         retry_key = self._stable_retry_key(
                             prefix="mr",
                             symbol=symbol,
@@ -919,8 +683,15 @@ class DecisionMaking:
                 return
             
             # === GATE 4: EXPOSURE GATE (pre-check) ===
-            position_size_usd = pld.get("position_size_usd", 100.0)
-            if not self._precheck_exposure_cache(symbol, side, position_size_usd):
+            # P1 FIX: No default 100.0. Signal must provide size or we block/error.
+            # Using get() without default returns None if missing, so we check robustness
+            position_size_usd = pld.get("position_size_usd")
+            if position_size_usd is None:
+                 self.logger.warning(f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Missing position_size_usd")
+                 self._record_blocked_intent(symbol)
+                 return
+            
+            if not self._precheck_exposure_cache(symbol, side, float(position_size_usd)):
                 self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Exposure limit exceeded")
                 self._record_blocked_intent(symbol)
                 return
@@ -986,6 +757,23 @@ class DecisionMaking:
                 f"[{symbol}] MR_SIGNAL_GATEWAY: EVT:TRADE_INTENT_PROPOSED emitted: {side}"
             )
             
+        except ConfigContractError as e:
+            # TASK 17: Central Interception Point for Config Contract Violations
+            # 1. Normalize Reason
+            reason = normalize_config_error(e)
+            
+            # 2. Block Trade (Implicitly by not emitting INTENT_PROPOSED and returning)
+            
+            # 3. Metric & Log
+            caught_symbol = e.symbol or symbol
+            inc_config_contract_violation(path=e.path or "unknown", symbol=caught_symbol or "unknown")
+            self.logger.critical(f"[{caught_symbol or 'unknown'}] CONFIG BLOCK: {reason} - {e.why}")
+            
+            # 4. Record blocked intent (optional but good for visibility)
+            if caught_symbol:
+                self._record_blocked_intent(caught_symbol)
+            return
+
         except Exception as e:
             self.logger.error(f"MR_SIGNAL_GATEWAY error: {e}", exc_info=True)
 
@@ -1220,44 +1008,9 @@ class DecisionMaking:
             if hasattr(dm_cfg, 'position_sizing') and dm_cfg.position_sizing is not None:
                 return dm_cfg.position_sizing
         
-        # Try dict domains config
-        if isinstance(self.config, dict):
-            sizing = self.config.get("domains", {}).get("decision_making", {}).get("position_sizing")
-            if sizing:
-                # Convert to object-like for consistent access
-                class SizingObj:
-                    pass
-                obj = SizingObj()
-                obj.min_position_size_usd = sizing.get("min_position_size_usd", 10)
-                obj.liquidity_based_cap_usd = sizing.get("liquidity_based_cap_usd", 10000)
-                return obj
-        
-        # LEGACY FALLBACK for tests - try trading.decision.position_sizing
-        try:
-            sizing = self._safe_config_get("trading", "decision", "position_sizing")
-            if sizing:
-                if hasattr(sizing, 'min_position_size_usd'):
-                    return sizing
-                elif isinstance(sizing, dict):
-                    class SizingObj:
-                        pass
-                    obj = SizingObj()
-                    obj.min_position_size_usd = sizing.get("min_position_size_usd", 10)
-                    obj.liquidity_based_cap_usd = sizing.get("liquidity_based_cap_usd", 10000)
-                    return obj
-        except Exception:
-            pass
-        
-        # FINAL FALLBACK for unit tests with minimal mock config
-        # Production MUST have domains.decision_making.position_sizing in domains.yaml
-        self.logger.warning(
-            "SSOT WARNING: 'domains.decision_making.position_sizing' missing. "
-            "Using defaults. Ensure domains.yaml is configured for production!"
-        )
-        class DefaultSizing:
-            min_position_size_usd = 10
-            liquidity_based_cap_usd = 10000
-        return DefaultSizing()
+        # Direct Pydantic access (fail-closed)
+        # If missing → AttributeError → crash at startup (intentional)
+        return self.config.domains.decision_making.position_sizing
 
     def _get_aurora_instrument_cfg(self, symbol: str) -> Optional[AuroraInstrumentConfig]:
         """
@@ -1365,47 +1118,29 @@ class DecisionMaking:
         Get allowed regimes for MR strategy (SSOT).
         
         Fallback chain:
-        1. trading.mean_reversion_1m.assets.<SYMBOL>.allowed_regimes
-        2. trading.mean_reversion_1m.allowed_regimes (Global)
+        1. mean_reversion_1m.assets.<SYMBOL>.allowed_regimes
+        2. mean_reversion_1m.allowed_regimes (Global)
         3. Hardcoded default
         """
         default_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
         
-        mr_config = self._safe_config_get("trading", "mean_reversion_1m")
+        default_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
+        
+        # Strict Config Access
+        mr_config = self.config.mean_reversion_1m
         if not mr_config:
-            return default_regimes
-            
-        # 1. Check Asset Override
-        assets = None
-        if hasattr(mr_config, "assets"):
-            assets = mr_config.assets
-        elif isinstance(mr_config, dict):
-            assets = mr_config.get("assets")
-            
-        if assets and symbol in assets:
-            asset_cfg = assets[symbol]
-            # Handle Pydantic model or dict
-            allowed = None
-            if hasattr(asset_cfg, "allowed_regimes"):
-                # Pydantic v2: check if set? defaults are factory lambda.
-                # If explicitly set in YAML, it will be here.
-                allowed = asset_cfg.allowed_regimes
-            elif isinstance(asset_cfg, dict):
-                allowed = asset_cfg.get("allowed_regimes")
-                
-            if allowed:
-                return allowed
+             return default_regimes
 
-        # 2. Check Global Config
-        global_allowed = None
-        if hasattr(mr_config, "allowed_regimes"):
-            global_allowed = mr_config.allowed_regimes
-        elif isinstance(mr_config, dict):
-            global_allowed = mr_config.get("allowed_regimes")
-            
-        if global_allowed:
-            return global_allowed
-            
+        # 1. Asset Override
+        if symbol in mr_config.assets:
+             asset_cfg = mr_config.assets[symbol]
+             if asset_cfg.allowed_regimes:
+                 return asset_cfg.allowed_regimes
+
+        # 2. Global Config
+        if mr_config.allowed_regimes:
+             return mr_config.allowed_regimes
+
         return default_regimes
 
     def _get_symbol_cooldown(self, symbol: str) -> int:
@@ -1456,8 +1191,8 @@ class DecisionMaking:
             if value is not None:
                 return value
 
-        # 2. Fallback to global trading.decision.*
-        global_value = self._safe_config_get("trading", "decision", param, default=default)
+        # 2. Fallback to global trading.decision.* (Strict)
+        global_value = getattr(self.config.trading.decision, param, default)
         return global_value if global_value is not None else default
 
     def _get_side_bias_params(self, symbol: str) -> tuple:
@@ -1491,9 +1226,11 @@ class DecisionMaking:
             )
 
         # 2. Fallback to global
-        penalty = self._safe_config_get("trading", "decision", "side_bias_penalty_factor", default=default_penalty)
-        window = self._safe_config_get("trading", "decision", "side_bias_window_sec", default=default_window)
-        target = self._safe_config_get("trading", "decision", "side_bias_target_ratio", default=default_target)
+        # 2. Fallback to global (Strict Object)
+        dm = self.config.trading.decision
+        penalty = dm.side_bias_penalty_factor if dm.side_bias_penalty_factor is not None else default_penalty
+        window = dm.side_bias_window_sec if dm.side_bias_window_sec is not None else default_window
+        target = dm.side_bias_target_ratio if dm.side_bias_target_ratio is not None else default_target
         return (penalty, window, target)
 
     def _get_regime_thresholds(self, symbol: str) -> dict:
@@ -1515,11 +1252,10 @@ class DecisionMaking:
             if thresholds is not None:
                 return thresholds
 
-        # 2. Fallback to global
-        global_thresholds = self._safe_config_get(
-            "trading", "decision", "regime_threshold_multipliers", default={}
-        )
-        return global_thresholds or {}
+        # 2. Fallback to global (Strict Object)
+        dm = self.config.trading.decision
+        global_thresholds = dm.regime_threshold_multipliers if dm.regime_threshold_multipliers is not None else {}
+        return global_thresholds
 
     def _get_regime_sizing(self, symbol: str) -> dict:
         """
@@ -1544,11 +1280,10 @@ class DecisionMaking:
                 elif isinstance(sizing, dict):
                     return sizing
 
-        # 2. Fallback to global
-        global_sizing = self._safe_config_get(
-            "trading", "decision", "sizing_modifiers", default={}
-        )
-        return global_sizing or {}
+        # 2. Fallback to global (Strict Object)
+        dm = self.config.trading.decision
+        global_sizing = dm.sizing_modifiers if dm.sizing_modifiers is not None else {}
+        return global_sizing
 
     def _get_signal_threshold(self, symbol: str) -> decimal.Decimal:
         """
@@ -1556,29 +1291,25 @@ class DecisionMaking:
 
         Fallback chain:
         1. aurora_instruments.<SYMBOL>.signal_threshold (if enabled=True)
-        2. trading.decision.signal_threshold (global)
-        3. 0.1 (hardcoded default)
+        2. trading.decision.signal_threshold (global - REQUIRED field)
 
         Returns:
             Signal threshold as Decimal
+        
+        Raises:
+            AttributeError: If trading.decision.signal_threshold missing (fail-closed)
         """
         # 1. Try per-instrument config (Phase 3+)
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         if instr_cfg is not None:
             st_cfg = getattr(instr_cfg, 'signal_threshold', None)
-            if st_cfg is not None and getattr(st_cfg, 'enabled', False):
-                value = getattr(st_cfg, 'value', None)
-                if value is not None:
-                    return decimal.Decimal(str(value))
+            if st_cfg is not None and st_cfg.enabled:
+                if st_cfg.value is not None:
+                    return decimal.Decimal(str(st_cfg.value))
 
-        # 2. Fallback to global
-        decision_config = self._safe_config_get("trading", "decision", default={})
-        if hasattr(decision_config, 'signal_threshold'):
-            return decimal.Decimal(str(decision_config.signal_threshold))
-        elif isinstance(decision_config, dict):
-            return decimal.Decimal(str(decision_config.get("signal_threshold", "0.1")))
-        
-        return decimal.Decimal("0.1")
+        # 2. Direct Pydantic access (fail-closed: missing field → AttributeError)
+        decision_config = self.config.trading.decision
+        return decimal.Decimal(str(decision_config.signal_threshold))
 
     def _compute_risk_contract_cap_notional(
         self, symbol: str, equity: decimal.Decimal
@@ -1597,18 +1328,18 @@ class DecisionMaking:
             Decimal cap if risk_contract_v1 is enabled and symbol is configured,
             None otherwise (caller falls back to legacy sizing).
         """
+        # Strict Config Access
         try:
-            rc = self._safe_config_get(
-                "trading", "decision", "position_sizing", "risk_contract_v1", default=None
-            )
-        except Exception:
-            rc = None
+             # trading.decision.position_sizing.risk_contract_v1
+             rc = self.config.trading.decision.position_sizing.risk_contract_v1
+        except AttributeError:
+             rc = None
         
         if rc is None:
             return None
         
-        enabled = rc.get("enabled") if isinstance(rc, dict) else getattr(rc, "enabled", False)
-        if not enabled:
+        # Direct Pydantic access only (fail-closed: missing field → AttributeError)
+        if not rc.enabled:
             return None
         
         if equity <= 0:
@@ -1619,12 +1350,8 @@ class DecisionMaking:
         
         # Cap = per_symbol_margin_fraction * equity * effective_leverage
         try:
-            if isinstance(rc, dict):
-                margin_fracs = rc.get("per_symbol_margin_fraction", {}) or {}
-                leverage = rc.get("effective_leverage", 10)
-            else:
-                margin_fracs = getattr(rc, "per_symbol_margin_fraction", {}) or {}
-                leverage = getattr(rc, "effective_leverage", 10)
+            margin_fracs = rc.per_symbol_margin_fraction or {}
+            leverage = rc.effective_leverage
             
             margin_frac = margin_fracs.get(symbol)
             if margin_frac is None or margin_frac <= 0:
@@ -1669,30 +1396,25 @@ class DecisionMaking:
             Decimal target if regime sizing enabled for symbol,
             None otherwise (caller uses ETAP2 logic: cap-only).
         """
+        # Strict Config Access
         try:
-            rc = self._safe_config_get(
-                "trading", "decision", "position_sizing", "risk_contract_v1", default=None
-            )
-        except Exception:
-            rc = None
+             # trading.decision.position_sizing.risk_contract_v1
+             rc = self.config.trading.decision.position_sizing.risk_contract_v1
+        except AttributeError:
+             rc = None
         
         if rc is None:
             return None
         
-        enabled = rc.get("enabled") if isinstance(rc, dict) else getattr(rc, "enabled", False)
-        if not enabled or equity <= 0:
+        # Direct Pydantic access only (fail-closed: missing field → AttributeError)
+        if not rc.enabled or equity <= 0:
             return None
         
         # Get per-symbol regime sizing config
         try:
-            if isinstance(rc, dict):
-                margin_fracs = rc.get("per_symbol_margin_fraction", {}) or {}
-                leverage = rc.get("effective_leverage", 10)
-                regime_sizing = rc.get("regime_sizing", {}) or {}
-            else:
-                margin_fracs = getattr(rc, "per_symbol_margin_fraction", {}) or {}
-                leverage = getattr(rc, "effective_leverage", 10)
-                regime_sizing = getattr(rc, "regime_sizing", {}) or {}
+            margin_fracs = rc.per_symbol_margin_fraction or {}
+            leverage = rc.effective_leverage
+            regime_sizing = rc.regime_sizing or {}
             
             margin_frac = margin_fracs.get(symbol)
             if margin_frac is None or margin_frac <= 0:
@@ -1704,14 +1426,20 @@ class DecisionMaking:
                 return None
             
             # Check if regime sizing is enabled for this symbol
+            # NOTE: sym_cfg can be dict (from YAML) or Pydantic model (if typed later)
             if isinstance(sym_cfg, dict):
                 sym_enabled = sym_cfg.get("enabled", False)
-                low_mult = sym_cfg.get("low_vol_multiplier", 1.0)
-                high_mult = sym_cfg.get("high_vol_multiplier", 1.0)
+                if "low_vol_multiplier" not in sym_cfg:
+                     raise ConfigContractError(path=f"regime.multipliers.{symbol}.low_vol_multiplier", why="Missing low_vol_multiplier", symbol=symbol)
+                low_mult = sym_cfg["low_vol_multiplier"]
+                
+                if "high_vol_multiplier" not in sym_cfg:
+                     raise ConfigContractError(path=f"regime.multipliers.{symbol}.high_vol_multiplier", why="Missing high_vol_multiplier", symbol=symbol)
+                high_mult = sym_cfg["high_vol_multiplier"]
             else:
-                sym_enabled = getattr(sym_cfg, "enabled", False)
-                low_mult = getattr(sym_cfg, "low_vol_multiplier", 1.0)
-                high_mult = getattr(sym_cfg, "high_vol_multiplier", 1.0)
+                sym_enabled = sym_cfg.enabled
+                low_mult = sym_cfg.low_vol_multiplier
+                high_mult = sym_cfg.high_vol_multiplier
             
             if not sym_enabled:
                 return None
@@ -1773,7 +1501,7 @@ class DecisionMaking:
             if not portfolio:
                 return False
             
-            positions = portfolio.get("positions", [])
+            positions = portfolio.get("positions") or []
             if not positions:
                 return False
             
@@ -1822,113 +1550,142 @@ class DecisionMaking:
             return False
 
     def on_features(self, event: Message) -> None:
-
         try:
-            if isinstance(event.pld, dict):
-                symbol = event.pld.get("symbol", "unknown")
-            elif hasattr(event, 'pld') and event.pld:
-                symbol = event.pld.symbol if hasattr(
-                    event.pld, 'symbol') else "unknown"
-            else:
-                symbol = "unknown"
-        except (AttributeError, TypeError):
-            symbol = "unknown"
-
-        self.logger.info(f"✅ on_features() called for {symbol}")
-        self.symbol_states[symbol]["features"] = event.pld
-
-        # Commit 5: Clear risk-skew until-refresh state on data refresh
-        try:
-            guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
-            if guard.get("until_refresh"):
-                self.symbol_states[symbol]["risk_skew_guard"] = {
-                    "defer_count": 0,
-                    "window_start_ms": int(time.time() * 1000),
-                    "until_refresh": False,
-                }
-                self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on features refresh")
-        except Exception:
-            pass
-
-        self._check_and_trigger_decision_for_symbol(symbol)
-
-        try:
-            if isinstance(event.pld, dict):
-                feats = (event.pld or {}).get("features") or {}
-            elif hasattr(event, 'pld') and event.pld:
-                feats = event.pld.features if hasattr(
-                    event.pld, 'features') else {}
-            else:
-                feats = {}
-        except (AttributeError, TypeError):
-            feats = {}
-
-        self.dlog.write(
-            "FEATURES_RX",
-            getattr(event, "rid", None),
-            {"symbol": symbol, "keys": list(feats.keys())},
-        )
-
-        # Calculate alpha scores if alpha models are available
-        if self.alpha_registry and feats:
             try:
-                alpha_scores = self.alpha_registry.calculate_all_alpha(
-                    symbol, {"current_price": feats.get("price")}, feats
-                )
-                if alpha_scores:
-                    # Emit alpha scores event
-                    alpha_payload = {
-                        "symbol": symbol,
-                        "scores": [score.dict() for score in alpha_scores],
-                        "timestamp": int(time.time() * 1000)
-                    }
-                    self.fsm.emit(
-                        "EVT:ALPHA_SCORE_CALCULATED",
-                        payload=alpha_payload,
-                        why="alpha_calculation",
-                        data_ref=[
-                            f"model_{score.model_name}" for score in alpha_scores]
-                    )
+                if isinstance(event.pld, dict):
+                    symbol = event.pld.get("symbol", "unknown")
+                elif hasattr(event, 'pld') and event.pld:
+                    symbol = event.pld.symbol if hasattr(
+                        event.pld, 'symbol') else "unknown"
+                else:
+                    symbol = "unknown"
+            except (AttributeError, TypeError):
+                symbol = "unknown"
 
-                    # VERIFY-ALPHA-CAPTURE: Write alpha scores to WAL for traceability
-                    try:
-                        wal_record = {
-                            "op": "EVT",
-                            "verb": "ALPHA_SCORE_CALCULATED",
+            self.logger.info(f"✅ on_features() called for {symbol}")
+            self.symbol_states[symbol]["features"] = event.pld
+
+            # Commit 5: Clear risk-skew until-refresh state on data refresh
+            try:
+                guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
+                if guard.get("until_refresh"):
+                    self.symbol_states[symbol]["risk_skew_guard"] = {
+                        "defer_count": 0,
+                        "window_start_ms": int(time.time() * 1000),
+                        "until_refresh": False,
+                    }
+                    self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on features refresh")
+            except Exception:
+                pass
+
+            # Update per-symbol regime cache if available
+            if isinstance(event.pld, dict):
+                regime = event.pld.get("flat_regime")
+                if regime:
+                    if symbol not in self._per_symbol_regimes:
+                        self._per_symbol_regimes[symbol] = {}
+                    self._per_symbol_regimes[symbol]["regime"] = regime
+                    self._per_symbol_regimes[symbol]["ts"] = time.time()
+                # Also cache warmup status
+                warmup = event.pld.get("warmup")
+                if warmup and isinstance(warmup, dict):
+                    if symbol not in self._per_symbol_regimes:
+                        self._per_symbol_regimes[symbol] = {}
+                    self._per_symbol_regimes[symbol]["warmup"] = warmup
+
+            # Define feats for alpha calculation
+            try:
+                if isinstance(event.pld, dict):
+                    feats = (event.pld or {}).get("features") or {}
+                elif hasattr(event, 'pld') and event.pld:
+                    feats = event.pld.features if hasattr(
+                        event.pld, 'features') else {}
+                else:
+                    feats = {}
+            except (AttributeError, TypeError):
+                feats = {}
+
+            self.dlog.write(
+                "FEATURES_RX",
+                getattr(event, "rid", None),
+                {"symbol": symbol, "keys": list(feats.keys())},
+            )
+
+            # Calculate alpha scores if alpha models are available
+            if self.alpha_registry and feats:
+                try:
+                    alpha_scores = self.alpha_registry.calculate_all_alpha(
+                        symbol, {"current_price": feats.get("price")}, feats
+                    )
+                    if alpha_scores:
+                        # Emit alpha scores event
+                        alpha_payload = {
                             "symbol": symbol,
                             "scores": [score.dict() for score in alpha_scores],
-                            "timestamp": int(time.time() * 1000),
-                            "why": "alpha_calculation"
+                            "timestamp": int(time.time() * 1000)
                         }
-                        wal.append(wal_record)
-                    except Exception as wal_e:
-                        self.logger.warning(
-                            f"Failed to write alpha scores to WAL: {wal_e}")
+                        self.fsm.emit(
+                            "EVT:ALPHA_SCORE_CALCULATED",
+                            payload=alpha_payload,
+                            why="alpha_calculation",
+                            data_ref=[
+                                f"model_{score.model_name}" for score in alpha_scores]
+                        )
 
-                    self.logger.info(
-                        f"✅ Alpha scores calculated for {symbol}: {len(alpha_scores)} models")
-                else:
-                    self.logger.debug(
-                        f"No alpha scores calculated for {symbol} - missing required features")
-            except Exception as e:
-                self.logger.error(
-                    f"Error calculating alpha scores for {symbol}: {e}")
-                # Continue with normal flow - alpha calculation failure shouldn't block trading
+                        # VERIFY-ALPHA-CAPTURE: Write alpha scores to WAL for traceability
+                        try:
+                            wal_record = {
+                                "op": "EVT",
+                                "verb": "ALPHA_SCORE_CALCULATED",
+                                "symbol": symbol,
+                                "scores": [score.dict() for score in alpha_scores],
+                                "timestamp": int(time.time() * 1000),
+                                "why": "alpha_calculation"
+                            }
+                            wal.append(wal_record)
+                        except Exception as wal_e:
+                            self.logger.warning(
+                                f"Failed to write alpha scores to WAL: {wal_e}")
 
-        # Fallback trigger: if both features and risk present, ensure a decision attempt
-        try:
-            state = self.symbol_states[symbol]
-            if state.get("features") and state.get("risk"):
-                decision_context = {
-                    "features": state["features"],
-                    "risk_params": state["risk"],
-                    "portfolio": self.latest_portfolio,
-                    "regime": self.latest_regime,
-                }
-                rid = str(uuid.uuid4())
-                self._make_decision_for_symbol(symbol, decision_context, rid)
-        except Exception:
-            pass
+                        self.logger.info(
+                            f"✅ Alpha scores calculated for {symbol}: {len(alpha_scores)} models")
+                    else:
+                        self.logger.debug(
+                            f"No alpha scores calculated for {symbol} - missing required features")
+                except ConfigContractError:
+                    raise # Propagate up to main catcher
+                except Exception as e:
+                    self.logger.error(
+                        f"Error calculating alpha scores for {symbol}: {e}")
+                    # Continue with normal flow - alpha calculation failure shouldn't block trading
+                    # UNLESS it was a ConfigContractError (handled above)
+
+            # Fallback trigger: if both features and risk present, ensure a decision attempt
+            try:
+                state = self.symbol_states[symbol]
+                if state.get("features") and state.get("risk"):
+                    decision_context = {
+                        "features": state["features"],
+                        "risk_params": state["risk"],
+                        "portfolio": self.latest_portfolio,
+                        "regime": self.latest_regime,
+                    }
+                    rid = str(uuid.uuid4())
+                    self._make_decision_for_symbol(symbol, decision_context, rid)
+            except ConfigContractError:
+                raise # Propagate
+            except Exception:
+                pass # Ignore generic errors in fallback
+        
+        except ConfigContractError as e:
+            # TASK 17: Central Interception Point
+            reason = normalize_config_error(e)
+            caught_symbol = e.symbol or symbol
+            inc_config_contract_violation(path=e.path or "unknown", symbol=caught_symbol or "unknown")
+            self.logger.critical(f"[{caught_symbol or 'unknown'}] CONFIG BLOCK: {reason} - {e.why}")
+            if caught_symbol:
+                self._record_blocked_intent(caught_symbol)
+            return
 
     def on_risk(self, event: Message) -> None:
         try:
@@ -2253,7 +2010,7 @@ class DecisionMaking:
             # ========== CONTRACT v1.0: WARMUP GUARD (AURORA ONLY) ==========
             # Block trades if RegimeDetector is still in warmup phase
             # BUGFIX: Only apply to Aurora instruments, not MR strategy
-            is_aurora_symbol = instr_cfg is not None and getattr(instr_cfg, 'enabled', False)
+            is_aurora_symbol = instr_cfg is not None and instr_cfg.enabled
             
             if is_aurora_symbol:
                 # Get per-symbol warmup state
@@ -2380,7 +2137,7 @@ class DecisionMaking:
             return
 
         # P0-W1: Warmup/arming gate (fail-closed when enabled).
-        is_aurora_symbol = bool(instr_cfg is not None and getattr(instr_cfg, "enabled", False))
+        is_aurora_symbol = bool(instr_cfg is not None and instr_cfg.enabled)
         if self.arming_require_regime_warmup and is_aurora_symbol:
             warmup = None
             if symbol in self._per_symbol_regimes:
@@ -2637,32 +2394,20 @@ class DecisionMaking:
             self.clear_internal_state_for_symbol(symbol)
             return
 
-        # Support both old (config['trading']['decision']) and new (config['decision']) formats
-        # If self.config doesn't have 'trading' key, it means self.config **is** the trading config
-        trading_config = self._safe_config_get("trading")
-        if not trading_config:
-            trading_config = self.config
+        # Strict Config Access
+        trading_config = self.config.trading
+        
+        # Signal Weights:
+        # 1. Try per-instrument (AuroraInstrument) - Dict[str, float]
+        signal_weights = None
+        instr_cfg = self._get_aurora_instrument_cfg(symbol)
+        if instr_cfg and instr_cfg.weights:
+             signal_weights = instr_cfg.weights
+        
+        # 2. Global Fallback - SignalWeights Object -> Dict
+        if not signal_weights:
+             signal_weights = trading_config.decision.signal_weights.model_dump()
 
-        if isinstance(trading_config, dict):
-            decision_config = trading_config.get("decision", {})
-            global_signal_weights = decision_config.get("signal_weights", {})
-        else:
-            decision_config = {}
-            global_signal_weights = {}
-
-        # Phase A1: Per-instrument signal weights with global fallback
-        signal_weights = self._get_param(symbol, "weights", global_signal_weights)
-        if signal_weights is None:
-            signal_weights = global_signal_weights
-
-        # DEBUG: Log full trading_config structure
-        try:
-            config_keys = list(trading_config.keys()) if isinstance(
-                trading_config, dict) else []
-            self.logger.info(f"DEBUG trading_config keys: {config_keys}")
-        except (AttributeError, TypeError):
-            pass
-        self.logger.info(f"DEBUG decision_config: {decision_config}")
         self.logger.info(f"DEBUG signal_weights for {symbol}: {signal_weights}")
 
         # Compute signal score; optionally normalize components into [0,1]
@@ -2772,14 +2517,24 @@ class DecisionMaking:
         regime_name = (regime or {}).get("regime") if regime else None
         try:
             # Use regime_threshold_multipliers config (already loaded above as regime_thresholds_cfg)
-            factor_str = (
-                str(regime_thresholds_cfg.get(regime_name))
-                if regime_name and regime_name in regime_thresholds_cfg
-                else str(regime_thresholds_cfg.get("DEFAULT", "1.0"))
-            )
+            if regime_name and regime_name in regime_thresholds_cfg:
+                factor_str = str(regime_thresholds_cfg.get(regime_name))
+            elif "DEFAULT" in regime_thresholds_cfg:
+                factor_str = str(regime_thresholds_cfg.get("DEFAULT"))
+            else:
+                 # P1 FIX: No hardcoded "1.0" fallback if DEFAULT missing.
+                 # If config is present but missing keys, we must block/fail to prevent unintended trading.
+                 raise ConfigContractError(
+                     path=f"regime.thresholds.{regime_name}", 
+                     why="Missing regime threshold and no DEFAULT",
+                     symbol=symbol
+                 )
+            
             threshold_factor = decimal.Decimal(factor_str)
-        except Exception:
-            threshold_factor = decimal.Decimal("1.0")
+        except Exception as e:
+            # Propagate error to inhibit signal (Fail Closed)
+            self.logger.error(f"Regime threshold error: {e}")
+            return None # Stop signal generation
         signal_threshold = base_threshold * threshold_factor
 
         # EXP-DIRECTION: Calculate side-bias penalty (Δθ_bias)
@@ -3051,103 +2806,78 @@ class DecisionMaking:
         # Phase A1: Regime multiplier with per-instrument fallback
         try:
             sizing_mods = self._get_regime_sizing(symbol)
-            if regime_name and regime_name in sizing_mods:
-                sizing_meta["regime_multiplier"] = decimal.Decimal(
-                    str(sizing_mods.get(regime_name, "1.0")))
+            if regime_name not in sizing_mods:
+                  raise ConfigContractError(path=f"regime.multipliers.{symbol}.{regime_name}", why="Missing specific regime multiplier", symbol=symbol)
+            sizing_meta["regime_multiplier"] = decimal.Decimal(str(sizing_mods[regime_name]))
         except Exception:
             pass
         # Kelly fraction (optional): derive from config when available
+        # Kelly fraction (optional): derive from config when available (Strict)
+        # Kelly fraction (optional): derive from config when available (Strict)
         try:
-            kelly_cfg = self._safe_config_get(
-                "trading", "decision", "kelly", default={}) or {}
-            if kelly_cfg:
-                base_p = decimal.Decimal(str(self._safe_config_get(
-                    "trading", "decision", "kelly", default={}).get("base_probability", 0.5)))
-                cap = decimal.Decimal(str(self._safe_config_get(
-                    "trading", "decision", "kelly", default={}).get("kelly_cap", 0.25)))
-                alpha = decimal.Decimal(str(self._safe_config_get(
-                    "trading", "decision", "kelly", default={}).get("kelly_alpha", 0.8)))
-                # SSOT: compute payoff ratio r from execution.manage.brackets TP/SL (fallback to config)
-                try:
-                    exec_cfg = self._safe_config_get(
-                        "trading", "execution", "manage", default={}) or {}
-                except (AttributeError, TypeError):
-                    exec_cfg = None
+            kelly_cfg = self.config.trading.decision.kelly
+            if kelly_cfg.base_probability is not None:
+                base_p = decimal.Decimal(str(kelly_cfg.base_probability))
+                cap = decimal.Decimal(str(kelly_cfg.kelly_cap))
+                alpha = decimal.Decimal(str(kelly_cfg.kelly_alpha))
 
-                if exec_cfg is None:
-                    exec_cfg = {}
+                brackets_cfg = self.config.trading.execution.brackets
+                if not brackets_cfg.sl.fixed_bps:
+                     raise ConfigContractError(path="trading.execution.brackets.sl.fixed_bps", why="Missing fixed_bps", symbol=symbol)
+                sl_bps_val = decimal.Decimal(str(brackets_cfg.sl.fixed_bps))
 
-                # Try primary path first (trading.execution.brackets)
-                brackets_cfg = self._safe_config_get(
-                    "trading", "execution", "brackets", default={}) or {}
+                if not brackets_cfg.tp.fixed_bps:
+                     raise ConfigContractError(path="trading.execution.brackets.tp.fixed_bps", why="Missing fixed_bps", symbol=symbol)
+                tp_bps_val = decimal.Decimal(str(brackets_cfg.tp.fixed_bps))
 
-                # If empty, fallback to manage.brackets (new standard path)
-                if not brackets_cfg:
-                    brackets_cfg = self._safe_config_get(
-                        "trading", "execution", "manage", "brackets", default={}) or {}
-
-                sl_cfg = (brackets_cfg.get("sl") if isinstance(
-                    brackets_cfg, dict) else None) or {}
-                tp_cfg = (brackets_cfg.get("tp") if isinstance(
-                    brackets_cfg, dict) else None) or {}
-                try:
-                    sl_bps_val = decimal.Decimal(
-                        str((sl_cfg or {}).get("fixed_bps", 50)))
-                except Exception:
-                    sl_bps_val = decimal.Decimal("50")
-                try:
-                    tp_bps_val = decimal.Decimal(
-                        str((tp_cfg or {}).get("fixed_bps", 100)))
-                except Exception:
-                    tp_bps_val = decimal.Decimal("100")
                 if sl_bps_val <= 0:
-                    self.logger.warning(
-                        "SL_bps missing/invalid; using default 50 bps for Kelly r")
-                    sl_bps_val = decimal.Decimal("50")
-                try:
-                    payoff_r = tp_bps_val / sl_bps_val
-                except Exception:
-                    payoff_r = decimal.Decimal(
-                        str((kelly_cfg or {}).get("payoff_ratio_r", 1.5)))
-                # Map score to [0,1] conservatively; if normalization is enabled, clamp directly
-                try:
-                    score_01 = signal_score
-                    if score_01 < 0:
-                        score_01 = decimal.Decimal("0")
-                    if score_01 > 1:
-                        score_01 = decimal.Decimal("1")
-                except Exception:
-                    score_01 = decimal.Decimal("0")
-                # Simple uplift from base probability (centered), conservative range
-                p = base_p + (decimal.Decimal("0.20") *
-                              (score_01 - decimal.Decimal("0.5")))
-                if p < 0:
-                    p = decimal.Decimal("0")
-                if p > 1:
-                    p = decimal.Decimal("1")
-                # Temporary conservative clipping to [0.45, 0.65]
-                if p < decimal.Decimal("0.45"):
-                    p = decimal.Decimal("0.45")
-                if p > decimal.Decimal("0.65"):
-                    p = decimal.Decimal("0.65")
-                # Kelly formula: f* = p - (1-p)/r
-                try:
-                    full_kelly = p - (decimal.Decimal("1") - p) / payoff_r
-                except Exception:
-                    full_kelly = decimal.Decimal("0")
-                # Floor: if no positive edge, set to zero
-                try:
-                    if p <= (decimal.Decimal("1") / (decimal.Decimal("1") + payoff_r)):
-                        full_kelly = decimal.Decimal("0")
-                except Exception:
-                    pass
-                kelly_fraction = full_kelly * alpha
-                if kelly_fraction < 0:
-                    kelly_fraction = decimal.Decimal("0")
-                if kelly_fraction > cap:
-                    kelly_fraction = cap
-                sizing_meta["kelly_fraction"] = kelly_fraction
-        except Exception:
+                    self.logger.warning("SL_bps invalid <= 0")
+                    return decimal.Decimal("0")
+
+                payoff_r = tp_bps_val / sl_bps_val
+                
+                # Check Kelly override logic (Legacy compat or unused?)
+                # Assuming valid payoff_r allows proceeding to Kelly calc
+        except Exception as e:
+            self.logger.error(f"Bracket/Kelly config error: {e}")
+            return decimal.Decimal("0")
+
+        try:
+            score_01 = signal_score
+            if score_01 < 0:
+                score_01 = decimal.Decimal("0")
+            elif score_01 > 1:
+                score_01 = decimal.Decimal("1")
+
+            # Simple uplift from base probability (centered), conservative range
+            p = base_p + (decimal.Decimal("0.20") * (score_01 - decimal.Decimal("0.5")))
+            
+            p = max(decimal.Decimal("0"), min(decimal.Decimal("1"), p))
+            
+            # Temporary conservative clipping to [0.45, 0.65]
+            p = max(decimal.Decimal("0.45"), min(decimal.Decimal("0.65"), p))
+
+            # Kelly formula: f* = p - (1-p)/r
+            # If r (payoff_r) is very small, this blows up, but checks above prevent r=0 div implies r safe?
+            # payoff_r = tp/sl. if sl=0 handled. if tp=0, r=0.
+            # Div by zero check?
+            if payoff_r == 0:
+                 full_kelly = decimal.Decimal("0")
+            else:
+                 full_kelly = p - (decimal.Decimal("1") - p) / payoff_r
+
+            # Floor: if no positive edge, set to zero
+            # Edge condition: p * (r+1) - 1 > 0  => p > 1/(r+1)
+            # If not met, f* <= 0.
+            if full_kelly < 0:
+                 full_kelly = decimal.Decimal("0")
+
+            kelly_fraction = full_kelly * alpha
+            kelly_fraction = max(decimal.Decimal("0"), min(cap, kelly_fraction))
+            
+            sizing_meta["kelly_fraction"] = kelly_fraction
+        except Exception as e:
+            self.logger.warning(f"Kelly calculation error: {e}")
             pass
 
         # FTR-07: Use DecisionContext for volatility state in sizing
@@ -3287,23 +3017,14 @@ class DecisionMaking:
         portfolio = context["portfolio"]
         equity = decimal.Decimal(str(portfolio.get("equity", "0")))
 
-        # Prefer SL_bps-based sizing when risk_fraction_q is configured
-        try:
-            sizing_cfg = self._safe_config_get(
-                "trading", "decision", "position_sizing", default={}) or {}
-        except Exception:
-            sizing_cfg = {}
 
-        if sizing_cfg is None:
-            sizing_cfg = {}
 
-        q_risk = self._safe_config_get(
-            "trading", "decision", "position_sizing", "risk_fraction_q", default=None)
-        # Liquidity kappa: dynamic from features or static from config
-        kappa_mode = str(self._safe_config_get("trading", "decision",
-                         "position_sizing", "liquidity_kappa_mode", default="static")).lower()
-        kappa_liq = float(self._safe_config_get(
-            "trading", "decision", "position_sizing", "liquidity_kappa", default=1.0))
+        # Strict Config for Dynamic Sizing via Domains
+        pos_config = self.config.domains.decision_making.position_sizing
+        
+        q_risk = pos_config.risk_fraction_q
+        kappa_mode = str(pos_config.liquidity_kappa_mode).lower()
+        kappa_liq = float(pos_config.liquidity_kappa)
         if kappa_mode == "dynamic":
             try:
                 features_event = context.get("features", {}) or {}
@@ -3327,8 +3048,8 @@ class DecisionMaking:
                 kappa_dec = decimal.Decimal("1")
 
             # brackets may be absent in some configs; guard accordingly
-            sl_bps_val = self._safe_config_get(
-                "trading", "execution", "brackets", "sl", "fixed_bps", default=50)
+            # brackets: trading.execution.brackets.sl.fixed_bps
+            sl_bps_val = self.config.trading.execution.brackets.sl.fixed_bps
             try:
                 sl_bps_dec = decimal.Decimal(str(sl_bps_val))
             except Exception:
@@ -3398,7 +3119,7 @@ class DecisionMaking:
             if final_pos_size_usd > self.liq_cap_usd:
                 final_pos_size_usd = self.liq_cap_usd
             why_parts.append(
-                f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={sizing_meta.get('regime_multiplier','1.0')} m_vol={volatility_multiplier} kappa={kappa_dec}")
+                f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={sizing_meta.get('regime_multiplier','N/A')} m_vol={volatility_multiplier} kappa={kappa_dec}")
         else:
             final_pos_size_usd = min(
                 self.liq_cap_usd, equity * decimal.Decimal("0.1")
@@ -3511,25 +3232,32 @@ class DecisionMaking:
             self._record_blocked_intent(symbol)
             return
         
-        # Z-01 FIX: Read tca_prefs from config instead of hardcoding
-        tca = self._tca_prefs or {}
-        if hasattr(tca, '__dict__'):  # Pydantic model
-            max_slippage = str(getattr(tca, 'max_slippage_bps', 10))
-            max_latency = getattr(tca, 'max_latency_ms', 500)
-            maker_pref = getattr(tca, 'maker_preference', 'neutral')
-        else:  # dict
-            max_slippage = str(tca.get('max_slippage_bps', 10))
-            max_latency = tca.get('max_latency_ms', 500)
-            maker_pref = tca.get('maker_preference', 'neutral')
-        
-        # Z-02 FIX: Read risk_budgets from config instead of hardcoding
-        rb = self._risk_budgets or {}
-        if hasattr(rb, '__dict__'):  # Pydantic model
-            trade_cvar = str(getattr(rb, 'trade_cvar95_max_bps', 100))
-            session_cvar = str(getattr(rb, 'session_cvar95_max_bps', 200))
-        else:  # dict
-            trade_cvar = str(rb.get('trade_cvar95_max_bps', 100))
-            session_cvar = str(rb.get('session_cvar95_max_bps', 200))
+        # Z-01 FIX: Read tca_prefs from config (Strict P1)
+        tca = self._tca_prefs
+        # Safe extraction helper (handles dict or Pydantic)
+        def _get_strict(obj, key, err_msg):
+            val = getattr(obj, key, None) if hasattr(obj, key) else (obj.get(key) if isinstance(obj, dict) else None)
+            if val is None:
+                raise ValueError(err_msg)
+            return val
+
+        try:
+             # TCA Prefs
+             max_slippage = str(_get_strict(tca, 'max_slippage_bps', "Missing max_slippage_bps"))
+             max_latency = _get_strict(tca, 'max_latency_ms', "Missing max_latency_ms")
+             maker_pref = _get_strict(tca, 'maker_preference', "Missing maker_preference")
+        except ValueError as e:
+             self.logger.error(f"TCA Config Block: {e}")
+             return None # Block trade
+
+        # Z-02 FIX: Read risk_budgets from config (Strict P1)
+        rb = self._risk_budgets
+        try:
+             trade_cvar = str(_get_strict(rb, 'trade_cvar95_max_bps', "Missing trade_cvar95_max_bps"))
+             session_cvar = str(_get_strict(rb, 'session_cvar95_max_bps', "Missing session_cvar95_max_bps"))
+        except ValueError as e:
+             self.logger.error(f"RiskBudget Config Block: {e}")
+             return None # Block trade
         
         trade_intent = {
             "instrument": symbol,
@@ -3681,10 +3409,11 @@ class DecisionMaking:
         context: str | None = None,
     ) -> None:
         now_ms = int(time.time() * 1000)
+        # Strict Config
         try:
-            ttl_ms = int(self._safe_config_get("trading", "decision", "retry_ttl_ms", default=300_000))
-        except Exception:
-            ttl_ms = 300_000
+             ttl_ms = self.config.trading.decision.retry_ttl_ms
+        except AttributeError:
+             ttl_ms = 300_000
         payload: Dict[str, Any] = {
             "retry_key": retry_key,
             "symbol": symbol,
@@ -3925,9 +3654,8 @@ class DecisionMaking:
         now_ms = int(time.time() * 1000)
         
         # Get stale TTL for retry delay
-        stale_ttl_sec = self._safe_config_get(
-            "position_tracking", "positions_stale_ttl_sec", default=5
-        )
+        # Get stale TTL for retry delay (Strict)
+        stale_ttl_sec = float(getattr(self.config.domains.position_tracking, 'positions_stale_ttl_sec', 5.0))
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
         
         # Prepare minimal original event for deferred retry
@@ -3980,9 +3708,8 @@ class DecisionMaking:
         now_ms = int(time.time() * 1000)
         
         # Get stale TTL for retry delay
-        stale_ttl_sec = self._safe_config_get(
-            "position_tracking", "positions_stale_ttl_sec", default=5
-        )
+        # Get stale TTL for retry delay (Strict)
+        stale_ttl_sec = float(getattr(self.config.domains.position_tracking, 'positions_stale_ttl_sec', 5.0))
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
         
         self.logger.info(
@@ -4103,19 +3830,51 @@ class DecisionMaking:
         
         Commit 5: Risk Skew Guard configuration.
         Config path: domains.decision_making.risk_skew.<key>
+        
+        Fail-closed: If risk_skew not configured or key missing → return default (NOT crash).
+        This is P2 (diagnostics), not P0 (trading critical).
         """
         try:
-            # Try domains config path
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-                risk_skew = getattr(self.config.domains.decision_making, 'risk_skew', None)
-                if risk_skew:
-                    return getattr(risk_skew, key, default)
-            
-            # Try dict access  
-            if isinstance(self.config, dict):
-                dm_cfg = self.config.get('domains', {}).get('decision_making', {})
-                return dm_cfg.get('risk_skew', {}).get(key, default)
-            
+            # Direct Pydantic access
+            risk_skew = self.config.domains.decision_making.risk_skew
+            if risk_skew:
+                return getattr(risk_skew, key, default)
             return default
-        except Exception:
+        except (AttributeError, TypeError):
+            # Risk skew optional feature
             return default
+    def _get_precision(self, symbol: str) -> tuple[float, float]:
+        """Return (tick_size, step_size) from canonical config.instruments; fail-closed.
+        
+        CANONICAL: config.instruments only (SSOT from config/aurora/instruments.yaml).
+        CFG-INSTRUMENTS-STEP-02-DM-PRECISION
+        
+        Args:
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            
+        Returns:
+            (tick_size, step_size) as floats
+            
+        Raises:
+            ValueError: If symbol missing or precision fields not set
+        """
+        instruments = self.config.instruments
+        if not instruments or symbol not in instruments:
+            raise ValueError(
+                f"Missing instrument config for {symbol} in config.instruments (SSOT)"
+            )
+        
+        spec = instruments[symbol]
+        tick_size = getattr(spec, 'tick_size', None)
+        step_size = getattr(spec, 'step_size', None)
+        
+        if tick_size is None or step_size is None:
+            raise ValueError(
+                f"Missing precision for {symbol}: tick_size={tick_size}, step_size={step_size}"
+            )
+        
+        return float(tick_size), float(step_size)
+
+
+# Backward-compat alias used by legacy runtime tests.
+DecisionMakingLogic = DecisionMaking

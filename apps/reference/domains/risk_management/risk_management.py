@@ -10,6 +10,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, TYPE_CHECKING
+from apps.reference.config_contract import ConfigContractError
 
 from vfoundation.core.protocol import Message
 
@@ -40,14 +41,32 @@ class RiskManagement:
     Subscribes to EVT:FEATURES_CALCULATED and emits EVT:RISK_ASSESSMENT_COMPLETED.
     """
 
-    def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
+    def __init__(self, fsm: "FSMCore", config: Any) -> None:
+        """
+        Initialize RiskManagement.
+        
+        Args:
+            fsm: FSM core
+            config: AuroraConfig object (Task 18: removed dict support)
+        """
         self.fsm = fsm
+        
+        # Strict Object Config Check
+        if isinstance(config, dict):
+            raise TypeError("RiskManagement requires AuroraConfig, got dict")
+            
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
         
+        # Initialize Domain Config Resolver
+        from apps.reference.domain_config import DomainConfigResolver
+        self.resolver = DomainConfigResolver(config)
+        self.domain_config = self.resolver.get_risk_management()
+        
         # ETAP4: Unified Daily Risk State
         from apps.reference.domains.risk_management.daily_gate import DailyRiskState
+        # Pass AuroraConfig directly (verified by DailyRiskState)
         self.daily_risk_state = DailyRiskState(config, logger=self.logger)
         
         # Portfolio state tracking for holistic risk management
@@ -61,8 +80,8 @@ class RiskManagement:
         # Listen to EVT:ORDER_FILLED to track realized PnL in DailyRiskState
         self.fsm.listen("EVT:ORDER_FILLED", self.on_order_filled)
         
-        # D5: Cache absorption penalty flag
-        self._use_absorption_penalty = self._get_use_absorption_penalty()
+        # D5: Cache absorption penalty flag (from strict object config)
+        self._use_absorption_penalty = self.domain_config.use_absorption_penalty
         if not self._use_absorption_penalty:
             self.logger.warning(
                 "D5: Absorption penalty DISABLED (use_absorption_penalty=False). "
@@ -70,27 +89,8 @@ class RiskManagement:
             )
 
     def _get_use_absorption_penalty(self) -> bool:
-        """
-        D5: Get use_absorption_penalty flag from config.
-        
-        When False, absorption term is excluded from risk score calculation.
-        Other weights are NOT rescaled (per Plan v1 requirement).
-        """
-        try:
-            # Try domains.risk_management.use_absorption_penalty
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
-                rm_config = self.config.domains.risk_management
-                if hasattr(rm_config, 'use_absorption_penalty'):
-                    return rm_config.use_absorption_penalty
-            
-            # Try dict access
-            if isinstance(self.config, dict):
-                return self.config.get('domains', {}).get('risk_management', {}).get('use_absorption_penalty', False)
-            
-            return False  # Default: disabled (absorption placeholder must not affect default risk)
-        except Exception as e:
-            self.logger.debug(f"Error reading use_absorption_penalty: {e}, defaulting to False")
-            return False
+        """Deprecated helper - removed."""
+        return self.domain_config.use_absorption_penalty
 
     def start(self) -> None:
         """Start the risk management component (subscription already done in __init__)."""
@@ -527,30 +527,38 @@ class RiskManagement:
         
         # Try dict config
         if isinstance(self.config, dict):
-            weights = self.config.get("domains", {}).get("risk_management", {}).get("risk_score_weights")
-            if weights:
+            # Strict dict access (Contract P1)
+            try:
+                weights = self.config["domains"]["risk_management"]["risk_score_weights"]
+            except KeyError:
+                weights = None
+            
+            if not weights:
+                raise ConfigContractError(path="domains.risk_management.risk_score_weights", why="Dict is empty or missing")
+
                 # Convert to object-like for consistent access
                 class WeightsObj:
                     pass
                 obj = WeightsObj()
-                obj.delta_price_pct = weights.get("delta_price_pct", 0.1)
-                obj.obi = weights.get("obi", 0.3)
-                obj.tfi = weights.get("tfi", 0.3)
-                obj.absorption_inverse = weights.get("absorption_inverse", 0.3)
+                
+                # STRICT: No defaults. If key missing, let it be None (or fail validation downstream)
+                # But here we want to ensure we don't inject defaults.
+                # Actually earlier validation checks for None.
+                for key in ["delta_price_pct", "obi", "tfi", "absorption_inverse"]:
+                    if key not in weights:
+                        raise ConfigContractError(
+                            path=f"domains.risk_management.risk_score_weights.{key}", 
+                            why="Missing required weight key"
+                        )
+                    setattr(obj, key, weights[key])
                 return obj
         
-        # FINAL FALLBACK for unit tests with minimal mock config
-        # Production MUST have domains.risk_management.risk_score_weights in domains.yaml
-        logger.warning(
-            "SSOT WARNING: 'domains.risk_management.risk_score_weights' missing. "
-            "Using defaults. Ensure domains.yaml is configured for production!"
+        # FINAL FALLBACK: Fail closed
+        # Production MUST have domains.risk_management.risk_score_weights
+        raise ConfigContractError(
+            path="domains.risk_management.risk_score_weights",
+            why="empty or missing"
         )
-        class DefaultWeights:
-            delta_price_pct = 0.1
-            obi = 0.3
-            tfi = 0.3
-            absorption_inverse = 0.3
-        return DefaultWeights()
 
     def _get_max_risk_score(self) -> decimal.Decimal:
         """
@@ -560,35 +568,27 @@ class RiskManagement:
             Decimal threshold value
             
         Raises:
-            ValueError: If config is missing required value
+            ConfigContractError: If config is missing required value (fail-closed)
         """
-        # Try domains config (preferred)
-        if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
-            thresholds = getattr(self.config.domains.risk_management, 'trading_allowed_thresholds', None)
-            if thresholds is not None:
-                max_risk = getattr(thresholds, 'max_risk_score', None)
-                if max_risk is not None:
-                    return decimal.Decimal(str(max_risk))
-        
-        # Try dict config
-        if isinstance(self.config, dict):
-            max_risk = (
-                self.config
-                .get("domains", {})
-                .get("risk_management", {})
-                .get("trading_allowed_thresholds", {})
-                .get("max_risk_score")
+        # Direct Pydantic access (fail-closed: missing field → AttributeError → crash)
+        # Trading allowed thresholds are CRITICAL - no silent defaults
+        try:
+            thresholds = self.config.domains.risk_management.trading_allowed_thresholds
+            max_risk = thresholds.max_risk_score
+            return decimal.Decimal(str(max_risk))
+        except AttributeError as e:
+            # CRITICAL: trading_allowed_thresholds missing → BLOCK trading
+            raise ConfigContractError(
+                path="domains.risk_management.trading_allowed_thresholds.max_risk_score",
+                why=f"Missing SSOT config: {e}"
             )
-            if max_risk is not None:
-                return decimal.Decimal(str(max_risk))
         
-        # FINAL FALLBACK for unit tests with minimal mock config
-        # Production MUST have domains.risk_management.trading_allowed_thresholds.max_risk_score
-        logger.warning(
-            "SSOT WARNING: 'domains.risk_management.trading_allowed_thresholds.max_risk_score' "
-            "missing. Using default 0.8. Ensure domains.yaml is configured for production!"
+        # FINAL FALLBACK: Fail closed should not be reachable if try/except covers it, 
+        # but if structure is wildly different:
+        raise ConfigContractError(
+            path="domains.risk_management.trading_allowed_thresholds.max_risk_score",
+            why="Unreachable fallback triggered"
         )
-        return decimal.Decimal("0.8")
 
     def stop(self) -> None:
         """Stop the risk management component."""

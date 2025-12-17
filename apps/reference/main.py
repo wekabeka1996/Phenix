@@ -18,7 +18,8 @@ Set LOG_LEVEL environment variable to control logging:
 """
 
 from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMPORT
-from apps.reference.config_loader import ConfigLoader
+from apps.reference.config_loader import ConfigLoader, AuroraConfig
+from apps.reference.config_contract import ConfigContractError
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 # from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
 #     SnapshotScheduler,
@@ -462,8 +463,10 @@ class AuroraBridge:
     with portfolio freshness gate to prevent race conditions.
     """
 
-    def __init__(self, fsm: FSMCore, config: dict[str, Any], logger: logging.Logger | None = None):
+    def __init__(self, fsm: FSMCore, config: AuroraConfig, logger: logging.Logger | None = None):
         self.fsm = fsm
+        if isinstance(config, dict):
+            raise TypeError("AuroraBridge requires AuroraConfig, got dict")
         self.config = config
         self.logger = logger or logging.getLogger("AuroraBridge")
 
@@ -478,20 +481,20 @@ class AuroraBridge:
         # QoS state for symbol cooldowns (from DecisionMaking deferrals)
         self._qos_next_allowed_ts_per_symbol: dict[str, int] = {}
 
-        # Configuration
-        position_tracking_config = config.get("position_tracking", {})
-        self._ttl_sec = int(position_tracking_config.get(
-            "positions_stale_ttl_sec", 5))
+        # Configuration (strict object config)
+        from apps.reference.domain_config import DomainConfigResolver
+        resolver = DomainConfigResolver(config)
+        self._ttl_sec = int(resolver.get_position_tracking().positions_stale_ttl_sec)
         self._retry_delay_sec = 0.5
         self._max_retries = 2
         
-        # D2: Initialize reliable retry scheduler
-        retry_config = config.get("bridge", {}).get("retry_scheduler", {})
+        # D2: Initialize reliable retry scheduler (strict object config)
+        retry_config = config.bridge.retry_scheduler
         self._retry_scheduler = RetryScheduler(
             fsm=fsm,
             logger=self.logger,
-            default_max_attempts=retry_config.get("max_attempts", 5),
-            min_retry_delay_ms=retry_config.get("min_retry_delay_ms", 500),
+            default_max_attempts=int(retry_config.max_attempts),
+            min_retry_delay_ms=int(retry_config.min_retry_delay_ms),
         )
 
         # Register event listeners
@@ -1151,7 +1154,7 @@ class JSONFormatter(logging.Formatter):
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 
-def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: dict) -> None:
+def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: AuroraConfig) -> None:
     """Perform periodic system health checks and raise alerts if needed."""
     # Check WAL size
     try:
@@ -1427,7 +1430,7 @@ def main() -> None:
     # def start_multi_tf_rollup(...) — REMOVED
 
     # Initialize Alert Manager
-    alert_manager = AlertManager(config=config.to_dict(), logger=LOG)
+    alert_manager = AlertManager(config=config, logger=LOG)
     LOG.info("✅ Alert Manager initialized")
 
     # Initialize EntropyMonitor for system anomaly detection
@@ -1440,7 +1443,7 @@ def main() -> None:
     LOG.info("✅ EntropyMonitor initialized")
 
     # FSMP-P3-T01: Pre-flight check for hybrid coherence
-    is_coherent, reasons = check_hybrid_coherence(config.to_dict())
+    is_coherent, reasons = check_hybrid_coherence(config)
     if not is_coherent:
         LOG.critical(
             f"🚨 CRITICAL: Hybrid mode is incoherent. Trading will be deferred. Reasons: {'; '.join(reasons)}"
@@ -1479,7 +1482,7 @@ def main() -> None:
     # Step 2: Create event listeners
     LOG.info("Setting up event listeners...")
     # Initialize AuroraBridge (handles TRADE_INTENT_PROPOSED → CMD:OPEN with freshness gate)
-    bridge = AuroraBridge(fsm=fsm, config=config.to_dict(), logger=LOG)
+    bridge = AuroraBridge(fsm=fsm, config=config, logger=LOG)
 
     # D6: Fail-closed restart behavior - clear any pending deferred intents
     # This ensures clean state after restart/crash, emitting EVT:INTENT_DROPPED for each
@@ -1513,19 +1516,29 @@ def main() -> None:
     LOG.info("Initializing domain components...")
 
     # Account Connector (source of account balance and positions)
-    account_balance = AccountConnector(fsm=fsm, config=config.to_dict())
+    account_balance = AccountConnector(fsm=fsm, config=config)
 
     # Account Observer (observes trades and sends portfolio updates)
     # FSMP-P3-T01: Use resolved risk_portfolio_source for AccountObserver environment
-    risk_portfolio_source = config.get("_resolved", {}).get(
-        "risk_portfolio_source", "testnet")  # Default to testnet for safety
+    try:
+        risk_portfolio_source = config.trading.risk_management.data_sources.portfolio_state
+    except AttributeError as e:
+        raise ConfigContractError(
+            path="trading.risk_management.data_sources.portfolio_state",
+            why=f"Missing required config for AccountObserver environment: {e}",
+        )
+    if risk_portfolio_source == "follow_execution":
+        risk_portfolio_source = "testnet"
     account_observer = AccountObserver(
-        fsm=fsm, config=config.to_dict(), environment=risk_portfolio_source)
+        fsm=fsm, config=config, environment=risk_portfolio_source)
 
     # FSMP-ARCH-01: Market Data Connector with Multiprocessing Feature Flag
-    # Feature flag: trading.market_data.use_multiprocessing (default: False for safety)
-    market_data_cfg = config.to_dict().get("trading", {}).get("market_data", {})
-    use_multiprocessing = market_data_cfg.get("use_multiprocessing", False)
+    if config.trading.market_data is None:
+        raise ConfigContractError(
+            path="trading.market_data",
+            why="Missing required config (market_data).",
+        )
+    use_multiprocessing = bool(config.trading.market_data.use_multiprocessing)
     
     if use_multiprocessing:
         LOG.info("🚀 Using MarketDataProxy (multiprocessing mode)")
@@ -1541,39 +1554,18 @@ def main() -> None:
 
     # Feature Engineering (calculates trading features) — NO feature_store
     feature_engineering = FeatureEngineering(
-        fsm=fsm, config=config.to_dict(), feature_store=None)
+        fsm=fsm, config=config, feature_store=None)
 
     # Risk Management (assesses position risk)
-    # Extract domain-specific config with correct mode overrides
-    risk_domain_mode = config.to_dict().get("trading", {}).get(
-        "domain_configuration", {}).get("risk_management", {}).get("trading_mode", "live")
-    risk_config = config.to_dict()
-
-    # Always apply mode-specific overrides for risk domain (even if same as global mode)
-    from copy import deepcopy
-    risk_config = deepcopy(risk_config)
-    trading = risk_config.get("trading", {})
-    risk = trading.get("risk", {})
-    if isinstance(risk, dict):
-        risk_mode_overrides = risk.get(risk_domain_mode, {})
-        if isinstance(risk_mode_overrides, dict) and risk_mode_overrides:
-            if "trading_allowed_thresholds" not in risk:
-                risk["trading_allowed_thresholds"] = {}
-            thresholds = risk["trading_allowed_thresholds"]
-            for key, value in risk_mode_overrides.items():
-                old_val = thresholds.get(key)
-                thresholds[key] = value
-                LOG.info(
-                    f"[domain-config] Risk override for mode '{risk_domain_mode}': {key} {old_val} → {value}")
-
-    risk_management = RiskManagement(fsm=fsm, config=risk_config)
+    # Task 18: Pass AuroraConfig object directly (Resolves domain_configuration internally via DomainConfigResolver)
+    risk_management = RiskManagement(fsm=fsm, config=config)
 
     # Position Tracking (tracks portfolio state)
-    position_tracking = PositionTracking(fsm=fsm, config=config.to_dict())
+    position_tracking = PositionTracking(fsm=fsm, config=config)
 
     # Execution Position (handles order execution on testnet)
     global execution_position
-    execution_position = ExecPosFSM(config=config.to_dict(), fsm=fsm)
+    execution_position = ExecPosFSM(config=config, fsm=fsm)
     LOG.info("✅ Execution position FSM initialized")
 
     # ==========================================
@@ -1721,7 +1713,7 @@ def main() -> None:
     
     # RegimeDetector: Analyzes market features to detect trading regimes (TREND_UP, TREND_DOWN, etc.)
     # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing
-    regime_detector = RegimeDetector(config=config.to_dict(), fsm=fsm)
+    regime_detector = RegimeDetector(config=config, fsm=fsm)
     LOG.info("✅ RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
 
 
@@ -1808,11 +1800,8 @@ def main() -> None:
             # Periodic alert checks
             if current_time - last_alert_check >= alert_check_interval:
                 try:
-                    from typing import cast
-                    config_dict_arg = cast(dict[Any, Any], config.to_dict(
-                    ) if hasattr(config, 'to_dict') else config)
                     _perform_alert_checks(
-                        alert_manager, wal_dir, config_dict_arg)
+                        alert_manager, wal_dir, config)
                 except Exception as e:
                     LOG.error(f"Error during alert checks: {e}")
                 last_alert_check = current_time

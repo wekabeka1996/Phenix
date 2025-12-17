@@ -50,10 +50,15 @@ arbitration:
 def base_trading_yaml():
     """Minimal trading.yaml."""
     return """
-mode: testnet
-decision:
-  signal_threshold: 0.1
-  symbols_to_track: ["ETHUSDT", "BTCUSDT"]
+trading:
+  mode: testnet
+  decision:
+    signal_threshold: 0.1
+    symbols_to_track: ["ETHUSDT", "BTCUSDT"]
+  risk_management:
+    data_sources:
+      portfolio_state: "testnet"
+      market_data: "live"
 """
 
 
@@ -61,6 +66,11 @@ decision:
 def base_system_yaml():
     """Minimal system.yaml."""
     return """
+trading_mode: "testnet"
+bridge:
+  retry_scheduler:
+    max_attempts: 5
+    min_retry_delay_ms: 500
 logging:
   level: INFO
 """
@@ -68,11 +78,20 @@ logging:
 
 @pytest.fixture
 def base_regime_yaml():
-    """Minimal regime.yaml."""
+    """Minimal regime.yaml.
+    
+    CFG-FEATURES-REGIME-SSOT-04: hmm is TOP-LEVEL key (not inside models)
+    """
     return """
+hmm:
+  enabled: false
 models:
-  hmm:
+  sma_trend:
+    sma_short_period: 10
+  volatility:
     enabled: false
+  mean_reversion:
+    threshold: 0.005
 """
 
 
@@ -204,8 +223,8 @@ def test_non_strict_mode_warns_on_missing_strategies_yaml(
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
     (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)
 
-    # Disable strict mode (default)
-    os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
+    # Disable strict mode
+    os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     config = loader.load_config()

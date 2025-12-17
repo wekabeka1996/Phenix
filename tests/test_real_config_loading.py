@@ -10,8 +10,8 @@ def test_real_config_loading():
     assert config.trading.market_data.poll_interval_sec == 2.0
     assert config.trading.market_data.api_call_limits.get_recent_trades == 50
     
-    # Verify Watchdog Config (from trading.yaml)
-    assert config.trading.execution.watchdog["rps_limit"] == 10
+    # Verify Watchdog Config (from trading.yaml) - CFG-DICT-ANY-BURN-13: typed WatchdogConfig
+    assert config.trading.execution.watchdog.rps_limit == 10  # Typed attribute access
     
     # Verify Regime Models Config (from regime.yaml)
     assert config.models is not None

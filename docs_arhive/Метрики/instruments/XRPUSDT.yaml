@@ -1,0 +1,100 @@
+# ==============================================================================
+# XRPUSDT — Aurora Instrument Configuration
+# Phase 3+ from Optuna optimization (Mean Reversion track)
+# Source: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md (SILVER 🥈)
+# ==============================================================================
+
+symbol: XRPUSDT
+
+# Instrument Specifications (from exchange)
+specs:
+  step_size: "0.1"
+  tick_size: "0.0001"
+  min_notional: "10"
+
+# Aurora Strategy Parameters
+# ⚠️ XRP uses Mean Reversion strategy (Track B) as PRIMARY
+# Aurora tick-based strategy is DISABLED to avoid signal conflicts
+aurora:
+  enabled: false  # XRP = MR-only (Phase 3 decision)
+  weights:
+    ema: 0.427
+    volume: 0.385
+    macro: 0.469
+    liquidity: 0.199
+    obi: 0.120
+    tfi: 0.402
+    volatility: 0.367
+    depth_imbalance: 0.392
+    delta_price: 0.028
+
+  side_bias:
+    penalty_factor: 0.4        # Moderate penalty (from Phase 3)
+    window_sec: 600
+    target_ratio: 0.6
+
+  regime_thresholds:
+    HIGH_VOLATILITY: 1.9       # 90% STRICTER (MAXIMUM filter)
+    LOW_VOLATILITY: 0.95
+    DEFAULT: 1.0
+
+  regime_sizing:
+    HIGH_VOLATILITY: 0.1       # 90% SMALLER (almost stop trading!)
+    LOW_VOLATILITY: 1.7        # 70% LARGER
+    MEAN_REVERSION: 0.8
+
+  exit:
+    # SYNCED: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md (XRP 🥈)
+    sl_pct: 0.024              # 2.4% from Optuna (was 1.44%!)
+    max_hold_sec: 2940         # 49 min from Optuna (was 660 = 11 min!)
+
+  take_profit:
+    # SYNCED: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md
+    tp_low_ratio: 0.75         # TP1 = 0.75x risk (was 0.5)
+    tp_high_ratio: 1.57        # TP2 = 1.57x risk (was 1.0)
+    partial_exit_pct: 0.41     # 41% at TP1 (was 50%)
+
+  trailing_stop:
+    # SYNCED: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md
+    enabled: true
+    activation_pct: 0.015      # Activate at 1.5% profit
+    trail_pct: 0.018           # Trail 1.8% behind peak (was 0.4%!) - wide trail for XRP
+    min_update_interval_sec: 5
+
+  # Regime Gating - XRP from Phase 3 optimization + FLAT regimes for MR
+  allowed_regimes:
+    - TREND_DOWN
+    - LOW_VOLATILITY
+    - FLAT_LOW
+    - FLAT_NORMAL
+    - FLAT_HIGH
+
+  # Phase 3+ per-asset overrides
+  ema_clamp:
+    enabled: true
+    clamp_min: -0.025
+    clamp_max: 0.025
+
+  signal_threshold:
+    enabled: true
+    value: 0.236
+
+  max_risk_score:
+    enabled: false
+
+  cooldown_sec: 165            # Optuna: 2.75 min (AURORA_FULLSCALE_OPTIMIZATION_FINAL.md)
+
+# Mean Reversion 1M Strategy (Track B) — SILVER 🥈
+mean_reversion_1m:
+  enabled: true
+  strategy:
+    bb_window: 40
+    bb_num_std: 2.5
+    min_bb_width: 0.007
+    entry_threshold: 0.05
+    tp_to_mid: true
+    cooldown_sec: 165
+  # Asset-specific overrides
+  sl_pct: 0.024                # SYNCED: Matches aurora (Phase 3)
+  # Regime Gating - XRP stable (+$121) - similar to DOGE
+  allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]

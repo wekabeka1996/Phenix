@@ -1,0 +1,52 @@
+# ==============================================================================
+# Aurora Instruments Index
+# List of all per-coin configuration files
+# ==============================================================================
+# 
+# This file provides a centralized list of enabled trading instruments.
+# Each instrument has a dedicated YAML file in this directory.
+#
+# To add a new instrument:
+# 1. Create a new YAML file: <SYMBOL>.yaml (e.g., AVAXUSDT.yaml)
+# 2. Add the symbol to the 'enabled' list below
+# 3. ConfigLoader will automatically pick it up
+#
+# ==============================================================================
+
+# Active instruments for trading
+enabled:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - DOGEUSDT
+  - XRPUSDT
+
+# Instruments with Mean Reversion 1M strategy enabled
+mean_reversion_1m_enabled:
+  - DOGEUSDT   # Champion 🥇 (+$387)
+  - XRPUSDT    # Silver 🥈 (+$121)
+  - BTCUSDT    # Bronze 🥉 (+$103)
+
+# Instrument groups for batch operations
+groups:
+  # High-liquidity majors (5m+ bars OK)
+  majors:
+    - BTCUSDT
+    - ETHUSDT
+
+  # Alt-coins (shorter bars recommended)
+  alts:
+    - SOLUSDT
+    - XRPUSDT
+    - DOGEUSDT
+
+  # Mean Reversion champions (FLAT regime trading)
+  mr_champions:
+    - DOGEUSDT
+    - XRPUSDT
+
+  # Trend followers (TREND_UP/DOWN regime trading)
+  trend_followers:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT

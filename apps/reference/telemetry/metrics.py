@@ -202,3 +202,15 @@ def inc_order_state(status: str) -> None:
 
 def observe_order_lifecycle(duration_seconds: float) -> None:
     h_order_lifecycle_seconds.observe(duration_seconds)
+
+
+# Task 17: Config Contract Violation Metric
+c_config_contract_violation_total = Counter(
+    "config_contract_violation_total", 
+    "Total configuration contract violations (blocking)", 
+    ["path", "symbol"]
+)
+
+def inc_config_contract_violation(path: str, symbol: str = "unknown") -> None:
+    """Increment the config contract violation counter."""
+    c_config_contract_violation_total.labels(path=path, symbol=symbol).inc()

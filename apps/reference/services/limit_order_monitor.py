@@ -43,7 +43,7 @@ class LimitOrderState:
         """Check if order has exceeded timeout"""
         return (now - self.placed_ts) > self.timeout_sec
     
-    def age_seconds(self, now: float) -&gt; float:
+    def age_seconds(self, now: float) -> float:
         """Get order age in seconds"""
         return now - self.placed_ts
 

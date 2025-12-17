@@ -247,15 +247,21 @@ class ExecPosFSM:
 
         # Safe extraction of watchdog settings
         def get_watchdog_setting(key: str, default):
+            # Direct access only (fail-closed: missing field → AttributeError)
             if isinstance(watchdog_config, dict):
-                return watchdog_config.get(key, default)
-            elif hasattr(watchdog_config, key):
-                return getattr(watchdog_config, key, default)
+                # Dict path for legacy compatibility, but NO defaults
+                if key not in watchdog_config:
+                    raise ValueError(
+                        f"CRITICAL: watchdog.{key} missing. FSM cannot start without watchdog config."
+                    )
+                return watchdog_config[key]
             else:
-                return default
+                # Pydantic model - direct access
+                return getattr(watchdog_config, key)
 
-        ack_ttl_ms: int = int(get_watchdog_setting("ack_ttl_ms", 8000))
-        fill_ttl_ms: int = int(get_watchdog_setting("fill_ttl_ms", 30000))
+        # Direct access - if missing, raises ValueError (fail-closed)
+        ack_ttl_ms: int = int(get_watchdog_setting("ack_ttl_ms", None))
+        fill_ttl_ms: int = int(get_watchdog_setting("fill_ttl_ms", None))
 
         # Log TTL configuration source and values
         ttl_source = "execution.watchdog"
@@ -938,15 +944,20 @@ class ExecPosFSM:
                 f"✅ ExecPosFSM adapter is configured for TESTNET execution (mode: {mode})."
             )
 
-        # Extract API credentials safely
-        if isinstance(env_config, dict):
-            api_key = env_config.get("api_key", "")
-            api_secret = env_config.get("api_secret", "")
-            rest_url = env_config.get("rest_url", "")
-        else:
-            api_key = getattr(env_config, "api_key", "")
-            api_secret = getattr(env_config, "api_secret", "")
-            rest_url = getattr(env_config, "rest_url", "")
+        # Extract API credentials (fail-closed: no default fallbacks on critical fields)
+        try:
+            if isinstance(env_config, dict):
+                api_key = env_config.get("api_key")
+                api_secret = env_config.get("api_secret")
+                rest_url = env_config.get("rest_url")
+            else:
+                api_key = getattr(env_config, "api_key")
+                api_secret = getattr(env_config, "api_secret")
+                rest_url = getattr(env_config, "rest_url")
+        except Exception:
+            api_key = None
+            api_secret = None
+            rest_url = None
 
         if not all([api_key, api_secret, rest_url]):
             LOG.error(

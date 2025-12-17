@@ -11,10 +11,11 @@ from datetime import datetime, timezone, date
 from typing import Optional, Dict, Any, Tuple
 
 
+from apps.reference.config_contract import ConfigContractError
+
 def _d(x: Any) -> float:
     """Safe decimal conversion with fallback to 0."""
     from decimal import Decimal as D, InvalidOperation
-
     try:
         return float(D(str(x)))
     except (InvalidOperation, ValueError, TypeError):
@@ -57,24 +58,33 @@ class DailyRiskState:
     def __init__(self, cfg: Dict[str, Any], logger=None):
         self.log = logger
 
-        # Safe extraction of risk config from dict or Pydantic object
-        if isinstance(cfg, dict):
-            risk_cfg = cfg.get("risk", {})
-            daily_cfg = risk_cfg.get("daily", {}) if isinstance(
-                risk_cfg, dict) else {}
-        else:
-            risk_cfg = getattr(cfg, "risk", {})
-            daily_cfg = getattr(risk_cfg, "daily", {}) if risk_cfg else {}
+        # Strict Object Config: No dict support (Task 18)
+        # cfg must be AuroraConfig object
+        if hasattr(cfg, "dict") or isinstance(cfg, dict):
+             if isinstance(cfg, dict):
+                 raise TypeError("DailyRiskState requires AuroraConfig, got dict")
+        
+        # Access strictly via AuroraConfig -> trading -> risk (Dict[str, Any])
+        try:
+             risk_cfg = cfg.trading.risk
+        except AttributeError:
+             # Fallback or error? Strict means we expect formatting.
+             # If cfg is not AuroraConfig, this crashes, which is good.
+             risk_cfg = {}
 
-        # Extract values safely
-        if isinstance(daily_cfg, dict):
-            max_loss = daily_cfg.get("max_realized_loss_usd", "250")
-            max_dd = daily_cfg.get("max_drawdown_pct", 8)
-            reset_time = daily_cfg.get("reset_time_utc", "00:00")
-        else:
-            max_loss = getattr(daily_cfg, "max_realized_loss_usd", "250")
-            max_dd = getattr(daily_cfg, "max_drawdown_pct", 8)
-            reset_time = getattr(daily_cfg, "reset_time_utc", "00:00")
+        daily_cfg = risk_cfg.get("daily", {}) if isinstance(risk_cfg, dict) else {}
+        
+        # Extract values from dict (risk.daily is a dict)
+        max_loss = daily_cfg.get("max_realized_loss_usd")
+        max_dd = daily_cfg.get("max_drawdown_pct")
+        reset_time = daily_cfg.get("reset_time_utc")
+        
+        # Fail-closed validation
+        if max_loss is None or max_dd is None or reset_time is None:
+            raise ConfigContractError(
+                path="risk.daily",
+                why="Daily gate config incomplete (max_realized_loss_usd, max_drawdown_pct, reset_time_utc required)"
+            )
 
         reset_time_str = str(reset_time)
         reset_parts = reset_time_str.split(":")

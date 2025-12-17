@@ -1,0 +1,1464 @@
+AccountObserverConfig.model_config:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer.model_config
+AccountObserverConfig.poll_interval:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer.poll_interval
+AccountObserverDomainConfig.poll_interval_sec:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer.poll_interval_sec
+AccountObserverDomainConfig.symbols:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer.symbols
+AccountObserverDomainConfig.thread_timeouts:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer.thread_timeouts
+AccountObserverDomainConfig.trade_limit:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer.trade_limit
+ApiCallLimits.get_klines:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.api_call_limits.get_klines
+ApiCallLimits.get_recent_trades:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.api_call_limits.get_recent_trades
+ArmingConfig.max_attempts:
+  file: config/aurora/trading.yaml
+  path: trading.decision.arming.max_attempts
+ArmingConfig.require_regime_warmup:
+  file: config/aurora/trading.yaml
+  path: trading.decision.arming.require_regime_warmup
+ArmingConfig.retry_backoff_ms:
+  file: config/aurora/trading.yaml
+  path: trading.decision.arming.retry_backoff_ms
+AuroraConfig.account_observer:
+  file: config/aurora/system.yaml
+  path: account_observer
+AuroraConfig.aurora:
+  file: config/aurora/system.yaml
+  path: aurora
+AuroraConfig.aurora_instruments:
+  file: config/aurora/system.yaml
+  path: aurora_instruments
+AuroraConfig.binance_api:
+  file: config/aurora/system.yaml
+  path: binance_api
+AuroraConfig.brackets:
+  file: config/aurora/system.yaml
+  path: brackets
+AuroraConfig.bridge:
+  file: config/aurora/system.yaml
+  path: bridge
+AuroraConfig.decision:
+  file: config/aurora/system.yaml
+  path: decision
+AuroraConfig.domains:
+  file: config/aurora/system.yaml
+  path: domains
+AuroraConfig.execution:
+  file: config/aurora/system.yaml
+  path: execution
+AuroraConfig.features:
+  file: config/aurora/system.yaml
+  path: features
+AuroraConfig.hmm:
+  file: config/aurora/system.yaml
+  path: hmm
+AuroraConfig.hotreload_whitelist:
+  file: config/aurora/system.yaml
+  path: hotreload_whitelist
+AuroraConfig.instruments:
+  file: config/aurora/system.yaml
+  path: instruments
+AuroraConfig.logging:
+  file: config/aurora/system.yaml
+  path: logging
+AuroraConfig.mean_reversion_1m:
+  file: config/aurora/system.yaml
+  path: mean_reversion_1m
+AuroraConfig.models:
+  file: config/aurora/system.yaml
+  path: models
+AuroraConfig.ops:
+  file: config/aurora/system.yaml
+  path: ops
+AuroraConfig.runtime:
+  file: config/aurora/system.yaml
+  path: runtime
+AuroraConfig.strategies_registry:
+  file: config/aurora/system.yaml
+  path: strategies_registry
+AuroraConfig.system:
+  file: config/aurora/system.yaml
+  path: system
+AuroraConfig.system_meta:
+  file: config/aurora/system.yaml
+  path: system_meta
+AuroraConfig.trading:
+  file: config/aurora/system.yaml
+  path: trading
+AuroraConfig.trading_mode:
+  file: config/aurora/system.yaml
+  path: trading_mode
+AuroraConfig.trailing:
+  file: config/aurora/system.yaml
+  path: trailing
+AuroraExecutionConfig.max_slippage_bps:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.execution.max_slippage_bps
+AuroraExecutionConfig.model_config:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.execution.model_config
+AuroraExecutionConfig.order_type:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.execution.order_type
+AuroraExecutionConfig.post_only:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.execution.post_only
+AuroraExitConfig.max_hold_sec:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.exit.max_hold_sec
+AuroraExitConfig.model_config:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.exit.model_config
+AuroraExitConfig.sl_pct:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.exit.sl_pct
+AuroraInstrumentConfig.allowed_regimes:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.allowed_regimes
+AuroraInstrumentConfig.cooldown_sec:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.cooldown_sec
+AuroraInstrumentConfig.ema_clamp:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.ema_clamp
+AuroraInstrumentConfig.enabled:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.enabled
+AuroraInstrumentConfig.execution:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.execution
+AuroraInstrumentConfig.exit:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.exit
+AuroraInstrumentConfig.max_risk_score:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.max_risk_score
+AuroraInstrumentConfig.position_mode:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.position_mode
+AuroraInstrumentConfig.regime_sizing:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.regime_sizing
+AuroraInstrumentConfig.regime_thresholds:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.regime_thresholds
+AuroraInstrumentConfig.side_bias:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.side_bias
+AuroraInstrumentConfig.signal_threshold:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.signal_threshold
+AuroraInstrumentConfig.take_profit:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.take_profit
+AuroraInstrumentConfig.timeframe_sec:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.timeframe_sec
+AuroraInstrumentConfig.trailing_stop:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.trailing_stop
+AuroraInstrumentConfig.weights:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.weights
+AuroraSideBiasConfig.model_config:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.side_bias.model_config
+AuroraSideBiasConfig.penalty_factor:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.side_bias.penalty_factor
+AuroraSideBiasConfig.target_ratio:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.side_bias.target_ratio
+AuroraSideBiasConfig.window_sec:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.side_bias.window_sec
+AuroraTakeProfitConfig.model_config:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.take_profit.model_config
+AuroraTakeProfitConfig.partial_exit_pct:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.take_profit.partial_exit_pct
+AuroraTakeProfitConfig.tp_high_ratio:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.take_profit.tp_high_ratio
+AuroraTakeProfitConfig.tp_low_ratio:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.take_profit.tp_low_ratio
+AuroraTrailingStopConfig.activation_pct:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.trailing_stop.activation_pct
+AuroraTrailingStopConfig.enabled:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.trailing_stop.enabled
+AuroraTrailingStopConfig.min_update_interval_sec:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.trailing_stop.min_update_interval_sec
+AuroraTrailingStopConfig.model_config:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.trailing_stop.model_config
+AuroraTrailingStopConfig.trail_pct:
+  file: config/aurora/aurora_instruments.yaml
+  path: aurora_instruments.trailing_stop.trail_pct
+BarGatingConfig.bar_ms:
+  file: config/aurora/trading.yaml
+  path: trading.decision.bar_gating.bar_ms
+BarGatingConfig.enable:
+  file: config/aurora/trading.yaml
+  path: trading.decision.bar_gating.enable
+BehaviorFsmConfig.enable:
+  file: config/aurora/trading.yaml
+  path: trading.decision.behavior_fsm.enable
+BehaviorFsmConfig.high_vol_multiplier:
+  file: config/aurora/trading.yaml
+  path: trading.decision.behavior_fsm.high_vol_multiplier
+BehaviorFsmConfig.low_vol_multiplier:
+  file: config/aurora/trading.yaml
+  path: trading.decision.behavior_fsm.low_vol_multiplier
+BinanceApiConfig.live:
+  file: config/aurora/trading.yaml
+  path: binance_api.live
+BinanceApiConfig.testnet:
+  file: config/aurora/trading.yaml
+  path: binance_api.testnet
+BinanceApiEnv.api_key:
+  file: config/aurora/trading.yaml
+  path: binance_api.env.api_key
+BinanceApiEnv.api_secret:
+  file: config/aurora/trading.yaml
+  path: binance_api.env.api_secret
+BinanceApiEnv.rest_url:
+  file: config/aurora/trading.yaml
+  path: binance_api.env.rest_url
+BinanceApiEnv.ws_url:
+  file: config/aurora/trading.yaml
+  path: binance_api.env.ws_url
+BracketsConfig.model_config:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.model_config
+BracketsConfig.oco_emulation:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.oco_emulation
+BracketsConfig.offset_bps:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.offset_bps
+BracketsConfig.sl:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.sl
+BracketsConfig.stop_loss_bps:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.stop_loss_bps
+BracketsConfig.tp:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.tp
+BridgeConfig.retry_scheduler:
+  file: config/aurora/system.yaml
+  path: bridge.retry_scheduler
+DecisionConfig.bar_gating:
+  file: config/aurora/trading.yaml
+  path: trading.decision.bar_gating
+DecisionConfig.behavior_fsm:
+  file: config/aurora/trading.yaml
+  path: trading.decision.behavior_fsm
+DecisionConfig.cooldown_sec:
+  file: config/aurora/trading.yaml
+  path: trading.decision.cooldown_sec
+DecisionConfig.kelly:
+  file: config/aurora/trading.yaml
+  path: trading.decision.kelly
+DecisionConfig.mean_reversion:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mean_reversion
+DecisionConfig.neutral_threshold:
+  file: config/aurora/trading.yaml
+  path: trading.decision.neutral_threshold
+DecisionConfig.position_sizing:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing
+DecisionConfig.production:
+  file: config/aurora/trading.yaml
+  path: trading.decision.production
+DecisionConfig.qos:
+  file: config/aurora/trading.yaml
+  path: trading.decision.qos
+DecisionConfig.regime_threshold_multipliers:
+  file: config/aurora/trading.yaml
+  path: trading.decision.regime_threshold_multipliers
+DecisionConfig.regime_thresholds:
+  file: config/aurora/trading.yaml
+  path: trading.decision.regime_thresholds
+DecisionConfig.retry_backoff_factor:
+  file: config/aurora/trading.yaml
+  path: trading.decision.retry_backoff_factor
+DecisionConfig.retry_max_count:
+  file: config/aurora/trading.yaml
+  path: trading.decision.retry_max_count
+DecisionConfig.retry_ttl_ms:
+  file: config/aurora/trading.yaml
+  path: trading.decision.retry_ttl_ms
+DecisionConfig.roi_exit:
+  file: config/aurora/trading.yaml
+  path: trading.decision.roi_exit
+DecisionConfig.side_bias_min_score:
+  file: config/aurora/trading.yaml
+  path: trading.decision.side_bias_min_score
+DecisionConfig.side_bias_penalty_factor:
+  file: config/aurora/trading.yaml
+  path: trading.decision.side_bias_penalty_factor
+DecisionConfig.side_bias_target_ratio:
+  file: config/aurora/trading.yaml
+  path: trading.decision.side_bias_target_ratio
+DecisionConfig.side_bias_window_sec:
+  file: config/aurora/trading.yaml
+  path: trading.decision.side_bias_window_sec
+DecisionConfig.signal_threshold:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_threshold
+DecisionConfig.signal_weights:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights
+DecisionConfig.signals:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signals
+DecisionConfig.sizing_modifiers:
+  file: config/aurora/trading.yaml
+  path: trading.decision.sizing_modifiers
+DecisionConfig.symbols_to_track:
+  file: config/aurora/trading.yaml
+  path: trading.decision.symbols_to_track
+DecisionConfig.testnet:
+  file: config/aurora/trading.yaml
+  path: trading.decision.testnet
+DecisionMakingDomainConfig.arming:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.arming
+DecisionMakingDomainConfig.bar_gating:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.bar_gating
+DecisionMakingDomainConfig.behavior_fsm:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.behavior_fsm
+DecisionMakingDomainConfig.features:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.features
+DecisionMakingDomainConfig.position_sizing:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.position_sizing
+DecisionMakingDomainConfig.qos:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.qos
+DecisionMakingDomainConfig.risk_skew:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.risk_skew
+DecisionMakingDomainConfig.signals:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making.signals
+DecisionModeOverrideConfig.model_config:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mode_override.model_config
+DecisionModeOverrideConfig.signal_threshold:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mode_override.signal_threshold
+DeltaPriceConfig.spike_filter_ms:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.delta_price.spike_filter_ms
+DepthImbalanceConfig.use_laplace_smoothing:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.depth_imbalance.use_laplace_smoothing
+DomainConfigurationConfig.audit_trail:
+  file: config/aurora/domains.yaml
+  path: domains.configuration.audit_trail
+DomainConfigurationConfig.decision_making:
+  file: config/aurora/domains.yaml
+  path: domains.configuration.decision_making
+DomainConfigurationConfig.execution_position:
+  file: config/aurora/domains.yaml
+  path: domains.configuration.execution_position
+DomainConfigurationConfig.feature_engineering:
+  file: config/aurora/domains.yaml
+  path: domains.configuration.feature_engineering
+DomainConfigurationConfig.market_data:
+  file: config/aurora/domains.yaml
+  path: domains.configuration.market_data
+DomainConfigurationConfig.model_config:
+  file: config/aurora/domains.yaml
+  path: domains.configuration.model_config
+DomainConfigurationConfig.risk_management:
+  file: config/aurora/domains.yaml
+  path: domains.configuration.risk_management
+DomainModeConfig.model_config:
+  file: config/aurora/domains.yaml
+  path: domains.mode.model_config
+DomainModeConfig.trading_mode:
+  file: config/aurora/domains.yaml
+  path: domains.mode.trading_mode
+DomainsConfig.account_observer:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer
+DomainsConfig.decision_making:
+  file: config/aurora/domains.yaml
+  path: domains.decision_making
+DomainsConfig.execution_position:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position
+DomainsConfig.feature_engineering:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering
+DomainsConfig.position_tracking:
+  file: config/aurora/domains.yaml
+  path: domains.position_tracking
+DomainsConfig.risk_management:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management
+EmaBiasConfig.clamp_max:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.ema_bias.clamp_max
+EmaBiasConfig.clamp_min:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.ema_bias.clamp_min
+EmaClampConfig.clamp_max:
+  file: config/aurora/trading.yaml
+  path: trading.decision.ema_clamp.clamp_max
+EmaClampConfig.clamp_min:
+  file: config/aurora/trading.yaml
+  path: trading.decision.ema_clamp.clamp_min
+EmaClampConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.decision.ema_clamp.enabled
+EmaConfigDetailed.period_long:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.ema.period_long
+EmaConfigDetailed.period_short:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.ema.period_short
+EmergencyConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.emergency.enabled
+EmergencyConfig.wait_mode_bars:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.emergency.wait_mode_bars
+ExecutionConfig.allow_trade_with_guardian_tidy_only:
+  file: config/aurora/trading.yaml
+  path: trading.execution.allow_trade_with_guardian_tidy_only
+ExecutionConfig.anti_race_close_ms:
+  file: config/aurora/trading.yaml
+  path: trading.execution.anti_race_close_ms
+ExecutionConfig.exposure:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure
+ExecutionConfig.fallback:
+  file: config/aurora/trading.yaml
+  path: trading.execution.fallback
+ExecutionConfig.fsm_periodic_cleanup_enabled:
+  file: config/aurora/trading.yaml
+  path: trading.execution.fsm_periodic_cleanup_enabled
+ExecutionConfig.limit_orders:
+  file: config/aurora/trading.yaml
+  path: trading.execution.limit_orders
+ExecutionConfig.manage:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage
+ExecutionConfig.min_post_interval_per_symbol_ms:
+  file: config/aurora/trading.yaml
+  path: trading.execution.min_post_interval_per_symbol_ms
+ExecutionConfig.open_order_type:
+  file: config/aurora/trading.yaml
+  path: trading.execution.open_order_type
+ExecutionConfig.order_guardian:
+  file: config/aurora/trading.yaml
+  path: trading.execution.order_guardian
+ExecutionConfig.order_params:
+  file: config/aurora/trading.yaml
+  path: trading.execution.order_params
+ExecutionConfig.orders:
+  file: config/aurora/trading.yaml
+  path: trading.execution.orders
+ExecutionConfig.preflight_backoff_ms:
+  file: config/aurora/trading.yaml
+  path: trading.execution.preflight_backoff_ms
+ExecutionConfig.watchdog:
+  file: config/aurora/trading.yaml
+  path: trading.execution.watchdog
+ExecutionPositionDomainConfig.exposure_guard:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position.exposure_guard
+ExecutionPositionDomainConfig.fsm_open:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position.fsm_open
+ExecutionPositionDomainConfig.idempotent_cancel:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position.idempotent_cancel
+ExecutionPositionDomainConfig.metrics_collector:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position.metrics_collector
+ExecutionPositionDomainConfig.order_index:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position.order_index
+ExecutionPositionDomainConfig.utils:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position.utils
+ExecutionPositionDomainConfig.watchdog:
+  file: config/aurora/domains.yaml
+  path: domains.execution_position.watchdog
+ExecutionUtilsConfig.basis_points_base:
+  file: config/aurora/trading.yaml
+  path: trading.execution.utils.basis_points_base
+ExecutionUtilsConfig.client_order_id_max_length:
+  file: config/aurora/trading.yaml
+  path: trading.execution.utils.client_order_id_max_length
+ExposureConfig.count_pending_orders:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.count_pending_orders
+ExposureConfig.exclude_reduce_only:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.exclude_reduce_only
+ExposureConfig.leverage_defaults:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.leverage_defaults
+ExposureConfig.max_directional_ratio:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.max_directional_ratio
+ExposureConfig.max_equity_utilization_pct:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.max_equity_utilization_pct
+ExposureConfig.max_portfolio_fraction:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.max_portfolio_fraction
+ExposureConfig.max_side_utilization_pct:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.max_side_utilization_pct
+ExposureConfig.pending_reservation_ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.pending_reservation_ttl_sec
+ExposureConfig.pending_ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.pending_ttl_sec
+ExposureConfig.per_symbol_cap_pct:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.per_symbol_cap_pct
+ExposureConfig.positions_stale_ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.positions_stale_ttl_sec
+ExposureConfig.post_fill_hold_ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure.post_fill_hold_ttl_sec
+ExposureGuardConfig.max_concentration_pct:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.max_concentration_pct
+ExposureGuardConfig.max_directional_ratio:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.max_directional_ratio
+ExposureGuardConfig.max_equity_utilization_pct:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.max_equity_utilization_pct
+ExposureGuardConfig.max_long_utilization_pct:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.max_long_utilization_pct
+ExposureGuardConfig.max_portfolio_fraction:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.max_portfolio_fraction
+ExposureGuardConfig.max_short_utilization_pct:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.max_short_utilization_pct
+ExposureGuardConfig.pending_timeout_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.pending_timeout_sec
+ExposureGuardConfig.pending_ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.pending_ttl_sec
+ExposureGuardConfig.post_fill_ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.post_fill_ttl_sec
+ExposureGuardConfig.stale_ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.exposure_guard.stale_ttl_sec
+FailsafeConfig.max_hold_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.failsafe.max_hold_sec
+FeatureDefaultsConfig.correlation_default:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.defaults.correlation_default
+FeatureDefaultsConfig.ms_per_sec:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.defaults.ms_per_sec
+FeatureDefaultsConfig.neutral_value:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.defaults.neutral_value
+FeatureDefaultsConfig.zero_value:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.defaults.zero_value
+FeatureEngineeringConfig.ema:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.ema
+FeatureEngineeringConfig.liquidity:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.liquidity
+FeatureEngineeringConfig.macro_sync:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync
+FeatureEngineeringConfig.volatility:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volatility
+FeatureEngineeringConfig.volume:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume
+FeatureEngineeringDomainConfig.defaults:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.defaults
+FeatureEngineeringDomainConfig.delta_price:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.delta_price
+FeatureEngineeringDomainConfig.depth_imbalance:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.depth_imbalance
+FeatureEngineeringDomainConfig.ema:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.ema
+FeatureEngineeringDomainConfig.ema_bias:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.ema_bias
+FeatureEngineeringDomainConfig.enable_new_metrics:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.enable_new_metrics
+FeatureEngineeringDomainConfig.liquidity:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.liquidity
+FeatureEngineeringDomainConfig.macro_sync:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync
+FeatureEngineeringDomainConfig.volatility:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volatility
+FeatureEngineeringDomainConfig.volatility_state:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volatility_state
+FeatureEngineeringDomainConfig.volume:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume
+FeatureEngineeringDomainConfig.volume_input_mode:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume_input_mode
+FeatureEngineeringDomainConfig.volume_spike:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume_spike
+FeaturesTtlConfig.ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.features_ttl.ttl_sec
+FsmOpenConfig.idempotency_window_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.fsm_open.idempotency_window_sec
+IdempotentCancelConfig.max_retries:
+  file: config/aurora/trading.yaml
+  path: trading.execution.idempotent_cancel.max_retries
+InstrumentPrecisionSpec.model_config:
+  file: config/aurora/instruments.yaml
+  path: instruments.model_config
+InstrumentPrecisionSpec.step_size:
+  file: config/aurora/instruments.yaml
+  path: instruments.step_size
+InstrumentPrecisionSpec.symbol:
+  file: config/aurora/instruments.yaml
+  path: instruments.symbol
+InstrumentPrecisionSpec.tick_size:
+  file: config/aurora/instruments.yaml
+  path: instruments.tick_size
+InstrumentSpec.min_notional:
+  file: config/aurora/instruments.yaml
+  path: instruments.min_notional
+InstrumentSpec.min_qty:
+  file: config/aurora/instruments.yaml
+  path: instruments.min_qty
+InstrumentSpec.quote:
+  file: config/aurora/instruments.yaml
+  path: instruments.quote
+InstrumentSpec.step_size:
+  file: config/aurora/instruments.yaml
+  path: instruments.step_size
+InstrumentSpec.symbol:
+  file: config/aurora/instruments.yaml
+  path: instruments.symbol
+InstrumentSpec.tick_size:
+  file: config/aurora/instruments.yaml
+  path: instruments.tick_size
+KellyConfig.base_probability:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.kelly.base_probability
+KellyConfig.kelly_alpha:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.kelly.kelly_alpha
+KellyConfig.kelly_cap:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.kelly.kelly_cap
+KellyConfig.payoff_ratio_r:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.kelly.payoff_ratio_r
+KlinesConfig.interval:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.klines.interval
+KlinesConfig.limit:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.klines.limit
+LiquidityConfigDetailed.depth_half:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.liquidity.depth_half
+LiquidityConfigDetailed.kappa_max:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.liquidity.kappa_max
+LiquidityConfigDetailed.kappa_min:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.liquidity.kappa_min
+LoggingConfig.file:
+  file: config/aurora/system.yaml
+  path: system.logging.file
+LoggingConfig.format:
+  file: config/aurora/system.yaml
+  path: system.logging.format
+LoggingConfig.level:
+  file: config/aurora/system.yaml
+  path: system.logging.level
+LoggingConfig.model_config:
+  file: config/aurora/system.yaml
+  path: system.logging.model_config
+LoggingConfig.rotation:
+  file: config/aurora/system.yaml
+  path: system.logging.rotation
+MRAssetConfig.allowed_regimes:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.allowed_regimes
+MRAssetConfig.bb_window:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.bb_window
+MRAssetConfig.enabled:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.enabled
+MRAssetConfig.min_vol_atr:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.min_vol_atr
+MRAssetConfig.position_mode:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.position_mode
+MRAssetConfig.risk:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk
+MRAssetConfig.sl_pct:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.sl_pct
+MRAssetConfig.strategy:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy
+MRAssetRiskConfig.max_risk_score:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.asset_risk.max_risk_score
+MRAssetRiskConfig.position_size_usd:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.asset_risk.position_size_usd
+MRRegimeSizingConfig.sizing_mult:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.regime_sizing.sizing_mult
+MRRegimeSizingConfig.stop_mult:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.regime_sizing.stop_mult
+MRRegimeSizingConfig.target_mult:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.regime_sizing.target_mult
+MRRegimeThresholdsConfig.high_vol_pct:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.regime_thresholds.high_vol_pct
+MRRegimeThresholdsConfig.low_vol_pct:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.regime_thresholds.low_vol_pct
+MRRiskConfig.daily_loss_limit_usd:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk.daily_loss_limit_usd
+MRRiskConfig.expected_pnl_multiplier:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk.expected_pnl_multiplier
+MRRiskConfig.fees_pct:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk.fees_pct
+MRRiskConfig.max_concurrent_positions:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk.max_concurrent_positions
+MRRiskConfig.position_size_usd:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk.position_size_usd
+MRRiskConfig.slippage_pct:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk.slippage_pct
+MRStrategyOverrideConfig.bb_num_std:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy_override.bb_num_std
+MRStrategyOverrideConfig.bb_window:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy_override.bb_window
+MRStrategyOverrideConfig.cooldown_sec:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy_override.cooldown_sec
+MRStrategyOverrideConfig.entry_threshold:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy_override.entry_threshold
+MRStrategyOverrideConfig.min_bb_width:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy_override.min_bb_width
+MRStrategyOverrideConfig.sl_atr_mult:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy_override.sl_atr_mult
+MRStrategyOverrideConfig.tp_to_mid:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy_override.tp_to_mid
+MRStrategyParamsConfig.atr_window:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.atr_window
+MRStrategyParamsConfig.bb_num_std:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.bb_num_std
+MRStrategyParamsConfig.bb_window:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.bb_window
+MRStrategyParamsConfig.cooldown_sec:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.cooldown_sec
+MRStrategyParamsConfig.entry_threshold:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.entry_threshold
+MRStrategyParamsConfig.max_bb_width:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.max_bb_width
+MRStrategyParamsConfig.min_bars:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.min_bars
+MRStrategyParamsConfig.min_bb_width:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.min_bb_width
+MRStrategyParamsConfig.rsi_overbought:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.rsi_overbought
+MRStrategyParamsConfig.rsi_oversold:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.rsi_oversold
+MRStrategyParamsConfig.rsi_window:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.rsi_window
+MRStrategyParamsConfig.sl_atr_mult:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.sl_atr_mult
+MRStrategyParamsConfig.tp_to_mid:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy.tp_to_mid
+MacroSyncConfig.align_mode:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.align_mode
+MacroSyncConfig.anchor_update_from_ticks:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.anchor_update_from_ticks
+MacroSyncConfig.anchors:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.anchors
+MacroSyncConfig.emit_abs:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.emit_abs
+MacroSyncConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.enabled
+MacroSyncConfig.min_buffer_size:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.min_buffer_size
+MacroSyncConfig.time_diff_threshold_ms:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.time_diff_threshold_ms
+MacroSyncConfig.window:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync.window
+MacroSyncMetricsConfig.align_mode:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync.align_mode
+MacroSyncMetricsConfig.anchor_update_from_ticks:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync.anchor_update_from_ticks
+MacroSyncMetricsConfig.anchors:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync.anchors
+MacroSyncMetricsConfig.enabled:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync.enabled
+MacroSyncMetricsConfig.min_buffer_size:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync.min_buffer_size
+MacroSyncMetricsConfig.time_diff_threshold_ms:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync.time_diff_threshold_ms
+MacroSyncMetricsConfig.window:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.macro_sync.window
+ManageConfig.auto:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.auto
+ManageConfig.brackets:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.brackets
+ManageConfig.emergency:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.emergency
+ManageConfig.failsafe:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.failsafe
+ManageConfig.orphan_monitor:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.orphan_monitor
+MarketDataConfig.api_call_limits:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.api_call_limits
+MarketDataConfig.macro_sync:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.macro_sync
+MarketDataConfig.poll_interval_sec:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.poll_interval_sec
+MarketDataConfig.use_multiprocessing:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.use_multiprocessing
+MarketDataConfig.websocket_streams:
+  file: config/aurora/trading.yaml
+  path: trading.market_data.websocket_streams
+MaxRiskScoreConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.decision.max_risk_score.enabled
+MaxRiskScoreConfig.value:
+  file: config/aurora/trading.yaml
+  path: trading.decision.max_risk_score.value
+MeanReversion1mStrategyConfig.allowed_regimes:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.allowed_regimes
+MeanReversion1mStrategyConfig.assets:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.assets
+MeanReversion1mStrategyConfig.emit_trade_intent_directly:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.emit_trade_intent_directly
+MeanReversion1mStrategyConfig.enabled:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.enabled
+MeanReversion1mStrategyConfig.model_config:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.model_config
+MeanReversion1mStrategyConfig.regime_sizing:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.regime_sizing
+MeanReversion1mStrategyConfig.regime_thresholds:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.regime_thresholds
+MeanReversion1mStrategyConfig.risk:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.risk
+MeanReversion1mStrategyConfig.strategy:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.strategy
+MeanReversion1mStrategyConfig.timeframe_sec:
+  file: config/aurora/strategies/mean_reversion_1m.yaml
+  path: mean_reversion_1m.timeframe_sec
+MeanReversionConfig.allowed_regimes:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mean_reversion.allowed_regimes
+MeanReversionConfig.bb_std_dev:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mean_reversion.bb_std_dev
+MeanReversionConfig.bb_window:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mean_reversion.bb_window
+MeanReversionConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mean_reversion.enabled
+MeanReversionConfig.min_vol_atr:
+  file: config/aurora/trading.yaml
+  path: trading.decision.mean_reversion.min_vol_atr
+MeanReversionRegimeModelConfig.confidence_multiplier:
+  file: config/aurora/regime.yaml
+  path: models.mean_reversion.confidence_multiplier
+MeanReversionRegimeModelConfig.model_config:
+  file: config/aurora/regime.yaml
+  path: models.mean_reversion.model_config
+MeanReversionRegimeModelConfig.threshold:
+  file: config/aurora/regime.yaml
+  path: models.mean_reversion.threshold
+MetricsCollectorConfig.recent_rejections_minutes:
+  file: config/aurora/trading.yaml
+  path: trading.execution.metrics_collector.recent_rejections_minutes
+MetricsCollectorConfig.window_size_minutes:
+  file: config/aurora/trading.yaml
+  path: trading.execution.metrics_collector.window_size_minutes
+OpsConfig.allowlist_symbols:
+  file: config/aurora/system.yaml
+  path: ops.allowlist_symbols
+OpsConfig.metrics_url:
+  file: config/aurora/system.yaml
+  path: ops.metrics_url
+OpsConfig.model_config:
+  file: config/aurora/system.yaml
+  path: ops.model_config
+OpsConfig.panic_killswitch:
+  file: config/aurora/system.yaml
+  path: ops.panic_killswitch
+OpsConfig.panic_ttl_sec:
+  file: config/aurora/system.yaml
+  path: ops.panic_ttl_sec
+OpsConfig.quiet_hours_utc:
+  file: config/aurora/system.yaml
+  path: ops.quiet_hours_utc
+OpsConfig.reports_dir:
+  file: config/aurora/system.yaml
+  path: ops.reports_dir
+OrderIndexConfig.ttl_sec:
+  file: config/aurora/trading.yaml
+  path: trading.execution.order_index.ttl_sec
+OrdersConfig.default_ttl_seconds:
+  file: config/aurora/trading.yaml
+  path: trading.execution.orders.default_ttl_seconds
+OrdersConfig.model_config:
+  file: config/aurora/trading.yaml
+  path: trading.execution.orders.model_config
+OrphanMonitorConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.orphan_monitor.enabled
+OrphanMonitorConfig.model_config:
+  file: config/aurora/trading.yaml
+  path: trading.execution.manage.orphan_monitor.model_config
+PositionSizingConfig.kappa_mode:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.kappa_mode
+PositionSizingConfig.liquidity_based_cap_usd:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.liquidity_based_cap_usd
+PositionSizingConfig.liquidity_kappa:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.liquidity_kappa
+PositionSizingConfig.liquidity_kappa_mode:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.liquidity_kappa_mode
+PositionSizingConfig.min_position_size_usd:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.min_position_size_usd
+PositionSizingConfig.risk_contract_v1:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.risk_contract_v1
+PositionSizingConfig.risk_fraction_q:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.risk_fraction_q
+PositionTrackingDomainConfig.enable_market_tick_subscription:
+  file: config/aurora/domains.yaml
+  path: domains.position_tracking.enable_market_tick_subscription
+PositionTrackingDomainConfig.positions_stale_ttl_sec:
+  file: config/aurora/domains.yaml
+  path: domains.position_tracking.positions_stale_ttl_sec
+PositionTrackingDomainConfig.precision:
+  file: config/aurora/domains.yaml
+  path: domains.position_tracking.precision
+PositionTrackingDomainConfig.thread_timeouts:
+  file: config/aurora/domains.yaml
+  path: domains.position_tracking.thread_timeouts
+PrecisionConfig.decimal_places:
+  file: config/aurora/instruments.yaml
+  path: instruments.precision.decimal_places
+PrecisionConfig.flat_position_threshold:
+  file: config/aurora/instruments.yaml
+  path: instruments.precision.flat_position_threshold
+PrecisionConfig.quantity_min_threshold:
+  file: config/aurora/instruments.yaml
+  path: instruments.precision.quantity_min_threshold
+QosConfig.enforce:
+  file: config/aurora/trading.yaml
+  path: trading.decision.qos.enforce
+QosConfig.exposure_block_cooldown_sec:
+  file: config/aurora/trading.yaml
+  path: trading.decision.qos.exposure_block_cooldown_sec
+QosConfig.max_intents_per_minute_per_symbol:
+  file: config/aurora/trading.yaml
+  path: trading.decision.qos.max_intents_per_minute_per_symbol
+QosConfig.mode:
+  file: config/aurora/trading.yaml
+  path: trading.decision.qos.mode
+QosConfig.symbol_cooldown_sec:
+  file: config/aurora/trading.yaml
+  path: trading.decision.qos.symbol_cooldown_sec
+ROIExitConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.decision.roi_exit.enabled
+ROIExitConfig.target_roi_pct:
+  file: config/aurora/trading.yaml
+  path: trading.decision.roi_exit.target_roi_pct
+RegimeDetectorConfig.model_config:
+  file: config/aurora/regime.yaml
+  path: models.model_config
+RegimeDetectorConfig.models:
+  file: config/aurora/regime.yaml
+  path: models.models
+RegimeModelConfig.confidence_max:
+  file: config/aurora/regime.yaml
+  path: models.confidence_max
+RegimeModelConfig.confidence_min:
+  file: config/aurora/regime.yaml
+  path: models.confidence_min
+RegimeModelConfig.confidence_multiplier:
+  file: config/aurora/regime.yaml
+  path: models.confidence_multiplier
+RegimeModelConfig.model_config:
+  file: config/aurora/regime.yaml
+  path: models.model_config
+RegimeModelsConfig.mean_reversion:
+  file: config/aurora/regime.yaml
+  path: models.mean_reversion
+RegimeModelsConfig.sma_trend:
+  file: config/aurora/regime.yaml
+  path: models.sma_trend
+RegimeModelsConfig.volatility:
+  file: config/aurora/regime.yaml
+  path: models.volatility
+RegimeSizingSymbolConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.decision.regime_sizing.enabled
+RegimeSizingSymbolConfig.high_vol_multiplier:
+  file: config/aurora/trading.yaml
+  path: trading.decision.regime_sizing.high_vol_multiplier
+RegimeSizingSymbolConfig.low_vol_multiplier:
+  file: config/aurora/trading.yaml
+  path: trading.decision.regime_sizing.low_vol_multiplier
+RetrySchedulerConfig.max_attempts:
+  file: config/aurora/trading.yaml
+  path: trading.execution.retry_scheduler.max_attempts
+RetrySchedulerConfig.min_retry_delay_ms:
+  file: config/aurora/trading.yaml
+  path: trading.execution.retry_scheduler.min_retry_delay_ms
+RiskContractV1Config.effective_leverage:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.risk_contract_v1.effective_leverage
+RiskContractV1Config.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.risk_contract_v1.enabled
+RiskContractV1Config.model_config:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.risk_contract_v1.model_config
+RiskContractV1Config.per_symbol_margin_fraction:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.risk_contract_v1.per_symbol_margin_fraction
+RiskContractV1Config.regime_sizing:
+  file: config/aurora/trading.yaml
+  path: trading.decision.position_sizing.risk_contract_v1.regime_sizing
+RiskManagementDataSourcesConfig.market_data:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management.data_sources.market_data
+RiskManagementDataSourcesConfig.portfolio_state:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management.data_sources.portfolio_state
+RiskManagementDomainConfig.risk_score_weights:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management.risk_score_weights
+RiskManagementDomainConfig.trading_allowed_thresholds:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management.trading_allowed_thresholds
+RiskManagementDomainConfig.use_absorption_penalty:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management.use_absorption_penalty
+RiskManagementDomainConfig.validation:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management.validation
+RiskScoreWeightsConfig.absorption_inverse:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_score_weights.absorption_inverse
+RiskScoreWeightsConfig.delta_price_pct:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_score_weights.delta_price_pct
+RiskScoreWeightsConfig.obi:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_score_weights.obi
+RiskScoreWeightsConfig.tfi:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_score_weights.tfi
+RiskSkewConfig.defer_cooldown_sec:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_skew.defer_cooldown_sec
+RiskSkewConfig.max_defer_count:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_skew.max_defer_count
+RiskSkewConfig.max_skew_sec:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_skew.max_skew_sec
+RiskValidationConfig.total_weight_max:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_validation.total_weight_max
+RiskValidationConfig.total_weight_min:
+  file: config/aurora/trading.yaml
+  path: trading.decision.risk_validation.total_weight_min
+SLConfig.fixed_bps:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.sl.fixed_bps
+SLConfig.model_config:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.sl.model_config
+SMARegimeModelConfig.confidence_max:
+  file: config/aurora/regime.yaml
+  path: models.sma.confidence_max
+SMARegimeModelConfig.confidence_min:
+  file: config/aurora/regime.yaml
+  path: models.sma.confidence_min
+SMARegimeModelConfig.confidence_multiplier:
+  file: config/aurora/regime.yaml
+  path: models.sma.confidence_multiplier
+SMARegimeModelConfig.model_config:
+  file: config/aurora/regime.yaml
+  path: models.sma.model_config
+SMARegimeModelConfig.sma_long_period:
+  file: config/aurora/regime.yaml
+  path: models.sma.sma_long_period
+SMARegimeModelConfig.sma_short_period:
+  file: config/aurora/regime.yaml
+  path: models.sma.sma_short_period
+SignalThresholdConfig.enabled:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_threshold.enabled
+SignalThresholdConfig.value:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_threshold.value
+SignalWeights.delta_price:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.delta_price
+SignalWeights.depth_imbalance:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.depth_imbalance
+SignalWeights.ema_bias:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.ema_bias
+SignalWeights.macro_sync:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.macro_sync
+SignalWeights.obi:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.obi
+SignalWeights.tfi:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.tfi
+SignalWeights.volatility_state:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.volatility_state
+SignalWeights.volume_spike:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signal_weights.volume_spike
+SignalsConfig.enable_new_metrics:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signals.enable_new_metrics
+SignalsConfig.normalize:
+  file: config/aurora/trading.yaml
+  path: trading.decision.signals.normalize
+StrategiesArbitrationConfig.logging:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.arbitration.logging
+StrategiesArbitrationConfig.mode:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.arbitration.mode
+StrategiesArbitrationConfig.priority:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.arbitration.priority
+StrategiesArbitrationLoggingConfig.log_level:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.arbitration.logging.log_level
+StrategiesArbitrationLoggingConfig.rejected_why_prefix:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.arbitration.logging.rejected_why_prefix
+StrategiesRegistryConfig.arbitration:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.arbitration
+StrategiesRegistryConfig.assignments:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.assignments
+StrategiesRegistryConfig.version:
+  file: config/aurora/strategies.yaml
+  path: strategies_registry.version
+SystemConfig.logging:
+  file: config/aurora/system.yaml
+  path: system.logging
+SystemConfig.market_data:
+  file: config/aurora/system.yaml
+  path: system.market_data
+SystemConfig.model_config:
+  file: config/aurora/system.yaml
+  path: system.model_config
+SystemMarketDataConfig.emit_workers:
+  file: config/aurora/system.yaml
+  path: system.market_data.emit_workers
+SystemMarketDataConfig.local_queue_maxsize:
+  file: config/aurora/system.yaml
+  path: system.market_data.local_queue_maxsize
+SystemMarketDataConfig.model_config:
+  file: config/aurora/system.yaml
+  path: system.market_data.model_config
+SystemMarketDataConfig.queue_maxsize:
+  file: config/aurora/system.yaml
+  path: system.market_data.queue_maxsize
+SystemMarketDataConfig.tick_ttl_ms:
+  file: config/aurora/system.yaml
+  path: system.market_data.tick_ttl_ms
+SystemMetaConfig.calibrator:
+  file: config/aurora/system.yaml
+  path: system.meta.calibrator
+SystemMetaConfig.hardening:
+  file: config/aurora/system.yaml
+  path: system.meta.hardening
+SystemMetaConfig.hawkes:
+  file: config/aurora/system.yaml
+  path: system.meta.hawkes
+SystemMetaConfig.hotreload_whitelist:
+  file: config/aurora/system.yaml
+  path: system.meta.hotreload_whitelist
+SystemMetaConfig.kelly:
+  file: config/aurora/system.yaml
+  path: system.meta.kelly
+SystemMetaConfig.position_tracking:
+  file: config/aurora/system.yaml
+  path: system.meta.position_tracking
+SystemMetaConfig.regime_config_version:
+  file: config/aurora/system.yaml
+  path: system.meta.regime_config_version
+SystemMetaConfig.risk_core:
+  file: config/aurora/system.yaml
+  path: system.meta.risk_core
+SystemMetaConfig.runtime:
+  file: config/aurora/system.yaml
+  path: system.meta.runtime
+SystemMetaConfig.sequential_tests:
+  file: config/aurora/system.yaml
+  path: system.meta.sequential_tests
+SystemMetaConfig.system_config_version:
+  file: config/aurora/system.yaml
+  path: system.meta.system_config_version
+SystemRuntimeMeta.config_dir:
+  file: config/aurora/system.yaml
+  path: system.runtime_meta.config_dir
+SystemRuntimeMeta.config_name:
+  file: config/aurora/system.yaml
+  path: system.runtime_meta.config_name
+TPConfig.fixed_bps:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.tp.fixed_bps
+TPConfig.model_config:
+  file: config/aurora/trading.yaml
+  path: trading.execution.brackets.tp.model_config
+ThreadTimeoutsConfig.join_timeout_sec:
+  file: config/aurora/domains.yaml
+  path: domains.account_observer.thread_timeouts.join_timeout_sec
+TradingAllowedThresholdsConfig.max_risk_score:
+  file: config/aurora/trading.yaml
+  path: trading.decision.trading_allowed_thresholds.max_risk_score
+TradingConfig.aurora_instruments:
+  file: config/aurora/trading.yaml
+  path: trading.aurora_instruments
+TradingConfig.decision:
+  file: config/aurora/trading.yaml
+  path: trading.decision
+TradingConfig.domain_configuration:
+  file: config/aurora/trading.yaml
+  path: trading.domain_configuration
+TradingConfig.domains:
+  file: config/aurora/trading.yaml
+  path: trading.domains
+TradingConfig.execution:
+  file: config/aurora/trading.yaml
+  path: trading.execution
+TradingConfig.feature_engineering:
+  file: config/aurora/trading.yaml
+  path: trading.feature_engineering
+TradingConfig.instruments:
+  file: config/aurora/trading.yaml
+  path: trading.instruments
+TradingConfig.market_data:
+  file: config/aurora/trading.yaml
+  path: trading.market_data
+TradingConfig.mode:
+  file: config/aurora/trading.yaml
+  path: trading.mode
+TradingConfig.ops:
+  file: config/aurora/trading.yaml
+  path: trading.ops
+TradingConfig.risk:
+  file: config/aurora/trading.yaml
+  path: trading.risk
+TradingConfig.risk_budgets:
+  file: config/aurora/trading.yaml
+  path: trading.risk_budgets
+TradingConfig.risk_management:
+  file: config/aurora/trading.yaml
+  path: trading.risk_management
+TradingConfig.symbols_to_track:
+  file: config/aurora/trading.yaml
+  path: trading.symbols_to_track
+TradingConfig.tca_prefs:
+  file: config/aurora/trading.yaml
+  path: trading.tca_prefs
+TradingRiskManagementConfig.data_sources:
+  file: config/aurora/domains.yaml
+  path: domains.risk_management.trading.data_sources
+VolatilityConfigDetailed.sma_length:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volatility.sma_length
+VolatilityConfigDetailed.window_sec:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volatility.window_sec
+VolatilityRegimeModelConfig.atr_period:
+  file: config/aurora/regime.yaml
+  path: models.volatility.atr_period
+VolatilityRegimeModelConfig.atr_sma_length:
+  file: config/aurora/regime.yaml
+  path: models.volatility.atr_sma_length
+VolatilityRegimeModelConfig.enabled:
+  file: config/aurora/regime.yaml
+  path: models.volatility.enabled
+VolatilityRegimeModelConfig.high_vol_confidence_multiplier:
+  file: config/aurora/regime.yaml
+  path: models.volatility.high_vol_confidence_multiplier
+VolatilityRegimeModelConfig.low_vol_confidence_multiplier:
+  file: config/aurora/regime.yaml
+  path: models.volatility.low_vol_confidence_multiplier
+VolatilityRegimeModelConfig.low_vol_multiplier:
+  file: config/aurora/regime.yaml
+  path: models.volatility.low_vol_multiplier
+VolatilityRegimeModelConfig.model_config:
+  file: config/aurora/regime.yaml
+  path: models.volatility.model_config
+VolatilityRegimeModelConfig.threshold_multiplier:
+  file: config/aurora/regime.yaml
+  path: models.volatility.threshold_multiplier
+VolatilityStateConfig.cap_max:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volatility_state.cap_max
+VolumeConfigDetailed.min_window_volume_usd:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume.min_window_volume_usd
+VolumeConfigDetailed.sma_length:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume.sma_length
+VolumeConfigDetailed.window_sec:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume.window_sec
+VolumeSpikeConfig.cap_max:
+  file: config/aurora/domains.yaml
+  path: domains.feature_engineering.volume_spike.cap_max
+WatchdogConfig.ack_ttl_ms:
+  file: config/aurora/trading.yaml
+  path: trading.execution.watchdog.ack_ttl_ms
+WatchdogConfig.check_interval_ms:
+  file: config/aurora/trading.yaml
+  path: trading.execution.watchdog.check_interval_ms
+WatchdogConfig.fill_ttl_ms:
+  file: config/aurora/trading.yaml
+  path: trading.execution.watchdog.fill_ttl_ms
+WatchdogConfig.rps_limit:
+  file: config/aurora/trading.yaml
+  path: trading.execution.watchdog.rps_limit

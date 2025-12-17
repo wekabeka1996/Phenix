@@ -14,6 +14,8 @@ from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal  # WAL module for disaster recovery
+from apps.reference.config_loader import AuroraConfig
+from apps.reference.domain_config import DomainConfigResolver
 
 # Import AlertManager for manual intervention alerts
 try:
@@ -51,8 +53,10 @@ class PositionTracking:
     Subscribes to EVT:TRADE_EXECUTED and emits EVT:PORTFOLIO_STATE_UPDATED.
     """
 
-    def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
+    def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         self.fsm = fsm
+        if isinstance(config, dict):
+            raise TypeError("PositionTracking requires AuroraConfig, got dict")
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
@@ -62,7 +66,8 @@ class PositionTracking:
         self.fsm.listen("EVT:BALANCE_UPDATE_RECEIVED", self.on_balance_update)
 
         # P1: Optional subscription to EVT:MARKET_TICK_RECEIVED for real-time mark prices
-        self._market_tick_subscription_enabled = self._should_subscribe_market_tick()
+        domain_cfg = DomainConfigResolver(self.config).get_position_tracking()
+        self._market_tick_subscription_enabled = bool(domain_cfg.enable_market_tick_subscription)
         if self._market_tick_subscription_enabled:
             self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
             self.logger.info("Market tick subscription enabled for real-time unrealized PnL")
@@ -97,41 +102,11 @@ class PositionTracking:
         # Manual intervention metrics
         self.manual_intervention_detected_total = 0
 
-        # Load precision parameters from domains config
-        self.quantity_min_threshold = decimal.Decimal("1e-9")
-        self.flat_position_threshold = decimal.Decimal("1e-12")
-        self.decimal_places = 2
-        
-        try:
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'position_tracking'):
-                precision = self.config.domains.position_tracking.precision
-                self.quantity_min_threshold = decimal.Decimal(str(precision.quantity_min_threshold))
-                self.flat_position_threshold = decimal.Decimal(str(precision.flat_position_threshold))
-                self.decimal_places = precision.decimal_places
-        except (AttributeError, TypeError):
-            pass  # Use defaults
-
-    def _should_subscribe_market_tick(self) -> bool:
-        """
-        Check if market tick subscription should be enabled.
-
-        P1: Config-gated subscription to EVT:MARKET_TICK_RECEIVED for real-time mark prices.
-
-        Returns:
-            bool: True if subscription should be enabled
-        """
-        try:
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'position_tracking'):
-                return bool(getattr(self.config.domains.position_tracking, 'enable_market_tick_subscription', False))
-            elif isinstance(self.config, dict):
-                return bool(
-                    self.config.get("domains", {})
-                    .get("position_tracking", {})
-                    .get("enable_market_tick_subscription", False)
-                )
-        except (AttributeError, TypeError):
-            pass
-        return False
+        # Load precision parameters from canonical domains config
+        precision = domain_cfg.precision
+        self.quantity_min_threshold = decimal.Decimal(str(precision.quantity_min_threshold))
+        self.flat_position_threshold = decimal.Decimal(str(precision.flat_position_threshold))
+        self.decimal_places = int(precision.decimal_places)
 
     def on_market_tick(self, event: Message) -> None:
         """

@@ -26,11 +26,18 @@ def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profil
     # Create minimal system.yaml
     system_yaml = {
         "trading_mode": "testnet",
+        "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
         "binance_api": {
             "testnet": {
                 "api_key": "test",
-                "api_secret": "test"
-            }
+                "api_secret": "test",
+                "rest_url": "https://test",
+            },
+            "live": {
+                "api_key": "test",
+                "api_secret": "test",
+                "rest_url": "https://live",
+            },
         }
     }
     with open(config_dir / "system.yaml", "w") as f:
@@ -38,7 +45,11 @@ def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profil
     
     # Create trading.yaml (minimal)
     trading_yaml = {
-        "trading": {}
+        "trading": {
+            "mode": "testnet",
+            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
+            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
+        }
     }
     with open(config_dir / "trading.yaml", "w") as f:
         yaml.dump(trading_yaml, f)
@@ -71,6 +82,11 @@ def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profil
     }
     with open(config_dir / "instruments.yaml", "w") as f:
         yaml.dump(instruments_yaml, f)
+
+    # Create aurora_instruments.yaml (required for strict SSOT)
+    aurora_instruments_yaml = {}
+    with open(config_dir / "aurora_instruments.yaml", "w") as f:
+        yaml.dump(aurora_instruments_yaml, f)
     
     # Create strategies.yaml
     assignments_dict = {}

@@ -16,18 +16,29 @@ def create_minimal_config(config_dir: Path, regime_yaml_content: dict):
     # system.yaml
     system_yaml = {
         "trading_mode": "testnet",
+        "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
         "binance_api": {
             "testnet": {
                 "api_key": "test",
-                "api_secret": "test"
-            }
+                "api_secret": "test",
+                "rest_url": "https://test",
+            },
+            "live": {
+                "api_key": "test",
+                "api_secret": "test",
+                "rest_url": "https://live",
+            },
         }
     }
     (config_dir / "system.yaml").write_text(yaml.dump(system_yaml))
     
     # trading.yaml
     trading_yaml = {
-        "trading": {}
+        "trading": {
+            "mode": "testnet",
+            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
+            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
+        }
     }
     (config_dir / "trading.yaml").write_text(yaml.dump(trading_yaml))
     

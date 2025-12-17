@@ -13,6 +13,8 @@ from decimal import Decimal
 from typing import Dict, Any
 
 from vfoundation.core.protocol import Message
+from apps.reference.config_contract import ConfigContractError
+from apps.reference.config_loader import AuroraConfig
 
 
 class RegimeDetector:
@@ -28,7 +30,7 @@ class RegimeDetector:
     Emits EVT:REGIME_DETECTED events with confidence scores.
     """
 
-    def __init__(self, config: dict, fsm):
+    def __init__(self, config: AuroraConfig, fsm):
         """
         Initializes the detector with model configurations.
 
@@ -38,90 +40,28 @@ class RegimeDetector:
             fsm: FSMCore instance for event emission and logging
         """
         self.fsm = fsm
+        if isinstance(config, dict):
+            raise TypeError("RegimeDetector requires AuroraConfig, got dict")
         self.config = config
         self.logger = logging.getLogger(__name__)
 
-        # Load model configuration
-        try:
-            if hasattr(self.config, 'models'):
-                models_cfg = (self.config.models or {})
-            elif isinstance(self.config, dict):
-                # Handle dict config with proper nesting
-                models_cfg = (
-                    self.config.get("trading", {}).get("regime_detector", {}).get("models", {}) or
-                    self.config.get("models", {}) or {}
-                )
-            else:
-                models_cfg = {}
-        except (AttributeError, TypeError):
-            models_cfg = {}
+        models_cfg = self.config.models
+        if models_cfg is None:
+            raise ConfigContractError(
+                path="models",
+                why="Missing regime models config (expected regime.yaml to populate root models).",
+            )
 
-        # Safe extraction of sma_trend config
-        try:
-            if isinstance(models_cfg, dict):
-                self.model_config = models_cfg.get("sma_trend", {}) or {}
-            elif hasattr(models_cfg, 'sma_trend'):
-                self.model_config = models_cfg.sma_trend or {}
-            else:
-                self.model_config = {}
-        except (AttributeError, TypeError):
-            self.model_config = {}
+        self.model_config = models_cfg.sma_trend
 
         self.model_name = "sma_trend_v1"
 
-        # Periods (safe defaults)
-        try:
-            if isinstance(self.model_config, dict):
-                self.sma_short_period = int(
-                    self.model_config.get("sma_short_period", 10))
-            elif hasattr(self.model_config, 'sma_short_period'):
-                self.sma_short_period = int(self.model_config.sma_short_period)
-            elif hasattr(self.model_config, 'short_period'):
-                self.sma_short_period = int(self.model_config.short_period)
-            else:
-                self.sma_short_period = 10
-        except Exception:
-            self.sma_short_period = 10
-        try:
-            if isinstance(self.model_config, dict):
-                self.sma_long_period = int(
-                    self.model_config.get("sma_long_period", 50))
-            elif hasattr(self.model_config, 'sma_long_period'):
-                self.sma_long_period = int(self.model_config.sma_long_period)
-            elif hasattr(self.model_config, 'long_period'):
-                self.sma_long_period = int(self.model_config.long_period)
-            else:
-                self.sma_long_period = 50
-        except Exception:
-            self.sma_long_period = 50
+        self.sma_short_period = int(self.model_config.sma_short_period)
+        self.sma_long_period = int(self.model_config.sma_long_period)
 
-        try:
-            if hasattr(models_cfg, 'volatility'):
-                vol_cfg = models_cfg.volatility
-            elif isinstance(models_cfg, dict):
-                vol_cfg = models_cfg.get("volatility", {})
-            else:
-                vol_cfg = {}
-        except (AttributeError, TypeError):
-            vol_cfg = {}
-        try:
-            if isinstance(vol_cfg, dict):
-                self.atr_period = int(vol_cfg.get("atr_period", 14))
-            elif hasattr(vol_cfg, 'atr_period'):
-                self.atr_period = int(vol_cfg.atr_period)
-            else:
-                self.atr_period = 14
-        except Exception:
-            self.atr_period = 14
-        try:
-            if isinstance(vol_cfg, dict):
-                self.atr_sma_length = int(vol_cfg.get("atr_sma_length", 100))
-            elif hasattr(vol_cfg, 'atr_sma_length'):
-                self.atr_sma_length = int(vol_cfg.atr_sma_length)
-            else:
-                self.atr_sma_length = 100
-        except Exception:
-            self.atr_sma_length = 100
+        vol_cfg = models_cfg.volatility
+        self.atr_period = int(vol_cfg.atr_period)
+        self.atr_sma_length = int(vol_cfg.atr_sma_length)
 
         # Per-symbol rolling buffers for computing SMA/ATR if features don't provide them
         self._price_buf: Dict[str, deque] = defaultdict(
@@ -159,11 +99,7 @@ class RegimeDetector:
 
         # Heuristic formula: spread / base * multiplier
         # Multiplier of 20.0 empirically tuned for realistic signals
-        confidence_multiplier = Decimal("20.0")
-        if hasattr(self.model_config, "confidence_multiplier"):
-             confidence_multiplier = Decimal(str(self.model_config.confidence_multiplier))
-        elif isinstance(self.model_config, dict):
-             confidence_multiplier = Decimal(str(self.model_config.get("confidence_multiplier", "20.0")))
+        confidence_multiplier = Decimal(str(self.model_config.confidence_multiplier))
 
         # For test case: (4050-3900)/3900 = 0.0385 * 20 = 0.77
         spread_ratio = (sma_short - sma_long) / sma_long
@@ -171,17 +107,8 @@ class RegimeDetector:
 
         # Bound the confidence between floor (0.5) and ceiling (0.95)
         # Using abs() to handle both uptrend and downtrend signals
-        conf_min = Decimal("0.5")
-        conf_max = Decimal("0.95")
-        if hasattr(self.model_config, "confidence_min"):
-             conf_min = Decimal(str(self.model_config.confidence_min))
-        elif isinstance(self.model_config, dict):
-             conf_min = Decimal(str(self.model_config.get("confidence_min", "0.5")))
-        
-        if hasattr(self.model_config, "confidence_max"):
-             conf_max = Decimal(str(self.model_config.confidence_max))
-        elif isinstance(self.model_config, dict):
-             conf_max = Decimal(str(self.model_config.get("confidence_max", "0.95")))
+        conf_min = Decimal(str(self.model_config.confidence_min))
+        conf_max = Decimal(str(self.model_config.confidence_max))
 
         bounded_confidence = min(
             max(abs(confidence), conf_min), conf_max)

@@ -53,7 +53,11 @@ def test_strict_mode_fails_when_trading_domains_present(temp_config_dir, monkeyp
 
     write_yaml(
         temp_config_dir / "system.yaml",
-        {"trading_mode": "testnet", "log_level": "INFO"},
+        {
+            "trading_mode": "testnet",
+            "log_level": "INFO",
+            "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
+        },
     )
     write_yaml(temp_config_dir / "regime.yaml", {"regime": {"detection": {"enabled": False}}})
     write_yaml(
@@ -77,6 +81,10 @@ def test_strict_mode_fails_when_trading_domains_present(temp_config_dir, monkeyp
         {
             "trading": {
                 "mode": "testnet",
+                "decision": {"symbols_to_track": ["TESTUSDT"]},
+                "risk_management": {
+                    "data_sources": {"portfolio_state": "testnet", "market_data": "live"}
+                },
                 "domains": {  # DEPRECATED - should trigger error
                     "decision_making": {"qos": {"mode": "defer"}}
                 },
@@ -86,8 +94,8 @@ def test_strict_mode_fails_when_trading_domains_present(temp_config_dir, monkeyp
 
     loader = ConfigLoader(temp_config_dir)
 
-    # Should raise ValueError in strict mode
-    with pytest.raises(ValueError, match="DEPRECATED.*trading.domains"):
+    from apps.reference.config_contract import ConfigContractError
+    with pytest.raises(ConfigContractError, match="trading.domains"):
         loader.load_config()
 
 
@@ -107,7 +115,11 @@ def test_strict_mode_fails_when_trading_instruments_present(temp_config_dir, mon
 
     write_yaml(
         temp_config_dir / "system.yaml",
-        {"trading_mode": "testnet", "log_level": "INFO"},
+        {
+            "trading_mode": "testnet",
+            "log_level": "INFO",
+            "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
+        },
     )
     write_yaml(temp_config_dir / "regime.yaml", {"regime": {"detection": {"enabled": False}}})
     write_yaml(
@@ -131,6 +143,10 @@ def test_strict_mode_fails_when_trading_instruments_present(temp_config_dir, mon
         {
             "trading": {
                 "mode": "testnet",
+                "decision": {"symbols_to_track": ["BTCUSDT"]},
+                "risk_management": {
+                    "data_sources": {"portfolio_state": "testnet", "market_data": "live"}
+                },
                 "instruments": {  # DEPRECATED - should trigger error
                     "ETHUSDT": {
                         "symbol": "ETHUSDT",
@@ -144,8 +160,8 @@ def test_strict_mode_fails_when_trading_instruments_present(temp_config_dir, mon
 
     loader = ConfigLoader(temp_config_dir)
 
-    # Should raise ValueError in strict mode
-    with pytest.raises(ValueError, match="DEPRECATED.*trading.instruments"):
+    from apps.reference.config_contract import ConfigContractError
+    with pytest.raises(ConfigContractError, match="trading.instruments"):
         loader.load_config()
 
 
@@ -167,7 +183,11 @@ def test_missing_instruments_yaml_fails_fast(temp_config_dir):
     """
     write_yaml(
         temp_config_dir / "system.yaml",
-        {"trading_mode": "testnet", "log_level": "INFO"},
+        {
+            "trading_mode": "testnet",
+            "log_level": "INFO",
+            "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
+        },
     )
     write_yaml(temp_config_dir / "regime.yaml", {"regime": {"detection": {"enabled": False}}})
     write_yaml(
@@ -179,7 +199,15 @@ def test_missing_instruments_yaml_fails_fast(temp_config_dir):
 
     write_yaml(
         temp_config_dir / "trading.yaml",
-        {"trading": {"mode": "testnet"}},
+        {
+            "trading": {
+                "mode": "testnet",
+                "decision": {"symbols_to_track": ["BTCUSDT"]},
+                "risk_management": {
+                    "data_sources": {"portfolio_state": "testnet", "market_data": "live"}
+                },
+            }
+        },
     )
 
     loader = ConfigLoader(temp_config_dir)
@@ -202,7 +230,11 @@ def test_missing_domains_yaml_fails_fast(temp_config_dir):
     """
     write_yaml(
         temp_config_dir / "system.yaml",
-        {"trading_mode": "testnet", "log_level": "INFO"},
+        {
+            "trading_mode": "testnet",
+            "log_level": "INFO",
+            "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
+        },
     )
     write_yaml(temp_config_dir / "regime.yaml", {"regime": {"detection": {"enabled": False}}})
 
@@ -221,7 +253,15 @@ def test_missing_domains_yaml_fails_fast(temp_config_dir):
 
     write_yaml(
         temp_config_dir / "trading.yaml",
-        {"trading": {"mode": "testnet"}},
+        {
+            "trading": {
+                "mode": "testnet",
+                "decision": {"symbols_to_track": ["TESTUSDT"]},
+                "risk_management": {
+                    "data_sources": {"portfolio_state": "testnet", "market_data": "live"}
+                },
+            }
+        },
     )
 
     loader = ConfigLoader(temp_config_dir)
@@ -252,7 +292,11 @@ def test_clean_config_with_ssot_only(temp_config_dir):
     """
     write_yaml(
         temp_config_dir / "system.yaml",
-        {"trading_mode": "testnet", "log_level": "INFO"},
+        {
+            "trading_mode": "testnet",
+            "log_level": "INFO",
+            "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
+        },
     )
     write_yaml(temp_config_dir / "regime.yaml", {"regime": {"detection": {"enabled": False}}})
     write_yaml(
@@ -279,6 +323,9 @@ def test_clean_config_with_ssot_only(temp_config_dir):
                 "decision": {
                     "symbols_to_track": ["BTCUSDT"],
                 },
+                "risk_management": {
+                    "data_sources": {"portfolio_state": "testnet", "market_data": "live"}
+                },
             }
         },
     )
@@ -300,9 +347,9 @@ def test_clean_config_with_ssot_only(temp_config_dir):
 # =============================================================================
 
 
-def test_non_strict_mode_warns_but_loads(temp_config_dir):
+def test_deprecated_sections_fail_even_non_strict(temp_config_dir):
     """
-    CFG-TRADING-YAML-BURN-DOWN-02: Test that non-strict mode warns but allows load.
+    CFG-TRADING-YAML-BURN-DOWN-02: Deprecated sections fail (no soft mode).
     
     Setup:
     - SSOT files present
@@ -310,12 +357,15 @@ def test_non_strict_mode_warns_but_loads(temp_config_dir):
     - STRICT_CONFIG_CONFLICTS=0 (default)
     
     Expected:
-    - WARNING logged
-    - Config loads (deprecated sections ignored)
+    - ConfigContractError raised
     """
     write_yaml(
         temp_config_dir / "system.yaml",
-        {"trading_mode": "testnet", "log_level": "INFO"},
+        {
+            "trading_mode": "testnet",
+            "log_level": "INFO",
+            "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
+        },
     )
     write_yaml(temp_config_dir / "regime.yaml", {"regime": {"detection": {"enabled": False}}})
     write_yaml(
@@ -342,6 +392,9 @@ def test_non_strict_mode_warns_but_loads(temp_config_dir):
                 "decision": {
                     "symbols_to_track": ["BTCUSDT"],
                 },
+                "risk_management": {
+                    "data_sources": {"portfolio_state": "testnet", "market_data": "live"}
+                },
                 "domains": {  # DEPRECATED
                     "decision_making": {"qos": {"mode": "defer"}}
                 },
@@ -357,11 +410,6 @@ def test_non_strict_mode_warns_but_loads(temp_config_dir):
     )
 
     loader = ConfigLoader(temp_config_dir)
-    
-    # Should load (with warnings, but not fail)
-    config = loader.load_config()
-    
-    # Assert: SSOT data wins
-    assert config.domains.decision_making.qos.mode == "shadow"  # From domains.yaml
-    assert "BTCUSDT" in config.instruments  # From instruments.yaml
-    assert "ETHUSDT" not in config.instruments  # trading.instruments ignored
+    from apps.reference.config_contract import ConfigContractError
+    with pytest.raises(ConfigContractError):
+        loader.load_config()

@@ -14,7 +14,10 @@ import logging
 import time
 from typing import Any, Optional, TYPE_CHECKING
 
-import aiohttp
+try:
+    import aiohttp  # type: ignore
+except ImportError:  # pragma: no cover
+    aiohttp = None  # type: ignore
 
 from apps.reference.adapters.binance_adapter import BinanceAdapter
 from apps.reference.utils import get_domain_mode_from_mapping
@@ -45,6 +48,8 @@ class MarketDataConnector:
     WS_URL_TESTNET = "wss://stream.binancefuture.com/ws"
 
     def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
+        if aiohttp is None:
+            raise ImportError("aiohttp is required for MarketDataConnector")
         """
         Initialize the connector with validated Config V2 object.
 

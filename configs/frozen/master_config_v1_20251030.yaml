@@ -1,7 +1,0 @@
-ops:
-  metrics_url: "http://127.0.0.1:8000/metrics"   #                 API                                                       
-  reports_dir: "reports"
-
-execution:
-  manage:
-    auto: false

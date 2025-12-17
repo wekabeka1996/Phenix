@@ -13,6 +13,7 @@ Supports Slack notifications and structured logging.
 import time
 import logging
 import json
+import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -66,16 +67,19 @@ class AlertManager:
     - Alert resolution tracking
     """
 
-    def __init__(self, config: Dict[str, Any], logger: Optional[logging.Logger] = None):
+    def __init__(self, config: "AuroraConfig", logger: Optional[logging.Logger] = None):
+        from apps.reference.config_loader import AuroraConfig
+        if isinstance(config, dict):
+            raise TypeError("AlertManager requires AuroraConfig, got dict")
+        if not isinstance(config, AuroraConfig):
+            raise TypeError(f"AlertManager requires AuroraConfig, got {type(config)}")
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
 
-        # Alert configuration
-        alert_config = config.get("alerts", {})
-        self.slack_webhook_url = alert_config.get("slack_webhook_url")
-        self.deduplication_window_sec = alert_config.get(
-            "deduplication_window_sec", 300)  # 5 min
-        self.max_alerts_per_hour = alert_config.get("max_alerts_per_hour", 10)
+        # Alert configuration (no dict traversal; configured via env vars for now)
+        self.slack_webhook_url = os.environ.get("AURORA_ALERTS_SLACK_WEBHOOK_URL")
+        self.deduplication_window_sec = int(os.environ.get("AURORA_ALERTS_DEDUP_WINDOW_SEC", "300"))
+        self.max_alerts_per_hour = int(os.environ.get("AURORA_ALERTS_MAX_PER_HOUR", "10"))
 
         # State
         self.active_alerts: Dict[str, Alert] = {}
@@ -85,10 +89,9 @@ class AlertManager:
         self.hour_start_time = time.time()
 
         # Thresholds
-        thresholds = alert_config.get("thresholds", {})
-        self.risk_gate_threshold = thresholds.get("risk_gate_percent", 80)
-        self.wal_size_threshold_mb = thresholds.get("wal_size_mb", 500)
-        self.cb_active_threshold_sec = thresholds.get("cb_active_sec", 60)
+        self.risk_gate_threshold = int(os.environ.get("AURORA_ALERTS_RISK_GATE_PCT", "80"))
+        self.wal_size_threshold_mb = int(os.environ.get("AURORA_ALERTS_WAL_SIZE_MB", "500"))
+        self.cb_active_threshold_sec = int(os.environ.get("AURORA_ALERTS_CB_ACTIVE_SEC", "60"))
 
         self.logger.info(
             f"AlertManager initialized: slack={bool(self.slack_webhook_url)}, "

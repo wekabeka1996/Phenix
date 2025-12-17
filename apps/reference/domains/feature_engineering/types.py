@@ -140,23 +140,13 @@ class FeatureEngineeringConfig:
             resolver = DomainConfigResolver(config)
             return resolver.get_feature_engineering()
         
-        # If dict, try to extract feature_engineering section
-        if isinstance(config, dict):
-            fe_dict = {}
-            # Try domains.feature_engineering path first
-            if 'domains' in config and 'feature_engineering' in config.get('domains', {}):
-                fe_dict = config['domains']['feature_engineering']
-            # Try trading.feature_engineering path
-            elif 'trading' in config and 'feature_engineering' in config.get('trading', {}):
-                fe_dict = config['trading']['feature_engineering']
-            # Try root level
-            elif 'feature_engineering' in config:
-                fe_dict = config['feature_engineering']
-            
-            return FeatureEngineeringDomainConfig(**fe_dict)
+        # Strict Object Config: No dict support (Task 18)
+        if hasattr(config, "dict") or isinstance(config, dict):
+             # Fail fast if someone tries to pass a dict or a Pydantic model masquerading as dict
+             if isinstance(config, dict):
+                 raise TypeError("FeatureEngineeringConfig requires AuroraConfig or DomainConfigResolver, got dict")
         
-        # Default config
-        return FeatureEngineeringDomainConfig()
+        raise TypeError(f"Invalid config type for FeatureEngineering: {type(config)}")
     
     # =========================================================================
     # TYPED ACCESSORS - No more hasattr/try-except!

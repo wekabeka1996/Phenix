@@ -63,10 +63,15 @@ ETHUSDT:
 def base_trading_yaml():
     """Minimal valid trading.yaml (no aurora_instruments)."""
     return """
-mode: testnet
-decision:
-  signal_threshold: 0.1
-  symbols_to_track: ["ETHUSDT"]
+trading:
+  mode: testnet
+  decision:
+    signal_threshold: 0.1
+    symbols_to_track: ["ETHUSDT"]
+  risk_management:
+    data_sources:
+      portfolio_state: "testnet"
+      market_data: "live"
 """
 
 
@@ -99,6 +104,11 @@ ETHUSDT:
 def base_system_yaml():
     """Minimal system.yaml for tests."""
     return """
+trading_mode: "testnet"
+bridge:
+  retry_scheduler:
+    max_attempts: 5
+    min_retry_delay_ms: 500
 logging:
   level: INFO
   file: logs/test.log
@@ -192,10 +202,15 @@ def test_strict_mode_fails_on_trading_aurora_instruments_present(temp_config_dir
     """Test C1: Strict mode fails when trading.aurora_instruments exists in trading.yaml."""
     # Setup: trading.yaml with aurora_instruments (deprecated)
     trading_with_aurora_instruments = """
-mode: testnet
-decision:
-  signal_threshold: 0.1
-  symbols_to_track: ["ETHUSDT"]
+trading:
+  mode: testnet
+  decision:
+    signal_threshold: 0.1
+    symbols_to_track: ["ETHUSDT"]
+  risk_management:
+    data_sources:
+      portfolio_state: "testnet"
+      market_data: "live"
 
 aurora_instruments:
   BTCUSDT:  # Deprecated section (minimal valid config to avoid Pydantic errors)
@@ -235,7 +250,8 @@ aurora_instruments:
     try:
         loader = ConfigLoader(config_dir=temp_config_dir)
         
-        with pytest.raises(ValueError) as exc_info:
+        from apps.reference.config_contract import ConfigContractError
+        with pytest.raises(ConfigContractError) as exc_info:
             loader.load_config()
 
         error_msg = str(exc_info.value)
@@ -245,14 +261,19 @@ aurora_instruments:
         os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
 
 
-def test_non_strict_mode_warns_on_trading_aurora_instruments_present(temp_config_dir, base_aurora_instruments_yaml, base_domains_yaml, base_instruments_yaml, base_system_yaml, base_regime_yaml, caplog):
-    """Test C2: Non-strict mode warns but loads when trading.aurora_instruments exists."""
+def test_non_strict_mode_fails_on_trading_aurora_instruments_present(temp_config_dir, base_aurora_instruments_yaml, base_domains_yaml, base_instruments_yaml, base_system_yaml, base_regime_yaml):
+    """Test C2: Deprecated trading.aurora_instruments always fails (no soft mode)."""
     # Setup: trading.yaml with aurora_instruments (deprecated)
     trading_with_aurora_instruments = """
-mode: testnet
-decision:
-  signal_threshold: 0.1
-  symbols_to_track: ["ETHUSDT"]
+trading:
+  mode: testnet
+  decision:
+    signal_threshold: 0.1
+    symbols_to_track: ["ETHUSDT"]
+  risk_management:
+    data_sources:
+      portfolio_state: "testnet"
+      market_data: "live"
 
 aurora_instruments:
   BTCUSDT:  # Deprecated section (minimal valid config)
@@ -290,16 +311,10 @@ aurora_instruments:
     # Disable strict mode (default)
     os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
 
+    from apps.reference.config_contract import ConfigContractError
     loader = ConfigLoader(config_dir=temp_config_dir)
-    config = loader.load_config()
-
-    # Should load successfully
-    assert config is not None, "Config должен загрузиться в non-strict mode"
-
-    # Check warning was logged
-    assert any("trading.aurora_instruments" in rec.message and "DEPRECATED" in rec.message 
-               for rec in caplog.records), \
-        "Non-strict mode должен логировать WARNING о deprecated trading.aurora_instruments"
+    with pytest.raises(ConfigContractError):
+        loader.load_config()
 
 
 def test_missing_aurora_instruments_yaml_allows_empty_dict(temp_config_dir, base_trading_yaml, base_domains_yaml, base_instruments_yaml, base_system_yaml, base_regime_yaml, caplog):
@@ -353,10 +368,15 @@ def test_runtime_no_access_to_trading_aurora_instruments(temp_config_dir, base_a
     
     # Setup
     trading_yaml_clean = """
-mode: testnet
-decision:
-  signal_threshold: 0.1
-  symbols_to_track: ["ETHUSDT"]
+trading:
+  mode: testnet
+  decision:
+    signal_threshold: 0.1
+    symbols_to_track: ["ETHUSDT"]
+  risk_management:
+    data_sources:
+      portfolio_state: "testnet"
+      market_data: "live"
 # NO aurora_instruments section here
 """
     (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)

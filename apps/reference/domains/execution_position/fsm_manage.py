@@ -204,9 +204,15 @@ class ManageFlowFSM:
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instr_cfg(symbol)
         if instr_cfg is not None and instr_cfg.exit is not None:
-            value = getattr(instr_cfg.exit, param, None)
-            if value is not None:
-                return value
+            # Direct access (no getattr fallback)
+            # If field missing → AttributeError → caller handles (fail-closed)
+            try:
+                value = getattr(instr_cfg.exit, param)
+                if value is not None:
+                    return value
+            except AttributeError:
+                # Exit param not configured → return None (fail-closed: block action)
+                pass
 
         # 2. Fallback to global via _manage_cfg (with param name mapping)
         if self._manage_cfg and self._manage_cfg.brackets:
@@ -217,7 +223,7 @@ class ManageFlowFSM:
                 # Convert bps to percentage (50 bps → 0.005)
                 return brackets.sl.fixed_bps / 10000.0
             
-            # max_hold_sec has no global equivalent - return default
+            # max_hold_sec has no global equivalent - return None (fail-closed)
         
         # 3. Return default
         return default
@@ -281,7 +287,7 @@ class ManageFlowFSM:
         if instr_cfg is not None and getattr(instr_cfg, 'trailing_stop', None) is not None:
             ts = instr_cfg.trailing_stop
             return (
-                getattr(ts, 'enabled', False) or False,
+                bool(ts.enabled),
                 getattr(ts, 'activation_pct', None),
                 getattr(ts, 'trail_pct', None),
                 getattr(ts, 'min_update_interval_sec', 5) or 5,
@@ -1054,10 +1060,15 @@ class ManageFlowFSM:
                                     msg.pld or {}).get("ts") else int(time.time() * 1000)
                             except Exception:
                                 now_ts = int(time.time() * 1000)
-                            bar_index = now_ts // getattr(self,
-                                                          "_bar_ms", 900000)
+                            # Direct access (fail-closed: missing emergency config → crash)
+                            if not hasattr(self, "_bar_ms") or not hasattr(self, "_wait_mode_bars"):
+                                raise ValueError(
+                                    "CRITICAL: Emergency mode activated but _bar_ms/_wait_mode_bars not configured. "
+                                    "Cannot determine wait period (fail-closed)."
+                                )
+                            bar_index = now_ts // self._bar_ms
                             self._wait_mode_until_ts = (
-                                bar_index + getattr(self, "_wait_mode_bars", 2)) * getattr(self, "_bar_ms", 900000)
+                                bar_index + self._wait_mode_bars) * self._bar_ms
                             self.state = ManageState.WAIT_MODE
                             new_sl = (self.position_entry_price * (Decimal("1") - sl_em_bps / Decimal("10000"))) if self.position_side == "BUY" else (
                                 self.position_entry_price * (Decimal("1") + sl_em_bps / Decimal("10000")))

@@ -16,6 +16,9 @@ except ImportError:
     Client = None
 
 from vfoundation.obs.correlation import CorrelationStore
+from apps.reference.config_contract import ConfigContractError
+from apps.reference.config_loader import AuroraConfig
+from apps.reference.domain_config import DomainConfigResolver
 
 
 class AccountObserver:
@@ -29,7 +32,7 @@ class AccountObserver:
     def __init__(
         self,
         fsm: Any,
-        config: dict[str, Any],
+        config: AuroraConfig,
         environment: Optional[Literal["live", "testnet"]
                               ] = None,  # NEW PARAMETER
     ) -> None:
@@ -43,6 +46,8 @@ class AccountObserver:
                          If None, it defaults to config's trading_mode.
         """
         self.fsm = fsm
+        if isinstance(config, dict):
+            raise TypeError("AccountObserver requires AuroraConfig, got dict")
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
@@ -52,63 +57,24 @@ class AccountObserver:
                 "python-binance is required. Install with: pip install python-binance"
             )
 
-        # Get trading mode and API config
-        # Use explicit environment if provided, otherwise fall back to config's trading_mode
-        resolved_environment = environment
-        if resolved_environment is None:
-            # Check for resolved risk_portfolio_source first (FSMP-P3-T01)
-            # TODO: This might need special handling in Pydantic model
-            resolved_portfolio_source = getattr(self.config, '_resolved', {}).get(
-                'risk_portfolio_source') if hasattr(self.config, '_resolved') else None
-            if resolved_portfolio_source:
-                resolved_environment = resolved_portfolio_source
-            else:
-                # Handle both dict and Pydantic object access
-                resolved_environment = (
-                    self.config.get("trading_mode", "testnet")
-                    if isinstance(self.config, dict)
-                    else self.config.trading_mode
-                )
+        # Resolve environment (strict object config)
+        resolved_environment = environment or str(self.config.trading_mode)
+        if resolved_environment not in ("live", "testnet"):
+            raise ConfigContractError(
+                path="account_observer.environment",
+                why=f"Invalid environment '{resolved_environment}' (expected 'live' or 'testnet')",
+            )
 
-        # Handle both dict and Pydantic object access for binance_api
-        api_config = (
-            self.config.get("binance_api", {})
-            if isinstance(self.config, dict)
-            else self.config.binance_api
-        )
-
-        # Get credentials based on resolved_environment
-        env_config = {}
-        if resolved_environment == "live":
-            if isinstance(api_config, dict):
-                env_config = api_config.get("live", {})
-            else:
-                env_config = api_config.live
-        else:  # testnet or hybrid modes
-            if isinstance(api_config, dict):
-                env_config = api_config.get("testnet", {})
-            else:
-                env_config = api_config.testnet
-
-        # Extract API credentials
-        if isinstance(env_config, dict):
-            api_key = env_config.get("api_key", "")
-            api_secret = env_config.get("api_secret", "")
-        else:
-            api_key = getattr(env_config, "api_key", "")
-            api_secret = getattr(env_config, "api_secret", "")
+        api_config = self.config.binance_api
+        env_config = api_config.live if resolved_environment == "live" else api_config.testnet
+        api_key = env_config.api_key
+        api_secret = env_config.api_secret
 
         if not api_key or not api_secret:
             raise ValueError(
-                f"API configuration for account observer in '{resolved_environment}' mode is incomplete"
+                f"CRITICAL: API credentials missing for account observer in '{resolved_environment}' mode. "
+                "Domain DISABLED (fail-closed). Check binance_api config."
             )
-
-        # Get account observer config
-        account_observer_config = (
-            self.config.get("account_observer", {})
-            if isinstance(self.config, dict)
-            else self.config.account_observer
-        )
 
         # Determine testnet/mainnet based on resolved_environment
         self.testnet = resolved_environment != "live"
@@ -125,61 +91,16 @@ class AccountObserver:
 
         self.correlation_store = CorrelationStore()
 
-        # Polling interval (seconds) - from domains config first, then account_observer config
-        poll_interval = 5  # default
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'account_observer'):
-                poll_interval = self.config.domains.account_observer.poll_interval_sec
-            # Fallback to legacy account_observer config
-            elif isinstance(account_observer_config, dict):
-                poll_interval = account_observer_config.get("poll_interval", 5)
-            else:
-                poll_interval = getattr(account_observer_config, "poll_interval", 5)
-        except (AttributeError, TypeError):
-            pass  # Use default
-        self.poll_interval = poll_interval
-
-        # Symbols to monitor - domains config > account_observer config > trading.symbols_to_track
-        explicit_symbols = []
-        try:
-            # Try domains config first
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'account_observer'):
-                explicit_symbols = self.config.domains.account_observer.symbols
-            # Fallback to legacy account_observer config
-            elif isinstance(account_observer_config, dict):
-                explicit_symbols = account_observer_config.get("symbols", [])
-            else:
-                explicit_symbols = getattr(account_observer_config, "symbols", [])
-        except (AttributeError, TypeError):
-            pass  # Will use trading.symbols_to_track as fallback
-
-        if explicit_symbols:
-            self.symbols = explicit_symbols
-        else:
-            # Dynamically use symbols_to_track from trading config
-            trading_config = (
-                self.config.get("trading", {})
-                if isinstance(self.config, dict)
-                else self.config.trading
+        # Canonical domains config (strict object config)
+        domain_cfg = DomainConfigResolver(self.config).get_account_observer()
+        self.poll_interval = int(domain_cfg.poll_interval_sec)
+        self.trade_limit = int(domain_cfg.trade_limit)
+        if not domain_cfg.symbols:
+            raise ConfigContractError(
+                path="domains.account_observer.symbols",
+                why="Empty symbols list (no fallbacks allowed).",
             )
-            default_symbols = ["BTCUSDT", "ETHUSDT"]
-            if isinstance(trading_config, dict):
-                self.symbols = trading_config.get(
-                    "symbols_to_track", default_symbols)
-            else:
-                self.symbols = getattr(
-                    trading_config, 'symbols_to_track', default_symbols)
-
-            self.logger.info(
-                f"AccountObserver using dynamic symbols_to_track: {self.symbols}")
-
-        # Trade limit per symbol - from config
-        if isinstance(account_observer_config, dict):
-            trade_limit = account_observer_config.get("trade_limit", 10)
-        else:
-            trade_limit = getattr(account_observer_config, "trade_limit", 10)
-        self.trade_limit = trade_limit
+        self.symbols = list(domain_cfg.symbols)
 
         self.logger.info("AccountObserver initialized with testnet client")
 
