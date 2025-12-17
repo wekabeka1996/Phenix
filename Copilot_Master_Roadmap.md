@@ -9,7 +9,7 @@
   - Loader rejects _config_* keys
   - Tests green
   - Docs updated
-- [x] TASK20: Zero defaults inventory and gate (commit: TBD)
+- [x] TASK20: Zero defaults inventory and gate (commit: 3ee7b59)
   - Inventory tool created (tools/inventory_config_defaults.py)
   - Reports generated (reports/TASK20_defaults_inventory.md, .json)
   - Test-gate added (tests/config/test_no_defaults_in_config_models.py)
