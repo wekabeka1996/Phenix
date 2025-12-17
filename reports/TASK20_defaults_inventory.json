@@ -1,0 +1,3425 @@
+[
+  {
+    "class": "InstrumentSpec",
+    "field": "symbol",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis)",
+    "line": 18
+  },
+  {
+    "class": "InstrumentSpec",
+    "field": "step_size",
+    "type": "AnnAssign",
+    "default": "Field(default='0.001', description='Quantity precision')",
+    "line": 19
+  },
+  {
+    "class": "InstrumentSpec",
+    "field": "tick_size",
+    "type": "AnnAssign",
+    "default": "Field(default='0.01', description='Price precision')",
+    "line": 20
+  },
+  {
+    "class": "InstrumentSpec",
+    "field": "min_qty",
+    "type": "AnnAssign",
+    "default": "Field(default='0.001')",
+    "line": 21
+  },
+  {
+    "class": "InstrumentSpec",
+    "field": "min_notional",
+    "type": "AnnAssign",
+    "default": "Field(default='10.0', description='Minimum notional value in USDT')",
+    "line": 22
+  },
+  {
+    "class": "InstrumentSpec",
+    "field": "quote",
+    "type": "AnnAssign",
+    "default": "Field(default='USDT')",
+    "line": 24
+  },
+  {
+    "class": "InstrumentPrecisionSpec",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 34
+  },
+  {
+    "class": "InstrumentPrecisionSpec",
+    "field": "symbol",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 36
+  },
+  {
+    "class": "InstrumentPrecisionSpec",
+    "field": "tick_size",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 37
+  },
+  {
+    "class": "InstrumentPrecisionSpec",
+    "field": "step_size",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 38
+  },
+  {
+    "class": "SignalWeights",
+    "field": "obi",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 48
+  },
+  {
+    "class": "SignalWeights",
+    "field": "tfi",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 49
+  },
+  {
+    "class": "SignalWeights",
+    "field": "delta_price",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 50
+  },
+  {
+    "class": "SignalWeights",
+    "field": "ema_bias",
+    "type": "AnnAssign",
+    "default": "Field(default=0.15)",
+    "line": 51
+  },
+  {
+    "class": "SignalWeights",
+    "field": "volume_spike",
+    "type": "AnnAssign",
+    "default": "Field(default=0.15)",
+    "line": 52
+  },
+  {
+    "class": "SignalWeights",
+    "field": "volatility_state",
+    "type": "AnnAssign",
+    "default": "Field(default=0.05)",
+    "line": 53
+  },
+  {
+    "class": "SignalWeights",
+    "field": "depth_imbalance",
+    "type": "AnnAssign",
+    "default": "Field(default=0.05)",
+    "line": 54
+  },
+  {
+    "class": "SignalWeights",
+    "field": "macro_sync",
+    "type": "AnnAssign",
+    "default": "Field(default=0.05)",
+    "line": 55
+  },
+  {
+    "class": "BarGatingConfig",
+    "field": "enable",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 60
+  },
+  {
+    "class": "BarGatingConfig",
+    "field": "bar_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=BinOp, description='Bar duration in milliseconds')",
+    "line": 61
+  },
+  {
+    "class": "BehaviorFsmConfig",
+    "field": "enable",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 67
+  },
+  {
+    "class": "BehaviorFsmConfig",
+    "field": "high_vol_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0)",
+    "line": 68
+  },
+  {
+    "class": "BehaviorFsmConfig",
+    "field": "low_vol_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=0.5)",
+    "line": 69
+  },
+  {
+    "class": "SignalsConfig",
+    "field": "normalize",
+    "type": "AnnAssign",
+    "default": "Field(default=True)",
+    "line": 74
+  },
+  {
+    "class": "SignalsConfig",
+    "field": "enable_new_metrics",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 75
+  },
+  {
+    "class": "RegimeSizingSymbolConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable regime-based sizing for this symbol')",
+    "line": 90
+  },
+  {
+    "class": "RegimeSizingSymbolConfig",
+    "field": "low_vol_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=1.0, description='Multiplier for LOW_VOLATILITY regime (calm)')",
+    "line": 91
+  },
+  {
+    "class": "RegimeSizingSymbolConfig",
+    "field": "high_vol_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=1.0, description='Multiplier for HIGH_VOLATILITY regime (storm)')",
+    "line": 92
+  },
+  {
+    "class": "RiskContractV1Config",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 105
+  },
+  {
+    "class": "RiskContractV1Config",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable Risk-Sizing V1')",
+    "line": 107
+  },
+  {
+    "class": "RiskContractV1Config",
+    "field": "effective_leverage",
+    "type": "AnnAssign",
+    "default": "Field(default=10.0, description='Assumed leverage for notional calculation')",
+    "line": 108
+  },
+  {
+    "class": "RiskContractV1Config",
+    "field": "per_symbol_margin_fraction",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Target margin fraction per symbol (e.g., BTCUSDT: 0.04)')",
+    "line": 111
+  },
+  {
+    "class": "RiskContractV1Config",
+    "field": "regime_sizing",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Per-symbol regime-based sizing config')",
+    "line": 117
+  },
+  {
+    "class": "PositionSizingConfig",
+    "field": "min_position_size_usd",
+    "type": "AnnAssign",
+    "default": "Field(default=10.0)",
+    "line": 128
+  },
+  {
+    "class": "PositionSizingConfig",
+    "field": "liquidity_based_cap_usd",
+    "type": "AnnAssign",
+    "default": "Field(default=10000.0)",
+    "line": 129
+  },
+  {
+    "class": "PositionSizingConfig",
+    "field": "risk_fraction_q",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 130
+  },
+  {
+    "class": "PositionSizingConfig",
+    "field": "liquidity_kappa",
+    "type": "AnnAssign",
+    "default": "Field(default=1.0)",
+    "line": 131
+  },
+  {
+    "class": "PositionSizingConfig",
+    "field": "kappa_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='passive')",
+    "line": 132
+  },
+  {
+    "class": "PositionSizingConfig",
+    "field": "liquidity_kappa_mode",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Alias for kappa_mode (legacy)')",
+    "line": 133
+  },
+  {
+    "class": "PositionSizingConfig",
+    "field": "risk_contract_v1",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Risk-Sizing V1 contract (ETAP1: disabled by default)')",
+    "line": 136
+  },
+  {
+    "class": "KellyConfig",
+    "field": "base_probability",
+    "type": "AnnAssign",
+    "default": "Field(default=0.5)",
+    "line": 145
+  },
+  {
+    "class": "KellyConfig",
+    "field": "kelly_cap",
+    "type": "AnnAssign",
+    "default": "Field(default=0.25)",
+    "line": 146
+  },
+  {
+    "class": "KellyConfig",
+    "field": "kelly_alpha",
+    "type": "AnnAssign",
+    "default": "Field(default=0.8)",
+    "line": 147
+  },
+  {
+    "class": "KellyConfig",
+    "field": "payoff_ratio_r",
+    "type": "AnnAssign",
+    "default": "Field(default=1.5)",
+    "line": 148
+  },
+  {
+    "class": "QosConfig",
+    "field": "exposure_block_cooldown_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=60)",
+    "line": 155
+  },
+  {
+    "class": "QosConfig",
+    "field": "symbol_cooldown_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=3, description='Global fallback cooldown. Per-symbol config takes priority.')",
+    "line": 157
+  },
+  {
+    "class": "QosConfig",
+    "field": "max_intents_per_minute_per_symbol",
+    "type": "AnnAssign",
+    "default": "Field(default=10)",
+    "line": 158
+  },
+  {
+    "class": "QosConfig",
+    "field": "mode",
+    "type": "AnnAssign",
+    "default": "Field(default='defer', description='defer | block')",
+    "line": 159
+  },
+  {
+    "class": "QosConfig",
+    "field": "enforce",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 160
+  },
+  {
+    "class": "ROIExitConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=True)",
+    "line": 165
+  },
+  {
+    "class": "ROIExitConfig",
+    "field": "target_roi_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=50.0)",
+    "line": 166
+  },
+  {
+    "class": "FailsafeConfig",
+    "field": "max_hold_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=86400)",
+    "line": 171
+  },
+  {
+    "class": "MeanReversionConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 181
+  },
+  {
+    "class": "MeanReversionConfig",
+    "field": "bb_window",
+    "type": "AnnAssign",
+    "default": "Field(default=20)",
+    "line": 182
+  },
+  {
+    "class": "MeanReversionConfig",
+    "field": "bb_std_dev",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0)",
+    "line": 183
+  },
+  {
+    "class": "MeanReversionConfig",
+    "field": "min_vol_atr",
+    "type": "AnnAssign",
+    "default": "Field(default=0.001)",
+    "line": 184
+  },
+  {
+    "class": "MeanReversionConfig",
+    "field": "allowed_regimes",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda)",
+    "line": 185
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "bb_window",
+    "type": "AnnAssign",
+    "default": "Field(default=20, description='Bollinger Bands window')",
+    "line": 199
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "bb_num_std",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0, description='BB standard deviations')",
+    "line": 200
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "atr_window",
+    "type": "AnnAssign",
+    "default": "Field(default=14, description='ATR window for stops')",
+    "line": 201
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "rsi_window",
+    "type": "AnnAssign",
+    "default": "Field(default=14, description='RSI window')",
+    "line": 202
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "entry_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=0.05, description='%B threshold for entry')",
+    "line": 204
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "rsi_oversold",
+    "type": "AnnAssign",
+    "default": "Field(default=30.0, description='RSI oversold level')",
+    "line": 205
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "rsi_overbought",
+    "type": "AnnAssign",
+    "default": "Field(default=70.0, description='RSI overbought level')",
+    "line": 206
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "min_bars",
+    "type": "AnnAssign",
+    "default": "Field(default=25, description='Min bars before trading')",
+    "line": 208
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "min_bb_width",
+    "type": "AnnAssign",
+    "default": "Field(default=0.001, description='Min BB width')",
+    "line": 209
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "max_bb_width",
+    "type": "AnnAssign",
+    "default": "Field(default=0.05, description='Max BB width')",
+    "line": 210
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "sl_atr_mult",
+    "type": "AnnAssign",
+    "default": "Field(default=1.5, description='SL as ATR multiplier')",
+    "line": 212
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "tp_to_mid",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Target mid BB')",
+    "line": 213
+  },
+  {
+    "class": "MRStrategyParamsConfig",
+    "field": "cooldown_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=60, description='Cooldown between signals')",
+    "line": 214
+  },
+  {
+    "class": "MRRegimeThresholdsConfig",
+    "field": "high_vol_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.003, description='ATR% for FLAT_HIGH')",
+    "line": 224
+  },
+  {
+    "class": "MRRegimeThresholdsConfig",
+    "field": "low_vol_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.001, description='ATR% for FLAT_LOW')",
+    "line": 225
+  },
+  {
+    "class": "MRStrategyOverrideConfig",
+    "field": "bb_window",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='BB window size')",
+    "line": 235
+  },
+  {
+    "class": "MRStrategyOverrideConfig",
+    "field": "bb_num_std",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='BB std multiplier')",
+    "line": 236
+  },
+  {
+    "class": "MRStrategyOverrideConfig",
+    "field": "min_bb_width",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Min BB width filter')",
+    "line": 237
+  },
+  {
+    "class": "MRStrategyOverrideConfig",
+    "field": "entry_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Entry distance threshold')",
+    "line": 238
+  },
+  {
+    "class": "MRStrategyOverrideConfig",
+    "field": "tp_to_mid",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='TP to mid vs outer band')",
+    "line": 239
+  },
+  {
+    "class": "MRStrategyOverrideConfig",
+    "field": "sl_atr_mult",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='SL ATR multiplier override')",
+    "line": 240
+  },
+  {
+    "class": "MRStrategyOverrideConfig",
+    "field": "cooldown_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Cooldown between trades')",
+    "line": 241
+  },
+  {
+    "class": "MRAssetRiskConfig",
+    "field": "position_size_usd",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Position size in USD')",
+    "line": 251
+  },
+  {
+    "class": "MRAssetRiskConfig",
+    "field": "max_risk_score",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Max risk score threshold')",
+    "line": 252
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 262
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "strategy",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Strategy parameter overrides for this symbol')",
+    "line": 265
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "risk",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Risk configuration for this symbol')",
+    "line": 271
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "bb_window",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 277
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "min_vol_atr",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 278
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "sl_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='SL as percent (e.g., 0.019 = 1.9%)')",
+    "line": 279
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "allowed_regimes",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description='Regimes where trading is allowed')",
+    "line": 281
+  },
+  {
+    "class": "MRAssetConfig",
+    "field": "position_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='DYNAMIC', description='STRICT = No pyramiding (1 trade only), DYNAMIC = Pyramiding allowed up to cap')",
+    "line": 286
+  },
+  {
+    "class": "MRRegimeSizingConfig",
+    "field": "sizing_mult",
+    "type": "AnnAssign",
+    "default": "Field(default=1.0)",
+    "line": 299
+  },
+  {
+    "class": "MRRegimeSizingConfig",
+    "field": "stop_mult",
+    "type": "AnnAssign",
+    "default": "Field(default=1.0)",
+    "line": 300
+  },
+  {
+    "class": "MRRegimeSizingConfig",
+    "field": "target_mult",
+    "type": "AnnAssign",
+    "default": "Field(default=1.0)",
+    "line": 301
+  },
+  {
+    "class": "MRRiskConfig",
+    "field": "position_size_usd",
+    "type": "AnnAssign",
+    "default": "Field(default=100.0)",
+    "line": 311
+  },
+  {
+    "class": "MRRiskConfig",
+    "field": "max_concurrent_positions",
+    "type": "AnnAssign",
+    "default": "Field(default=3)",
+    "line": 312
+  },
+  {
+    "class": "MRRiskConfig",
+    "field": "daily_loss_limit_usd",
+    "type": "AnnAssign",
+    "default": "Field(default=50.0)",
+    "line": 313
+  },
+  {
+    "class": "MRRiskConfig",
+    "field": "expected_pnl_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=1.5)",
+    "line": 314
+  },
+  {
+    "class": "MRRiskConfig",
+    "field": "fees_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.0004)",
+    "line": 315
+  },
+  {
+    "class": "MRRiskConfig",
+    "field": "slippage_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.0002)",
+    "line": 316
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 325
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable MR 1m strategy')",
+    "line": 328
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "timeframe_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=60, description='Bar timeframe in seconds')",
+    "line": 331
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "strategy",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=MRStrategyParamsConfig)",
+    "line": 334
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "regime_thresholds",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=MRRegimeThresholdsConfig)",
+    "line": 337
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "assets",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 340
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "regime_sizing",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 343
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "allowed_regimes",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description='Whitelist of Flat regimes to trade in (global default)')",
+    "line": 346
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "risk",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=MRRiskConfig)",
+    "line": 352
+  },
+  {
+    "class": "MeanReversion1mStrategyConfig",
+    "field": "emit_trade_intent_directly",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='If true, MR emits trade intent directly (legacy). If false, emits MR_SIGNAL for DM gateway.')",
+    "line": 357
+  },
+  {
+    "class": "StrategiesArbitrationLoggingConfig",
+    "field": "rejected_why_prefix",
+    "type": "AnnAssign",
+    "default": "Field(default='ARBITRATION_REJECT', description='Prefix for why-codes when strategy intent is rejected')",
+    "line": 370
+  },
+  {
+    "class": "StrategiesArbitrationLoggingConfig",
+    "field": "log_level",
+    "type": "AnnAssign",
+    "default": "Field(default='INFO', description='Log level for arbitration events (INFO/WARNING/ERROR)')",
+    "line": 374
+  },
+  {
+    "class": "StrategiesArbitrationConfig",
+    "field": "mode",
+    "type": "AnnAssign",
+    "default": "Field(default='priority', description=\"Arbitration mode: 'priority' (only supported mode, lower number = higher priority)\")",
+    "line": 384
+  },
+  {
+    "class": "StrategiesArbitrationConfig",
+    "field": "priority",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Strategy priority ranks (lower = higher priority)')",
+    "line": 388
+  },
+  {
+    "class": "StrategiesArbitrationConfig",
+    "field": "logging",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=StrategiesArbitrationLoggingConfig)",
+    "line": 392
+  },
+  {
+    "class": "StrategiesRegistryConfig",
+    "field": "version",
+    "type": "AnnAssign",
+    "default": "Field(default='1.0.0', description='Strategies registry config version')",
+    "line": 409
+  },
+  {
+    "class": "StrategiesRegistryConfig",
+    "field": "assignments",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Per-symbol strategy assignments (symbol → list[strategy_id])')",
+    "line": 413
+  },
+  {
+    "class": "StrategiesRegistryConfig",
+    "field": "arbitration",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=StrategiesArbitrationConfig, description='Arbitration policy for strategy conflicts')",
+    "line": 417
+  },
+  {
+    "class": "DecisionModeOverrideConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 445
+  },
+  {
+    "class": "DecisionModeOverrideConfig",
+    "field": "signal_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 448
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "testnet",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 460
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "production",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 461
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "signal_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2, description='Signal score threshold. PRODUCTION MUST OVERRIDE in trading.yaml!')",
+    "line": 464
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "cooldown_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Global cooldown (deprecated, use per-instrument)')",
+    "line": 465
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "side_bias_min_score",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Min score for side bias')",
+    "line": 466
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "side_bias_penalty_factor",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Side bias penalty factor')",
+    "line": 467
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "side_bias_target_ratio",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Side bias target ratio')",
+    "line": 468
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "side_bias_window_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Side bias window (seconds)')",
+    "line": 469
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "retry_ttl_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=300000, description='Retry TTL in ms')",
+    "line": 472
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "retry_max_count",
+    "type": "AnnAssign",
+    "default": "Field(default=3, description='Max retry attempts')",
+    "line": 473
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "retry_backoff_factor",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0, description='Retry backoff multiplier')",
+    "line": 474
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "signal_weights",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=SignalWeights)",
+    "line": 476
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "signals",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=SignalsConfig)",
+    "line": 477
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "position_sizing",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=PositionSizingConfig)",
+    "line": 478
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "kelly",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=KellyConfig)",
+    "line": 480
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "qos",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=QosConfig)",
+    "line": 481
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "bar_gating",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 483
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "behavior_fsm",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 484
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "roi_exit",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 485
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "mean_reversion",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 486
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "sizing_modifiers",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Regime-specific multipliers')",
+    "line": 488
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "regime_thresholds",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Regime-specific signal thresholds')",
+    "line": 490
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "regime_threshold_multipliers",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Regime threshold multipliers')",
+    "line": 492
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "symbols_to_track",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='DEPRECATED: Use instruments SSOT')",
+    "line": 494
+  },
+  {
+    "class": "DecisionConfig",
+    "field": "neutral_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Neutral zone threshold')",
+    "line": 495
+  },
+  {
+    "class": "SLConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 500
+  },
+  {
+    "class": "SLConfig",
+    "field": "fixed_bps",
+    "type": "AnnAssign",
+    "default": "Field(default=50, description='Fixed basis points')",
+    "line": 501
+  },
+  {
+    "class": "TPConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 506
+  },
+  {
+    "class": "TPConfig",
+    "field": "fixed_bps",
+    "type": "AnnAssign",
+    "default": "Field(default=100, description='Fixed basis points')",
+    "line": 507
+  },
+  {
+    "class": "BracketsConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 512
+  },
+  {
+    "class": "BracketsConfig",
+    "field": "sl",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 514
+  },
+  {
+    "class": "BracketsConfig",
+    "field": "tp",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 515
+  },
+  {
+    "class": "BracketsConfig",
+    "field": "oco_emulation",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Emulate OCO orders')",
+    "line": 516
+  },
+  {
+    "class": "BracketsConfig",
+    "field": "stop_loss_bps",
+    "type": "AnnAssign",
+    "default": "Field(default=50)",
+    "line": 518
+  },
+  {
+    "class": "BracketsConfig",
+    "field": "offset_bps",
+    "type": "AnnAssign",
+    "default": "Field(default=5, description='Safety offset in bps')",
+    "line": 519
+  },
+  {
+    "class": "EmergencyConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable emergency SL')",
+    "line": 529
+  },
+  {
+    "class": "EmergencyConfig",
+    "field": "wait_mode_bars",
+    "type": "AnnAssign",
+    "default": "Field(default=2, description='Wait mode bars before resuming')",
+    "line": 530
+  },
+  {
+    "class": "OrphanMonitorConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 539
+  },
+  {
+    "class": "OrphanMonitorConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable orphan monitoring')",
+    "line": 541
+  },
+  {
+    "class": "ManageConfig",
+    "field": "brackets",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 552
+  },
+  {
+    "class": "ManageConfig",
+    "field": "emergency",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 553
+  },
+  {
+    "class": "ManageConfig",
+    "field": "auto",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 554
+  },
+  {
+    "class": "ManageConfig",
+    "field": "orphan_monitor",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 555
+  },
+  {
+    "class": "ManageConfig",
+    "field": "failsafe",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 556
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "max_equity_utilization_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 566
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "max_portfolio_fraction",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 567
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "max_side_utilization_pct",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda)",
+    "line": 568
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "max_directional_ratio",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0)",
+    "line": 570
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "per_symbol_cap_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.08)",
+    "line": 571
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "pending_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=90)",
+    "line": 572
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "pending_reservation_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=45, description='Reservation TTL')",
+    "line": 573
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "post_fill_hold_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=30)",
+    "line": 574
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "positions_stale_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=120)",
+    "line": 575
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "leverage_defaults",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda)",
+    "line": 576
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "count_pending_orders",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Count pending orders in exposure')",
+    "line": 578
+  },
+  {
+    "class": "ExposureConfig",
+    "field": "exclude_reduce_only",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Exclude reduce-only from exposure')",
+    "line": 579
+  },
+  {
+    "class": "WatchdogConfig",
+    "field": "ack_ttl_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=8000)",
+    "line": 586
+  },
+  {
+    "class": "WatchdogConfig",
+    "field": "fill_ttl_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=30000)",
+    "line": 587
+  },
+  {
+    "class": "WatchdogConfig",
+    "field": "check_interval_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=1000)",
+    "line": 588
+  },
+  {
+    "class": "WatchdogConfig",
+    "field": "rps_limit",
+    "type": "AnnAssign",
+    "default": "Field(default=10)",
+    "line": 589
+  },
+  {
+    "class": "SMARegimeModelConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 597
+  },
+  {
+    "class": "SMARegimeModelConfig",
+    "field": "sma_short_period",
+    "type": "AnnAssign",
+    "default": "Field(default=10, ge=2, description='Short SMA period for trend detection')",
+    "line": 599
+  },
+  {
+    "class": "SMARegimeModelConfig",
+    "field": "sma_long_period",
+    "type": "AnnAssign",
+    "default": "Field(default=50, ge=5, description='Long SMA period for trend detection')",
+    "line": 600
+  },
+  {
+    "class": "SMARegimeModelConfig",
+    "field": "confidence_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=20.0, ge=1.0, description='Confidence scaling factor')",
+    "line": 601
+  },
+  {
+    "class": "SMARegimeModelConfig",
+    "field": "confidence_min",
+    "type": "AnnAssign",
+    "default": "Field(default=0.5, ge=0.0, le=1.0, description='Minimum confidence value')",
+    "line": 602
+  },
+  {
+    "class": "SMARegimeModelConfig",
+    "field": "confidence_max",
+    "type": "AnnAssign",
+    "default": "Field(default=0.95, ge=0.0, le=1.0, description='Maximum confidence value')",
+    "line": 603
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 611
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Enable volatility regime detection')",
+    "line": 613
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "atr_period",
+    "type": "AnnAssign",
+    "default": "Field(default=14, ge=1, description='ATR calculation period')",
+    "line": 614
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "atr_sma_length",
+    "type": "AnnAssign",
+    "default": "Field(default=100, ge=10, description='ATR SMA length for baseline')",
+    "line": 615
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "threshold_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0, ge=1.0, description='High vol threshold (ATR > threshold_mult * avg)')",
+    "line": 616
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "low_vol_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=0.5, ge=0.0, le=1.0, description='Low vol threshold (ATR < low_vol_mult * avg)')",
+    "line": 617
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "high_vol_confidence_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0, ge=1.0, description='Confidence scaling for high vol')",
+    "line": 618
+  },
+  {
+    "class": "VolatilityRegimeModelConfig",
+    "field": "low_vol_confidence_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=3.0, ge=1.0, description='Confidence scaling for low vol')",
+    "line": 619
+  },
+  {
+    "class": "MeanReversionRegimeModelConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 627
+  },
+  {
+    "class": "MeanReversionRegimeModelConfig",
+    "field": "threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=0.005, ge=0.0, description='Max price deviation from SMAs for MR regime')",
+    "line": 629
+  },
+  {
+    "class": "MeanReversionRegimeModelConfig",
+    "field": "confidence_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=100.0, ge=1.0, description='Confidence scaling factor')",
+    "line": 630
+  },
+  {
+    "class": "RegimeModelsConfig",
+    "field": "sma_trend",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=SMARegimeModelConfig, description='SMA trend model')",
+    "line": 642
+  },
+  {
+    "class": "RegimeModelsConfig",
+    "field": "volatility",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=VolatilityRegimeModelConfig, description='Volatility model')",
+    "line": 643
+  },
+  {
+    "class": "RegimeModelsConfig",
+    "field": "mean_reversion",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=MeanReversionRegimeModelConfig, description='Mean reversion model')",
+    "line": 644
+  },
+  {
+    "class": "RegimeModelConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 649
+  },
+  {
+    "class": "RegimeModelConfig",
+    "field": "confidence_multiplier",
+    "type": "AnnAssign",
+    "default": "Field(default=20.0)",
+    "line": 651
+  },
+  {
+    "class": "RegimeModelConfig",
+    "field": "confidence_min",
+    "type": "AnnAssign",
+    "default": "Field(default=0.5)",
+    "line": 652
+  },
+  {
+    "class": "RegimeModelConfig",
+    "field": "confidence_max",
+    "type": "AnnAssign",
+    "default": "Field(default=0.95)",
+    "line": 653
+  },
+  {
+    "class": "RegimeDetectorConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 658
+  },
+  {
+    "class": "RegimeDetectorConfig",
+    "field": "models",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=RegimeModelsConfig, description='Regime detection models config')",
+    "line": 660
+  },
+  {
+    "class": "OrdersConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 688
+  },
+  {
+    "class": "OrdersConfig",
+    "field": "default_ttl_seconds",
+    "type": "AnnAssign",
+    "default": "Field(default=120, description='Default order TTL')",
+    "line": 690
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "manage",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 700
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "exposure",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 701
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "watchdog",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 702
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "fallback",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 705
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "limit_orders",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 706
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "orders",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 707
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "fsm_periodic_cleanup_enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='FSM periodic cleanup')",
+    "line": 710
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "anti_race_close_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=800, description='Anti-race window (ms)')",
+    "line": 711
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "open_order_type",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='DEPRECATED: No consumption found')",
+    "line": 714
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "order_params",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='DEPRECATED: No consumption found')",
+    "line": 715
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "preflight_backoff_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='DEPRECATED: No consumption found')",
+    "line": 716
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "min_post_interval_per_symbol_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='DEPRECATED')",
+    "line": 717
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "allow_trade_with_guardian_tidy_only",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='DEPRECATED')",
+    "line": 718
+  },
+  {
+    "class": "ExecutionConfig",
+    "field": "order_guardian",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='DEPRECATED: Guardian not config')",
+    "line": 719
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Enable macro sync (anchor subscription and events)')",
+    "line": 724
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "anchors",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=list, description='Anchor symbols for macro alignment')",
+    "line": 725
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "window",
+    "type": "AnnAssign",
+    "default": "Field(default=60, description='Window in seconds')",
+    "line": 727
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "emit_abs",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='DEPRECATED: Not implemented. Planned removal: v2.0')",
+    "line": 728
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "align_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='strict_len', description=\"Alignment mode: 'strict_len' (exact match) or 'tail_min_len' (use min overlap tail)\")",
+    "line": 731
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "min_buffer_size",
+    "type": "AnnAssign",
+    "default": "Field(default=10, description='Min samples in buffer for correlation')",
+    "line": 735
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "time_diff_threshold_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=5000, description='Max time diff (ms) between ticks for return calculation')",
+    "line": 736
+  },
+  {
+    "class": "MacroSyncConfig",
+    "field": "anchor_update_from_ticks",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Update anchor buffers from symbol ticks (false = EVT:ANCHOR_UPDATED only)')",
+    "line": 739
+  },
+  {
+    "class": "KlinesConfig",
+    "field": "interval",
+    "type": "AnnAssign",
+    "default": "Field(default='1m', description='Kline interval')",
+    "line": 751
+  },
+  {
+    "class": "KlinesConfig",
+    "field": "limit",
+    "type": "AnnAssign",
+    "default": "Field(default=2, description='Max klines to fetch')",
+    "line": 752
+  },
+  {
+    "class": "ApiCallLimits",
+    "field": "get_recent_trades",
+    "type": "AnnAssign",
+    "default": "Field(default=50)",
+    "line": 762
+  },
+  {
+    "class": "ApiCallLimits",
+    "field": "get_klines",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=KlinesConfig)",
+    "line": 763
+  },
+  {
+    "class": "MarketDataConfig",
+    "field": "poll_interval_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0)",
+    "line": 773
+  },
+  {
+    "class": "MarketDataConfig",
+    "field": "use_multiprocessing",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable multiprocessing')",
+    "line": 774
+  },
+  {
+    "class": "MarketDataConfig",
+    "field": "websocket_streams",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda)",
+    "line": 775
+  },
+  {
+    "class": "MarketDataConfig",
+    "field": "api_call_limits",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=ApiCallLimits)",
+    "line": 776
+  },
+  {
+    "class": "MarketDataConfig",
+    "field": "macro_sync",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 777
+  },
+  {
+    "class": "FeatureEngineeringConfig",
+    "field": "ema",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 784
+  },
+  {
+    "class": "FeatureEngineeringConfig",
+    "field": "volume",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 785
+  },
+  {
+    "class": "FeatureEngineeringConfig",
+    "field": "volatility",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 786
+  },
+  {
+    "class": "FeatureEngineeringConfig",
+    "field": "liquidity",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 787
+  },
+  {
+    "class": "FeatureEngineeringConfig",
+    "field": "macro_sync",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 788
+  },
+  {
+    "class": "RiskSkewConfig",
+    "field": "max_skew_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=5, description='Max age difference between features.ts and risk.ts')",
+    "line": 803
+  },
+  {
+    "class": "RiskSkewConfig",
+    "field": "max_defer_count",
+    "type": "AnnAssign",
+    "default": "Field(default=3, description='Max DEFERs per symbol before NO_TRADE_UNTIL_REFRESH')",
+    "line": 804
+  },
+  {
+    "class": "RiskSkewConfig",
+    "field": "defer_cooldown_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=2, description='Cooldown between deferred retries')",
+    "line": 805
+  },
+  {
+    "class": "FeaturesTtlConfig",
+    "field": "ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=5)",
+    "line": 812
+  },
+  {
+    "class": "ArmingConfig",
+    "field": "require_regime_warmup",
+    "type": "AnnAssign",
+    "default": "Field(default=False)",
+    "line": 822
+  },
+  {
+    "class": "ArmingConfig",
+    "field": "retry_backoff_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=1000)",
+    "line": 823
+  },
+  {
+    "class": "ArmingConfig",
+    "field": "max_attempts",
+    "type": "AnnAssign",
+    "default": "Field(default=120)",
+    "line": 824
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "position_sizing",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=PositionSizingConfig)",
+    "line": 831
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "qos",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=QosConfig)",
+    "line": 832
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "features",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=FeaturesTtlConfig)",
+    "line": 833
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "bar_gating",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=BarGatingConfig)",
+    "line": 834
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "behavior_fsm",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=BehaviorFsmConfig)",
+    "line": 835
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "signals",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=SignalsConfig)",
+    "line": 836
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "risk_skew",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=RiskSkewConfig)",
+    "line": 837
+  },
+  {
+    "class": "DecisionMakingDomainConfig",
+    "field": "arming",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=ArmingConfig)",
+    "line": 838
+  },
+  {
+    "class": "EmaConfigDetailed",
+    "field": "period_short",
+    "type": "AnnAssign",
+    "default": "Field(default=3, ge=1, le=50, description='Short EMA period (EMA3 default). Must be < period_long.')",
+    "line": 849
+  },
+  {
+    "class": "EmaConfigDetailed",
+    "field": "period_long",
+    "type": "AnnAssign",
+    "default": "Field(default=7, ge=2, le=200, description='Long EMA period (EMA7 default). Must be > period_short.')",
+    "line": 854
+  },
+  {
+    "class": "VolumeConfigDetailed",
+    "field": "sma_length",
+    "type": "AnnAssign",
+    "default": "Field(default=5, ge=2, le=100, description='SMA length for volume spike calculation')",
+    "line": 874
+  },
+  {
+    "class": "VolumeConfigDetailed",
+    "field": "window_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=60, ge=1, le=3600, description='Volume aggregation window in seconds')",
+    "line": 879
+  },
+  {
+    "class": "VolumeConfigDetailed",
+    "field": "min_window_volume_usd",
+    "type": "AnnAssign",
+    "default": "Field(default=0.0, ge=0.0, description='Minimum volume threshold for active signal (Commit 6)')",
+    "line": 884
+  },
+  {
+    "class": "VolatilityConfigDetailed",
+    "field": "sma_length",
+    "type": "AnnAssign",
+    "default": "Field(default=10, ge=2, le=100, description='SMA length for volatility state calculation')",
+    "line": 895
+  },
+  {
+    "class": "VolatilityConfigDetailed",
+    "field": "window_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=60, ge=1, le=3600, description='Range window for volatility calculation in seconds')",
+    "line": 900
+  },
+  {
+    "class": "LiquidityConfigDetailed",
+    "field": "depth_half",
+    "type": "AnnAssign",
+    "default": "Field(default=1000.0, gt=0, le=1000000, description='Half-depth parameter for liquidity kappa and depth imbalance (USD)')",
+    "line": 911
+  },
+  {
+    "class": "LiquidityConfigDetailed",
+    "field": "kappa_min",
+    "type": "AnnAssign",
+    "default": "Field(default=0.3, ge=0.0, le=1.0, description='Minimum liquidity kappa value')",
+    "line": 916
+  },
+  {
+    "class": "LiquidityConfigDetailed",
+    "field": "kappa_max",
+    "type": "AnnAssign",
+    "default": "Field(default=1.0, ge=0.0, le=1.0, description='Maximum liquidity kappa value')",
+    "line": 921
+  },
+  {
+    "class": "EmaBiasConfig",
+    "field": "clamp_min",
+    "type": "AnnAssign",
+    "default": "Field(default=UnaryOp, ge=UnaryOp, le=0.0, description='Minimum clamp for EMA bias (typically -2%)')",
+    "line": 941
+  },
+  {
+    "class": "EmaBiasConfig",
+    "field": "clamp_max",
+    "type": "AnnAssign",
+    "default": "Field(default=0.02, ge=0.0, le=1.0, description='Maximum clamp for EMA bias (typically +2%)')",
+    "line": 946
+  },
+  {
+    "class": "VolumeSpikeConfig",
+    "field": "cap_max",
+    "type": "AnnAssign",
+    "default": "Field(default=3.0, gt=1.0, le=10.0, description='Maximum cap for volume spike ratio (e.g., 3.0 = 300% of average)')",
+    "line": 967
+  },
+  {
+    "class": "MacroSyncMetricsConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Enable macro sync correlation calculation')",
+    "line": 978
+  },
+  {
+    "class": "MacroSyncMetricsConfig",
+    "field": "time_diff_threshold_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=5000, ge=100, le=60000, description='Maximum time difference (ms) between ticks for return calculation')",
+    "line": 982
+  },
+  {
+    "class": "MacroSyncMetricsConfig",
+    "field": "min_buffer_size",
+    "type": "AnnAssign",
+    "default": "Field(default=3, ge=2, le=100, description='Minimum buffer size before computing correlation')",
+    "line": 987
+  },
+  {
+    "class": "MacroSyncMetricsConfig",
+    "field": "window",
+    "type": "AnnAssign",
+    "default": "Field(default=60, ge=10, le=1000, description='Rolling window size for correlation calculation')",
+    "line": 992
+  },
+  {
+    "class": "MacroSyncMetricsConfig",
+    "field": "anchors",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, min_length=1, description='Anchor symbols for correlation (market leaders)')",
+    "line": 997
+  },
+  {
+    "class": "MacroSyncMetricsConfig",
+    "field": "align_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='strict_len', pattern='^(strict_len|tail_min_len)$', description=\"Alignment mode: 'strict_len' (require exact match) or 'tail_min_len' (use shorter tail)\")",
+    "line": 1004
+  },
+  {
+    "class": "MacroSyncMetricsConfig",
+    "field": "anchor_update_from_ticks",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Update anchor buffers from symbol ticks (set false to avoid double-count when anchor is also trade symbol)')",
+    "line": 1011
+  },
+  {
+    "class": "VolatilityStateConfig",
+    "field": "cap_max",
+    "type": "AnnAssign",
+    "default": "Field(default=3.0, gt=1.0, le=10.0, description='Maximum cap for volatility ratio normalization')",
+    "line": 1030
+  },
+  {
+    "class": "DepthImbalanceConfig",
+    "field": "use_laplace_smoothing",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Use Laplace smoothing (depth_half) in calculation')",
+    "line": 1041
+  },
+  {
+    "class": "DeltaPriceConfig",
+    "field": "spike_filter_ms",
+    "type": "AnnAssign",
+    "default": "Field(default=5000, ge=100, le=60000, description='Time gap (ms) above which delta_price is zeroed to filter spikes')",
+    "line": 1051
+  },
+  {
+    "class": "FeatureDefaultsConfig",
+    "field": "neutral_value",
+    "type": "AnnAssign",
+    "default": "Field(default=0.5, ge=0.0, le=1.0, description='Default neutral value for all normalized features (0.5 = center of [0,1])')",
+    "line": 1071
+  },
+  {
+    "class": "FeatureDefaultsConfig",
+    "field": "zero_value",
+    "type": "AnnAssign",
+    "default": "Field(default=0.0, ge=0.0, le=1.0, description='Value for truly zero/absent features (absorption placeholder)')",
+    "line": 1076
+  },
+  {
+    "class": "FeatureDefaultsConfig",
+    "field": "correlation_default",
+    "type": "AnnAssign",
+    "default": "Field(default=0.0, ge=UnaryOp, le=1.0, description='Default correlation value when insufficient data')",
+    "line": 1081
+  },
+  {
+    "class": "FeatureDefaultsConfig",
+    "field": "ms_per_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=1000, ge=1000, le=1000, description='Milliseconds per second (constant for clarity)')",
+    "line": 1086
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "enable_new_metrics",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Enable Phase 1 metrics (ema_bias, volume_spike, etc.)')",
+    "line": 1104
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "volume_input_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='integrate', pattern='^(integrate|sample_window_total)$', description=\"Volume input mode: 'integrate' (sum ticks) or 'sample_window_total' (treat tick as pre-windowed sample)\")",
+    "line": 1110
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "ema",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=EmaConfigDetailed)",
+    "line": 1117
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "volume",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=VolumeConfigDetailed)",
+    "line": 1118
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "volatility",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=VolatilityConfigDetailed)",
+    "line": 1119
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "liquidity",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=LiquidityConfigDetailed)",
+    "line": 1120
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "ema_bias",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=EmaBiasConfig)",
+    "line": 1123
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "volume_spike",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=VolumeSpikeConfig)",
+    "line": 1124
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "volatility_state",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=VolatilityStateConfig)",
+    "line": 1125
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "depth_imbalance",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=DepthImbalanceConfig)",
+    "line": 1126
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "delta_price",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=DeltaPriceConfig)",
+    "line": 1127
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "macro_sync",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=MacroSyncMetricsConfig)",
+    "line": 1130
+  },
+  {
+    "class": "FeatureEngineeringDomainConfig",
+    "field": "defaults",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=FeatureDefaultsConfig)",
+    "line": 1133
+  },
+  {
+    "class": "RiskScoreWeightsConfig",
+    "field": "delta_price_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.1)",
+    "line": 1152
+  },
+  {
+    "class": "RiskScoreWeightsConfig",
+    "field": "obi",
+    "type": "AnnAssign",
+    "default": "Field(default=0.3)",
+    "line": 1153
+  },
+  {
+    "class": "RiskScoreWeightsConfig",
+    "field": "tfi",
+    "type": "AnnAssign",
+    "default": "Field(default=0.3)",
+    "line": 1154
+  },
+  {
+    "class": "RiskScoreWeightsConfig",
+    "field": "absorption_inverse",
+    "type": "AnnAssign",
+    "default": "Field(default=0.3)",
+    "line": 1155
+  },
+  {
+    "class": "TradingAllowedThresholdsConfig",
+    "field": "max_risk_score",
+    "type": "AnnAssign",
+    "default": "Field(default=0.8, description='Max risk score. PRODUCTION MUST OVERRIDE in domains.yaml!')",
+    "line": 1163
+  },
+  {
+    "class": "RiskValidationConfig",
+    "field": "total_weight_min",
+    "type": "AnnAssign",
+    "default": "Field(default=0.5)",
+    "line": 1170
+  },
+  {
+    "class": "RiskValidationConfig",
+    "field": "total_weight_max",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0)",
+    "line": 1171
+  },
+  {
+    "class": "RiskManagementDomainConfig",
+    "field": "risk_score_weights",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=RiskScoreWeightsConfig)",
+    "line": 1178
+  },
+  {
+    "class": "RiskManagementDomainConfig",
+    "field": "trading_allowed_thresholds",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=TradingAllowedThresholdsConfig)",
+    "line": 1179
+  },
+  {
+    "class": "RiskManagementDomainConfig",
+    "field": "validation",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=RiskValidationConfig)",
+    "line": 1180
+  },
+  {
+    "class": "RiskManagementDomainConfig",
+    "field": "use_absorption_penalty",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Whether to include absorption penalty in risk score. Set to False to disable deprecated absorption feature.')",
+    "line": 1185
+  },
+  {
+    "class": "PrecisionConfig",
+    "field": "quantity_min_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=1e-09)",
+    "line": 1197
+  },
+  {
+    "class": "PrecisionConfig",
+    "field": "flat_position_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=1e-12)",
+    "line": 1198
+  },
+  {
+    "class": "PrecisionConfig",
+    "field": "decimal_places",
+    "type": "AnnAssign",
+    "default": "Field(default=2)",
+    "line": 1199
+  },
+  {
+    "class": "ThreadTimeoutsConfig",
+    "field": "join_timeout_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=10)",
+    "line": 1206
+  },
+  {
+    "class": "PositionTrackingDomainConfig",
+    "field": "precision",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=PrecisionConfig)",
+    "line": 1213
+  },
+  {
+    "class": "PositionTrackingDomainConfig",
+    "field": "thread_timeouts",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=ThreadTimeoutsConfig)",
+    "line": 1214
+  },
+  {
+    "class": "PositionTrackingDomainConfig",
+    "field": "positions_stale_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=15, description='Portfolio freshness TTL for AuroraBridge gate')",
+    "line": 1215
+  },
+  {
+    "class": "PositionTrackingDomainConfig",
+    "field": "enable_market_tick_subscription",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable EVT:MARKET_TICK_RECEIVED subscription for mark-price PnL (optional)')",
+    "line": 1216
+  },
+  {
+    "class": "AccountObserverDomainConfig",
+    "field": "poll_interval_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=5)",
+    "line": 1227
+  },
+  {
+    "class": "AccountObserverDomainConfig",
+    "field": "trade_limit",
+    "type": "AnnAssign",
+    "default": "Field(default=10)",
+    "line": 1228
+  },
+  {
+    "class": "AccountObserverDomainConfig",
+    "field": "symbols",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=list)",
+    "line": 1229
+  },
+  {
+    "class": "AccountObserverDomainConfig",
+    "field": "thread_timeouts",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=ThreadTimeoutsConfig)",
+    "line": 1230
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "pending_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=90)",
+    "line": 1238
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "post_fill_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=5)",
+    "line": 1239
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "stale_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=5)",
+    "line": 1240
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "max_equity_utilization_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 1241
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "max_portfolio_fraction",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 1242
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "max_long_utilization_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 1243
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "max_short_utilization_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.2)",
+    "line": 1244
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "max_directional_ratio",
+    "type": "AnnAssign",
+    "default": "Field(default=2.0)",
+    "line": 1245
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "max_concentration_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=0.1)",
+    "line": 1246
+  },
+  {
+    "class": "ExposureGuardConfig",
+    "field": "pending_timeout_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=5)",
+    "line": 1247
+  },
+  {
+    "class": "FsmOpenConfig",
+    "field": "idempotency_window_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=60)",
+    "line": 1254
+  },
+  {
+    "class": "OrderIndexConfig",
+    "field": "ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=3600)",
+    "line": 1261
+  },
+  {
+    "class": "MetricsCollectorConfig",
+    "field": "window_size_minutes",
+    "type": "AnnAssign",
+    "default": "Field(default=60)",
+    "line": 1268
+  },
+  {
+    "class": "MetricsCollectorConfig",
+    "field": "recent_rejections_minutes",
+    "type": "AnnAssign",
+    "default": "Field(default=5)",
+    "line": 1269
+  },
+  {
+    "class": "IdempotentCancelConfig",
+    "field": "max_retries",
+    "type": "AnnAssign",
+    "default": "Field(default=2)",
+    "line": 1276
+  },
+  {
+    "class": "ExecutionUtilsConfig",
+    "field": "client_order_id_max_length",
+    "type": "AnnAssign",
+    "default": "Field(default=32)",
+    "line": 1283
+  },
+  {
+    "class": "ExecutionUtilsConfig",
+    "field": "basis_points_base",
+    "type": "AnnAssign",
+    "default": "Field(default=10000.0)",
+    "line": 1284
+  },
+  {
+    "class": "ExecutionPositionDomainConfig",
+    "field": "watchdog",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=WatchdogConfig)",
+    "line": 1291
+  },
+  {
+    "class": "ExecutionPositionDomainConfig",
+    "field": "exposure_guard",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=ExposureGuardConfig)",
+    "line": 1292
+  },
+  {
+    "class": "ExecutionPositionDomainConfig",
+    "field": "fsm_open",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=FsmOpenConfig)",
+    "line": 1293
+  },
+  {
+    "class": "ExecutionPositionDomainConfig",
+    "field": "order_index",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=OrderIndexConfig)",
+    "line": 1294
+  },
+  {
+    "class": "ExecutionPositionDomainConfig",
+    "field": "metrics_collector",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=MetricsCollectorConfig)",
+    "line": 1295
+  },
+  {
+    "class": "ExecutionPositionDomainConfig",
+    "field": "idempotent_cancel",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=IdempotentCancelConfig)",
+    "line": 1296
+  },
+  {
+    "class": "ExecutionPositionDomainConfig",
+    "field": "utils",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=ExecutionUtilsConfig)",
+    "line": 1297
+  },
+  {
+    "class": "DomainsConfig",
+    "field": "decision_making",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=DecisionMakingDomainConfig)",
+    "line": 1305
+  },
+  {
+    "class": "DomainsConfig",
+    "field": "feature_engineering",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=FeatureEngineeringDomainConfig)",
+    "line": 1306
+  },
+  {
+    "class": "DomainsConfig",
+    "field": "risk_management",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=RiskManagementDomainConfig)",
+    "line": 1307
+  },
+  {
+    "class": "DomainsConfig",
+    "field": "position_tracking",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=PositionTrackingDomainConfig)",
+    "line": 1308
+  },
+  {
+    "class": "DomainsConfig",
+    "field": "account_observer",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=AccountObserverDomainConfig)",
+    "line": 1309
+  },
+  {
+    "class": "DomainsConfig",
+    "field": "execution_position",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=ExecutionPositionDomainConfig)",
+    "line": 1310
+  },
+  {
+    "class": "AuroraSideBiasConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1319
+  },
+  {
+    "class": "AuroraSideBiasConfig",
+    "field": "penalty_factor",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Penalty multiplier for counter-bias trades')",
+    "line": 1321
+  },
+  {
+    "class": "AuroraSideBiasConfig",
+    "field": "window_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Rolling window in seconds for side bias calculation')",
+    "line": 1325
+  },
+  {
+    "class": "AuroraSideBiasConfig",
+    "field": "target_ratio",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Target long/short ratio (e.g., 0.5 = balanced)')",
+    "line": 1329
+  },
+  {
+    "class": "AuroraExitConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1337
+  },
+  {
+    "class": "AuroraExitConfig",
+    "field": "sl_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Stop-loss as percentage from entry (e.g., 0.005 = 0.5%)')",
+    "line": 1339
+  },
+  {
+    "class": "AuroraExitConfig",
+    "field": "max_hold_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Maximum position hold time in seconds')",
+    "line": 1343
+  },
+  {
+    "class": "AuroraTakeProfitConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1351
+  },
+  {
+    "class": "AuroraTakeProfitConfig",
+    "field": "tp_low_ratio",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='TP1 as ratio to ATR or fixed percent')",
+    "line": 1353
+  },
+  {
+    "class": "AuroraTakeProfitConfig",
+    "field": "tp_high_ratio",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='TP2 as ratio to ATR or fixed percent')",
+    "line": 1357
+  },
+  {
+    "class": "AuroraTakeProfitConfig",
+    "field": "partial_exit_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Percentage to exit at TP1 (e.g., 0.7 = 70%)')",
+    "line": 1361
+  },
+  {
+    "class": "AuroraTrailingStopConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1369
+  },
+  {
+    "class": "AuroraTrailingStopConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Enable trailing stop')",
+    "line": 1371
+  },
+  {
+    "class": "AuroraTrailingStopConfig",
+    "field": "activation_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Activate trailing after this profit % (e.g., 0.003 = 0.3%)')",
+    "line": 1375
+  },
+  {
+    "class": "AuroraTrailingStopConfig",
+    "field": "trail_pct",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Trail distance as % from high-water mark')",
+    "line": 1379
+  },
+  {
+    "class": "AuroraTrailingStopConfig",
+    "field": "min_update_interval_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=5, description='Minimum seconds between SL updates (rate limit)')",
+    "line": 1383
+  },
+  {
+    "class": "AuroraExecutionConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1391
+  },
+  {
+    "class": "AuroraExecutionConfig",
+    "field": "order_type",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Order type: LIMIT, MARKET')",
+    "line": 1393
+  },
+  {
+    "class": "AuroraExecutionConfig",
+    "field": "post_only",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Use post-only orders for maker fees')",
+    "line": 1397
+  },
+  {
+    "class": "AuroraExecutionConfig",
+    "field": "max_slippage_bps",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Max allowed slippage in basis points')",
+    "line": 1401
+  },
+  {
+    "class": "EmaClampConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable per-asset clamp override')",
+    "line": 1415
+  },
+  {
+    "class": "EmaClampConfig",
+    "field": "clamp_min",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Override global ema_bias.clamp_min')",
+    "line": 1416
+  },
+  {
+    "class": "EmaClampConfig",
+    "field": "clamp_max",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Override global ema_bias.clamp_max')",
+    "line": 1417
+  },
+  {
+    "class": "SignalThresholdConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable per-asset threshold override')",
+    "line": 1424
+  },
+  {
+    "class": "SignalThresholdConfig",
+    "field": "value",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Override global signal_threshold')",
+    "line": 1425
+  },
+  {
+    "class": "MaxRiskScoreConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Enable per-asset max_risk_score override')",
+    "line": 1432
+  },
+  {
+    "class": "MaxRiskScoreConfig",
+    "field": "value",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Max risk score threshold for entry filtering')",
+    "line": 1433
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "enabled",
+    "type": "AnnAssign",
+    "default": "Field(default=True, description='Enable Aurora strategy for this instrument (default: True for backward compat)')",
+    "line": 1447
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "weights",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Per-feature signal weights from Optuna')",
+    "line": 1453
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "side_bias",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Side bias configuration')",
+    "line": 1459
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "position_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='DYNAMIC', description='STRICT = No pyramiding (1 trade only), DYNAMIC = Pyramiding allowed up to cap')",
+    "line": 1464
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "regime_thresholds",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Threshold multipliers per regime (TREND, VOLATILE, FLAT)')",
+    "line": 1470
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "regime_sizing",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Position size multipliers per regime')",
+    "line": 1476
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "exit",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Stop-loss and max hold time')",
+    "line": 1482
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "take_profit",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='TP1/TP2 partial exit settings')",
+    "line": 1488
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "trailing_stop",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Trailing stop settings')",
+    "line": 1494
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "execution",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Order execution settings')",
+    "line": 1500
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "ema_clamp",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Per-asset EMA clamp range (Phase 3+)')",
+    "line": 1506
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "signal_threshold",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Per-asset signal threshold (Phase 3+)')",
+    "line": 1510
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "max_risk_score",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Per-asset max risk score (Phase 3+)')",
+    "line": 1514
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "cooldown_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Per-instrument cooldown in seconds (overrides global qos.symbol_cooldown_sec)')",
+    "line": 1519
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "allowed_regimes",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='If set, only trade when current regime is in this list (Phase 3+ regime gating)')",
+    "line": 1525
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "timeframe_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Bar timeframe in seconds for this instrument. SOL=180 (3m), BTC/ETH=300 (5m)')",
+    "line": 1531
+  },
+  {
+    "class": "AuroraInstrumentConfig",
+    "field": "position_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='ONE_SIDE', description=\"Position constraint mode: 'STRICT' (1 pos total), 'ONE_SIDE' (1 pos per side/allow reduce), 'HEDGE' (allow all)\")",
+    "line": 1537
+  },
+  {
+    "class": "OpsConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1545
+  },
+  {
+    "class": "OpsConfig",
+    "field": "panic_killswitch",
+    "type": "AnnAssign",
+    "default": "Field(default=False, description='Emergency kill switch - blocks all new CMD:OPEN when True')",
+    "line": 1548
+  },
+  {
+    "class": "OpsConfig",
+    "field": "panic_ttl_sec",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Optional TTL in seconds for panic_killswitch; if set, killswitch auto-expires after this many seconds')",
+    "line": 1552
+  },
+  {
+    "class": "OpsConfig",
+    "field": "quiet_hours_utc",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=list, description=\"Time windows in UTC when trading is blocked (e.g., ['22:00-06:00'])\")",
+    "line": 1556
+  },
+  {
+    "class": "OpsConfig",
+    "field": "allowlist_symbols",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=list, description='If non-empty, only these symbols can trade. Empty = no restrictions')",
+    "line": 1560
+  },
+  {
+    "class": "OpsConfig",
+    "field": "metrics_url",
+    "type": "AnnAssign",
+    "default": "Field(default='http://127.0.0.1:8000/metrics')",
+    "line": 1566
+  },
+  {
+    "class": "OpsConfig",
+    "field": "reports_dir",
+    "type": "AnnAssign",
+    "default": "Field(default='reports')",
+    "line": 1567
+  },
+  {
+    "class": "DomainModeConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1575
+  },
+  {
+    "class": "DomainModeConfig",
+    "field": "trading_mode",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis, description=\"Trading mode for this domain: 'live' or 'testnet'\")",
+    "line": 1577
+  },
+  {
+    "class": "DomainConfigurationConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1594
+  },
+  {
+    "class": "DomainConfigurationConfig",
+    "field": "market_data",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description=\"Market data source mode (should be 'live' for real prices)\")",
+    "line": 1596
+  },
+  {
+    "class": "DomainConfigurationConfig",
+    "field": "feature_engineering",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description='Feature engineering mode (should match market_data)')",
+    "line": 1600
+  },
+  {
+    "class": "DomainConfigurationConfig",
+    "field": "decision_making",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description='Decision making mode (should match market_data)')",
+    "line": 1604
+  },
+  {
+    "class": "DomainConfigurationConfig",
+    "field": "risk_management",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description='Risk management mode (testnet for safety)')",
+    "line": 1608
+  },
+  {
+    "class": "DomainConfigurationConfig",
+    "field": "execution_position",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description=\"Execution mode (MUST be 'testnet' for testing!)\")",
+    "line": 1612
+  },
+  {
+    "class": "DomainConfigurationConfig",
+    "field": "audit_trail",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda, description=\"Audit trail mode (usually 'live' for logging)\")",
+    "line": 1616
+  },
+  {
+    "class": "TradingConfig",
+    "field": "mode",
+    "type": "AnnAssign",
+    "default": "Field(default='testnet', description='testnet | production | live')",
+    "line": 1626
+  },
+  {
+    "class": "TradingConfig",
+    "field": "decision",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=DecisionConfig)",
+    "line": 1628
+  },
+  {
+    "class": "TradingConfig",
+    "field": "execution",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1629
+  },
+  {
+    "class": "TradingConfig",
+    "field": "instruments",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1630
+  },
+  {
+    "class": "TradingConfig",
+    "field": "aurora_instruments",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Per-instrument Aurora strategy configuration (Optuna results)')",
+    "line": 1631
+  },
+  {
+    "class": "TradingConfig",
+    "field": "symbols_to_track",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=list, description='List of symbols to track for multi-TF aggregation')",
+    "line": 1635
+  },
+  {
+    "class": "TradingConfig",
+    "field": "market_data",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1636
+  },
+  {
+    "class": "TradingConfig",
+    "field": "feature_engineering",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1637
+  },
+  {
+    "class": "TradingConfig",
+    "field": "domains",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=DomainsConfig)",
+    "line": 1639
+  },
+  {
+    "class": "TradingConfig",
+    "field": "risk",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Legacy risk configuration (daily gate, etc)')",
+    "line": 1642
+  },
+  {
+    "class": "TradingConfig",
+    "field": "tca_prefs",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='TCA Preferences')",
+    "line": 1645
+  },
+  {
+    "class": "TradingConfig",
+    "field": "risk_budgets",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Risk Budgeting Configuration')",
+    "line": 1646
+  },
+  {
+    "class": "TradingConfig",
+    "field": "risk_management",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis)",
+    "line": 1649
+  },
+  {
+    "class": "TradingConfig",
+    "field": "ops",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Operations config (panic killswitch, quiet hours, allowlist)')",
+    "line": 1652
+  },
+  {
+    "class": "TradingConfig",
+    "field": "domain_configuration",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=DomainConfigurationConfig, description='Domain-level trading mode configuration for hybrid mode (live data + testnet execution)')",
+    "line": 1659
+  },
+  {
+    "class": "BinanceApiEnv",
+    "field": "api_key",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1669
+  },
+  {
+    "class": "BinanceApiEnv",
+    "field": "api_secret",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1670
+  },
+  {
+    "class": "BinanceApiEnv",
+    "field": "rest_url",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1671
+  },
+  {
+    "class": "BinanceApiEnv",
+    "field": "ws_url",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1672
+  },
+  {
+    "class": "BinanceApiConfig",
+    "field": "live",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=BinanceApiEnv)",
+    "line": 1678
+  },
+  {
+    "class": "BinanceApiConfig",
+    "field": "testnet",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=BinanceApiEnv)",
+    "line": 1679
+  },
+  {
+    "class": "RetrySchedulerConfig",
+    "field": "max_attempts",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis, description='Max retry attempts for deferred intents')",
+    "line": 1686
+  },
+  {
+    "class": "RetrySchedulerConfig",
+    "field": "min_retry_delay_ms",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis, description='Minimum retry delay (ms)')",
+    "line": 1687
+  },
+  {
+    "class": "BridgeConfig",
+    "field": "retry_scheduler",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis)",
+    "line": 1694
+  },
+  {
+    "class": "RiskManagementDataSourcesConfig",
+    "field": "market_data",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis)",
+    "line": 1701
+  },
+  {
+    "class": "RiskManagementDataSourcesConfig",
+    "field": "portfolio_state",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis)",
+    "line": 1702
+  },
+  {
+    "class": "TradingRiskManagementConfig",
+    "field": "data_sources",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis)",
+    "line": 1709
+  },
+  {
+    "class": "AccountObserverConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1714
+  },
+  {
+    "class": "AccountObserverConfig",
+    "field": "poll_interval",
+    "type": "AnnAssign",
+    "default": "Field(default=30, description='Polling interval in seconds')",
+    "line": 1715
+  },
+  {
+    "class": "LoggingConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1721
+  },
+  {
+    "class": "LoggingConfig",
+    "field": "level",
+    "type": "AnnAssign",
+    "default": "Field(default='INFO')",
+    "line": 1723
+  },
+  {
+    "class": "LoggingConfig",
+    "field": "file",
+    "type": "AnnAssign",
+    "default": "Field(default='logs/aurora_core.log')",
+    "line": 1724
+  },
+  {
+    "class": "LoggingConfig",
+    "field": "format",
+    "type": "AnnAssign",
+    "default": "Field(default='json')",
+    "line": 1725
+  },
+  {
+    "class": "LoggingConfig",
+    "field": "rotation",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=Lambda)",
+    "line": 1726
+  },
+  {
+    "class": "SystemMarketDataConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1732
+  },
+  {
+    "class": "SystemMarketDataConfig",
+    "field": "queue_maxsize",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis, description='Max size of IPC queue (worker → proxy)')",
+    "line": 1734
+  },
+  {
+    "class": "SystemMarketDataConfig",
+    "field": "local_queue_maxsize",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis, description='Max size of local queue (proxy internal)')",
+    "line": 1735
+  },
+  {
+    "class": "SystemMarketDataConfig",
+    "field": "emit_workers",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis, description='Thread pool size for non-blocking FSM.emit()')",
+    "line": 1736
+  },
+  {
+    "class": "SystemMarketDataConfig",
+    "field": "tick_ttl_ms",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis, description='Max age of tick data in ms — older ticks are DROPPED')",
+    "line": 1737
+  },
+  {
+    "class": "SystemConfig",
+    "field": "model_config",
+    "type": "ConfigDict",
+    "default": "extra=allow",
+    "line": 1742
+  },
+  {
+    "class": "SystemConfig",
+    "field": "logging",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=LoggingConfig)",
+    "line": 1744
+  },
+  {
+    "class": "SystemConfig",
+    "field": "market_data",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Market data system settings')",
+    "line": 1745
+  },
+  {
+    "class": "SystemRuntimeMeta",
+    "field": "config_name",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Identifier of the loaded config profile')",
+    "line": 1753
+  },
+  {
+    "class": "SystemRuntimeMeta",
+    "field": "config_dir",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Filesystem path of the config directory in use')",
+    "line": 1754
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "system_config_version",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1762
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "regime_config_version",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1763
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "sequential_tests",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1764
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "risk_core",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1765
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "kelly",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1766
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "calibrator",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1767
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "hawkes",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1768
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "hotreload_whitelist",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=list)",
+    "line": 1769
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "hardening",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1770
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "position_tracking",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1771
+  },
+  {
+    "class": "SystemMetaConfig",
+    "field": "runtime",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=SystemRuntimeMeta)",
+    "line": 1772
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "trading_mode",
+    "type": "AnnAssign",
+    "default": "Field(default='testnet', description='Trading mode: testnet | production | live')",
+    "line": 1785
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "trading",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=TradingConfig)",
+    "line": 1787
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "binance_api",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=BinanceApiConfig)",
+    "line": 1790
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "account_observer",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=AccountObserverConfig)",
+    "line": 1791
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "system",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=SystemConfig)",
+    "line": 1795
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "system_meta",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=SystemMetaConfig)",
+    "line": 1796
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "ops",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=OpsConfig)",
+    "line": 1797
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "bridge",
+    "type": "AnnAssign",
+    "default": "Field(Ellipsis)",
+    "line": 1800
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "domains",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Domain-specific configurations')",
+    "line": 1803
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "instruments",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Canonical instrument precision map (symbol -> tick_size/step_size)')",
+    "line": 1806
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "aurora_instruments",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict, description='Per-symbol Aurora strategy overrides (weights, side_bias, exit, etc.)')",
+    "line": 1812
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "strategies_registry",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Strategy assignments + arbitration config (from strategies.yaml)')",
+    "line": 1819
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "mean_reversion_1m",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Mean Reversion 1m strategy config (loaded from strategy profile SSOT)')",
+    "line": 1825
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "decision",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Override trading.decision if set')",
+    "line": 1831
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "execution",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Override trading.execution if set')",
+    "line": 1833
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "brackets",
+    "type": "AnnAssign",
+    "default": "Field(default=None)",
+    "line": 1835
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "trailing",
+    "type": "AnnAssign",
+    "default": "Field(default_factory=dict)",
+    "line": 1836
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "models",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Regime detection models from regime.yaml')",
+    "line": 1839
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "logging",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Logging configuration')",
+    "line": 1842
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "hmm",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='HMM regime detector config')",
+    "line": 1843
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "features",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Feature engineering config')",
+    "line": 1844
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "hotreload_whitelist",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Hot-reload allowlist')",
+    "line": 1845
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "aurora",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Aurora strategy global config')",
+    "line": 1846
+  },
+  {
+    "class": "AuroraConfig",
+    "field": "runtime",
+    "type": "AnnAssign",
+    "default": "Field(default=None, description='Runtime configuration')",
+    "line": 1847
+  }
+]

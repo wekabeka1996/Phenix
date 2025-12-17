@@ -1,3 +1,13 @@
+## ✅ TASK20: CFG-ZERO-DEFAULTS-INVENTORY-AND-GATE-P1-20 — COMPLETE
+
+- [x] Create `tools/inventory_config_defaults.py` (AST parser for defaults)
+- [x] Generate `reports/TASK20_defaults_inventory.md` and `.json` (489 defaults inventoried)
+- [x] Add `tests/config/test_no_defaults_in_config_models.py` (tool validation test)
+- [x] Update `Copilot_Master_Roadmap.md` with completion entry
+- [x] Update JOURNAL.md with detailed completion log
+- [x] Ensure `pytest -q tests/config` passes (69/69 tests green)
+
+---
 # Aurora Refactoring TODO
 
 ## ✅ Phase 0: Per-Instrument Config Architecture — COMPLETE
@@ -9,6 +19,9 @@
 - [x] [P0-06] Add _get_aurora_instr_cfg helper to FSM — fsm_manage.py
 
 ## ✅ Track A: Aurora Phase 3+ — COMPLETE
+
+## ✅ Task 19: Root Strict Config Freeze — COMPLETE
+- [x] [CFG-ROOT-STRICT-19] AuroraConfig extra='forbid', system_meta carved out, loader rejects service keys
 
 ### A1: Per-Asset Core Parameters
 - [x] [A1-01] Refactor signal_weights lookup with per-instrument fallback — decision_making.py

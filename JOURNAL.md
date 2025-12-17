@@ -1,3 +1,39 @@
+## 2025-12-17 12:00 MSK — TASK20: CFG-ZERO-DEFAULTS-INVENTORY-AND-GATE-P1-20 ✅ COMPLETE
+
+**Goal**: Formally fix "defaults are not needed" as verifiable contract. Inventory all defaults in config_models.py, add gate to prevent new defaults/extra='allow'.
+
+**Implementation**:
+- **Tool**: `tools/inventory_config_defaults.py` - AST-based parser detecting Field(default=...), default_factory, ConfigDict(extra='allow'), AnnAssign defaults in BaseModel classes
+- **Reports**: Generated `reports/TASK20_defaults_inventory.md` (table) and `.json` (489 defaults found)
+- **Gate**: `tests/config/test_no_defaults_in_config_models.py` - Ensures tool works and generates reports
+- **No removals**: Task explicitly does NOT remove defaults (only inventory + gate for future enforcement)
+
+**Key Findings**:
+- 489 defaults/extra='allow' instances across 100+ BaseModel classes
+- Most common: Field(default=...) in domain configs, model_config extra='allow' for flexibility
+- Ready for future mass refactor to remove defaults (separate task)
+
+**DoD Met**: Tool works, reports generated, test green, pytest -q tests/config ✅, roadmap updated.
+
+---
+## 2025-12-17 12:00 MSK — TASK20: CFG-ZERO-DEFAULTS-INVENTORY-AND-GATE-P1-20 ✅ COMPLETE
+
+**Goal**: Formally fix "defaults are not needed" as verifiable contract. Inventory all defaults in config_models.py, add gate to prevent new defaults/extra='allow'.
+
+**Implementation**:
+- **Tool**: `tools/inventory_config_defaults.py` - AST-based parser detecting Field(default=...), default_factory, ConfigDict(extra='allow'), AnnAssign defaults in BaseModel classes
+- **Reports**: Generated `reports/TASK20_defaults_inventory.md` (table) and `.json` (489 defaults found)
+- **Gate**: `tests/config/test_no_defaults_in_config_models.py` - Ensures tool works and generates reports
+- **No removals**: Task explicitly does NOT remove defaults (only inventory + gate for future enforcement)
+
+**Key Findings**:
+- 489 defaults/extra='allow' instances across 100+ BaseModel classes
+- Most common: Field(default=...) in domain configs, model_config extra='allow' for flexibility
+- Ready for future mass refactor to remove defaults (separate task)
+
+**DoD Met**: Tool works, reports generated, test green, pytest -q tests/config ✅, roadmap updated.
+
+---
 
 ---
 
@@ -517,6 +553,29 @@ def _resolve_domains(self):
         "Check config_loader.py canonical domains logic."
     )
 ```
+
+    ## 2025-12-17 18:00 MSK — TASK19 CFG-ROOT-STRICT-FREEZE-NO-EXTRAS-P1-19 ✅
+
+    **Goal**: Enforce strict root validation (`extra='forbid'`), isolate service/meta keys, and fail-fast on `_config_*` noise.
+
+    **Changes**:
+    - Added typed `system_meta` + `system_meta.runtime` for diagnostics; AuroraConfig root now `extra='forbid'`.
+    - ConfigLoader extracts meta from system/regime YAML, relocates root `guardian` → `execution.order_guardian`, and rejects `_config_*` keys.
+    - Tests: root typo rejection, `_config_*` rejection, canonical strict load.
+    - Forensic: `reports/TASK19_root_extra_keys.md` documents prior root extras and sources.
+
+    **Files**:
+    - apps/reference/config_models.py
+    - apps/reference/config_loader.py
+    - reports/TASK19_root_extra_keys.md
+    - tests/config/test_root_forbid_extra_keys.py
+    - tests/config/test_loader_rejects_config_meta_keys.py
+    - TODO.md
+
+    **Notes**:
+    - Runtime metadata (`_config_name/_config_dir`) now resides under `system_meta.runtime`.
+    - `guardian` config is preserved under `execution.order_guardian` to satisfy strict root schema.
+
 
 #### 2. decision_making.py: QoS рефакторинг
 **Змінено:**
