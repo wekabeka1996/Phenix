@@ -71,12 +71,14 @@ class MarketDataConnector:
         # Load trading section (guaranteed valid by AuroraConfig validation).
         trading = self.config.trading
 
+        # CFG-TRADING-YAML-BURN-DOWN-02: Use canonical config.instruments (SSOT)
         # Symbols: Load from instruments dict keys. Fail if empty.
-        self.symbols: list[str] = list(trading.instruments.keys())
+        instruments = self.config.instruments if hasattr(self.config, 'instruments') else {}
+        self.symbols: list[str] = list(instruments.keys())
         if not self.symbols:
             raise ValueError(
-                "trading.instruments must contain at least one symbol. "
-                "Please configure 'trading.instruments' in your config file.")
+                "config.instruments must contain at least one symbol. "
+                "Please configure config/aurora/instruments.yaml (SSOT).")
 
         # Anchors: Load from macro_sync config. Fail if None/missing.
         if not trading.market_data or not trading.market_data.macro_sync:

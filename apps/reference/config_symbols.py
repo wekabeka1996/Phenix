@@ -21,9 +21,14 @@ def get_trading_symbols() -> List[str]:
     """
     Get list of trading symbols from configuration.
 
+    CFG-STRATEGIES-SSOT-03: Single source of truth - ONLY through get_config()
+    No fallback to vfoundation.config (dual import eliminated)
+
     Returns:
         List of trading symbols (e.g., ['SOLUSDT', 'ETHUSDT'])
-        Falls back to ['SOLUSDT', 'ETHUSDT'] if config unavailable
+
+    Raises:
+        ValueError: If config unavailable or instruments missing
 
     Example:
         >>> symbols = get_trading_symbols()
@@ -31,32 +36,23 @@ def get_trading_symbols() -> List[str]:
         ['SOLUSDT', 'ETHUSDT']
     """
     try:
-        # Try approach 1: Direct import with Pydantic config
+        # CFG-STRATEGIES-SSOT-03: ONE SOURCE OF TRUTH - canonical config.instruments (SSOT)
         from apps.reference.config_loader import get_config
         config = get_config()
-        # Access Pydantic object directly
-        instruments = config.trading.instruments if hasattr(
-            config.trading, 'instruments') else {}
+        # Access canonical instruments (from instruments.yaml)
+        instruments = config.instruments if hasattr(config, 'instruments') else {}
         if instruments:
             return list(instruments.keys())
+        else:
+            raise ValueError("config.instruments is empty")
     except Exception as e:
-        logger.debug(f"Approach 1 (get_config) failed: {e}")
-
-    try:
-        # Try approach 2: vfoundation.config (environment-based)
-        from vfoundation.config import config
-        if hasattr(config, 'trading'):
-            # config is vfoundation.config.Config object
-            instruments = getattr(config.trading, 'instruments', {})
-            if instruments:
-                return list(instruments.keys())
-    except Exception as e:
-        logger.debug(f"Approach 2 (vfoundation.config) failed: {e}")
-
-    # Last resort fallback - FAIL FAST
-    error_msg = "No trading symbols configured! Please check 'trading.instruments' in your config."
-    logger.critical(error_msg)
-    raise ValueError(error_msg)
+        # FAIL-CLOSED: No silent fallback, explicit error
+        error_msg = (
+            f"❌ CRITICAL: Failed to get trading symbols from AuroraConfig: {e}. "
+            f"Please check config/aurora/instruments.yaml (SSOT)."
+        )
+        logger.critical(error_msg)
+        raise ValueError(error_msg)
 
 
 def get_first_symbol() -> str:
@@ -79,6 +75,8 @@ def get_symbol_config(symbol: str) -> Optional[dict]:
     """
     Get configuration for a specific symbol.
 
+    CFG-STRATEGIES-SSOT-03: Single source of truth - ONLY through get_config()
+
     Args:
         symbol: Trading symbol (e.g., 'SOLUSDT')
 
@@ -91,11 +89,10 @@ def get_symbol_config(symbol: str) -> Optional[dict]:
         {'step_size': '0.01', 'min_notional': '10'}
     """
     try:
-        # Try approach 1: apps.reference.config_loader with Pydantic
+        # CFG-STRATEGIES-SSOT-03: ONE SOURCE OF TRUTH - canonical config.instruments (SSOT)
         from apps.reference.config_loader import get_config
         config = get_config()
-        instruments = config.trading.instruments if hasattr(
-            config.trading, 'instruments') else {}
+        instruments = config.instruments if hasattr(config, 'instruments') else {}
         if instruments and symbol in instruments:
             # Convert Pydantic model to dict
             symbol_cfg = instruments[symbol]
@@ -106,17 +103,7 @@ def get_symbol_config(symbol: str) -> Optional[dict]:
             else:
                 return dict(symbol_cfg) if symbol_cfg else None
     except Exception as e:
-        logger.debug(f"Approach 1 (get_config) failed: {e}")
-
-    try:
-        # Try approach 2: vfoundation.config (environment-based)
-        from vfoundation.config import config
-        if hasattr(config, 'trading'):
-            instruments = getattr(config.trading, 'instruments', {})
-            if instruments and symbol in instruments:
-                return instruments[symbol]
-    except Exception as e:
-        logger.debug(f"Approach 2 (vfoundation.config) failed: {e}")
+        logger.debug(f"Failed to get config for symbol {symbol}: {e}")
 
     logger.debug(f"Could not find config for symbol {symbol}")
     return None

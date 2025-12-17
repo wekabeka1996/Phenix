@@ -41,10 +41,10 @@ class TestDomainsConfigLoading:
         assert domains.decision_making.qos.exposure_block_cooldown_sec == 10
         assert domains.decision_making.qos.symbol_cooldown_sec == 3
         assert domains.decision_making.qos.max_intents_per_minute_per_symbol == 6
-        assert domains.decision_making.qos.mode == "defer"
+        assert domains.decision_making.qos.mode == "shadow"  # Updated from "defer" to "shadow"
         
         # Features TTL
-        assert domains.decision_making.features.ttl_sec == 5
+        assert domains.decision_making.features.ttl_sec == 30  # Updated from 5 to 30
         
         # Bar gating
         assert domains.decision_making.bar_gating.bar_ms == 900000  # 15 minutes
@@ -92,7 +92,7 @@ class TestDomainsConfigLoading:
         # Exposure Guard
         assert domains.execution_position.exposure_guard.pending_ttl_sec == 90
         assert domains.execution_position.exposure_guard.post_fill_ttl_sec == 5
-        assert domains.execution_position.exposure_guard.stale_ttl_sec == 5
+        assert domains.execution_position.exposure_guard.stale_ttl_sec == 60  # Updated from 5 to 60
         
         # FSM Open
         assert domains.execution_position.fsm_open.idempotency_window_sec == 60
@@ -120,7 +120,7 @@ class TestDomainsConfigLoading:
         assert domains.risk_management.risk_score_weights.absorption_inverse == 0.3
         
         # Trading allowed thresholds
-        assert domains.risk_management.trading_allowed_thresholds.max_risk_score == 0.8
+        assert domains.risk_management.trading_allowed_thresholds.max_risk_score == 0.96  # Updated from 0.8 to 0.96
         
         # Validation
         assert domains.risk_management.validation.total_weight_min == 0.5

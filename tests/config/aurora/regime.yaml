@@ -1,0 +1,6 @@
+regime:
+  models:
+    hmm:
+      enabled: false
+  detection:
+    enabled: false

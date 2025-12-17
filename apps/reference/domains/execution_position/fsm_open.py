@@ -88,24 +88,37 @@ class OpenFlowFSM:
             self.idempotency_window_sec = 60
 
     def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
-        """Get instrument specifications from config."""
-        instruments = self.config.trading.instruments or {}
+        """Get instrument specifications from config.
+        
+        CFG-INSTRUMENTS-STEP-03-EXECUTION-PRECISION:
+        Uses canonical config.instruments (SSOT from config/aurora/instruments.yaml).
+        """
+        # CANONICAL: config.instruments only
+        instruments = self.config.instruments or {}
         specs = instruments.get(symbol)
 
-        # Default values
+        # Default values (fallback for non-trading symbols or missing config)
         min_qty = MIN_ORDER_QTY
         step_size = QTY_STEP
         tick_size = PRICE_STEP
         min_notional = MIN_NOTIONAL
 
         if specs:
-            # Pydantic model InstrumentSpec fields are strings, convert to Decimal
+            # Pydantic model InstrumentPrecisionSpec fields, convert to Decimal
             try:
-                min_qty = Decimal(specs.min_qty)
-                step_size = Decimal(specs.step_size)
-                tick_size = Decimal(specs.tick_size)
-                min_notional = Decimal(specs.min_notional)
-            except (ValueError, TypeError, InvalidOperation):
+                # Primary fields (tick_size/step_size are float in canonical model)
+                if hasattr(specs, 'tick_size') and specs.tick_size is not None:
+                    tick_size = Decimal(str(specs.tick_size))
+                if hasattr(specs, 'step_size') and specs.step_size is not None:
+                    step_size = Decimal(str(specs.step_size))
+                
+                # Optional legacy fields (may not be in InstrumentPrecisionSpec)
+                if hasattr(specs, 'min_qty') and specs.min_qty is not None:
+                    min_qty = Decimal(str(specs.min_qty))
+                if hasattr(specs, 'min_notional') and specs.min_notional is not None:
+                    min_notional = Decimal(str(specs.min_notional))
+            except (ValueError, TypeError, InvalidOperation) as e:
+                # Log but continue with defaults
                 pass
 
         return {

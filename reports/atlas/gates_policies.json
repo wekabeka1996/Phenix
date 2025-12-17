@@ -1,12 +1,75 @@
 {
   "files": {
-    ".github\\workflows\\ci.yml": {},
-    ".github\\workflows\\gemini-dispatch.yml": {},
-    ".github\\workflows\\gemini-invoke.yml": {},
-    ".github\\workflows\\gemini-review.yml": {},
-    ".github\\workflows\\gemini-scheduled-triage.yml": {},
-    ".github\\workflows\\gemini-triage.yml": {},
-    "apps\\reference\\dictionaries\\global_v2_2.yaml": {
+    ".github/workflows/gemini-invoke.yml": {},
+    ".github/workflows/gemini-review.yml": {},
+    ".github/workflows/ci.yml": {},
+    ".github/workflows/gemini-scheduled-triage.yml": {},
+    ".github/workflows/gemini-triage.yml": {},
+    ".github/workflows/gemini-dispatch.yml": {},
+    "configs/master_config_v1.yaml": {
+      "execution": {
+        "preflight_backoff_ms": [
+          120,
+          250,
+          400,
+          800,
+          1200,
+          1800
+        ],
+        "anti_race_close_ms": 800,
+        "min_post_interval_per_symbol_ms": 300,
+        "allow_trade_with_guardian_tidy_only": false,
+        "fsm_periodic_cleanup_enabled": false
+      },
+      "ops": {
+        "metrics_url": "http://127.0.0.1:8000/metrics",
+        "reports_dir": "reports"
+      }
+    },
+    "deepseek_workspace/offline_analysis/aurora_market_llm-20251129T235042Z-1-001/aurora_market_llm/wandb/run-20251129_190756-0kngxlrh/files/config.yaml": {},
+    "config/aurora/features.yaml": {},
+    "config/aurora/regime.yaml": {},
+    "config/aurora/system.yaml": {},
+    "config/aurora/instruments.yaml": {},
+    "config/aurora/trading.yaml": {
+      "execution": {
+        "allow_trade_with_guardian_tidy_only": false,
+        "fsm_periodic_cleanup_enabled": false,
+        "preflight_backoff_ms": [
+          120,
+          250,
+          400,
+          800,
+          1200,
+          1800
+        ],
+        "anti_race_close_ms": 800,
+        "min_post_interval_per_symbol_ms": 300,
+        "order_guardian": {
+          "poll_interval_ms": 5000
+        }
+      }
+    },
+    "config/aurora/aurora_instruments.yaml": {},
+    "config/aurora/domains.yaml": {},
+    "config/aurora/strategies.yaml": {},
+    "config/aurora/strategies/trading_1m_best_optuna.yaml": {},
+    "config/aurora/strategies/aurora_optimal_production_v1.yaml": {},
+    "config/aurora/strategies/traiding_best_optuna_3_5m.yaml": {},
+    "config/aurora/strategies/aurora_phase3_production.yaml": {},
+    "config/aurora/strategies/aurora_optimal_full_v1.yaml": {},
+    "config/aurora/strategies/mean_reversion_1m.yaml": {},
+    "config/aurora/strategies/aurora_fullscale_optuna_v1.yaml": {},
+    "config/aurora/instruments/XRPUSDT.yaml": {},
+    "config/aurora/instruments/_index.yaml": {},
+    "config/aurora/instruments/BTCUSDT.yaml": {},
+    "config/aurora/instruments/SOLUSDT.yaml": {},
+    "config/aurora/instruments/ETHUSDT.yaml": {},
+    "config/aurora/instruments/DOGEUSDT.yaml": {},
+    "vfoundation/examples/flow.yaml": {},
+    "vfoundation/configs/idempotency.yaml": {},
+    "vfoundation/configs/adapter.yaml": {},
+    "vfoundation/dictionaries/global_v2_2.yaml": {
       "ops": [
         "ASK",
         "DEC",
@@ -16,23 +79,15 @@
         "ERR"
       ]
     },
-    "config\\aurora\\regime.yaml": {},
-    "config\\aurora\\system.yaml": {},
-    "config\\aurora\\trading.staging.override.yaml": {},
-    "config\\aurora\\trading.yaml": {},
-    "config\\aurora\\trading_v0.2.yaml": {},
-    "configs\\master_config_v1.yaml": {
-      "execution": {
-        "manage": {
-          "auto": true
-        }
-      },
-      "ops": {
-        "metrics_url": "http://127.0.0.1:8000/metrics",
-        "reports_dir": "reports"
-      }
-    },
-    "configs\\frozen\\master_config_v1_20251030.yaml": {
+    "vfoundation/dictionaries/domains/domain_feature_engineering.yaml": {},
+    "vfoundation/dictionaries/domains/domain_execution_position.yaml": {},
+    "vfoundation/dictionaries/domains/domain_risk_management.yaml": {},
+    "vfoundation/dictionaries/domains/domain_market_data.yaml": {},
+    "vfoundation/dictionaries/domains/domain_decision_making.yaml": {},
+    "tests/config/aurora/regime.yaml": {},
+    "tests/config/aurora/system.yaml": {},
+    "tests/config/aurora/trading.yaml": {},
+    "configs/frozen/master_config_v1_20251030.yaml": {
       "execution": {
         "manage": {
           "auto": false
@@ -43,11 +98,7 @@
         "reports_dir": "reports"
       }
     },
-    "tests\\config\\aurora\\system.yaml": {},
-    "tests\\config\\aurora\\trading.yaml": {},
-    "vfoundation\\configs\\adapter.yaml": {},
-    "vfoundation\\configs\\idempotency.yaml": {},
-    "vfoundation\\dictionaries\\global_v2_2.yaml": {
+    "apps/reference/dictionaries/global_v2_2.yaml": {
       "ops": [
         "ASK",
         "DEC",
@@ -56,14 +107,22 @@
         "UPD",
         "ERR"
       ]
-    },
-    "vfoundation\\examples\\flow.yaml": {}
+    }
   },
   "merged_master": {
     "execution": {
-      "manage": {
-        "auto": true
-      }
+      "preflight_backoff_ms": [
+        120,
+        250,
+        400,
+        800,
+        1200,
+        1800
+      ],
+      "anti_race_close_ms": 800,
+      "min_post_interval_per_symbol_ms": 300,
+      "allow_trade_with_guardian_tidy_only": false,
+      "fsm_periodic_cleanup_enabled": false
     },
     "ops": {
       "metrics_url": "http://127.0.0.1:8000/metrics",

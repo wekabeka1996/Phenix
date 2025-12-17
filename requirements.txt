@@ -5,6 +5,7 @@ trio>=0.25.0
 prometheus_client>=0.20.0
 pydantic==2.12.3
 PyYAML>=6.0
+python-dotenv>=1.0.0
 pandas>=2.0.0
 numpy>=1.24.0
 duckdb>=0.8.0

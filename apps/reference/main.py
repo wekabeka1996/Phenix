@@ -1370,6 +1370,7 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
         fsm, config_dict.get("trading", {}))
     risk_management = RiskManagement(fsm, config_dict.get("system", {}))
     position_tracking = PositionTracking(fsm, config_dict.get("system", {}))
+    # NOTE: Legacy unused initialization (line 1718 is the actual one used)
     decision_making = DecisionMaking(fsm, config_dict.get("trading", {}))
     account_balance = AccountConnector(fsm, config_dict)
     account_observer = AccountObserver(fsm, config_dict)
@@ -1715,7 +1716,8 @@ def main() -> None:
     LOG.info("--- Order/Position Synchronization Finished ---")
 
     # Decision Making (generates trade intents) - execution_position already initialized in initialize_domains()
-    decision_making = DecisionMaking(fsm=fsm, config=config.to_dict())
+    # CFG-DOMAINS-STEP-02-FIX: Pass AuroraConfig (not dict) to DecisionMaking
+    decision_making = DecisionMaking(fsm=fsm, config=config)
     
     # RegimeDetector: Analyzes market features to detect trading regimes (TREND_UP, TREND_DOWN, etc.)
     # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing

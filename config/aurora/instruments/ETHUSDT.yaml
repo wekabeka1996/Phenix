@@ -1,0 +1,85 @@
+# ==============================================================================
+# ETHUSDT — Aurora Instrument Configuration
+# Phase 3+ from Optuna optimization
+# Source: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md
+# ==============================================================================
+
+symbol: ETHUSDT
+
+# Instrument Specifications (from exchange)
+specs:
+  step_size: "0.001"
+  tick_size: "0.01"
+  min_notional: "10"
+
+# Aurora Strategy Parameters
+# ETH uses Aurora tick-based strategy as PRIMARY
+aurora:
+  enabled: true  # ETH = Aurora-only
+  weights:
+    ema: 0.25
+    volume: 0.10
+    macro: 0.10
+    liquidity: 0.15
+    obi: 0.15
+    tfi: 0.08
+    volatility: 0.07
+    depth_imbalance: 0.10
+    delta_price: 0.10
+
+  side_bias:
+    penalty_factor: 0.9        # Strong penalty for over-commitment
+    window_sec: 600
+    target_ratio: 0.6
+
+  regime_thresholds:
+    HIGH_VOLATILITY: 1.7       # 70% STRICTER threshold
+    LOW_VOLATILITY: 0.9
+    DEFAULT: 1.0
+
+  regime_sizing:
+    HIGH_VOLATILITY: 0.6       # 40% smaller in high vol
+    LOW_VOLATILITY: 1.3        # 30% larger in low vol
+    DEFAULT: 1.0
+
+  exit:
+    # SYNCED: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md (ETH)
+    sl_pct: 0.019              # 1.9% from Optuna
+    max_hold_sec: 4320         # 72 min from Optuna
+
+  take_profit:
+    # SYNCED: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md
+    tp_low_ratio: 0.55         # TP1 = 0.55x risk
+    tp_high_ratio: 1.68        # TP2 = 1.68x risk
+    partial_exit_pct: 0.70     # 70% at TP1
+
+  trailing_stop:
+    # SYNCED: AURORA_FULLSCALE_OPTIMIZATION_FINAL.md
+    enabled: true
+    activation_pct: 0.013      # Activate at 1.3% profit
+    trail_pct: 0.006           # Trail 0.6% behind peak
+    min_update_interval_sec: 5
+
+  # Regime Gating - ETH: expanded to include observed regimes
+  allowed_regimes:
+    - TREND_DOWN
+    - TREND_UP
+    - LOW_VOLATILITY
+    - MEAN_REVERSION
+    - UNCERTAIN        # Allow trading in uncertain regime with reduced size
+
+  # Phase 3+ per-asset overrides
+  ema_clamp:
+    enabled: false
+
+  signal_threshold:
+    enabled: false
+
+  max_risk_score:
+    enabled: false
+
+  cooldown_sec: 195            # Optuna: 3.25 min (AURORA_FULLSCALE_OPTIMIZATION_FINAL.md)
+
+  # Phase 1.5 Recovery: Bar timeframe
+  # NOTE: Aurora is tick-based, NOT bar-based
+  # Rolling windows use global config from domains.yaml

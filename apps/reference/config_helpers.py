@@ -28,12 +28,9 @@ def get_domains_config(config: Any, domain_name: str) -> Optional[Any]:
             if hasattr(domains, domain_name):
                 return getattr(domains, domain_name)
         
-        # Fallback: try config.trading.domains if domains is nested  
-        if hasattr(config, 'trading') and hasattr(config.trading, 'domains'):
-            trading_domains = config.trading.domains
-            if hasattr(trading_domains, domain_name):
-                return getattr(trading_domains, domain_name)
-    except (Attribute Error, TypeError) as e:
+        # CFG-TRADING-YAML-BURN-DOWN-02: No fallback to trading.domains
+        # SSOT is config.domains only
+    except (AttributeError, TypeError) as e:
         LOG.warning(f"Could not get domains config for {domain_name}: {e}")
     
     return None

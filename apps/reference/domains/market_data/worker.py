@@ -147,8 +147,11 @@ class MarketDataWorker:
         md_config = domain_config.get("market_data", {})
         self._mode = md_config.get("trading_mode", "testnet")
         
+        # CFG-TRADING-YAML-BURN-DOWN-02: Fail-fast validation for symbols
         if not self._symbols:
-            raise ValueError("No symbols configured in trading.instruments")
+            raise ValueError(
+                "No symbols configured! Please check config/aurora/instruments.yaml (SSOT)."
+            )
         
         # Initialize aggregator
         self._aggregator = WebSocketAggregator(

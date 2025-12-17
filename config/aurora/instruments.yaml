@@ -1,0 +1,35 @@
+# SSOT: Canonical instrument precision configuration
+# Priority: This file overrides trading.instruments (deprecated mirror)
+#
+# CFG-INSTRUMENTS-AURORA-SSOT-01
+
+instruments:
+  SOLUSDT:
+    symbol: "SOLUSDT"
+    step_size: "0.01"
+    tick_size: "0.01"
+    min_notional: "10"
+    
+  ETHUSDT:
+    symbol: "ETHUSDT"
+    step_size: "0.001"
+    tick_size: "0.01"
+    min_notional: "10"
+    
+  BTCUSDT:
+    symbol: "BTCUSDT"
+    step_size: "0.001"
+    tick_size: "0.10"
+    min_notional: "10"
+    
+  DOGEUSDT:
+    symbol: "DOGEUSDT"
+    step_size: "1"
+    tick_size: "0.00001"
+    min_notional: "10"
+    
+  XRPUSDT:
+    symbol: "XRPUSDT"
+    step_size: "0.1"
+    tick_size: "0.0001"
+    min_notional: "10"

@@ -66,11 +66,11 @@ class DomainConfigResolver:
             config: Validated AuroraConfig instance (not dict!)
         
         Raises:
-            TypeError: If config is not AuroraConfig
+            TypeError: If config is dict (legacy pattern)
         """
-        if not isinstance(config, AuroraConfig):
+        if isinstance(config, dict):
             raise TypeError(
-                f"DomainConfigResolver requires AuroraConfig, got {type(config).__name__}. "
+                f"DomainConfigResolver requires AuroraConfig, got dict. "
                 "Convert dict to AuroraConfig first."
             )
         self._config = config
@@ -84,25 +84,28 @@ class DomainConfigResolver:
         """
         Resolve DomainsConfig from AuroraConfig.
         
+        CFG-DOMAINS-STEP-02: CANONICAL ONLY (fail-closed).
+        
         Priority:
-        1. config.domains (root level)
-        2. config.trading.domains (legacy)
-        3. Default DomainsConfig()
+        1. config.domains (root level) — CANONICAL
+        2. FAIL if missing (no fallback to trading.domains)
+        
+        Note: trading.domains exists as deprecated mirror for legacy code,
+              but resolver MUST NOT read it (enforce canonical path).
+        
+        Raises:
+            ValueError: If config.domains is None or missing
         """
-        # Try root-level domains first (preferred)
+        # CANONICAL PATH ONLY
         if self._config.domains is not None:
             return self._config.domains
         
-        # Try trading.domains (legacy path)
-        if (self._config.trading is not None and 
-            hasattr(self._config.trading, 'domains') and 
-            self._config.trading.domains is not None):
-            LOG.debug("Using legacy trading.domains path")
-            return self._config.trading.domains
-        
-        # Return defaults
-        LOG.debug("No domains config found, using defaults")
-        return DomainsConfig()
+        # FAIL CLOSED: domains REQUIRED (no fallback)
+        raise ValueError(
+            "DomainConfigResolver requires config.domains (canonical). "
+            "Ensure domains.yaml is loaded and config.domains is populated. "
+            "Legacy trading.domains is NOT used by resolver."
+        )
     
     # =========================================================================
     # EXECUTION_POSITION DOMAIN

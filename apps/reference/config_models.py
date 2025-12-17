@@ -7,7 +7,7 @@ All models are designed to fail fast (startup validation) rather than silently a
 
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Literal
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
 class InstrumentSpec(BaseModel):
@@ -22,6 +22,20 @@ class InstrumentSpec(BaseModel):
     min_notional: str = Field(
         default="10.0", description="Minimum notional value in USDT")
     quote: str = Field(default="USDT")
+
+
+class InstrumentPrecisionSpec(BaseModel):
+    """Canonical Aurora instrument precision (SSOT from instruments.yaml).
+
+    Keep this model permissive (extra=allow) to avoid breaking exchange-specific tails.
+    tick_size/step_size are enforced for active symbols via loader fail-fast checks.
+    """
+
+    model_config = ConfigDict(extra='allow')
+
+    symbol: Optional[str] = Field(default=None)
+    tick_size: Optional[float] = Field(default=None)
+    step_size: Optional[float] = Field(default=None)
 
 
 class SignalWeights(BaseModel):
@@ -104,13 +118,14 @@ class RiskContractV1Config(BaseModel):
 
 class PositionSizingConfig(BaseModel):
     """Position sizing configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
 
     min_position_size_usd: float = Field(default=10.0)
     liquidity_based_cap_usd: float = Field(default=10000.0)
     risk_fraction_q: Optional[float] = Field(default=None)
     liquidity_kappa: float = Field(default=1.0)
     kappa_mode: str = Field(default="passive")
+    liquidity_kappa_mode: Optional[str] = Field(default=None, description="Alias for kappa_mode (legacy)")
     
     # Risk-Sizing V1 contract (ETAP1: config-only, not used in runtime)
     risk_contract_v1: Optional[RiskContractV1Config] = Field(
@@ -130,6 +145,8 @@ class KellyConfig(BaseModel):
 
 class QosConfig(BaseModel):
     """Quality of Service configuration for rate limiting."""
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
+    
     exposure_block_cooldown_sec: int = Field(default=60)
     # Global fallback for per-symbol cooldown (aurora_instruments.<SYMBOL>.cooldown_sec takes priority)
     symbol_cooldown_sec: int = Field(default=3, description="Global fallback cooldown. Per-symbol config takes priority.")
@@ -322,6 +339,82 @@ class MeanReversion1mStrategyConfig(BaseModel):
         description="If true, MR emits trade intent directly (legacy). If false, emits MR_SIGNAL for DM gateway."
     )
 
+# ==============================================================================
+# STRATEGIES REGISTRY (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
+# ==============================================================================
+
+class StrategiesArbitrationLoggingConfig(BaseModel):
+    """Logging configuration for strategy arbitration."""
+    model_config = ConfigDict(extra='forbid')
+    
+    rejected_why_prefix: str = Field(
+        default="ARBITRATION_REJECT",
+        description="Prefix for why-codes when strategy intent is rejected"
+    )
+    log_level: str = Field(
+        default="INFO",
+        description="Log level for arbitration events (INFO/WARNING/ERROR)"
+    )
+
+
+class StrategiesArbitrationConfig(BaseModel):
+    """Configuration for strategy conflict arbitration."""
+    model_config = ConfigDict(extra='forbid')
+    
+    mode: Literal['priority'] = Field(
+        default="priority",
+        description="Arbitration mode: 'priority' (only supported mode, lower number = higher priority)"
+    )
+    priority: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Strategy priority ranks (lower = higher priority)"
+    )
+    logging: StrategiesArbitrationLoggingConfig = Field(
+        default_factory=StrategiesArbitrationLoggingConfig
+    )
+
+
+class StrategiesRegistryConfig(BaseModel):
+    """
+    Strategies Registry SSOT (config/aurora/strategies.yaml).
+    
+    Defines:
+    1. Which strategies are active per symbol (assignments)
+    2. How to arbitrate conflicts between strategies (arbitration)
+    
+    CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Strict validation (extra='forbid')
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    version: str = Field(
+        default="1.0.0",
+        description="Strategies registry config version"
+    )
+    assignments: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Per-symbol strategy assignments (symbol → list[strategy_id])"
+    )
+    arbitration: StrategiesArbitrationConfig = Field(
+        default_factory=StrategiesArbitrationConfig,
+        description="Arbitration policy for strategy conflicts"
+    )
+    
+    @model_validator(mode='after')
+    def validate_priorities_for_hybrid_symbols(self) -> 'StrategiesRegistryConfig':
+        """Ensure all strategies in hybrid assignments have priorities defined."""
+        if self.arbitration.mode == 'priority':
+            priorities = self.arbitration.priority
+            for symbol, strategies in self.assignments.items():
+                if len(strategies) > 1:  # Hybrid symbol
+                    for strategy_id in strategies:
+                        if strategy_id not in priorities:
+                            raise ValueError(
+                                f"❌ ARBITRATION:missing_priority for '{strategy_id}' in hybrid "
+                                f"symbol {symbol}. All strategies must have priorities defined."
+                            )
+        return self
+
+
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides)."""
     model_config = ConfigDict(extra='allow')
@@ -404,7 +497,7 @@ class ExposureConfig(BaseModel):
 
 class WatchdogConfig(BaseModel):
     """Watchdog configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     ack_ttl_ms: int = Field(default=8000)
     fill_ttl_ms: int = Field(default=30000)
@@ -457,8 +550,10 @@ class RegimeModelsConfig(BaseModel):
     """Container for all regime detection model configurations.
     
     Loaded from regime.yaml 'models' section.
+    
+    CFG-FEATURES-REGIME-SSOT-04: extra='forbid' for strict validation
     """
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')
     
     sma_trend: SMARegimeModelConfig = Field(default_factory=SMARegimeModelConfig, description="SMA trend model")
     volatility: VolatilityRegimeModelConfig = Field(default_factory=VolatilityRegimeModelConfig, description="Volatility model")
@@ -547,9 +642,18 @@ class FeatureEngineeringConfig(BaseModel):
 # and reused here to avoid duplication.
 
 
+class RiskSkewConfig(BaseModel):
+    """Risk skew guard configuration (Commit 5)."""
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
+    
+    max_skew_sec: int = Field(default=5, description="Max age difference between features.ts and risk.ts")
+    max_defer_count: int = Field(default=3, description="Max DEFERs per symbol before NO_TRADE_UNTIL_REFRESH")
+    defer_cooldown_sec: int = Field(default=2, description="Cooldown between deferred retries")
+
+
 class FeaturesTtlConfig(BaseModel):
     """Features TTL configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     ttl_sec: int = Field(default=5)
 
@@ -559,7 +663,7 @@ class FeaturesTtlConfig(BaseModel):
 
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     position_sizing: PositionSizingConfig = Field(default_factory=PositionSizingConfig)
     qos: QosConfig = Field(default_factory=QosConfig)
@@ -567,6 +671,7 @@ class DecisionMakingDomainConfig(BaseModel):
     bar_gating: BarGatingConfig = Field(default_factory=BarGatingConfig)
     behavior_fsm: BehaviorFsmConfig = Field(default_factory=BehaviorFsmConfig)
     signals: SignalsConfig = Field(default_factory=SignalsConfig)
+    risk_skew: RiskSkewConfig = Field(default_factory=RiskSkewConfig)
 
 
 # ============================================================================
@@ -878,7 +983,7 @@ class FeatureEngineeringDomainConfig(BaseModel):
 
 class RiskScoreWeightsConfig(BaseModel):
     """Risk score weights configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     delta_price_pct: float = Field(default=0.1)
     obi: float = Field(default=0.3)
@@ -888,7 +993,7 @@ class RiskScoreWeightsConfig(BaseModel):
 
 class TradingAllowedThresholdsConfig(BaseModel):
     """Trading allowed thresholds configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     # IMPORTANT: Default exists for test compatibility, but production MUST override
     max_risk_score: float = Field(default=0.8, description="Max risk score. PRODUCTION MUST OVERRIDE in domains.yaml!")
@@ -896,7 +1001,7 @@ class TradingAllowedThresholdsConfig(BaseModel):
 
 class RiskValidationConfig(BaseModel):
     """Risk validation configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     total_weight_min: float = Field(default=0.5)
     total_weight_max: float = Field(default=2.0)
@@ -904,7 +1009,7 @@ class RiskValidationConfig(BaseModel):
 
 class RiskManagementDomainConfig(BaseModel):
     """Complete risk management domain configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     risk_score_weights: RiskScoreWeightsConfig = Field(default_factory=RiskScoreWeightsConfig)
     trading_allowed_thresholds: TradingAllowedThresholdsConfig = Field(default_factory=TradingAllowedThresholdsConfig)
@@ -923,7 +1028,7 @@ class RiskManagementDomainConfig(BaseModel):
 # Position Tracking Domain
 class PrecisionConfig(BaseModel):
     """Position precision configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     quantity_min_threshold: float = Field(default=1e-9)
     flat_position_threshold: float = Field(default=1e-12)
@@ -932,23 +1037,24 @@ class PrecisionConfig(BaseModel):
 
 class ThreadTimeoutsConfig(BaseModel):
     """Thread timeouts configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     join_timeout_sec: int = Field(default=10)
 
 
 class PositionTrackingDomainConfig(BaseModel):
     """Complete position tracking domain configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     precision: PrecisionConfig = Field(default_factory=PrecisionConfig)
     thread_timeouts: ThreadTimeoutsConfig = Field(default_factory=ThreadTimeoutsConfig)
+    positions_stale_ttl_sec: int = Field(default=15, description="Portfolio freshness TTL for AuroraBridge gate")
 
 
 # Account Observer Domain
 class AccountObserverDomainConfig(BaseModel):
     """Complete account observer domain configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     poll_interval_sec: int = Field(default=5)
     trade_limit: int = Field(default=10)
@@ -959,7 +1065,7 @@ class AccountObserverDomainConfig(BaseModel):
 # Execution Position Domain
 class ExposureGuardConfig(BaseModel):
     """Exposure guard configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     pending_ttl_sec: int = Field(default=90)
     post_fill_ttl_sec: int = Field(default=5)
@@ -975,21 +1081,21 @@ class ExposureGuardConfig(BaseModel):
 
 class FsmOpenConfig(BaseModel):
     """FSM open configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     idempotency_window_sec: int = Field(default=60)
 
 
 class OrderIndexConfig(BaseModel):
     """Order index configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     ttl_sec: int = Field(default=3600)
 
 
 class MetricsCollectorConfig(BaseModel):
     """Metrics collector configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     window_size_minutes: int = Field(default=60)
     recent_rejections_minutes: int = Field(default=5)
@@ -997,14 +1103,14 @@ class MetricsCollectorConfig(BaseModel):
 
 class IdempotentCancelConfig(BaseModel):
     """Idempotent cancel configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     max_retries: int = Field(default=2)
 
 
 class ExecutionUtilsConfig(BaseModel):
     """Execution utilities configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     client_order_id_max_length: int = Field(default=32)
     basis_points_base: float = Field(default=10000.0)
@@ -1012,7 +1118,7 @@ class ExecutionUtilsConfig(BaseModel):
 
 class ExecutionPositionDomainConfig(BaseModel):
     """Complete execution position domain configuration."""
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
     exposure_guard: ExposureGuardConfig = Field(default_factory=ExposureGuardConfig)
@@ -1025,8 +1131,8 @@ class ExecutionPositionDomainConfig(BaseModel):
 
 # Top-Level Domains Configuration
 class DomainsConfig(BaseModel):
-    """Top-level domains configuration container."""
-    model_config = ConfigDict(extra='allow')
+    """Top-level domains configuration container (CANONICAL)."""
+    model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation, fail-fast on unknown fields
     
     decision_making: DecisionMakingDomainConfig = Field(default_factory=DecisionMakingDomainConfig)
     feature_engineering: FeatureEngineeringDomainConfig = Field(default_factory=FeatureEngineeringDomainConfig)
@@ -1179,7 +1285,7 @@ class AuroraInstrumentConfig(BaseModel):
     1. aurora_instruments.<SYMBOL>.<param> (this config)
     2. trading.decision.<param> (global fallback)
     """
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra='forbid')  # Strict validation (CFG-AURORA-INSTRUMENTS-SSOT-01)
 
     # Strategy enable/disable flag
     enabled: bool = Field(
@@ -1476,6 +1582,25 @@ class AuroraConfig(BaseModel):
     
     # Domain configs (New)
     domains: Optional[DomainsConfig] = Field(default=None, description="Domain-specific configurations")
+
+    # Canonical instruments SSOT (config/aurora/instruments.yaml)
+    instruments: Dict[str, InstrumentPrecisionSpec] = Field(
+        default_factory=dict,
+        description="Canonical instrument precision map (symbol -> tick_size/step_size)"
+    )
+    
+    # Canonical aurora_instruments SSOT (config/aurora/aurora_instruments.yaml)
+    aurora_instruments: Dict[str, AuroraInstrumentConfig] = Field(
+        default_factory=dict,
+        description="Per-symbol Aurora strategy overrides (weights, side_bias, exit, etc.)"
+    )
+    
+    # Strategies registry SSOT (config/aurora/strategies.yaml)
+    # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION
+    strategies_registry: Optional[StrategiesRegistryConfig] = Field(
+        default=None,
+        description="Strategy assignments + arbitration config (from strategies.yaml)"
+    )
     
     # Strategy configs (Track B, optional root-level overrides)
     mean_reversion_1m: Optional[MeanReversion1mStrategyConfig] = Field(

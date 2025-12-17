@@ -1,0 +1,26 @@
+# ==============================================================================
+# Aurora Strategy Profile
+# ==============================================================================
+# CFG-STRATEGIES-SSOT-03: Registry-driven strategy profile
+#
+# Aurora is the tick-based multi-signal alpha strategy with regime awareness.
+# This profile defines default parameters for Aurora strategy.
+#
+# NOTE: Per-symbol overrides are in config/aurora/aurora_instruments.yaml
+# ==============================================================================
+
+aurora:
+  # Global enable/disable
+  enabled: true
+  
+  # Strategy type
+  type: tick_based
+  
+  # Description
+  description: "Tick-based multi-signal alpha strategy with regime awareness"
+  
+  # Placeholder for future Aurora-specific global params
+  # Currently Aurora params are primarily in:
+  # - config/aurora/trading.yaml (decision thresholds, filters)
+  # - config/aurora/aurora_instruments.yaml (per-symbol overrides)
+  # - config/aurora/regime.yaml (regime detection)

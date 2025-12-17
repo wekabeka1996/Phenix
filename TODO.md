@@ -41,6 +41,21 @@
 - [x] [A4-03] Integrate max hold check in _check_rules — fsm_manage.py
 - [x] [A4-04] Add tests for max hold time — test_aurora_instrument_config.py
 
+## ✅ Configuration: Instruments SSOT Migration — COMPLETE
+- [x] [C0-SSOT-01] Wire config/aurora/instruments.yaml → ConfigLoader + Pydantic + fail-fast
+- [x] [C0-SSOT-02] Wire DecisionMaking + execution_position to config.instruments SSOT
+- [x] [C0-SSOT-03-AUDIT] Audit trading.yaml for SSOT duplicates + add guardrails (CFG-TRADING-YAML-BURN-DOWN-01)
+- [x] [C0-SSOT-03-BURNDOWN] Видалити deprecated trading.instruments/domains mirrors після міграції всіх споживачів (CFG-TRADING-YAML-BURN-DOWN-02)
+
+## Configuration: Instrument Parameters (XRPUSDT/DOGEUSDT/SOL/ETH)
+- [ ] [C1] Додати XRPUSDT до instruments.yaml з правильними tick_size/step_size
+- [ ] [C2] Додати DOGEUSDT до instruments.yaml з правильними tick_size/step_size
+- [ ] [C3] Оновити SOLUSDT параметри (tick_size, step_size) згідно з Binance specs
+- [ ] [C4] Оновити ETHUSDT параметри (tick_size, step_size) згідно з Binance specs
+- [ ] [C5] Додати min_notional для всіх інструментів (перевірити з Binance exchangeInfo)
+- [ ] [C6] Додати exchange-specific filters (MAX_POSITION, MAX_NUM_ORDERS тощо)
+- [ ] [C7] Валідація інструментів проти Binance exchangeInfo API при старті
+
 ## ✅ Tech Debt Cleanup — COMPLETE
 - [x] [TD-01] Remove legacy trail_pct/breakeven_after_sec stub fields — fsm_manage.py
 - [x] [TD-02] Remove Rule 1 (ADJUST_TRAIL) stub logic — fsm_manage.py
@@ -73,7 +88,13 @@
 - [x] [B5-10] Add tests for config_sizing — test_regime_mapping.py (+7 tests)
 - [x] [B5-11] Fix UnboundLocalError in fsm_manage.py (LOG shadowing) — fsm_manage.py
 
-## 🔴 Phase C: Config Completion & Validation — IN PROGRESS
+## ✅ Phase C: Config Completion & Validation — COMPLETE
+
+- [x] [C0-SSOT-01] STEP next: підключити execution/DM до config.instruments (забрати tick/step з legacy trading.instruments)
+- [x] [C0-SSOT-02] STEP next: підключити execution_position rounding/filters → config.instruments (fsm_open.py, fsm_manage.py)
+- [x] [C0-SSOT-03] STEP next: burn-down trading.instruments mirror після міграції всіх споживачів (CFG-TRADING-YAML-BURN-DOWN-02 DONE)
+
+## Phase C: Instrument Coverage Expansion 🔴 IN PROGRESS
 
 **Джерело:** `apps/research/new_alpha/` — R&D документи з Optuna результатами
 

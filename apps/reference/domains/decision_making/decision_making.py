@@ -5,6 +5,7 @@ Aggregates features, risk assessment, and portfolio state to make trading decisi
 and emit EVT:TRADE_INTENT_PROPOSED events.
 
 FTR-07: Refactored to use DecisionContext for type-safe feature access.
+CFG-DOMAINS-STEP-02: Enforces AuroraConfig contract (not dict).
 """
 
 import decimal
@@ -26,9 +27,15 @@ from .dm_log_adapter import (
 # FTR-07: Import DecisionContext for typed feature access
 from .decision_context import DecisionContext, create_decision_context
 
+# CFG-DOMAINS-STEP-02: Import AuroraConfig for type enforcement
+from apps.reference.config_models import AuroraConfig
+
 from apps.reference.telemetry.metrics import inc_decision_deferred
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
 from apps.reference.telemetry.order_logger import order_logger
+
+# CFG-DOMAINS-STEP-02: Import DomainConfigResolver for canonical config access
+from apps.reference.domain_config import DomainConfigResolver
 
 # Phase 0: Import Aurora per-instrument config
 from apps.reference.config_models import AuroraInstrumentConfig
@@ -71,9 +78,28 @@ class DecisionMaking:
     """
     Decision making component that aggregates analytical data streams
     and generates trade intents based on aurora decision logic.
+    
+    CFG-DOMAINS-STEP-02: Requires AuroraConfig (not dict).
     """
 
-    def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
+    def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
+        """
+        Initialize DecisionMaking domain.
+        
+        Args:
+            fsm: Finite State Machine for event emission
+            config: AuroraConfig instance (NOT dict)
+            
+        Raises:
+            TypeError: If config is dict (legacy pattern)
+        """
+        # CFG-DOMAINS-STEP-02-FIX: Reject dict, accept AuroraConfig & subclasses
+        if isinstance(config, dict):
+            raise TypeError(
+                f"DecisionMaking requires AuroraConfig, got dict. "
+                "Pass config directly (not config.to_dict())"
+            )
+        
         self.fsm = fsm
         self.config = config
         self.logger = logging.getLogger(
@@ -96,6 +122,38 @@ class DecisionMaking:
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
             lambda: {"features": None, "risk": None}
         )
+
+    def _get_precision(self, symbol: str) -> tuple[float, float]:
+        """Return (tick_size, step_size) from canonical config.instruments; fail-closed.
+        
+        CANONICAL: config.instruments only (SSOT from config/aurora/instruments.yaml).
+        CFG-INSTRUMENTS-STEP-02-DM-PRECISION
+        
+        Args:
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            
+        Returns:
+            (tick_size, step_size) as floats
+            
+        Raises:
+            ValueError: If symbol missing or precision fields not set
+        """
+        instruments = self.config.instruments
+        if not instruments or symbol not in instruments:
+            raise ValueError(
+                f"Missing instrument config for {symbol} in config.instruments (SSOT)"
+            )
+        
+        spec = instruments[symbol]
+        tick_size = getattr(spec, 'tick_size', None)
+        step_size = getattr(spec, 'step_size', None)
+        
+        if tick_size is None or step_size is None:
+            raise ValueError(
+                f"Missing precision for {symbol}: tick_size={tick_size}, step_size={step_size}"
+            )
+        
+        return float(tick_size), float(step_size)
         self.latest_portfolio: Optional[Dict[str, Any]] = None
         self.latest_regime: Optional[Dict[str, Any]] = None
         self._last_successful_features_ts: Dict[str, int] = {}  # Idempotency guard
@@ -152,6 +210,17 @@ class DecisionMaking:
             self.logger.warning(
                 "Alpha models not available - alpha_search module not found")
 
+        # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Load strategies registry
+        self.strategies_registry = None
+        if hasattr(self.config, 'strategies_registry') and self.config.strategies_registry:
+            self.strategies_registry = self.config.strategies_registry
+            self.logger.info(
+                f"Strategies registry loaded: {len(self.strategies_registry.assignments)} symbols, "
+                f"arbitration mode: {self.strategies_registry.arbitration.mode}"
+            )
+        else:
+            self.logger.warning("Strategies registry not configured - multi-strategy arbitration disabled")
+
         # Support both old (config['trading']['decision']) and new (config['decision']) formats
         try:
             trading_config = self._safe_config_get("trading")
@@ -160,11 +229,12 @@ class DecisionMaking:
         except (AttributeError, TypeError):
             trading_config = self.config
 
-        if "decision" not in trading_config and "decision" not in self.config:
+        # CFG-DOMAINS-STEP-02-RUNTIME-FIX: AuroraConfig is Pydantic model, not dict
+        if not hasattr(trading_config, 'decision') and not hasattr(self.config, 'decision'):
             raise ValueError("Configuration key missing: 'decision'")
-        if "tca_prefs" not in trading_config and "tca_prefs" not in self.config:
+        if not hasattr(trading_config, 'tca_prefs') and not hasattr(self.config, 'tca_prefs'):
             raise ValueError("Configuration key missing: 'tca_prefs'")
-        if "risk_budgets" not in trading_config and "risk_budgets" not in self.config:
+        if not hasattr(trading_config, 'risk_budgets') and not hasattr(self.config, 'risk_budgets'):
             raise ValueError("Configuration key missing: 'risk_budgets'")
 
         # Z-01 FIX: Store tca_prefs from config (instead of hardcoding in _propose_trade_intent)
@@ -228,24 +298,58 @@ class DecisionMaking:
         self.min_pos_size_usd = decimal.Decimal(str(sizing_cfg.min_position_size_usd))
         self.liq_cap_usd = decimal.Decimal(str(sizing_cfg.liquidity_based_cap_usd))
 
-        # QoS configuration - SSOT from domains.yaml
-        qos_cfg = self._get_qos_config()
+        # CFG-DOMAINS-STEP-02: QoS configuration via DomainConfigResolver (CANONICAL)
+        # Replace _get_qos_config() with direct resolver access
+        resolver = DomainConfigResolver(self.config)
+        dm_cfg = resolver.get_decision_making()
+        qos_cfg = dm_cfg.qos
         
-        # QoS exposure cooldown - REQUIRED from config
+        # QoS exposure cooldown - from canonical domains
         self.qos_exposure_block_cooldown_sec = int(qos_cfg.exposure_block_cooldown_sec)
         
-        # QoS max intents - REQUIRED from config  
+        # QoS max intents - from canonical domains
         self.qos_max_intents_per_minute_per_symbol = int(qos_cfg.max_intents_per_minute_per_symbol)
         
-        # QoS mode - REQUIRED from config
-        self.qos_mode = str(qos_cfg.mode) if hasattr(qos_cfg, 'mode') else "defer"
+        # QoS mode - from canonical domains
+        self.qos_mode = str(qos_cfg.mode)
         
         # Per-symbol cooldown fallback (for symbols not in aurora_instruments)
         # This is the ONLY fallback allowed - new symbols must be added to config
-        self._default_symbol_cooldown_sec = 3
+        self._default_symbol_cooldown_sec = int(qos_cfg.symbol_cooldown_sec)
 
         # Legacy enforce flag (from qos_cfg)
-        self.qos_enforce = bool(getattr(qos_cfg, 'enforce', False))
+        self.qos_enforce = bool(qos_cfg.enforce)
+
+        # P0-W1: Warmup/arming gate (additive, off by default).
+        # When enabled, Aurora symbols must have RegimeDetector warmup.full_ready=true,
+        # otherwise we emit EVT:INTENT_DEFERRED(v1) fail-closed.
+        self.arming_require_regime_warmup = bool(
+            self._safe_config_get(
+                "domains",
+                "decision_making",
+                "arming",
+                "require_regime_warmup",
+                default=False,
+            )
+        )
+        self.arming_retry_backoff_ms = int(
+            self._safe_config_get(
+                "domains",
+                "decision_making",
+                "arming",
+                "retry_backoff_ms",
+                default=1000,
+            )
+        )
+        self.arming_max_attempts = int(
+            self._safe_config_get(
+                "domains",
+                "decision_making",
+                "arming",
+                "max_attempts",
+                default=120,
+            )
+        )
 
         # Features TTL configuration (domains config takes priority)
         features_ttl = 5  # default
@@ -552,6 +656,16 @@ class DecisionMaking:
                 return
             
             self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: Processing {side} signal rid={rid}")
+
+            # === GATE 0: STRATEGY ARBITRATION ===
+            # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check if this strategy is allowed
+            arbitration_result = self._check_strategy_arbitration(symbol, "mean_reversion_1m")
+            if not arbitration_result["allowed"]:
+                self.logger.info(
+                    f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Strategy arbitration blocked: {arbitration_result['reason']}"
+                )
+                self._record_blocked_intent(symbol)
+                return
 
             # Risk-skew limiter escalation state (Commit 5):
             # if until_refresh is active, fail-closed for this symbol until a new risk/features refresh clears it.
@@ -1086,63 +1200,9 @@ class DecisionMaking:
     # Phase 0: Per-Instrument Aurora Configuration Helpers
     # =========================================================================
 
-    def _get_qos_config(self):
-        """
-        Get QoS configuration from domains.yaml. SSOT - no fallbacks.
-        
-        Returns:
-            QoS config object with exposure_block_cooldown_sec, max_intents_per_minute_per_symbol, mode
-            
-        Raises:
-            ValueError: If config is missing required QoS section
-        """
-        # Try domains config (preferred)
-        if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'decision_making'):
-            dm_cfg = self.config.domains.decision_making
-            if hasattr(dm_cfg, 'qos') and dm_cfg.qos is not None:
-                return dm_cfg.qos
-        
-        # Try dict domains config
-        if isinstance(self.config, dict):
-            qos = self.config.get("domains", {}).get("decision_making", {}).get("qos")
-            if qos:
-                # Convert to object-like for consistent access
-                class QosObj:
-                    pass
-                obj = QosObj()
-                obj.exposure_block_cooldown_sec = qos.get("exposure_block_cooldown_sec", 10)
-                obj.max_intents_per_minute_per_symbol = qos.get("max_intents_per_minute_per_symbol", 6)
-                obj.mode = qos.get("mode", "defer")
-                return obj
-        
-        # LEGACY FALLBACK for tests - try trading.decision.qos
-        try:
-            qos = self._safe_config_get("trading", "decision", "qos")
-            if qos:
-                if hasattr(qos, 'exposure_block_cooldown_sec'):
-                    return qos
-                elif isinstance(qos, dict):
-                    class QosObj:
-                        pass
-                    obj = QosObj()
-                    obj.exposure_block_cooldown_sec = qos.get("exposure_block_cooldown_sec", 10)
-                    obj.max_intents_per_minute_per_symbol = qos.get("max_intents_per_minute_per_symbol", 6)
-                    obj.mode = qos.get("mode", "defer")
-                    return obj
-        except Exception:
-            pass
-        
-        # FINAL FALLBACK for unit tests with minimal mock config
-        # Production MUST have domains.decision_making.qos in domains.yaml
-        self.logger.warning(
-            "SSOT WARNING: 'domains.decision_making.qos' missing. "
-            "Using defaults. Ensure domains.yaml is configured for production!"
-        )
-        class DefaultQos:
-            exposure_block_cooldown_sec = 10
-            max_intents_per_minute_per_symbol = 6
-            mode = "defer"
-        return DefaultQos()
+    # CFG-DOMAINS-STEP-02: _get_qos_config() REMOVED
+    # QoS config now accessed via DomainConfigResolver in __init__
+    # No fallback logic needed - fail-closed via resolver
 
     def _get_position_sizing_config(self):
         """
@@ -1204,7 +1264,7 @@ class DecisionMaking:
         Get per-instrument Aurora configuration for a symbol.
 
         Fallback chain:
-        1. trading.aurora_instruments.<SYMBOL> (Pydantic config)
+        1. config.aurora_instruments[SYMBOL] (CANONICAL SSOT from aurora_instruments.yaml)
         2. None (caller falls back to global trading.decision.*)
 
         Args:
@@ -1213,27 +1273,92 @@ class DecisionMaking:
         Returns:
             AuroraInstrumentConfig or None if not configured
         """
-        # Try Pydantic config first (new format)
-        trading_cfg = self._safe_config_get("trading")
-        if trading_cfg and hasattr(trading_cfg, 'aurora_instruments'):
-            aurora_instruments = trading_cfg.aurora_instruments
-            if isinstance(aurora_instruments, dict) and symbol in aurora_instruments:
-                return aurora_instruments[symbol]
+        # CFG-AURORA-INSTRUMENTS-SSOT-01-FIXPACK: Direct Pydantic access (no safe_get)
+        if not self.config or not hasattr(self.config, 'aurora_instruments'):
+            return None
+        
+        aurora_instruments = self.config.aurora_instruments
+        if not isinstance(aurora_instruments, dict):
+            return None
+        
+        return aurora_instruments.get(symbol)  # Already Pydantic-typed, no conversion needed
 
-        # Try dict config (legacy format)
-        aurora_instruments_dict = self._safe_config_get("trading", "aurora_instruments")
-        if isinstance(aurora_instruments_dict, dict) and symbol in aurora_instruments_dict:
-            instr_cfg = aurora_instruments_dict[symbol]
-            if isinstance(instr_cfg, AuroraInstrumentConfig):
-                return instr_cfg
-            elif isinstance(instr_cfg, dict):
-                # Convert dict to Pydantic model
-                try:
-                    return AuroraInstrumentConfig(**instr_cfg)
-                except (TypeError, ValueError) as e:
-                    self.logger.debug(f"Failed to convert legacy dict config for {symbol}: {e}")
-
-        return None
+    def _check_strategy_arbitration(self, symbol: str, strategy_id: str) -> Dict[str, Any]:
+        """
+        Check if strategy is allowed to generate intent for symbol based on arbitration rules.
+        
+        CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Implements deterministic arbitration.
+        
+        Args:
+            symbol: Trading pair symbol
+            strategy_id: Strategy identifier ("aurora", "mean_reversion_1m")
+            
+        Returns:
+            Dict with keys:
+            - allowed (bool): Whether strategy can proceed
+            - reason (str): If blocked, why (≤80 chars)
+        """
+        # If no strategies registry, allow (backward compat)
+        if not self.strategies_registry:
+            return {"allowed": True, "reason": ""}
+        
+        # Get assigned strategies for this symbol
+        assignments = self.strategies_registry.assignments.get(symbol, [])
+        
+        # If symbol not in registry, block (fail-closed)
+        if not assignments:
+            return {
+                "allowed": False, 
+                "reason": f"ARBITRATION_REJECT:symbol_not_in_registry"
+            }
+        
+        # If strategy not assigned to symbol, block
+        if strategy_id not in assignments:
+            return {
+                "allowed": False,
+                "reason": f"ARBITRATION_REJECT:strategy_not_assigned_to_symbol"
+            }
+        
+        # If only one strategy assigned, always allow
+        if len(assignments) == 1:
+            return {"allowed": True, "reason": ""}
+        
+        # Multi-strategy case: check arbitration
+        arb = self.strategies_registry.arbitration
+        
+        if arb.mode == "priority":
+            # Fail-closed: check that all assigned strategies have priorities
+            for strat in assignments:
+                if strat not in arb.priority:
+                    return {
+                        "allowed": False,
+                        "reason": f"ARBITRATION_REJECT:missing_priority:{strat}"[:80]
+                    }
+            
+            # Get priorities for all assigned strategies
+            priorities = {s: arb.priority.get(s, 999) for s in assignments}
+            
+            # Current strategy priority
+            current_priority = priorities.get(strategy_id, 999)
+            
+            # Find highest priority strategy (lowest number)
+            highest_priority_strategy = min(assignments, key=lambda s: priorities.get(s, 999))
+            highest_priority = priorities[highest_priority_strategy]
+            
+            # Allow if current strategy has highest priority
+            if current_priority == highest_priority:
+                return {"allowed": True, "reason": ""}
+            else:
+                return {
+                    "allowed": False,
+                    "reason": f"{arb.logging.rejected_why_prefix}:priority_{highest_priority_strategy}_wins"[:80]
+                }
+        else:
+            # Unknown arbitration mode - fail-closed (defense-in-depth)
+            return {
+                "allowed": False,
+                "reason": f"ARBITRATION_REJECT:unknown_mode_{arb.mode}"[:80]
+            }
 
     def _get_mr_allowed_regimes(self, symbol: str) -> List[str]:
         """
@@ -1940,7 +2065,8 @@ class DecisionMaking:
                 self._handle_regime_flip(symbol, self._per_symbol_regimes[symbol])
             
             # Guard: Block trades if not full_ready
-            if symbol and not warmup.get("full_ready", True):
+            full_ready = bool(warmup.get("full_ready", False)) if self.arming_require_regime_warmup else bool(warmup.get("full_ready", True))
+            if symbol and not full_ready:
                 self.logger.info(
                     f"[{symbol}] RegimeContract: warmup phase (full_ready=false, " 
                     f"ticks={warmup.get('ticks_seen', 0)})"
@@ -2131,15 +2257,40 @@ class DecisionMaking:
             
             if is_aurora_symbol:
                 # Get per-symbol warmup state
-                warmup = {}
+                warmup = None
                 if symbol in self._per_symbol_regimes:
-                    warmup = self._per_symbol_regimes[symbol].get("warmup", {})
+                    warmup = self._per_symbol_regimes[symbol].get("warmup")
                 else:
-                    warmup = getattr(self, '_latest_warmup', {})
-                full_ready = warmup.get("full_ready", True) if isinstance(warmup, dict) else True
-                
-                if not full_ready:
-                    ticks_seen = warmup.get("ticks_seen", 0) if isinstance(warmup, dict) else 0
+                    warmup = getattr(self, "_latest_warmup", None)
+
+                warmup_dict = warmup if isinstance(warmup, dict) else None
+                warmup_full_ready = bool(warmup_dict.get("full_ready", False)) if warmup_dict else False
+
+                if self.arming_require_regime_warmup and not warmup_full_ready:
+                    now_ms = int(time.time() * 1000)
+                    retry_key = self._stable_retry_key(prefix="arming", symbol=symbol, rid=rid, ts_ms=ts)
+                    reason = "NRR-ARMING-NOT-READY" if warmup_dict else "NRR-ARMING-WARMUP-MISSING"
+                    self.logger.warning(
+                        f"[{symbol}] WARMUP_GUARD_DEFER (Aurora): {reason} warmup={bool(warmup_dict)} full_ready={warmup_full_ready}"
+                    )
+                    self._emit_intent_deferred_v1(
+                        symbol=symbol,
+                        reason=reason,
+                        retry_key=retry_key,
+                        next_allowed_ts=now_ms + max(0, int(self.arming_retry_backoff_ms)),
+                        original_event_name="EVT:ARMING_RECHECK",
+                        original_payload_min={"symbol": symbol, "rid": rid},
+                        attempt=1,
+                        max_attempts=int(self.arming_max_attempts),
+                        why_chain=["arming_required", "warmup_not_ready"],
+                        context="decision_making:on_features:warmup_guard",
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
+                # Legacy behavior (arming disabled): only block when warmup explicitly says full_ready=false.
+                if (not self.arming_require_regime_warmup) and warmup_dict and (not bool(warmup_dict.get("full_ready", True))):
+                    ticks_seen = warmup_dict.get("ticks_seen", 0)
                     self.logger.info(
                         f"[{symbol}] WARMUP_GUARD_BLOCKED (Aurora): full_ready=false (ticks_seen={ticks_seen})"
                     )
@@ -2227,6 +2378,41 @@ class DecisionMaking:
                 f"[{symbol}] Aurora strategy DISABLED for this instrument. Skipping decision."
             )
             return
+
+        # P0-W1: Warmup/arming gate (fail-closed when enabled).
+        is_aurora_symbol = bool(instr_cfg is not None and getattr(instr_cfg, "enabled", False))
+        if self.arming_require_regime_warmup and is_aurora_symbol:
+            warmup = None
+            if symbol in self._per_symbol_regimes:
+                warmup = self._per_symbol_regimes[symbol].get("warmup")
+            else:
+                warmup = getattr(self, "_latest_warmup", None)
+
+            warmup_dict = warmup if isinstance(warmup, dict) else None
+            warmup_full_ready = bool(warmup_dict.get("full_ready", False)) if warmup_dict else False
+            if not warmup_full_ready:
+                now_ms = int(time.time() * 1000)
+                retry_key = self._stable_retry_key(
+                    prefix="arming",
+                    symbol=symbol,
+                    rid=rid,
+                    ts_ms=int(context.get("features", {}).get("ts", 0)) or None,
+                )
+                reason = "NRR-ARMING-NOT-READY" if warmup_dict else "NRR-ARMING-WARMUP-MISSING"
+                self._emit_intent_deferred_v1(
+                    symbol=symbol,
+                    reason=reason,
+                    retry_key=retry_key,
+                    next_allowed_ts=now_ms + max(0, int(self.arming_retry_backoff_ms)),
+                    original_event_name="EVT:ARMING_RECHECK",
+                    original_payload_min={"symbol": symbol, "rid": rid},
+                    attempt=1,
+                    max_attempts=int(self.arming_max_attempts),
+                    why_chain=["arming_required", "warmup_not_ready"],
+                    context="decision_making:_make_decision_for_symbol:warmup_guard",
+                )
+                self._record_blocked_intent(symbol)
+                return
 
         # Busy guard: prevent infinite defer loops during cooldown
         current_time_ms = int(time.time() * 1000)  # Convert to milliseconds for comparison
@@ -3270,26 +3456,15 @@ class DecisionMaking:
         if why_parts:
             why_chain.append(", ".join(why_parts))
 
-        # Support both old (config['trading']['instruments']) and new (config['instruments']) formats
-        trading_config = self._safe_config_get("trading", default={}) or {}
-        instrument_specs = {}
+        # CFG-INSTRUMENTS-STEP-02-DM-PRECISION: Use canonical config.instruments SSOT
         try:
-            if isinstance(trading_config, dict):
-                instrument_specs = (trading_config.get(
-                    "instruments", {}) or {}).get(symbol, {})
-            else:
-                instrument_specs = {}
-        except Exception:
-            instrument_specs = {}
-        step_size_str = instrument_specs.get("step_size")
-        if not step_size_str:
-            reject_reason = "Missing step_size in config"
-            normalized_reason = NormalizedRejectReasons.normalize(
-                reject_reason)
+            tick_size, step_size_float = self._get_precision(symbol)
+            step_size = decimal.Decimal(str(step_size_float))
+        except ValueError as e:
+            reject_reason = f"Precision error: {e}"
+            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
             self.logger.error(f"[{symbol}] REJECT: {reject_reason}")
             return None, f"{reject_reason} (NRR: {normalized_reason})"
-
-        step_size = decimal.Decimal(step_size_str)
         if price <= 0:
             reject_reason = "Invalid price for sizing"
             normalized_reason = NormalizedRejectReasons.normalize(
@@ -3325,7 +3500,17 @@ class DecisionMaking:
         why_chain: list[str],
         rid: str,
         reduce_only: bool = False,
+        strategy_id: str = "aurora",  # CFG-STRATEGIES-SSOT-01: Add strategy_id
     ) -> None:
+        # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check strategy arbitration
+        arbitration_result = self._check_strategy_arbitration(symbol, strategy_id)
+        if not arbitration_result["allowed"]:
+            self.logger.info(
+                f"[{symbol}] TRADE_INTENT_BLOCKED: Strategy arbitration rejected: {arbitration_result['reason']}"
+            )
+            self._record_blocked_intent(symbol)
+            return
+        
         # Z-01 FIX: Read tca_prefs from config instead of hardcoding
         tca = self._tca_prefs or {}
         if hasattr(tca, '__dict__'):  # Pydantic model
@@ -3676,7 +3861,8 @@ class DecisionMaking:
             return True
 
     # === D3: FLIP ORCHESTRATION (Plan v1) ===
-    
+
+    def _is_same_side_position(self, position_side: str | None, intent_side: str) -> bool:
         """Check if intent side is same as current position side (pyramiding)."""
         if not position_side:
             return False

@@ -1,6 +1,19 @@
 [
   {
-    "path": "config\\_schemas\\aurora_system.schema.json",
+    "path": "config/_schemas/ops_security.schema.json",
+    "$id": "https://aurora.scalp/shared/config/ops_security.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "required": [
+      "config_version",
+      "mtls",
+      "algorithms",
+      "acl",
+      "keys"
+    ],
+    "defaults": {}
+  },
+  {
+    "path": "config/_schemas/aurora_system.schema.json",
     "$id": "https://aurora.scalp/shared/config/aurora_system.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "required": [
@@ -15,73 +28,7 @@
     "defaults": {}
   },
   {
-    "path": "config\\_schemas\\aurora_trading.schema.json",
-    "$id": "https://aurora.scalp/shared/config/aurora_trading.schema.json",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "required": [
-      "config_version",
-      "instruments",
-      "entry",
-      "tca_prefs",
-      "risk_budgets",
-      "hotreload_whitelist"
-    ],
-    "defaults": {}
-  },
-  {
-    "path": "config\\_schemas\\backtest.schema.json",
-    "$id": "https://schemas.trading-system.local/shared/backtest/backtest.schema.json",
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "required": [
-      "symbol",
-      "hmm",
-      "hawkes",
-      "maker",
-      "routing",
-      "risk",
-      "tca"
-    ],
-    "defaults": {}
-  },
-  {
-    "path": "config\\_schemas\\obs_jobs.schema.json",
-    "$id": null,
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "required": [
-      "config_version",
-      "jobs"
-    ],
-    "defaults": {}
-  },
-  {
-    "path": "config\\_schemas\\ops_dr.schema.json",
-    "$id": "https://aurora.scalp/shared/config/ops_dr.schema.json",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "required": [
-      "config_version",
-      "targets",
-      "backup",
-      "failover",
-      "tests"
-    ],
-    "defaults": {}
-  },
-  {
-    "path": "config\\_schemas\\ops_monitoring.schema.json",
-    "$id": "https://aurora.scalp/shared/config/ops_monitoring.schema.json",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "required": [
-      "config_version",
-      "sla",
-      "error_budgets",
-      "alarms",
-      "dashboards",
-      "sampling"
-    ],
-    "defaults": {}
-  },
-  {
-    "path": "config\\_schemas\\ops_orchestration.schema.json",
+    "path": "config/_schemas/ops_orchestration.schema.json",
     "$id": "https://aurora.scalp/shared/config/ops_orchestration.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "required": [
@@ -97,20 +44,7 @@
     "defaults": {}
   },
   {
-    "path": "config\\_schemas\\ops_security.schema.json",
-    "$id": "https://aurora.scalp/shared/config/ops_security.schema.json",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "required": [
-      "config_version",
-      "mtls",
-      "algorithms",
-      "acl",
-      "keys"
-    ],
-    "defaults": {}
-  },
-  {
-    "path": "config\\_schemas\\ops_testing.schema.json",
+    "path": "config/_schemas/ops_testing.schema.json",
     "$id": "https://aurora.scalp/shared/config/ops_testing.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "required": [
@@ -122,7 +56,21 @@
     "defaults": {}
   },
   {
-    "path": "config\\_schemas\\portfolio.schema.json",
+    "path": "config/_schemas/ops_monitoring.schema.json",
+    "$id": "https://aurora.scalp/shared/config/ops_monitoring.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "required": [
+      "config_version",
+      "sla",
+      "error_budgets",
+      "alarms",
+      "dashboards",
+      "sampling"
+    ],
+    "defaults": {}
+  },
+  {
+    "path": "config/_schemas/portfolio.schema.json",
     "$id": "https://aurora.scalp/shared/config/_schemas/portfolio.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "required": [
@@ -133,22 +81,7 @@
     "defaults": {}
   },
   {
-    "path": "config\\_schemas\\scalp_system.schema.json",
-    "$id": "https://aurora.scalp/shared/config/scalp_system.schema.json",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "required": [
-      "config_version",
-      "idempotency",
-      "lifecycle",
-      "slas",
-      "positions",
-      "xai",
-      "hotreload_whitelist"
-    ],
-    "defaults": {}
-  },
-  {
-    "path": "config\\_schemas\\scalp_trading.schema.json",
+    "path": "config/_schemas/scalp_trading.schema.json",
     "$id": "https://aurora.scalp/shared/config/scalp_trading.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "required": [
@@ -164,7 +97,74 @@
     "defaults": {}
   },
   {
-    "path": "config\\_schemas\\frozen\\aurora_trading_20251030.json",
+    "path": "config/_schemas/backtest.schema.json",
+    "$id": "https://schemas.trading-system.local/shared/backtest/backtest.schema.json",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "required": [
+      "symbol",
+      "hmm",
+      "hawkes",
+      "maker",
+      "routing",
+      "risk",
+      "tca"
+    ],
+    "defaults": {}
+  },
+  {
+    "path": "config/_schemas/aurora_trading.schema.json",
+    "$id": "https://aurora.scalp/shared/config/aurora_trading.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "required": [
+      "config_version",
+      "instruments",
+      "entry",
+      "tca_prefs",
+      "risk_budgets",
+      "hotreload_whitelist"
+    ],
+    "defaults": {}
+  },
+  {
+    "path": "config/_schemas/obs_jobs.schema.json",
+    "$id": null,
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "required": [
+      "config_version",
+      "jobs"
+    ],
+    "defaults": {}
+  },
+  {
+    "path": "config/_schemas/scalp_system.schema.json",
+    "$id": "https://aurora.scalp/shared/config/scalp_system.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "required": [
+      "config_version",
+      "idempotency",
+      "lifecycle",
+      "slas",
+      "positions",
+      "xai",
+      "hotreload_whitelist"
+    ],
+    "defaults": {}
+  },
+  {
+    "path": "config/_schemas/ops_dr.schema.json",
+    "$id": "https://aurora.scalp/shared/config/ops_dr.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "required": [
+      "config_version",
+      "targets",
+      "backup",
+      "failover",
+      "tests"
+    ],
+    "defaults": {}
+  },
+  {
+    "path": "config/_schemas/frozen/aurora_trading_20251030.json",
     "$id": "https://aurora.scalp/shared/config/aurora_trading.schema.json",
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "required": [

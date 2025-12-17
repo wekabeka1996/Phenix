@@ -24,6 +24,7 @@ import json
 import logging
 from typing import Dict, Any, TYPE_CHECKING, Optional
 from collections import deque
+import os
 
 from vfoundation.core.protocol import Message
 
@@ -112,6 +113,23 @@ class FeatureEngineering:
             f"macro_sync={self.cfg.macro_sync_enabled}, "
             f"futures={self.cfg.futures_enabled}"
         )
+        
+        # Ensure feature logs directory exists
+        self._feature_logs_dir = os.path.join("logs", "features")
+        os.makedirs(self._feature_logs_dir, exist_ok=True)
+
+    def _log_features_to_file(self, symbol: str, features: dict) -> None:
+        """
+        Log raw feature JSON to a dedicated file for the symbol.
+        Format: JSON string (no prefix)
+        Path: logs/features/{symbol}.log
+        """
+        try:
+            file_path = os.path.join(self._feature_logs_dir, f"{symbol}.log")
+            with open(file_path, "a") as f:
+                f.write(json.dumps(features, default=str) + "\n")
+        except Exception as e:
+            self.logger.error(f"Error logging features to file for {symbol}: {e}")
 
     def update_anchor_price(self, anchor: str, price: str) -> None:
         """Update anchor price buffer directly from MarketData."""
@@ -458,6 +476,9 @@ class FeatureEngineering:
 
             # FTR-10: Dynamic logging for all features (no manual f-string updates needed)
             self.logger.info(f"Calculated features for {symbol}: {json.dumps(features, default=str)}")
+            
+            # Log separate cleaner file for user inspection
+            self._log_features_to_file(symbol, features)
 
             # Emit event
             self.fsm.emit("EVT:FEATURES_CALCULATED", payload=features_payload, why="features_calculated")

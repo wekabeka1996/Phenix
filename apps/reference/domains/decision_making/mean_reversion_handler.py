@@ -93,20 +93,52 @@ class MeanReversionHandler:
             f"strategies={list(self._strategies.keys())}"
         )
     
+    def _get_mr_assigned_symbols(self) -> set[str]:
+        """
+        Get symbols that have mean_reversion_1m assigned in strategies_registry.
+        
+        CFG-STRATEGIES-SSOT-02-MR-HANDLER-STRICT-CONTRACT:
+        MR is "potentially active" if assigned in registry OR enabled=True in config.
+        """
+        mr_symbols = set()
+        
+        if hasattr(self.config, 'strategies_registry') and self.config.strategies_registry:
+            assignments = self.config.strategies_registry.assignments
+            for symbol, strategies in assignments.items():
+                if "mean_reversion_1m" in strategies:
+                    mr_symbols.add(symbol)
+        
+        return mr_symbols
+    
     def _parse_config(self) -> None:
-        """Parse Mean Reversion config from application config."""
-        # Try Pydantic config first
+        """
+        Parse Mean Reversion config from application config.
+        
+        CFG-STRATEGIES-SSOT-02-MR-HANDLER-STRICT-CONTRACT:
+        - Only typed Pydantic config (no dict-fallback)
+        - Fail-closed: missing config when MR assigned → ValueError
+        """
+        # Check if MR is assigned in strategies_registry
+        mr_assigned_symbols = self._get_mr_assigned_symbols()
+        
+        # Try Pydantic config (ONLY typed access)
         if hasattr(self.config, 'mean_reversion_1m') and self.config.mean_reversion_1m is not None:
             self._mr_config = self.config.mean_reversion_1m
             self._enabled = self._mr_config.enabled
-        elif isinstance(self.config, dict) and 'mean_reversion_1m' in self.config:
-            mr_dict = self.config['mean_reversion_1m']
-            if isinstance(mr_dict, dict):
-                try:
-                    self._mr_config = MeanReversion1mStrategyConfig(**mr_dict)
-                    self._enabled = self._mr_config.enabled
-                except Exception as e:
-                    self.logger.warning(f"Failed to parse MR config: {e}")
+        else:
+            # MR config missing
+            if mr_assigned_symbols:
+                # FAIL-CLOSED: MR assigned but config missing
+                raise ValueError(
+                    f"❌ CRITICAL: mean_reversion_1m assigned to symbols {mr_assigned_symbols} "
+                    f"but config.mean_reversion_1m is missing or invalid. "
+                    f"Required: config.mean_reversion_1m (typed Pydantic) must be present."
+                )
+            else:
+                # MR not assigned and config missing → disabled (fail-closed, no noise)
+                self.logger.info("Mean Reversion 1m: config missing, handler disabled (no assignment)")
+                self._enabled = False
+                return
         
         if not self._enabled:
             self.logger.info("Mean Reversion 1m strategy is disabled by config")
@@ -159,8 +191,6 @@ class MeanReversionHandler:
             config.entry_threshold = Decimal(str(base_strat_cfg.entry_threshold))
             config.rsi_oversold = Decimal(str(base_strat_cfg.rsi_oversold))
             config.rsi_overbought = Decimal(str(base_strat_cfg.rsi_overbought))
-            config.sl_atr_mult = Decimal(str(base_strat_cfg.sl_atr_mult))
-            config.tp_to_mid = base_strat_cfg.tp_to_mid
             config.sl_atr_mult = Decimal(str(base_strat_cfg.sl_atr_mult))
             config.tp_to_mid = base_strat_cfg.tp_to_mid
             config.cooldown_sec = base_strat_cfg.cooldown_sec
@@ -263,7 +293,15 @@ class MeanReversionHandler:
         
         # Get per-asset config for this symbol
         sl_pct = self._get_asset_sl_pct(symbol)
-        position_size_usd = self._get_position_size_usd()
+        position_size_usd = self._get_position_size_usd(symbol)
+        
+        # FAIL-CLOSED: missing position_size → block signal
+        if position_size_usd is None:
+            self.logger.warning(
+                f"[{symbol}] MR_SIGNAL_BLOCKED: MR_REJECT:missing_position_size "
+                f"(risk.position_size_usd not configured)"
+            )
+            return
         
         # FIX: Calculate qty = position_size_usd / entry_price
         # This is required for execution_position to know how much to trade
@@ -332,16 +370,22 @@ class MeanReversionHandler:
         
         return None
     
-    def _get_position_size_usd(self) -> Decimal:
-        """Get position size from risk config."""
+    def _get_position_size_usd(self, symbol: str) -> Optional[Decimal]:
+        """
+        Get position size from risk config.
+        
+        CFG-STRATEGIES-SSOT-02-MR-HANDLER-STRICT-CONTRACT:
+        - NO silent defaults (no fallback to 100)
+        - Return None if missing → caller must handle (fail-closed)
+        """
         if not self._mr_config or not self._mr_config.risk:
-            return Decimal("100")
+            return None
         
         risk_cfg = self._mr_config.risk
         if hasattr(risk_cfg, 'position_size_usd'):
             return Decimal(str(risk_cfg.position_size_usd))
         
-        return Decimal("100")
+        return None
     
     def get_stats(self) -> Dict[str, Any]:
         """Get handler statistics."""

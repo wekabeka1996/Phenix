@@ -170,31 +170,22 @@ class ManageFlowFSM:
         if not target_symbol:
             return None
 
-        # Try Pydantic config (new format)
-        if self.config and hasattr(self.config, 'trading'):
-            trading = self.config.trading
-            if hasattr(trading, 'aurora_instruments'):
-                aurora_instruments = trading.aurora_instruments
-                if isinstance(aurora_instruments, dict) and target_symbol in aurora_instruments:
-                    instr_cfg = aurora_instruments[target_symbol]
-                    # Return if already Pydantic model
-                    if isinstance(instr_cfg, AuroraInstrumentConfig):
-                        return instr_cfg
-                    # Try to convert dict to Pydantic model (legacy support)
-                    elif isinstance(instr_cfg, dict):
-                        try:
-                            return AuroraInstrumentConfig(**instr_cfg)
-                        except Exception:
-                            pass
+        # CFG-AURORA-INSTRUMENTS-SSOT-01-FIXPACK: Direct Pydantic access
+        if not self.config or not hasattr(self.config, 'aurora_instruments'):
+            return None
 
-        return None
+        aurora_instruments = self.config.aurora_instruments
+        if not isinstance(aurora_instruments, dict):
+            return None
+
+        return aurora_instruments.get(target_symbol)  # Already Pydantic-typed
 
     def _get_exit_param(self, param: str, default: Any, symbol: Optional[str] = None) -> Any:
         """
         Get exit parameter with per-instrument override support.
 
         Fallback chain:
-        1. aurora_instruments.<SYMBOL>.exit.<param>
+        1. config.aurora_instruments[SYMBOL].exit.<param> (CANONICAL SSOT)
         2. trading.execution.manage.brackets.sl/tp.* (global, param name mapped)
         3. default value
 
@@ -645,12 +636,13 @@ class ManageFlowFSM:
             if self._manage_cfg and self._manage_cfg.brackets:
                  offset_bps = self._manage_cfg.brackets.offset_bps
 
-            # Get tick_size from config or default
+            # CFG-INSTRUMENTS-STEP-03-EXECUTION-PRECISION:
+            # Get tick_size from canonical config.instruments
             tick_size = Decimal("0.01")
             symbol = msg.pld.get("symbol")
-            if symbol and self.config.trading.instruments:
-                 inst = self.config.trading.instruments.get(symbol)
-                 if inst:
+            if symbol and self.config.instruments:
+                 inst = self.config.instruments.get(symbol)
+                 if inst and hasattr(inst, 'tick_size') and inst.tick_size is not None:
                      tick_size = Decimal(str(inst.tick_size))
 
             # Apply offset to SL (move it AWAY from entry to be safer)
