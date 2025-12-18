@@ -163,7 +163,9 @@ class MeanReversionHandler:
         if not self._mr_config:
             return
 
-        timeframe_sec = self._mr_config.timeframe_sec or 60
+        timeframe_sec = self._mr_config.timeframe_sec
+        if timeframe_sec <= 0:
+            raise ValueError(f"mean_reversion_1m.timeframe_sec must be positive, got {timeframe_sec}")
         
         # Global base config
         base_strat_cfg = self._mr_config.strategy

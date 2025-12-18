@@ -27,8 +27,22 @@ def test_bootstrap_to_arbitration_chain_minimal():
     
     config = MagicMock(spec=AuroraConfig)
     config.instruments = [
-        InstrumentSpec(symbol="BTCUSDT"),
-        InstrumentSpec(symbol="ETHUSDT"),
+        InstrumentSpec(
+            symbol="BTCUSDT",
+            step_size="0.00001",
+            tick_size="0.01",
+            min_qty="0.00001",
+            min_notional="10",
+            quote="USDT",
+        ),
+        InstrumentSpec(
+            symbol="ETHUSDT",
+            step_size="0.0001",
+            tick_size="0.01",
+            min_qty="0.0001",
+            min_notional="10",
+            quote="USDT",
+        ),
     ]
     config.trading = MagicMock(spec=TradingConfig)
     config.trading.instruments = []  # Deprecated (strict mode)
@@ -98,8 +112,22 @@ def test_drift_detection_canonical_vs_legacy():
     
     config = MagicMock(spec=AuroraConfig)
     config.instruments = [
-        InstrumentSpec(symbol="BTCUSDT"),
-        InstrumentSpec(symbol="ETHUSDT"),
+        InstrumentSpec(
+            symbol="BTCUSDT",
+            step_size="0.00001",
+            tick_size="0.01",
+            min_qty="0.00001",
+            min_notional="10",
+            quote="USDT",
+        ),
+        InstrumentSpec(
+            symbol="ETHUSDT",
+            step_size="0.0001",
+            tick_size="0.01",
+            min_qty="0.0001",
+            min_notional="10",
+            quote="USDT",
+        ),
     ]
     config.trading = MagicMock(spec=TradingConfig)
     config.trading.instruments = []  # Deprecated

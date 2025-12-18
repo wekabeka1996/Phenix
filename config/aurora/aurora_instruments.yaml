@@ -16,6 +16,8 @@
 # ETHUSDT - Phase 3+ Optuna optimized parameters
 # Source: aurora_optimal_full_v1.yaml, aurora_phase3_production.yaml
 ETHUSDT:
+  enabled: true
+  position_mode: "STRICT"
   weights:
     ema: 0.058
     volume: 0.241
@@ -64,6 +66,13 @@ ETHUSDT:
   # Regime Gating - ETH "Universal" from optimization reports
   allowed_regimes: ["TREND_UP", "TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY"]
 
+  execution: null
+  ema_clamp: null
+  signal_threshold: null
+  max_risk_score: null
+  cooldown_sec: null
+  timeframe_sec: null
+
 # SOLUSDT - Phase 3 Optuna optimized parameters
 # KEY INSIGHT: SOL should NOT have side-bias penalty (penalty_factor: 0.0)
 SOLUSDT:
@@ -77,6 +86,8 @@ SOLUSDT:
     volatility: 0.05
     depth_imbalance: 0.20
     delta_price: 0.22
+  enabled: true
+  position_mode: "STRICT"
 
   side_bias:
     penalty_factor: 0.0       # DISABLED - SOL performs better without side-bias
@@ -97,6 +108,8 @@ SOLUSDT:
     tp_high_ratio: 0.80       # TP2 = 0.8x risk
     partial_exit_pct: 0.31    # 31% at TP1
 
+  enabled: true
+  position_mode: "STRICT"
   # Regime Gating - SOL "Bear" from optimization reports (CRITICAL: TREND_UP excluded!)
   allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL"]
 
@@ -107,10 +120,20 @@ SOLUSDT:
     trail_pct: 0.018          # Trail 1.8% behind peak
     min_update_interval_sec: 5
 
+  regime_thresholds: null
+  execution: null
+  ema_clamp: null
+  signal_threshold: null
+  max_risk_score: null
+  cooldown_sec: null
+  timeframe_sec: null
+
 # DOGEUSDT - Phase 3+ derived from Mean Reversion optimization
 # Source: config/aurora/strategies/mean_reversion_1m.yaml (CHAMPION asset)
 # Audit: Previously missing, causing fallback to global 40/80 bps brackets
 DOGEUSDT:
+  enabled: true
+  position_mode: "STRICT"
   weights:
     # Derived from global weights (no momentum optimization exists for DOGE)
     ema: 0.15
@@ -157,6 +180,13 @@ DOGEUSDT:
   # Regime Gating - DOGE works best in FLAT regimes (MR champion)
   allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "LOW_VOLATILITY"]
 
+  execution: null
+  ema_clamp: null
+  signal_threshold: null
+  max_risk_score: null
+  cooldown_sec: null
+  timeframe_sec: null
+
 # XRPUSDT - Phase 3+ from Optuna optimization
 # Source: config/aurora/strategies/aurora_phase3_production.yaml (line 266-382)
 # Audit: Previously missing, causing fallback to global 40/80 bps brackets
@@ -171,6 +201,8 @@ XRPUSDT:
     volatility: 0.367
     depth_imbalance: 0.392
     delta_price: 0.028
+  enabled: true
+  position_mode: "STRICT"
 
   side_bias:
     penalty_factor: 0.4       # Moderate penalty (from Phase 3)
@@ -205,6 +237,13 @@ XRPUSDT:
   # Regime Gating - XRP from Phase 3 optimization + FLAT regimes for MR
   allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_LOW", "FLAT_NORMAL"]
 
+  execution: null
+  ema_clamp: null
+  signal_threshold: null
+  max_risk_score: null
+  cooldown_sec: null
+  timeframe_sec: null
+
 # BTCUSDT - Phase 3+ baseline (если будут оптимизации)
 # Fallback: используется global config из trading.yaml
 BTCUSDT:
@@ -218,6 +257,8 @@ BTCUSDT:
     volatility: 0.10
     depth_imbalance: 0.05
     delta_price: 0.05
+  enabled: true
+  position_mode: "STRICT"
 
   side_bias:
     penalty_factor: 0.5
@@ -250,3 +291,10 @@ BTCUSDT:
     min_update_interval_sec: 5
 
   allowed_regimes: ["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "FLAT_LOW", "FLAT_NORMAL"]
+
+  execution: null
+  ema_clamp: null
+  signal_threshold: null
+  max_risk_score: null
+  cooldown_sec: null
+  timeframe_sec: null

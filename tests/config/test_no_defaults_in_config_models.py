@@ -43,4 +43,46 @@ def test_inventory_defaults_tool_works(tmp_path):
     import json
     json_data = json.loads(out_json.read_text())
     assert isinstance(json_data, list)
-    assert len(json_data) > 0  # Should have found defaults
+
+    # TASK22 policy: no behavior-changing defaults should remain
+    assert len(json_data) == 0
+
+    # Also verify the tool can detect defaults on a synthetic file
+    synthetic = tmp_path / "synthetic_defaults.py"
+    synthetic.write_text(
+        """
+from pydantic import BaseModel, Field, ConfigDict
+
+
+class Demo(BaseModel):
+    model_config = ConfigDict(extra='allow')
+    a: int = 1
+    b: int = Field(default=2)
+    c: int = Field(...)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    out_md2 = tmp_path / "synthetic_inventory.md"
+    out_json2 = tmp_path / "synthetic_inventory.json"
+    result2 = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--file",
+            str(synthetic),
+            "--out-md",
+            str(out_md2),
+            "--out-json",
+            str(out_json2),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result2.returncode == 0, f"Script failed: {result2.stderr}"
+    json_data2 = json.loads(out_json2.read_text())
+    assert isinstance(json_data2, list)
+    assert any(d.get("field") == "model_config" for d in json_data2)
+    assert any(d.get("field") == "a" for d in json_data2)
+    assert any(d.get("field") == "b" for d in json_data2)

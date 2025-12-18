@@ -59,7 +59,7 @@ class ConfigDefaultsVisitor(ast.NodeVisitor):
         # Check for field assignments with Field(default=...)
         elif len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             field_name = node.targets[0].id
-            if self._is_field_with_default(node.value):
+            if self._field_call_has_default(node.value):
                 default_value = self._extract_field_default(node.value)
                 self.defaults.append({
                     'class': self.current_class,
@@ -75,16 +75,38 @@ class ConfigDefaultsVisitor(ast.NodeVisitor):
         if not self.is_basemodel or not self.current_class:
             return
 
-        if node.value is not None:  # Has a default value
+        # AnnAssign is used for Pydantic fields:
+        # - `x: int` (required)
+        # - `x: int = 1` (default)
+        # - `x: int = Field(...)` (required with metadata)
+        # - `x: int = Field(default=1)` / `Field(default_factory=...)` (default)
+        if node.value is not None:
             field_name = node.target.id if isinstance(node.target, ast.Name) else str(node.target)
-            default_value = self._extract_value(node.value)
-            self.defaults.append({
-                'class': self.current_class,
-                'field': field_name,
-                'type': 'AnnAssign',
-                'default': default_value,
-                'line': node.lineno
-            })
+
+            # TASK22: zero defaults means ANY default is forbidden, including
+            # - `= None`
+            # - `Field(default=None)`
+            # - `Field(default_factory=...)`
+            # - `Field(<positional_default>)`
+            if self._is_field_call(node.value):
+                if self._field_call_has_default(node.value):
+                    default_value = self._extract_value(node.value)
+                    self.defaults.append({
+                        'class': self.current_class,
+                        'field': field_name,
+                        'type': 'Field',
+                        'default': default_value,
+                        'line': node.lineno
+                    })
+            else:
+                default_value = self._extract_value(node.value)
+                self.defaults.append({
+                    'class': self.current_class,
+                    'field': field_name,
+                    'type': 'AnnAssign',
+                    'default': default_value,
+                    'line': node.lineno
+                })
 
         self.generic_visit(node)
 
@@ -103,6 +125,30 @@ class ConfigDefaultsVisitor(ast.NodeVisitor):
                 if keyword.arg in ('default', 'default_factory'):
                     return True
         return False
+
+    def _field_call_has_default(self, node: ast.AST) -> bool:
+        """True if Field(...) specifies a real default.
+
+        In Pydantic v2 the first positional arg is the default value.
+        Metadata-only forms like Field() / Field(..., description=...) are NOT defaults.
+        """
+        if not self._is_field_call(node):
+            return False
+
+        call = node
+        if self._is_field_with_default(call):
+            return True
+
+        if call.args:
+            first = call.args[0]
+            if isinstance(first, ast.Constant) and first.value is Ellipsis:
+                return False
+            return True
+
+        return False
+
+    def _is_field_call(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'Field'
 
     def _extract_field_default(self, node: ast.Call) -> str:
         """Extract default value from Field(...)"""
@@ -132,6 +178,8 @@ class ConfigDefaultsVisitor(ast.NodeVisitor):
             return f"{node.attr}"
         else:
             return str(type(node).__name__)
+
+    # NOTE: TASK22 policy is strict zero defaults.
 
 
 def inventory_defaults(file_path: str) -> List[Dict[str, Any]]:

@@ -4,6 +4,11 @@ decision_making:
   position_sizing:
     min_position_size_usd: 10
     liquidity_based_cap_usd: 10000
+    risk_fraction_q: null
+    liquidity_kappa: 1.0
+    kappa_mode: dynamic
+    liquidity_kappa_mode: dynamic
+    risk_contract_v1: null
   
   qos:
     exposure_block_cooldown_sec: 10
@@ -26,6 +31,7 @@ decision_making:
   
   signals:
     normalize: false
+    enable_new_metrics: true
   
   # Commit 5: Risk Skew Guard
   risk_skew:
@@ -33,43 +39,63 @@ decision_making:
     max_defer_count: 3        # Max DEFERs per symbol before NO_TRADE_UNTIL_REFRESH
     defer_cooldown_sec: 2     # Cooldown between deferred retries
 
+  arming:
+    require_regime_warmup: false
+    retry_backoff_ms: 250
+    max_attempts: 3
+
 feature_engineering:
   enable_new_metrics: true
-  
+  volume_input_mode: integrate
+
   ema:
     period_short: 3
     period_long: 7
-  
+
   volume:
     sma_length: 5
     window_sec: 60
-    # Commit 6: Low-volume neutral for volume_spike
-    min_window_volume_usd: 1000.0  # If total volume < this, volume_spike=0.5 (neutral)
-  
+    min_window_volume_usd: 1000.0
+
   volatility:
     sma_length: 10
     window_sec: 60
-  
+
   liquidity:
-    depth_half: 1000
+    depth_half: 1000.0
     kappa_min: 0.3
     kappa_max: 1.0
-  
+
   ema_bias:
     clamp_min: -0.02
     clamp_max: 0.02
-  
+
   volume_spike:
     cap_max: 3.0
-  
+
+  volatility_state:
+    cap_max: 3.0
+
+  depth_imbalance:
+    use_laplace_smoothing: true
+
   delta_price:
     spike_filter_ms: 60000
 
   macro_sync:
+    enabled: true
     time_diff_threshold_ms: 60000
     min_buffer_size: 3
     window: 60
     anchors: ["BTCUSDT", "ETHUSDT"]
+    align_mode: tail_min_len
+    anchor_update_from_ticks: false
+
+  defaults:
+    neutral_value: 0.5
+    zero_value: 0.0
+    correlation_default: 0.0
+    ms_per_sec: 1000
 
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
@@ -98,6 +124,7 @@ position_tracking:
   
   thread_timeouts:
     join_timeout_sec: 10
+  enable_market_tick_subscription: false
 
 account_observer:
   poll_interval_sec: 5

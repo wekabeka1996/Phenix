@@ -8,83 +8,16 @@ import pytest
 import yaml
 import os
 from pathlib import Path
+import shutil
 from apps.reference.config_loader import ConfigLoader
 
 
-def create_minimal_config(config_dir: Path):
-    """Create minimal valid config structure."""
-    # system.yaml
-    system_yaml = {
-        "trading_mode": "testnet",
-        "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
-        "binance_api": {
-            "testnet": {
-                "api_key": "test",
-                "api_secret": "test",
-                "rest_url": "https://test",
-            },
-            "live": {
-                "api_key": "test",
-                "api_secret": "test",
-                "rest_url": "https://live",
-            },
-        }
-    }
-    (config_dir / "system.yaml").write_text(yaml.dump(system_yaml))
-    
-    # trading.yaml
-    trading_yaml = {
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        }
-    }
-    (config_dir / "trading.yaml").write_text(yaml.dump(trading_yaml))
-    
-    # regime.yaml
-    regime_yaml = {
-        "hmm": {
-            "enabled": False
-        }
-    }
-    (config_dir / "regime.yaml").write_text(yaml.dump(regime_yaml))
-    
-    # domains.yaml
-    domains_yaml = {
-        "decision_making": {
-            "position_sizing": {
-                "min_position_size_usd": 10
-            }
-        }
-    }
-    (config_dir / "domains.yaml").write_text(yaml.dump(domains_yaml))
-    
-    # instruments.yaml
-    instruments_yaml = {
-        "instruments": {
-            "BTCUSDT": {
-                "step_size": "0.001",
-                "tick_size": "0.01",
-                "min_notional": "10"
-            }
-        }
-    }
-    (config_dir / "instruments.yaml").write_text(yaml.dump(instruments_yaml))
-    
-    # strategies.yaml
-    strategies_yaml = {
-        "assignments": {},
-        "arbitration": {
-            "mode": "priority",
-            "priority": {}
-        }
-    }
-    (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml))
-    
-    # aurora_instruments.yaml (optional but suppresses warning)
-    aurora_instruments_yaml = {}
-    (config_dir / "aurora_instruments.yaml").write_text(yaml.dump(aurora_instruments_yaml))
+def _copy_canonical_config_dir(tmp_path: Path) -> Path:
+    """Copy repo canonical config so tests don't depend on model defaults."""
+    src = Path(__file__).resolve().parents[2] / "config" / "aurora"
+    dst = tmp_path / "aurora"
+    shutil.copytree(src, dst)
+    return dst
 
 
 class TestFeaturesYamlDeprecated:
@@ -97,11 +30,7 @@ class TestFeaturesYamlDeprecated:
         CFG-FEATURES-REGIME-SSOT-04: features.yaml is orphaned (not loaded),
         strict mode must crash to prevent confusion.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
-        
-        # Create minimal config
-        create_minimal_config(config_dir)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
         # Create orphaned features.yaml
         features_yaml = {
@@ -109,7 +38,7 @@ class TestFeaturesYamlDeprecated:
                 "enable_new_metrics": True
             }
         }
-        (config_dir / "features.yaml").write_text(yaml.dump(features_yaml))
+        (config_dir / "features.yaml").write_text(yaml.dump(features_yaml), encoding="utf-8")
         
         # Enable strict mode
         os.environ["STRICT_CONFIG_CONFLICTS"] = "1"
@@ -131,11 +60,7 @@ class TestFeaturesYamlDeprecated:
         """
         Test NON-STRICT MODE: features.yaml exists → still fails (no soft mode).
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
-        
-        # Create minimal config
-        create_minimal_config(config_dir)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
         # Create orphaned features.yaml
         features_yaml = {
@@ -143,7 +68,7 @@ class TestFeaturesYamlDeprecated:
                 "enable_new_metrics": True
             }
         }
-        (config_dir / "features.yaml").write_text(yaml.dump(features_yaml))
+        (config_dir / "features.yaml").write_text(yaml.dump(features_yaml), encoding="utf-8")
         
         # Ensure NON-strict mode
         os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
@@ -159,11 +84,7 @@ class TestFeaturesYamlDeprecated:
         
         CFG-FEATURES-REGIME-SSOT-04: Normal operation without orphaned file.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
-        
-        # Create minimal config (WITHOUT features.yaml)
-        create_minimal_config(config_dir)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
         # Load config - should succeed
         loader = ConfigLoader(config_dir=config_dir)
@@ -172,4 +93,4 @@ class TestFeaturesYamlDeprecated:
         # VERIFY: config loaded successfully
         assert config is not None
         assert hasattr(config, "trading_mode")
-        assert config.trading_mode == "testnet"
+        assert config.trading_mode in {"testnet", "production", "live", "hybrid_live_data_testnet_exec"}

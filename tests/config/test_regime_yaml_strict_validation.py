@@ -1,84 +1,23 @@
-"""
-Tests for regime.yaml strict validation (extra keys).
+"""Tests for regime.yaml strict validation (extra keys).
 
 CFG-FEATURES-REGIME-SSOT-04-LIVE-OR-DEPRECATE
 """
 
+import shutil
+from pathlib import Path
+
 import pytest
 import yaml
-from pathlib import Path
-from apps.reference.config_loader import ConfigLoader
 from pydantic import ValidationError
 
+from apps.reference.config_loader import ConfigLoader
 
-def create_minimal_config(config_dir: Path, regime_yaml_content: dict):
-    """Create minimal valid config structure with custom regime.yaml."""
-    # system.yaml
-    system_yaml = {
-        "trading_mode": "testnet",
-        "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
-        "binance_api": {
-            "testnet": {
-                "api_key": "test",
-                "api_secret": "test",
-                "rest_url": "https://test",
-            },
-            "live": {
-                "api_key": "test",
-                "api_secret": "test",
-                "rest_url": "https://live",
-            },
-        }
-    }
-    (config_dir / "system.yaml").write_text(yaml.dump(system_yaml))
-    
-    # trading.yaml
-    trading_yaml = {
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        }
-    }
-    (config_dir / "trading.yaml").write_text(yaml.dump(trading_yaml))
-    
-    # regime.yaml (provided by caller)
-    (config_dir / "regime.yaml").write_text(yaml.dump(regime_yaml_content))
-    
-    # domains.yaml
-    domains_yaml = {
-        "decision_making": {
-            "position_sizing": {
-                "min_position_size_usd": 10
-            }
-        }
-    }
-    (config_dir / "domains.yaml").write_text(yaml.dump(domains_yaml))
-    
-    # instruments.yaml
-    instruments_yaml = {
-        "instruments": {
-            "BTCUSDT": {
-                "step_size": "0.001",
-                "tick_size": "0.01",
-                "min_notional": "10"
-            }
-        }
-    }
-    (config_dir / "instruments.yaml").write_text(yaml.dump(instruments_yaml))
-    
-    # strategies.yaml
-    strategies_yaml = {
-        "assignments": {},
-        "arbitration": {
-            "mode": "priority",
-            "priority": {}
-        }
-    }
-    (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml))
-    
-    # aurora_instruments.yaml (suppress warning)
-    (config_dir / "aurora_instruments.yaml").write_text(yaml.dump({}))
+
+def _copy_canonical_config_dir(tmp_path: Path) -> Path:
+    src = Path(__file__).resolve().parents[2] / "config" / "aurora"
+    dst = tmp_path / "aurora"
+    shutil.copytree(src, dst)
+    return dst
 
 
 class TestRegimeYamlStrictValidation:
@@ -90,31 +29,42 @@ class TestRegimeYamlStrictValidation:
         
         CFG-FEATURES-REGIME-SSOT-04: regime.yaml is SSOT, valid config should load.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
         # Valid regime.yaml
         regime_yaml = {
+            "config_version": "1.0.0",
             "hmm": {
                 "enabled": True,
                 "K": 3
             },
+            "features": {},
+            "hotreload_whitelist": [],
             "models": {
                 "sma_trend": {
                     "sma_short_period": 10,
-                    "sma_long_period": 50
+                    "sma_long_period": 50,
+                    "confidence_multiplier": 1.0,
+                    "confidence_min": 0.0,
+                    "confidence_max": 1.0,
                 },
                 "volatility": {
                     "enabled": True,
-                    "atr_period": 14
+                    "atr_period": 14,
+                    "atr_sma_length": 20,
+                    "threshold_multiplier": 2.0,
+                    "low_vol_multiplier": 0.5,
+                    "high_vol_confidence_multiplier": 1.0,
+                    "low_vol_confidence_multiplier": 1.0,
                 },
                 "mean_reversion": {
-                    "threshold": 0.005
+                    "threshold": 0.005,
+                    "confidence_multiplier": 1.0,
                 }
             }
         }
         
-        create_minimal_config(config_dir, regime_yaml)
+        (config_dir / "regime.yaml").write_text(yaml.dump(regime_yaml), encoding="utf-8")
         
         # Load config - should succeed
         loader = ConfigLoader(config_dir=config_dir)
@@ -133,23 +83,36 @@ class TestRegimeYamlStrictValidation:
         CFG-FEATURES-REGIME-SSOT-04: RegimeModelsConfig has extra='forbid',
         unknown keys should fail Pydantic validation.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
         # regime.yaml with EXTRA KEY in models
         regime_yaml = {
+            "config_version": "1.0.0",
             "hmm": {
                 "enabled": True
             },
+            "features": {},
+            "hotreload_whitelist": [],
             "models": {
                 "sma_trend": {
-                    "sma_short_period": 10
+                    "sma_short_period": 10,
+                    "sma_long_period": 50,
+                    "confidence_multiplier": 1.0,
+                    "confidence_min": 0.0,
+                    "confidence_max": 1.0,
                 },
                 "volatility": {
-                    "enabled": True
+                    "enabled": True,
+                    "atr_period": 14,
+                    "atr_sma_length": 20,
+                    "threshold_multiplier": 2.0,
+                    "low_vol_multiplier": 0.5,
+                    "high_vol_confidence_multiplier": 1.0,
+                    "low_vol_confidence_multiplier": 1.0,
                 },
                 "mean_reversion": {
-                    "threshold": 0.005
+                    "threshold": 0.005,
+                    "confidence_multiplier": 1.0,
                 },
                 "unknown_model": {  # EXTRA KEY (not in RegimeModelsConfig)
                     "some_param": 123
@@ -157,7 +120,7 @@ class TestRegimeYamlStrictValidation:
             }
         }
         
-        create_minimal_config(config_dir, regime_yaml)
+        (config_dir / "regime.yaml").write_text(yaml.dump(regime_yaml), encoding="utf-8")
         
         # Load config - should FAIL
         loader = ConfigLoader(config_dir=config_dir)
@@ -171,28 +134,25 @@ class TestRegimeYamlStrictValidation:
     
     def test_minimal_regime_yaml_loads(self, tmp_path):
         """
-        Test MINIMAL regime.yaml (empty models) loads successfully.
+        Test MINIMAL regime.yaml missing required keys fails fast.
         
-        CFG-FEATURES-REGIME-SSOT-04: Default factory values should work.
+        TASK22: With zero-defaults config models, absent keys must raise ValidationError.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
-        
-        # Minimal regime.yaml
+        config_dir = _copy_canonical_config_dir(tmp_path)
+
+        # Minimal regime.yaml without required keys
         regime_yaml = {
             "hmm": {
                 "enabled": False
             }
         }
-        
-        create_minimal_config(config_dir, regime_yaml)
-        
-        # Load config - should succeed
+
+        (config_dir / "regime.yaml").write_text(yaml.dump(regime_yaml), encoding="utf-8")
+
         loader = ConfigLoader(config_dir=config_dir)
-        config = loader.load_config()
-        
-        # VERIFY: config loaded with defaults
-        assert config is not None
-        # models should exist with default factory
-        if hasattr(config, "models") and config.models:
-            assert hasattr(config.models, "sma_trend")
+
+        with pytest.raises(ValidationError) as exc_info:
+            loader.load_config()
+
+        error_msg = str(exc_info.value)
+        assert "field required" in error_msg.lower()

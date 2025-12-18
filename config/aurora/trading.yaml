@@ -1,406 +1,255 @@
 binance_api:
   live:
-    api_key: "${BINANCE_FUTURES_API_KEY_LIVE}"
-    api_secret: "${BINANCE_FUTURES_API_SECRET_LIVE}"
-    rest_url: "${BINANCE_FUTURES_BASE_URL_LIVE}"
+    api_key: ${BINANCE_FUTURES_API_KEY_LIVE}
+    api_secret: ${BINANCE_FUTURES_API_SECRET_LIVE}
+    rest_url: ${BINANCE_FUTURES_BASE_URL_LIVE}
+    ws_url: wss://fstream.binance.com
   testnet:
-    api_key: "${BINANCE_TESTNET_API_KEY}"
-    api_secret: "${BINANCE_TESTNET_API_SECRET}"
-    rest_url: "https://testnet.binancefuture.com"
-
+    api_key: ${BINANCE_TESTNET_API_KEY}
+    api_secret: ${BINANCE_TESTNET_API_SECRET}
+    rest_url: https://testnet.binancefuture.com
+    ws_url: wss://stream.testnet.binancefuture.com
 trading:
-  mode: "testnet"
+  mode: testnet
   decision:
-    signal_threshold: 0.10
-    # Signal thresholds (Balanced profile)
-    neutral_threshold: 0.18              # Below this → treat as neutral (reduced clip attempts)
-    
-    # Symbols to track for decision making
-    symbols_to_track: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"]
-    
-    # Minimal behavior FSM mapped from regimes
+    testnet:
+      signal_threshold: null
+    production:
+      signal_threshold: null
+    signal_threshold: 0.1
+    neutral_threshold: 0.18
+    symbols_to_track:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - DOGEUSDT
+    - XRPUSDT
     behavior_fsm:
       enable: false
       high_vol_multiplier: 2.0
       low_vol_multiplier: 0.5
-    
-    # Regime-based threshold multipliers (Δθ). Factors multiply signal_threshold.
     regime_threshold_multipliers:
-      HIGH_VOLATILITY: 1.20   # stricter in high vol
-      LOW_VOLATILITY: 0.90    # easier in low vol
+      HIGH_VOLATILITY: 1.2
+      LOW_VOLATILITY: 0.9
       MEAN_REVERSION: 1.05
-      TREND_UP: 1.00
-      TREND_DOWN: 1.00
+      TREND_UP: 1.0
+      TREND_DOWN: 1.0
       UNCERTAIN: 1.15
-      DEFAULT: 1.00
-
-    # Side-bias penalty: prevent unidirectional accumulation (EXP-DIRECTION)
-    side_bias_window_sec: 60                  # Sliding window for tracking SELL vs BUY ratio
-    side_bias_target_ratio: 0.60              # Target max SELL share (60% max, 40% min BUY)
-    side_bias_penalty_factor: 0.50            # If oversold, raise threshold by 50%
-
-    cooldown_sec: 10           # Increase pause between decisions
-    
+      DEFAULT: 1.0
+    side_bias_min_score: null
+    side_bias_window_sec: 60
+    side_bias_target_ratio: 0.6
+    side_bias_penalty_factor: 0.5
+    cooldown_sec: 10
+    retry_ttl_ms: 5000
+    retry_max_count: 3
+    retry_backoff_factor: 1.5
     position_sizing:
       min_position_size_usd: 10
       liquidity_based_cap_usd: 10000
-      # Risk-based sizing (optional). If set, overrides legacy 10% equity rule:
-      # notional_usd = q * Equity / (SL_bps/1e4) * kappa, capped by liquidity_based_cap_usd
-      # notional_usd = q * Equity / (SL_bps/1e4) * kappa, capped by liquidity_based_cap_usd
-      risk_fraction_q: 0.05     # Risk per trade (Increased to 5% for ~10% utilization)
-      liquidity_kappa: 1.0      # Liquidity/micro-account cap factor (0..1]
-      liquidity_kappa_mode: dynamic  # Use dynamic depth-based kappa when available
-
-      # ============================================================================
-      # Risk-Sizing V1 (ETAP1: контракт для депозиту ≈500 USDT, плече ~x10)
-      # УВАГА: enabled=false означає, що ці поля НЕ використовуються в runtime.
-      #        Це лише опис майбутнього контракту для ETAP2+.
-      # ============================================================================
-      risk_contract_v1:
-        enabled: false           # ETAP1: тільки опис, не використовується runtime
-
-        # Ефективне плече (те, що виставлено на біржі).
-        # Використовуватиметься для розрахунку notional = margin * effective_leverage
-        effective_leverage: 10.0
-
-        # Цільова частка маржі від equity для кожного інструменту.
-        # margin_fraction_i * Equity * L ≈ target_notional_i
-        # Приклад: при E=500 USDT, L=10, margin_fraction=0.05 → notional ≈ 250$
-        per_symbol_margin_fraction:
-          BTCUSDT: 0.04   # ~4% маржі → при E=500, L=10 → notional ≈ 200$
-          ETHUSDT: 0.055  # ~5.5% → ≈ 275$
-          XRPUSDT: 0.04   # ~4% → ≈ 200$
-          DOGEUSDT: 0.05  # ~5% → ≈ 250$
-          SOLUSDT: 0.06   # ~6% → ≈ 300$
-
-        # Базові фіксовані розміри позицій у USD для монет з MR/класичним підходом.
-        # Використовуватиметься пізніше в runtime як таргетний notional.
-        fixed_notional_usd:
-          BTCUSDT: 200.0   # Mean reversion BTC
-          ETHUSDT: 250.0   # Smart trend ETH
-          XRPUSDT: 200.0   # MR XRP
-          DOGEUSDT: 200.0  # MR DOGE
-
-        # Режимні множники для SOL: змінюють target_notional залежно від волатильності.
-        # calm = low-vol / трендовий режим, storm = high-vol / "шторм"
-        sol_regime_multipliers:
-          calm: 1.5   # low-vol → до 300$ notional
-          storm: 0.5  # high-vol → зменшення до ~100$
-
-    # Regime-adaptive sizing modifiers (applied by DecisionMaking domain)
+      risk_fraction_q: 0.05
+      liquidity_kappa: 1.0
+      kappa_mode: dynamic
+      liquidity_kappa_mode: dynamic
+      risk_contract_v1: null
     sizing_modifiers:
-      HIGH_VOLATILITY: "0.60"   # -40% position size in high volatility regimes
-      LOW_VOLATILITY: "1.20"    # +20% position size in low volatility (calm market)
-      MEAN_REVERSION: "0.50"    # -50% position size in ranging/mean reversion
-      UNCERTAIN: "0.50"         # -50% position size when regime confidence is low
-    
-    # Kelly criterion sizing (optional; if enabled, min(q, Kelly) path is used)
+      HIGH_VOLATILITY: 0.6
+      LOW_VOLATILITY: 1.2
+      MEAN_REVERSION: 0.5
+      UNCERTAIN: 0.5
+    regime_thresholds:
+      HIGH_VOLATILITY: 0.12
+      LOW_VOLATILITY: 0.09
+      MEAN_REVERSION: 0.105
+      TREND_UP: 0.1
+      TREND_DOWN: 0.1
+      UNCERTAIN: 0.115
+      DEFAULT: 0.1
     kelly:
-      base_probability: 0.50    # Base probability for Kelly formula (55% = edge)
-      kelly_cap: 0.25           # Maximum Kelly fraction (conservative cap)
-      kelly_alpha: 0.8          # Fractional Kelly: use 80% of full Kelly
-      payoff_ratio_r: 1.5       # Payoff ratio (TP_bps / SL_bps); overrideable per trade
-    
+      base_probability: 0.5
+      kelly_cap: 0.25
+      kelly_alpha: 0.8
+      payoff_ratio_r: 1.5
     qos:
-      mode: "defer"        # QoS mode: defer intents instead of blocking
-      enforce: false       # Legacy: disable QoS enforcement
+      mode: defer
+      enforce: false
       exposure_block_cooldown_sec: 30
-      symbol_cooldown_sec: 1     # Cooldown to 1 second (must be int for Pydantic)
-      max_intents_per_minute_per_symbol: 60  # Increase limit to avoid hitting 2/min cap
-
-    # Signal weights for 8-metric composition (Phase 1)
+      symbol_cooldown_sec: 1
+      max_intents_per_minute_per_symbol: 60
+    signals:
+      normalize: false
+      enable_new_metrics: true
+    bar_gating: null
+    roi_exit: null
+    mean_reversion: null
     signal_weights:
-      # Legacy metrics (3)
-      obi: 0.15              # Order Book Imbalance
-      tfi: 0.15              # Taker Fill Index
-      delta_price: 0.10      # Delta Price
-      # New metrics (5) - Phase 1
-      ema_bias: 0.15         # EMA bias (trend confirmation)
-      volume_spike: 0.10     # Volume spike (participation)
-      volatility_state: 0.10 # Volatility state (regime context)
-      depth_imbalance: 0.15  # Depth imbalance (liquidity context)
-      macro_sync: 0.10       # Macro sync with anchors (correlation)
-
-  # INSTRUMENT SPECIFICATIONS (BINANCE FUTURES)
-  # ==============================================================================
-  # AURORA PER-INSTRUMENT CONFIGURATION (Phase 0 / Phase A1)
-  # Per-asset overrides for Aurora strategy parameters from Optuna optimization
-  # Fallback chain: aurora_instruments.<SYMBOL>.* → decision.* (global)
-  # ==============================================================================
-  # ==============================================================================
-  # AURORA INSTRUMENTS (Per-symbol Aurora strategy overrides)
-  # ==============================================================================
-  # MOVED TO: config/aurora/aurora_instruments.yaml (CANONICAL SSOT)
-  # CFG-AURORA-INSTRUMENTS-SSOT-01: trading.aurora_instruments is DEPRECATED
-  # All per-symbol overrides (weights, side_bias, exit, take_profit, trailing_stop, etc.)
-  # must be configured in aurora_instruments.yaml
-  # ==============================================================================
-
-  # TCA (Transaction Cost Analysis) Preferences
+      obi: 0.15
+      tfi: 0.15
+      delta_price: 0.1
+      ema_bias: 0.15
+      volume_spike: 0.1
+      volatility_state: 0.1
+      depth_imbalance: 0.15
+      macro_sync: 0.1
   tca_prefs:
     max_slippage_pct: 0.5
-    preferred_venue: "binance"
-    execution_priority: "speed"
-
-  # Risk Budgets
+    preferred_venue: binance
+    execution_priority: speed
   risk_budgets:
     max_portfolio_risk_pct: 5.0
     max_single_position_risk_pct: 1.0
     max_daily_loss_pct: 2.0
-
-  # Risk Management Settings
   risk:
-    max_daily_drawdown_limit: 0.05  # 5%
+    max_daily_drawdown_limit: 0.05
     score_weights:
       delta_price: 0.05
       obi: 0.35
       tfi: 0.35
       absorption_inverse: 0.25
-    # Mode-specific risk thresholds
     testnet:
-      max_risk_score: 0.90  # Higher tolerance for exploration
+      max_risk_score: 0.9
     production:
-      max_risk_score: 0.80  # Stricter for live trading
-    # Current active threshold (will be overridden by mode)
+      max_risk_score: 0.8
     trading_allowed_thresholds:
-      max_risk_score: 0.9  # Default to testnet value
-    # Daily Loss / Drawdown Gate (A3)
+      max_risk_score: 0.9
     daily:
-      max_realized_loss_usd: 250.0     # Stop-day by realized PnL
-      max_drawdown_pct: 8.0            # Stop-day by intra-day DD (% from equity_open)
-      reset_time_utc: "00:00"          # Daily reset time
-
-    # ===========================================================================
-    # BALANCED PROFILE: Soft-limit clip, directional ratio, mode adaptation
-    # ===========================================================================
-    # Active profile: "balanced" (conservative/balanced/accelerated available)
-    profile: "balanced"
-
-    # Soft-limit clipping (instead of rejection, reduce order size)
+      max_realized_loss_usd: 250.0
+      max_drawdown_pct: 8.0
+      reset_time_utc: 00:00
+    profile: balanced
     soft_limits:
-      mode: "clip"                         # "reject" (legacy) or "clip" (new)
-      clip_min_notional_usdt: 10           # Minimum notional after clipping; below this → reject
-      directional_ratio_max: 20.0          # Max ratio between long/short margin (base)
-      side_exposure_usdt: 600              # Max per-side exposure (adapts with regime)
-      margin_exposure_usdt: 1100           # Max margin used (adapts with regime)
-
-    # Regime-adaptive multipliers for directional_ratio_max
+      mode: clip
+      clip_min_notional_usdt: 10
+      directional_ratio_max: 20.0
+      side_exposure_usdt: 600
+      margin_exposure_usdt: 1100
     regime_adaptation:
-      trend_up_delta: 0.30                 # Add +0.30 to directional_ratio in uptrend
-      trend_down_delta: 0.30               # Add +0.30 to directional_ratio in downtrend
-      flat_delta: -0.30                    # Subtract -0.30 in flat regime
-      bounds: [2.0, 4.0]                   # Clamp ratio to [min, max]
-
-    # Feature flags for advanced features
+      trend_up_delta: 0.3
+      trend_down_delta: 0.3
+      flat_delta: -0.3
+      bounds:
+      - 2.0
+      - 4.0
     feature_flags:
-      dynamic_ratio: true                  # Enable regime-based ratio adaptation
-      clipping_enabled: true               # Enable soft-limit clipping
-
-  # ==============================================================================
-  # MARKET DATA SETTINGS (Phase 1)
-  # ==============================================================================
+      dynamic_ratio: true
+      clipping_enabled: true
   market_data:
     poll_interval_sec: 5.0
-    websocket_streams: ["bookTicker", "trade"]
-    # FSMP-ARCH-01: Enable multiprocessing for market data isolation
-    # When true, market data runs in a separate OS process to prevent
-    # event loop starvation in the main process (OrderGuardian, DecisionMaking)
-    use_multiprocessing: true  # ENABLED - isolated worker process
+    websocket_streams:
+    - bookTicker
+    - trade
+    use_multiprocessing: true
     api_call_limits:
       get_recent_trades: 50
       get_klines:
-        interval: "1m"
+        interval: 1m
         limit: 2
-    # Macro sync configuration for correlation with anchors
     macro_sync:
       enabled: true
-      anchors: ["BTCUSDT", "ETHUSDT"]  # Anchor symbols for correlation
-      window: 60        # Window size for correlation (ticks/samples)
-      emit_abs: false   # Emit absolute value or signed correlation
-
-  # ==============================================================================
-  # ==============================================================================
+      anchors:
+      - BTCUSDT
+      - ETHUSDT
+      window: 60
+      emit_abs: false
+      align_mode: tail_min_len
+      min_buffer_size: 3
+      time_diff_threshold_ms: 60000
+      anchor_update_from_ticks: false
   ops:
-    panic_killswitch: true   # Enable emergency kill switch
-    quiet_hours_utc: ["22:00-06:00"]
-    allowlist_symbols: []    # Empty = no restrictions
+    panic_killswitch: true
+    panic_ttl_sec: null
+    quiet_hours_utc:
+    - 22:00-06:00
+    allowlist_symbols: []
+    metrics_url: http://localhost:8000/metrics
+    reports_dir: reports
   execution:
-    # Auto-trading management settings
     manage:
-      auto: true  # Enable automatic position management (take-profit, stop-loss)
-
-      # Bracket parameters (SL/TP used by Kelly calculation and sizing)
+      auto: true
       brackets:
-        enable: true  # Enable bracket order management with atomic close and cancellation
-        oco_emulation: true  # Enable OCO emulation: when SL or TP fills, cancel the counterpart
-
-        # === LEGACY KEYS (for backward compatibility, used by Kelly/decision_making) ===
-        stop_loss_bps: 40      # Stop-loss in basis points (default 50 bps = 0.5%)
-        take_profit_low_ratio: 0.5   # k₁: TP_low = k₁ × SL_bps
-        take_profit_high_ratio: 1.0  # k₂: TP_high = k₂ × SL_bps
-        # Note: TP_bps computed at runtime from these ratios (SSOT for Kelly payoff_r)
-
-        # === NEW KEYS (for FSM _calculate_bracket_prices / validation) ===
-        # Structure: sl/tp nodes with fixed_bps for direct SL/TP calculation
+        oco_emulation: true
+        stop_loss_bps: 40
+        offset_bps: 5
         sl:
-          fixed_bps: 40        # SL offset (basis points) — used by fsm_manage._calculate_bracket_prices()
+          fixed_bps: 40
         tp:
-          fixed_bps: 80        # TP offset (basis points) — used by fsm_manage._calculate_bracket_prices()
-
-        # === VALIDATION & SAFETY PARAMETERS ===
-        offset_bps: 5          # Safety offset to apply before placing SL/TP (avoids -2021 errors)
-        working_type_default: "MARK_PRICE"  # Default workingType for SL/TP orders (MARK_PRICE or CONTRACT_PRICE)
-        price_protect: false   # Set priceProtect=true for SL/TP to prevent slippage
-
-        # === RETRY & TIMEOUT CONFIG ===
-        retry:
-          max_attempts: 3                    # Max retry attempts for -2021/-4116/-4137 errors
-          backoff_ms: [120, 250, 400]        # Exponential backoff (ms): 1st=120, 2nd=250, 3rd=400
-          fallback_to_limit: true            # After max retries on -2021, fallback to LIMIT order
-        timeout_sec: 5                       # Timeout for pending order cleanup (seconds)
-
-        # CRITICAL FIX (Phase 1): Atomic bracket cleanup on position close
-        # When enabled: DEC:CLOSE cancels SL/TP BEFORE closing position
-        # When disabled: Brackets are NOT cancelled (old behavior - NOT RECOMMENDED)
-        atomic_close: true  # Prevent orphaned bracket accumulation
-        bracket_tracking: true  # Track SL/TP order IDs per symbol
-
-      # Orphaned bracket monitor (periodic cleanup of reduceOnly/closePosition orders when no position exists)
+          fixed_bps: 80
       orphan_monitor:
-        enabled: true                # Master switch for background monitor
-        run_on_startup: true         # PHASE B2: One-time sync on startup to cancel orphans immediately
-        periodic_interval_sec: 90    # PHASE B2: Reduced from 300 to 90 seconds for faster cleanup
-        min_order_age_sec: 0         # Skip cancelling orders newer than this age (0 disables)
-        batch_cancel_limit: 50       # Max cancels per single loop run to avoid bursts
-        rate_limit_per_min: 120      # Global per-minute cancel cap across symbols (0 disables)
-        # PHASE B2: Pre-flight & backoff settings for TP/SL placement
-        offset_bps: 30               # Safety offset to apply before TP/SL (in basis points)
-
-    # Portfolio Exposure Gate (for testnet - no real risk)
+        enabled: true
+      emergency: null
+      failsafe: null
+    fsm_periodic_cleanup_enabled: false
+    anti_race_close_ms: 800
+    fallback: null
+    limit_orders: null
     exposure:
-      max_equity_utilization_pct: 2.00  # Testnet: allow high utilization (200% for testing)
-      max_portfolio_fraction: 2.00     # Notional-based fallback: max 200% for testnet
-
-      # Per-side utilization limits (prevent unidirectional accumulation)
+      max_equity_utilization_pct: 2.0
+      max_portfolio_fraction: 2.0
       max_side_utilization_pct:
-        long: 1.50                     # Testnet: allow 150% for testing
-        short: 1.50                    # Testnet: allow 150% for testing
-
-      # Directional imbalance control
-      max_directional_ratio: 50.0       # Max ratio between long and short margin (Relaxed to 50:1)
-
-      # Per-symbol cap (prevent concentration in single instrument)
-      per_symbol_cap_pct: 0.08         # Max 8% of equity per symbol per side
-
+        long: 1.5
+        short: 1.5
+      max_directional_ratio: 50.0
+      per_symbol_cap_pct: 0.08
       count_pending_orders: true
       exclude_reduce_only: true
-      pending_reservation_ttl_sec: 45  # Reduced from 90 for faster cleanup on testnet
-      leverage_defaults:  # Leverage per symbol - MATCH WITH BINANCE SETTINGS
+      pending_ttl_sec: 90
+      pending_reservation_ttl_sec: 45
+      post_fill_hold_ttl_sec: 5
+      positions_stale_ttl_sec: 15
+      leverage_defaults:
         BTCUSDT: 20
         ETHUSDT: 20
         SOLUSDT: 20
         XRPUSDT: 20
         DOGEUSDT: 20
         __default__: 20
-
-    # Default order type for opening positions.
-    # Valid types: LIMIT, MARKET, STOP, STOP_MARKET, TAKE_PROFIT, TAKE_PROFIT_MARKET
-    open_order_type: "MARKET"
-
-    # Parameters for each order type
+    open_order_type: MARKET
     order_params:
       LIMIT:
-        timeInForce: "GTC" # Good-Till-Cancel
+        timeInForce: GTC
       STOP_MARKET:
-        workingType: "MARK_PRICE"
+        workingType: MARK_PRICE
       TAKE_PROFIT_MARKET:
-        workingType: "MARK_PRICE"
+        workingType: MARK_PRICE
       TRAILING_STOP_MARKET:
-        callbackRate: "0.5" # 0.5%
-
-    # Order timeout watchdog configuration
+        callbackRate: '0.5'
     watchdog:
-      ack_ttl_ms: 8000    # 8 seconds for ACK timeout (unchanged)
-      fill_ttl_ms: 60000  # 60 seconds for FILL timeout (increased from 30s for testnet)
+      ack_ttl_ms: 8000
+      fill_ttl_ms: 60000
       check_interval_ms: 1000
       rps_limit: 10
-
-    # ===========================================================================
-    # ORDER EXECUTION & CANCELLATION (Balanced profile)
-    # ===========================================================================
     orders:
-      default_ttl_seconds: 15                 # Default order time-to-live (seconds)
-      market:
-        slippage_cap_bps: 10                  # Max acceptable slippage for market orders (basis points)
-      cancel:
-        idempotent: true                      # Enable idempotent cancellation (safe retry on -2011)
-        use_cancel_replace: true              # Use cancelReplace where supported (Binance Futures)
-
-
-
-  # ==============================================================================
-  # DOMAIN-LEVEL CONFIGURATION
-  # ==============================================================================
-  # IMPORTANT: These override global trading_mode for each domain
-  # Global mode: "hybrid_live_data_testnet_exec" = live data for features + testnet for execution
+      default_ttl_seconds: 15
+    preflight_backoff_ms:
+    - 120
+    - 250
+    - 400
+    - 800
+    - 1200
+    - 1800
+    min_post_interval_per_symbol_ms: 300
+    allow_trade_with_guardian_tidy_only: false
+    order_guardian:
+      unified: true
+      emit_tidy_event: true
+      cleanup_ttl_ms: 6000
+      symbol_cooldown_ms: 4000
+      poll_interval_ms: 5000
+      ledger_db_path: data/order_ledger.db
   domain_configuration:
-    # Data sources: READ from live market
     market_data:
-      trading_mode: "live"  # Read LIVE Binance data
-
+      trading_mode: live
     feature_engineering:
-      trading_mode: "live"  # Process live features (OBI, TFI, delta_price)
-
+      trading_mode: live
     decision_making:
-      trading_mode: "live"  # Make decisions based on live signals
-
+      trading_mode: live
     risk_management:
-      trading_mode: "testnet"  # Risk scoring uses testnet thresholds (safety first!)
-
-    # Execution: WRITE to testnet (safety!)
+      trading_mode: testnet
     execution_position:
-      trading_mode: "testnet"  # Place orders on TESTNET only
-
+      trading_mode: testnet
     audit_trail:
-      trading_mode: "live"  # Log from live data
-
-  # ==============================================================================
+      trading_mode: live
   risk_management:
     data_sources:
-      portfolio_state: "testnet"   # ["live"|"testnet"], default: follow-execution
-      market_data: "live"          #                   ;                                       pipeline
-
-# ==============================================================================
-# BINANCE API CONFIGURATION
-# ==============================================================================
-# All credentials come from .env file via ${VAR_NAME} template substitution
-# ConfigLoader._resolve_env_vars() automatically converts these at load time
-binance_api:
-  live:
-    api_key: "${BINANCE_FUTURES_API_KEY_LIVE}"
-    api_secret: "${BINANCE_FUTURES_API_SECRET_LIVE}"
-    rest_url: "${BINANCE_FUTURES_BASE_URL_LIVE}"
-    ws_url: "wss://fstream.binance.com"
-
-  testnet:
-    api_key: "${BINANCE_TESTNET_API_KEY}"
-    api_secret: "${BINANCE_TESTNET_API_SECRET}"
-    rest_url: "https://testnet.binancefuture.com"
-    ws_url: "wss://stream.testnet.binancefuture.com"
-
-execution:
-  allow_trade_with_guardian_tidy_only: false  # Disabled: blocks all entries on cold start (no tidy history)
-  fsm_periodic_cleanup_enabled: false
-  preflight_backoff_ms: [120, 250, 400, 800, 1200, 1800]
-  anti_race_close_ms: 800
-  min_post_interval_per_symbol_ms: 300
-  order_guardian:
-    poll_interval_ms: 5000
-
-guardian:
-  unified: true
-  emit_tidy_event: true
-  cleanup_ttl_ms: 6000
-  symbol_cooldown_ms: 4000
-  poll_interval_ms: 5000
-  ledger_db_path: "data/order_ledger.db"
+      portfolio_state: testnet
+      market_data: live

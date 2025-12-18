@@ -12,11 +12,18 @@
 # ==================================================================================
 
 mean_reversion_1m:
-  # Global enable/disable (default: false for safety)
-  enabled: false
+  # Global enable/disable
+  # CFG-STRATEGIES-SSOT-05: SSOT for MR config (no longer in trading.yaml)
+  enabled: true
   
   # Timeframe for bar aggregation
-  timeframe_sec: 60  # 1 minute bars
+  timeframe_sec: 60  # 1-minute bars
+
+  # Global allowed regimes whitelist (default; can be overridden per-asset)
+  allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+
+  # MR emission mode
+  emit_trade_intent_directly: false
   
   # ─────────────────────────────────────────────────────────────────────────────
   # Strategy Parameters (global defaults)
@@ -61,64 +68,112 @@ mean_reversion_1m:
   # ─────────────────────────────────────────────────────────────────────────────
   # Per-Asset Configurations
   # ─────────────────────────────────────────────────────────────────────────────
-  # Optuna-optimized parameters per asset
-  # Source: config/trading_1m_best_optuna.yaml
+  # Champion parameters from Phase 3 Track B production testing
+  # Source: trading.yaml optimization (December 2025)
   
   assets:
-    BTCUSDT:
-      enabled: true
-      bb_window: 20
-      min_vol_atr: 0.008       # min BB width to trade
-      sl_pct: 0.0068           # 0.68% stop loss
-      allowed_regimes:
-        - FLAT_LOW
-        - FLAT_NORMAL
-        - FLAT_HIGH
-      # R&D metrics: PnL ≈ +$45, Win Rate ≈ 65.7%
-    
-    ETHUSDT:
-      enabled: true
-      bb_window: 120           # Wider window for ETH
-      min_vol_atr: 0.025       # Higher vol threshold
-      sl_pct: 0.0282           # 2.82% stop loss (conservative)
-      allowed_regimes:
-        - FLAT_LOW
-        - FLAT_NORMAL
-        - FLAT_HIGH
-      # R&D metrics: PnL ≈ +$37, Win Rate ≈ 69.7%
-    
-    XRPUSDT:
-      enabled: true
-      bb_window: 20
-      min_vol_atr: 0.010
-      sl_pct: 0.0144           # 1.44% stop loss
-      allowed_regimes:
-        - FLAT_LOW
-        - FLAT_NORMAL
-        - FLAT_HIGH
-      # R&D metrics: PnL ≈ +$31, Win Rate ≈ 62.6%
-    
+    # --- DOGE (CHAMPION 🥇) ---
     DOGEUSDT:
       enabled: true
-      bb_window: 20
-      min_vol_atr: 0.010
-      sl_pct: 0.0197           # 1.97% stop loss (widest)
-      allowed_regimes:
-        - FLAT_LOW
-        - FLAT_NORMAL
-        - FLAT_HIGH
-      # R&D metrics: PnL ≈ +$88, Win Rate ≈ 64.4% (BEST)
+      position_mode: "STRICT"
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      strategy:
+        bb_window: 20
+        bb_num_std: 2.1
+        min_bb_width: 0.005  # (min_vol_atr from report)
+        entry_threshold: 0.05
+        # Exit parameters
+        sl_atr_mult: 1.5     # Base, overridden below
+        tp_to_mid: false     # False for outer band target
+        cooldown_sec: 210
+      # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for "жирні" угоди
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      risk:
+        position_size_usd: 150
+        max_risk_score: null
+
+    # --- BTC (BRONZE 🥉) ---
+    BTCUSDT:
+      enabled: true
+      position_mode: "STRICT"
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      strategy:
+        bb_window: 40
+        bb_num_std: 2.3
+        min_bb_width: 0.006
+        entry_threshold: 0.05
+        tp_to_mid: true      # Default behavior
+        sl_atr_mult: null
+        cooldown_sec: 0      # No cooldown
+      # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL"]
+      risk:
+        position_size_usd: 150
+        max_risk_score: null
     
+    # --- XRP (SILVER 🥈) ---
+    XRPUSDT:
+      enabled: true
+      position_mode: "STRICT"
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      strategy:
+        bb_window: 40
+        bb_num_std: 2.5
+        min_bb_width: 0.007
+        entry_threshold: 0.05
+        tp_to_mid: true
+        sl_atr_mult: null
+        cooldown_sec: 165
+      # Regime Gating - XRP stable (+$121) - similar to DOGE
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      risk:
+        position_size_usd: 150
+        max_risk_score: null
+    
+    # --- Optional assets (disabled) ---
+    ETHUSDT:
+      enabled: false
+      position_mode: "STRICT"
+      strategy:
+        bb_window: null
+        bb_num_std: null
+        min_bb_width: null
+        entry_threshold: null
+        tp_to_mid: null
+        sl_atr_mult: null
+        cooldown_sec: null
+      risk:
+        position_size_usd: null
+        max_risk_score: null
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+
     SOLUSDT:
-      enabled: false           # Break-even in R&D, disabled
-      bb_window: 60
-      min_vol_atr: 0.020
-      sl_pct: 0.0156
-      allowed_regimes:
-        - FLAT_LOW
-        - FLAT_NORMAL
-        - FLAT_HIGH
-      # R&D metrics: PnL ≈ +$1.5 (skip)
+      enabled: false
+      position_mode: "STRICT"
+      strategy:
+        bb_window: null
+        bb_num_std: null
+        min_bb_width: null
+        entry_threshold: null
+        tp_to_mid: null
+        sl_atr_mult: null
+        cooldown_sec: null
+      risk:
+        position_size_usd: null
+        max_risk_score: null
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
   
   # ─────────────────────────────────────────────────────────────────────────────
   # Regime Sizing Multipliers

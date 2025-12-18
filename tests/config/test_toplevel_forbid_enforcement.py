@@ -16,25 +16,133 @@ from apps.reference.config_models import (
 )
 
 
+def _valid_decision_kwargs():
+    return {
+        "testnet": None,
+        "production": None,
+        "signal_threshold": 0.25,
+        "cooldown_sec": None,
+        "side_bias_min_score": None,
+        "side_bias_penalty_factor": None,
+        "side_bias_target_ratio": None,
+        "side_bias_window_sec": None,
+        "retry_ttl_ms": 5000,
+        "retry_max_count": 3,
+        "retry_backoff_factor": 1.5,
+        "signal_weights": {
+            "obi": 0.2,
+            "tfi": 0.2,
+            "delta_price": 0.2,
+            "ema_bias": 0.2,
+            "volume_spike": 0.2,
+            "volatility_state": 0.0,
+            "depth_imbalance": 0.0,
+            "macro_sync": 0.0,
+        },
+        "signals": {"normalize": False, "enable_new_metrics": True},
+        "position_sizing": {
+            "min_position_size_usd": 10,
+            "liquidity_based_cap_usd": 10000,
+            "risk_fraction_q": 0.05,
+            "liquidity_kappa": 1.0,
+            "kappa_mode": "dynamic",
+            "liquidity_kappa_mode": "dynamic",
+            "risk_contract_v1": None,
+        },
+        "kelly": {
+            "base_probability": 0.5,
+            "kelly_cap": 0.25,
+            "kelly_alpha": 0.8,
+            "payoff_ratio_r": 1.5,
+        },
+        "qos": {
+            "exposure_block_cooldown_sec": 30,
+            "symbol_cooldown_sec": 1,
+            "max_intents_per_minute_per_symbol": 60,
+            "mode": "shadow",
+            "enforce": False,
+        },
+        "bar_gating": None,
+        "behavior_fsm": None,
+        "roi_exit": None,
+        "mean_reversion": None,
+        "sizing_modifiers": {},
+        "regime_thresholds": {},
+        "regime_threshold_multipliers": {},
+        "symbols_to_track": None,
+        "neutral_threshold": None,
+    }
+
+
+def _valid_execution_kwargs():
+    return {
+        "manage": None,
+        "exposure": None,
+        "watchdog": None,
+        "fallback": None,
+        "limit_orders": None,
+        "orders": None,
+        "fsm_periodic_cleanup_enabled": False,
+        "anti_race_close_ms": 250,
+        "open_order_type": None,
+        "order_params": None,
+        "preflight_backoff_ms": None,
+        "min_post_interval_per_symbol_ms": None,
+        "allow_trade_with_guardian_tidy_only": None,
+        "order_guardian": None,
+    }
+
+
+def _valid_market_data_kwargs():
+    return {
+        "poll_interval_sec": 3.0,
+        "use_multiprocessing": False,
+        "websocket_streams": ["kline_1m"],
+        "api_call_limits": {
+            "get_recent_trades": 10,
+            "get_klines": {"interval": "1m", "limit": 500},
+        },
+        "macro_sync": None,
+    }
+
+
+def _valid_exposure_kwargs():
+    return {
+        "max_equity_utilization_pct": 0.30,
+        "max_portfolio_fraction": 0.95,
+        "max_side_utilization_pct": {"long": 0.95, "short": 0.95},
+        "max_directional_ratio": 20.0,
+        "per_symbol_cap_pct": 0.10,
+        "pending_ttl_sec": 90,
+        "pending_reservation_ttl_sec": 10,
+        "post_fill_hold_ttl_sec": 5,
+        "positions_stale_ttl_sec": 60,
+        "leverage_defaults": {"long": 1, "short": 1},
+        "count_pending_orders": True,
+        "exclude_reduce_only": True,
+    }
+
+
 class TestTopLevelForbidEnforcement:
     """Contract tests: all top-level configs have extra='forbid'."""
     
     def test_decision_config_forbid_rejects_unknown_keys_strict(self):
         """DecisionConfig rejects unknown keys (extra='forbid')."""
         # Valid config OK
-        valid_config = DecisionConfig(signal_threshold=0.25)
+        valid_config = DecisionConfig(**_valid_decision_kwargs())
         assert valid_config.signal_threshold == 0.25
         
         # Unknown key rejected
         with pytest.raises(ValidationError) as exc_info:
-            DecisionConfig(unknown_field="should_fail")
+            DecisionConfig(**_valid_decision_kwargs(), unknown_field="should_fail")
+        assert "field required" not in str(exc_info.value).lower()
         assert "extra" in str(exc_info.value).lower() or \
                "unexpected" in str(exc_info.value).lower()
     
     def test_manage_config_forbid_rejects_unknown_keys_strict(self):
         """ManageConfig rejects unknown keys (extra='forbid')."""
         # Valid config OK
-        valid_config = ManageConfig(auto=True)
+        valid_config = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor=None, failsafe=None)
         assert valid_config.auto is True
         
         # Unknown key rejected
@@ -46,36 +154,39 @@ class TestTopLevelForbidEnforcement:
     def test_execution_config_forbid_rejects_unknown_keys_strict(self):
         """ExecutionConfig rejects unknown keys (extra='forbid')."""
         # Valid config OK
-        valid_config = ExecutionConfig(fsm_periodic_cleanup_enabled=False)
+        valid_config = ExecutionConfig(**_valid_execution_kwargs())
         assert valid_config.fsm_periodic_cleanup_enabled is False
         
         # Unknown key rejected
         with pytest.raises(ValidationError) as exc_info:
-            ExecutionConfig(unknown_field="should_fail")
+            ExecutionConfig(**_valid_execution_kwargs(), unknown_field="should_fail")
+        assert "field required" not in str(exc_info.value).lower()
         assert "extra" in str(exc_info.value).lower() or \
                "unexpected" in str(exc_info.value).lower()
     
     def test_market_data_config_forbid_rejects_unknown_keys_strict(self):
         """MarketDataConfig rejects unknown keys (extra='forbid')."""
         # Valid config OK
-        valid_config = MarketDataConfig(poll_interval_sec=3.0)
+        valid_config = MarketDataConfig(**_valid_market_data_kwargs())
         assert valid_config.poll_interval_sec == 3.0
         
         # Unknown key rejected
         with pytest.raises(ValidationError) as exc_info:
-            MarketDataConfig(unknown_field="should_fail")
+            MarketDataConfig(**_valid_market_data_kwargs(), unknown_field="should_fail")
+        assert "field required" not in str(exc_info.value).lower()
         assert "extra" in str(exc_info.value).lower() or \
                "unexpected" in str(exc_info.value).lower()
     
     def test_exposure_config_forbid_rejects_unknown_keys_strict(self):
         """ExposureConfig rejects unknown keys (extra='forbid')."""
         # Valid config OK
-        valid_config = ExposureConfig(max_equity_utilization_pct=0.30)
+        valid_config = ExposureConfig(**_valid_exposure_kwargs())
         assert valid_config.max_equity_utilization_pct == 0.30
         
         # Unknown key rejected
         with pytest.raises(ValidationError) as exc_info:
-            ExposureConfig(unknown_field="should_fail")
+            ExposureConfig(**_valid_exposure_kwargs(), unknown_field="should_fail")
+        assert "field required" not in str(exc_info.value).lower()
         assert "extra" in str(exc_info.value).lower() or \
                "unexpected" in str(exc_info.value).lower()
 
@@ -85,7 +196,7 @@ class TestExplicitFieldsPresent:
     
     def test_decision_config_has_all_known_fields(self):
         """DecisionConfig has all consumption-proven fields."""
-        config = DecisionConfig()
+        config = DecisionConfig(**_valid_decision_kwargs())
         
         # Core fields
         assert hasattr(config, 'signal_threshold')
@@ -117,7 +228,7 @@ class TestExplicitFieldsPresent:
     
     def test_execution_config_has_all_known_fields(self):
         """ExecutionConfig has all consumption-proven fields."""
-        config = ExecutionConfig()
+        config = ExecutionConfig(**_valid_execution_kwargs())
         
         # Core fields
         assert hasattr(config, 'manage')
@@ -141,7 +252,7 @@ class TestExplicitFieldsPresent:
     
     def test_exposure_config_has_all_known_fields(self):
         """ExposureConfig has all consumption-proven fields."""
-        config = ExposureConfig()
+        config = ExposureConfig(**_valid_exposure_kwargs())
         
         assert hasattr(config, 'max_equity_utilization_pct')
         assert hasattr(config, 'max_portfolio_fraction')
@@ -158,7 +269,7 @@ class TestExplicitFieldsPresent:
     
     def test_market_data_config_has_all_known_fields(self):
         """MarketDataConfig has all consumption-proven fields."""
-        config = MarketDataConfig()
+        config = MarketDataConfig(**_valid_market_data_kwargs())
         
         assert hasattr(config, 'poll_interval_sec')
         assert hasattr(config, 'use_multiprocessing')
@@ -172,7 +283,7 @@ class TestDeprecatedFieldsOptional:
     
     def test_decision_config_deprecated_fields_optional(self):
         """DecisionConfig deprecated fields are Optional."""
-        config = DecisionConfig()
+        config = DecisionConfig(**_valid_decision_kwargs())
         
         # Deprecated fields
         assert config.cooldown_sec is None  # Use per-instrument instead
@@ -180,7 +291,7 @@ class TestDeprecatedFieldsOptional:
     
     def test_execution_config_deprecated_fields_optional(self):
         """ExecutionConfig deprecated fields are Optional."""
-        config = ExecutionConfig()
+        config = ExecutionConfig(**_valid_execution_kwargs())
         
         # Dead fields (no consumption found)
         assert config.open_order_type is None

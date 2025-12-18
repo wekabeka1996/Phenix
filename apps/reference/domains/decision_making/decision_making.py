@@ -44,19 +44,19 @@ from apps.reference.config_models import AuroraInstrumentConfig
 
 # Track B: Import Mean Reversion handler
 try:
-    from .mean_reversion_handler import MeanReversionHandler
+    from .mean_reversion_handler import MeanReversionHandler as _MeanReversionHandler
     MEAN_REVERSION_AVAILABLE = True
 except ImportError:
     MEAN_REVERSION_AVAILABLE = False
-    MeanReversionHandler = None  # type: ignore
+    _MeanReversionHandler = None  # type: ignore[assignment]
 
 # Import AlertManager for risk gating
 try:
-    from apps.reference.telemetry.alerts import AlertManager
+    from apps.reference.telemetry.alerts import AlertManager as _AlertManager
     ALERT_MANAGER_AVAILABLE = True
 except ImportError:
     ALERT_MANAGER_AVAILABLE = False
-    AlertManager = None  # type: ignore
+    _AlertManager = None  # type: ignore[assignment]
 
 # Import alpha models
 try:
@@ -72,6 +72,8 @@ except ImportError:
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
+    from apps.reference.telemetry.alerts import AlertManager
+    from .mean_reversion_handler import MeanReversionHandler
 
 chain_logger = logging.getLogger("event_chain")
 
@@ -132,10 +134,10 @@ class DecisionMaking:
         self.intents_seen_total: int = 0  # Total intents evaluated
         self.intents_blocked_total: int = 0  # Intents blocked by risk gate
         self.last_alert_check_time: float = time.time()
-        self.alert_manager: Optional[AlertManager] = None
-        if ALERT_MANAGER_AVAILABLE:
+        self.alert_manager: Optional["AlertManager"] = None
+        if ALERT_MANAGER_AVAILABLE and _AlertManager is not None:
             try:
-                self.alert_manager = AlertManager(
+                self.alert_manager = _AlertManager(
                     config=config, logger=self.logger.getChild("alerts"))
                 self.logger.info("AlertManager initialized in DecisionMaking")
             except Exception as e:
@@ -268,10 +270,10 @@ class DecisionMaking:
                         self.update_exposure_cache)
         
         # Track B: Initialize Mean Reversion handler (feature-flagged)
-        self._mr_handler: Optional[MeanReversionHandler] = None
-        if MEAN_REVERSION_AVAILABLE:
+        self._mr_handler: Optional["MeanReversionHandler"] = None
+        if MEAN_REVERSION_AVAILABLE and _MeanReversionHandler is not None:
             try:
-                self._mr_handler = MeanReversionHandler(
+                self._mr_handler = _MeanReversionHandler(
                     fsm=self.fsm,
                     config=self.config,
                     decision_making=self
@@ -3645,7 +3647,7 @@ class DecisionMaking:
             
         # 3. Handle Flip
         # Emit Reduce-Only Close
-        rid = original_pld.get("rid", f"flip-{int(time.time())}")
+        rid = original_pld.get("rid") or f"flip-{int(time.time())}"
         self._emit_reduce_only_close(symbol, "flip_orchestration", f"{rid}-close")
         
         # Schedule Retry (Defer Open)
@@ -3659,21 +3661,26 @@ class DecisionMaking:
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
         
         # Prepare minimal original event for deferred retry
+        qty_hint = original_pld.get("qty_hint")
+        if qty_hint is None:
+            qty_hint = original_pld.get("position_size_usd")
+
         original_event = {
             "event_name": f"EVT:{source.upper()}_SIGNAL_PRODUCED" if source != "aurora" else "EVT:FEATURES_CALCULATED",
             "payload_min": {
                 "symbol": symbol,
                 "side": intent_side,
-                "qty_hint": original_pld.get("qty_hint", original_pld.get("position_size_usd")),
+                "qty_hint": qty_hint,
                 "price_ctx": original_pld.get("price_ctx"),
-                "strategy_id": original_pld.get("strategy_id", source),
+                "strategy_id": original_pld.get("strategy_id") or source,
                 "cooldown_class": "flip",
-                "rid": original_pld.get("rid", f"flip_{retry_key}"),
+                "rid": original_pld.get("rid") or f"flip_{retry_key}",
             }
         }
         
         # Build why_chain for debugging
-        why_chain = original_pld.get("why_chain", []).copy() if isinstance(original_pld.get("why_chain"), list) else []
+        why_chain_raw = original_pld.get("why_chain")
+        why_chain = why_chain_raw.copy() if isinstance(why_chain_raw, list) else []
         why_chain.extend(["opposite_position_exists", "flip_close_emitted"])
         
         self._emit_intent_deferred_v1(

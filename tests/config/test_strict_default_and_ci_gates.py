@@ -12,8 +12,10 @@ Test Plan:
 import os
 import pytest
 import yaml
+import shutil
 from pathlib import Path
 from apps.reference.config_loader import ConfigLoader
+from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -27,70 +29,12 @@ def clean_env():
 
 @pytest.fixture
 def minimal_config(tmp_path):
-    """Create minimal valid config structure."""
+    """Create a minimal *strict-valid* config directory by copying canonical SSOT."""
     config_dir = tmp_path / "config" / "aurora"
-    config_dir.mkdir(parents=True)
-    
-    # instruments.yaml
-    (config_dir / "instruments.yaml").write_text(yaml.dump({
-        "instruments": {
-            "BTCUSDT": {
-                "tick_size": "0.01",
-                "step_size": "0.00001",
-                "base_asset": "BTC",
-                "quote_asset": "USDT"
-            }
-        }
-    }))
-    
-    # aurora_instruments.yaml
-    (config_dir / "aurora_instruments.yaml").write_text(yaml.dump({
-        "aurora_instruments": {
-            "BTCUSDT": {}  # empty - no extra fields to trigger validation errors
-        }
-    }))
-    
-    # domains.yaml (simplified - no domains dict, just decision_making)
-    (config_dir / "domains.yaml").write_text(yaml.dump({
-        "decision_making": {
-            "position_sizing": {
-                "min_position_size_usd": 10
-            }
-        }
-    }))
-    
-    # regime.yaml
-    (config_dir / "regime.yaml").write_text(yaml.dump({
-        "models": {},
-        "hmm": {"states": 2}
-    }))
-    
-    # strategies.yaml
-    (config_dir / "strategies.yaml").write_text(yaml.dump({
-        "assignments": {},
-        "arbitration": {"mode": "priority"}
-    }))
-    
-    # system.yaml (must include required bridge config)
-    (config_dir / "system.yaml").write_text(yaml.dump({
-        "trading_mode": "testnet",
-        "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
-    }))
-    
-    # trading.yaml (clean, no deprecated sections)
-    (config_dir / "trading.yaml").write_text(yaml.dump({
-        "runtime": {"mode": "backtest", "exchange": "binance"},
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        },
-        "binance_api": {
-            "testnet": {"api_key": "x", "api_secret": "y", "rest_url": "https://test"},
-            "live": {"api_key": "x", "api_secret": "y", "rest_url": "https://live"},
-        },
-    }))
-    
+
+    repo_root = Path(__file__).resolve().parents[2]
+    src = repo_root / "config" / "aurora"
+    shutil.copytree(src, config_dir)
     return config_dir
 
 
@@ -123,20 +67,12 @@ def test_feature_engineering_in_trading_yaml_strict_crash(minimal_config, clean_
     """T3: trading.yaml with feature_engineering + strict → ValueError."""
     config_dir = minimal_config
     
-    # Add deprecated feature_engineering to trading.yaml
-    (config_dir / "trading.yaml").write_text(yaml.dump({
-        "runtime": {"mode": "backtest", "exchange": "binance"},
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        },
-        "binance_api": {
-            "testnet": {"api_key": "x", "api_secret": "y", "rest_url": "https://test"},
-            "live": {"api_key": "x", "api_secret": "y", "rest_url": "https://live"},
-        },
-        "feature_engineering": {"enabled": True, "lookback_periods": [120]}
-    }))
+    # Add deprecated feature_engineering to trading.yaml (preserve required structure)
+    trading_path = config_dir / "trading.yaml"
+    payload = yaml.safe_load(trading_path.read_text())
+    assert isinstance(payload, dict)
+    payload["feature_engineering"] = {"enabled": True, "lookback_periods": [120]}
+    trading_path.write_text(yaml.safe_dump(payload, sort_keys=False))
     
     # Strict mode (default) → should crash
     os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
@@ -151,20 +87,12 @@ def test_feature_engineering_in_trading_yaml_nonstrict_still_fails(minimal_confi
     """T4: Deprecated feature_engineering always fails (no soft mode)."""
     config_dir = minimal_config
     
-    # Add deprecated feature_engineering to trading.yaml
-    (config_dir / "trading.yaml").write_text(yaml.dump({
-        "runtime": {"mode": "backtest", "exchange": "binance"},
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        },
-        "binance_api": {
-            "testnet": {"api_key": "x", "api_secret": "y", "rest_url": "https://test"},
-            "live": {"api_key": "x", "api_secret": "y", "rest_url": "https://live"},
-        },
-        "feature_engineering": {"enabled": False}
-    }))
+    # Add deprecated feature_engineering to trading.yaml (preserve required structure)
+    trading_path = config_dir / "trading.yaml"
+    payload = yaml.safe_load(trading_path.read_text())
+    assert isinstance(payload, dict)
+    payload["feature_engineering"] = {"enabled": False}
+    trading_path.write_text(yaml.safe_dump(payload, sort_keys=False))
     
     # Opt-out strict mode (should not change deprecated policy)
     os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
@@ -190,6 +118,28 @@ def test_clean_config_loads_in_strict_mode(minimal_config, clean_env):
     assert loader._get_strict_mode() is True
 
 
+def test_fail_fast_missing_required_key_in_trading_yaml(minimal_config, clean_env):
+    """Negative: missing required YAML key must fail fast (no permissive defaults)."""
+    config_dir = minimal_config
+
+    trading_path = config_dir / "trading.yaml"
+    payload = yaml.safe_load(trading_path.read_text())
+    assert isinstance(payload, dict)
+
+    # Remove a required key under trading.decision
+    del payload["trading"]["decision"]["retry_ttl_ms"]
+    trading_path.write_text(yaml.safe_dump(payload))
+
+    os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
+    loader = ConfigLoader(config_dir=config_dir)
+
+    with pytest.raises(ValidationError) as exc_info:
+        loader.load_config()
+
+    msg = str(exc_info.value)
+    assert "trading.decision.retry_ttl_ms" in msg or "retry_ttl_ms" in msg
+
+
 def test_sanity_features_yaml_deprecated_strict(minimal_config, clean_env):
     """T6a: Sanity check features.yaml deprecation still works (TASK 06)."""
     config_dir = minimal_config
@@ -210,20 +160,12 @@ def test_sanity_mean_reversion_in_trading_yaml_strict(minimal_config, clean_env)
     """T6b: Sanity check MR in trading.yaml deprecation still works (TASK 08)."""
     config_dir = minimal_config
     
-    # Add deprecated mean_reversion_1m to trading.yaml
-    (config_dir / "trading.yaml").write_text(yaml.dump({
-        "runtime": {"mode": "backtest"},
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        },
-        "binance_api": {
-            "testnet": {"api_key": "x", "api_secret": "y", "rest_url": "https://test"},
-            "live": {"api_key": "x", "api_secret": "y", "rest_url": "https://live"},
-        },
-        "mean_reversion_1m": {"enabled": True}
-    }))
+    # Add deprecated mean_reversion_1m to trading.yaml (preserve required structure)
+    trading_path = config_dir / "trading.yaml"
+    payload = yaml.safe_load(trading_path.read_text())
+    assert isinstance(payload, dict)
+    payload["mean_reversion_1m"] = {"enabled": True}
+    trading_path.write_text(yaml.safe_dump(payload, sort_keys=False))
     
     # Strict mode
     os.environ.pop("STRICT_CONFIG_CONFLICTS", None)

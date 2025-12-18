@@ -18,14 +18,45 @@ from .config_contract import ConfigContractError
 LOG = logging.getLogger(__name__)
 
 
-def deep_merge(source, destination):
-    """Deep merge source dict into destination dict."""
+def deep_merge(source, destination, *, _path: str = ""):
+    """Deep merge ``source`` dict into ``destination`` dict (fail-closed on type conflicts)."""
+    if not isinstance(destination, dict):
+        raise ConfigContractError(
+            path=_path or "root",
+            why=f"Invalid config merge target: expected dict, got {type(destination).__name__}",
+        )
+
     for key, value in source.items():
+        key_str = str(key)
+        path = f"{_path}.{key_str}" if _path else key_str
+
         if isinstance(value, dict):
-            node = destination.setdefault(key, {})
-            deep_merge(value, node)
+            if key not in destination:
+                destination[key] = {}
+            else:
+                existing = destination.get(key)
+                if existing is None:
+                    raise ConfigContractError(
+                        path=path,
+                        why=(
+                            "Type conflict during config merge: cannot deep-merge a mapping into null. "
+                            "Remove the `: null` value or replace it with an explicit mapping `{}`."
+                        ),
+                    )
+                if not isinstance(existing, dict):
+                    raise ConfigContractError(
+                        path=path,
+                        why=(
+                            f"Type conflict during config merge: cannot deep-merge a mapping into "
+                            f"{type(existing).__name__}."
+                        ),
+                    )
+
+            node = destination[key]
+            deep_merge(value, node, _path=path)
         else:
             destination[key] = value
+
     return destination
 
 
@@ -126,6 +157,10 @@ class ConfigLoader:
 
         if isinstance(regime_config, dict) and "config_version" in regime_config:
             meta["regime_config_version"] = regime_config.pop("config_version")
+
+        # Keep required Optional keys present for Pydantic (zero-defaults contract).
+        meta.setdefault("system_config_version", None)
+        meta.setdefault("regime_config_version", None)
 
         return meta
 
@@ -460,6 +495,12 @@ class ConfigLoader:
                 "Remove trading.domains from trading.yaml."
             )
             raise ConfigContractError(path="trading.domains", why=msg)
+
+        # Backward-compat mirror: expose canonical root domains under trading.domains
+        # without accepting trading.domains from trading.yaml.
+        trading_block = merged_config.setdefault("trading", {})
+        if isinstance(trading_block, dict) and "domains" not in trading_block:
+            trading_block["domains"] = merged_config.get("domains")
         
         # Consistency check
         if not merged_config.get('domains'):
@@ -524,6 +565,37 @@ class ConfigLoader:
         # =========================================================================
         # END CANONICAL instruments.yaml LOGIC
         # =========================================================================
+
+        # -------------------------------------------------------------------------
+        # TradingConfig strict-schema hydration (TASK22: zero defaults)
+        # -------------------------------------------------------------------------
+        # TradingConfig requires explicit keys even for Optional[...] fields.
+        # We keep SSOT policy (trading.yaml must NOT define these), but we inject
+        # canonical values here so Pydantic validation can succeed.
+        try:
+            trading_block = merged_config.setdefault("trading", {})
+            if not isinstance(trading_block, dict):
+                trading_block = {}
+                merged_config["trading"] = trading_block
+
+            # SSOT mirrors (must be injected, not read from trading.yaml)
+            trading_block.setdefault("domains", merged_config.get("domains"))
+            trading_block.setdefault("instruments", merged_config.get("instruments", {}))
+            trading_block.setdefault("aurora_instruments", merged_config.get("aurora_instruments", {}))
+
+            # Required field at trading.* level (historically existed under decision)
+            # Prefer explicit list from decision if present; else derive from instruments SSOT.
+            decision_block = trading_block.get("decision", {})
+            if isinstance(decision_block, dict) and isinstance(decision_block.get("symbols_to_track"), list):
+                trading_block.setdefault("symbols_to_track", decision_block.get("symbols_to_track"))
+            else:
+                trading_block.setdefault("symbols_to_track", list((merged_config.get("instruments") or {}).keys()))
+
+            # Deprecated in trading.yaml (SSOT is domains.yaml). Keep explicit null for schema.
+            trading_block.setdefault("feature_engineering", None)
+        except Exception:
+            # Best-effort hydration; strict validation will surface remaining issues.
+            pass
 
         # =========================================================================
         # CANONICAL strategies.yaml LOGIC (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
@@ -616,6 +688,11 @@ class ConfigLoader:
         # Inject strategy configs at root level (e.g., mean_reversion_1m)
         for strategy_id, config_data in strategy_configs.items():
             merged_config[strategy_id] = config_data
+
+        # Zero-defaults contract: optional strategy profile blocks must be present.
+        # When strategies.yaml is missing or a strategy isn't assigned, keep explicit null.
+        merged_config.setdefault("aurora", None)
+        merged_config.setdefault("mean_reversion_1m", None)
         
         # =========================================================================
         # END REGISTRY-DRIVEN STRATEGY PROFILE LOADING
@@ -710,6 +787,9 @@ class ConfigLoader:
         # CFG-TRADING-YAML-BURN-DOWN-01: Check for SSOT conflicts
         self._validate_ssot_conflicts(resolved_config)
 
+        # TASK23B: Enforce SSOT precedence for timeframe_sec
+        self._apply_timeframe_sec_ssot_precedence(resolved_config)
+
         # --- NEW: Validate through Pydantic (startup validation) ---
         try:
             pydantic_config = PydanticAuroraConfig(**resolved_config)
@@ -746,6 +826,109 @@ class ConfigLoader:
                 loc = ".".join(str(x) for x in error["loc"])
                 LOG.error(f"  {loc}: {error['msg']}")
             raise
+
+    def _apply_timeframe_sec_ssot_precedence(self, resolved_config: dict) -> None:
+        """Apply strict SSOT precedence for timeframe_sec.
+
+        Contract (TASK23B):
+        1) aurora_instruments.<SYM>.timeframe_sec (if set) wins
+        2) mean_reversion_1m.timeframe_sec from strategy profile
+        3) If both absent while strategy assigned -> fail-closed (ConfigContractError)
+        """
+        if not isinstance(resolved_config, dict):
+            return
+
+        sr = resolved_config.get("strategies_registry")
+        if not isinstance(sr, dict):
+            return
+
+        assignments = sr.get("assignments")
+        if not isinstance(assignments, dict):
+            return
+
+        assigned_symbols: list[str] = []
+        for symbol, strategy_ids in assignments.items():
+            if not isinstance(symbol, str):
+                continue
+            if not isinstance(strategy_ids, list):
+                continue
+            if "mean_reversion_1m" in strategy_ids:
+                assigned_symbols.append(symbol)
+
+        if not assigned_symbols:
+            return
+
+        aurora_instruments = resolved_config.get("aurora_instruments")
+        if not isinstance(aurora_instruments, dict):
+            aurora_instruments = {}
+
+        overrides: set[int] = set()
+        for symbol in assigned_symbols:
+            inst_cfg = aurora_instruments.get(symbol)
+            if not isinstance(inst_cfg, dict):
+                continue
+            if "timeframe_sec" not in inst_cfg:
+                continue
+            raw = inst_cfg.get("timeframe_sec")
+            if raw is None:
+                continue
+            try:
+                overrides.add(int(raw))
+            except Exception as e:
+                raise ConfigContractError(
+                    path=f"aurora_instruments.{symbol}.timeframe_sec",
+                    symbol=symbol,
+                    why=f"Invalid timeframe_sec override: {raw!r} ({e})",
+                )
+
+        mr_block = resolved_config.get("mean_reversion_1m")
+        if mr_block is None:
+            mr_dict: dict = {}
+        elif isinstance(mr_block, dict):
+            mr_dict = mr_block
+        else:
+            raise ConfigContractError(
+                path="mean_reversion_1m",
+                why=f"Expected dict for mean_reversion_1m config, got {type(mr_block).__name__}",
+            )
+
+        profile_raw = mr_dict.get("timeframe_sec", None)
+
+        if overrides:
+            if len(overrides) != 1:
+                raise ConfigContractError(
+                    path="aurora_instruments.*.timeframe_sec",
+                    why=f"Conflicting timeframe_sec overrides for mean_reversion_1m across assigned symbols: {sorted(overrides)}",
+                )
+            effective = next(iter(overrides))
+            if effective <= 0:
+                raise ConfigContractError(
+                    path="aurora_instruments.*.timeframe_sec",
+                    why=f"timeframe_sec override must be positive, got {effective}",
+                )
+            mr_dict["timeframe_sec"] = effective
+            resolved_config["mean_reversion_1m"] = mr_dict
+            return
+
+        if profile_raw is None:
+            raise ConfigContractError(
+                path="mean_reversion_1m.timeframe_sec",
+                why="Missing timeframe_sec for assigned strategy mean_reversion_1m. Set aurora_instruments.<SYM>.timeframe_sec or mean_reversion_1m.timeframe_sec",
+            )
+
+        try:
+            profile_tf = int(profile_raw)
+        except Exception as e:
+            raise ConfigContractError(
+                path="mean_reversion_1m.timeframe_sec",
+                why=f"Invalid timeframe_sec value: {profile_raw!r} ({e})",
+            )
+
+        if profile_tf <= 0:
+            raise ConfigContractError(
+                path="mean_reversion_1m.timeframe_sec",
+                why=f"timeframe_sec must be positive, got {profile_tf}",
+            )
 
 
 _config_instance: Optional[AuroraConfig] = None

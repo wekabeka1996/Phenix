@@ -15,6 +15,14 @@ from apps.reference.config_loader import ConfigLoader
 from pydantic import ValidationError
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CANON_AURORA_DIR = _REPO_ROOT / "config" / "aurora"
+
+
+def _read_canonical_yaml(rel_path: str) -> str:
+  return (_CANON_AURORA_DIR / rel_path).read_text(encoding="utf-8")
+
+
 @pytest.fixture
 def temp_config_dir():
     """Create temporary config directory for tests."""
@@ -48,114 +56,39 @@ arbitration:
 
 @pytest.fixture
 def base_trading_yaml():
-    """Minimal trading.yaml."""
-    return """
-trading:
-  mode: testnet
-  decision:
-    signal_threshold: 0.1
-    symbols_to_track: ["ETHUSDT", "BTCUSDT"]
-  risk_management:
-    data_sources:
-      portfolio_state: "testnet"
-      market_data: "live"
-"""
+    """Canonical trading.yaml (kept in sync with strict config contract)."""
+    return _read_canonical_yaml("trading.yaml")
 
 
 @pytest.fixture
 def base_system_yaml():
-    """Minimal system.yaml."""
-    return """
-trading_mode: "testnet"
-bridge:
-  retry_scheduler:
-    max_attempts: 5
-    min_retry_delay_ms: 500
-logging:
-  level: INFO
-"""
+    """Canonical system.yaml (strict, no-defaults compatible)."""
+    return _read_canonical_yaml("system.yaml")
 
 
 @pytest.fixture
 def base_regime_yaml():
-    """Minimal regime.yaml.
-    
-    CFG-FEATURES-REGIME-SSOT-04: hmm is TOP-LEVEL key (not inside models)
-    """
-    return """
-hmm:
-  enabled: false
-models:
-  sma_trend:
-    sma_short_period: 10
-  volatility:
-    enabled: false
-  mean_reversion:
-    threshold: 0.005
-"""
+    """Canonical regime.yaml."""
+    return _read_canonical_yaml("regime.yaml")
 
 
 @pytest.fixture
 def base_domains_yaml():
-    """Minimal domains.yaml (REQUIRED по CFG-TRADING-YAML-BURN-DOWN-02)."""
-    return """
-decision_making:
-  position_sizing:
-    min_position_size_usd: 10
-  qos:
-    mode: shadow
-    enforce: false
-  features:
-    ttl_sec: 30
+    """Canonical domains.yaml (SSOT)."""
+    return _read_canonical_yaml("domains.yaml")
 
-feature_engineering:
-  enable_new_metrics: true
-"""
 
 
 @pytest.fixture
 def base_instruments_yaml():
-    """Minimal instruments.yaml."""
-    return """
-ETHUSDT:
-  symbol: ETHUSDT
-  tick_size: 0.01
-  step_size: 0.001
-  min_qty: 0.001
-  min_notional: 10.0
-  quote: USDT
-BTCUSDT:
-  symbol: BTCUSDT
-  tick_size: 0.1
-  step_size: 0.001
-  min_qty: 0.001
-  min_notional: 10.0
-  quote: USDT
-"""
+    """Canonical instruments.yaml (SSOT)."""
+    return _read_canonical_yaml("instruments.yaml")
 
 
 @pytest.fixture
 def base_aurora_instruments_yaml():
-    """Minimal aurora_instruments.yaml."""
-    return """
-ETHUSDT:
-  weights:
-    ema: 0.1
-  side_bias:
-    penalty_factor: 0.5
-    window_sec: 300
-    target_ratio: 0.6
-  exit:
-    sl_pct: 0.02
-    max_hold_sec: 600
-  take_profit:
-    tp_low_ratio: 0.5
-    tp_high_ratio: 1.0
-    partial_exit_pct: 0.5
-  trailing_stop:
-    enabled: false
-    activation_pct: 0.02
-"""
+    """Canonical aurora_instruments.yaml (SSOT)."""
+    return _read_canonical_yaml("aurora_instruments.yaml")
 
 
 @pytest.fixture(autouse=True)
@@ -163,23 +96,14 @@ def create_strategy_profiles(temp_config_dir):
     """CFG-STRATEGIES-SSOT-03: Create strategy profile files (aurora.yaml, mean_reversion_1m.yaml)."""
     strategies_dir = temp_config_dir / "strategies"
     strategies_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create aurora.yaml profile
-    aurora_profile = """aurora:
-  enabled: true
-  type: tick_based
-"""
-    (strategies_dir / "aurora.yaml").write_text(aurora_profile)
-    
-    # Create mean_reversion_1m.yaml profile
-    mr_profile = """mean_reversion_1m:
-  enabled: true
-  timeframe_sec: 60
-  strategy:
-    bb_window: 20
-    bb_num_std: 2.0
-"""
-    (strategies_dir / "mean_reversion_1m.yaml").write_text(mr_profile)
+
+    # Use canonical strategy profiles to stay in sync with strict schema.
+    (strategies_dir / "aurora.yaml").write_text(
+        _read_canonical_yaml("strategies/aurora.yaml"), encoding="utf-8"
+    )
+    (strategies_dir / "mean_reversion_1m.yaml").write_text(
+        _read_canonical_yaml("strategies/mean_reversion_1m.yaml"), encoding="utf-8"
+    )
 
 
 def test_strict_mode_fails_on_missing_strategies_yaml(

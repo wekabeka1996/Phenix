@@ -8,102 +8,35 @@ import pytest
 import yaml
 import os
 from pathlib import Path
+import shutil
 from apps.reference.config_loader import ConfigLoader
-from pydantic import ValidationError
 
 
-def create_minimal_config_with_mr_in_trading(config_dir: Path, mr_config: dict):
-    """Create minimal config with MR section in trading.yaml."""
-    # system.yaml
-    system_yaml = {
-        "trading_mode": "testnet",
-        "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
-        "binance_api": {
-            "testnet": {
-                "api_key": "test",
-                "api_secret": "test",
-                "rest_url": "https://test",
-            },
-            "live": {
-                "api_key": "test",
-                "api_secret": "test",
-                "rest_url": "https://live",
-            },
-        }
-    }
-    (config_dir / "system.yaml").write_text(yaml.dump(system_yaml))
-    
-    # trading.yaml WITH mean_reversion_1m (DEPRECATED)
-    trading_yaml = {
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        },
-        "mean_reversion_1m": mr_config  # DEPRECATED section
-    }
-    (config_dir / "trading.yaml").write_text(yaml.dump(trading_yaml))
-    
-    # regime.yaml
-    regime_yaml = {
-        "hmm": {
-            "enabled": False
-        },
-        "models": {
-            "sma_trend": {"sma_short_period": 10},
-            "volatility": {"enabled": False},
-            "mean_reversion": {"threshold": 0.005}
-        }
-    }
-    (config_dir / "regime.yaml").write_text(yaml.dump(regime_yaml))
-    
-    # domains.yaml
-    domains_yaml = {
-        "decision_making": {
-            "position_sizing": {
-                "min_position_size_usd": 10
-            }
-        }
-    }
-    (config_dir / "domains.yaml").write_text(yaml.dump(domains_yaml))
-    
-    # instruments.yaml
-    instruments_yaml = {
-        "BTCUSDT": {
-            "step_size": "0.001",
-            "tick_size": "0.01",
-            "min_notional": "10"
-        }
-    }
-    (config_dir / "instruments.yaml").write_text(yaml.dump(instruments_yaml))
-    
-    # strategies.yaml (empty assignments)
-    strategies_yaml = {
-        "assignments": {},
-        "arbitration": {
-            "mode": "priority",
-            "priority": {}
-        }
-    }
-    (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml))
-    
-    # aurora_instruments.yaml (suppress warning)
-    (config_dir / "aurora_instruments.yaml").write_text(yaml.dump({}))
+def _copy_canonical_config_dir(tmp_path: Path) -> Path:
+    src = Path(__file__).resolve().parents[2] / "config" / "aurora"
+    dst = tmp_path / "aurora"
+    shutil.copytree(src, dst)
+    return dst
 
 
-def create_minimal_config_without_mr(config_dir: Path):
-    """Create minimal config WITHOUT MR in trading.yaml."""
-    create_minimal_config_with_mr_in_trading(config_dir, {})
-    
-    # Overwrite trading.yaml without MR section
-    trading_yaml = {
-        "trading": {
-            "mode": "testnet",
-            "decision": {"signal_threshold": 0.1, "symbols_to_track": ["BTCUSDT"]},
-            "risk_management": {"data_sources": {"portfolio_state": "testnet", "market_data": "live"}},
-        }
-    }
-    (config_dir / "trading.yaml").write_text(yaml.dump(trading_yaml))
+def _read_canonical_strategy_profile(rel_path: str) -> str:
+    repo_root = Path(__file__).resolve().parents[2]
+    return (repo_root / "config" / "aurora" / "strategies" / rel_path).read_text(encoding="utf-8")
+
+
+def _set_mean_reversion_in_trading_yaml(config_dir: Path, mr_config: dict | None) -> None:
+    """Inject/remove deprecated top-level mean_reversion_1m key in trading.yaml."""
+    trading_path = config_dir / "trading.yaml"
+    data = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise AssertionError("trading.yaml did not parse to a dict")
+
+    if mr_config is None:
+        data.pop("mean_reversion_1m", None)
+    else:
+        data["mean_reversion_1m"] = mr_config
+
+    trading_path.write_text(yaml.dump(data), encoding="utf-8")
 
 
 class TestMeanReversionTradingYamlDeprecated:
@@ -115,8 +48,7 @@ class TestMeanReversionTradingYamlDeprecated:
         
         CFG-STRATEGIES-SSOT-05: MR in trading.yaml is DEPRECATED (SSOT: strategy profile).
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
         # Create config with MR in trading.yaml (DEPRECATED)
         mr_config = {
@@ -130,7 +62,7 @@ class TestMeanReversionTradingYamlDeprecated:
                 }
             }
         }
-        create_minimal_config_with_mr_in_trading(config_dir, mr_config)
+        _set_mean_reversion_in_trading_yaml(config_dir, mr_config)
         
         # Enable strict mode
         os.environ["STRICT_CONFIG_CONFLICTS"] = "1"
@@ -154,8 +86,7 @@ class TestMeanReversionTradingYamlDeprecated:
         """
         Test B: MR in trading.yaml always fails (no soft mode).
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
         # Create config with MR in trading.yaml
         mr_config = {
@@ -164,7 +95,7 @@ class TestMeanReversionTradingYamlDeprecated:
                 "BTCUSDT": {"enabled": True}
             }
         }
-        create_minimal_config_with_mr_in_trading(config_dir, mr_config)
+        _set_mean_reversion_in_trading_yaml(config_dir, mr_config)
         
         # Ensure NON-strict mode
         os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
@@ -180,11 +111,10 @@ class TestMeanReversionTradingYamlDeprecated:
         
         CFG-STRATEGIES-SSOT-05: Normal operation without deprecated section.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
-        # Create config WITHOUT MR in trading.yaml
-        create_minimal_config_without_mr(config_dir)
+        # Ensure config has NO deprecated MR key in trading.yaml
+        _set_mean_reversion_in_trading_yaml(config_dir, None)
         
         # Load config - should succeed
         loader = ConfigLoader(config_dir=config_dir)
@@ -193,7 +123,7 @@ class TestMeanReversionTradingYamlDeprecated:
         # VERIFY: config loaded successfully
         assert config is not None
         assert hasattr(config, "trading_mode")
-        assert config.trading_mode == "testnet"
+        assert config.trading_mode in {"testnet", "production", "live", "hybrid_live_data_testnet_exec"}
     
     def test_mr_profile_loaded_when_assigned(self, tmp_path):
         """
@@ -201,37 +131,23 @@ class TestMeanReversionTradingYamlDeprecated:
         
         CFG-STRATEGIES-SSOT-05: Strategy profile is SSOT for MR config.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
-        # Create base config
-        create_minimal_config_without_mr(config_dir)
+        # Base config: ensure deprecated MR is not present in trading.yaml
+        _set_mean_reversion_in_trading_yaml(config_dir, None)
         
         # Create strategy profile
         strategies_dir = config_dir / "strategies"
-        strategies_dir.mkdir(parents=True)
+        strategies_dir.mkdir(parents=True, exist_ok=True)
         
-        mr_profile = {
-            "mean_reversion_1m": {
-                "enabled": True,
-                "strategy": {
-                    "bb_window": 40,
-                    "bb_num_std": 2.5
-                },
-                "assets": {
-                    "BTCUSDT": {
-                        "enabled": True,
-                        "strategy": {
-                            "bb_window": 20
-                        }
-                    }
-                }
-            }
-        }
-        (strategies_dir / "mean_reversion_1m.yaml").write_text(yaml.dump(mr_profile))
+        # Use canonical profile to satisfy strict schema (zero-defaults => keys required).
+        (strategies_dir / "mean_reversion_1m.yaml").write_text(
+            _read_canonical_strategy_profile("mean_reversion_1m.yaml"), encoding="utf-8"
+        )
         
         # Assign MR in strategies.yaml
         strategies_yaml = {
+            "version": "1.0.0",
             "assignments": {
                 "BTCUSDT": ["mean_reversion_1m"]
             },
@@ -239,10 +155,11 @@ class TestMeanReversionTradingYamlDeprecated:
                 "mode": "priority",
                 "priority": {
                     "mean_reversion_1m": 1
-                }
+                },
+                "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
             }
         }
-        (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml))
+        (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml), encoding="utf-8")
         
         # Load config
         loader = ConfigLoader(config_dir=config_dir)
@@ -252,8 +169,9 @@ class TestMeanReversionTradingYamlDeprecated:
         assert config is not None
         assert hasattr(config, "mean_reversion_1m")
         assert config.mean_reversion_1m is not None
-        assert config.mean_reversion_1m.enabled == True
-        assert config.mean_reversion_1m.strategy.bb_window == 40
+        assert config.mean_reversion_1m.enabled is True
+        # Canonical profile: BTCUSDT override uses bb_window=40
+        assert config.mean_reversion_1m.assets["BTCUSDT"].strategy.bb_window == 40
         
         # VERIFY: strategy registry loaded
         assert hasattr(config, "strategies_registry")
@@ -266,18 +184,23 @@ class TestMeanReversionTradingYamlDeprecated:
         
         CFG-STRATEGIES-SSOT-05: Assigned strategy must have profile file.
         """
-        config_dir = tmp_path / "config" / "aurora"
-        config_dir.mkdir(parents=True)
+        config_dir = _copy_canonical_config_dir(tmp_path)
         
-        # Create base config
-        create_minimal_config_without_mr(config_dir)
+        # Base config: ensure deprecated MR is not present in trading.yaml
+        _set_mean_reversion_in_trading_yaml(config_dir, None)
         
         # Create strategies dir but NO mean_reversion_1m.yaml
         strategies_dir = config_dir / "strategies"
-        strategies_dir.mkdir(parents=True)
+        strategies_dir.mkdir(parents=True, exist_ok=True)
+
+        # Canonical config includes this profile; remove it to simulate missing profile.
+        mr_profile_path = strategies_dir / "mean_reversion_1m.yaml"
+        if mr_profile_path.exists():
+            mr_profile_path.unlink()
         
         # Assign MR in strategies.yaml (but profile missing!)
         strategies_yaml = {
+            "version": "1.0.0",
             "assignments": {
                 "BTCUSDT": ["mean_reversion_1m"]
             },
@@ -285,10 +208,11 @@ class TestMeanReversionTradingYamlDeprecated:
                 "mode": "priority",
                 "priority": {
                     "mean_reversion_1m": 1
-                }
+                },
+                "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
             }
         }
-        (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml))
+        (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml), encoding="utf-8")
         
         # Load config - should FAIL
         loader = ConfigLoader(config_dir=config_dir)

@@ -3,6 +3,36 @@ config_version: 1.0.1
 # Options: "live", "testnet", "hybrid_live_data_testnet_exec"
 trading_mode: "hybrid_live_data_testnet_exec"
 
+# REQUIRED: typed system config (SystemConfig)
+system:
+  logging:
+    level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
+    file: "logs/aurora_core.log"
+    format: "json"  # 'json' or 'text'
+    rotation:
+      max_bytes: 10485760  # 10 MB
+      backup_count: 5
+  market_data:
+    queue_maxsize: 10000
+    local_queue_maxsize: 10000
+    emit_workers: 4
+    tick_ttl_ms: 2000
+
+# REQUIRED: ops config (OpsConfig)
+ops:
+  panic_killswitch: true
+  panic_ttl_sec: null
+  quiet_hours_utc: ["22:00-06:00"]
+  allowlist_symbols: []
+  metrics_url: "http://localhost:8000/metrics"
+  reports_dir: "reports"
+
+# TASK22 (zero defaults): root-level optional keys must be explicitly present
+decision: null
+execution: null
+brackets: null
+trailing: {}
+
 # AuroraBridge (required)
 bridge:
   retry_scheduler:
@@ -55,13 +85,6 @@ hotreload_whitelist:
   - hawkes.update_interval_ms
   - hawkes.window_ms
   - hawkes.eta_max
-logging:
-  level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
-  file: "logs/aurora_core.log"
-  format: "json"  # 'json' or 'text'
-  rotation:
-    max_bytes: 10485760  # 10 MB
-    backup_count: 5
 
 # AURORA_HARDENING_V1 - Enterprise reliability features
 hardening:
@@ -89,9 +112,7 @@ hardening:
     integrity_check_enabled: true # Enable WAL integrity verification
     hash_algorithm: "sha256"     # Hash algorithm for integrity checks
 account_observer:
-  poll_interval: 5  # seconds between trade polls
-  symbols: [SOLUSDT, ETHUSDT, DOGEUSDT, XRPUSDT, BTCUSDT]  # symbols to monitor
-  trade_limit: 50  # max trades to fetch per symbol
+  poll_interval: 5
 
 position_tracking:
   positions_stale_ttl_sec: 8  # TTL for portfolio freshness check in bridge
