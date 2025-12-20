@@ -41,13 +41,13 @@ assignments:
     - aurora
   BTCUSDT:
     - aurora
-    - mean_reversion_1m
+    - mean_reversion
 
 arbitration:
   mode: priority
   priority:
     aurora: 1
-    mean_reversion_1m: 2
+    mean_reversion: 2
   logging:
     rejected_why_prefix: "ARBITRATION_REJECT"
     log_level: "INFO"
@@ -93,7 +93,7 @@ def base_aurora_instruments_yaml():
 
 @pytest.fixture(autouse=True)
 def create_strategy_profiles(temp_config_dir):
-    """CFG-STRATEGIES-SSOT-03: Create strategy profile files (aurora.yaml, mean_reversion_1m.yaml)."""
+    """CFG-STRATEGIES-SSOT-03: Create strategy profile files (aurora.yaml, mean_reversion.yaml)."""
     strategies_dir = temp_config_dir / "strategies"
     strategies_dir.mkdir(parents=True, exist_ok=True)
 
@@ -101,8 +101,8 @@ def create_strategy_profiles(temp_config_dir):
     (strategies_dir / "aurora.yaml").write_text(
         _read_canonical_yaml("strategies/aurora.yaml"), encoding="utf-8"
     )
-    (strategies_dir / "mean_reversion_1m.yaml").write_text(
-        _read_canonical_yaml("strategies/mean_reversion_1m.yaml"), encoding="utf-8"
+    (strategies_dir / "mean_reversion.yaml").write_text(
+        _read_canonical_yaml("strategies/mean_reversion.yaml"), encoding="utf-8"
     )
 
 
@@ -231,12 +231,12 @@ def test_strategies_yaml_loads_successfully(
     assert "BTCUSDT" in config.strategies_registry.assignments
     assert len(config.strategies_registry.assignments["BTCUSDT"]) == 2
     assert "aurora" in config.strategies_registry.assignments["BTCUSDT"]
-    assert "mean_reversion_1m" in config.strategies_registry.assignments["BTCUSDT"]
+    assert "mean_reversion" in config.strategies_registry.assignments["BTCUSDT"]
     
     # Verify arbitration
     assert config.strategies_registry.arbitration.mode == "priority"
     assert config.strategies_registry.arbitration.priority["aurora"] == 1
-    assert config.strategies_registry.arbitration.priority["mean_reversion_1m"] == 2
+    assert config.strategies_registry.arbitration.priority["mean_reversion"] == 2
     assert config.strategies_registry.arbitration.logging.rejected_why_prefix == "ARBITRATION_REJECT"
 
 
@@ -290,13 +290,13 @@ version: "1.0.0"
 assignments:
   BTCUSDT:
     - aurora
-    - mean_reversion_1m  # HYBRID
+    - mean_reversion  # HYBRID
 
 arbitration:
   mode: priority
   priority:
     aurora: 1
-    # MISSING: mean_reversion_1m priority
+    # MISSING: mean_reversion priority
   logging:
     rejected_why_prefix: "ARBITRATION_REJECT"
     log_level: "INFO"
@@ -316,8 +316,8 @@ arbitration:
         loader.load_config()
 
     error_msg = str(exc_info.value)
-    assert "missing_priority" in error_msg.lower() or "mean_reversion_1m" in error_msg.lower(), \
-        "ValueError должен упоминать missing_priority для mean_reversion_1m"
+    assert "missing_priority" in error_msg.lower() or "mean_reversion" in error_msg.lower(), \
+        "ValueError должен упоминать missing_priority для mean_reversion"
 
 
 if __name__ == "__main__":

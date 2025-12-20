@@ -208,7 +208,7 @@ class EnsembleModel(AlphaModel):
 
         for model_name, score in valid_scores:
             weight = Decimal(
-                str(self.weights.model_weights.get(model_name, 0.0)))
+                str(self.weights.model_weights[model_name] if model_name in self.weights.model_weights else 0.0))
             if weight > 0:
                 weighted_score = score.score * weight
                 total_weighted_score += weighted_score

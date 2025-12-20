@@ -30,7 +30,7 @@ config/aurora/trading.yaml:
 │   ├── decision             # DecisionMaking domain params
 │   ├── instruments          # ⚠️  DEPRECATED MIRROR (SSOT: instruments.yaml)
 │   ├── aurora_instruments   # Per-symbol Aurora strategy params
-│   ├── mean_reversion_1m    # Mean reversion strategy config
+│   ├── mean_reversion    # Mean reversion strategy config
 │   ├── tca_prefs            # Transaction cost analysis preferences
 │   ├── risk_budgets         # Portfolio risk budgets
 │   ├── risk                 # Risk management settings
@@ -56,7 +56,7 @@ config/aurora/trading.yaml:
 - `ETHUSDT`, `SOLUSDT`, `DOGEUSDT`, `XRPUSDT`
 - Each with: `weights`, `side_bias`, `regime_thresholds`, `exit`, `take_profit`, `trailing_stop`, `allowed_regimes`
 
-**trading.mean_reversion_1m**:
+**trading.mean_reversion**:
 - `enabled`, `assets` (DOGEUSDT, BTCUSDT, XRPUSDT configs)
 
 **trading.execution**:
@@ -77,7 +77,7 @@ config/aurora/trading.yaml:
 | `trading.instruments` | ⚠️  LEGACY MIRROR | `config_symbols.py:38,97` | **DEPRECATED** (SSOT: instruments.yaml) |
 | `trading.domains` | ⚠️  LEGACY MIRROR | `config_helpers.py:31-33` | **DEPRECATED** (SSOT: domains.yaml) |
 | `trading.aurora_instruments` | ✅ YES | Runtime per-symbol overrides | **KEEP** |
-| `trading.mean_reversion_1m` | ✅ YES | Strategy implementation | **KEEP** |
+| `trading.mean_reversion` | ✅ YES | Strategy implementation | **KEEP** |
 | `trading.risk.*` | ✅ YES | `risk_management.py:303-304` | **KEEP** |
 | `trading.execution.*` | ✅ YES | `domain_config.py:190-235`, `fsm_manage.py:112`, `binance_adapter.py:1159-1160`, `limit_order_monitor.py:93-95` | **KEEP** |
 | `trading.feature_engineering` | ✅ YES | Domain initialization | **KEEP** |
@@ -229,7 +229,7 @@ LOG.warning(
 **Kept as-is** (all actively used):
 - `trading.decision`
 - `trading.aurora_instruments`
-- `trading.mean_reversion_1m`
+- `trading.mean_reversion`
 - `trading.execution`
 - `trading.risk`
 - `trading.feature_engineering`
@@ -334,7 +334,7 @@ LOG.warning(
 
 **Candidates for extraction** (future SSOT files):
 - `trading.aurora_instruments` → `config/aurora/aurora_instruments.yaml`
-- `trading.mean_reversion_1m` → `config/aurora/strategies/mean_reversion_1m.yaml` (already exists!)
+- `trading.mean_reversion` → `config/aurora/strategies/mean_reversion.yaml` (already exists!)
 - `trading.execution.manage.brackets` → `config/aurora/brackets.yaml`
 
 **Benefit**: Cleaner separation of concerns, easier to audit/test individual config aspects
@@ -448,7 +448,7 @@ STRICT_CONFIG_CONFLICTS=1 pytest tests/test_cfg_trading_yaml_burndown_01.py::tes
 | `trading.instruments` | Precision specs | `instruments.yaml` | `trading.instruments` | **DEPRECATED** (Phase 1) |
 | `trading.domains` | Domain configs | `domains.yaml` | `trading.domains` | **DEPRECATED** (Phase 1) |
 | `trading.aurora_instruments` | Per-symbol overrides | N/A | N/A | **KEEP** |
-| `trading.mean_reversion_1m` | Strategy config | N/A | N/A | **KEEP** |
+| `trading.mean_reversion` | Strategy config | N/A | N/A | **KEEP** |
 | `trading.execution` | Execution params | N/A | N/A | **KEEP** |
 | `trading.risk` | Risk management | N/A | N/A | **KEEP** |
 | `trading.feature_engineering` | Feature params | N/A | N/A | **KEEP** |

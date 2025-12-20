@@ -54,7 +54,7 @@ def infer_location(class_name: str, field_name: str) -> tuple[str, str]:
         'BridgeConfig': 'config/aurora/system.yaml',
         'BinanceApiConfig': 'config/aurora/trading.yaml',
         'StrategiesRegistryConfig': 'config/aurora/strategies.yaml',
-        'MeanReversion1mStrategyConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
+        'MeanReversion1mStrategyConfig': 'config/aurora/strategies/mean_reversion.yaml',
         'RegimeDetectorConfig': 'config/aurora/regime.yaml',
         'RegimeModelsConfig': 'config/aurora/regime.yaml',
         'AuroraInstrumentConfig': 'config/aurora/aurora_instruments.yaml',
@@ -73,13 +73,13 @@ def infer_location(class_name: str, field_name: str) -> tuple[str, str]:
         'ROIExitConfig': 'config/aurora/trading.yaml',
         'FailsafeConfig': 'config/aurora/trading.yaml',
         'MeanReversionConfig': 'config/aurora/trading.yaml',
-        'MRStrategyParamsConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
-        'MRRegimeThresholdsConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
-        'MRStrategyOverrideConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
-        'MRAssetRiskConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
-        'MRAssetConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
-        'MRRegimeSizingConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
-        'MRRiskConfig': 'config/aurora/strategies/mean_reversion_1m.yaml',
+        'MRStrategyParamsConfig': 'config/aurora/strategies/mean_reversion.yaml',
+        'MRRegimeThresholdsConfig': 'config/aurora/strategies/mean_reversion.yaml',
+        'MRStrategyOverrideConfig': 'config/aurora/strategies/mean_reversion.yaml',
+        'MRAssetRiskConfig': 'config/aurora/strategies/mean_reversion.yaml',
+        'MRAssetConfig': 'config/aurora/strategies/mean_reversion.yaml',
+        'MRRegimeSizingConfig': 'config/aurora/strategies/mean_reversion.yaml',
+        'MRRiskConfig': 'config/aurora/strategies/mean_reversion.yaml',
         'StrategiesArbitrationLoggingConfig': 'config/aurora/strategies.yaml',
         'StrategiesArbitrationConfig': 'config/aurora/strategies.yaml',
         'DecisionModeOverrideConfig': 'config/aurora/trading.yaml',
@@ -157,7 +157,7 @@ def infer_location(class_name: str, field_name: str) -> tuple[str, str]:
             yaml_path = field_name
         elif field_name in ['trading', 'binance_api', 'account_observer', 'decision', 'execution', 'brackets', 'trailing']:
             yaml_path = field_name
-        elif field_name in ['domains', 'instruments', 'aurora_instruments', 'strategies_registry', 'mean_reversion_1m', 'models']:
+        elif field_name in ['domains', 'instruments', 'aurora_instruments', 'strategies_registry', 'mean_reversion', 'models']:
             yaml_path = field_name
         else:
             yaml_path = field_name
@@ -192,7 +192,7 @@ def infer_location(class_name: str, field_name: str) -> tuple[str, str]:
     elif class_name == 'StrategiesRegistryConfig':
         yaml_path = f"strategies_registry.{field_name}"
     elif class_name == 'MeanReversion1mStrategyConfig':
-        yaml_path = f"mean_reversion_1m.{field_name}"
+        yaml_path = f"mean_reversion.{field_name}"
     elif class_name == 'RegimeDetectorConfig':
         yaml_path = f"models.{field_name}"
     elif class_name == 'RegimeModelsConfig':
@@ -228,19 +228,19 @@ def infer_location(class_name: str, field_name: str) -> tuple[str, str]:
     elif class_name == 'MeanReversionConfig':
         yaml_path = f"trading.decision.mean_reversion.{field_name}"
     elif class_name == 'MRStrategyParamsConfig':
-        yaml_path = f"mean_reversion_1m.strategy.{field_name}"
+        yaml_path = f"mean_reversion.strategy.{field_name}"
     elif class_name == 'MRRegimeThresholdsConfig':
-        yaml_path = f"mean_reversion_1m.regime_thresholds.{field_name}"
+        yaml_path = f"mean_reversion.regime_thresholds.{field_name}"
     elif class_name == 'MRStrategyOverrideConfig':
-        yaml_path = f"mean_reversion_1m.strategy_override.{field_name}"
+        yaml_path = f"mean_reversion.strategy_override.{field_name}"
     elif class_name == 'MRAssetRiskConfig':
-        yaml_path = f"mean_reversion_1m.asset_risk.{field_name}"
+        yaml_path = f"mean_reversion.asset_risk.{field_name}"
     elif class_name == 'MRAssetConfig':
-        yaml_path = f"mean_reversion_1m.{field_name}"
+        yaml_path = f"mean_reversion.{field_name}"
     elif class_name == 'MRRegimeSizingConfig':
-        yaml_path = f"mean_reversion_1m.regime_sizing.{field_name}"
+        yaml_path = f"mean_reversion.regime_sizing.{field_name}"
     elif class_name == 'MRRiskConfig':
-        yaml_path = f"mean_reversion_1m.risk.{field_name}"
+        yaml_path = f"mean_reversion.risk.{field_name}"
     elif class_name == 'StrategiesArbitrationLoggingConfig':
         yaml_path = f"strategies_registry.arbitration.logging.{field_name}"
     elif class_name == 'StrategiesArbitrationConfig':

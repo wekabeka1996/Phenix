@@ -6,59 +6,47 @@
     ".github/workflows/gemini-scheduled-triage.yml": {},
     ".github/workflows/gemini-triage.yml": {},
     ".github/workflows/gemini-dispatch.yml": {},
-    "configs/master_config_v1.yaml": {
-      "execution": {
-        "preflight_backoff_ms": [
-          120,
-          250,
-          400,
-          800,
-          1200,
-          1800
-        ],
-        "anti_race_close_ms": 800,
-        "min_post_interval_per_symbol_ms": 300,
-        "allow_trade_with_guardian_tidy_only": false,
-        "fsm_periodic_cleanup_enabled": false
-      },
-      "ops": {
-        "metrics_url": "http://127.0.0.1:8000/metrics",
-        "reports_dir": "reports"
-      }
-    },
+    "tools/config_default_path_map.yaml": {},
     "deepseek_workspace/offline_analysis/aurora_market_llm-20251129T235042Z-1-001/aurora_market_llm/wandb/run-20251129_190756-0kngxlrh/files/config.yaml": {},
-    "config/aurora/features.yaml": {},
+    "docs_arhive/Метрики/trading_1m_best_optuna.yaml": {},
+    "docs_arhive/Метрики/aurora_optimal_production_v1.yaml": {},
+    "docs_arhive/Метрики/traiding_best_optuna_3_5m.yaml": {},
+    "docs_arhive/Метрики/aurora_phase3_production.yaml": {},
+    "docs_arhive/Метрики/aurora_optimal_full_v1.yaml": {},
+    "docs_arhive/Метрики/aurora_fullscale_optuna_v1.yaml": {},
+    "docs_arhive/Метрики/instruments/XRPUSDT.yaml": {},
+    "docs_arhive/Метрики/instruments/_index.yaml": {},
+    "docs_arhive/Метрики/instruments/BTCUSDT.yaml": {},
+    "docs_arhive/Метрики/instruments/SOLUSDT.yaml": {},
+    "docs_arhive/Метрики/instruments/ETHUSDT.yaml": {},
+    "docs_arhive/Метрики/instruments/DOGEUSDT.yaml": {},
     "config/aurora/regime.yaml": {},
-    "config/aurora/system.yaml": {},
-    "config/aurora/instruments.yaml": {},
-    "config/aurora/trading.yaml": {
-      "execution": {
-        "allow_trade_with_guardian_tidy_only": false,
-        "fsm_periodic_cleanup_enabled": false,
-        "preflight_backoff_ms": [
-          120,
-          250,
-          400,
-          800,
-          1200,
-          1800
+    "config/aurora/system.yaml": {
+      "execution": null,
+      "ops": {
+        "panic_killswitch": true,
+        "panic_ttl_sec": null,
+        "quiet_hours_utc": [
+          "22:00-06:00"
         ],
-        "anti_race_close_ms": 800,
-        "min_post_interval_per_symbol_ms": 300,
-        "order_guardian": {
-          "poll_interval_ms": 5000
-        }
-      }
+        "allowlist_symbols": [],
+        "metrics_url": "http://localhost:8000/metrics",
+        "reports_dir": "reports"
+      },
+      "decision": null
     },
+    "config/aurora/instruments.yaml": {},
+    "config/aurora/trading.yaml": {},
     "config/aurora/aurora_instruments.yaml": {},
     "config/aurora/domains.yaml": {},
     "config/aurora/strategies.yaml": {},
     "config/aurora/strategies/trading_1m_best_optuna.yaml": {},
+    "config/aurora/strategies/aurora.yaml": {},
     "config/aurora/strategies/aurora_optimal_production_v1.yaml": {},
     "config/aurora/strategies/traiding_best_optuna_3_5m.yaml": {},
     "config/aurora/strategies/aurora_phase3_production.yaml": {},
     "config/aurora/strategies/aurora_optimal_full_v1.yaml": {},
-    "config/aurora/strategies/mean_reversion_1m.yaml": {},
+    "config/aurora/strategies/mean_reversion.yaml": {},
     "config/aurora/strategies/aurora_fullscale_optuna_v1.yaml": {},
     "config/aurora/instruments/XRPUSDT.yaml": {},
     "config/aurora/instruments/_index.yaml": {},
@@ -87,17 +75,6 @@
     "tests/config/aurora/regime.yaml": {},
     "tests/config/aurora/system.yaml": {},
     "tests/config/aurora/trading.yaml": {},
-    "configs/frozen/master_config_v1_20251030.yaml": {
-      "execution": {
-        "manage": {
-          "auto": false
-        }
-      },
-      "ops": {
-        "metrics_url": "http://127.0.0.1:8000/metrics",
-        "reports_dir": "reports"
-      }
-    },
     "apps/reference/dictionaries/global_v2_2.yaml": {
       "ops": [
         "ASK",
@@ -109,24 +86,5 @@
       ]
     }
   },
-  "merged_master": {
-    "execution": {
-      "preflight_backoff_ms": [
-        120,
-        250,
-        400,
-        800,
-        1200,
-        1800
-      ],
-      "anti_race_close_ms": 800,
-      "min_post_interval_per_symbol_ms": 300,
-      "allow_trade_with_guardian_tidy_only": false,
-      "fsm_periodic_cleanup_enabled": false
-    },
-    "ops": {
-      "metrics_url": "http://127.0.0.1:8000/metrics",
-      "reports_dir": "reports"
-    }
-  }
+  "merged_master": {}
 }

@@ -309,11 +309,24 @@ class BinanceAdapter(AbstractExchangeAdapter):
             # Retry on timeout
             import httpx
             import httpcore
-            timeout_exceptions = (
-                httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException,
-                httpcore.ReadTimeout, httpcore.ConnectTimeout, httpcore.TimeoutException
+
+            def _is_exc_type(obj: object) -> bool:
+                return isinstance(obj, type) and issubclass(obj, BaseException)
+
+            timeout_exceptions = tuple(
+                t
+                for t in (
+                    getattr(httpx, "ReadTimeout", None),
+                    getattr(httpx, "ConnectTimeout", None),
+                    getattr(httpx, "TimeoutException", None),
+                    getattr(httpcore, "ReadTimeout", None),
+                    getattr(httpcore, "ConnectTimeout", None),
+                    getattr(httpcore, "TimeoutException", None),
+                )
+                if _is_exc_type(t)
             )
-            if isinstance(e, timeout_exceptions):
+
+            if timeout_exceptions and isinstance(e, timeout_exceptions):
                 LOG.warning(f"Timeout on {method} {path}, retrying once...")
                 await asyncio.sleep(0.5)
                 return await _do(method, base_params)

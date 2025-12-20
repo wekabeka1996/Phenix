@@ -2,14 +2,14 @@
 
 ## TL;DR
 
-`timeframe_sec` for **mean_reversion_1m** comes from the strategy profile SSOT by default, but can be overridden per-symbol via `aurora_instruments.<SYM>.timeframe_sec`. We enforce a single precedence contract and fail-closed when both sources are missing.
+`timeframe_sec` for **mean_reversion** comes from the strategy profile SSOT by default, but can be overridden per-symbol via `aurora_instruments.<SYM>.timeframe_sec`. We enforce a single precedence contract and fail-closed when both sources are missing.
 
 ## SSOT sources (YAML)
 
 ### Strategy profile (default)
 
-- File: `config/aurora/strategies/mean_reversion_1m.yaml`
-- Key: `mean_reversion_1m.timeframe_sec`
+- File: `config/aurora/strategies/mean_reversion.yaml`
+- Key: `mean_reversion.timeframe_sec`
 - Previously observed mismatch: value `180` with comment “1 minute bars”
   - Fixed to `60` to match 1-minute bars.
 
@@ -35,12 +35,12 @@
 
 ## Effective precedence (contract)
 
-For strategy `mean_reversion_1m` **when it is assigned in** `strategies_registry.assignments`:
+For strategy `mean_reversion` **when it is assigned in** `strategies_registry.assignments`:
 
 1. `aurora_instruments.<SYM>.timeframe_sec` if not null (highest precedence)
-2. `mean_reversion_1m.timeframe_sec` from strategy profile
+2. `mean_reversion.timeframe_sec` from strategy profile
 3. If both are missing → **ConfigContractError** (fail-closed)
 
 ## Why this fixes “180 != 60”
 
-The observed mismatch was traced to the SSOT profile value in `mean_reversion_1m.yaml` (comment/value inconsistency). After correcting SSOT to `60` and enforcing a single precedence path, tests stop depending on accidental runtime fallbacks or magic.
+The observed mismatch was traced to the SSOT profile value in `mean_reversion.yaml` (comment/value inconsistency). After correcting SSOT to `60` and enforcing a single precedence path, tests stop depending on accidental runtime fallbacks or magic.

@@ -54,12 +54,12 @@ class MomentumAlphaModel(AlphaModel):
         """
 
         # Extract momentum features
-        mom_5m = Decimal(str(features.get('price_momentum_5m', 0)))
-        mom_1h = Decimal(str(features.get('price_momentum_1h', 0)))
-        mom_1d = Decimal(str(features.get('price_momentum_1d', 0)))
-        vol_mom_5m = Decimal(str(features.get('volume_momentum_5m', 0)))
-        rsi = Decimal(str(features.get('rsi_14', 50)))
-        macd_signal = Decimal(str(features.get('macd_signal', 0)))
+        mom_5m = Decimal(str(features["price_momentum_5m"] if "price_momentum_5m" in features else 0))
+        mom_1h = Decimal(str(features["price_momentum_1h"] if "price_momentum_1h" in features else 0))
+        mom_1d = Decimal(str(features["price_momentum_1d"] if "price_momentum_1d" in features else 0))
+        vol_mom_5m = Decimal(str(features["volume_momentum_5m"] if "volume_momentum_5m" in features else 0))
+        rsi = Decimal(str(features["rsi_14"] if "rsi_14" in features else 50))
+        macd_signal = Decimal(str(features["macd_signal"] if "macd_signal" in features else 0))
 
         # Calculate weighted momentum score
         short_weight = Decimal('0.3')

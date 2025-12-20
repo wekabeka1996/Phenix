@@ -22,8 +22,9 @@ Features computed (9 base + 3 V2):
 import decimal
 import json
 import logging
+import time
 from typing import Dict, Any, TYPE_CHECKING, Optional
-from collections import deque
+from collections import deque, defaultdict
 import os
 
 from vfoundation.core.protocol import Message
@@ -40,6 +41,12 @@ from apps.reference.domains.feature_engineering.types import (
 from apps.reference.domains.feature_engineering.calculation_engine import (
     FeatureCalculationEngine,
 )
+from apps.reference.domains.feature_engineering.macro_sync_resampler import MacroSyncResampler
+
+# TASK24: Data-quality metrics (explicit; no silent degrade)
+from apps.reference.telemetry.metrics import inc_data_quality_bad_dt, inc_data_quality_drop
+from apps.reference.telemetry.metrics import inc_config_contract_violation
+from apps.reference.config_contract import ConfigContractError
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -93,6 +100,20 @@ class FeatureEngineering:
             anchor: deque(maxlen=self.cfg.macro_sync_window)
             for anchor in self.cfg.macro_sync_anchors
         }
+        self._anchor_last_ts_ms: Dict[str, int] = {anchor: 0 for anchor in self.cfg.macro_sync_anchors}
+        self._macro_sync_resampler = MacroSyncResampler(
+            bin_ms=self.cfg.macro_sync_bin_ms,
+            window_bins=self.cfg.macro_sync_window,
+            min_bins=self.cfg.macro_sync_min_buffer,
+            ttl_ms=self.cfg.macro_sync_ttl_ms,
+            max_gap_bins=self.cfg.macro_sync_max_gap_bins,
+            eps=self.cfg.macro_sync_eps,
+        )
+        self._macro_sync_anchor_ts_missing: bool = False
+
+        # Warmup/readiness tracking
+        self._ticks_seen: dict[str, int] = defaultdict(int)
+        self._last_tick_ts_ms: int = 0
         
         # Register event listener
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
@@ -131,14 +152,22 @@ class FeatureEngineering:
         except Exception as e:
             self.logger.error(f"Error logging features to file for {symbol}: {e}")
 
-    def update_anchor_price(self, anchor: str, price: str) -> None:
+    def update_anchor_price(self, anchor: str, price: str, ts_ms: int | None = None) -> None:
         """Update anchor price buffer directly from MarketData."""
-        try:
-            if anchor in self.anchor_prices:
-                self.anchor_prices[anchor].append(decimal.Decimal(price))
-                self.logger.debug(f"Updated anchor {anchor} price: {price}")
-        except Exception as e:
-            self.logger.error(f"Error updating anchor price {anchor}: {e}")
+        if ts_ms is None or int(ts_ms) <= 0:
+            inc_config_contract_violation(path="market_data.anchor.ts_ms", symbol=str(anchor))
+            self._macro_sync_anchor_ts_missing = True
+            raise ConfigContractError(
+                path="market_data.anchor.ts_ms",
+                symbol=str(anchor),
+                why="Missing exchange-derived ts_ms for EVT:ANCHOR_UPDATED (wallclock fallback forbidden)",
+            )
+        if anchor in self.anchor_prices:
+            self.anchor_prices[anchor].append(decimal.Decimal(price))
+            self._anchor_last_ts_ms[anchor] = int(ts_ms)
+            self._macro_sync_resampler.update_anchor(anchor, ts_ms=int(ts_ms), price=float(decimal.Decimal(price)))
+            self._macro_sync_anchor_ts_missing = False
+            self.logger.debug(f"Updated anchor {anchor} price: {price}")
 
     def _on_anchor_updated_event(self, event: Message) -> None:
         """
@@ -150,8 +179,9 @@ class FeatureEngineering:
         try:
             anchor = event.pld.get("anchor")
             price = event.pld.get("price")
+            ts_ms = event.pld.get("ts_ms")
             if anchor and price:
-                self.update_anchor_price(anchor, price)
+                self.update_anchor_price(anchor, price, int(ts_ms) if ts_ms else None)
         except Exception as e:
             self.logger.error(f"Error processing EVT:ANCHOR_UPDATED: {e}")
 
@@ -173,13 +203,21 @@ class FeatureEngineering:
                 vol_window_trades=0.0,
                 vol_hist=deque(maxlen=self.cfg.volume_sma_length),
                 vol_stats=(0, 0.0, 0.0),  # FTR-03: Welford stats
+                volume_rate_hist=deque(maxlen=self.cfg.volume_spike_sma_len),
+                volume_rate_current=None,
+                volume_spike_ready=False,
+                volume_spike_not_ready_reason=None,
                 range_window_start_ts=None,
                 range_min=None,
                 range_max=None,
                 range_hist=deque(maxlen=self.cfg.volatility_sma_length),  # Now float for Welford
                 range_stats=(0, 0.0, 0.0),  # FTR-03: Welford stats
+                volatility_state_ready=False,
+                volatility_state_not_ready_reason=None,
                 returns_buffer=deque(maxlen=self.cfg.macro_sync_window),
                 prev_price=None,
+                macro_sync_ready=False,
+                macro_sync_not_ready_reason=None,
             )
             cold = ColdState()
             self.symbol_states[symbol] = SymbolFeatureState(hot=hot, cold=cold)
@@ -205,10 +243,10 @@ class FeatureEngineering:
         state = self._get_symbol_state(symbol).hot
         return self._engine.compute_ema_bias(state)
 
-    def _update_volume_spike(self, symbol: str, current_tick: dict) -> None:
-        """Update volume window with real volumes."""
+    def _update_volume_spike(self, symbol: str, volume: decimal.Decimal, time_diff_ms: int) -> None:
+        """TASK24.C2: Update time-normalized volume spike rate samples."""
         state = self._get_symbol_state(symbol).hot
-        self._engine.update_volume_spike(state, current_tick)
+        self._engine.update_volume_spike(state, volume=volume, time_diff_ms=time_diff_ms)
 
     def _compute_volume_spike(self, symbol: str) -> decimal.Decimal:
         """Compute volume spike = vol_window / mean(vol), normalized to [0,1]."""
@@ -239,9 +277,10 @@ class FeatureEngineering:
         """Compute bid-ask spread in basis points."""
         return self._engine.compute_spread_bps(best_bid, best_ask, mid_price)
     
-    def _compute_large_trade_imbalance(self, current_tick: dict) -> decimal.Decimal:
-        """Compute large trade imbalance from buy/sell trade counts."""
-        return self._engine.compute_large_trade_imbalance(current_tick)
+    def _compute_large_trade_imbalance(self, symbol: str, current_tick: dict) -> decimal.Decimal:
+        """Compute large trade imbalance (TASK31, explicit readiness)."""
+        state = self._get_symbol_state(symbol).hot
+        return self._engine.compute_large_trade_imbalance(current_tick, state=state)
 
     def _compute_depth_imbalance(self, bid_size: decimal.Decimal, ask_size: decimal.Decimal) -> decimal.Decimal:
         """Compute depth imbalance with Laplace smoothing, normalized to [0,1]."""
@@ -255,7 +294,22 @@ class FeatureEngineering:
     def _compute_macro_sync(self, symbol: str) -> decimal.Decimal:
         """Compute macro_sync = correlation with anchor returns, normalized to [0,1]."""
         state = self._get_symbol_state(symbol).hot
-        return self._engine.compute_macro_sync(state, self.anchor_prices)
+        if self._last_tick_ts_ms <= 0:
+            inc_config_contract_violation(path="market_data.tick.ts", symbol=str(symbol))
+            state.macro_sync_ready = False
+            state.macro_sync_not_ready_reason = "tick_ts_missing"
+            return self.cfg.neutral_value
+        if self._macro_sync_anchor_ts_missing:
+            state.macro_sync_ready = False
+            state.macro_sync_not_ready_reason = "anchor_ts_missing"
+            return self.cfg.neutral_value
+        return self._engine.compute_macro_sync_v2(
+            state,
+            self._macro_sync_resampler,
+            symbol=symbol,
+            anchors=self.cfg.macro_sync_anchors,
+            current_ts_ms=int(self._last_tick_ts_ms),
+        )
 
     @staticmethod
     def _pearson_correlation(x: list, y: list) -> float:
@@ -285,9 +339,9 @@ class FeatureEngineering:
                 self.logger.warning("EVT:FUNDING_UPDATE missing symbol")
                 return
             
-            funding_rate_str = event.pld.get("funding_rate", "0")
+            funding_rate_str = event.pld["funding_rate"] if "funding_rate" in event.pld else "0"
             funding_rate = decimal.Decimal(str(funding_rate_str))
-            next_funding_ts = int(event.pld.get("next_funding_ts", 0))
+            next_funding_ts = int(event.pld["next_funding_ts"] if "next_funding_ts" in event.pld else 0)
             
             # Get or create symbol state
             state = self._get_symbol_state(symbol)
@@ -319,9 +373,9 @@ class FeatureEngineering:
                 self.logger.warning("EVT:OI_UPDATE missing symbol")
                 return
             
-            oi_str = event.pld.get("open_interest", "0")
+            oi_str = event.pld["open_interest"] if "open_interest" in event.pld else "0"
             open_interest = decimal.Decimal(str(oi_str))
-            ts = int(event.pld.get("ts", 0))
+            ts = int(event.pld["ts"] if "ts" in event.pld else 0)
             
             # Get or create symbol state
             state = self._get_symbol_state(symbol)
@@ -344,11 +398,20 @@ class FeatureEngineering:
         symbol = event.pld.get("symbol")
         if not symbol:
             return
+        ts_pld = event.pld.get("ts")
+        if ts_pld is None:
+            inc_config_contract_violation(path="market_data.tick.ts", symbol=str(symbol))
+            inc_data_quality_drop(domain="feature_engineering", reason="tick_ts_missing")
+            return
 
-        # Update anchor prices if this is an anchor
-        if symbol in self.cfg.macro_sync_anchors:
-            price = decimal.Decimal(str(event.pld.get("price", 0)))
+        # Update anchor prices if this is an anchor and config allows tick-based updates.
+        # Default (anchor_update_from_ticks=false): anchors are updated via EVT:ANCHOR_UPDATED only.
+        if self.cfg.macro_sync_anchor_update_from_ticks and symbol in self.cfg.macro_sync_anchors:
+            price = decimal.Decimal(str(event.pld["price"] if "price" in event.pld else 0))
             self.anchor_prices[symbol].append(price)
+            self._anchor_last_ts_ms[symbol] = int(ts_pld)
+            if price > 0:
+                self._macro_sync_resampler.update_anchor(symbol, ts_ms=int(ts_pld), price=float(price))
 
         current_tick = event.pld
         last_tick = self.last_tick_data.get(symbol)
@@ -368,13 +431,17 @@ class FeatureEngineering:
                 self._init_symbol_state(symbol)
 
             # Parse tick data
-            bid_size = decimal.Decimal(str(current_tick.get("bid_size", 0)))
-            ask_size = decimal.Decimal(str(current_tick.get("ask_size", 0)))
-            buy_volume = decimal.Decimal(str(current_tick.get("buy_volume", 0)))
-            sell_volume = decimal.Decimal(str(current_tick.get("sell_volume", 0)))
-            price = decimal.Decimal(str(current_tick.get("price", 0)))
-            prev_price = decimal.Decimal(str(last_tick.get("price", 0)))
+            bid_size = decimal.Decimal(str(current_tick["bid_size"] if "bid_size" in current_tick else 0))
+            ask_size = decimal.Decimal(str(current_tick["ask_size"] if "ask_size" in current_tick else 0))
+            buy_volume = decimal.Decimal(str(current_tick["buy_volume"] if "buy_volume" in current_tick else 0))
+            sell_volume = decimal.Decimal(str(current_tick["sell_volume"] if "sell_volume" in current_tick else 0))
+            price = decimal.Decimal(str(current_tick["price"] if "price" in current_tick else 0))
+            prev_price = decimal.Decimal(str(last_tick["price"] if "price" in last_tick else 0))
             time_diff = current_tick["ts"] - last_tick["ts"]
+            self._last_tick_ts_ms = int((current_tick["ts"] if "ts" in current_tick else 0) or 0)
+            self._ticks_seen[symbol] += 1
+            if self._last_tick_ts_ms > 0 and price > 0:
+                self._macro_sync_resampler.update_symbol(symbol, ts_ms=self._last_tick_ts_ms, price=float(price))
 
             # ================================================================
             # BASE FEATURES (always computed)
@@ -419,8 +486,11 @@ class FeatureEngineering:
                 self._update_ema(symbol, price)
                 features["ema_bias"] = str(self._compute_ema_bias(symbol))
 
-                # Volume Spike
-                self._update_volume_spike(symbol, current_tick)
+                # Volume Spike (TASK24.C2: time-normalized, dt-aware)
+                if time_diff <= 0:
+                    inc_data_quality_bad_dt(domain="feature_engineering")
+                else:
+                    self._update_volume_spike(symbol, buy_volume + sell_volume, int(time_diff))
                 features["volume_spike"] = str(self._compute_volume_spike(symbol))
 
                 # Volatility State
@@ -431,7 +501,6 @@ class FeatureEngineering:
                 features["depth_imbalance"] = str(self._compute_depth_imbalance(bid_size * price, ask_size * price))
 
                 # Macro Sync
-                self._update_macro_sync_buffer(symbol, price, time_diff)
                 features["macro_sync"] = str(self._compute_macro_sync(symbol))
                 
                 # ================================================================
@@ -441,12 +510,22 @@ class FeatureEngineering:
                 # Volume Z-Score (normalized via tanh)
                 features["volume_zscore"] = str(self._compute_volume_zscore(symbol))
                 
-                # Large Trade Imbalance
-                features["large_trade_imbalance"] = str(self._compute_large_trade_imbalance(current_tick))
+                # Large Trade Imbalance (TASK31)
+                features["large_trade_imbalance"] = str(self._compute_large_trade_imbalance(symbol, current_tick))
                 
                 # Spread in basis points
-                best_bid = decimal.Decimal(str(current_tick.get("best_bid", current_tick.get("bid", price))))
-                best_ask = decimal.Decimal(str(current_tick.get("best_ask", current_tick.get("ask", price))))
+                best_bid_raw = (
+                    current_tick["best_bid"]
+                    if "best_bid" in current_tick
+                    else (current_tick["bid"] if "bid" in current_tick else price)
+                )
+                best_ask_raw = (
+                    current_tick["best_ask"]
+                    if "best_ask" in current_tick
+                    else (current_tick["ask"] if "ask" in current_tick else price)
+                )
+                best_bid = decimal.Decimal(str(best_bid_raw))
+                best_ask = decimal.Decimal(str(best_ask_raw))
                 mid_price = (best_bid + best_ask) / 2 if best_bid > 0 and best_ask > 0 else price
                 features["spread_bps"] = str(self._compute_spread_bps(best_bid, best_ask, mid_price))
 
@@ -467,11 +546,49 @@ class FeatureEngineering:
                     if oi_delta is not None:
                         features["oi_delta_pct"] = str(oi_delta)
 
+            # Warmup/readiness contract (TASK24.B/C): explicit; DecisionMaking blocks trading until full_ready.
+            warmup: dict[str, object] = {
+                "ticks_seen": int(self._ticks_seen[symbol] if symbol in self._ticks_seen else 0),
+                "full_ready": True,
+                "ready": {},
+                "reasons": [],
+            }
+            if self.cfg.enable_new_metrics:
+                hot = self._get_symbol_state(symbol).hot
+                ready_map = {
+                    "ema_bias": bool(hot.ema_long is not None and hot.ema_short is not None and hot.ema_long > 0),
+                    "volume_spike": bool(hot.volume_spike_ready),
+                    "volatility_state": bool(hot.volatility_state_ready),
+                    "macro_sync": bool(hot.macro_sync_ready) if self.cfg.macro_sync_enabled else True,
+                }
+                reasons: list[str] = []
+                if not hot.volume_spike_ready and hot.volume_spike_not_ready_reason:
+                    reasons.append(f"volume_spike:{hot.volume_spike_not_ready_reason}")
+                    inc_data_quality_drop(domain="feature_engineering", reason="volume_spike_not_ready")
+                if not hot.volatility_state_ready and hot.volatility_state_not_ready_reason:
+                    reasons.append(f"volatility_state:{hot.volatility_state_not_ready_reason}")
+                    inc_data_quality_drop(domain="feature_engineering", reason="volatility_state_not_ready")
+                if self.cfg.macro_sync_enabled and (not hot.macro_sync_ready) and hot.macro_sync_not_ready_reason:
+                    reasons.append(f"macro_sync:{hot.macro_sync_not_ready_reason}")
+                    inc_data_quality_drop(domain="feature_engineering", reason="macro_sync_not_ready")
+                if (not hot.large_trade_imbalance_ready) and hot.large_trade_imbalance_not_ready_reason:
+                    reasons.append(f"large_trade_imbalance:{hot.large_trade_imbalance_not_ready_reason}")
+                    inc_data_quality_drop(domain="feature_engineering", reason="large_trade_imbalance_not_ready")
+
+                warmup["ready"] = ready_map
+                warmup["reasons"] = reasons
+                warmup["full_ready"] = all(ready_map.values())
+                warmup["large_trade_imbalance_ready"] = bool(hot.large_trade_imbalance_ready)
+                warmup["large_trade_imbalance_not_ready_reason"] = hot.large_trade_imbalance_not_ready_reason
+                warmup["large_trade_imbalance_trades_used"] = int(hot.large_trade_imbalance_trades_used)
+                warmup["large_trade_imbalance_dropped_out_of_order"] = int(hot.large_trade_imbalance_dropped_out_of_order)
+
             # Build payload
             features_payload = {
                 "ts": current_tick["ts"],
                 "symbol": symbol,
                 "features": features,
+                "warmup": warmup,
             }
 
             # FTR-10: Dynamic logging for all features (no manual f-string updates needed)

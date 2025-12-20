@@ -129,7 +129,7 @@ SOLUSDT:
   timeframe_sec: null
 
 # DOGEUSDT - Phase 3+ derived from Mean Reversion optimization
-# Source: config/aurora/strategies/mean_reversion_1m.yaml (CHAMPION asset)
+# Source: config/aurora/strategies/mean_reversion.yaml (CHAMPION asset)
 # Audit: Previously missing, causing fallback to global 40/80 bps brackets
 DOGEUSDT:
   enabled: true

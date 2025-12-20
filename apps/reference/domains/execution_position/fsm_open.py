@@ -15,7 +15,7 @@ import logging
 import uuid
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Dict, Optional, Union, Any
+from typing import Dict, Optional, Any
 
 from vfoundation.core.protocol import Message
 from .contracts import (
@@ -25,7 +25,7 @@ from .contracts import (
     PRICE_STEP,
 )
 from .metrics_collector import MetricsCollector
-from apps.reference.config_models import AuroraConfig, create_aurora_config
+from apps.reference.config_models import AuroraConfig
 
 
 class OpenState(str, Enum):
@@ -48,25 +48,16 @@ class OpenFlowFSM:
         self,
         cooldown_sec: float = 1.0,
         guard_enabled: bool = True,
-        config: Optional[Union[Dict[str, Any], AuroraConfig]] = None,
+        config: Optional[AuroraConfig] = None,
         metrics_collector: Optional[MetricsCollector] = None,
     ):
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
         self.guard_enabled = guard_enabled
         
-        # Configuration: Unify to AuroraConfig
-        if config is None:
-            self.config = AuroraConfig()
-        elif isinstance(config, dict):
-            try:
-                self.config = create_aurora_config(config)
-            except Exception as e:
-                # Fallback for partial dicts in tests
-                logging.getLogger(__name__).warning(f"Config validation failed, using default: {e}")
-                self.config = AuroraConfig()
-        else:
-            self.config = config
+        if isinstance(config, dict):
+            raise TypeError("OpenFlowFSM requires typed AuroraConfig, got dict")
+        self.config = AuroraConfig() if config is None else config
 
         self.last_open_ts: float = 0.0
         self.logger = logging.getLogger(__name__)
@@ -178,8 +169,8 @@ class OpenFlowFSM:
                 side = pld.get("side")
                 qty = pld.get("qty")
                 price = pld.get("price")
-                order_type = pld.get("order_type", "MARKET")
-                tif = pld.get("tif", "GTC")
+                order_type = pld["order_type"] if "order_type" in pld else "MARKET"
+                tif = pld["tif"] if "tif" in pld else "GTC"
 
                 if not symbol or not side:
                     self.logger.error(

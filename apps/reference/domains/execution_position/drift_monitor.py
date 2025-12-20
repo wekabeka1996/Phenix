@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 
 from vfoundation.config import config
 
+from apps.reference.utils.accessors import dget
+
 
 @dataclass
 class ConfusionMatrix:
@@ -128,7 +130,7 @@ def compute_drift(
     # Index events by RID for fast lookup (symbol may be missing in DEC)
     event_index: Dict[str, List[Dict[str, Any]]] = {}
     for evt in events:
-        rid = evt.get("rid", "unknown")
+        rid = dget(evt, "rid", "unknown")
         if rid not in event_index:
             event_index[rid] = []
         event_index[rid].append(evt)
@@ -138,22 +140,23 @@ def compute_drift(
 
     # Process decisions (DEC:OPEN/CLOSE) → check for matching events
     for dec in decisions:
-        verb = dec.get("verb", "")
+        verb = dget(dec, "verb", "")
         if verb not in ("OPEN", "CLOSE"):
             continue  # Skip non-OPEN/CLOSE decisions
 
-        pld = dec.get("pld", {})
-        symbol = pld.get("symbol", "UNKNOWN")
-        rid = dec.get("rid", "unknown")
-        dec_ts = dec.get("timestamp", time.time())
+        pld_raw = dec.get("pld")
+        pld = pld_raw if isinstance(pld_raw, dict) else {}
+        symbol = dget(pld, "symbol", "UNKNOWN")
+        rid = dget(dec, "rid", "unknown")
+        dec_ts = dec["timestamp"] if "timestamp" in dec else time.time()
 
         # Look for matching events by RID
-        candidate_events = event_index.get(rid, [])
+        candidate_events = event_index[rid] if rid in event_index else []
 
         matched = False
         for evt in candidate_events:
-            evt_ts = evt.get("timestamp", time.time())
-            evt_verb = evt.get("verb", "")
+            evt_ts = evt["timestamp"] if "timestamp" in evt else time.time()
+            evt_verb = dget(evt, "verb", "")
 
             # Check time window
             if abs(evt_ts - dec_ts) > time_window_sec:
@@ -170,8 +173,9 @@ def compute_drift(
             if verb == "CLOSE" and evt_verb in ("CANCELLED", "FILL"):
                 # For FILL events, ensure it's actually a position-reducing fill
                 if evt_verb == "FILL":
-                    evt_pld = evt.get("pld", {})
-                    reduce_only = evt_pld.get("reduceOnly", False)
+                    evt_pld_raw = evt.get("pld")
+                    evt_pld = evt_pld_raw if isinstance(evt_pld_raw, dict) else {}
+                    reduce_only = evt_pld["reduceOnly"] if "reduceOnly" in evt_pld else False
                     # If reduceOnly flag is present, it must be True for position closure
                     if "reduceOnly" in evt_pld and not reduce_only:
                         continue  # This FILL is not a position closure, skip matching
@@ -199,11 +203,12 @@ def compute_drift(
     # Process unmatched events → False Negatives
     for evt in events:
         if id(evt) not in matched_events:
-            pld = evt.get("pld", {})
-            symbol = pld.get("symbol", "UNKNOWN")
-            rid = evt.get("rid", "unknown")
-            evt_verb = evt.get("verb", "")
-            evt_ts = evt.get("timestamp", time.time())
+            pld_raw = evt.get("pld")
+            pld = pld_raw if isinstance(pld_raw, dict) else {}
+            symbol = dget(pld, "symbol", "UNKNOWN")
+            rid = dget(evt, "rid", "unknown")
+            evt_verb = dget(evt, "verb", "")
+            evt_ts = evt["timestamp"] if "timestamp" in evt else time.time()
 
             confusion.fn += 1
             mismatches.append(

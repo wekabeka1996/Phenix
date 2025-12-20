@@ -13,7 +13,7 @@ Bring `mean_reversion_handler.py` to "config as contract (SSOT + fail-closed)" c
 
 1. **Forbid dict-fallback** - no silent "let's try somehow"
 2. **Remove silent defaults** (position_size_usd=100)
-3. **Typed Pydantic only** - `AuroraConfig.mean_reversion_1m`
+3. **Typed Pydantic only** - `AuroraConfig.mean_reversion`
 4. **Strict crash** if MR assigned but config invalid/missing
 5. **Handler disabled fail-closed** if MR not assigned + config missing
 
@@ -27,9 +27,9 @@ Bring `mean_reversion_handler.py` to "config as contract (SSOT + fail-closed)" c
 
 **Before** (fail-open):
 ```python
-if hasattr(self.config, 'mean_reversion_1m'):
-    self._mr_config = self.config.mean_reversion_1m
-elif isinstance(self.config, dict) and 'mean_reversion_1m' in self.config:
+if hasattr(self.config, 'mean_reversion'):
+    self._mr_config = self.config.mean_reversion
+elif isinstance(self.config, dict) and 'mean_reversion' in self.config:
     try:
         self._mr_config = MeanReversion1mStrategyConfig(**mr_dict)
     except Exception as e:
@@ -42,17 +42,17 @@ elif isinstance(self.config, dict) and 'mean_reversion_1m' in self.config:
 mr_assigned_symbols = self._get_mr_assigned_symbols()
 
 # ONLY typed Pydantic access (NO dict-fallback)
-if hasattr(self.config, 'mean_reversion_1m') and self.config.mean_reversion_1m is not None:
-    self._mr_config = self.config.mean_reversion_1m
+if hasattr(self.config, 'mean_reversion') and self.config.mean_reversion is not None:
+    self._mr_config = self.config.mean_reversion
     self._enabled = self._mr_config.enabled
 else:
     # MR config missing
     if mr_assigned_symbols:
         # FAIL-CLOSED: MR assigned but config missing → ValueError
         raise ValueError(
-            f"❌ CRITICAL: mean_reversion_1m assigned to symbols {mr_assigned_symbols} "
-            f"but config.mean_reversion_1m is missing or invalid. "
-            f"Required: config.mean_reversion_1m (typed Pydantic) must be present."
+            f"❌ CRITICAL: mean_reversion assigned to symbols {mr_assigned_symbols} "
+            f"but config.mean_reversion is missing or invalid. "
+            f"Required: config.mean_reversion (typed Pydantic) must be present."
         )
     else:
         # MR not assigned and config missing → disabled (fail-closed, no noise)
@@ -70,7 +70,7 @@ else:
 ```python
 def _get_mr_assigned_symbols(self) -> set[str]:
     """
-    Get symbols that have mean_reversion_1m assigned in strategies_registry.
+    Get symbols that have mean_reversion assigned in strategies_registry.
     
     CFG-STRATEGIES-SSOT-02-MR-HANDLER-STRICT-CONTRACT:
     MR is "potentially active" if assigned in registry OR enabled=True in config.
@@ -80,7 +80,7 @@ def _get_mr_assigned_symbols(self) -> set[str]:
     if hasattr(self.config, 'strategies_registry') and self.config.strategies_registry:
         assignments = self.config.strategies_registry.assignments
         for symbol, strategies in assignments.items():
-            if "mean_reversion_1m" in strategies:
+            if "mean_reversion" in strategies:
                 mr_symbols.add(symbol)
     
     return mr_symbols
@@ -235,7 +235,7 @@ tests/domains/decision_making/test_mr_handler_strict_missing_config.py ......   
 
 | Scenario | Behavior | Log/Error |
 |----------|----------|-----------|
-| MR assigned + config missing | ❌ CRASH ValueError | "mean_reversion_1m assigned but config missing" |
+| MR assigned + config missing | ❌ CRASH ValueError | "mean_reversion assigned but config missing" |
 | MR not assigned + config missing | ✅ Disabled (silent) | "config missing, handler disabled" |
 | MR enabled + missing position_size | ❌ BLOCK signal | "MR_REJECT:missing_position_size" |
 | MR enabled + valid config | ✅ Signal emitted | EVT:TRADE_INTENT_PROPOSED |
@@ -263,8 +263,8 @@ tests/domains/decision_making/test_mr_handler_strict_missing_config.py ......   
 ## 🚀 Next Steps (Future Phases)
 
 ### **Phase-3: MR Config Consolidation** (NOT in this PR)
-- Merge `strategies/mean_reversion_1m.yaml` → single SSOT
-- Remove `trading.mean_reversion_1m` mirror (deprecated)
+- Merge `strategies/mean_reversion.yaml` → single SSOT
+- Remove `trading.mean_reversion` mirror (deprecated)
 - Migrate parameters without changing behavior
 - Update tests for new config paths
 
@@ -280,7 +280,7 @@ tests/domains/decision_making/test_mr_handler_strict_missing_config.py ......   
 ### **Key Design Decisions**
 
 1. **MR Assignment as Contract**:
-   - If `strategies_registry.assignments` includes `mean_reversion_1m` → config REQUIRED
+   - If `strategies_registry.assignments` includes `mean_reversion` → config REQUIRED
    - If no assignment → config optional (handler disabled, no noise)
    - This prevents "MR enabled in config but no symbols assigned" confusion
 
@@ -309,7 +309,7 @@ tests/domains/decision_making/test_mr_handler_strict_missing_config.py ......   
 
 ### **Medium Risk ⚠️**
 - Existing MR deployments with `risk.position_size_usd` missing will now BLOCK signals
-  - **Mitigation**: Validate `mean_reversion_1m.risk.position_size_usd` is set before deploy
+  - **Mitigation**: Validate `mean_reversion.risk.position_size_usd` is set before deploy
   - **Detection**: Logs show `MR_REJECT:missing_position_size` immediately
 
 ### **Zero Risk 🔒**

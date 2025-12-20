@@ -52,14 +52,13 @@
       "event_name": "CMD:CLOSE",
       "schema_path": null,
       "target_domains": ["execution_position"],
-      "description": "ROI exit command when position meets target ROI"
+      "description": "Close command for existing position"
     }
   ],
   "components": [
     "DecisionMaking",
     "NormalizedRejectReasons",
     "DeferredIntentScheduler",
-    "ROIExitStrategy",
     "WhyCodes",
     "DecisionLog"
   ],

@@ -9,9 +9,9 @@
 
 ## 🎯 Objective
 
-Implement minimal Strategy Registry SSOT with deterministic arbitration for BTC hybrid strategy (aurora + mean_reversion_1m).
+Implement minimal Strategy Registry SSOT with deterministic arbitration for BTC hybrid strategy (aurora + mean_reversion).
 
-**Key Principle**: НЕ переносимо все одразу - тільки registry + arbitration, без міграції параметрів з aurora_instruments/mean_reversion_1m.
+**Key Principle**: НЕ переносимо все одразу - тільки registry + arbitration, без міграції параметрів з aurora_instruments/mean_reversion.
 
 ---
 
@@ -20,7 +20,7 @@ Implement minimal Strategy Registry SSOT with deterministic arbitration for BTC 
 ### 1. **Created config/aurora/strategies.yaml** (NEW)
 - **Version**: 1.0.0
 - **Assignments**: 5 symbols (ETH/SOL→aurora, DOGE/XRP→MR, BTC→both)
-- **Arbitration**: Priority mode (aurora=1 wins, mean_reversion_1m=2 blocked)
+- **Arbitration**: Priority mode (aurora=1 wins, mean_reversion=2 blocked)
 - **Logging**: ARBITRATION_REJECT prefix, INFO level, ≤80 char reasons
 
 **File**: [config/aurora/strategies.yaml](config/aurora/strategies.yaml)
@@ -34,18 +34,18 @@ assignments:
   SOLUSDT:
     - aurora
   DOGEUSDT:
-    - mean_reversion_1m
+    - mean_reversion
   XRPUSDT:
-    - mean_reversion_1m
+    - mean_reversion
   BTCUSDT:
     - aurora
-    - mean_reversion_1m  # HYBRID: Both strategies can generate intents
+    - mean_reversion  # HYBRID: Both strategies can generate intents
 
 arbitration:
   mode: priority  # Deterministic priority-based arbitration
   priority:
     aurora: 1              # Higher priority (WINS on conflicts)
-    mean_reversion_1m: 2   # Lower priority (BLOCKED on conflicts)
+    mean_reversion: 2   # Lower priority (BLOCKED on conflicts)
   
   logging:
     rejected_why_prefix: "ARBITRATION_REJECT"
@@ -179,7 +179,7 @@ def _check_strategy_arbitration(
 #### **C. MR Gateway Integration** (L654-661)
 ```python
 # ARBITRATION CHECK (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
-arbitration_result = self._check_strategy_arbitration(symbol, "mean_reversion_1m")
+arbitration_result = self._check_strategy_arbitration(symbol, "mean_reversion")
 if not arbitration_result["allowed"]:
     self.logger.info(
         f"[{symbol}] MR_SIGNAL_BLOCKED: {arbitration_result['reason']}"
@@ -268,7 +268,7 @@ tests/domains/decision_making/test_btc_arbitration_deterministic.py ........... 
   - ✅ Test: `test_strict_mode_fails_on_missing_strategies_yaml` PASS
 
 - [x] **BTC арбітраж детермінований і покритий тестом**
-  - ✅ Priority mode: aurora=1 (wins), mean_reversion_1m=2 (blocked)
+  - ✅ Priority mode: aurora=1 (wins), mean_reversion=2 (blocked)
   - ✅ Test: `test_arbitration_deterministic_repeated_calls` PASS (10x same result)
   - ✅ Test: `test_btc_aurora_signal_passes_arbitration` PASS
   - ✅ Test: `test_btc_mean_reversion_signal_blocked_by_arbitration` PASS
@@ -280,7 +280,7 @@ tests/domains/decision_making/test_btc_arbitration_deterministic.py ........... 
 
 - [x] **Немає переносу параметрів з aurora_instruments**
   - ✅ aurora_instruments.yaml unchanged
-  - ✅ mean_reversion_1m config unchanged
+  - ✅ mean_reversion config unchanged
   - ✅ Only added registry + arbitration layer (minimal change)
 
 - [x] **Не змінюючи існуючу семантику параметрів Aurora/MR**
@@ -299,17 +299,17 @@ tests/domains/decision_making/test_btc_arbitration_deterministic.py ........... 
    ├─ Aurora processes tick → generates BUY signal
    │  └─ _propose_trade_intent(symbol="BTCUSDT", strategy_id="aurora")
    │     └─ _check_strategy_arbitration("BTCUSDT", "aurora")
-   │        ├─ assignments["BTCUSDT"] = [aurora, mean_reversion_1m]
-   │        ├─ priority: aurora=1, mean_reversion_1m=2
+   │        ├─ assignments["BTCUSDT"] = [aurora, mean_reversion]
+   │        ├─ priority: aurora=1, mean_reversion=2
    │        ├─ aurora=1 is highest priority
    │        └─ {"allowed": True, "reason": ""}  ✅ EMIT INTENT
    │
    └─ MR processes bar → generates SELL signal
       └─ mean_reversion_gateway(symbol="BTCUSDT")
-         └─ _check_strategy_arbitration("BTCUSDT", "mean_reversion_1m")
-            ├─ assignments["BTCUSDT"] = [aurora, mean_reversion_1m]
-            ├─ priority: aurora=1 (winner), mean_reversion_1m=2
-            ├─ mean_reversion_1m ≠ aurora (loser)
+         └─ _check_strategy_arbitration("BTCUSDT", "mean_reversion")
+            ├─ assignments["BTCUSDT"] = [aurora, mean_reversion]
+            ├─ priority: aurora=1 (winner), mean_reversion=2
+            ├─ mean_reversion ≠ aurora (loser)
             └─ {"allowed": False, "reason": "ARBITRATION_REJECT:priority_aurora_wins"}
                └─ LOG: "MR_SIGNAL_BLOCKED: ARBITRATION_REJECT:priority_aurora_wins"
                └─ _record_blocked_intent("BTCUSDT")
@@ -348,7 +348,7 @@ tests/domains/decision_making/test_btc_arbitration_deterministic.py ........... 
 
 ### **Phase-1: Parameter Migration** (NOT in this PR)
 - Migrate aurora_instruments weights/side_bias → strategies.yaml
-- Migrate mean_reversion_1m thresholds → strategies.yaml
+- Migrate mean_reversion thresholds → strategies.yaml
 - Deprecate old parameter locations
 - Update tests for new parameter paths
 
@@ -374,7 +374,7 @@ tests/domains/decision_making/test_btc_arbitration_deterministic.py ........... 
    - Extra keys → ValidationError (Pydantic extra='forbid')
 
 2. **Priority-Based Arbitration**:
-   - Lower number = higher priority (aurora=1 > mean_reversion_1m=2)
+   - Lower number = higher priority (aurora=1 > mean_reversion=2)
    - Single strategy symbols → no arbitration overhead
    - Deterministic (same symbol → same winner every time)
 

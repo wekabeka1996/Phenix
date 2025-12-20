@@ -289,6 +289,32 @@
             }
           ]
         },
+        "strict-config": {
+          "name": "Strict Config Validation (CFG-FREEZE-SSOT-06)",
+          "runs-on": "ubuntu-latest",
+          "steps": [
+            {
+              "uses": "actions/checkout@v4"
+            },
+            {
+              "name": "Set up Python 3.11",
+              "uses": "actions/setup-python@v5",
+              "with": {
+                "python-version": "3.11",
+                "cache": "pip"
+              }
+            },
+            {
+              "name": "Install dependencies",
+              "run": "python -m pip install --upgrade pip\npip install -r requirements.txt\n"
+            },
+            {
+              "name": "Run strict config load test",
+              "run": "export STRICT_CONFIG_CONFLICTS=1\npython -c \"from apps.reference.config_loader import ConfigLoader; loader = ConfigLoader(); print('✅ STRICT_LOAD_OK')\"\n",
+              "working-directory": "./"
+            }
+          ]
+        },
         "smoke": {
           "name": "Smoke E2E Tests",
           "runs-on": "ubuntu-latest",
@@ -357,6 +383,7 @@
             "lint",
             "type",
             "test",
+            "strict-config",
             "smoke",
             "build"
           ],
@@ -364,7 +391,7 @@
           "steps": [
             {
               "name": "Check all gates passed",
-              "run": "if [ \"${{ needs.lint.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.type.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.test.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.smoke.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.build.result }}\" != \"success\" ]; then\n  echo \"    Some gates failed!\"\n  exit 1\nfi\necho \"    All P1 gates passed!\"\n"
+              "run": "if [ \"${{ needs.lint.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.type.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.test.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.strict-config.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.smoke.result }}\" != \"success\" ] || \\\n   [ \"${{ needs.build.result }}\" != \"success\" ]; then\n  echo \"    Some gates failed!\"\n  exit 1\nfi\necho \"    All P1 gates passed!\"\n"
             }
           ]
         }
@@ -849,116 +876,2449 @@
       }
     }
   },
-  "configs/master_config_v1.yaml": {
+  "tools/config_default_path_map.yaml": {
     "keys": [
-      "ops",
-      "execution",
-      "brackets",
-      "trading",
-      "guardian",
-      "models"
+      "AccountObserverConfig.model_config",
+      "AccountObserverConfig.poll_interval",
+      "AccountObserverDomainConfig.poll_interval_sec",
+      "AccountObserverDomainConfig.symbols",
+      "AccountObserverDomainConfig.thread_timeouts",
+      "AccountObserverDomainConfig.trade_limit",
+      "ApiCallLimits.get_klines",
+      "ApiCallLimits.get_recent_trades",
+      "ArmingConfig.max_attempts",
+      "ArmingConfig.require_regime_warmup",
+      "ArmingConfig.retry_backoff_ms",
+      "AuroraConfig.account_observer",
+      "AuroraConfig.aurora",
+      "AuroraConfig.aurora_instruments",
+      "AuroraConfig.binance_api",
+      "AuroraConfig.brackets",
+      "AuroraConfig.bridge",
+      "AuroraConfig.decision",
+      "AuroraConfig.domains",
+      "AuroraConfig.execution",
+      "AuroraConfig.features",
+      "AuroraConfig.hmm",
+      "AuroraConfig.hotreload_whitelist",
+      "AuroraConfig.instruments",
+      "AuroraConfig.logging",
+      "AuroraConfig.mean_reversion",
+      "AuroraConfig.models",
+      "AuroraConfig.ops",
+      "AuroraConfig.runtime",
+      "AuroraConfig.strategies_registry",
+      "AuroraConfig.system",
+      "AuroraConfig.system_meta",
+      "AuroraConfig.trading",
+      "AuroraConfig.trading_mode",
+      "AuroraConfig.trailing",
+      "AuroraExecutionConfig.max_slippage_bps",
+      "AuroraExecutionConfig.model_config",
+      "AuroraExecutionConfig.order_type",
+      "AuroraExecutionConfig.post_only",
+      "AuroraExitConfig.max_hold_sec",
+      "AuroraExitConfig.model_config",
+      "AuroraExitConfig.sl_pct",
+      "AuroraInstrumentConfig.allowed_regimes",
+      "AuroraInstrumentConfig.cooldown_sec",
+      "AuroraInstrumentConfig.ema_clamp",
+      "AuroraInstrumentConfig.enabled",
+      "AuroraInstrumentConfig.execution",
+      "AuroraInstrumentConfig.exit",
+      "AuroraInstrumentConfig.max_risk_score",
+      "AuroraInstrumentConfig.position_mode",
+      "AuroraInstrumentConfig.regime_sizing",
+      "AuroraInstrumentConfig.regime_thresholds",
+      "AuroraInstrumentConfig.side_bias",
+      "AuroraInstrumentConfig.signal_threshold",
+      "AuroraInstrumentConfig.take_profit",
+      "AuroraInstrumentConfig.timeframe_sec",
+      "AuroraInstrumentConfig.trailing_stop",
+      "AuroraInstrumentConfig.weights",
+      "AuroraSideBiasConfig.model_config",
+      "AuroraSideBiasConfig.penalty_factor",
+      "AuroraSideBiasConfig.target_ratio",
+      "AuroraSideBiasConfig.window_sec",
+      "AuroraTakeProfitConfig.model_config",
+      "AuroraTakeProfitConfig.partial_exit_pct",
+      "AuroraTakeProfitConfig.tp_high_ratio",
+      "AuroraTakeProfitConfig.tp_low_ratio",
+      "AuroraTrailingStopConfig.activation_pct",
+      "AuroraTrailingStopConfig.enabled",
+      "AuroraTrailingStopConfig.min_update_interval_sec",
+      "AuroraTrailingStopConfig.model_config",
+      "AuroraTrailingStopConfig.trail_pct",
+      "BarGatingConfig.bar_ms",
+      "BarGatingConfig.enable",
+      "BehaviorFsmConfig.enable",
+      "BehaviorFsmConfig.high_vol_multiplier",
+      "BehaviorFsmConfig.low_vol_multiplier",
+      "BinanceApiConfig.live",
+      "BinanceApiConfig.testnet",
+      "BinanceApiEnv.api_key",
+      "BinanceApiEnv.api_secret",
+      "BinanceApiEnv.rest_url",
+      "BinanceApiEnv.ws_url",
+      "BracketsConfig.model_config",
+      "BracketsConfig.oco_emulation",
+      "BracketsConfig.offset_bps",
+      "BracketsConfig.sl",
+      "BracketsConfig.stop_loss_bps",
+      "BracketsConfig.tp",
+      "BridgeConfig.retry_scheduler",
+      "DecisionConfig.bar_gating",
+      "DecisionConfig.behavior_fsm",
+      "DecisionConfig.cooldown_sec",
+      "DecisionConfig.kelly",
+      "DecisionConfig.mean_reversion",
+      "DecisionConfig.neutral_threshold",
+      "DecisionConfig.position_sizing",
+      "DecisionConfig.production",
+      "DecisionConfig.qos",
+      "DecisionConfig.regime_threshold_multipliers",
+      "DecisionConfig.regime_thresholds",
+      "DecisionConfig.retry_backoff_factor",
+      "DecisionConfig.retry_max_count",
+      "DecisionConfig.retry_ttl_ms",
+      "DecisionConfig.roi_exit",
+      "DecisionConfig.side_bias_min_score",
+      "DecisionConfig.side_bias_penalty_factor",
+      "DecisionConfig.side_bias_target_ratio",
+      "DecisionConfig.side_bias_window_sec",
+      "DecisionConfig.signal_threshold",
+      "DecisionConfig.signal_weights",
+      "DecisionConfig.signals",
+      "DecisionConfig.sizing_modifiers",
+      "DecisionConfig.symbols_to_track",
+      "DecisionConfig.testnet",
+      "DecisionMakingDomainConfig.arming",
+      "DecisionMakingDomainConfig.bar_gating",
+      "DecisionMakingDomainConfig.behavior_fsm",
+      "DecisionMakingDomainConfig.features",
+      "DecisionMakingDomainConfig.position_sizing",
+      "DecisionMakingDomainConfig.qos",
+      "DecisionMakingDomainConfig.risk_skew",
+      "DecisionMakingDomainConfig.signals",
+      "DecisionModeOverrideConfig.model_config",
+      "DecisionModeOverrideConfig.signal_threshold",
+      "DeltaPriceConfig.spike_filter_ms",
+      "DepthImbalanceConfig.use_laplace_smoothing",
+      "DomainConfigurationConfig.audit_trail",
+      "DomainConfigurationConfig.decision_making",
+      "DomainConfigurationConfig.execution_position",
+      "DomainConfigurationConfig.feature_engineering",
+      "DomainConfigurationConfig.market_data",
+      "DomainConfigurationConfig.model_config",
+      "DomainConfigurationConfig.risk_management",
+      "DomainModeConfig.model_config",
+      "DomainModeConfig.trading_mode",
+      "DomainsConfig.account_observer",
+      "DomainsConfig.decision_making",
+      "DomainsConfig.execution_position",
+      "DomainsConfig.feature_engineering",
+      "DomainsConfig.position_tracking",
+      "DomainsConfig.risk_management",
+      "EmaBiasConfig.clamp_max",
+      "EmaBiasConfig.clamp_min",
+      "EmaClampConfig.clamp_max",
+      "EmaClampConfig.clamp_min",
+      "EmaClampConfig.enabled",
+      "EmaConfigDetailed.period_long",
+      "EmaConfigDetailed.period_short",
+      "EmergencyConfig.enabled",
+      "EmergencyConfig.wait_mode_bars",
+      "ExecutionConfig.allow_trade_with_guardian_tidy_only",
+      "ExecutionConfig.anti_race_close_ms",
+      "ExecutionConfig.exposure",
+      "ExecutionConfig.fallback",
+      "ExecutionConfig.fsm_periodic_cleanup_enabled",
+      "ExecutionConfig.limit_orders",
+      "ExecutionConfig.manage",
+      "ExecutionConfig.min_post_interval_per_symbol_ms",
+      "ExecutionConfig.open_order_type",
+      "ExecutionConfig.order_guardian",
+      "ExecutionConfig.order_params",
+      "ExecutionConfig.orders",
+      "ExecutionConfig.preflight_backoff_ms",
+      "ExecutionConfig.watchdog",
+      "ExecutionPositionDomainConfig.exposure_guard",
+      "ExecutionPositionDomainConfig.fsm_open",
+      "ExecutionPositionDomainConfig.idempotent_cancel",
+      "ExecutionPositionDomainConfig.metrics_collector",
+      "ExecutionPositionDomainConfig.order_index",
+      "ExecutionPositionDomainConfig.utils",
+      "ExecutionPositionDomainConfig.watchdog",
+      "ExecutionUtilsConfig.basis_points_base",
+      "ExecutionUtilsConfig.client_order_id_max_length",
+      "ExposureConfig.count_pending_orders",
+      "ExposureConfig.exclude_reduce_only",
+      "ExposureConfig.leverage_defaults",
+      "ExposureConfig.max_directional_ratio",
+      "ExposureConfig.max_equity_utilization_pct",
+      "ExposureConfig.max_portfolio_fraction",
+      "ExposureConfig.max_side_utilization_pct",
+      "ExposureConfig.pending_reservation_ttl_sec",
+      "ExposureConfig.pending_ttl_sec",
+      "ExposureConfig.per_symbol_cap_pct",
+      "ExposureConfig.positions_stale_ttl_sec",
+      "ExposureConfig.post_fill_hold_ttl_sec",
+      "ExposureGuardConfig.max_concentration_pct",
+      "ExposureGuardConfig.max_directional_ratio",
+      "ExposureGuardConfig.max_equity_utilization_pct",
+      "ExposureGuardConfig.max_long_utilization_pct",
+      "ExposureGuardConfig.max_portfolio_fraction",
+      "ExposureGuardConfig.max_short_utilization_pct",
+      "ExposureGuardConfig.pending_timeout_sec",
+      "ExposureGuardConfig.pending_ttl_sec",
+      "ExposureGuardConfig.post_fill_ttl_sec",
+      "ExposureGuardConfig.stale_ttl_sec",
+      "FailsafeConfig.max_hold_sec",
+      "FeatureDefaultsConfig.correlation_default",
+      "FeatureDefaultsConfig.ms_per_sec",
+      "FeatureDefaultsConfig.neutral_value",
+      "FeatureDefaultsConfig.zero_value",
+      "FeatureEngineeringConfig.ema",
+      "FeatureEngineeringConfig.liquidity",
+      "FeatureEngineeringConfig.macro_sync",
+      "FeatureEngineeringConfig.volatility",
+      "FeatureEngineeringConfig.volume",
+      "FeatureEngineeringDomainConfig.defaults",
+      "FeatureEngineeringDomainConfig.delta_price",
+      "FeatureEngineeringDomainConfig.depth_imbalance",
+      "FeatureEngineeringDomainConfig.ema",
+      "FeatureEngineeringDomainConfig.ema_bias",
+      "FeatureEngineeringDomainConfig.enable_new_metrics",
+      "FeatureEngineeringDomainConfig.liquidity",
+      "FeatureEngineeringDomainConfig.macro_sync",
+      "FeatureEngineeringDomainConfig.volatility",
+      "FeatureEngineeringDomainConfig.volatility_state",
+      "FeatureEngineeringDomainConfig.volume",
+      "FeatureEngineeringDomainConfig.volume_input_mode",
+      "FeatureEngineeringDomainConfig.volume_spike",
+      "FeaturesTtlConfig.ttl_sec",
+      "FsmOpenConfig.idempotency_window_sec",
+      "IdempotentCancelConfig.max_retries",
+      "InstrumentPrecisionSpec.model_config",
+      "InstrumentPrecisionSpec.step_size",
+      "InstrumentPrecisionSpec.symbol",
+      "InstrumentPrecisionSpec.tick_size",
+      "InstrumentSpec.min_notional",
+      "InstrumentSpec.min_qty",
+      "InstrumentSpec.quote",
+      "InstrumentSpec.step_size",
+      "InstrumentSpec.symbol",
+      "InstrumentSpec.tick_size",
+      "KellyConfig.base_probability",
+      "KellyConfig.kelly_alpha",
+      "KellyConfig.kelly_cap",
+      "KellyConfig.payoff_ratio_r",
+      "KlinesConfig.interval",
+      "KlinesConfig.limit",
+      "LiquidityConfigDetailed.depth_half",
+      "LiquidityConfigDetailed.kappa_max",
+      "LiquidityConfigDetailed.kappa_min",
+      "LoggingConfig.file",
+      "LoggingConfig.format",
+      "LoggingConfig.level",
+      "LoggingConfig.model_config",
+      "LoggingConfig.rotation",
+      "MRAssetConfig.allowed_regimes",
+      "MRAssetConfig.bb_window",
+      "MRAssetConfig.enabled",
+      "MRAssetConfig.min_vol_atr",
+      "MRAssetConfig.position_mode",
+      "MRAssetConfig.risk",
+      "MRAssetConfig.sl_pct",
+      "MRAssetConfig.strategy",
+      "MRAssetRiskConfig.max_risk_score",
+      "MRAssetRiskConfig.position_size_usd",
+      "MRRegimeSizingConfig.sizing_mult",
+      "MRRegimeSizingConfig.stop_mult",
+      "MRRegimeSizingConfig.target_mult",
+      "MRRegimeThresholdsConfig.high_vol_pct",
+      "MRRegimeThresholdsConfig.low_vol_pct",
+      "MRRiskConfig.daily_loss_limit_usd",
+      "MRRiskConfig.expected_pnl_multiplier",
+      "MRRiskConfig.fees_pct",
+      "MRRiskConfig.max_concurrent_positions",
+      "MRRiskConfig.position_size_usd",
+      "MRRiskConfig.slippage_pct",
+      "MRStrategyOverrideConfig.bb_num_std",
+      "MRStrategyOverrideConfig.bb_window",
+      "MRStrategyOverrideConfig.cooldown_sec",
+      "MRStrategyOverrideConfig.entry_threshold",
+      "MRStrategyOverrideConfig.min_bb_width",
+      "MRStrategyOverrideConfig.sl_atr_mult",
+      "MRStrategyOverrideConfig.tp_to_mid",
+      "MRStrategyParamsConfig.atr_window",
+      "MRStrategyParamsConfig.bb_num_std",
+      "MRStrategyParamsConfig.bb_window",
+      "MRStrategyParamsConfig.cooldown_sec",
+      "MRStrategyParamsConfig.entry_threshold",
+      "MRStrategyParamsConfig.max_bb_width",
+      "MRStrategyParamsConfig.min_bars",
+      "MRStrategyParamsConfig.min_bb_width",
+      "MRStrategyParamsConfig.rsi_overbought",
+      "MRStrategyParamsConfig.rsi_oversold",
+      "MRStrategyParamsConfig.rsi_window",
+      "MRStrategyParamsConfig.sl_atr_mult",
+      "MRStrategyParamsConfig.tp_to_mid",
+      "MacroSyncConfig.align_mode",
+      "MacroSyncConfig.anchor_update_from_ticks",
+      "MacroSyncConfig.anchors",
+      "MacroSyncConfig.emit_abs",
+      "MacroSyncConfig.enabled",
+      "MacroSyncConfig.min_buffer_size",
+      "MacroSyncConfig.time_diff_threshold_ms",
+      "MacroSyncConfig.window",
+      "MacroSyncMetricsConfig.align_mode",
+      "MacroSyncMetricsConfig.anchor_update_from_ticks",
+      "MacroSyncMetricsConfig.anchors",
+      "MacroSyncMetricsConfig.enabled",
+      "MacroSyncMetricsConfig.min_buffer_size",
+      "MacroSyncMetricsConfig.time_diff_threshold_ms",
+      "MacroSyncMetricsConfig.window",
+      "ManageConfig.auto",
+      "ManageConfig.brackets",
+      "ManageConfig.emergency",
+      "ManageConfig.failsafe",
+      "ManageConfig.orphan_monitor",
+      "MarketDataConfig.api_call_limits",
+      "MarketDataConfig.macro_sync",
+      "MarketDataConfig.poll_interval_sec",
+      "MarketDataConfig.use_multiprocessing",
+      "MarketDataConfig.websocket_streams",
+      "MaxRiskScoreConfig.enabled",
+      "MaxRiskScoreConfig.value",
+      "MeanReversion1mStrategyConfig.allowed_regimes",
+      "MeanReversion1mStrategyConfig.assets",
+      "MeanReversion1mStrategyConfig.emit_trade_intent_directly",
+      "MeanReversion1mStrategyConfig.enabled",
+      "MeanReversion1mStrategyConfig.model_config",
+      "MeanReversion1mStrategyConfig.regime_sizing",
+      "MeanReversion1mStrategyConfig.regime_thresholds",
+      "MeanReversion1mStrategyConfig.risk",
+      "MeanReversion1mStrategyConfig.strategy",
+      "MeanReversion1mStrategyConfig.timeframe_sec",
+      "MeanReversionConfig.allowed_regimes",
+      "MeanReversionConfig.bb_std_dev",
+      "MeanReversionConfig.bb_window",
+      "MeanReversionConfig.enabled",
+      "MeanReversionConfig.min_vol_atr",
+      "MeanReversionRegimeModelConfig.confidence_multiplier",
+      "MeanReversionRegimeModelConfig.model_config",
+      "MeanReversionRegimeModelConfig.threshold",
+      "MetricsCollectorConfig.recent_rejections_minutes",
+      "MetricsCollectorConfig.window_size_minutes",
+      "OpsConfig.allowlist_symbols",
+      "OpsConfig.metrics_url",
+      "OpsConfig.model_config",
+      "OpsConfig.panic_killswitch",
+      "OpsConfig.panic_ttl_sec",
+      "OpsConfig.quiet_hours_utc",
+      "OpsConfig.reports_dir",
+      "OrderIndexConfig.ttl_sec",
+      "OrdersConfig.default_ttl_seconds",
+      "OrdersConfig.model_config",
+      "OrphanMonitorConfig.enabled",
+      "OrphanMonitorConfig.model_config",
+      "PositionSizingConfig.kappa_mode",
+      "PositionSizingConfig.liquidity_based_cap_usd",
+      "PositionSizingConfig.liquidity_kappa",
+      "PositionSizingConfig.liquidity_kappa_mode",
+      "PositionSizingConfig.min_position_size_usd",
+      "PositionSizingConfig.risk_contract_v1",
+      "PositionSizingConfig.risk_fraction_q",
+      "PositionTrackingDomainConfig.enable_market_tick_subscription",
+      "PositionTrackingDomainConfig.positions_stale_ttl_sec",
+      "PositionTrackingDomainConfig.precision",
+      "PositionTrackingDomainConfig.thread_timeouts",
+      "PrecisionConfig.decimal_places",
+      "PrecisionConfig.flat_position_threshold",
+      "PrecisionConfig.quantity_min_threshold",
+      "QosConfig.enforce",
+      "QosConfig.exposure_block_cooldown_sec",
+      "QosConfig.max_intents_per_minute_per_symbol",
+      "QosConfig.mode",
+      "QosConfig.symbol_cooldown_sec",
+      "ROIExitConfig.enabled",
+      "ROIExitConfig.target_roi_pct",
+      "RegimeDetectorConfig.model_config",
+      "RegimeDetectorConfig.models",
+      "RegimeModelConfig.confidence_max",
+      "RegimeModelConfig.confidence_min",
+      "RegimeModelConfig.confidence_multiplier",
+      "RegimeModelConfig.model_config",
+      "RegimeModelsConfig.mean_reversion",
+      "RegimeModelsConfig.sma_trend",
+      "RegimeModelsConfig.volatility",
+      "RegimeSizingSymbolConfig.enabled",
+      "RegimeSizingSymbolConfig.high_vol_multiplier",
+      "RegimeSizingSymbolConfig.low_vol_multiplier",
+      "RetrySchedulerConfig.max_attempts",
+      "RetrySchedulerConfig.min_retry_delay_ms",
+      "RiskContractV1Config.effective_leverage",
+      "RiskContractV1Config.enabled",
+      "RiskContractV1Config.model_config",
+      "RiskContractV1Config.per_symbol_margin_fraction",
+      "RiskContractV1Config.regime_sizing",
+      "RiskManagementDataSourcesConfig.market_data",
+      "RiskManagementDataSourcesConfig.portfolio_state",
+      "RiskManagementDomainConfig.risk_score_weights",
+      "RiskManagementDomainConfig.trading_allowed_thresholds",
+      "RiskManagementDomainConfig.use_absorption_penalty",
+      "RiskManagementDomainConfig.validation",
+      "RiskScoreWeightsConfig.absorption_inverse",
+      "RiskScoreWeightsConfig.delta_price_pct",
+      "RiskScoreWeightsConfig.obi",
+      "RiskScoreWeightsConfig.tfi",
+      "RiskSkewConfig.defer_cooldown_sec",
+      "RiskSkewConfig.max_defer_count",
+      "RiskSkewConfig.max_skew_sec",
+      "RiskValidationConfig.total_weight_max",
+      "RiskValidationConfig.total_weight_min",
+      "SLConfig.fixed_bps",
+      "SLConfig.model_config",
+      "SMARegimeModelConfig.confidence_max",
+      "SMARegimeModelConfig.confidence_min",
+      "SMARegimeModelConfig.confidence_multiplier",
+      "SMARegimeModelConfig.model_config",
+      "SMARegimeModelConfig.sma_long_period",
+      "SMARegimeModelConfig.sma_short_period",
+      "SignalThresholdConfig.enabled",
+      "SignalThresholdConfig.value",
+      "SignalWeights.delta_price",
+      "SignalWeights.depth_imbalance",
+      "SignalWeights.ema_bias",
+      "SignalWeights.macro_sync",
+      "SignalWeights.obi",
+      "SignalWeights.tfi",
+      "SignalWeights.volatility_state",
+      "SignalWeights.volume_spike",
+      "SignalsConfig.enable_new_metrics",
+      "SignalsConfig.normalize",
+      "StrategiesArbitrationConfig.logging",
+      "StrategiesArbitrationConfig.mode",
+      "StrategiesArbitrationConfig.priority",
+      "StrategiesArbitrationLoggingConfig.log_level",
+      "StrategiesArbitrationLoggingConfig.rejected_why_prefix",
+      "StrategiesRegistryConfig.arbitration",
+      "StrategiesRegistryConfig.assignments",
+      "StrategiesRegistryConfig.version",
+      "SystemConfig.logging",
+      "SystemConfig.market_data",
+      "SystemConfig.model_config",
+      "SystemMarketDataConfig.emit_workers",
+      "SystemMarketDataConfig.local_queue_maxsize",
+      "SystemMarketDataConfig.model_config",
+      "SystemMarketDataConfig.queue_maxsize",
+      "SystemMarketDataConfig.tick_ttl_ms",
+      "SystemMetaConfig.calibrator",
+      "SystemMetaConfig.hardening",
+      "SystemMetaConfig.hawkes",
+      "SystemMetaConfig.hotreload_whitelist",
+      "SystemMetaConfig.kelly",
+      "SystemMetaConfig.position_tracking",
+      "SystemMetaConfig.regime_config_version",
+      "SystemMetaConfig.risk_core",
+      "SystemMetaConfig.runtime",
+      "SystemMetaConfig.sequential_tests",
+      "SystemMetaConfig.system_config_version",
+      "SystemRuntimeMeta.config_dir",
+      "SystemRuntimeMeta.config_name",
+      "TPConfig.fixed_bps",
+      "TPConfig.model_config",
+      "ThreadTimeoutsConfig.join_timeout_sec",
+      "TradingAllowedThresholdsConfig.max_risk_score",
+      "TradingConfig.aurora_instruments",
+      "TradingConfig.decision",
+      "TradingConfig.domain_configuration",
+      "TradingConfig.domains",
+      "TradingConfig.execution",
+      "TradingConfig.feature_engineering",
+      "TradingConfig.instruments",
+      "TradingConfig.market_data",
+      "TradingConfig.mode",
+      "TradingConfig.ops",
+      "TradingConfig.risk",
+      "TradingConfig.risk_budgets",
+      "TradingConfig.risk_management",
+      "TradingConfig.symbols_to_track",
+      "TradingConfig.tca_prefs",
+      "TradingRiskManagementConfig.data_sources",
+      "VolatilityConfigDetailed.sma_length",
+      "VolatilityConfigDetailed.window_sec",
+      "VolatilityRegimeModelConfig.atr_period",
+      "VolatilityRegimeModelConfig.atr_sma_length",
+      "VolatilityRegimeModelConfig.enabled",
+      "VolatilityRegimeModelConfig.high_vol_confidence_multiplier",
+      "VolatilityRegimeModelConfig.low_vol_confidence_multiplier",
+      "VolatilityRegimeModelConfig.low_vol_multiplier",
+      "VolatilityRegimeModelConfig.model_config",
+      "VolatilityRegimeModelConfig.threshold_multiplier",
+      "VolatilityStateConfig.cap_max",
+      "VolumeConfigDetailed.min_window_volume_usd",
+      "VolumeConfigDetailed.sma_length",
+      "VolumeConfigDetailed.window_sec",
+      "VolumeSpikeConfig.cap_max",
+      "WatchdogConfig.ack_ttl_ms",
+      "WatchdogConfig.check_interval_ms",
+      "WatchdogConfig.fill_ttl_ms",
+      "WatchdogConfig.rps_limit"
     ],
     "raw": {
-      "ops": {
-        "metrics_url": "http://127.0.0.1:8000/metrics",
-        "reports_dir": "reports"
+      "AccountObserverConfig.model_config": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer.model_config"
       },
-      "execution": {
-        "preflight_backoff_ms": [
-          120,
-          250,
-          400,
-          800,
-          1200,
-          1800
-        ],
-        "anti_race_close_ms": 800,
-        "min_post_interval_per_symbol_ms": 300,
-        "allow_trade_with_guardian_tidy_only": false,
-        "fsm_periodic_cleanup_enabled": false
+      "AccountObserverConfig.poll_interval": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer.poll_interval"
       },
-      "brackets": {
-        "enable": true,
-        "oco_emulation": true,
-        "sl": {
-          "fixed_bps": 40
-        },
-        "tp": {
-          "fixed_bps": 80
-        }
+      "AccountObserverDomainConfig.poll_interval_sec": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer.poll_interval_sec"
       },
-      "trading": {
-        "execution": {
-          "order_guardian": {
-            "poll_interval_ms": 500,
-            "batch_limit": 50,
-            "rate_limit_per_min": 120
-          },
-          "exposure": {
-            "positions_stale_ttl_sec": 15,
-            "max_equity_utilization_pct": "0.30",
-            "max_side_utilization_pct": {
-              "long": "0.15",
-              "short": "0.15"
-            },
-            "max_directional_ratio": "20.0",
-            "per_symbol_cap_pct": "0.08",
-            "count_pending_orders": true,
-            "exclude_reduce_only": true
-          },
-          "fallback": {
-            "backoff_ms": [
-              200,
-              500,
-              1000
-            ]
-          }
-        },
-        "risk": {
-          "soft_limits": {
-            "mode": "clip",
-            "clip_min_notional_usdt": 10.0,
-            "directional_ratio_max": 3.0,
-            "side_exposure_usdt": 600.0,
-            "margin_exposure_usdt": 1100.0
-          }
-        }
+      "AccountObserverDomainConfig.symbols": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer.symbols"
       },
-      "guardian": {
-        "unified": true,
-        "enable": true,
-        "cleanup_cycles_ms": [
-          200,
-          700,
-          1500,
-          3000
-        ],
-        "cleanup_ttl_ms": 6000,
-        "symbol_cooldown_ms": 4000,
-        "emit_tidy_event": true,
-        "ledger_db_path": "data/order_ledger.db"
+      "AccountObserverDomainConfig.thread_timeouts": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer.thread_timeouts"
       },
-      "models": {
-        "sma_trend": {
-          "sma_short_period": 10,
-          "sma_long_period": 50,
-          "confidence_multiplier": 20.0,
-          "confidence_min": 0.5,
-          "confidence_max": 0.95
-        },
-        "volatility": {
-          "enabled": true,
-          "atr_period": 14,
-          "atr_sma_length": 100,
-          "threshold_multiplier": 2.0,
-          "low_vol_multiplier": 0.5,
-          "high_vol_confidence_multiplier": 2.0,
-          "low_vol_confidence_multiplier": 3.0
-        },
-        "mean_reversion": {
-          "threshold": 0.005,
-          "confidence_multiplier": 100.0
-        }
+      "AccountObserverDomainConfig.trade_limit": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer.trade_limit"
+      },
+      "ApiCallLimits.get_klines": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.api_call_limits.get_klines"
+      },
+      "ApiCallLimits.get_recent_trades": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.api_call_limits.get_recent_trades"
+      },
+      "ArmingConfig.max_attempts": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.arming.max_attempts"
+      },
+      "ArmingConfig.require_regime_warmup": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.arming.require_regime_warmup"
+      },
+      "ArmingConfig.retry_backoff_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.arming.retry_backoff_ms"
+      },
+      "AuroraConfig.account_observer": {
+        "file": "config/aurora/system.yaml",
+        "path": "account_observer"
+      },
+      "AuroraConfig.aurora": {
+        "file": "config/aurora/system.yaml",
+        "path": "aurora"
+      },
+      "AuroraConfig.aurora_instruments": {
+        "file": "config/aurora/system.yaml",
+        "path": "aurora_instruments"
+      },
+      "AuroraConfig.binance_api": {
+        "file": "config/aurora/system.yaml",
+        "path": "binance_api"
+      },
+      "AuroraConfig.brackets": {
+        "file": "config/aurora/system.yaml",
+        "path": "brackets"
+      },
+      "AuroraConfig.bridge": {
+        "file": "config/aurora/system.yaml",
+        "path": "bridge"
+      },
+      "AuroraConfig.decision": {
+        "file": "config/aurora/system.yaml",
+        "path": "decision"
+      },
+      "AuroraConfig.domains": {
+        "file": "config/aurora/system.yaml",
+        "path": "domains"
+      },
+      "AuroraConfig.execution": {
+        "file": "config/aurora/system.yaml",
+        "path": "execution"
+      },
+      "AuroraConfig.features": {
+        "file": "config/aurora/system.yaml",
+        "path": "features"
+      },
+      "AuroraConfig.hmm": {
+        "file": "config/aurora/system.yaml",
+        "path": "hmm"
+      },
+      "AuroraConfig.hotreload_whitelist": {
+        "file": "config/aurora/system.yaml",
+        "path": "hotreload_whitelist"
+      },
+      "AuroraConfig.instruments": {
+        "file": "config/aurora/system.yaml",
+        "path": "instruments"
+      },
+      "AuroraConfig.logging": {
+        "file": "config/aurora/system.yaml",
+        "path": "logging"
+      },
+      "AuroraConfig.mean_reversion": {
+        "file": "config/aurora/system.yaml",
+        "path": "mean_reversion"
+      },
+      "AuroraConfig.models": {
+        "file": "config/aurora/system.yaml",
+        "path": "models"
+      },
+      "AuroraConfig.ops": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops"
+      },
+      "AuroraConfig.runtime": {
+        "file": "config/aurora/system.yaml",
+        "path": "runtime"
+      },
+      "AuroraConfig.strategies_registry": {
+        "file": "config/aurora/system.yaml",
+        "path": "strategies_registry"
+      },
+      "AuroraConfig.system": {
+        "file": "config/aurora/system.yaml",
+        "path": "system"
+      },
+      "AuroraConfig.system_meta": {
+        "file": "config/aurora/system.yaml",
+        "path": "system_meta"
+      },
+      "AuroraConfig.trading": {
+        "file": "config/aurora/system.yaml",
+        "path": "trading"
+      },
+      "AuroraConfig.trading_mode": {
+        "file": "config/aurora/system.yaml",
+        "path": "trading_mode"
+      },
+      "AuroraConfig.trailing": {
+        "file": "config/aurora/system.yaml",
+        "path": "trailing"
+      },
+      "AuroraExecutionConfig.max_slippage_bps": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.execution.max_slippage_bps"
+      },
+      "AuroraExecutionConfig.model_config": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.execution.model_config"
+      },
+      "AuroraExecutionConfig.order_type": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.execution.order_type"
+      },
+      "AuroraExecutionConfig.post_only": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.execution.post_only"
+      },
+      "AuroraExitConfig.max_hold_sec": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.exit.max_hold_sec"
+      },
+      "AuroraExitConfig.model_config": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.exit.model_config"
+      },
+      "AuroraExitConfig.sl_pct": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.exit.sl_pct"
+      },
+      "AuroraInstrumentConfig.allowed_regimes": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.allowed_regimes"
+      },
+      "AuroraInstrumentConfig.cooldown_sec": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.cooldown_sec"
+      },
+      "AuroraInstrumentConfig.ema_clamp": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.ema_clamp"
+      },
+      "AuroraInstrumentConfig.enabled": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.enabled"
+      },
+      "AuroraInstrumentConfig.execution": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.execution"
+      },
+      "AuroraInstrumentConfig.exit": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.exit"
+      },
+      "AuroraInstrumentConfig.max_risk_score": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.max_risk_score"
+      },
+      "AuroraInstrumentConfig.position_mode": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.position_mode"
+      },
+      "AuroraInstrumentConfig.regime_sizing": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.regime_sizing"
+      },
+      "AuroraInstrumentConfig.regime_thresholds": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.regime_thresholds"
+      },
+      "AuroraInstrumentConfig.side_bias": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.side_bias"
+      },
+      "AuroraInstrumentConfig.signal_threshold": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.signal_threshold"
+      },
+      "AuroraInstrumentConfig.take_profit": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.take_profit"
+      },
+      "AuroraInstrumentConfig.timeframe_sec": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.timeframe_sec"
+      },
+      "AuroraInstrumentConfig.trailing_stop": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.trailing_stop"
+      },
+      "AuroraInstrumentConfig.weights": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.weights"
+      },
+      "AuroraSideBiasConfig.model_config": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.side_bias.model_config"
+      },
+      "AuroraSideBiasConfig.penalty_factor": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.side_bias.penalty_factor"
+      },
+      "AuroraSideBiasConfig.target_ratio": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.side_bias.target_ratio"
+      },
+      "AuroraSideBiasConfig.window_sec": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.side_bias.window_sec"
+      },
+      "AuroraTakeProfitConfig.model_config": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.take_profit.model_config"
+      },
+      "AuroraTakeProfitConfig.partial_exit_pct": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.take_profit.partial_exit_pct"
+      },
+      "AuroraTakeProfitConfig.tp_high_ratio": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.take_profit.tp_high_ratio"
+      },
+      "AuroraTakeProfitConfig.tp_low_ratio": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.take_profit.tp_low_ratio"
+      },
+      "AuroraTrailingStopConfig.activation_pct": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.trailing_stop.activation_pct"
+      },
+      "AuroraTrailingStopConfig.enabled": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.trailing_stop.enabled"
+      },
+      "AuroraTrailingStopConfig.min_update_interval_sec": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.trailing_stop.min_update_interval_sec"
+      },
+      "AuroraTrailingStopConfig.model_config": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.trailing_stop.model_config"
+      },
+      "AuroraTrailingStopConfig.trail_pct": {
+        "file": "config/aurora/aurora_instruments.yaml",
+        "path": "aurora_instruments.trailing_stop.trail_pct"
+      },
+      "BarGatingConfig.bar_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.bar_gating.bar_ms"
+      },
+      "BarGatingConfig.enable": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.bar_gating.enable"
+      },
+      "BehaviorFsmConfig.enable": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.behavior_fsm.enable"
+      },
+      "BehaviorFsmConfig.high_vol_multiplier": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.behavior_fsm.high_vol_multiplier"
+      },
+      "BehaviorFsmConfig.low_vol_multiplier": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.behavior_fsm.low_vol_multiplier"
+      },
+      "BinanceApiConfig.live": {
+        "file": "config/aurora/trading.yaml",
+        "path": "binance_api.live"
+      },
+      "BinanceApiConfig.testnet": {
+        "file": "config/aurora/trading.yaml",
+        "path": "binance_api.testnet"
+      },
+      "BinanceApiEnv.api_key": {
+        "file": "config/aurora/trading.yaml",
+        "path": "binance_api.env.api_key"
+      },
+      "BinanceApiEnv.api_secret": {
+        "file": "config/aurora/trading.yaml",
+        "path": "binance_api.env.api_secret"
+      },
+      "BinanceApiEnv.rest_url": {
+        "file": "config/aurora/trading.yaml",
+        "path": "binance_api.env.rest_url"
+      },
+      "BinanceApiEnv.ws_url": {
+        "file": "config/aurora/trading.yaml",
+        "path": "binance_api.env.ws_url"
+      },
+      "BracketsConfig.model_config": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.model_config"
+      },
+      "BracketsConfig.oco_emulation": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.oco_emulation"
+      },
+      "BracketsConfig.offset_bps": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.offset_bps"
+      },
+      "BracketsConfig.sl": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.sl"
+      },
+      "BracketsConfig.stop_loss_bps": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.stop_loss_bps"
+      },
+      "BracketsConfig.tp": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.tp"
+      },
+      "BridgeConfig.retry_scheduler": {
+        "file": "config/aurora/system.yaml",
+        "path": "bridge.retry_scheduler"
+      },
+      "DecisionConfig.bar_gating": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.bar_gating"
+      },
+      "DecisionConfig.behavior_fsm": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.behavior_fsm"
+      },
+      "DecisionConfig.cooldown_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.cooldown_sec"
+      },
+      "DecisionConfig.kelly": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.kelly"
+      },
+      "DecisionConfig.mean_reversion": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mean_reversion"
+      },
+      "DecisionConfig.neutral_threshold": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.neutral_threshold"
+      },
+      "DecisionConfig.position_sizing": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing"
+      },
+      "DecisionConfig.production": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.production"
+      },
+      "DecisionConfig.qos": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.qos"
+      },
+      "DecisionConfig.regime_threshold_multipliers": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.regime_threshold_multipliers"
+      },
+      "DecisionConfig.regime_thresholds": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.regime_thresholds"
+      },
+      "DecisionConfig.retry_backoff_factor": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.retry_backoff_factor"
+      },
+      "DecisionConfig.retry_max_count": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.retry_max_count"
+      },
+      "DecisionConfig.retry_ttl_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.retry_ttl_ms"
+      },
+      "DecisionConfig.roi_exit": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.roi_exit"
+      },
+      "DecisionConfig.side_bias_min_score": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.side_bias_min_score"
+      },
+      "DecisionConfig.side_bias_penalty_factor": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.side_bias_penalty_factor"
+      },
+      "DecisionConfig.side_bias_target_ratio": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.side_bias_target_ratio"
+      },
+      "DecisionConfig.side_bias_window_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.side_bias_window_sec"
+      },
+      "DecisionConfig.signal_threshold": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_threshold"
+      },
+      "DecisionConfig.signal_weights": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights"
+      },
+      "DecisionConfig.signals": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signals"
+      },
+      "DecisionConfig.sizing_modifiers": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.sizing_modifiers"
+      },
+      "DecisionConfig.symbols_to_track": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.symbols_to_track"
+      },
+      "DecisionConfig.testnet": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.testnet"
+      },
+      "DecisionMakingDomainConfig.arming": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.arming"
+      },
+      "DecisionMakingDomainConfig.bar_gating": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.bar_gating"
+      },
+      "DecisionMakingDomainConfig.behavior_fsm": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.behavior_fsm"
+      },
+      "DecisionMakingDomainConfig.features": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.features"
+      },
+      "DecisionMakingDomainConfig.position_sizing": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.position_sizing"
+      },
+      "DecisionMakingDomainConfig.qos": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.qos"
+      },
+      "DecisionMakingDomainConfig.risk_skew": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.risk_skew"
+      },
+      "DecisionMakingDomainConfig.signals": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making.signals"
+      },
+      "DecisionModeOverrideConfig.model_config": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mode_override.model_config"
+      },
+      "DecisionModeOverrideConfig.signal_threshold": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mode_override.signal_threshold"
+      },
+      "DeltaPriceConfig.spike_filter_ms": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.delta_price.spike_filter_ms"
+      },
+      "DepthImbalanceConfig.use_laplace_smoothing": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.depth_imbalance.use_laplace_smoothing"
+      },
+      "DomainConfigurationConfig.audit_trail": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.configuration.audit_trail"
+      },
+      "DomainConfigurationConfig.decision_making": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.configuration.decision_making"
+      },
+      "DomainConfigurationConfig.execution_position": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.configuration.execution_position"
+      },
+      "DomainConfigurationConfig.feature_engineering": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.configuration.feature_engineering"
+      },
+      "DomainConfigurationConfig.market_data": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.configuration.market_data"
+      },
+      "DomainConfigurationConfig.model_config": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.configuration.model_config"
+      },
+      "DomainConfigurationConfig.risk_management": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.configuration.risk_management"
+      },
+      "DomainModeConfig.model_config": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.mode.model_config"
+      },
+      "DomainModeConfig.trading_mode": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.mode.trading_mode"
+      },
+      "DomainsConfig.account_observer": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer"
+      },
+      "DomainsConfig.decision_making": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.decision_making"
+      },
+      "DomainsConfig.execution_position": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position"
+      },
+      "DomainsConfig.feature_engineering": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering"
+      },
+      "DomainsConfig.position_tracking": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.position_tracking"
+      },
+      "DomainsConfig.risk_management": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management"
+      },
+      "EmaBiasConfig.clamp_max": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.ema_bias.clamp_max"
+      },
+      "EmaBiasConfig.clamp_min": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.ema_bias.clamp_min"
+      },
+      "EmaClampConfig.clamp_max": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.ema_clamp.clamp_max"
+      },
+      "EmaClampConfig.clamp_min": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.ema_clamp.clamp_min"
+      },
+      "EmaClampConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.ema_clamp.enabled"
+      },
+      "EmaConfigDetailed.period_long": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.ema.period_long"
+      },
+      "EmaConfigDetailed.period_short": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.ema.period_short"
+      },
+      "EmergencyConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.emergency.enabled"
+      },
+      "EmergencyConfig.wait_mode_bars": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.emergency.wait_mode_bars"
+      },
+      "ExecutionConfig.allow_trade_with_guardian_tidy_only": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.allow_trade_with_guardian_tidy_only"
+      },
+      "ExecutionConfig.anti_race_close_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.anti_race_close_ms"
+      },
+      "ExecutionConfig.exposure": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure"
+      },
+      "ExecutionConfig.fallback": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.fallback"
+      },
+      "ExecutionConfig.fsm_periodic_cleanup_enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.fsm_periodic_cleanup_enabled"
+      },
+      "ExecutionConfig.limit_orders": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.limit_orders"
+      },
+      "ExecutionConfig.manage": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage"
+      },
+      "ExecutionConfig.min_post_interval_per_symbol_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.min_post_interval_per_symbol_ms"
+      },
+      "ExecutionConfig.open_order_type": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.open_order_type"
+      },
+      "ExecutionConfig.order_guardian": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.order_guardian"
+      },
+      "ExecutionConfig.order_params": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.order_params"
+      },
+      "ExecutionConfig.orders": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.orders"
+      },
+      "ExecutionConfig.preflight_backoff_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.preflight_backoff_ms"
+      },
+      "ExecutionConfig.watchdog": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.watchdog"
+      },
+      "ExecutionPositionDomainConfig.exposure_guard": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position.exposure_guard"
+      },
+      "ExecutionPositionDomainConfig.fsm_open": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position.fsm_open"
+      },
+      "ExecutionPositionDomainConfig.idempotent_cancel": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position.idempotent_cancel"
+      },
+      "ExecutionPositionDomainConfig.metrics_collector": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position.metrics_collector"
+      },
+      "ExecutionPositionDomainConfig.order_index": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position.order_index"
+      },
+      "ExecutionPositionDomainConfig.utils": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position.utils"
+      },
+      "ExecutionPositionDomainConfig.watchdog": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.execution_position.watchdog"
+      },
+      "ExecutionUtilsConfig.basis_points_base": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.utils.basis_points_base"
+      },
+      "ExecutionUtilsConfig.client_order_id_max_length": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.utils.client_order_id_max_length"
+      },
+      "ExposureConfig.count_pending_orders": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.count_pending_orders"
+      },
+      "ExposureConfig.exclude_reduce_only": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.exclude_reduce_only"
+      },
+      "ExposureConfig.leverage_defaults": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.leverage_defaults"
+      },
+      "ExposureConfig.max_directional_ratio": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.max_directional_ratio"
+      },
+      "ExposureConfig.max_equity_utilization_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.max_equity_utilization_pct"
+      },
+      "ExposureConfig.max_portfolio_fraction": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.max_portfolio_fraction"
+      },
+      "ExposureConfig.max_side_utilization_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.max_side_utilization_pct"
+      },
+      "ExposureConfig.pending_reservation_ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.pending_reservation_ttl_sec"
+      },
+      "ExposureConfig.pending_ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.pending_ttl_sec"
+      },
+      "ExposureConfig.per_symbol_cap_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.per_symbol_cap_pct"
+      },
+      "ExposureConfig.positions_stale_ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.positions_stale_ttl_sec"
+      },
+      "ExposureConfig.post_fill_hold_ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure.post_fill_hold_ttl_sec"
+      },
+      "ExposureGuardConfig.max_concentration_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.max_concentration_pct"
+      },
+      "ExposureGuardConfig.max_directional_ratio": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.max_directional_ratio"
+      },
+      "ExposureGuardConfig.max_equity_utilization_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.max_equity_utilization_pct"
+      },
+      "ExposureGuardConfig.max_long_utilization_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.max_long_utilization_pct"
+      },
+      "ExposureGuardConfig.max_portfolio_fraction": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.max_portfolio_fraction"
+      },
+      "ExposureGuardConfig.max_short_utilization_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.max_short_utilization_pct"
+      },
+      "ExposureGuardConfig.pending_timeout_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.pending_timeout_sec"
+      },
+      "ExposureGuardConfig.pending_ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.pending_ttl_sec"
+      },
+      "ExposureGuardConfig.post_fill_ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.post_fill_ttl_sec"
+      },
+      "ExposureGuardConfig.stale_ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.exposure_guard.stale_ttl_sec"
+      },
+      "FailsafeConfig.max_hold_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.failsafe.max_hold_sec"
+      },
+      "FeatureDefaultsConfig.correlation_default": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.defaults.correlation_default"
+      },
+      "FeatureDefaultsConfig.ms_per_sec": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.defaults.ms_per_sec"
+      },
+      "FeatureDefaultsConfig.neutral_value": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.defaults.neutral_value"
+      },
+      "FeatureDefaultsConfig.zero_value": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.defaults.zero_value"
+      },
+      "FeatureEngineeringConfig.ema": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.ema"
+      },
+      "FeatureEngineeringConfig.liquidity": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.liquidity"
+      },
+      "FeatureEngineeringConfig.macro_sync": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync"
+      },
+      "FeatureEngineeringConfig.volatility": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volatility"
+      },
+      "FeatureEngineeringConfig.volume": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume"
+      },
+      "FeatureEngineeringDomainConfig.defaults": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.defaults"
+      },
+      "FeatureEngineeringDomainConfig.delta_price": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.delta_price"
+      },
+      "FeatureEngineeringDomainConfig.depth_imbalance": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.depth_imbalance"
+      },
+      "FeatureEngineeringDomainConfig.ema": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.ema"
+      },
+      "FeatureEngineeringDomainConfig.ema_bias": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.ema_bias"
+      },
+      "FeatureEngineeringDomainConfig.enable_new_metrics": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.enable_new_metrics"
+      },
+      "FeatureEngineeringDomainConfig.liquidity": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.liquidity"
+      },
+      "FeatureEngineeringDomainConfig.macro_sync": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync"
+      },
+      "FeatureEngineeringDomainConfig.volatility": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volatility"
+      },
+      "FeatureEngineeringDomainConfig.volatility_state": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volatility_state"
+      },
+      "FeatureEngineeringDomainConfig.volume": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume"
+      },
+      "FeatureEngineeringDomainConfig.volume_input_mode": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume_input_mode"
+      },
+      "FeatureEngineeringDomainConfig.volume_spike": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume_spike"
+      },
+      "FeaturesTtlConfig.ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.features_ttl.ttl_sec"
+      },
+      "FsmOpenConfig.idempotency_window_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.fsm_open.idempotency_window_sec"
+      },
+      "IdempotentCancelConfig.max_retries": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.idempotent_cancel.max_retries"
+      },
+      "InstrumentPrecisionSpec.model_config": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.model_config"
+      },
+      "InstrumentPrecisionSpec.step_size": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.step_size"
+      },
+      "InstrumentPrecisionSpec.symbol": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.symbol"
+      },
+      "InstrumentPrecisionSpec.tick_size": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.tick_size"
+      },
+      "InstrumentSpec.min_notional": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.min_notional"
+      },
+      "InstrumentSpec.min_qty": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.min_qty"
+      },
+      "InstrumentSpec.quote": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.quote"
+      },
+      "InstrumentSpec.step_size": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.step_size"
+      },
+      "InstrumentSpec.symbol": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.symbol"
+      },
+      "InstrumentSpec.tick_size": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.tick_size"
+      },
+      "KellyConfig.base_probability": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.kelly.base_probability"
+      },
+      "KellyConfig.kelly_alpha": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.kelly.kelly_alpha"
+      },
+      "KellyConfig.kelly_cap": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.kelly.kelly_cap"
+      },
+      "KellyConfig.payoff_ratio_r": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.kelly.payoff_ratio_r"
+      },
+      "KlinesConfig.interval": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.klines.interval"
+      },
+      "KlinesConfig.limit": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.klines.limit"
+      },
+      "LiquidityConfigDetailed.depth_half": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.liquidity.depth_half"
+      },
+      "LiquidityConfigDetailed.kappa_max": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.liquidity.kappa_max"
+      },
+      "LiquidityConfigDetailed.kappa_min": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.liquidity.kappa_min"
+      },
+      "LoggingConfig.file": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.logging.file"
+      },
+      "LoggingConfig.format": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.logging.format"
+      },
+      "LoggingConfig.level": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.logging.level"
+      },
+      "LoggingConfig.model_config": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.logging.model_config"
+      },
+      "LoggingConfig.rotation": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.logging.rotation"
+      },
+      "MRAssetConfig.allowed_regimes": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.allowed_regimes"
+      },
+      "MRAssetConfig.bb_window": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.bb_window"
+      },
+      "MRAssetConfig.enabled": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.enabled"
+      },
+      "MRAssetConfig.min_vol_atr": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.min_vol_atr"
+      },
+      "MRAssetConfig.position_mode": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.position_mode"
+      },
+      "MRAssetConfig.risk": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk"
+      },
+      "MRAssetConfig.sl_pct": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.sl_pct"
+      },
+      "MRAssetConfig.strategy": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy"
+      },
+      "MRAssetRiskConfig.max_risk_score": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.asset_risk.max_risk_score"
+      },
+      "MRAssetRiskConfig.position_size_usd": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.asset_risk.position_size_usd"
+      },
+      "MRRegimeSizingConfig.sizing_mult": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.regime_sizing.sizing_mult"
+      },
+      "MRRegimeSizingConfig.stop_mult": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.regime_sizing.stop_mult"
+      },
+      "MRRegimeSizingConfig.target_mult": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.regime_sizing.target_mult"
+      },
+      "MRRegimeThresholdsConfig.high_vol_pct": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.regime_thresholds.high_vol_pct"
+      },
+      "MRRegimeThresholdsConfig.low_vol_pct": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.regime_thresholds.low_vol_pct"
+      },
+      "MRRiskConfig.daily_loss_limit_usd": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk.daily_loss_limit_usd"
+      },
+      "MRRiskConfig.expected_pnl_multiplier": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk.expected_pnl_multiplier"
+      },
+      "MRRiskConfig.fees_pct": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk.fees_pct"
+      },
+      "MRRiskConfig.max_concurrent_positions": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk.max_concurrent_positions"
+      },
+      "MRRiskConfig.position_size_usd": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk.position_size_usd"
+      },
+      "MRRiskConfig.slippage_pct": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk.slippage_pct"
+      },
+      "MRStrategyOverrideConfig.bb_num_std": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy_override.bb_num_std"
+      },
+      "MRStrategyOverrideConfig.bb_window": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy_override.bb_window"
+      },
+      "MRStrategyOverrideConfig.cooldown_sec": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy_override.cooldown_sec"
+      },
+      "MRStrategyOverrideConfig.entry_threshold": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy_override.entry_threshold"
+      },
+      "MRStrategyOverrideConfig.min_bb_width": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy_override.min_bb_width"
+      },
+      "MRStrategyOverrideConfig.sl_atr_mult": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy_override.sl_atr_mult"
+      },
+      "MRStrategyOverrideConfig.tp_to_mid": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy_override.tp_to_mid"
+      },
+      "MRStrategyParamsConfig.atr_window": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.atr_window"
+      },
+      "MRStrategyParamsConfig.bb_num_std": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.bb_num_std"
+      },
+      "MRStrategyParamsConfig.bb_window": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.bb_window"
+      },
+      "MRStrategyParamsConfig.cooldown_sec": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.cooldown_sec"
+      },
+      "MRStrategyParamsConfig.entry_threshold": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.entry_threshold"
+      },
+      "MRStrategyParamsConfig.max_bb_width": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.max_bb_width"
+      },
+      "MRStrategyParamsConfig.min_bars": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.min_bars"
+      },
+      "MRStrategyParamsConfig.min_bb_width": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.min_bb_width"
+      },
+      "MRStrategyParamsConfig.rsi_overbought": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.rsi_overbought"
+      },
+      "MRStrategyParamsConfig.rsi_oversold": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.rsi_oversold"
+      },
+      "MRStrategyParamsConfig.rsi_window": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.rsi_window"
+      },
+      "MRStrategyParamsConfig.sl_atr_mult": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.sl_atr_mult"
+      },
+      "MRStrategyParamsConfig.tp_to_mid": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy.tp_to_mid"
+      },
+      "MacroSyncConfig.align_mode": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.align_mode"
+      },
+      "MacroSyncConfig.anchor_update_from_ticks": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.anchor_update_from_ticks"
+      },
+      "MacroSyncConfig.anchors": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.anchors"
+      },
+      "MacroSyncConfig.emit_abs": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.emit_abs"
+      },
+      "MacroSyncConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.enabled"
+      },
+      "MacroSyncConfig.min_buffer_size": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.min_buffer_size"
+      },
+      "MacroSyncConfig.time_diff_threshold_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.time_diff_threshold_ms"
+      },
+      "MacroSyncConfig.window": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync.window"
+      },
+      "MacroSyncMetricsConfig.align_mode": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync.align_mode"
+      },
+      "MacroSyncMetricsConfig.anchor_update_from_ticks": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync.anchor_update_from_ticks"
+      },
+      "MacroSyncMetricsConfig.anchors": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync.anchors"
+      },
+      "MacroSyncMetricsConfig.enabled": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync.enabled"
+      },
+      "MacroSyncMetricsConfig.min_buffer_size": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync.min_buffer_size"
+      },
+      "MacroSyncMetricsConfig.time_diff_threshold_ms": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync.time_diff_threshold_ms"
+      },
+      "MacroSyncMetricsConfig.window": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.macro_sync.window"
+      },
+      "ManageConfig.auto": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.auto"
+      },
+      "ManageConfig.brackets": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.brackets"
+      },
+      "ManageConfig.emergency": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.emergency"
+      },
+      "ManageConfig.failsafe": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.failsafe"
+      },
+      "ManageConfig.orphan_monitor": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.orphan_monitor"
+      },
+      "MarketDataConfig.api_call_limits": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.api_call_limits"
+      },
+      "MarketDataConfig.macro_sync": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.macro_sync"
+      },
+      "MarketDataConfig.poll_interval_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.poll_interval_sec"
+      },
+      "MarketDataConfig.use_multiprocessing": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.use_multiprocessing"
+      },
+      "MarketDataConfig.websocket_streams": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data.websocket_streams"
+      },
+      "MaxRiskScoreConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.max_risk_score.enabled"
+      },
+      "MaxRiskScoreConfig.value": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.max_risk_score.value"
+      },
+      "MeanReversion1mStrategyConfig.allowed_regimes": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.allowed_regimes"
+      },
+      "MeanReversion1mStrategyConfig.assets": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.assets"
+      },
+      "MeanReversion1mStrategyConfig.emit_trade_intent_directly": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.emit_trade_intent_directly"
+      },
+      "MeanReversion1mStrategyConfig.enabled": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.enabled"
+      },
+      "MeanReversion1mStrategyConfig.model_config": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.model_config"
+      },
+      "MeanReversion1mStrategyConfig.regime_sizing": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.regime_sizing"
+      },
+      "MeanReversion1mStrategyConfig.regime_thresholds": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.regime_thresholds"
+      },
+      "MeanReversion1mStrategyConfig.risk": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.risk"
+      },
+      "MeanReversion1mStrategyConfig.strategy": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.strategy"
+      },
+      "MeanReversion1mStrategyConfig.timeframe_sec": {
+        "file": "config/aurora/strategies/mean_reversion.yaml",
+        "path": "mean_reversion.timeframe_sec"
+      },
+      "MeanReversionConfig.allowed_regimes": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mean_reversion.allowed_regimes"
+      },
+      "MeanReversionConfig.bb_std_dev": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mean_reversion.bb_std_dev"
+      },
+      "MeanReversionConfig.bb_window": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mean_reversion.bb_window"
+      },
+      "MeanReversionConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mean_reversion.enabled"
+      },
+      "MeanReversionConfig.min_vol_atr": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.mean_reversion.min_vol_atr"
+      },
+      "MeanReversionRegimeModelConfig.confidence_multiplier": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.mean_reversion.confidence_multiplier"
+      },
+      "MeanReversionRegimeModelConfig.model_config": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.mean_reversion.model_config"
+      },
+      "MeanReversionRegimeModelConfig.threshold": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.mean_reversion.threshold"
+      },
+      "MetricsCollectorConfig.recent_rejections_minutes": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.metrics_collector.recent_rejections_minutes"
+      },
+      "MetricsCollectorConfig.window_size_minutes": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.metrics_collector.window_size_minutes"
+      },
+      "OpsConfig.allowlist_symbols": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops.allowlist_symbols"
+      },
+      "OpsConfig.metrics_url": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops.metrics_url"
+      },
+      "OpsConfig.model_config": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops.model_config"
+      },
+      "OpsConfig.panic_killswitch": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops.panic_killswitch"
+      },
+      "OpsConfig.panic_ttl_sec": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops.panic_ttl_sec"
+      },
+      "OpsConfig.quiet_hours_utc": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops.quiet_hours_utc"
+      },
+      "OpsConfig.reports_dir": {
+        "file": "config/aurora/system.yaml",
+        "path": "ops.reports_dir"
+      },
+      "OrderIndexConfig.ttl_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.order_index.ttl_sec"
+      },
+      "OrdersConfig.default_ttl_seconds": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.orders.default_ttl_seconds"
+      },
+      "OrdersConfig.model_config": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.orders.model_config"
+      },
+      "OrphanMonitorConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.orphan_monitor.enabled"
+      },
+      "OrphanMonitorConfig.model_config": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.manage.orphan_monitor.model_config"
+      },
+      "PositionSizingConfig.kappa_mode": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.kappa_mode"
+      },
+      "PositionSizingConfig.liquidity_based_cap_usd": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.liquidity_based_cap_usd"
+      },
+      "PositionSizingConfig.liquidity_kappa": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.liquidity_kappa"
+      },
+      "PositionSizingConfig.liquidity_kappa_mode": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.liquidity_kappa_mode"
+      },
+      "PositionSizingConfig.min_position_size_usd": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.min_position_size_usd"
+      },
+      "PositionSizingConfig.risk_contract_v1": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.risk_contract_v1"
+      },
+      "PositionSizingConfig.risk_fraction_q": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.risk_fraction_q"
+      },
+      "PositionTrackingDomainConfig.enable_market_tick_subscription": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.position_tracking.enable_market_tick_subscription"
+      },
+      "PositionTrackingDomainConfig.positions_stale_ttl_sec": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.position_tracking.positions_stale_ttl_sec"
+      },
+      "PositionTrackingDomainConfig.precision": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.position_tracking.precision"
+      },
+      "PositionTrackingDomainConfig.thread_timeouts": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.position_tracking.thread_timeouts"
+      },
+      "PrecisionConfig.decimal_places": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.precision.decimal_places"
+      },
+      "PrecisionConfig.flat_position_threshold": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.precision.flat_position_threshold"
+      },
+      "PrecisionConfig.quantity_min_threshold": {
+        "file": "config/aurora/instruments.yaml",
+        "path": "instruments.precision.quantity_min_threshold"
+      },
+      "QosConfig.enforce": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.qos.enforce"
+      },
+      "QosConfig.exposure_block_cooldown_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.qos.exposure_block_cooldown_sec"
+      },
+      "QosConfig.max_intents_per_minute_per_symbol": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.qos.max_intents_per_minute_per_symbol"
+      },
+      "QosConfig.mode": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.qos.mode"
+      },
+      "QosConfig.symbol_cooldown_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.qos.symbol_cooldown_sec"
+      },
+      "ROIExitConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.roi_exit.enabled"
+      },
+      "ROIExitConfig.target_roi_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.roi_exit.target_roi_pct"
+      },
+      "RegimeDetectorConfig.model_config": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.model_config"
+      },
+      "RegimeDetectorConfig.models": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.models"
+      },
+      "RegimeModelConfig.confidence_max": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.confidence_max"
+      },
+      "RegimeModelConfig.confidence_min": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.confidence_min"
+      },
+      "RegimeModelConfig.confidence_multiplier": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.confidence_multiplier"
+      },
+      "RegimeModelConfig.model_config": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.model_config"
+      },
+      "RegimeModelsConfig.mean_reversion": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.mean_reversion"
+      },
+      "RegimeModelsConfig.sma_trend": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.sma_trend"
+      },
+      "RegimeModelsConfig.volatility": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility"
+      },
+      "RegimeSizingSymbolConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.regime_sizing.enabled"
+      },
+      "RegimeSizingSymbolConfig.high_vol_multiplier": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.regime_sizing.high_vol_multiplier"
+      },
+      "RegimeSizingSymbolConfig.low_vol_multiplier": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.regime_sizing.low_vol_multiplier"
+      },
+      "RetrySchedulerConfig.max_attempts": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.retry_scheduler.max_attempts"
+      },
+      "RetrySchedulerConfig.min_retry_delay_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.retry_scheduler.min_retry_delay_ms"
+      },
+      "RiskContractV1Config.effective_leverage": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.risk_contract_v1.effective_leverage"
+      },
+      "RiskContractV1Config.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.risk_contract_v1.enabled"
+      },
+      "RiskContractV1Config.model_config": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.risk_contract_v1.model_config"
+      },
+      "RiskContractV1Config.per_symbol_margin_fraction": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.risk_contract_v1.per_symbol_margin_fraction"
+      },
+      "RiskContractV1Config.regime_sizing": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.position_sizing.risk_contract_v1.regime_sizing"
+      },
+      "RiskManagementDataSourcesConfig.market_data": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management.data_sources.market_data"
+      },
+      "RiskManagementDataSourcesConfig.portfolio_state": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management.data_sources.portfolio_state"
+      },
+      "RiskManagementDomainConfig.risk_score_weights": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management.risk_score_weights"
+      },
+      "RiskManagementDomainConfig.trading_allowed_thresholds": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management.trading_allowed_thresholds"
+      },
+      "RiskManagementDomainConfig.use_absorption_penalty": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management.use_absorption_penalty"
+      },
+      "RiskManagementDomainConfig.validation": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management.validation"
+      },
+      "RiskScoreWeightsConfig.absorption_inverse": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_score_weights.absorption_inverse"
+      },
+      "RiskScoreWeightsConfig.delta_price_pct": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_score_weights.delta_price_pct"
+      },
+      "RiskScoreWeightsConfig.obi": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_score_weights.obi"
+      },
+      "RiskScoreWeightsConfig.tfi": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_score_weights.tfi"
+      },
+      "RiskSkewConfig.defer_cooldown_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_skew.defer_cooldown_sec"
+      },
+      "RiskSkewConfig.max_defer_count": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_skew.max_defer_count"
+      },
+      "RiskSkewConfig.max_skew_sec": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_skew.max_skew_sec"
+      },
+      "RiskValidationConfig.total_weight_max": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_validation.total_weight_max"
+      },
+      "RiskValidationConfig.total_weight_min": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.risk_validation.total_weight_min"
+      },
+      "SLConfig.fixed_bps": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.sl.fixed_bps"
+      },
+      "SLConfig.model_config": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.sl.model_config"
+      },
+      "SMARegimeModelConfig.confidence_max": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.sma.confidence_max"
+      },
+      "SMARegimeModelConfig.confidence_min": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.sma.confidence_min"
+      },
+      "SMARegimeModelConfig.confidence_multiplier": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.sma.confidence_multiplier"
+      },
+      "SMARegimeModelConfig.model_config": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.sma.model_config"
+      },
+      "SMARegimeModelConfig.sma_long_period": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.sma.sma_long_period"
+      },
+      "SMARegimeModelConfig.sma_short_period": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.sma.sma_short_period"
+      },
+      "SignalThresholdConfig.enabled": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_threshold.enabled"
+      },
+      "SignalThresholdConfig.value": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_threshold.value"
+      },
+      "SignalWeights.delta_price": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.delta_price"
+      },
+      "SignalWeights.depth_imbalance": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.depth_imbalance"
+      },
+      "SignalWeights.ema_bias": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.ema_bias"
+      },
+      "SignalWeights.macro_sync": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.macro_sync"
+      },
+      "SignalWeights.obi": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.obi"
+      },
+      "SignalWeights.tfi": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.tfi"
+      },
+      "SignalWeights.volatility_state": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.volatility_state"
+      },
+      "SignalWeights.volume_spike": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signal_weights.volume_spike"
+      },
+      "SignalsConfig.enable_new_metrics": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signals.enable_new_metrics"
+      },
+      "SignalsConfig.normalize": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.signals.normalize"
+      },
+      "StrategiesArbitrationConfig.logging": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.arbitration.logging"
+      },
+      "StrategiesArbitrationConfig.mode": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.arbitration.mode"
+      },
+      "StrategiesArbitrationConfig.priority": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.arbitration.priority"
+      },
+      "StrategiesArbitrationLoggingConfig.log_level": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.arbitration.logging.log_level"
+      },
+      "StrategiesArbitrationLoggingConfig.rejected_why_prefix": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.arbitration.logging.rejected_why_prefix"
+      },
+      "StrategiesRegistryConfig.arbitration": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.arbitration"
+      },
+      "StrategiesRegistryConfig.assignments": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.assignments"
+      },
+      "StrategiesRegistryConfig.version": {
+        "file": "config/aurora/strategies.yaml",
+        "path": "strategies_registry.version"
+      },
+      "SystemConfig.logging": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.logging"
+      },
+      "SystemConfig.market_data": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.market_data"
+      },
+      "SystemConfig.model_config": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.model_config"
+      },
+      "SystemMarketDataConfig.emit_workers": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.market_data.emit_workers"
+      },
+      "SystemMarketDataConfig.local_queue_maxsize": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.market_data.local_queue_maxsize"
+      },
+      "SystemMarketDataConfig.model_config": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.market_data.model_config"
+      },
+      "SystemMarketDataConfig.queue_maxsize": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.market_data.queue_maxsize"
+      },
+      "SystemMarketDataConfig.tick_ttl_ms": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.market_data.tick_ttl_ms"
+      },
+      "SystemMetaConfig.calibrator": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.calibrator"
+      },
+      "SystemMetaConfig.hardening": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.hardening"
+      },
+      "SystemMetaConfig.hawkes": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.hawkes"
+      },
+      "SystemMetaConfig.hotreload_whitelist": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.hotreload_whitelist"
+      },
+      "SystemMetaConfig.kelly": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.kelly"
+      },
+      "SystemMetaConfig.position_tracking": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.position_tracking"
+      },
+      "SystemMetaConfig.regime_config_version": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.regime_config_version"
+      },
+      "SystemMetaConfig.risk_core": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.risk_core"
+      },
+      "SystemMetaConfig.runtime": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.runtime"
+      },
+      "SystemMetaConfig.sequential_tests": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.sequential_tests"
+      },
+      "SystemMetaConfig.system_config_version": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.meta.system_config_version"
+      },
+      "SystemRuntimeMeta.config_dir": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.runtime_meta.config_dir"
+      },
+      "SystemRuntimeMeta.config_name": {
+        "file": "config/aurora/system.yaml",
+        "path": "system.runtime_meta.config_name"
+      },
+      "TPConfig.fixed_bps": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.tp.fixed_bps"
+      },
+      "TPConfig.model_config": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.brackets.tp.model_config"
+      },
+      "ThreadTimeoutsConfig.join_timeout_sec": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.account_observer.thread_timeouts.join_timeout_sec"
+      },
+      "TradingAllowedThresholdsConfig.max_risk_score": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision.trading_allowed_thresholds.max_risk_score"
+      },
+      "TradingConfig.aurora_instruments": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.aurora_instruments"
+      },
+      "TradingConfig.decision": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.decision"
+      },
+      "TradingConfig.domain_configuration": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.domain_configuration"
+      },
+      "TradingConfig.domains": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.domains"
+      },
+      "TradingConfig.execution": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution"
+      },
+      "TradingConfig.feature_engineering": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.feature_engineering"
+      },
+      "TradingConfig.instruments": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.instruments"
+      },
+      "TradingConfig.market_data": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.market_data"
+      },
+      "TradingConfig.mode": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.mode"
+      },
+      "TradingConfig.ops": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.ops"
+      },
+      "TradingConfig.risk": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.risk"
+      },
+      "TradingConfig.risk_budgets": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.risk_budgets"
+      },
+      "TradingConfig.risk_management": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.risk_management"
+      },
+      "TradingConfig.symbols_to_track": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.symbols_to_track"
+      },
+      "TradingConfig.tca_prefs": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.tca_prefs"
+      },
+      "TradingRiskManagementConfig.data_sources": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.risk_management.trading.data_sources"
+      },
+      "VolatilityConfigDetailed.sma_length": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volatility.sma_length"
+      },
+      "VolatilityConfigDetailed.window_sec": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volatility.window_sec"
+      },
+      "VolatilityRegimeModelConfig.atr_period": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.atr_period"
+      },
+      "VolatilityRegimeModelConfig.atr_sma_length": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.atr_sma_length"
+      },
+      "VolatilityRegimeModelConfig.enabled": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.enabled"
+      },
+      "VolatilityRegimeModelConfig.high_vol_confidence_multiplier": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.high_vol_confidence_multiplier"
+      },
+      "VolatilityRegimeModelConfig.low_vol_confidence_multiplier": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.low_vol_confidence_multiplier"
+      },
+      "VolatilityRegimeModelConfig.low_vol_multiplier": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.low_vol_multiplier"
+      },
+      "VolatilityRegimeModelConfig.model_config": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.model_config"
+      },
+      "VolatilityRegimeModelConfig.threshold_multiplier": {
+        "file": "config/aurora/regime.yaml",
+        "path": "models.volatility.threshold_multiplier"
+      },
+      "VolatilityStateConfig.cap_max": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volatility_state.cap_max"
+      },
+      "VolumeConfigDetailed.min_window_volume_usd": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume.min_window_volume_usd"
+      },
+      "VolumeConfigDetailed.sma_length": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume.sma_length"
+      },
+      "VolumeConfigDetailed.window_sec": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume.window_sec"
+      },
+      "VolumeSpikeConfig.cap_max": {
+        "file": "config/aurora/domains.yaml",
+        "path": "domains.feature_engineering.volume_spike.cap_max"
+      },
+      "WatchdogConfig.ack_ttl_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.watchdog.ack_ttl_ms"
+      },
+      "WatchdogConfig.check_interval_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.watchdog.check_interval_ms"
+      },
+      "WatchdogConfig.fill_ttl_ms": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.watchdog.fill_ttl_ms"
+      },
+      "WatchdogConfig.rps_limit": {
+        "file": "config/aurora/trading.yaml",
+        "path": "trading.execution.watchdog.rps_limit"
       }
     }
   },
@@ -2073,72 +4433,2099 @@
       }
     }
   },
+  "docs_arhive/Метрики/trading_1m_best_optuna.yaml": {
+    "keys": [
+      "strategy"
+    ],
+    "raw": {
+      "strategy": {
+        "name": "Mean Reversion 1m",
+        "version": "v3.0-final",
+        "timeframe": "1m",
+        "global": {
+          "position_size_usd": 1000,
+          "maker_fee": 0.0002,
+          "taker_fee": 0.0005,
+          "slippage": 0.0001,
+          "cost_basis": 0.0008
+        },
+        "risk": {
+          "max_concurrent_positions": 5,
+          "daily_loss_limit_usd": 500,
+          "per_asset_exposure_pct": 20
+        },
+        "assets": {
+          "BTCUSDT": {
+            "enabled": true,
+            "bb_window": 20,
+            "min_vol_atr": 0.008,
+            "sl_pct": 0.0068,
+            "allowed_regimes": [
+              "FLAT_LOW",
+              "FLAT_NORMAL",
+              "FLAT_HIGH"
+            ],
+            "metrics": {
+              "expected_pnl": 45.27,
+              "win_rate": 0.657,
+              "calmar": 0.91,
+              "trades_per_month": 172
+            }
+          },
+          "DOGEUSDT": {
+            "enabled": true,
+            "bb_window": 20,
+            "min_vol_atr": 0.01,
+            "sl_pct": 0.0197,
+            "allowed_regimes": [
+              "FLAT_LOW",
+              "FLAT_NORMAL",
+              "FLAT_HIGH"
+            ],
+            "metrics": {
+              "expected_pnl": 88.38,
+              "win_rate": 0.644,
+              "calmar": 1.07,
+              "trades_per_month": 146
+            }
+          },
+          "XRPUSDT": {
+            "enabled": true,
+            "bb_window": 20,
+            "min_vol_atr": 0.01,
+            "sl_pct": 0.0144,
+            "allowed_regimes": [
+              "FLAT_LOW",
+              "FLAT_NORMAL",
+              "FLAT_HIGH"
+            ],
+            "metrics": {
+              "expected_pnl": 31.41,
+              "win_rate": 0.626,
+              "calmar": 0.54,
+              "trades_per_month": 107
+            }
+          },
+          "ETHUSDT": {
+            "enabled": true,
+            "bb_window": 120,
+            "min_vol_atr": 0.025,
+            "sl_pct": 0.0282,
+            "allowed_regimes": [
+              "FLAT_LOW",
+              "FLAT_NORMAL",
+              "FLAT_HIGH"
+            ],
+            "metrics": {
+              "expected_pnl": 37.38,
+              "win_rate": 0.697,
+              "calmar": 0.71,
+              "trades_per_month": 33
+            }
+          },
+          "SOLUSDT": {
+            "enabled": false,
+            "bb_window": 60,
+            "min_vol_atr": 0.02,
+            "sl_pct": 0.0156,
+            "allowed_regimes": [
+              "FLAT_LOW",
+              "FLAT_NORMAL",
+              "FLAT_HIGH"
+            ],
+            "metrics": {
+              "expected_pnl": 1.48,
+              "win_rate": 0.65,
+              "calmar": 0.01,
+              "trades_per_month": 180
+            }
+          }
+        },
+        "entry": {
+          "min_expected_return_multiplier": 1.5
+        },
+        "exit": {
+          "mean_reversion_exit": true,
+          "stop_loss_enabled": true,
+          "max_hold_time_minutes": null
+        },
+        "execution": {
+          "order_type": "MARKET",
+          "entry_fee_type": "MAKER",
+          "exit_fee_type": "TAKER"
+        },
+        "performance": {
+          "total_portfolio_pnl": 203.72,
+          "assets_profitable": 5,
+          "avg_win_rate": 0.648,
+          "avg_calmar": 0.65,
+          "total_trades": 558
+        },
+        "deployment": {
+          "recommended_assets": [
+            "BTCUSDT",
+            "DOGEUSDT",
+            "XRPUSDT",
+            "ETHUSDT"
+          ],
+          "excluded_assets": [
+            "SOLUSDT"
+          ],
+          "expected_monthly_pnl": 202.0,
+          "min_capital_usd": 50000
+        }
+      }
+    }
+  },
+  "docs_arhive/Метрики/aurora_optimal_production_v1.yaml": {
+    "keys": [
+      "aurora_optimal",
+      "common"
+    ],
+    "raw": {
+      "aurora_optimal": {
+        "version": "1.0.0",
+        "description": "Multi-asset Aurora strategy with optimized parameters per symbol",
+        "training_period": "2024-01",
+        "total_trials": 31200,
+        "expected_monthly_roi": 0.106,
+        "SOLUSDT": {
+          "enabled": true,
+          "timeframe": "3m",
+          "bar_seconds": 180,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 201.6,
+            "trades": 98,
+            "win_rate": 0.612,
+            "max_dd_usd": -19.74,
+            "calmar": 9.7,
+            "source": "Phase 2 (Fixed Phase 1)"
+          },
+          "features": {
+            "ema": {
+              "period_short": 7,
+              "period_long": 25
+            },
+            "volume": {
+              "window_sec": 280,
+              "sma_length": 16,
+              "cap_max": 3.439
+            },
+            "liquidity": {
+              "depth_half": 3000.0,
+              "kappa_min": 0.345
+            },
+            "obi": {
+              "window_sec": 70
+            },
+            "tfi": {
+              "window_sec": 160
+            },
+            "volatility": {
+              "window_sec": 150,
+              "sma_length": 4,
+              "cap_max": 4.777
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 10000
+            },
+            "macro_sync": {
+              "window": 90
+            }
+          },
+          "weights": {
+            "ema": 0.467,
+            "volume": 0.242,
+            "macro": 0.227,
+            "liquidity": 0.138,
+            "obi": 0.344,
+            "tfi": 0.363,
+            "volatility": 0.393,
+            "depth_imbalance": 0.241,
+            "delta_price": 0.176
+          },
+          "decision": {
+            "signal_threshold": 0.11,
+            "max_risk_score": 0.784,
+            "allowed_regimes": [
+              "TREND_DOWN"
+            ]
+          },
+          "exit": {
+            "sl_pct": 0.526,
+            "max_hold_sec": 660
+          }
+        },
+        "ETHUSDT": {
+          "enabled": true,
+          "timeframe": "5m",
+          "bar_seconds": 300,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 105.87,
+            "trades": 103,
+            "win_rate": 0.592,
+            "max_dd_usd": -22.64,
+            "calmar": 4.68,
+            "source": "DEEP 15K trials"
+          },
+          "features": {
+            "ema": {
+              "period_short": 4,
+              "period_long": 19
+            },
+            "volume": {
+              "window_sec": 60,
+              "sma_length": 12,
+              "cap_max": 4.814
+            },
+            "liquidity": {
+              "depth_half": 1250.0,
+              "kappa_min": 0.463
+            },
+            "obi": {
+              "window_sec": 145
+            },
+            "tfi": {
+              "window_sec": 290
+            },
+            "volatility": {
+              "window_sec": 290,
+              "sma_length": 3,
+              "cap_max": 4.373
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 5000
+            },
+            "macro_sync": {
+              "window": 40
+            }
+          },
+          "weights": {
+            "ema": 0.058,
+            "volume": 0.241,
+            "macro": 0.131,
+            "liquidity": 0.341,
+            "obi": 0.155,
+            "tfi": 0.093,
+            "volatility": 0.036,
+            "depth_imbalance": 0.256,
+            "delta_price": 0.253
+          },
+          "decision": {
+            "signal_threshold": 0.271,
+            "max_risk_score": 0.756,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ]
+          },
+          "exit": {
+            "sl_pct": 0.019,
+            "max_hold_sec": 900
+          }
+        },
+        "XRPUSDT": {
+          "enabled": true,
+          "timeframe": "3m",
+          "bar_seconds": 180,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 28.96,
+            "trades": 41,
+            "win_rate": 0.537,
+            "max_dd_usd": -26.8,
+            "calmar": 1.08,
+            "source": "Phase 2 (Fixed Phase 1)"
+          },
+          "features": {
+            "ema": {
+              "period_short": 12,
+              "period_long": 14
+            },
+            "volume": {
+              "window_sec": 150,
+              "sma_length": 6,
+              "cap_max": 4.649
+            },
+            "liquidity": {
+              "depth_half": 4750.0,
+              "kappa_min": 0.471
+            },
+            "obi": {
+              "window_sec": 120
+            },
+            "tfi": {
+              "window_sec": 240
+            },
+            "volatility": {
+              "window_sec": 290,
+              "sma_length": 9,
+              "cap_max": 3.694
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 6000
+            },
+            "macro_sync": {
+              "window": 60
+            }
+          },
+          "weights": {
+            "ema": 0.427,
+            "volume": 0.385,
+            "macro": 0.469,
+            "liquidity": 0.199,
+            "obi": 0.12,
+            "tfi": 0.402,
+            "volatility": 0.367,
+            "depth_imbalance": 0.392,
+            "delta_price": 0.028
+          },
+          "decision": {
+            "signal_threshold": 0.236,
+            "max_risk_score": 0.831,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ]
+          },
+          "exit": {
+            "sl_pct": 1.671,
+            "max_hold_sec": 660
+          }
+        },
+        "DOGEUSDT": {
+          "enabled": true,
+          "timeframe": "3m",
+          "bar_seconds": 180,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 85.89,
+            "trades": 78,
+            "win_rate": 0.564,
+            "max_dd_usd": -24.76,
+            "calmar": 3.47,
+            "source": "DEEP 15K trials"
+          },
+          "features": {
+            "ema": {
+              "period_short": 7,
+              "period_long": 9
+            },
+            "volume": {
+              "window_sec": 125,
+              "sma_length": 15,
+              "cap_max": 4.81
+            },
+            "liquidity": {
+              "depth_half": 2000.0,
+              "kappa_min": 0.29
+            },
+            "obi": {
+              "window_sec": 110
+            },
+            "tfi": {
+              "window_sec": 70
+            },
+            "volatility": {
+              "window_sec": 230,
+              "sma_length": 14,
+              "cap_max": 2.052
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 3000
+            },
+            "macro_sync": {
+              "window": 30
+            }
+          },
+          "weights": {
+            "ema": 0.414,
+            "volume": 0.352,
+            "macro": 0.45,
+            "liquidity": 0.101,
+            "obi": 0.317,
+            "tfi": 0.085,
+            "volatility": 0.325,
+            "depth_imbalance": 0.15,
+            "delta_price": 0.088
+          },
+          "decision": {
+            "signal_threshold": 0.282,
+            "max_risk_score": 0.9,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ]
+          },
+          "exit": {
+            "sl_pct": 0.016,
+            "max_hold_sec": 600
+          }
+        }
+      },
+      "common": {
+        "regime_filter": {
+          "enabled": true,
+          "always_reject": [
+            "TREND_UP",
+            "MEAN_REVERSION",
+            "HIGH_VOLATILITY"
+          ],
+          "note": "TREND_DOWN and LOW_VOLATILITY are the only profitable regimes"
+        },
+        "backtest": {
+          "maker_fee": 0.0002,
+          "taker_fee": 0.0005,
+          "slippage": 0.0001,
+          "position_size_usd": 1000,
+          "use_compounding": false
+        },
+        "portfolio": {
+          "total_capital_usd": 4000,
+          "expected_monthly_pnl_usd": 423,
+          "expected_monthly_roi_pct": 10.6,
+          "expected_annual_roi_pct": 127,
+          "breakdown": {
+            "SOL": {
+              "pnl": 202,
+              "allocation": 1000
+            },
+            "ETH": {
+              "pnl": 106,
+              "allocation": 1000
+            },
+            "DOGE": {
+              "pnl": 86,
+              "allocation": 1000
+            },
+            "XRP": {
+              "pnl": 29,
+              "allocation": 1000
+            }
+          }
+        }
+      }
+    }
+  },
+  "docs_arhive/Метрики/traiding_best_optuna_3_5m.yaml": {
+    "keys": [
+      "strategy"
+    ],
+    "raw": {
+      "strategy": {
+        "name": "Aurora Multi-Timeframe",
+        "version": "v4.0-optuna-obi-tfi",
+        "description": "Mixed 3m/5m strategy with Order Flow (OBI/TFI) integration",
+        "global": {
+          "position_size_usd": 1000,
+          "maker_fee": 0.0002,
+          "taker_fee": 0.0005,
+          "slippage": 0.0001,
+          "cost_basis": 0.0008
+        },
+        "risk": {
+          "max_concurrent_positions": 5,
+          "daily_loss_limit_usd": 500,
+          "per_asset_exposure_pct": 20
+        },
+        "assets": {
+          "SOLUSDT": {
+            "enabled": true,
+            "timeframe": "3m",
+            "ema_period_short": 7,
+            "ema_period_long": 25,
+            "volume_window_sec": 280,
+            "volume_sma_length": 16,
+            "volume_cap_max": 3.439,
+            "liquidity_depth_half": 3000.0,
+            "liquidity_kappa_min": 0.345,
+            "obi_window_sec": 70,
+            "tfi_window_sec": 160,
+            "weight_ema": 0.467,
+            "weight_volume": 0.242,
+            "weight_macro": 0.138,
+            "weight_liquidity": 0.138,
+            "weight_obi": 0.344,
+            "weight_tfi": 0.363,
+            "signal_threshold": 0.11,
+            "max_risk_score": 0.784,
+            "sl_pct": 0.526,
+            "max_hold_sec": 660,
+            "allowed_regimes": [
+              "TREND_DOWN"
+            ],
+            "metrics": {
+              "expected_pnl": 173.73,
+              "win_rate": 0.508,
+              "calmar": 3.08,
+              "trades_per_month": 199,
+              "max_drawdown": -56.47
+            }
+          },
+          "ETHUSDT": {
+            "enabled": true,
+            "timeframe": "5m",
+            "ema_period_short": 5,
+            "ema_period_long": 5,
+            "volume_window_sec": 40,
+            "volume_sma_length": 11,
+            "volume_cap_max": 3.087,
+            "liquidity_depth_half": 3750.0,
+            "liquidity_kappa_min": 0.494,
+            "obi_window_sec": 150,
+            "tfi_window_sec": 80,
+            "weight_ema": 0.174,
+            "weight_volume": 0.236,
+            "weight_macro": 0.382,
+            "weight_liquidity": 0.35,
+            "weight_obi": 0.453,
+            "weight_tfi": 0.471,
+            "signal_threshold": 0.16,
+            "max_risk_score": 0.567,
+            "sl_pct": 1.591,
+            "max_hold_sec": 720,
+            "allowed_regimes": [
+              "TREND_DOWN"
+            ],
+            "metrics": {
+              "expected_pnl": 76.12,
+              "win_rate": 0.677,
+              "calmar": 9.31,
+              "trades_per_month": 62,
+              "max_drawdown": -8.17
+            }
+          },
+          "XRPUSDT": {
+            "enabled": true,
+            "timeframe": "3m",
+            "ema_period_short": 12,
+            "ema_period_long": 14,
+            "volume_window_sec": 150,
+            "volume_sma_length": 6,
+            "volume_cap_max": 4.649,
+            "liquidity_depth_half": 4750.0,
+            "liquidity_kappa_min": 0.471,
+            "obi_window_sec": 120,
+            "tfi_window_sec": 240,
+            "weight_ema": 0.427,
+            "weight_volume": 0.385,
+            "weight_macro": 0.411,
+            "weight_liquidity": 0.199,
+            "weight_obi": 0.12,
+            "weight_tfi": 0.402,
+            "signal_threshold": 0.236,
+            "max_risk_score": 0.831,
+            "sl_pct": 1.671,
+            "max_hold_sec": 660,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ],
+            "metrics": {
+              "expected_pnl": 28.95,
+              "win_rate": 0.623,
+              "calmar": 2.94,
+              "trades_per_month": 61,
+              "max_drawdown": -9.85
+            }
+          },
+          "DOGEUSDT": {
+            "enabled": true,
+            "timeframe": "3m",
+            "ema_period_short": 7,
+            "ema_period_long": 6,
+            "volume_window_sec": 180,
+            "volume_sma_length": 4,
+            "volume_cap_max": 3.37,
+            "liquidity_depth_half": 3250.0,
+            "liquidity_kappa_min": 0.239,
+            "obi_window_sec": 50,
+            "tfi_window_sec": 100,
+            "weight_ema": 0.185,
+            "weight_volume": 0.375,
+            "weight_macro": 0.326,
+            "weight_liquidity": 0.242,
+            "weight_obi": 0.146,
+            "weight_tfi": 0.153,
+            "signal_threshold": 0.172,
+            "max_risk_score": 0.883,
+            "sl_pct": 0.614,
+            "max_hold_sec": 660,
+            "allowed_regimes": [
+              "LOW_VOLATILITY"
+            ],
+            "metrics": {
+              "expected_pnl": 5.2,
+              "win_rate": 0.479,
+              "calmar": 0.22,
+              "trades_per_month": 73,
+              "max_drawdown": -23.66
+            }
+          },
+          "BTCUSDT": {
+            "enabled": false,
+            "timeframe": "5m",
+            "ema_period_short": 8,
+            "ema_period_long": 20,
+            "volume_window_sec": 240,
+            "volume_sma_length": 5,
+            "volume_cap_max": 4.618,
+            "liquidity_depth_half": 750.0,
+            "liquidity_kappa_min": 0.152,
+            "obi_window_sec": 290,
+            "tfi_window_sec": 80,
+            "weight_ema": 0.233,
+            "weight_volume": 0.367,
+            "weight_macro": 0.277,
+            "weight_liquidity": 0.182,
+            "weight_obi": 0.187,
+            "weight_tfi": 0.277,
+            "signal_threshold": 0.22,
+            "max_risk_score": 0.526,
+            "sl_pct": 0.683,
+            "max_hold_sec": 720,
+            "allowed_regimes": [
+              "TREND_UP",
+              "TREND_DOWN"
+            ],
+            "metrics": {
+              "expected_pnl": -3.77,
+              "win_rate": 0.48,
+              "calmar": -0.2,
+              "trades_per_month": 50,
+              "max_drawdown": -18.71
+            }
+          }
+        },
+        "execution": {
+          "order_type": "MARKET",
+          "entry_fee_type": "MAKER",
+          "exit_fee_type": "TAKER"
+        },
+        "performance": {
+          "total_portfolio_pnl": 283.3,
+          "assets_profitable": 4,
+          "avg_win_rate": 0.572,
+          "avg_calmar": 3.9,
+          "total_trades": 395
+        },
+        "deployment": {
+          "recommended_assets": [
+            "SOLUSDT",
+            "ETHUSDT",
+            "XRPUSDT"
+          ],
+          "optional_assets": [
+            "DOGEUSDT"
+          ],
+          "excluded_assets": [
+            "BTCUSDT"
+          ],
+          "expected_monthly_pnl": 278.1,
+          "min_capital_usd": 50000
+        }
+      }
+    }
+  },
+  "docs_arhive/Метрики/aurora_phase3_production.yaml": {
+    "keys": [
+      "aurora_phase3",
+      "common"
+    ],
+    "raw": {
+      "aurora_phase3": {
+        "SOLUSDT": {
+          "enabled": true,
+          "timeframe": "3m",
+          "bar_seconds": 180,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 318.94,
+            "improvement_vs_phase2": "58.2%",
+            "source": "Phase 3 Full Spectrum (3000 trials)"
+          },
+          "features": {
+            "ema": {
+              "period_short": 7,
+              "period_long": 25,
+              "clamp_min": -0.045,
+              "clamp_max": 0.045
+            },
+            "volume": {
+              "window_sec": 280,
+              "sma_length": 16,
+              "cap_max": 3.439
+            },
+            "liquidity": {
+              "depth_half": 3000.0,
+              "kappa_min": 0.345
+            },
+            "obi": {
+              "window_sec": 70
+            },
+            "tfi": {
+              "window_sec": 160
+            },
+            "volatility": {
+              "window_sec": 150,
+              "sma_length": 4,
+              "cap_max": 4.777
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 10000
+            },
+            "macro_sync": {
+              "window": 90
+            }
+          },
+          "weights": {
+            "ema": 0.467,
+            "volume": 0.242,
+            "macro": 0.227,
+            "liquidity": 0.138,
+            "obi": 0.344,
+            "tfi": 0.363,
+            "volatility": 0.393,
+            "depth_imbalance": 0.241,
+            "delta_price": 0.176
+          },
+          "risk_weights": {
+            "delta_price": 0.4,
+            "volume": 0.4,
+            "volatility": 0.2
+          },
+          "side_bias": {
+            "penalty_factor": 0.0,
+            "window_sec": 180,
+            "target_ratio": 0.6
+          },
+          "regime_thresholds": {
+            "high_volatility_multiplier": 1.8,
+            "low_volatility_multiplier": 0.65,
+            "trend_multiplier": 1.0
+          },
+          "regime_sizing": {
+            "high_volatility_multiplier": 0.6,
+            "low_volatility_multiplier": 2.0,
+            "mean_reversion_multiplier": 0.7,
+            "base_size_usd": 1000.0
+          },
+          "decision": {
+            "signal_threshold": 0.11,
+            "max_risk_score": 0.784,
+            "allowed_regimes": [
+              "TREND_DOWN"
+            ]
+          },
+          "exit": {
+            "sl_pct": 0.526,
+            "max_hold_sec": 660
+          }
+        },
+        "ETHUSDT": {
+          "enabled": true,
+          "timeframe": "5m",
+          "bar_seconds": 300,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 130.5,
+            "improvement_vs_deep": "23.2%",
+            "source": "Phase 3 Full Spectrum (3000 trials)"
+          },
+          "features": {
+            "ema": {
+              "period_short": 4,
+              "period_long": 19,
+              "clamp_min": -0.03,
+              "clamp_max": 0.03
+            },
+            "volume": {
+              "window_sec": 60,
+              "sma_length": 12,
+              "cap_max": 4.814
+            },
+            "liquidity": {
+              "depth_half": 1250.0,
+              "kappa_min": 0.463
+            },
+            "obi": {
+              "window_sec": 145
+            },
+            "tfi": {
+              "window_sec": 290
+            },
+            "volatility": {
+              "window_sec": 290,
+              "sma_length": 3,
+              "cap_max": 4.373
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 5000
+            },
+            "macro_sync": {
+              "window": 40
+            }
+          },
+          "weights": {
+            "ema": 0.058,
+            "volume": 0.241,
+            "macro": 0.131,
+            "liquidity": 0.341,
+            "obi": 0.155,
+            "tfi": 0.093,
+            "volatility": 0.036,
+            "depth_imbalance": 0.256,
+            "delta_price": 0.253
+          },
+          "risk_weights": {
+            "delta_price": 0.4,
+            "volume": 0.5,
+            "volatility": 0.1
+          },
+          "side_bias": {
+            "penalty_factor": 0.9,
+            "window_sec": 600,
+            "target_ratio": 0.6
+          },
+          "regime_thresholds": {
+            "high_volatility_multiplier": 1.3,
+            "low_volatility_multiplier": 0.85,
+            "trend_multiplier": 1.05
+          },
+          "regime_sizing": {
+            "high_volatility_multiplier": 0.3,
+            "low_volatility_multiplier": 1.9,
+            "mean_reversion_multiplier": 0.8,
+            "base_size_usd": 1000.0
+          },
+          "decision": {
+            "signal_threshold": 0.271,
+            "max_risk_score": 0.756,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ]
+          },
+          "exit": {
+            "sl_pct": 0.019,
+            "max_hold_sec": 900
+          }
+        },
+        "XRPUSDT": {
+          "enabled": true,
+          "timeframe": "3m",
+          "bar_seconds": 180,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 45.93,
+            "improvement_vs_phase2": "58.6%",
+            "source": "Phase 3 Full Spectrum (3000 trials)"
+          },
+          "features": {
+            "ema": {
+              "period_short": 12,
+              "period_long": 14,
+              "clamp_min": -0.04,
+              "clamp_max": 0.04
+            },
+            "volume": {
+              "window_sec": 150,
+              "sma_length": 6,
+              "cap_max": 4.649
+            },
+            "liquidity": {
+              "depth_half": 4750.0,
+              "kappa_min": 0.471
+            },
+            "obi": {
+              "window_sec": 120
+            },
+            "tfi": {
+              "window_sec": 240
+            },
+            "volatility": {
+              "window_sec": 290,
+              "sma_length": 9,
+              "cap_max": 3.694
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 6000
+            },
+            "macro_sync": {
+              "window": 60
+            }
+          },
+          "weights": {
+            "ema": 0.427,
+            "volume": 0.385,
+            "macro": 0.469,
+            "liquidity": 0.199,
+            "obi": 0.12,
+            "tfi": 0.402,
+            "volatility": 0.367,
+            "depth_imbalance": 0.392,
+            "delta_price": 0.028
+          },
+          "risk_weights": {
+            "delta_price": 0.4,
+            "volume": 0.4,
+            "volatility": 0.5
+          },
+          "side_bias": {
+            "penalty_factor": 0.4,
+            "window_sec": 600,
+            "target_ratio": 0.6
+          },
+          "regime_thresholds": {
+            "high_volatility_multiplier": 1.9,
+            "low_volatility_multiplier": 0.95,
+            "trend_multiplier": 1.0
+          },
+          "regime_sizing": {
+            "high_volatility_multiplier": 0.1,
+            "low_volatility_multiplier": 1.7,
+            "mean_reversion_multiplier": 0.8,
+            "base_size_usd": 1000.0
+          },
+          "decision": {
+            "signal_threshold": 0.236,
+            "max_risk_score": 0.831,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ]
+          },
+          "exit": {
+            "sl_pct": 1.671,
+            "max_hold_sec": 660
+          }
+        }
+      },
+      "common": {
+        "concepts": [
+          "Side-Bias Penalty: Prevents chasing same direction repeatedly",
+          "Regime-Adaptive Thresholds: Dynamic signal filtering by market state",
+          "Regime-Adaptive Sizing: Risk-proportional position sizing",
+          "EMA Clamping: Trend sensitivity tuning per asset",
+          "Risk Score Composition: Weighted risk assessment"
+        ]
+      }
+    }
+  },
+  "docs_arhive/Метрики/aurora_optimal_full_v1.yaml": {
+    "keys": [
+      "aurora_optimal_full_v1",
+      "summary"
+    ],
+    "raw": {
+      "aurora_optimal_full_v1": {
+        "ETHUSDT": {
+          "enabled": true,
+          "timeframe": "5m",
+          "bar_seconds": 300,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 180.84,
+            "improvement_vs_phase3": "38.6%",
+            "trials": 3000,
+            "source": "Phase 3+ Full Feature"
+          },
+          "features": {
+            "ema": {
+              "period_short": 4,
+              "period_long": 19,
+              "clamp_min": -0.03,
+              "clamp_max": 0.03
+            },
+            "volume": {
+              "window_sec": 60,
+              "sma_length": 12,
+              "cap_max": 4.814
+            },
+            "liquidity": {
+              "depth_half": 1250.0,
+              "kappa_min": 0.463
+            },
+            "obi": {
+              "window_sec": 145
+            },
+            "tfi": {
+              "window_sec": 290
+            },
+            "volatility": {
+              "window_sec": 290,
+              "sma_length": 3,
+              "cap_max": 4.373
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 5000
+            },
+            "macro_sync": {
+              "window": 40
+            }
+          },
+          "weights": {
+            "ema": 0.058,
+            "volume": 0.241,
+            "macro": 0.131,
+            "liquidity": 0.341,
+            "obi": 0.155,
+            "tfi": 0.093,
+            "volatility": 0.036,
+            "depth_imbalance": 0.256,
+            "delta_price": 0.253
+          },
+          "risk_weights": {
+            "delta_price": 0.4,
+            "volume": 0.5,
+            "volatility": 0.1
+          },
+          "side_bias": {
+            "penalty_factor": 0.9,
+            "window_sec": 600,
+            "target_ratio": 0.6
+          },
+          "regime_thresholds": {
+            "high_volatility_multiplier": 1.3,
+            "low_volatility_multiplier": 0.85,
+            "trend_multiplier": 1.05
+          },
+          "regime_sizing": {
+            "high_volatility_multiplier": 0.3,
+            "low_volatility_multiplier": 1.9,
+            "mean_reversion_multiplier": 0.8,
+            "base_size_usd": 1000.0
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.4,
+            "tp_high_ratio": 1.4,
+            "partial_exit_pct": 0.7
+          },
+          "trailing_stop": {
+            "enabled": false,
+            "activation_pct": 0.005,
+            "distance_pct": 0.004
+          },
+          "execution": {
+            "cooldown_sec": 15
+          },
+          "decision": {
+            "signal_threshold": 0.271,
+            "max_risk_score": 0.756,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ]
+          },
+          "exit": {
+            "sl_pct": 0.019,
+            "max_hold_sec": 900
+          }
+        },
+        "XRPUSDT": {
+          "enabled": true,
+          "timeframe": "3m",
+          "bar_seconds": 180,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 74.15,
+            "improvement_vs_phase3": "61.4%",
+            "trials": 3000,
+            "source": "Phase 3+ Full Feature"
+          },
+          "features": {
+            "ema": {
+              "period_short": 12,
+              "period_long": 14,
+              "clamp_min": -0.04,
+              "clamp_max": 0.04
+            },
+            "volume": {
+              "window_sec": 150,
+              "sma_length": 6,
+              "cap_max": 4.649
+            },
+            "liquidity": {
+              "depth_half": 4750.0,
+              "kappa_min": 0.471
+            },
+            "obi": {
+              "window_sec": 120
+            },
+            "tfi": {
+              "window_sec": 240
+            },
+            "volatility": {
+              "window_sec": 290,
+              "sma_length": 9,
+              "cap_max": 3.694
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 6000
+            },
+            "macro_sync": {
+              "window": 60
+            }
+          },
+          "weights": {
+            "ema": 0.427,
+            "volume": 0.385,
+            "macro": 0.469,
+            "liquidity": 0.199,
+            "obi": 0.12,
+            "tfi": 0.402,
+            "volatility": 0.367,
+            "depth_imbalance": 0.392,
+            "delta_price": 0.028
+          },
+          "risk_weights": {
+            "delta_price": 0.4,
+            "volume": 0.4,
+            "volatility": 0.5
+          },
+          "side_bias": {
+            "penalty_factor": 0.4,
+            "window_sec": 600,
+            "target_ratio": 0.6
+          },
+          "regime_thresholds": {
+            "high_volatility_multiplier": 1.9,
+            "low_volatility_multiplier": 0.95,
+            "trend_multiplier": 1.0
+          },
+          "regime_sizing": {
+            "high_volatility_multiplier": 0.1,
+            "low_volatility_multiplier": 1.7,
+            "mean_reversion_multiplier": 0.8,
+            "base_size_usd": 1000.0
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.4,
+            "tp_high_ratio": 1.6,
+            "partial_exit_pct": 0.5
+          },
+          "trailing_stop": {
+            "enabled": true,
+            "activation_pct": 0.004,
+            "distance_pct": 0.006
+          },
+          "execution": {
+            "cooldown_sec": 20
+          },
+          "decision": {
+            "signal_threshold": 0.236,
+            "max_risk_score": 0.831,
+            "allowed_regimes": [
+              "TREND_DOWN",
+              "LOW_VOLATILITY"
+            ]
+          },
+          "exit": {
+            "sl_pct": 1.671,
+            "max_hold_sec": 660
+          }
+        },
+        "BTCUSDT": {
+          "enabled": true,
+          "timeframe": "5m",
+          "bar_seconds": 300,
+          "capital_usd": 1000,
+          "training_metrics": {
+            "pnl_usd": 157.35,
+            "improvement_vs_baseline": 189.35,
+            "trials": 3000,
+            "source": "Phase 3+ BTC Quick-Fix"
+          },
+          "features": {
+            "ema": {
+              "period_short": 4,
+              "period_long": 19,
+              "clamp_min": -0.025,
+              "clamp_max": 0.025
+            },
+            "volume": {
+              "window_sec": 60,
+              "sma_length": 12,
+              "cap_max": 4.814
+            },
+            "liquidity": {
+              "depth_half": 1250.0,
+              "kappa_min": 0.463
+            },
+            "obi": {
+              "window_sec": 145
+            },
+            "tfi": {
+              "window_sec": 290
+            },
+            "volatility": {
+              "window_sec": 290,
+              "sma_length": 3,
+              "cap_max": 4.373
+            },
+            "depth_imbalance": {
+              "use_smoothing": false
+            },
+            "delta_price": {
+              "spike_filter_ms": 5000
+            },
+            "macro_sync": {
+              "window": 40
+            }
+          },
+          "weights": {
+            "ema": 0.35,
+            "volume": 0.1,
+            "macro": 0.35,
+            "liquidity": 0.1,
+            "obi": 0.05,
+            "tfi": 0.05,
+            "volatility": 0.2,
+            "depth_imbalance": 0.05,
+            "delta_price": 0.1
+          },
+          "risk_weights": {
+            "delta_price": 0.4,
+            "volume": 0.2,
+            "volatility": 0.3
+          },
+          "side_bias": {
+            "penalty_factor": 0.4,
+            "window_sec": 420,
+            "target_ratio": 0.6
+          },
+          "regime_thresholds": {
+            "high_volatility_multiplier": 2.5,
+            "low_volatility_multiplier": 0.7,
+            "trend_multiplier": 0.9
+          },
+          "regime_sizing": {
+            "high_volatility_multiplier": 0.3,
+            "low_volatility_multiplier": 1.6,
+            "mean_reversion_multiplier": 1.4,
+            "base_size_usd": 1800.0
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.7,
+            "tp_high_ratio": 1.6,
+            "partial_exit_pct": 0.5
+          },
+          "trailing_stop": {
+            "enabled": true,
+            "activation_pct": 0.005,
+            "distance_pct": 0.003
+          },
+          "execution": {
+            "cooldown_sec": 30
+          },
+          "decision": {
+            "signal_threshold": 0.2,
+            "max_risk_score": 0.6,
+            "allowed_regimes": [
+              "MEAN_REVERSION",
+              "LOW_VOLATILITY",
+              "TREND_UP",
+              "TREND_DOWN"
+            ]
+          },
+          "exit": {
+            "sl_pct": 0.035,
+            "max_hold_sec": 2400
+          }
+        }
+      },
+      "summary": {
+        "portfolio_pnl_monthly": 412.34,
+        "improvement_vs_phase3": "61.7%",
+        "assets_optimized": 3,
+        "total_trials": 9000,
+        "optimization_time": "~120 minutes",
+        "key_findings": [
+          "TP logic provides +40-60% PnL improvement",
+          "Aggressive TP1 (0.4-0.7x SL) optimal for all assets",
+          "Partial exits (50-70%) reduce risk without losing upside",
+          "Trailing stop effective for volatile (XRP) & trending (BTC) assets",
+          "Cooldown (15-30s) significantly improves trade quality",
+          "BTC requires DIFFERENT strategy: wider SL, longer holds, MEAN_REVERSION regime"
+        ]
+      }
+    }
+  },
   "docs_arhive/Метрики/CONFIG_SNIPPETS.yaml": {
     "keys": null,
     "raw": null
   },
-  "config/aurora/features.yaml": {
+  "docs_arhive/Метрики/aurora_fullscale_optuna_v1.yaml": {
     "keys": [
-      "feature_engineering"
+      "aurora_fullscale_optimization_v1",
+      "summary"
     ],
     "raw": {
-      "feature_engineering": {
-        "enable_new_metrics": true,
-        "ema": {
-          "period_short": 3,
-          "period_long": 7
+      "aurora_fullscale_optimization_v1": {
+        "global": {
+          "strategy_mode": "mean_reversion",
+          "timeframe_sec": 60,
+          "cost_basis": 0.0006,
+          "allowed_regimes": [
+            "MEAN_REVERSION",
+            "LOW_VOLATILITY",
+            "UNCERTAIN"
+          ]
         },
-        "ema_bias": {
-          "clamp_min": -0.02,
-          "clamp_max": 0.02
-        },
-        "volume": {
-          "window_sec": 60,
-          "sma_length": 5
-        },
-        "volume_spike": {
-          "cap_max": 3.0
-        },
-        "volatility": {
-          "window_sec": 60,
-          "sma_length": 10
-        },
-        "volatility_state": {
-          "cap_max": 3.0
-        },
-        "liquidity": {
-          "depth_half": 1000.0,
-          "kappa_min": 0.3,
-          "kappa_max": 1.0
-        },
-        "depth_imbalance": {
-          "use_laplace_smoothing": true
-        },
-        "delta_price": {
-          "spike_filter_ms": 5000
-        },
-        "macro_sync": {
+        "DOGEUSDT": {
           "enabled": true,
-          "anchors": [
-            "BTCUSDT",
-            "ETHUSDT"
-          ],
-          "window": 60,
-          "min_buffer_size": 3,
-          "time_diff_threshold_ms": 5000
+          "training_metrics": {
+            "pnl_usd": 387.24,
+            "trades": 230,
+            "win_rate": 0.587,
+            "max_dd_usd": -56.08,
+            "calmar_ratio": 6.91,
+            "trials": 3000
+          },
+          "bollinger_bands": {
+            "bb_window": 20,
+            "bb_std_dev": 2.1
+          },
+          "entry": {
+            "min_vol_atr": 0.005
+          },
+          "stop_loss": {
+            "sl_pct": 0.019
+          },
+          "time_exit": {
+            "max_hold_sec": 6480
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.63,
+            "tp_high_ratio": 2.45,
+            "partial_exit_pct": 0.38
+          },
+          "trailing_stop": {
+            "enabled": true,
+            "activation_pct": 0.012,
+            "distance_pct": 0.004
+          },
+          "execution": {
+            "cooldown_sec": 210
+          },
+          "notes": "DOGE has the most \"pump and dump\" patterns, ideal for mean reversion.\n- Shortest BB window captures quick reversals\n- Longest hold time allows pumps to mature\n- Most aggressive TP2 captures large moves\n- Early trailing activation locks profits\n"
         },
-        "defaults": {
-          "neutral_value": 0.5,
-          "zero_value": 0.0,
-          "correlation_default": 0.0,
-          "ms_per_sec": 1000
-        },
-        "futures": {
+        "XRPUSDT": {
           "enabled": true,
-          "funding": {
-            "extreme_threshold": 0.001
-          }
+          "training_metrics": {
+            "pnl_usd": 121.62,
+            "trades": 107,
+            "win_rate": 0.598,
+            "max_dd_usd": -40.27,
+            "calmar_ratio": 3.02,
+            "trials": 3000
+          },
+          "bollinger_bands": {
+            "bb_window": 40,
+            "bb_std_dev": 2.5
+          },
+          "entry": {
+            "min_vol_atr": 0.007
+          },
+          "stop_loss": {
+            "sl_pct": 0.024
+          },
+          "time_exit": {
+            "max_hold_sec": 2940
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.75,
+            "tp_high_ratio": 1.57,
+            "partial_exit_pct": 0.41
+          },
+          "trailing_stop": {
+            "enabled": true,
+            "activation_pct": 0.015,
+            "distance_pct": 0.018
+          },
+          "execution": {
+            "cooldown_sec": 165
+          },
+          "notes": "XRP benefits from wide trailing stop distance.\n- Early trailing activation captures moves\n- Wide trailing distance prevents premature exits\n- Longer holds give reversals time to complete\n"
+        },
+        "BTCUSDT": {
+          "enabled": true,
+          "training_metrics": {
+            "pnl_usd": 103.7,
+            "trades": 213,
+            "win_rate": 0.596,
+            "max_dd_usd": -36.15,
+            "calmar_ratio": 2.87,
+            "trials": 3000
+          },
+          "bollinger_bands": {
+            "bb_window": 40,
+            "bb_std_dev": 2.3
+          },
+          "entry": {
+            "min_vol_atr": 0.006
+          },
+          "stop_loss": {
+            "sl_pct": 0.015
+          },
+          "time_exit": {
+            "max_hold_sec": 1500
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.57,
+            "tp_high_ratio": 1.73,
+            "partial_exit_pct": 0.76
+          },
+          "trailing_stop": {
+            "enabled": true,
+            "activation_pct": 0.04,
+            "distance_pct": 0.003
+          },
+          "execution": {
+            "cooldown_sec": 0
+          },
+          "notes": "BTC is the most liquid and active asset.\n- No cooldown allows rapid consecutive trades\n- High partial exit (76%) locks profits quickly\n- Tight SL (1.5%) limits losses\n"
+        },
+        "ETHUSDT": {
+          "enabled": true,
+          "training_metrics": {
+            "pnl_usd": 53.94,
+            "trades": 33,
+            "win_rate": 0.606,
+            "max_dd_usd": -23.23,
+            "calmar_ratio": 2.32,
+            "trials": 3000
+          },
+          "bollinger_bands": {
+            "bb_window": 180,
+            "bb_std_dev": 1.5
+          },
+          "entry": {
+            "min_vol_atr": 0.024
+          },
+          "stop_loss": {
+            "sl_pct": 0.027
+          },
+          "time_exit": {
+            "max_hold_sec": 1620
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.4,
+            "tp_high_ratio": 2.23,
+            "partial_exit_pct": 0.74
+          },
+          "trailing_stop": {
+            "enabled": true,
+            "activation_pct": 0.049,
+            "distance_pct": 0.006
+          },
+          "execution": {
+            "cooldown_sec": 195
+          },
+          "notes": "ETH requires long-term perspective (180 min BB window).\n- Narrow bands (1.5σ) compensate for wide window\n- Very extended TP2 (2.23x) captures large moves\n- Fewer trades but higher quality\n"
+        },
+        "SOLUSDT": {
+          "enabled": true,
+          "training_metrics": {
+            "pnl_usd": 27.57,
+            "trades": 99,
+            "win_rate": 0.566,
+            "max_dd_usd": -21.23,
+            "calmar_ratio": 1.3,
+            "trials": 3000
+          },
+          "bollinger_bands": {
+            "bb_window": 120,
+            "bb_std_dev": 1.8
+          },
+          "entry": {
+            "min_vol_atr": 0.025
+          },
+          "stop_loss": {
+            "sl_pct": 0.027
+          },
+          "time_exit": {
+            "max_hold_sec": 180
+          },
+          "take_profit": {
+            "tp_low_ratio": 0.48,
+            "tp_high_ratio": 0.8,
+            "partial_exit_pct": 0.31
+          },
+          "trailing_stop": {
+            "enabled": true,
+            "activation_pct": 0.046,
+            "distance_pct": 0.018
+          },
+          "execution": {
+            "cooldown_sec": 210
+          },
+          "notes": "SOL is extremely volatile, requires fast exits.\n- Ultra-short max_hold (3 min) - pure scalping\n- Conservative TP2 (0.8x) - quick profit taking\n- Wide trailing (1.8%) prevents whipsaw exits\n"
         }
+      },
+      "summary": {
+        "total_pnl_usd": 694.07,
+        "total_trades": 682,
+        "avg_win_rate": 0.591,
+        "asset_ranking": {
+          "1": {
+            "symbol": "DOGEUSDT",
+            "pnl": 387.24,
+            "calmar": 6.91
+          },
+          "2": {
+            "symbol": "XRPUSDT",
+            "pnl": 121.62,
+            "calmar": 3.02
+          },
+          "3": {
+            "symbol": "BTCUSDT",
+            "pnl": 103.7,
+            "calmar": 2.87
+          },
+          "4": {
+            "symbol": "ETHUSDT",
+            "pnl": 53.94,
+            "calmar": 2.32
+          },
+          "5": {
+            "symbol": "SOLUSDT",
+            "pnl": 27.57,
+            "calmar": 1.3
+          }
+        },
+        "optimization_details": {
+          "trials_per_asset": 3000,
+          "total_trials": 15000,
+          "duration_hours": 9,
+          "data_period": "January 2024",
+          "timeframe": "1 minute"
+        },
+        "key_insights": [
+          "DOGE dominates with Calmar 6.91 (best risk-adjusted)",
+          "All assets profitable with Calmar > 1.0",
+          "Asset-specific parameters critical (no one-size-fits-all)",
+          "Trailing stop + Partial exit = major edge",
+          "Mean Reversion works best in MEAN_REVERSION/LOW_VOL regimes"
+        ],
+        "next_steps": [
+          "Out-of-sample testing on Feb-Mar 2024",
+          "Paper trading validation",
+          "Integration into production config"
+        ]
+      }
+    }
+  },
+  "docs_arhive/Метрики/instruments/XRPUSDT.yaml": {
+    "keys": [
+      "symbol",
+      "specs",
+      "aurora",
+      "mean_reversion"
+    ],
+    "raw": {
+      "symbol": "XRPUSDT",
+      "specs": {
+        "step_size": "0.1",
+        "tick_size": "0.0001",
+        "min_notional": "10"
+      },
+      "aurora": {
+        "enabled": false,
+        "weights": {
+          "ema": 0.427,
+          "volume": 0.385,
+          "macro": 0.469,
+          "liquidity": 0.199,
+          "obi": 0.12,
+          "tfi": 0.402,
+          "volatility": 0.367,
+          "depth_imbalance": 0.392,
+          "delta_price": 0.028
+        },
+        "side_bias": {
+          "penalty_factor": 0.4,
+          "window_sec": 600,
+          "target_ratio": 0.6
+        },
+        "regime_thresholds": {
+          "HIGH_VOLATILITY": 1.9,
+          "LOW_VOLATILITY": 0.95,
+          "DEFAULT": 1.0
+        },
+        "regime_sizing": {
+          "HIGH_VOLATILITY": 0.1,
+          "LOW_VOLATILITY": 1.7,
+          "MEAN_REVERSION": 0.8
+        },
+        "exit": {
+          "sl_pct": 0.024,
+          "max_hold_sec": 2940
+        },
+        "take_profit": {
+          "tp_low_ratio": 0.75,
+          "tp_high_ratio": 1.57,
+          "partial_exit_pct": 0.41
+        },
+        "trailing_stop": {
+          "enabled": true,
+          "activation_pct": 0.015,
+          "trail_pct": 0.018,
+          "min_update_interval_sec": 5
+        },
+        "allowed_regimes": [
+          "TREND_DOWN",
+          "LOW_VOLATILITY",
+          "FLAT_LOW",
+          "FLAT_NORMAL",
+          "FLAT_HIGH"
+        ],
+        "ema_clamp": {
+          "enabled": true,
+          "clamp_min": -0.025,
+          "clamp_max": 0.025
+        },
+        "signal_threshold": {
+          "enabled": true,
+          "value": 0.236
+        },
+        "max_risk_score": {
+          "enabled": false
+        },
+        "cooldown_sec": 165
+      },
+      "mean_reversion": {
+        "enabled": true,
+        "strategy": {
+          "bb_window": 40,
+          "bb_num_std": 2.5,
+          "min_bb_width": 0.007,
+          "entry_threshold": 0.05,
+          "tp_to_mid": true,
+          "cooldown_sec": 165
+        },
+        "sl_pct": 0.024,
+        "allowed_regimes": [
+          "FLAT_LOW",
+          "FLAT_NORMAL",
+          "FLAT_HIGH"
+        ]
+      }
+    }
+  },
+  "docs_arhive/Метрики/instruments/_index.yaml": {
+    "keys": [
+      "enabled",
+      "mean_reversion_enabled",
+      "groups"
+    ],
+    "raw": {
+      "enabled": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "DOGEUSDT",
+        "XRPUSDT"
+      ],
+      "mean_reversion_enabled": [
+        "DOGEUSDT",
+        "XRPUSDT",
+        "BTCUSDT"
+      ],
+      "groups": {
+        "majors": [
+          "BTCUSDT",
+          "ETHUSDT"
+        ],
+        "alts": [
+          "SOLUSDT",
+          "XRPUSDT",
+          "DOGEUSDT"
+        ],
+        "mr_champions": [
+          "DOGEUSDT",
+          "XRPUSDT"
+        ],
+        "trend_followers": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ]
+      }
+    }
+  },
+  "docs_arhive/Метрики/instruments/BTCUSDT.yaml": {
+    "keys": [
+      "symbol",
+      "specs",
+      "aurora",
+      "mean_reversion"
+    ],
+    "raw": {
+      "symbol": "BTCUSDT",
+      "specs": {
+        "step_size": "0.001",
+        "tick_size": "0.10",
+        "min_notional": "10"
+      },
+      "aurora": {
+        "enabled": true,
+        "weights": {
+          "ema": 0.35,
+          "volume": 0.1,
+          "macro": 0.35,
+          "liquidity": 0.1,
+          "obi": 0.05,
+          "tfi": 0.05,
+          "volatility": 0.2,
+          "depth_imbalance": 0.05,
+          "delta_price": 0.1
+        },
+        "side_bias": {
+          "penalty_factor": 0.4,
+          "window_sec": 420,
+          "target_ratio": 0.6
+        },
+        "regime_thresholds": {
+          "HIGH_VOLATILITY": 2.5,
+          "LOW_VOLATILITY": 0.7,
+          "MEAN_REVERSION": 1.05,
+          "DEFAULT": 1.0
+        },
+        "regime_sizing": {
+          "HIGH_VOLATILITY": 0.3,
+          "LOW_VOLATILITY": 1.6,
+          "MEAN_REVERSION": 1.4
+        },
+        "exit": {
+          "sl_pct": 0.035,
+          "max_hold_sec": 2400
+        },
+        "take_profit": {
+          "tp_low_ratio": 0.7,
+          "tp_high_ratio": 1.6,
+          "partial_exit_pct": 0.5
+        },
+        "trailing_stop": {
+          "enabled": true,
+          "activation_pct": 0.005,
+          "trail_pct": 0.003,
+          "min_update_interval_sec": 5
+        },
+        "allowed_regimes": [
+          "MEAN_REVERSION",
+          "LOW_VOLATILITY",
+          "TREND_UP",
+          "TREND_DOWN"
+        ],
+        "ema_clamp": {
+          "enabled": true,
+          "clamp_min": -0.025,
+          "clamp_max": 0.025
+        },
+        "signal_threshold": {
+          "enabled": true,
+          "value": 0.2
+        },
+        "max_risk_score": {
+          "enabled": true,
+          "value": 0.6
+        },
+        "cooldown_sec": 0
+      },
+      "mean_reversion": {
+        "enabled": true,
+        "strategy": {
+          "bb_window": 40,
+          "bb_num_std": 2.3,
+          "min_bb_width": 0.006,
+          "entry_threshold": 0.05,
+          "tp_to_mid": true,
+          "cooldown_sec": 0
+        },
+        "allowed_regimes": [
+          "FLAT_LOW",
+          "FLAT_NORMAL"
+        ]
+      }
+    }
+  },
+  "docs_arhive/Метрики/instruments/SOLUSDT.yaml": {
+    "keys": [
+      "symbol",
+      "specs",
+      "aurora"
+    ],
+    "raw": {
+      "symbol": "SOLUSDT",
+      "specs": {
+        "step_size": "0.01",
+        "tick_size": "0.01",
+        "min_notional": "10"
+      },
+      "aurora": {
+        "enabled": true,
+        "position_mode": "DYNAMIC",
+        "weights": {
+          "ema": 0.2,
+          "volume": 0.12,
+          "macro": 0.1,
+          "liquidity": 0.18,
+          "obi": 0.12,
+          "tfi": 0.1,
+          "volatility": 0.08,
+          "depth_imbalance": 0.12,
+          "delta_price": 0.08
+        },
+        "side_bias": {
+          "penalty_factor": 0.0,
+          "window_sec": 450,
+          "target_ratio": 0.5
+        },
+        "regime_thresholds": {
+          "HIGH_VOLATILITY": 1.6,
+          "LOW_VOLATILITY": 0.85,
+          "DEFAULT": 1.0
+        },
+        "regime_sizing": {
+          "HIGH_VOLATILITY": 0.5,
+          "LOW_VOLATILITY": 1.4,
+          "DEFAULT": 1.0
+        },
+        "exit": {
+          "sl_pct": 0.0053,
+          "max_hold_sec": 2400
+        },
+        "take_profit": {
+          "tp_low_ratio": 0.48,
+          "tp_high_ratio": 1.45,
+          "partial_exit_pct": 0.65
+        },
+        "trailing_stop": {
+          "enabled": true,
+          "activation_pct": 0.008,
+          "trail_pct": 0.004,
+          "min_update_interval_sec": 5
+        },
+        "allowed_regimes": [
+          "TREND_DOWN",
+          "TREND_UP",
+          "LOW_VOLATILITY",
+          "FLAT_NORMAL",
+          "MEAN_REVERSION",
+          "UNCERTAIN"
+        ],
+        "ema_clamp": {
+          "enabled": false
+        },
+        "signal_threshold": {
+          "enabled": false
+        },
+        "max_risk_score": {
+          "enabled": false
+        },
+        "cooldown_sec": 210
+      }
+    }
+  },
+  "docs_arhive/Метрики/instruments/ETHUSDT.yaml": {
+    "keys": [
+      "symbol",
+      "specs",
+      "aurora"
+    ],
+    "raw": {
+      "symbol": "ETHUSDT",
+      "specs": {
+        "step_size": "0.001",
+        "tick_size": "0.01",
+        "min_notional": "10"
+      },
+      "aurora": {
+        "enabled": true,
+        "weights": {
+          "ema": 0.25,
+          "volume": 0.1,
+          "macro": 0.1,
+          "liquidity": 0.15,
+          "obi": 0.15,
+          "tfi": 0.08,
+          "volatility": 0.07,
+          "depth_imbalance": 0.1,
+          "delta_price": 0.1
+        },
+        "side_bias": {
+          "penalty_factor": 0.9,
+          "window_sec": 600,
+          "target_ratio": 0.6
+        },
+        "regime_thresholds": {
+          "HIGH_VOLATILITY": 1.7,
+          "LOW_VOLATILITY": 0.9,
+          "DEFAULT": 1.0
+        },
+        "regime_sizing": {
+          "HIGH_VOLATILITY": 0.6,
+          "LOW_VOLATILITY": 1.3,
+          "DEFAULT": 1.0
+        },
+        "exit": {
+          "sl_pct": 0.019,
+          "max_hold_sec": 4320
+        },
+        "take_profit": {
+          "tp_low_ratio": 0.55,
+          "tp_high_ratio": 1.68,
+          "partial_exit_pct": 0.7
+        },
+        "trailing_stop": {
+          "enabled": true,
+          "activation_pct": 0.013,
+          "trail_pct": 0.006,
+          "min_update_interval_sec": 5
+        },
+        "allowed_regimes": [
+          "TREND_DOWN",
+          "TREND_UP",
+          "LOW_VOLATILITY",
+          "MEAN_REVERSION",
+          "UNCERTAIN"
+        ],
+        "ema_clamp": {
+          "enabled": false
+        },
+        "signal_threshold": {
+          "enabled": false
+        },
+        "max_risk_score": {
+          "enabled": false
+        },
+        "cooldown_sec": 195
+      }
+    }
+  },
+  "docs_arhive/Метрики/instruments/DOGEUSDT.yaml": {
+    "keys": [
+      "symbol",
+      "specs",
+      "aurora",
+      "mean_reversion"
+    ],
+    "raw": {
+      "symbol": "DOGEUSDT",
+      "specs": {
+        "step_size": "1",
+        "tick_size": "0.00001",
+        "min_notional": "10"
+      },
+      "aurora": {
+        "enabled": false,
+        "weights": {
+          "ema": 0.15,
+          "volume": 0.15,
+          "macro": 0.1,
+          "liquidity": 0.2,
+          "obi": 0.15,
+          "tfi": 0.12,
+          "volatility": 0.08,
+          "depth_imbalance": 0.15,
+          "delta_price": 0.15
+        },
+        "side_bias": {
+          "penalty_factor": 0.3,
+          "window_sec": 300,
+          "target_ratio": 0.6
+        },
+        "regime_thresholds": {
+          "HIGH_VOLATILITY": 1.5,
+          "LOW_VOLATILITY": 0.85,
+          "MEAN_REVERSION": 0.9,
+          "DEFAULT": 1.0
+        },
+        "regime_sizing": {
+          "HIGH_VOLATILITY": 0.4,
+          "LOW_VOLATILITY": 1.5,
+          "MEAN_REVERSION": 1.2
+        },
+        "exit": {
+          "sl_pct": 0.019,
+          "max_hold_sec": 6480
+        },
+        "take_profit": {
+          "tp_low_ratio": 0.63,
+          "tp_high_ratio": 2.45,
+          "partial_exit_pct": 0.38
+        },
+        "trailing_stop": {
+          "enabled": true,
+          "activation_pct": 0.012,
+          "trail_pct": 0.004,
+          "min_update_interval_sec": 5
+        },
+        "allowed_regimes": [
+          "FLAT_LOW",
+          "FLAT_NORMAL",
+          "FLAT_HIGH",
+          "LOW_VOLATILITY"
+        ],
+        "ema_clamp": {
+          "enabled": false
+        },
+        "signal_threshold": {
+          "enabled": false
+        },
+        "max_risk_score": {
+          "enabled": false
+        },
+        "cooldown_sec": 210
+      },
+      "mean_reversion": {
+        "enabled": true,
+        "strategy": {
+          "bb_window": 20,
+          "bb_num_std": 2.1,
+          "min_bb_width": 0.005,
+          "entry_threshold": 0.05,
+          "sl_atr_mult": 1.5,
+          "tp_to_mid": false,
+          "cooldown_sec": 210
+        },
+        "position_mode": "DYNAMIC",
+        "sl_pct": 0.019,
+        "allowed_regimes": [
+          "FLAT_LOW",
+          "FLAT_NORMAL",
+          "FLAT_HIGH"
+        ]
       }
     }
   },
@@ -2187,6 +6574,7 @@
           "enabled": true,
           "atr_period": 14,
           "atr_sma_length": 100,
+          "allow_close_to_close_atr": true,
           "threshold_multiplier": 2.0,
           "low_vol_multiplier": 0.5,
           "high_vol_confidence_multiplier": 2.0,
@@ -2203,13 +6591,19 @@
     "keys": [
       "config_version",
       "trading_mode",
+      "system",
+      "ops",
+      "decision",
+      "execution",
+      "brackets",
+      "trailing",
+      "bridge",
       "sequential_tests",
       "risk_core",
       "kelly",
       "calibrator",
       "hawkes",
       "hotreload_whitelist",
-      "logging",
       "hardening",
       "account_observer",
       "position_tracking",
@@ -2218,6 +6612,50 @@
     "raw": {
       "config_version": "1.0.1",
       "trading_mode": "hybrid_live_data_testnet_exec",
+      "system": {
+        "logging": {
+          "level": "DEBUG",
+          "file": "logs/aurora_core.log",
+          "format": "json",
+          "rotation": {
+            "max_bytes": 10485760,
+            "backup_count": 5
+          }
+        },
+        "market_data": {
+          "queue_maxsize": 10000,
+          "local_queue_maxsize": 10000,
+          "emit_workers": 4,
+          "tick_ttl_ms": 2000,
+          "ws_heartbeat_sec": 20.0,
+          "ws_receive_timeout_sec": 60.0,
+          "proxy_batch_size": 100,
+          "proxy_queue_get_timeout_sec": 0.01,
+          "proxy_idle_sleep_sec": 0.01
+        }
+      },
+      "ops": {
+        "panic_killswitch": true,
+        "panic_ttl_sec": null,
+        "quiet_hours_utc": [
+          "22:00-06:00"
+        ],
+        "allowlist_symbols": [],
+        "metrics_url": "http://localhost:8000/metrics",
+        "reports_dir": "reports"
+      },
+      "decision": null,
+      "execution": null,
+      "brackets": null,
+      "trailing": {},
+      "bridge": {
+        "retry_scheduler": {
+          "max_attempts": 5,
+          "min_retry_delay_ms": 500,
+          "backoff_factor": 2.0,
+          "jitter_ms": 50
+        }
+      },
       "sequential_tests": {
         "wald": {
           "alpha": 0.05,
@@ -2273,15 +6711,6 @@
         "hawkes.window_ms",
         "hawkes.eta_max"
       ],
-      "logging": {
-        "level": "DEBUG",
-        "file": "logs/aurora_core.log",
-        "format": "json",
-        "rotation": {
-          "max_bytes": 10485760,
-          "backup_count": 5
-        }
-      },
       "hardening": {
         "ttl_config": {
           "entry_place_ttl_ms": 5000,
@@ -2314,15 +6743,7 @@
         }
       },
       "account_observer": {
-        "poll_interval": 5,
-        "symbols": [
-          "SOLUSDT",
-          "ETHUSDT",
-          "DOGEUSDT",
-          "XRPUSDT",
-          "BTCUSDT"
-        ],
-        "trade_limit": 50
+        "poll_interval": 5
       },
       "position_tracking": {
         "positions_stale_ttl_sec": 8
@@ -2352,33 +6773,28 @@
       "instruments": {
         "SOLUSDT": {
           "symbol": "SOLUSDT",
-          "step_size": "0.01",
-          "tick_size": "0.01",
-          "min_notional": "10"
+          "step_size": 0.01,
+          "tick_size": 0.01
         },
         "ETHUSDT": {
           "symbol": "ETHUSDT",
-          "step_size": "0.001",
-          "tick_size": "0.01",
-          "min_notional": "10"
+          "step_size": 0.001,
+          "tick_size": 0.01
         },
         "BTCUSDT": {
           "symbol": "BTCUSDT",
-          "step_size": "0.001",
-          "tick_size": "0.10",
-          "min_notional": "10"
+          "step_size": 0.001,
+          "tick_size": 0.1
         },
         "DOGEUSDT": {
           "symbol": "DOGEUSDT",
-          "step_size": "1",
-          "tick_size": "0.00001",
-          "min_notional": "10"
+          "step_size": 1.0,
+          "tick_size": 1e-05
         },
         "XRPUSDT": {
           "symbol": "XRPUSDT",
-          "step_size": "0.1",
-          "tick_size": "0.0001",
-          "min_notional": "10"
+          "step_size": 0.1,
+          "tick_size": 0.0001
         }
       }
     }
@@ -2386,9 +6802,7 @@
   "config/aurora/trading.yaml": {
     "keys": [
       "binance_api",
-      "trading",
-      "execution",
-      "guardian"
+      "trading"
     ],
     "raw": {
       "binance_api": {
@@ -2403,16 +6817,17 @@
           "api_secret": "${BINANCE_TESTNET_API_SECRET}",
           "rest_url": "https://testnet.binancefuture.com",
           "ws_url": "wss://stream.testnet.binancefuture.com"
-        },
-        "feature_engineering": {
-          "liquidity": {
-            "depth_half": 1000
-          }
         }
       },
       "trading": {
         "mode": "testnet",
         "decision": {
+          "testnet": {
+            "signal_threshold": null
+          },
+          "production": {
+            "signal_threshold": null
+          },
           "signal_threshold": 0.1,
           "neutral_threshold": 0.18,
           "symbols_to_track": [
@@ -2436,43 +6851,37 @@
             "UNCERTAIN": 1.15,
             "DEFAULT": 1.0
           },
+          "side_bias_min_score": null,
           "side_bias_window_sec": 60,
           "side_bias_target_ratio": 0.6,
           "side_bias_penalty_factor": 0.5,
           "cooldown_sec": 10,
+          "retry_ttl_ms": 5000,
+          "retry_max_count": 3,
+          "retry_backoff_factor": 1.5,
           "position_sizing": {
             "min_position_size_usd": 10,
             "liquidity_based_cap_usd": 10000,
             "risk_fraction_q": 0.05,
             "liquidity_kappa": 1.0,
+            "kappa_mode": "dynamic",
             "liquidity_kappa_mode": "dynamic",
-            "risk_contract_v1": {
-              "enabled": false,
-              "effective_leverage": 10.0,
-              "per_symbol_margin_fraction": {
-                "BTCUSDT": 0.04,
-                "ETHUSDT": 0.055,
-                "XRPUSDT": 0.04,
-                "DOGEUSDT": 0.05,
-                "SOLUSDT": 0.06
-              },
-              "fixed_notional_usd": {
-                "BTCUSDT": 200.0,
-                "ETHUSDT": 250.0,
-                "XRPUSDT": 200.0,
-                "DOGEUSDT": 200.0
-              },
-              "sol_regime_multipliers": {
-                "calm": 1.5,
-                "storm": 0.5
-              }
-            }
+            "risk_contract_v1": null
           },
           "sizing_modifiers": {
-            "HIGH_VOLATILITY": "0.60",
-            "LOW_VOLATILITY": "1.20",
-            "MEAN_REVERSION": "0.50",
-            "UNCERTAIN": "0.50"
+            "HIGH_VOLATILITY": 0.6,
+            "LOW_VOLATILITY": 1.2,
+            "MEAN_REVERSION": 0.5,
+            "UNCERTAIN": 0.5
+          },
+          "regime_thresholds": {
+            "HIGH_VOLATILITY": 0.12,
+            "LOW_VOLATILITY": 0.09,
+            "MEAN_REVERSION": 0.105,
+            "TREND_UP": 0.1,
+            "TREND_DOWN": 0.1,
+            "UNCERTAIN": 0.115,
+            "DEFAULT": 0.1
           },
           "kelly": {
             "base_probability": 0.5,
@@ -2487,6 +6896,13 @@
             "symbol_cooldown_sec": 1,
             "max_intents_per_minute_per_symbol": 60
           },
+          "signals": {
+            "normalize": false,
+            "enable_new_metrics": true
+          },
+          "bar_gating": null,
+          "roi_exit": null,
+          "mean_reversion": null,
           "signal_weights": {
             "obi": 0.15,
             "tfi": 0.15,
@@ -2498,74 +6914,17 @@
             "macro_sync": 0.1
           }
         },
-        "mean_reversion_1m": {
-          "enabled": true,
-          "assets": {
-            "DOGEUSDT": {
-              "enabled": true,
-              "strategy": {
-                "bb_window": 20,
-                "bb_num_std": 2.1,
-                "min_bb_width": 0.005,
-                "entry_threshold": 0.05,
-                "sl_atr_mult": 1.5,
-                "tp_to_mid": false,
-                "cooldown_sec": 210
-              },
-              "allowed_regimes": [
-                "FLAT_LOW",
-                "FLAT_NORMAL",
-                "FLAT_HIGH"
-              ],
-              "risk": {
-                "position_size_usd": 150
-              }
-            },
-            "BTCUSDT": {
-              "enabled": true,
-              "strategy": {
-                "bb_window": 40,
-                "bb_num_std": 2.3,
-                "min_bb_width": 0.006,
-                "entry_threshold": 0.05,
-                "tp_to_mid": true,
-                "cooldown_sec": 0
-              },
-              "allowed_regimes": [
-                "FLAT_LOW",
-                "FLAT_NORMAL"
-              ],
-              "risk": {
-                "position_size_usd": 150
-              }
-            },
-            "XRPUSDT": {
-              "enabled": true,
-              "strategy": {
-                "bb_window": 40,
-                "bb_num_std": 2.5,
-                "min_bb_width": 0.007,
-                "entry_threshold": 0.05,
-                "tp_to_mid": true,
-                "cooldown_sec": 165
-              },
-              "allowed_regimes": [
-                "FLAT_LOW",
-                "FLAT_NORMAL",
-                "FLAT_HIGH"
-              ],
-              "risk": {
-                "position_size_usd": 150
-              }
-            }
-          }
-        },
         "tca_prefs": {
           "max_slippage_pct": 0.5,
+          "max_slippage_bps": 10,
+          "max_latency_ms": 500,
+          "maker_preference": "neutral",
           "preferred_venue": "binance",
           "execution_priority": "speed"
         },
         "risk_budgets": {
+          "trade_cvar95_max_bps": 100,
+          "session_cvar95_max_bps": 200,
           "max_portfolio_risk_pct": 5.0,
           "max_single_position_risk_pct": 1.0,
           "max_daily_loss_pct": 2.0
@@ -2614,25 +6973,6 @@
             "clipping_enabled": true
           }
         },
-        "feature_engineering": {
-          "ema": {
-            "period_short": 3,
-            "period_long": 7
-          },
-          "volume": {
-            "window_sec": 60,
-            "sma_length": 5
-          },
-          "volatility": {
-            "window_sec": 60,
-            "sma_length": 10
-          },
-          "liquidity": {
-            "depth_half": 1000
-          },
-          "enable_new_metrics": true,
-          "compute_all": true
-        },
         "market_data": {
           "poll_interval_sec": 5.0,
           "websocket_streams": [
@@ -2654,57 +6994,47 @@
               "ETHUSDT"
             ],
             "window": 60,
-            "emit_abs": false
+            "emit_abs": false,
+            "align_mode": "tail_min_len",
+            "min_buffer_size": 3,
+            "time_diff_threshold_ms": 60000,
+            "anchor_update_from_ticks": false
           }
         },
         "ops": {
           "panic_killswitch": true,
+          "panic_ttl_sec": null,
           "quiet_hours_utc": [
             "22:00-06:00"
           ],
-          "allowlist_symbols": []
+          "allowlist_symbols": [],
+          "metrics_url": "http://localhost:8000/metrics",
+          "reports_dir": "reports"
         },
         "execution": {
           "manage": {
             "auto": true,
             "brackets": {
-              "enable": true,
               "oco_emulation": true,
               "stop_loss_bps": 40,
-              "take_profit_low_ratio": 0.5,
-              "take_profit_high_ratio": 1.0,
+              "offset_bps": 5,
               "sl": {
                 "fixed_bps": 40
               },
               "tp": {
                 "fixed_bps": 80
-              },
-              "offset_bps": 5,
-              "working_type_default": "MARK_PRICE",
-              "price_protect": false,
-              "retry": {
-                "max_attempts": 3,
-                "backoff_ms": [
-                  120,
-                  250,
-                  400
-                ],
-                "fallback_to_limit": true
-              },
-              "timeout_sec": 5,
-              "atomic_close": true,
-              "bracket_tracking": true
+              }
             },
             "orphan_monitor": {
-              "enabled": true,
-              "run_on_startup": true,
-              "periodic_interval_sec": 90,
-              "min_order_age_sec": 0,
-              "batch_cancel_limit": 50,
-              "rate_limit_per_min": 120,
-              "offset_bps": 30
-            }
+              "enabled": true
+            },
+            "emergency": null,
+            "failsafe": null
           },
+          "fsm_periodic_cleanup_enabled": false,
+          "anti_race_close_ms": 800,
+          "fallback": null,
+          "limit_orders": null,
           "exposure": {
             "max_equity_utilization_pct": 2.0,
             "max_portfolio_fraction": 2.0,
@@ -2716,7 +7046,10 @@
             "per_symbol_cap_pct": 0.08,
             "count_pending_orders": true,
             "exclude_reduce_only": true,
+            "pending_ttl_sec": 90,
             "pending_reservation_ttl_sec": 45,
+            "post_fill_hold_ttl_sec": 5,
+            "positions_stale_ttl_sec": 15,
             "leverage_defaults": {
               "BTCUSDT": 20,
               "ETHUSDT": 20,
@@ -2748,14 +7081,25 @@
             "rps_limit": 10
           },
           "orders": {
-            "default_ttl_seconds": 15,
-            "market": {
-              "slippage_cap_bps": 10
-            },
-            "cancel": {
-              "idempotent": true,
-              "use_cancel_replace": true
-            }
+            "default_ttl_seconds": 15
+          },
+          "preflight_backoff_ms": [
+            120,
+            250,
+            400,
+            800,
+            1200,
+            1800
+          ],
+          "min_post_interval_per_symbol_ms": 300,
+          "allow_trade_with_guardian_tidy_only": false,
+          "order_guardian": {
+            "unified": true,
+            "emit_tidy_event": true,
+            "cleanup_ttl_ms": 6000,
+            "symbol_cooldown_ms": 4000,
+            "poll_interval_ms": 5000,
+            "ledger_db_path": "data/order_ledger.db"
           }
         },
         "domain_configuration": {
@@ -2778,48 +7122,12 @@
             "trading_mode": "live"
           }
         },
-        "models": {
-          "volatility": {
-            "enabled": true,
-            "atr_period": 14,
-            "threshold_multiplier": 2.0,
-            "low_vol_multiplier": 0.5
-          },
-          "mean_reversion": {
-            "threshold": 0.005
-          }
-        },
         "risk_management": {
           "data_sources": {
             "portfolio_state": "testnet",
             "market_data": "live"
           }
         }
-      },
-      "execution": {
-        "allow_trade_with_guardian_tidy_only": false,
-        "fsm_periodic_cleanup_enabled": false,
-        "preflight_backoff_ms": [
-          120,
-          250,
-          400,
-          800,
-          1200,
-          1800
-        ],
-        "anti_race_close_ms": 800,
-        "min_post_interval_per_symbol_ms": 300,
-        "order_guardian": {
-          "poll_interval_ms": 5000
-        }
-      },
-      "guardian": {
-        "unified": true,
-        "emit_tidy_event": true,
-        "cleanup_ttl_ms": 6000,
-        "symbol_cooldown_ms": 4000,
-        "poll_interval_ms": 5000,
-        "ledger_db_path": "data/order_ledger.db"
       }
     }
   },
@@ -2833,6 +7141,8 @@
     ],
     "raw": {
       "ETHUSDT": {
+        "enabled": true,
+        "position_mode": "STRICT",
         "weights": {
           "ema": 0.058,
           "volume": 0.241,
@@ -2881,7 +7191,13 @@
           "FLAT_LOW",
           "FLAT_NORMAL",
           "LOW_VOLATILITY"
-        ]
+        ],
+        "execution": null,
+        "ema_clamp": null,
+        "signal_threshold": null,
+        "max_risk_score": null,
+        "cooldown_sec": null,
+        "timeframe_sec": null
       },
       "SOLUSDT": {
         "weights": {
@@ -2895,6 +7211,8 @@
           "depth_imbalance": 0.2,
           "delta_price": 0.22
         },
+        "enabled": true,
+        "position_mode": "STRICT",
         "side_bias": {
           "penalty_factor": 0.0,
           "window_sec": 300,
@@ -2923,9 +7241,18 @@
           "activation_pct": 0.046,
           "trail_pct": 0.018,
           "min_update_interval_sec": 5
-        }
+        },
+        "regime_thresholds": null,
+        "execution": null,
+        "ema_clamp": null,
+        "signal_threshold": null,
+        "max_risk_score": null,
+        "cooldown_sec": null,
+        "timeframe_sec": null
       },
       "DOGEUSDT": {
+        "enabled": true,
+        "position_mode": "STRICT",
         "weights": {
           "ema": 0.15,
           "volume": 0.15,
@@ -2973,7 +7300,13 @@
           "FLAT_NORMAL",
           "FLAT_HIGH",
           "LOW_VOLATILITY"
-        ]
+        ],
+        "execution": null,
+        "ema_clamp": null,
+        "signal_threshold": null,
+        "max_risk_score": null,
+        "cooldown_sec": null,
+        "timeframe_sec": null
       },
       "XRPUSDT": {
         "weights": {
@@ -2987,6 +7320,8 @@
           "depth_imbalance": 0.392,
           "delta_price": 0.028
         },
+        "enabled": true,
+        "position_mode": "STRICT",
         "side_bias": {
           "penalty_factor": 0.4,
           "window_sec": 600,
@@ -3022,7 +7357,13 @@
           "LOW_VOLATILITY",
           "FLAT_LOW",
           "FLAT_NORMAL"
-        ]
+        ],
+        "execution": null,
+        "ema_clamp": null,
+        "signal_threshold": null,
+        "max_risk_score": null,
+        "cooldown_sec": null,
+        "timeframe_sec": null
       },
       "BTCUSDT": {
         "weights": {
@@ -3036,6 +7377,8 @@
           "depth_imbalance": 0.05,
           "delta_price": 0.05
         },
+        "enabled": true,
+        "position_mode": "STRICT",
         "side_bias": {
           "penalty_factor": 0.5,
           "window_sec": 600,
@@ -3072,7 +7415,13 @@
           "LOW_VOLATILITY",
           "FLAT_LOW",
           "FLAT_NORMAL"
-        ]
+        ],
+        "execution": null,
+        "ema_clamp": null,
+        "signal_threshold": null,
+        "max_risk_score": null,
+        "cooldown_sec": null,
+        "timeframe_sec": null
       }
     }
   },
@@ -3089,7 +7438,12 @@
       "decision_making": {
         "position_sizing": {
           "min_position_size_usd": 10,
-          "liquidity_based_cap_usd": 10000
+          "liquidity_based_cap_usd": 10000,
+          "risk_fraction_q": null,
+          "liquidity_kappa": 1.0,
+          "kappa_mode": "dynamic",
+          "liquidity_kappa_mode": "dynamic",
+          "risk_contract_v1": null
         },
         "qos": {
           "exposure_block_cooldown_sec": 10,
@@ -3111,16 +7465,23 @@
           "low_vol_multiplier": 0.5
         },
         "signals": {
-          "normalize": false
+          "normalize": false,
+          "enable_new_metrics": true
         },
         "risk_skew": {
           "max_skew_sec": 5,
           "max_defer_count": 3,
           "defer_cooldown_sec": 2
+        },
+        "arming": {
+          "require_regime_warmup": true,
+          "retry_backoff_ms": 250,
+          "max_attempts": 3
         }
       },
       "feature_engineering": {
         "enable_new_metrics": true,
+        "volume_input_mode": "integrate",
         "ema": {
           "period_short": 3,
           "period_long": 7
@@ -3135,7 +7496,7 @@
           "window_sec": 60
         },
         "liquidity": {
-          "depth_half": 1000,
+          "depth_half": 1000.0,
           "kappa_min": 0.3,
           "kappa_max": 1.0
         },
@@ -3144,19 +7505,46 @@
           "clamp_max": 0.02
         },
         "volume_spike": {
+          "cap_max": 3.0,
+          "sma_len": 5,
+          "eps": 1e-09
+        },
+        "large_trade_imbalance": {
+          "window_ms": 60000,
+          "min_trades": 10,
+          "eps": 1e-12,
+          "use_notional": false
+        },
+        "volatility_state": {
           "cap_max": 3.0
+        },
+        "depth_imbalance": {
+          "use_laplace_smoothing": true
         },
         "delta_price": {
           "spike_filter_ms": 60000
         },
         "macro_sync": {
+          "enabled": true,
           "time_diff_threshold_ms": 60000,
+          "ttl_ms": 60000,
           "min_buffer_size": 3,
           "window": 60,
+          "bin_ms": 1000,
+          "max_gap_bins": 2,
+          "eps": 1e-12,
           "anchors": [
             "BTCUSDT",
             "ETHUSDT"
-          ]
+          ],
+          "align_mode": "tail_min_len",
+          "anchor_update_from_ticks": false
+        },
+        "defaults": {
+          "neutral_value": 0.5,
+          "zero_value": 0.0,
+          "correlation_default": 0.0,
+          "ms_per_sec": 1000
         }
       },
       "risk_management": {
@@ -3184,12 +7572,19 @@
         "positions_stale_ttl_sec": 15,
         "thread_timeouts": {
           "join_timeout_sec": 10
-        }
+        },
+        "enable_market_tick_subscription": false
       },
       "account_observer": {
         "poll_interval_sec": 5,
         "trade_limit": 10,
-        "symbols": [],
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT",
+          "DOGEUSDT",
+          "XRPUSDT"
+        ],
         "thread_timeouts": {
           "join_timeout_sec": 10
         }
@@ -3249,21 +7644,21 @@
           "aurora"
         ],
         "DOGEUSDT": [
-          "mean_reversion_1m"
+          "mean_reversion"
         ],
         "XRPUSDT": [
-          "mean_reversion_1m"
+          "mean_reversion"
         ],
         "BTCUSDT": [
           "aurora",
-          "mean_reversion_1m"
+          "mean_reversion"
         ]
       },
       "arbitration": {
         "mode": "priority",
         "priority": {
           "aurora": 1,
-          "mean_reversion_1m": 2
+          "mean_reversion": 2
         },
         "logging": {
           "rejected_why_prefix": "ARBITRATION_REJECT",
@@ -3413,6 +7808,18 @@
           "expected_monthly_pnl": 202.0,
           "min_capital_usd": 50000
         }
+      }
+    }
+  },
+  "config/aurora/strategies/aurora.yaml": {
+    "keys": [
+      "aurora"
+    ],
+    "raw": {
+      "aurora": {
+        "enabled": true,
+        "type": "tick_based",
+        "description": "Tick-based multi-signal alpha strategy with regime awareness"
       }
     }
   },
@@ -4619,14 +9026,20 @@
       }
     }
   },
-  "config/aurora/strategies/mean_reversion_1m.yaml": {
+  "config/aurora/strategies/mean_reversion.yaml": {
     "keys": [
-      "mean_reversion_1m"
+      "mean_reversion"
     ],
     "raw": {
-      "mean_reversion_1m": {
-        "enabled": false,
+      "mean_reversion": {
+        "enabled": true,
         "timeframe_sec": 60,
+        "allowed_regimes": [
+          "FLAT_LOW",
+          "FLAT_NORMAL",
+          "FLAT_HIGH"
+        ],
+        "emit_trade_intent_directly": false,
         "strategy": {
           "bb_window": 20,
           "bb_num_std": 2.0,
@@ -4647,44 +9060,99 @@
           "low_vol_pct": 0.001
         },
         "assets": {
+          "DOGEUSDT": {
+            "enabled": true,
+            "position_mode": "STRICT",
+            "bb_window": null,
+            "min_vol_atr": null,
+            "sl_pct": null,
+            "strategy": {
+              "bb_window": 20,
+              "bb_num_std": 2.1,
+              "min_bb_width": 0.005,
+              "entry_threshold": 0.05,
+              "sl_atr_mult": 1.5,
+              "tp_to_mid": false,
+              "cooldown_sec": 210
+            },
+            "allowed_regimes": [
+              "FLAT_LOW",
+              "FLAT_NORMAL",
+              "FLAT_HIGH"
+            ],
+            "risk": {
+              "position_size_usd": 150,
+              "max_risk_score": null
+            }
+          },
           "BTCUSDT": {
             "enabled": true,
-            "bb_window": 20,
-            "min_vol_atr": 0.008,
-            "sl_pct": 0.0068,
+            "position_mode": "STRICT",
+            "bb_window": null,
+            "min_vol_atr": null,
+            "sl_pct": null,
+            "strategy": {
+              "bb_window": 40,
+              "bb_num_std": 2.3,
+              "min_bb_width": 0.006,
+              "entry_threshold": 0.05,
+              "tp_to_mid": true,
+              "sl_atr_mult": null,
+              "cooldown_sec": 0
+            },
             "allowed_regimes": [
               "FLAT_LOW",
-              "FLAT_NORMAL",
-              "FLAT_HIGH"
-            ]
-          },
-          "ETHUSDT": {
-            "enabled": true,
-            "bb_window": 120,
-            "min_vol_atr": 0.025,
-            "sl_pct": 0.0282,
-            "allowed_regimes": [
-              "FLAT_LOW",
-              "FLAT_NORMAL",
-              "FLAT_HIGH"
-            ]
+              "FLAT_NORMAL"
+            ],
+            "risk": {
+              "position_size_usd": 150,
+              "max_risk_score": null
+            }
           },
           "XRPUSDT": {
             "enabled": true,
-            "bb_window": 20,
-            "min_vol_atr": 0.01,
-            "sl_pct": 0.0144,
+            "position_mode": "STRICT",
+            "bb_window": null,
+            "min_vol_atr": null,
+            "sl_pct": null,
+            "strategy": {
+              "bb_window": 40,
+              "bb_num_std": 2.5,
+              "min_bb_width": 0.007,
+              "entry_threshold": 0.05,
+              "tp_to_mid": true,
+              "sl_atr_mult": null,
+              "cooldown_sec": 165
+            },
             "allowed_regimes": [
               "FLAT_LOW",
               "FLAT_NORMAL",
               "FLAT_HIGH"
-            ]
+            ],
+            "risk": {
+              "position_size_usd": 150,
+              "max_risk_score": null
+            }
           },
-          "DOGEUSDT": {
-            "enabled": true,
-            "bb_window": 20,
-            "min_vol_atr": 0.01,
-            "sl_pct": 0.0197,
+          "ETHUSDT": {
+            "enabled": false,
+            "position_mode": "STRICT",
+            "strategy": {
+              "bb_window": null,
+              "bb_num_std": null,
+              "min_bb_width": null,
+              "entry_threshold": null,
+              "tp_to_mid": null,
+              "sl_atr_mult": null,
+              "cooldown_sec": null
+            },
+            "risk": {
+              "position_size_usd": null,
+              "max_risk_score": null
+            },
+            "bb_window": null,
+            "min_vol_atr": null,
+            "sl_pct": null,
             "allowed_regimes": [
               "FLAT_LOW",
               "FLAT_NORMAL",
@@ -4693,9 +9161,23 @@
           },
           "SOLUSDT": {
             "enabled": false,
-            "bb_window": 60,
-            "min_vol_atr": 0.02,
-            "sl_pct": 0.0156,
+            "position_mode": "STRICT",
+            "strategy": {
+              "bb_window": null,
+              "bb_num_std": null,
+              "min_bb_width": null,
+              "entry_threshold": null,
+              "tp_to_mid": null,
+              "sl_atr_mult": null,
+              "cooldown_sec": null
+            },
+            "risk": {
+              "position_size_usd": null,
+              "max_risk_score": null
+            },
+            "bb_window": null,
+            "min_vol_atr": null,
+            "sl_pct": null,
             "allowed_regimes": [
               "FLAT_LOW",
               "FLAT_NORMAL",
@@ -4997,7 +9479,7 @@
       "symbol",
       "specs",
       "aurora",
-      "mean_reversion_1m"
+      "mean_reversion"
     ],
     "raw": {
       "symbol": "XRPUSDT",
@@ -5070,7 +9552,7 @@
         },
         "cooldown_sec": 165
       },
-      "mean_reversion_1m": {
+      "mean_reversion": {
         "enabled": true,
         "strategy": {
           "bb_window": 40,
@@ -5092,7 +9574,7 @@
   "config/aurora/instruments/_index.yaml": {
     "keys": [
       "enabled",
-      "mean_reversion_1m_enabled",
+      "mean_reversion_enabled",
       "groups"
     ],
     "raw": {
@@ -5103,7 +9585,7 @@
         "DOGEUSDT",
         "XRPUSDT"
       ],
-      "mean_reversion_1m_enabled": [
+      "mean_reversion_enabled": [
         "DOGEUSDT",
         "XRPUSDT",
         "BTCUSDT"
@@ -5135,7 +9617,7 @@
       "symbol",
       "specs",
       "aurora",
-      "mean_reversion_1m"
+      "mean_reversion"
     ],
     "raw": {
       "symbol": "BTCUSDT",
@@ -5209,7 +9691,7 @@
         },
         "cooldown_sec": 0
       },
-      "mean_reversion_1m": {
+      "mean_reversion": {
         "enabled": true,
         "strategy": {
           "bb_window": 40,
@@ -5385,7 +9867,7 @@
       "symbol",
       "specs",
       "aurora",
-      "mean_reversion_1m"
+      "mean_reversion"
     ],
     "raw": {
       "symbol": "DOGEUSDT",
@@ -5455,7 +9937,7 @@
         },
         "cooldown_sec": 210
       },
-      "mean_reversion_1m": {
+      "mean_reversion": {
         "enabled": true,
         "strategy": {
           "bb_window": 20,
@@ -5735,7 +10217,6 @@
         "fsm_close.py",
         "fsm_manage.py",
         "exposure_guard.py",
-        "drift_monitor.py",
         "order_index.py"
       ],
       "imports": [
@@ -5954,8 +10435,7 @@
       "version": "1.0",
       "description": "Trade intent generation based on risk assessment and market features",
       "modules": [
-        "decision_making.py",
-        "roi_exit_strategy.py"
+        "decision_making.py"
       ],
       "imports": [
         {
@@ -6085,23 +10565,6 @@
             "symbol": "ETHUSDT",
             "step_size": "0.001"
           }
-        }
-      }
-    }
-  },
-  "configs/frozen/master_config_v1_20251030.yaml": {
-    "keys": [
-      "ops",
-      "execution"
-    ],
-    "raw": {
-      "ops": {
-        "metrics_url": "http://127.0.0.1:8000/metrics",
-        "reports_dir": "reports"
-      },
-      "execution": {
-        "manage": {
-          "auto": false
         }
       }
     }

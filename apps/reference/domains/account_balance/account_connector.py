@@ -22,6 +22,11 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
+def _dget(d: Dict[str, Any], key: str, default: Any) -> Any:
+    """Defaulting dict access without using the default-arg form of `dict.get` (TASK25 policy)."""
+    return d[key] if key in d else default
+
+
 class AccountConnector:
     """
     Connects to Binance REST API via BinanceAdapter to retrieve account data.
@@ -127,11 +132,11 @@ class AccountConnector:
                     )
                     if usdt_asset:
                         LOG.info(
-                            f"   💰 USDT balance: {usdt_asset.get('balance', 'N/A')}")
+                            f"   💰 USDT balance: {_dget(usdt_asset, 'balance', 'N/A')}")
                         LOG.info(
-                            f"   📊 USDT crossWalletBalance: {usdt_asset.get('crossWalletBalance', 'N/A')}")
+                            f"   📊 USDT crossWalletBalance: {_dget(usdt_asset, 'crossWalletBalance', 'N/A')}")
                         LOG.info(
-                            f"   📈 USDT crossUnPnl: {usdt_asset.get('crossUnPnl', 'N/A')}")
+                            f"   📈 USDT crossUnPnl: {_dget(usdt_asset, 'crossUnPnl', 'N/A')}")
                     else:
                         LOG.warning(
                             "   ⚠️  No USDT asset found in balance data")
@@ -159,17 +164,16 @@ class AccountConnector:
                     ]
                     # Count non-zero positions (using position_amount field from ExchangePosition)
                     non_zero = sum(1 for p in positions_list if abs(
-                        float(p.get("position_amount", p.get("positionAmt", 0)))) > 0.0001)
+                        float(_dget(p, "position_amount", _dget(p, "positionAmt", 0)))) > 0.0001)
                     LOG.info(
                         f"✅ Fetched positions: {non_zero} non-zero out of {len(positions_list)} total")
                     # Log each non-zero position
                     for pos in positions_list:
-                        amt = float(pos.get("position_amount",
-                                    pos.get("positionAmt", 0)))
+                        amt = float(_dget(pos, "position_amount", _dget(pos, "positionAmt", 0)))
                         if abs(amt) > 0.0001:
                             LOG.info(
                                 f"   📊 {pos.get('symbol')}: {amt} @ "
-                                f"{pos.get('entry_price', pos.get('entryPrice', 'N/A'))}")
+                                f"{_dget(pos, 'entry_price', _dget(pos, 'entryPrice', 'N/A'))}")
 
                     # 🔴 DIAGNOSTIC: Check for divergence (API empty but internal has data)
                     if api_position_count == 0:
@@ -194,15 +198,15 @@ class AccountConnector:
         assets = [
             {
                 "asset": asset["asset"],
-                "balance": str(decimal.Decimal(asset.get("balance", "0"))),
-                "crossUnPnl": str(decimal.Decimal(asset.get("crossUnPnl", "0"))),
+                "balance": str(decimal.Decimal(_dget(asset, "balance", "0"))),
+                "crossUnPnl": str(decimal.Decimal(_dget(asset, "crossUnPnl", "0"))),
                 "crossWalletBalance": str(
-                    decimal.Decimal(asset.get("crossWalletBalance", "0"))
+                    decimal.Decimal(_dget(asset, "crossWalletBalance", "0"))
                 ),
-                "updateTime": asset.get("updateTime", 0),
+                "updateTime": _dget(asset, "updateTime", 0),
             }
             for asset in balance_data
-            if decimal.Decimal(asset.get("balance", "0")) > 0
+            if decimal.Decimal(_dget(asset, "balance", "0")) > 0
         ]
 
         if not assets:
@@ -211,7 +215,7 @@ class AccountConnector:
         payload = {
             "assets": assets,
             "updateTime": max(
-                (asset.get("updateTime", 0) for asset in assets), default=0
+                ((asset["updateTime"] if "updateTime" in asset else 0) for asset in assets), default=0
             ),
         }
         self.fsm.emit(
@@ -227,25 +231,49 @@ class AccountConnector:
         LOG.info(
             f"📊 Processing positions data: {len(positions_data)} raw positions")
 
-        open_positions = [
-            {
-                "symbol": pos["symbol"],
-                "positionAmt": str(decimal.Decimal(pos.get("position_amount", pos.get("positionAmt", "0")))),
-                "entryPrice": str(decimal.Decimal(pos.get("entry_price", pos.get("entryPrice", "0")))),
-                "unRealizedProfit": str(
-                    decimal.Decimal(
-                        pos.get("unrealized_pnl", pos.get("unRealizedProfit", "0")))),
-                "leverage": int(pos.get("leverage", 1)),
-                "marginType": pos.get("marginType", "cross"),
-                "markPrice": str(decimal.Decimal(pos.get("mark_price", pos.get("markPrice", "0")))),
-                "liquidationPrice": str(
-                    decimal.Decimal(pos.get("liquidation_price",
-                                    pos.get("liquidationPrice", "0")))
-                ),
-            }
-            for pos in positions_data
-            if decimal.Decimal(pos.get("position_amount", pos.get("positionAmt", "0"))) != 0
-        ]
+        open_positions: List[Dict[str, Any]] = []
+        for pos in positions_data:
+            position_amt_raw = (
+                pos["position_amount"]
+                if "position_amount" in pos
+                else (pos["positionAmt"] if "positionAmt" in pos else "0")
+            )
+            if decimal.Decimal(position_amt_raw) == 0:
+                continue
+
+            entry_price_raw = (
+                pos["entry_price"]
+                if "entry_price" in pos
+                else (pos["entryPrice"] if "entryPrice" in pos else "0")
+            )
+            unrealized_pnl_raw = (
+                pos["unrealized_pnl"]
+                if "unrealized_pnl" in pos
+                else (pos["unRealizedProfit"] if "unRealizedProfit" in pos else "0")
+            )
+            mark_price_raw = (
+                pos["mark_price"]
+                if "mark_price" in pos
+                else (pos["markPrice"] if "markPrice" in pos else "0")
+            )
+            liquidation_price_raw = (
+                pos["liquidation_price"]
+                if "liquidation_price" in pos
+                else (pos["liquidationPrice"] if "liquidationPrice" in pos else "0")
+            )
+
+            open_positions.append(
+                {
+                    "symbol": pos["symbol"],
+                    "positionAmt": str(decimal.Decimal(position_amt_raw)),
+                    "entryPrice": str(decimal.Decimal(entry_price_raw)),
+                    "unRealizedProfit": str(decimal.Decimal(unrealized_pnl_raw)),
+                    "leverage": int(_dget(pos, "leverage", 1)),
+                    "marginType": _dget(pos, "marginType", "cross"),
+                    "markPrice": str(decimal.Decimal(mark_price_raw)),
+                    "liquidationPrice": str(decimal.Decimal(liquidation_price_raw)),
+                }
+            )
 
         LOG.info(f"📊 Filtered to {len(open_positions)} non-zero positions")
 
@@ -278,13 +306,13 @@ class AccountConnector:
             if usdt_asset:
                 # Use 'balance' field instead of 'walletBalance' (which doesn't exist in /fapi/v2/balance response)
                 wallet_balance = str(decimal.Decimal(
-                    usdt_asset.get("balance", "0")))
+                    _dget(usdt_asset, "balance", "0")))
                 unrealized_profit = str(
-                    decimal.Decimal(usdt_asset.get("crossUnPnl", "0"))
+                    decimal.Decimal(_dget(usdt_asset, "crossUnPnl", "0"))
                 )
                 # crossWalletBalance = balance - unrealizedProfit (approximately)
                 cross_wallet_balance = str(
-                    decimal.Decimal(usdt_asset.get("crossWalletBalance", "0"))
+                    decimal.Decimal(_dget(usdt_asset, "crossWalletBalance", "0"))
                 )
 
                 LOG.info(

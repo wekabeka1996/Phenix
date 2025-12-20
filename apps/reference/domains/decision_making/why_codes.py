@@ -204,7 +204,7 @@ def get_why_description(code: WhyCode) -> str:
         WhyCode.INFO_RISK_RECALCULATED: "Risk parameters recalculated",
     }
 
-    return descriptions.get(code, f"Unknown WHY code: {code.value}")
+    return descriptions[code] if code in descriptions else f"Unknown WHY code: {code.value}"
 
 
 def format_why_with_details(code: WhyCode, *details: str) -> str:

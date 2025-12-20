@@ -31,14 +31,14 @@ mr_1m_config: Dict[str, Any] = {}
 try:
     strategies_dir = self.config_dir / "strategies"
     if strategies_dir.exists():
-        mr_1m_path = strategies_dir / "mean_reversion_1m.yaml"  # HARDCODED
+        mr_1m_path = strategies_dir / "mean_reversion.yaml"  # HARDCODED
         if mr_1m_path.exists():
             with open(mr_1m_path, "r", encoding="utf-8-sig", errors="replace") as f:
                 mr_1m_raw = yaml.safe_load(f)
-            if isinstance(mr_1m_raw, dict) and "mean_reversion_1m" in mr_1m_raw:
-                mr_1m_config = mr_1m_raw["mean_reversion_1m"]
+            if isinstance(mr_1m_raw, dict) and "mean_reversion" in mr_1m_raw:
+                mr_1m_config = mr_1m_raw["mean_reversion"]
 except Exception as e:
-    LOG.warning(f"Failed to load mean_reversion_1m.yaml: {e}")
+    LOG.warning(f"Failed to load mean_reversion.yaml: {e}")
 ```
 
 **After** (registry-driven):
@@ -93,7 +93,7 @@ if strategies_payload and "assignments" in strategies_payload:
                     f"from {profile_path}: {e}"
                 )
 
-# Inject strategy configs at root level (e.g., mean_reversion_1m)
+# Inject strategy configs at root level (e.g., mean_reversion)
 for strategy_id, config_data in strategy_configs.items():
     merged_config[strategy_id] = config_data
 ```
@@ -102,7 +102,7 @@ for strategy_id, config_data in strategy_configs.items():
 - Read `strategies_registry.assignments` → extract unique strategy_ids
 - For each strategy_id: load `config/aurora/strategies/{strategy_id}.yaml`
 - FAIL-CLOSED: Missing profile → ValueError (no silent fallback)
-- Inject loaded configs at root level (`config.mean_reversion_1m`, `config.aurora`)
+- Inject loaded configs at root level (`config.mean_reversion`, `config.aurora`)
 
 ---
 
@@ -284,7 +284,7 @@ tests/config/test_strategy_profiles_registry_load.py ....     [100%]
 
 ## 📋 Definition of Done (DoD) Checklist
 
-- [x] **No hardcode in config_loader.py** - removed `mean_reversion_1m.yaml` hardcode
+- [x] **No hardcode in config_loader.py** - removed `mean_reversion.yaml` hardcode
   - ✅ Registry-driven load: reads assignments → loads profiles
   - ✅ Strict: assignment → missing profile → ValueError
 
@@ -334,7 +334,7 @@ tests/config/test_strategy_profiles_registry_load.py ....     [100%]
 
 ### **Modified Files**
 1. ✅ [apps/reference/config_loader.py](apps/reference/config_loader.py)
-   - L308-310: Removed hardcoded `mean_reversion_1m.yaml` loading
+   - L308-310: Removed hardcoded `mean_reversion.yaml` loading
    - L325-327: Removed merge of `mr_1m_config`
    - L458-512: Added registry-driven strategy profile loading (55 lines)
 
@@ -349,7 +349,7 @@ tests/config/test_strategy_profiles_registry_load.py ....     [100%]
 
 ### **Updated Test Files**
 1. ✅ [tests/config/test_strategies_registry_strict.py](tests/config/test_strategies_registry_strict.py)
-   - Added autouse fixture `create_strategy_profiles` to auto-create aurora.yaml and mean_reversion_1m.yaml
+   - Added autouse fixture `create_strategy_profiles` to auto-create aurora.yaml and mean_reversion.yaml
 
 ---
 
@@ -358,7 +358,7 @@ tests/config/test_strategy_profiles_registry_load.py ....     [100%]
 ### **Phase-4: Strategy Config Consolidation** (NOT in this PR)
 - Merge aurora params scattered across files → single SSOT
 - Remove `trading.aurora_instruments` mirror (deprecated)
-- Migrate MR params from trading.yaml → strategies/mean_reversion_1m.yaml
+- Migrate MR params from trading.yaml → strategies/mean_reversion.yaml
 
 ### **Phase-5: Strategy Framework Enhancements** (NOT in this PR)
 - Multi-symbol correlation checks

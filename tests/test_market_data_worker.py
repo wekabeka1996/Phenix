@@ -67,8 +67,14 @@ class TestWorkerBackpressure:
         
         # Create minimal config
         config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -99,8 +105,14 @@ class TestWorkerBackpressure:
         q = MockQueue(maxsize=3)
         
         config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -148,8 +160,14 @@ class TestWorkerMessageTypes:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -192,8 +210,14 @@ class TestWorkerMessageTypes:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {"ETHUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"ETHUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": ["BTCUSDT"]},
                     "poll_interval_sec": 1,
@@ -212,7 +236,7 @@ class TestWorkerMessageTypes:
             "type": worker.MSG_TYPE_ANCHOR,
             "anchor": "BTCUSDT",
             "price": "95000.00",
-            "ts": int(time.time() * 1000),
+            "ts_ms": int(time.time() * 1000),
         }
         
         worker._put_with_backpressure(msg)
@@ -227,8 +251,14 @@ class TestWorkerMessageTypes:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -271,11 +301,17 @@ class TestWorkerConfig:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {
+                "BTCUSDT": {"step_size": "0.001"},
+                "ETHUSDT": {"step_size": "0.01"},
+            },
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {
-                    "BTCUSDT": {"step_size": "0.001"},
-                    "ETHUSDT": {"step_size": "0.01"},
-                },
                 "market_data": {
                     "macro_sync": {"anchors": ["BTCUSDT"]},
                     "poll_interval_sec": 2,
@@ -300,8 +336,14 @@ class TestWorkerConfig:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {},  # Empty!
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {},  # Empty!
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -324,8 +366,14 @@ class TestWorkerConfig:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -350,8 +398,14 @@ class TestWorkerWebSocket:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -373,8 +427,14 @@ class TestWorkerWebSocket:
         q = MockQueue(maxsize=100)
         
         config = {
+            "instruments": {"BTCUSDT": {}, "ETHUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
             "trading": {
-                "instruments": {"BTCUSDT": {}, "ETHUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": ["SOLUSDT"]},  # Extra anchor
                     "poll_interval_sec": 1,

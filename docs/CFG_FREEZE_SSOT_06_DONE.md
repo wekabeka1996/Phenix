@@ -30,7 +30,7 @@
 | T4 | trading.yaml with feature_engineering + non-strict → WARNING | ✅ PASS |
 | T5 | Clean config loads in strict mode | ✅ PASS |
 | T6a | Sanity: features.yaml + strict → ValueError (TASK 06 regression) | ✅ PASS |
-| T6b | Sanity: mean_reversion_1m + strict → ValueError (TASK 08 regression) | ✅ PASS |
+| T6b | Sanity: mean_reversion + strict → ValueError (TASK 08 regression) | ✅ PASS |
 
 ```bash
 $ pytest tests/config/test_strict_default_and_ci_gates.py -v
@@ -128,7 +128,7 @@ if feature_eng_found:
         LOG.warning(msg)
 ```
 
-**Pattern**: Same as features.yaml (TASK 06) and mean_reversion_1m (TASK 08) deprecation
+**Pattern**: Same as features.yaml (TASK 06) and mean_reversion (TASK 08) deprecation
 
 ---
 
@@ -177,7 +177,7 @@ needs: [lint, type, test, strict-config, smoke, build]
 
 **Contents**:
 - SSOT hierarchy (instruments, domains, regime, strategies, trading)
-- Deprecated sections catalog (features.yaml, trading.domains, trading.mean_reversion_1m, trading.feature_engineering)
+- Deprecated sections catalog (features.yaml, trading.domains, trading.mean_reversion, trading.feature_engineering)
 - Detection patterns explanation
 - Test coverage matrix
 - Legacy `extra='allow'` audit plan
@@ -241,7 +241,7 @@ STRICT_CONFIG_CONFLICTS=1 python -c "from apps.reference.config_loader import Co
 - Any file not in SSOT hierarchy
 
 ### 2. Duplicate sections in trading.yaml
-- **mean_reversion_1m** → use `strategies/mean_reversion_1m.yaml`
+- **mean_reversion** → use `strategies/mean_reversion.yaml`
 - **feature_engineering** → use `domains.yaml`
 - **domains** → use `domains.yaml`
 - **instruments** → use `instruments.yaml`
@@ -287,7 +287,7 @@ STRICT_CONFIG_CONFLICTS=1 python -c "from apps.reference.config_loader import Co
 - [x] All tests passing (8/8)
 - [x] SSOT freeze map created (comprehensive docs)
 - [x] Legacy audit plan documented (sunset 2025-01-15)
-- [x] Previous task deprecations still work (features.yaml, mean_reversion_1m)
+- [x] Previous task deprecations still work (features.yaml, mean_reversion)
 
 ---
 

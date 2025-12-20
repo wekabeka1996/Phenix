@@ -85,7 +85,7 @@ _drift_reports: list[dict[str, Any]] = []
 
 def add_drift_report(report: Any) -> None:
     """
-    Store a DriftReport (apps/reference/domains/execution_position/drift_monitor.py).
+    Store a DriftReport (apps/monitoring/drift_monitor.py).
     Keeps only last 100 reports.
     """
     if hasattr(report, "to_dict"):

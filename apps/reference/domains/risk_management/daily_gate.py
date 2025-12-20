@@ -72,7 +72,7 @@ class DailyRiskState:
              # If cfg is not AuroraConfig, this crashes, which is good.
              risk_cfg = {}
 
-        daily_cfg = risk_cfg.get("daily", {}) if isinstance(risk_cfg, dict) else {}
+        daily_cfg = risk_cfg["daily"] if isinstance(risk_cfg, dict) and "daily" in risk_cfg else {}
         
         # Extract values from dict (risk.daily is a dict)
         max_loss = daily_cfg.get("max_realized_loss_usd")

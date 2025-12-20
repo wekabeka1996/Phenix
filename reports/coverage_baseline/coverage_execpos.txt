@@ -1,0 +1,1 @@
+Coverage collection failed: pytest-cov missing and installation blocked (PEP 668). Using manual analysis.

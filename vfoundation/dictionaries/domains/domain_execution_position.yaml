@@ -8,7 +8,6 @@ modules:
   - fsm_close.py
   - fsm_manage.py
   - exposure_guard.py
-  - drift_monitor.py
   - order_index.py
 
 imports:

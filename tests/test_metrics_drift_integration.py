@@ -15,7 +15,7 @@ from vfoundation.obs.debug_api import (
     _drift_reports,
     _drift_lock,
 )
-from apps.reference.domains.execution_position.drift_monitor import (
+from apps.monitoring.drift_monitor import (
     ConfusionMatrix,
     DriftReport,
 )

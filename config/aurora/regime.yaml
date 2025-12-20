@@ -30,6 +30,7 @@ models:
     enabled: true
     atr_period: 14
     atr_sma_length: 100
+    allow_close_to_close_atr: true
     threshold_multiplier: 2.0
     low_vol_multiplier: 0.5
     high_vol_confidence_multiplier: 2.0

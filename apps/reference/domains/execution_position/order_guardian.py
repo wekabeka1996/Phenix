@@ -12,6 +12,7 @@ from typing import Any, Optional
 from apps.reference.services.order_guardian import OrderGuardian as ServicesGuardian
 from apps.reference.services.ledger_store_adapter import LedgerStoreAdapter
 from apps.clean_TP_SL.order_ledger import OrderLedger
+from apps.reference.utils.accessors import aget
 
 
 class OrderGuardian:
@@ -24,32 +25,23 @@ class OrderGuardian:
         poll_interval_ms: int = 0,
         bus: Optional[Any] = None,
     ):
+        if isinstance(config, dict):
+            raise TypeError("OrderGuardian requires typed config object, got dict")
+
         self._cfg = config or {}
 
         # Feature flag: guardian.unified (default True)
         unified = True
-        try:
-            if hasattr(self._cfg, 'guardian') and self._cfg.guardian:
-                unified = bool(getattr(self._cfg.guardian, 'unified', True))
-            elif isinstance(self._cfg, dict):
-                unified = bool(self._cfg.get(
-                    'guardian', {}).get('unified', True))
-        except Exception:
-            unified = True
+        guardian_cfg = aget(self._cfg, "guardian", None)
+        if guardian_cfg:
+            unified = bool(aget(guardian_cfg, "unified", True))
 
         store = None
         if unified:
             # Optional DB path for ledger
             db_path = None
-            try:
-                if hasattr(self._cfg, 'guardian') and self._cfg.guardian:
-                    db_path = getattr(self._cfg.guardian,
-                                      'ledger_db_path', None)
-                elif isinstance(self._cfg, dict):
-                    db_path = self._cfg.get(
-                        'guardian', {}).get('ledger_db_path')
-            except Exception:
-                db_path = None
+            if guardian_cfg:
+                db_path = aget(guardian_cfg, "ledger_db_path", None)
 
             ledger = OrderLedger(db_path or ":memory:")
             store = LedgerStoreAdapter(ledger)

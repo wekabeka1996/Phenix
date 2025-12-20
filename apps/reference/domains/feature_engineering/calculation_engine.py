@@ -17,8 +17,13 @@ Architecture:
 import decimal
 import math
 import statistics
+from apps.reference.domains.feature_engineering.macro_sync_resampler import MacroSyncResampler
 from typing import Dict, Deque, Optional, Any, List
 from collections import deque
+
+from apps.reference.domains.feature_engineering.large_trade_imbalance import (
+    LargeTradeImbalanceCalculator,
+)
 
 from apps.reference.domains.feature_engineering.types import (
     HotState,
@@ -49,6 +54,18 @@ class FeatureCalculationEngine:
             cfg: FeatureEngineeringConfig instance
         """
         self.cfg = cfg
+        self._large_trade_imbalance: Optional[LargeTradeImbalanceCalculator] = None
+
+    def _get_large_trade_imbalance(self) -> LargeTradeImbalanceCalculator:
+        if self._large_trade_imbalance is None:
+            self._large_trade_imbalance = LargeTradeImbalanceCalculator(
+                window_ms=int(self.cfg.large_trade_imbalance_window_ms),
+                min_trades=int(self.cfg.large_trade_imbalance_min_trades),
+                eps=self.cfg.large_trade_imbalance_eps,
+                neutral_value=self.cfg.neutral_value,
+                use_notional=bool(self.cfg.large_trade_imbalance_use_notional),
+            )
+        return self._large_trade_imbalance
     
     # =========================================================================
     # EMA CALCULATIONS
@@ -85,69 +102,87 @@ class FeatureCalculationEngine:
     # VOLUME SPIKE CALCULATIONS (FTR-03: O(1) Welford)
     # =========================================================================
 
-    def update_volume_spike(self, state: HotState, current_tick: dict) -> None:
+    def update_volume_spike(
+        self,
+        state: HotState,
+        *,
+        volume: decimal.Decimal,
+        time_diff_ms: int,
+    ) -> None:
         """
-        Update volume window with real volumes.
-        
-        FTR-03: O(1) implementation using Welford's Algorithm.
-        The deque stores values for FIFO removal, Welford stats for O(1) mean.
+        TASK24.C2: Update time-normalized volume rate samples (Decimal-only for spike).
+
+        Uses `time_diff_ms` to compute an instantaneous rate:
+          rate_t = volume / dt_sec
+
+        Notes:
+        - For Z-score (v2), we also keep Welford stats in float space (rate-based).
+        - If dt<=0, caller should record data-quality metrics; we only mark NOT_READY here.
         """
-        current_ts = current_tick["ts"]
-        window_ms = self.cfg.volume_window_ms
+        state.volume_spike_ready = False
+        state.volume_spike_not_ready_reason = None
 
-        # Initialize or reset window
-        if state.vol_window_start_ts is None:
-            state.vol_window_start_ts = current_ts
-            state.vol_current_ts = current_ts
+        if time_diff_ms <= 0:
+            state.volume_spike_not_ready_reason = "bad_dt"
+            return
 
-        # Check if time to close window
-        if current_ts - state.vol_window_start_ts >= window_ms:
-            if state.vol_window_trades > 0:
-                new_val = state.vol_window_trades
-                
-                # FTR-03: O(1) sliding window with Welford
-                # Remove oldest if window full BEFORE append
-                maxlen = state.vol_hist.maxlen or self.cfg.volume_sma_length
-                if len(state.vol_hist) >= maxlen:
-                    old_val = state.vol_hist[0]
-                    state.vol_stats = FeatureUtils.welford_remove_tuple(state.vol_stats, old_val)
-                
-                # Append new value (deque auto-pops if maxlen set)
-                state.vol_hist.append(new_val)
-                
-                # Update Welford stats
-                state.vol_stats = FeatureUtils.welford_update(state.vol_stats, new_val)
-                
-            state.vol_window_start_ts = current_ts
-            state.vol_window_trades = 0.0
+        ms_per_sec = decimal.Decimal(str(self.cfg.ms_per_sec))
+        dt_sec = decimal.Decimal(int(time_diff_ms)) / ms_per_sec
+        if dt_sec <= 0:
+            state.volume_spike_not_ready_reason = "bad_dt"
+            return
 
-        # Accumulate REAL volume (not tick count)
-        buy_vol = float(current_tick.get("buy_volume", 0))
-        sell_vol = float(current_tick.get("sell_volume", 0))
-        state.vol_window_trades += buy_vol + sell_vol
-        state.vol_current_ts = current_ts
+        if volume < 0:
+            state.volume_spike_not_ready_reason = "negative_volume"
+            return
+
+        rate = volume / dt_sec
+        state.volume_rate_current = rate
+
+        # Maintain Decimal SMA window
+        state.volume_rate_hist.append(rate)
+
+        # Maintain float Welford window for volume_zscore (rate-based)
+        rate_f = float(rate)
+        maxlen = state.vol_hist.maxlen or self.cfg.volume_sma_length
+        if len(state.vol_hist) >= maxlen:
+            old_val = state.vol_hist[0]
+            state.vol_stats = FeatureUtils.welford_remove_tuple(state.vol_stats, old_val)
+        state.vol_hist.append(rate_f)
+        state.vol_stats = FeatureUtils.welford_update(state.vol_stats, rate_f)
+        state.vol_window_trades = rate_f
 
     def compute_volume_spike(self, state: HotState) -> decimal.Decimal:
         """
-        Compute volume spike = vol_window / mean(vol), normalized to [0,1].
-        
-        FTR-03: O(1) implementation - uses Welford mean instead of sum()/len().
+        TASK24.C2: Compute time-normalized volume_spike from rate samples, normalized to [0,1].
+
+        spike = current_rate / max(avg_rate, eps)
+        phi = min(spike, cap_max) / cap_max
         """
-        count, mean, _ = state.vol_stats
-        
-        if count < 2:
+        state.volume_spike_ready = False
+        state.volume_spike_not_ready_reason = None
+
+        current_rate = state.volume_rate_current
+        if current_rate is None:
+            state.volume_spike_not_ready_reason = "missing_rate"
             return self.cfg.neutral_value
 
-        # O(1) mean access from Welford stats
-        avg_vol = decimal.Decimal(str(mean))
-        current_vol = decimal.Decimal(str(state.vol_window_trades))
+        if len(state.volume_rate_hist) < 2:
+            state.volume_spike_not_ready_reason = "insufficient_samples"
+            return self.cfg.neutral_value
 
-        if avg_vol > 0:
-            spike = current_vol / avg_vol
-            spike_capped = min(spike, self.cfg.volume_spike_cap)
-            phi = spike_capped / self.cfg.volume_spike_cap
-            return phi
-        return self.cfg.neutral_value
+        avg_rate = sum(state.volume_rate_hist) / decimal.Decimal(len(state.volume_rate_hist))
+        if avg_rate <= 0:
+            state.volume_spike_not_ready_reason = "avg_rate_non_positive"
+            return self.cfg.neutral_value
+
+        denom = max(avg_rate, self.cfg.volume_spike_eps)
+        spike = current_rate / denom
+        spike_capped = min(spike, self.cfg.volume_spike_cap)
+        phi = spike_capped / self.cfg.volume_spike_cap
+
+        state.volume_spike_ready = True
+        return phi
     
     def compute_volume_zscore(self, state: HotState) -> decimal.Decimal:
         """
@@ -177,6 +212,11 @@ class FeatureCalculationEngine:
         
         FTR-03: O(1) implementation using Welford's Algorithm.
         """
+        if price is None or price <= 0:
+            state.volatility_state_ready = False
+            state.volatility_state_not_ready_reason = "bad_price"
+            return
+
         current_ts = current_tick["ts"]
         window_ms = self.cfg.volatility_window_ms
 
@@ -217,21 +257,32 @@ class FeatureCalculationEngine:
         count, mean, _ = state.range_stats
         
         if count < 2:
+            state.volatility_state_ready = False
+            state.volatility_state_not_ready_reason = "insufficient_history"
             return self.cfg.neutral_value
 
         # O(1) mean access from Welford stats
         avg_range = decimal.Decimal(str(mean))
-        current_range = (
-            state.range_max - state.range_min
-            if state.range_max and state.range_min
-            else decimal.Decimal("0")
-        )
+        if state.range_max is None or state.range_min is None:
+            state.volatility_state_ready = False
+            state.volatility_state_not_ready_reason = "missing_range"
+            return self.cfg.neutral_value
+
+        current_range = state.range_max - state.range_min
+        if current_range < 0:
+            state.volatility_state_ready = False
+            state.volatility_state_not_ready_reason = "negative_range"
+            return self.cfg.neutral_value
 
         if avg_range > 0:
             ratio = current_range / avg_range
             ratio_capped = min(ratio, self.cfg.volatility_state_cap)
             phi = ratio_capped / self.cfg.volatility_state_cap
+            state.volatility_state_ready = True
+            state.volatility_state_not_ready_reason = None
             return phi
+        state.volatility_state_ready = False
+        state.volatility_state_not_ready_reason = "avg_range_non_positive"
         return self.cfg.neutral_value
 
     # =========================================================================
@@ -267,45 +318,27 @@ class FeatureCalculationEngine:
     def compute_large_trade_imbalance(
         self,
         current_tick: dict,
+        state: Optional[HotState] = None,
     ) -> decimal.Decimal:
         """
-        Compute large trade imbalance from buy/sell trade counts.
+        Compute large trade imbalance (volume-weighted, TASK31).
         
         FTR-03: V2 feature.
-        Uses average trade size to detect institutional flow.
-        
-        Formula:
-            avg_buy = buy_volume / buy_count
-            avg_sell = sell_volume / sell_count
-            imbalance = (avg_buy - avg_sell) / max(avg_buy, avg_sell)
-            
+        Volume-weighted imbalance (qty or notional):
+            imb = (buy - sell) / (buy + sell + eps) in [-1, 1]
+            phi = (imb + 1) / 2 in [0, 1]
+
         Returns:
-            Normalized imbalance in [-1, 1]. >0 = larger buys, <0 = larger sells.
-            Returns 0 if counts not available.
+            Normalized imbalance in [0, 1]. >0.5 = buy dominance, <0.5 = sell dominance.
+            Fail-closed: returns neutral_value when not ready; readiness is surfaced via HotState when provided.
         """
-        # Extract trade counts (optional fields)
-        buy_count = float(current_tick.get("buy_count", 0))
-        sell_count = float(current_tick.get("sell_count", 0))
-        buy_volume = float(current_tick.get("buy_volume", 0))
-        sell_volume = float(current_tick.get("sell_volume", 0))
-        
-        # Need both counts to compute
-        if buy_count <= 0 or sell_count <= 0:
-            return self.cfg.neutral_value  # Return 0.5 when data unavailable
-        
-        avg_buy = buy_volume / buy_count
-        avg_sell = sell_volume / sell_count
-        
-        max_avg = max(avg_buy, avg_sell)
-        if max_avg <= 0:
-            return self.cfg.neutral_value
-        
-        # Raw imbalance: [-1, 1]
-        imbalance = (avg_buy - avg_sell) / max_avg
-        
-        # Normalize to [0, 1]: phi = (imbalance + 1) / 2
-        phi = (decimal.Decimal(str(imbalance)) + decimal.Decimal("1")) / decimal.Decimal("2")
-        return phi
+        res = self._get_large_trade_imbalance().compute_from_tick(current_tick)
+        if state is not None:
+            state.large_trade_imbalance_ready = bool(res.ready)
+            state.large_trade_imbalance_not_ready_reason = res.why
+            state.large_trade_imbalance_trades_used = int(res.trades_used)
+            state.large_trade_imbalance_dropped_out_of_order = int(res.dropped_out_of_order)
+        return res.phi
 
     # =========================================================================
     # DEPTH IMBALANCE
@@ -335,9 +368,15 @@ class FeatureCalculationEngine:
         time_diff_ms: int
     ) -> None:
         """Update return for macro_sync correlation."""
-        if (state.prev_price and 
-            state.prev_price > 0 and 
-            time_diff_ms < self.cfg.delta_price_spike_filter_ms):
+        if price is None or price <= 0:
+            state.prev_price = price
+            return
+
+        if (
+            state.prev_price is not None
+            and state.prev_price > 0
+            and 0 < time_diff_ms <= self.cfg.macro_sync_time_diff_threshold_ms
+        ):
             ret = (price - state.prev_price) / state.prev_price
             state.returns_buffer.append(float(ret))
 
@@ -347,42 +386,89 @@ class FeatureCalculationEngine:
         self, 
         state: HotState,
         anchor_prices: Dict[str, Deque],
+        *,
+        anchor_last_ts_ms: Dict[str, int],
+        current_ts_ms: int,
     ) -> decimal.Decimal:
         """Compute macro_sync = correlation with anchor returns, normalized to [0,1]."""
+        state.macro_sync_ready = False
+        state.macro_sync_not_ready_reason = None
+
         if not self.cfg.macro_sync_enabled or not self.cfg.macro_sync_anchors:
+            state.macro_sync_ready = True
             return self.cfg.neutral_value
 
-        if len(state.returns_buffer) < self.cfg.macro_sync_min_buffer:
+        sym_returns = list(state.returns_buffer)
+        if len(sym_returns) < self.cfg.macro_sync_min_buffer:
+            state.macro_sync_not_ready_reason = "insufficient_symbol_samples"
             return self.cfg.neutral_value
 
-        correlations = []
+        align_mode = self.cfg.macro_sync_align_mode
+        ttl_ms = int(self.cfg.macro_sync_ttl_ms)
+
+        correlations: list[float] = []
+        valid_anchors = 0
         for anchor in self.cfg.macro_sync_anchors:
-            if anchor not in anchor_prices or len(anchor_prices[anchor]) < 3:
+            last_ts = int((anchor_last_ts_ms[anchor] if anchor in anchor_last_ts_ms else 0) or 0)
+            if last_ts <= 0:
+                continue
+            if current_ts_ms - last_ts > ttl_ms:
                 continue
 
-            # Compute anchor returns
-            anchor_returns = []
-            anchor_prices_list = list(anchor_prices[anchor])
+            prices_deque = anchor_prices.get(anchor)
+            if not prices_deque:
+                continue
+            anchor_prices_list = list(prices_deque)
+            if len(anchor_prices_list) < 3:
+                continue
+
+            anchor_returns: list[float] = []
             for i in range(1, len(anchor_prices_list)):
-                if anchor_prices_list[i-1] > 0:
-                    ret = (anchor_prices_list[i] - anchor_prices_list[i-1]) / anchor_prices_list[i-1]
+                prev_p = anchor_prices_list[i - 1]
+                if prev_p > 0:
+                    ret = (anchor_prices_list[i] - prev_p) / prev_p
                     anchor_returns.append(float(ret))
 
-            # Compute Pearson correlation
-            if len(anchor_returns) == len(state.returns_buffer):
-                try:
-                    corr = self._pearson_correlation(list(state.returns_buffer), anchor_returns)
-                    correlations.append(corr)
-                except Exception:
-                    pass  # Skip on error
+            if len(anchor_returns) < self.cfg.macro_sync_min_buffer:
+                continue
 
-        if correlations:
-            avg_corr = statistics.mean(correlations)
-            # Map from [-1, 1] to [0, 1]
-            phi = (decimal.Decimal(str(avg_corr)) + decimal.Decimal("1")) / decimal.Decimal("2")
-            return phi
+            # Alignment
+            if align_mode == "strict_len":
+                if len(anchor_returns) != len(sym_returns):
+                    continue
+                n = min(len(sym_returns), self.cfg.macro_sync_window)
+                x = sym_returns[-n:]
+                y = anchor_returns[-n:]
+            else:
+                n = min(len(sym_returns), len(anchor_returns), self.cfg.macro_sync_window)
+                if n < self.cfg.macro_sync_min_buffer:
+                    continue
+                x = sym_returns[-n:]
+                y = anchor_returns[-n:]
 
-        return self.cfg.neutral_value
+            corr = self._pearson_correlation(x, y)
+            # Treat zero-variance as NOT_READY (avoid false "neutral correlation").
+            if corr == 0.0 and (statistics.pstdev(x) == 0.0 or statistics.pstdev(y) == 0.0):
+                continue
+
+            correlations.append(corr)
+            valid_anchors += 1
+
+        if not correlations:
+            if valid_anchors == 0:
+                state.macro_sync_not_ready_reason = "no_fresh_anchor_data"
+            else:
+                state.macro_sync_not_ready_reason = "no_valid_correlation"
+            return self.cfg.neutral_value
+
+        avg_corr = statistics.mean(correlations)
+        phi = (decimal.Decimal(str(avg_corr)) + decimal.Decimal("1")) / decimal.Decimal("2")
+        # Clamp numerical noise
+        phi = max(decimal.Decimal("0"), min(decimal.Decimal("1"), phi))
+
+        state.macro_sync_ready = True
+        state.macro_sync_not_ready_reason = None
+        return phi
 
     @staticmethod
     def _pearson_correlation(x: List[float], y: List[float]) -> float:
@@ -401,6 +487,45 @@ class FeatureCalculationEngine:
         if denominator > 0:
             return numerator / denominator
         return 0.0
+
+    def compute_macro_sync_v2(
+        self,
+        state: HotState,
+        resampler: MacroSyncResampler,
+        *,
+        symbol: str,
+        anchors: list[str],
+        current_ts_ms: int,
+    ) -> decimal.Decimal:
+        """
+        TASK30-I: Macro Sync V2 — time-grid aligned correlation (Epps removed).
+
+        Contract:
+        - Uses exchange ts_ms SSOT only (no wallclock fallback).
+        - On NOT_READY: sets state.macro_sync_ready=false and macro_sync_not_ready_reason, returns neutral_value.
+        - On READY: sets ready=true and clears reason, returns phi in [0,1].
+        """
+        state.macro_sync_ready = False
+        state.macro_sync_not_ready_reason = None
+
+        if not self.cfg.macro_sync_enabled or not anchors:
+            state.macro_sync_ready = True
+            return self.cfg.neutral_value
+
+        if current_ts_ms <= 0:
+            state.macro_sync_not_ready_reason = "tick_ts_missing"
+            return self.cfg.neutral_value
+
+        result = resampler.compute(symbol, anchors=anchors, now_ts_ms=int(current_ts_ms))
+        if not result.ready:
+            state.macro_sync_not_ready_reason = result.why or "not_ready"
+            return self.cfg.neutral_value
+
+        phi = decimal.Decimal(str(result.phi))
+        phi = max(decimal.Decimal("0"), min(decimal.Decimal("1"), phi))
+        state.macro_sync_ready = True
+        state.macro_sync_not_ready_reason = None
+        return phi
 
     # =========================================================================
     # FUTURES FEATURES (FTR-05)

@@ -8,9 +8,9 @@
 
 ## 📊 Результат
 
-**mean_reversion_1m SSOT** ✅
-- **SSOT**: `config/aurora/strategies/mean_reversion_1m.yaml`
-- **DEPRECATED**: `trading.yaml` більше НЕ містить `mean_reversion_1m` секцію
+**mean_reversion SSOT** ✅
+- **SSOT**: `config/aurora/strategies/mean_reversion.yaml`
+- **DEPRECATED**: `trading.yaml` більше НЕ містить `mean_reversion` секцію
 - **Fail-closed**: strict mode crash якщо trading.yaml містить MR
 
 **No Trading Logic Changes** ✅
@@ -22,13 +22,13 @@
 
 ## 🎯 Definition of Done (ВИКОНАНО)
 
-### ✅ DoD 1: trading.yaml не містить mean_reversion_1m
+### ✅ DoD 1: trading.yaml не містить mean_reversion
 
 **Verified**: `config/aurora/trading.yaml` L140-150
 
 **Before** (дублікат):
 ```yaml
-mean_reversion_1m:
+mean_reversion:
   enabled: true
   assets:
     DOGEUSDT:
@@ -45,7 +45,7 @@ mean_reversion_1m:
 # MEAN REVERSION 1M STRATEGY (Phase 3 Track B)
 # =========================================================================
 # CFG-STRATEGIES-SSOT-05: DEPRECATED - Moved to strategy profile
-# SSOT: config/aurora/strategies/mean_reversion_1m.yaml
+# SSOT: config/aurora/strategies/mean_reversion.yaml
 #
 # This section is IGNORED by ConfigLoader (strategy profiles have priority).
 # Remove this section to eliminate config drift.
@@ -60,17 +60,17 @@ mean_reversion_1m:
 # =========================================================================
 # DEPRECATED MR DETECTION (CFG-STRATEGIES-SSOT-05-MR-TRADING-YAML-BURN-DOWN)
 # =========================================================================
-# mean_reversion_1m is DEPRECATED in trading.yaml (SSOT: strategy profile)
+# mean_reversion is DEPRECATED in trading.yaml (SSOT: strategy profile)
 # Detect its presence and fail/warn based on strict mode
 # =========================================================================
-if isinstance(trading_config, dict) and "mean_reversion_1m" in trading_config:
-    mr_section = trading_config.get("mean_reversion_1m")
+if isinstance(trading_config, dict) and "mean_reversion" in trading_config:
+    mr_section = trading_config.get("mean_reversion")
     if isinstance(mr_section, dict) and mr_section:
         msg = (
-            "⚠️  DEPRECATED: mean_reversion_1m detected in trading.yaml! "
+            "⚠️  DEPRECATED: mean_reversion detected in trading.yaml! "
             "This section is IGNORED (strategy profiles have priority). "
-            "SSOT for MR config: config/aurora/strategies/mean_reversion_1m.yaml. "
-            "Action required: Remove mean_reversion_1m from trading.yaml."
+            "SSOT for MR config: config/aurora/strategies/mean_reversion.yaml. "
+            "Action required: Remove mean_reversion from trading.yaml."
         )
         
         if strict_mode:
@@ -91,17 +91,17 @@ if isinstance(trading_config, dict) and "mean_reversion_1m" in trading_config:
 **Config Flow**:
 ```
 1. strategies.yaml assignments:
-   BTCUSDT: [mean_reversion_1m]
+   BTCUSDT: [mean_reversion]
    
 2. ConfigLoader loads profile:
-   config/aurora/strategies/mean_reversion_1m.yaml
+   config/aurora/strategies/mean_reversion.yaml
    
 3. Inject at root level:
-   merged_config["mean_reversion_1m"] = profile_data
+   merged_config["mean_reversion"] = profile_data
    
 4. Pydantic validates:
-   config.mean_reversion_1m.enabled == True
-   config.mean_reversion_1m.assets == {DOGEUSDT, BTCUSDT, XRPUSDT, ...}
+   config.mean_reversion.enabled == True
+   config.mean_reversion.assets == {DOGEUSDT, BTCUSDT, XRPUSDT, ...}
 ```
 
 **Runtime Verification**:
@@ -120,7 +120,7 @@ mr_assets: ['DOGEUSDT', 'BTCUSDT', 'XRPUSDT', 'ETHUSDT', 'SOLUSDT']
 
 1. **test_mr_in_trading_yaml_strict_mode_crashes** ✅
    - MR в trading.yaml + `STRICT_CONFIG_CONFLICTS=1` → ValueError
-   - Verifies: "deprecated", "mean_reversion_1m", "trading.yaml", "strategy profile"
+   - Verifies: "deprecated", "mean_reversion", "trading.yaml", "strategy profile"
 
 2. **test_mr_in_trading_yaml_non_strict_warns_and_ignores** ✅
    - MR в trading.yaml + non-strict → WARNING logged
@@ -132,12 +132,12 @@ mr_assets: ['DOGEUSDT', 'BTCUSDT', 'XRPUSDT', 'ETHUSDT', 'SOLUSDT']
 
 4. **test_mr_profile_loaded_when_assigned** ✅
    - strategies.yaml assigns MR → profile loads
-   - Verifies: `config.mean_reversion_1m.enabled == True`
-   - Verifies: `config.strategies_registry.assignments["BTCUSDT"] == ["mean_reversion_1m"]`
+   - Verifies: `config.mean_reversion.enabled == True`
+   - Verifies: `config.strategies_registry.assignments["BTCUSDT"] == ["mean_reversion"]`
 
 5. **test_mr_profile_missing_when_assigned_fails** ✅
    - MR assigned але profile відсутній → ValueError (fail-closed)
-   - Verifies: "mean_reversion_1m", "missing", "profile"
+   - Verifies: "mean_reversion", "missing", "profile"
 
 ---
 
@@ -169,15 +169,15 @@ tests/config/test_strategy_profiles_registry_load.py ....                [100%]
 **Lines**: L335-352 (added)
 
 **Changes**:
-- Detect `mean_reversion_1m` in raw `trading_config` (after load, before merge)
+- Detect `mean_reversion` in raw `trading_config` (after load, before merge)
 - Strict mode: ValueError with clear message
 - Non-strict: WARNING log
-- Message: "DEPRECATED in trading.yaml, SSOT: strategies/mean_reversion_1m.yaml"
+- Message: "DEPRECATED in trading.yaml, SSOT: strategies/mean_reversion.yaml"
 
 **Impact**: Silent config conflicts → explicit fail-fast or visible warning
 
 ### 2. Strategy Profile (SSOT)
-**File**: `config/aurora/strategies/mean_reversion_1m.yaml`  
+**File**: `config/aurora/strategies/mean_reversion.yaml`  
 **Lines**: L14-17 (modified), L69-110 (modified)
 
 **Changes**:
@@ -195,7 +195,7 @@ tests/config/test_strategy_profiles_registry_load.py ....                [100%]
 **Lines**: L140-199 (removed)
 
 **Changes**:
-- Removed 60-line `mean_reversion_1m` section
+- Removed 60-line `mean_reversion` section
 - Added deprecation comment with SSOT reference
 - Eliminated config drift source
 
@@ -218,16 +218,16 @@ tests/config/test_strategy_profiles_registry_load.py ....                [100%]
 
 ```
 1. ConfigLoader loads trading.yaml
-   ├─> trading_config["mean_reversion_1m"] = {enabled: true, assets: {...}}
+   ├─> trading_config["mean_reversion"] = {enabled: true, assets: {...}}
    
-2. ConfigLoader loads strategies/mean_reversion_1m.yaml
-   ├─> strategy_configs["mean_reversion_1m"] = {enabled: false, ...}
+2. ConfigLoader loads strategies/mean_reversion.yaml
+   ├─> strategy_configs["mean_reversion"] = {enabled: false, ...}
    
 3. Merge operations:
    ├─> deep_merge(trading_config, merged_config)
-   │   └─> merged_config["mean_reversion_1m"] = {enabled: true, ...}  # FROM TRADING
+   │   └─> merged_config["mean_reversion"] = {enabled: true, ...}  # FROM TRADING
    ├─> Inject strategy profiles (L543)
-   │   └─> merged_config["mean_reversion_1m"] = {enabled: false, ...} # OVERWRITES
+   │   └─> merged_config["mean_reversion"] = {enabled: false, ...} # OVERWRITES
    
 4. Result: CONFLICT (strategy profile silently overwrites trading.yaml)
    ├─> enabled: false (from profile)
@@ -241,17 +241,17 @@ tests/config/test_strategy_profiles_registry_load.py ....                [100%]
 
 ```
 1. ConfigLoader loads trading.yaml
-   ├─> Check if "mean_reversion_1m" in trading_config
+   ├─> Check if "mean_reversion" in trading_config
    │   └─> NO (removed) → continue
    
-2. ConfigLoader loads strategies/mean_reversion_1m.yaml
-   ├─> strategy_configs["mean_reversion_1m"] = {enabled: true, assets: champion params}
+2. ConfigLoader loads strategies/mean_reversion.yaml
+   ├─> strategy_configs["mean_reversion"] = {enabled: true, assets: champion params}
    
 3. Merge operations:
    ├─> deep_merge(trading_config, merged_config)
-   │   └─> NO mean_reversion_1m in trading_config
+   │   └─> NO mean_reversion in trading_config
    ├─> Inject strategy profiles (L543)
-   │   └─> merged_config["mean_reversion_1m"] = {enabled: true, ...}  # SSOT
+   │   └─> merged_config["mean_reversion"] = {enabled: true, ...}  # SSOT
    
 4. Result: SINGLE SOURCE OF TRUTH
    ├─> enabled: true (from profile SSOT)
@@ -265,7 +265,7 @@ tests/config/test_strategy_profiles_registry_load.py ....                [100%]
 
 ```
 1. Load trading.yaml → trading_config
-2. Check: "mean_reversion_1m" in trading_config?
+2. Check: "mean_reversion" in trading_config?
    ├─> YES → deprecated section detected
    │   ├─> STRICT_CONFIG_CONFLICTS=1 → ValueError (fail-closed)
    │   └─> Non-strict → LOG.warning (migration path)
@@ -289,7 +289,7 @@ tests/config/test_strategy_profiles_registry_load.py ....                [100%]
 - **Decision**: Check raw `trading_config` immediately after load (L335-352)
 
 **Implementation**:
-- Check if `trading_config["mean_reversion_1m"]` exists and non-empty
+- Check if `trading_config["mean_reversion"]` exists and non-empty
 - Strict mode: ValueError with diagnostic message
 - Non-strict: WARNING log
 - Runs before any merging → catches deprecated section early
@@ -346,8 +346,8 @@ tests/config/test_strategy_profiles_registry_load.py ....                [100%]
 #### Option A: Remove deprecated section (recommended)
 
 ```bash
-# BEFORE: trading.yaml has mean_reversion_1m section
-mean_reversion_1m:
+# BEFORE: trading.yaml has mean_reversion section
+mean_reversion:
   enabled: true
   assets:
     BTCUSDT: {...}
@@ -356,26 +356,26 @@ mean_reversion_1m:
 # (section deleted)
 
 # Verify profile loads:
-python -c "from apps.reference.config_loader import get_config; c=get_config(); print('mr_enabled:', c.mean_reversion_1m.enabled)"
+python -c "from apps.reference.config_loader import get_config; c=get_config(); print('mr_enabled:', c.mean_reversion.enabled)"
 ```
 
 #### Option B: Migrate custom params to profile
 
 ```bash
 # 1. Check diff between trading.yaml and profile
-diff <(grep -A100 'mean_reversion_1m:' config/aurora/trading.yaml) \
-     <(cat config/aurora/strategies/mean_reversion_1m.yaml)
+diff <(grep -A100 'mean_reversion:' config/aurora/trading.yaml) \
+     <(cat config/aurora/strategies/mean_reversion.yaml)
 
 # 2. If custom params exist → copy to profile
-# Edit config/aurora/strategies/mean_reversion_1m.yaml
+# Edit config/aurora/strategies/mean_reversion.yaml
 # Add your custom asset params
 
 # 3. Remove from trading.yaml
 # Edit config/aurora/trading.yaml
-# Delete mean_reversion_1m section
+# Delete mean_reversion section
 
 # 4. Verify
-python -c "from apps.reference.config_loader import get_config; c=get_config(); print('mr_assets:', list(c.mean_reversion_1m.assets.keys()))"
+python -c "from apps.reference.config_loader import get_config; c=get_config(); print('mr_assets:', list(c.mean_reversion.assets.keys()))"
 ```
 
 #### Option C: Non-strict mode (temporary)
@@ -387,7 +387,7 @@ python -c "from apps.reference.config_loader import get_config; c=get_config(); 
 
 unset STRICT_CONFIG_CONFLICTS
 python -m apps.reference.main
-# Check logs for WARNING about mean_reversion_1m deprecated
+# Check logs for WARNING about mean_reversion deprecated
 ```
 
 ### For Developers: Strict Mode Testing
@@ -451,7 +451,7 @@ SSOT Hierarchy (Post-TASK 08):
 │  ├─ regime.yaml ─────────────────> SSOT for regime detection
 │  ├─ strategies.yaml ─────────────> SSOT for strategy assignments
 │  ├─ strategies/
-│  │  ├─ mean_reversion_1m.yaml ──> SSOT for MR config (TASK 08 ✅)
+│  │  ├─ mean_reversion.yaml ──> SSOT for MR config (TASK 08 ✅)
 │  │  └─ aurora.yaml ──────────────> SSOT for Aurora strategy
 │  └─ trading.yaml ────────────────> LEGACY (no duplicates, deprecated sections removed)
 ```

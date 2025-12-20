@@ -8,6 +8,7 @@ WHY: Enable regime-aware trading decisions [FSMP-PORTING-T01]
 """
 
 import logging
+import time
 from collections import deque, defaultdict
 from decimal import Decimal
 from typing import Dict, Any
@@ -15,6 +16,7 @@ from typing import Dict, Any
 from vfoundation.core.protocol import Message
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import AuroraConfig
+from apps.reference.telemetry.metrics import inc_data_quality_drop
 
 
 class RegimeDetector:
@@ -44,6 +46,9 @@ class RegimeDetector:
             raise TypeError("RegimeDetector requires AuroraConfig, got dict")
         self.config = config
         self.logger = logging.getLogger(__name__)
+        self._subscribed = False
+        self._last_emitted_regime: Dict[str, str] = {}
+        self._last_full_ready: Dict[str, bool] = {}
 
         models_cfg = self.config.models
         if models_cfg is None:
@@ -60,8 +65,27 @@ class RegimeDetector:
         self.sma_long_period = int(self.model_config.sma_long_period)
 
         vol_cfg = models_cfg.volatility
+        # TASK24.D1: Strict config contract - missing required fields must fail fast.
+        for attr in (
+            "enabled",
+            "atr_period",
+            "atr_sma_length",
+            "allow_close_to_close_atr",
+            "threshold_multiplier",
+            "low_vol_multiplier",
+            "high_vol_confidence_multiplier",
+            "low_vol_confidence_multiplier",
+        ):
+            try:
+                getattr(vol_cfg, attr)
+            except AttributeError as e:
+                raise ConfigContractError(
+                    path=f"models.volatility.{attr}",
+                    why=f"Missing required volatility config field: {e}",
+                )
         self.atr_period = int(vol_cfg.atr_period)
         self.atr_sma_length = int(vol_cfg.atr_sma_length)
+        self._allow_close_to_close_atr = bool(vol_cfg.allow_close_to_close_atr)
 
         # Per-symbol rolling buffers for computing SMA/ATR if features don't provide them
         self._price_buf: Dict[str, deque] = defaultdict(
@@ -72,9 +96,23 @@ class RegimeDetector:
             lambda: deque(maxlen=self.atr_period))
         self._atr_buf: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=self.atr_sma_length))
+        self._atr_last: Dict[str, Decimal] = {}
+        self._ticks_seen: Dict[str, int] = defaultdict(int)
 
         self.logger.info(
             f"RegimeDetector initialized with model: {self.model_name}")
+
+        self._subscribe_once()
+
+    def _subscribe_once(self) -> None:
+        if self._subscribed:
+            return
+        self.fsm.listen("EVT:FEATURES_CALCULATED", self.handle_event)
+        self._subscribed = True
+        self.logger.info("RegimeDetector subscribed to EVT:FEATURES_CALCULATED")
+
+    def start(self) -> None:
+        self._subscribe_once()
 
     def _calculate_confidence(self, sma_short: Decimal, sma_long: Decimal) -> Decimal:
         """
@@ -95,7 +133,7 @@ class RegimeDetector:
             Decimal("0.77")  # Strong uptrend signal
         """
         if sma_long == 0:
-            return Decimal("0.5")
+            return Decimal(str(self.model_config.confidence_min))
 
         # Heuristic formula: spread / base * multiplier
         # Multiplier of 20.0 empirically tuned for realistic signals
@@ -132,247 +170,220 @@ class RegimeDetector:
             self.logger.debug(f"Ignoring event: {event.verb}")
             return
 
-        features: Dict[str, Any] = event.pld.get("features", {}) or {}
-        price = Decimal(str(features.get("price", "0")))
-        sma_short = Decimal(str(features.get("sma_short", "0")))
-        sma_long = Decimal(str(features.get("sma_long", "0")))
-        symbol = event.pld.get("symbol")
-        ts = event.pld.get("ts")
+        pld = event.pld or {}
+        symbol = pld.get("symbol")
+        ts = pld.get("ts")
+        features: Dict[str, Any] = (pld.get("features") or {}) if isinstance(pld, dict) else {}
 
-        # Volatility features (optional)
-        atr_14 = Decimal(str(features.get("atr_14", "0"))
-                         ) if "atr_14" in features else None
-        atr_14_sma_100 = (
-            Decimal(str(features.get("atr_14_sma_100", "0")))
-            if "atr_14_sma_100" in features
-            else None
-        )
-
-        # Validate required base data presence
-        if not all([price > 0, symbol, ts]):
-            self.logger.debug(
-                f"Skipping regime detection for {symbol} - missing price/symbol/ts")
+        if not symbol or ts is None:
+            inc_data_quality_drop(domain="regime_detector", reason="missing_symbol_or_ts")
+            return
+        if not isinstance(features, dict) or not features:
+            inc_data_quality_drop(domain="regime_detector", reason="missing_features_dict")
             return
 
-        # Optionally compute missing indicators from rolling buffers (best-effort)
+        try:
+            ts_ms = int(ts)
+        except Exception:
+            inc_data_quality_drop(domain="regime_detector", reason="bad_ts")
+            return
+
+        self._ticks_seen[symbol] += 1
+
+        now_ms = int(time.time() * 1000)
+        tick_ttl_ms = int(self.config.system.market_data.tick_ttl_ms) if self.config.system.market_data else 0
+        data_drops: list[str] = []
+        data_notes: list[str] = []
+
+        if tick_ttl_ms > 0 and (now_ms - ts_ms) > tick_ttl_ms:
+            data_drops.append("stale_features")
+            inc_data_quality_drop(domain="regime_detector", reason="stale_features")
+
+        if "price" not in features:
+            inc_data_quality_drop(domain="regime_detector", reason="missing_price")
+            return
+        try:
+            price = Decimal(str(features["price"]))
+        except Exception:
+            inc_data_quality_drop(domain="regime_detector", reason="bad_price")
+            return
+        if price <= 0:
+            inc_data_quality_drop(domain="regime_detector", reason="bad_price")
+            return
+
+        # Feed price buffer (even in warmup; price<=0 won't help calculations)
         self._price_buf[symbol].append(price)
-        if sma_short <= 0 and len(self._price_buf[symbol]) >= self.sma_short_period:
-            sma_short = sum(list(
-                self._price_buf[symbol])[-self.sma_short_period:]) / Decimal(str(self.sma_short_period))
-        if sma_long <= 0 and len(self._price_buf[symbol]) >= self.sma_long_period:
-            sma_long = sum(list(
-                self._price_buf[symbol])[-self.sma_long_period:]) / Decimal(str(self.sma_long_period))
 
-        # Approximate ATR using close-to-close true range when high/low not available
-        prev_price = self._price_buf[symbol][-2] if len(
-            self._price_buf[symbol]) >= 2 else None
-        if prev_price is not None:
-            tr = abs(price - prev_price)
-            self._tr_buf[symbol].append(tr)
-            if len(self._tr_buf[symbol]) >= self.atr_period:
-                atr_val = sum(
-                    list(self._tr_buf[symbol])[-self.atr_period:]) / Decimal(str(self.atr_period))
-                self._atr_buf[symbol].append(atr_val)
-                if atr_14 is None or atr_14 <= 0:
-                    atr_14 = atr_val
-                if (atr_14_sma_100 is None or atr_14_sma_100 <= 0) and len(self._atr_buf[symbol]) >= 1:
-                    base = min(len(self._atr_buf[symbol]), self.atr_sma_length)
-                    atr_sma = sum(
-                        list(self._atr_buf[symbol])[-base:]) / Decimal(str(base))
-                    atr_14_sma_100 = atr_sma
+        # Compute SMA if not provided (strict: no fallbacks to magic, only buffer-derived)
+        sma_short_raw = features.get("sma_short")
+        sma_long_raw = features.get("sma_long")
+        sma_short = Decimal(str(sma_short_raw)) if sma_short_raw is not None else Decimal("0")
+        sma_long = Decimal(str(sma_long_raw)) if sma_long_raw is not None else Decimal("0")
 
-        # If SMAs still missing, trend detection will remain UNCERTAIN
+        sma_short_ready = sma_short > 0
+        sma_long_ready = sma_long > 0
 
-        # --- Regime Detection Logic ---
+        if (not sma_short_ready) and len(self._price_buf[symbol]) >= self.sma_short_period:
+            sma_short = sum(list(self._price_buf[symbol])[-self.sma_short_period:]) / Decimal(str(self.sma_short_period))
+            sma_short_ready = True
+        if (not sma_long_ready) and len(self._price_buf[symbol]) >= self.sma_long_period:
+            sma_long = sum(list(self._price_buf[symbol])[-self.sma_long_period:]) / Decimal(str(self.sma_long_period))
+            sma_long_ready = True
+
+        # ATR / volatility pipeline (Wilder). Prefer OHLC TR; close-to-close only with explicit opt-in.
+        vol_cfg = self.config.models.volatility  # typed (D1)
+        atr_ready = False
+        atr_baseline_ready = False
+        atr_val: Decimal | None = None
+        atr_baseline: Decimal | None = None
+
+        if vol_cfg.enabled and price > 0:
+            high_raw = features.get("high")
+            low_raw = features.get("low")
+            close = price
+
+            prev_close = self._price_buf[symbol][-2] if len(self._price_buf[symbol]) >= 2 else None
+            tr: Decimal | None = None
+
+            if high_raw is not None and low_raw is not None and prev_close is not None:
+                high = Decimal(str(high_raw))
+                low = Decimal(str(low_raw))
+                if high > 0 and low > 0:
+                    tr = max(
+                        high - low,
+                        abs(high - prev_close),
+                        abs(low - prev_close),
+                    )
+            elif prev_close is not None and self._allow_close_to_close_atr:
+                tr = abs(close - prev_close)
+                data_notes.append("atr_close_to_close")
+            elif prev_close is not None and (not self._allow_close_to_close_atr):
+                data_drops.append("atr_missing_ohlc")
+                inc_data_quality_drop(domain="regime_detector", reason="atr_missing_ohlc")
+
+            if tr is not None:
+                self._tr_buf[symbol].append(tr)
+
+                last_atr = self._atr_last.get(symbol)
+                if last_atr is None:
+                    if len(self._tr_buf[symbol]) >= self.atr_period:
+                        init_atr = sum(list(self._tr_buf[symbol])[-self.atr_period:]) / Decimal(str(self.atr_period))
+                        self._atr_last[symbol] = init_atr
+                        atr_val = init_atr
+                        atr_ready = True
+                else:
+                    n = Decimal(str(self.atr_period))
+                    atr_val = (last_atr * (n - 1) + tr) / n
+                    self._atr_last[symbol] = atr_val
+                    atr_ready = True
+
+                if atr_ready and atr_val is not None:
+                    self._atr_buf[symbol].append(atr_val)
+                    if len(self._atr_buf[symbol]) >= self.atr_sma_length:
+                        atr_baseline = sum(list(self._atr_buf[symbol])[-self.atr_sma_length:]) / Decimal(str(self.atr_sma_length))
+                        atr_baseline_ready = True
+                    else:
+                        data_notes.append("atr_baseline_insufficient")
+
+        # --- Regime Detection Logic (strict, no magic) ---
+        conf_min = Decimal(str(self.model_config.confidence_min))
+        conf_max = Decimal(str(self.model_config.confidence_max))
+
         regime = "UNCERTAIN"
-        confidence = Decimal("0.5")
+        confidence = conf_min
         source_model = self.model_name
 
-        # --- PRIORITY 1: Volatility Regime Detection ---
-        # Check for HIGH_VOLATILITY or LOW_VOLATILITY if ATR data available
-        try:
-            if hasattr(self.config, 'models') and self.config.models:
-                volatility_config = self.config.models.volatility if self.config.models and hasattr(
-                    self.config.models, 'volatility') else {}
-            elif isinstance(self.config, dict):
-                volatility_config = self.config.get(
-                    "models", {}).get("volatility", {})
-            else:
-                volatility_config = {}
-        except (AttributeError, TypeError):
-            volatility_config = {}
-
-        # Get vol_enabled from volatility_config (dict or object)
-        try:
-            if isinstance(volatility_config, dict):
-                vol_enabled = volatility_config.get("enabled", False)
-            else:
-                vol_enabled = getattr(volatility_config, 'enabled', False)
-        except (AttributeError, TypeError):
-            vol_enabled = False
-
+        # Priority 1: Volatility regimes (if enabled and baseline ready)
         if (
-            vol_enabled
-            and atr_14 is not None
-            and atr_14_sma_100 is not None
-            and atr_14 > 0
-            and atr_14_sma_100 > 0
+            vol_cfg.enabled
+            and atr_ready
+            and atr_baseline_ready
+            and atr_val is not None
+            and atr_baseline is not None
+            and atr_val > 0
+            and atr_baseline > 0
         ):
-            try:
-                if hasattr(volatility_config, 'threshold_multiplier'):
-                    threshold_multiplier_val = volatility_config.threshold_multiplier
-                else:
-                    threshold_multiplier_val = 2.0
-            except (AttributeError, TypeError):
-                threshold_multiplier_val = 2.0
-            threshold_multiplier = Decimal(str(threshold_multiplier_val))
-            try:
-                if hasattr(volatility_config, 'low_vol_multiplier'):
-                    low_vol_multiplier_val = volatility_config.low_vol_multiplier
-                else:
-                    low_vol_multiplier_val = 0.5
-            except (AttributeError, TypeError):
-                low_vol_multiplier_val = 0.5
-            low_vol_multiplier = Decimal(str(low_vol_multiplier_val))
-            volatility_ratio = atr_14 / atr_14_sma_100
+            threshold_multiplier = Decimal(str(vol_cfg.threshold_multiplier))
+            low_vol_multiplier = Decimal(str(vol_cfg.low_vol_multiplier))
+            vol_ratio = atr_val / atr_baseline
 
-            # HIGH_VOLATILITY: ATR significantly above its long-term average
-            if volatility_ratio > threshold_multiplier:
+            if vol_ratio > threshold_multiplier:
                 regime = "HIGH_VOLATILITY"
-                source_model = "volatility_v1"
-
-                # Confidence increases with higher volatility ratio
-                # Formula: min(0.95, 0.5 + (ratio - threshold) * 2.0)
-                # Example: ratio=2.14, threshold=2.0 → 0.5 + 0.14*2.0 = 0.78
-                
-                high_vol_conf_mult = Decimal("2.0")
-                try:
-                    if hasattr(volatility_config, 'high_vol_confidence_multiplier'):
-                        high_vol_conf_mult = Decimal(str(volatility_config.high_vol_confidence_multiplier))
-                    elif isinstance(volatility_config, dict):
-                        high_vol_conf_mult = Decimal(str(volatility_config.get("high_vol_confidence_multiplier", "2.0")))
-                except Exception:
-                    pass
-
-                excess_volatility = volatility_ratio - threshold_multiplier
-                confidence = min(
-                    Decimal("0.95"), Decimal("0.5") +
-                    excess_volatility * high_vol_conf_mult
-                )
-
-            # LOW_VOLATILITY: ATR significantly below its long-term average
-            elif volatility_ratio < low_vol_multiplier:
+                source_model = "volatility_v2"
+                excess = vol_ratio - threshold_multiplier
+                conf_mult = Decimal(str(vol_cfg.high_vol_confidence_multiplier))
+                confidence = min(conf_max, conf_min + excess * conf_mult)
+            elif vol_ratio < low_vol_multiplier:
                 regime = "LOW_VOLATILITY"
-                source_model = "volatility_v1"
+                source_model = "volatility_v2"
+                calm = low_vol_multiplier - vol_ratio
+                conf_mult = Decimal(str(vol_cfg.low_vol_confidence_multiplier))
+                confidence = min(conf_max, conf_min + calm * conf_mult)
 
-                # Confidence increases with lower volatility ratio (market calm)
-                # Formula: min(0.95, 0.5 + (threshold - ratio) * 3.0)
-                # Example: ratio=0.43, threshold=0.5 → 0.5 + 0.07*3.0 = 0.71
-                
-                low_vol_conf_mult = Decimal("3.0")
-                try:
-                    if hasattr(volatility_config, 'low_vol_confidence_multiplier'):
-                        low_vol_conf_mult = Decimal(str(volatility_config.low_vol_confidence_multiplier))
-                    elif isinstance(volatility_config, dict):
-                        low_vol_conf_mult = Decimal(str(volatility_config.get("low_vol_confidence_multiplier", "3.0")))
-                except Exception:
-                    pass
+        # Priority 2: Mean reversion (requires SMAs)
+        mr_cfg = self.config.models.mean_reversion  # typed
+        if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short > 0 and sma_long > 0 and price > 0:
+            threshold = Decimal(str(mr_cfg.threshold))
+            sma_spread = abs(sma_short - sma_long) / sma_long
+            dev_short = abs(price - sma_short) / sma_short
+            dev_long = abs(price - sma_long) / sma_long
 
-                calm_factor = low_vol_multiplier - volatility_ratio
-                confidence = min(
-                    Decimal("0.95"), Decimal("0.5") +
-                    calm_factor * low_vol_conf_mult
-                )
-
-        # --- PRIORITY 2: Mean Reversion Detection ---
-        # Calculate relative deviations for mean reversion detection
-        # If price and SMAs are tightly clustered → ranging market
-        if regime == "UNCERTAIN":  # Only check if volatility didn't trigger
-            sma_spread = (
-                abs(sma_short - sma_long) /
-                sma_long if sma_long > 0 else Decimal("1.0")
-            )
-            price_deviation_short = (
-                abs(price - sma_short) /
-                sma_short if sma_short > 0 else Decimal("1.0")
-            )
-            price_deviation_long = (
-                abs(price - sma_long) /
-                sma_long if sma_long > 0 else Decimal("1.0")
-            )
-
-            # Mean reversion threshold: from config if available (default 0.5%)
-            try:
-                if hasattr(self.config, 'models') and self.config.models:
-                    mr_cfg = self.config.models.mean_reversion if hasattr(
-                        self.config.models, 'mean_reversion') else {}
-                elif isinstance(self.config, dict):
-                    mr_cfg = self.config.get(
-                        "models", {}).get("mean_reversion", {})
-                else:
-                    mr_cfg = {}
-
-                if isinstance(mr_cfg, dict):
-                    try:
-                        if hasattr(mr_cfg, 'threshold'):
-                            threshold_val = mr_cfg.threshold
-                        else:
-                            threshold_val = "0.005"
-                    except (AttributeError, TypeError):
-                        threshold_val = "0.005"
-                    mean_reversion_threshold = Decimal(str(threshold_val))
-                else:
-                    mean_reversion_threshold = Decimal(
-                        str(mr_cfg.threshold if hasattr(mr_cfg, 'threshold') else "0.005"))
-            except Exception:
-                mean_reversion_threshold = Decimal("0.005")
-
-            # Mean reversion condition: tight clustering around mean
-            if (
-                sma_spread < mean_reversion_threshold
-                and price_deviation_short < mean_reversion_threshold
-                and price_deviation_long < mean_reversion_threshold
-            ):
+            if sma_spread < threshold and dev_short < threshold and dev_long < threshold:
                 regime = "MEAN_REVERSION"
-                # Higher confidence for tighter clustering
-                # Invert the spread: smaller spread → higher confidence
-                tightness = mean_reversion_threshold - max(
-                    sma_spread, price_deviation_short, price_deviation_long
-                )
-                
-                mr_conf_mult = Decimal("100.0")
-                try:
-                    if isinstance(mr_cfg, dict):
-                        mr_conf_mult = Decimal(str(mr_cfg.get("confidence_multiplier", "100.0")))
-                    elif hasattr(mr_cfg, 'confidence_multiplier'):
-                        mr_conf_mult = Decimal(str(mr_cfg.confidence_multiplier))
-                except Exception:
-                    pass
+                source_model = "mean_reversion_v2"
+                tightness = threshold - max(sma_spread, dev_short, dev_long)
+                conf_mult = Decimal(str(mr_cfg.confidence_multiplier))
+                confidence = min(conf_max, conf_min + tightness * conf_mult)
 
-                confidence = min(
-                    Decimal("0.95"), Decimal("0.5") +
-                    tightness * mr_conf_mult
-                )
-
-        # --- PRIORITY 3: Trend Detection ---
-        # Uptrend condition: short SMA > long SMA AND price > short SMA
-        if regime == "UNCERTAIN" and sma_short > sma_long and price > sma_short:
+        # Priority 3: SMA trend
+        if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short > sma_long and price > sma_short:
             regime = "TREND_UP"
             confidence = self._calculate_confidence(sma_short, sma_long)
-
-        # Downtrend condition: short SMA < long SMA AND price < short SMA
-        if regime == "UNCERTAIN" and sma_short < sma_long and price < sma_short:
+        if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short < sma_long and price < sma_short:
             regime = "TREND_DOWN"
             confidence = self._calculate_confidence(sma_short, sma_long)
 
-        # --- Emit regime detected event ---
-        payload = {
-            "ts": ts,
+        # TASK24.D5: Data-quality gates are fail-closed (no regime claims on stale/invalid data).
+        if data_drops:
+            regime = "UNCERTAIN"
+            confidence = conf_min
+            source_model = "data_quality_gate"
+
+        warmup_ready_map = {
+            "sma_short": bool(sma_short_ready),
+            "sma_long": bool(sma_long_ready),
+            "atr": bool(atr_ready) if vol_cfg.enabled else True,
+            "atr_baseline": bool(atr_baseline_ready) if vol_cfg.enabled else True,
+        }
+        warmup_reasons: list[str] = []
+        if data_drops:
+            warmup_reasons.extend([f"drop:{d}" for d in data_drops])
+        if data_notes:
+            warmup_reasons.extend([f"note:{n}" for n in data_notes])
+        if not sma_short_ready:
+            warmup_reasons.append("sma_short_insufficient")
+        if not sma_long_ready:
+            warmup_reasons.append("sma_long_insufficient")
+        if vol_cfg.enabled and (not atr_ready):
+            warmup_reasons.append("atr_not_ready")
+        if vol_cfg.enabled and atr_ready and (not atr_baseline_ready):
+            warmup_reasons.append("atr_baseline_not_ready")
+
+        warmup = {
+            "ticks_seen": int(self._ticks_seen[symbol] if symbol in self._ticks_seen else 0),
+            "full_ready": all(warmup_ready_map.values()) and (not data_drops),
+            "ready": warmup_ready_map,
+            "reasons": warmup_reasons,
+        }
+
+        payload: Dict[str, Any] = {
+            "ts": ts_ms,
             "symbol": symbol,
             "regime": regime,
-            # String-encoded Decimal for precision
             "confidence": str(confidence),
             "source_model": source_model,
+            "warmup": warmup,
+            "data_quality": {"drops": data_drops, "notes": data_notes},
         }
 
         self.fsm.emit(
@@ -381,7 +392,16 @@ class RegimeDetector:
             why=f"Regime '{regime}' detected by {source_model} for {symbol}",
         )
 
-        self.logger.info(
-            f"Detected {regime} for {symbol} by {source_model} "
-            f"(confidence: {confidence}, price: {price})"
-        )
+        # Log only on meaningful transitions (avoid hot-path log spam).
+        full_ready = bool(warmup.get("full_ready"))
+        last_ready = self._last_full_ready.get(symbol)
+        if last_ready is not None and (not last_ready) and full_ready:
+            self.logger.info(f"[{symbol}] RegimeDetector warmup COMPLETE")
+        self._last_full_ready[symbol] = full_ready
+
+        last_regime = self._last_emitted_regime.get(symbol)
+        if last_regime is None or last_regime != regime:
+            self.logger.info(
+                f"[{symbol}] Regime updated: {last_regime or '∅'} → {regime} (confidence={confidence}, model={source_model})"
+            )
+        self._last_emitted_regime[symbol] = regime

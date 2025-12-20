@@ -210,7 +210,7 @@ return list(instruments.keys())
 ### 1. Remove trading.instruments from Config (Future)
 **When**: After confirming no runtime code uses `trading.instruments`
 **Action**: 
-- Add strict validation in config_loader.py (like features.yaml, mean_reversion_1m)
+- Add strict validation in config_loader.py (like features.yaml, mean_reversion)
 - Deprecate `trading.instruments` → ValueError in strict mode
 - Update config schemas to remove trading.instruments field
 

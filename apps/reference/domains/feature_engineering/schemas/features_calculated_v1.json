@@ -13,6 +13,24 @@
       "type": "string",
       "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
     },
+    "warmup": {
+      "type": "object",
+      "description": "Warmup/readiness state for feature engineering (TASK24, fail-closed upstream)",
+      "properties": {
+        "full_ready": { "type": "boolean" },
+        "ticks_seen": { "type": "integer" },
+        "ready": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["full_ready", "ticks_seen"],
+      "additionalProperties": false
+    },
     "features": {
       "type": "object",
       "description": "Calculated features object",

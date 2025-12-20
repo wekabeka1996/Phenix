@@ -1,0 +1,18 @@
+{
+  "domain": "regime_detector",
+  "description": "Analyzes market features to detect the current trading regime (e.g., TREND, MEAN_REVERSION, VOLATILITY). Based on logic from legacy aurora/regime/detectors.py.",
+  "imports": [
+    {
+      "event": "EVT:FEATURES_CALCULATED",
+      "description": "Receives calculated indicators to analyze market state."
+    }
+  ],
+  "exports": [
+    {
+      "event": "EVT:REGIME_DETECTED",
+      "schema": "regime_detected_v1.json",
+      "description": "Emitted when a new market regime is identified or confirmed."
+    }
+  ],
+  "config": "AuroraConfig (regime.yaml)"
+}

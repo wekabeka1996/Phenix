@@ -959,7 +959,7 @@ def compute_rsi(
 
 ---
 
-### 3.3. Strategy-layer: `mean_reversion_1m_strategy.py`
+### 3.3. Strategy-layer: `mean_reversion_strategy.py`
 
 **Скелет:**
 
@@ -988,7 +988,7 @@ class MeanReversion1mStrategy:
 
 Інтеграція:
 - У `decision_making.py` додати registry стратегій:
-  - `self.strategies["mean_reversion_1m"] = MeanReversion1mStrategy(config_for_mr)`
+  - `self.strategies["mean_reversion"] = MeanReversion1mStrategy(config_for_mr)`
 - У `_make_decision_for_symbol`:
   - якщо символ/таймфрейм належить MR – делегувати прийняття рішення цій стратегії.
 

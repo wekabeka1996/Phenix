@@ -91,7 +91,7 @@ hmm:
 ```yaml
 assignments:
   BTCUSDT:
-    - mean_reversion_1m
+    - mean_reversion
     - aurora
 
 arbitration:
@@ -105,7 +105,7 @@ arbitration:
 - No inline config in `trading.yaml`
 
 **Deprecated alternatives**:
-- ❌ `trading.yaml: mean_reversion_1m` (use `strategies/mean_reversion_1m.yaml`)
+- ❌ `trading.yaml: mean_reversion` (use `strategies/mean_reversion.yaml`)
 - ❌ `trading.yaml: aurora` (use `strategies/aurora.yaml`)
 
 ---
@@ -137,7 +137,7 @@ execution:
 |--------------------|----------|------------------|------|--------|
 | `features.yaml` | `config/aurora/features.yaml` | `regime.yaml` | CFG-FEATURES-REGIME-SSOT-04 | ✅ DONE (22 tests) |
 | `trading.yaml: domains` | `trading.yaml: domains` | `domains.yaml` | CFG-DOMAINS-STEP02 | ✅ DONE (prev) |
-| `trading.yaml: mean_reversion_1m` | `trading.yaml: mean_reversion_1m` | `strategies/mean_reversion_1m.yaml` | CFG-STRATEGIES-SSOT-05 | ✅ DONE (27 tests) |
+| `trading.yaml: mean_reversion` | `trading.yaml: mean_reversion` | `strategies/mean_reversion.yaml` | CFG-STRATEGIES-SSOT-05 | ✅ DONE (27 tests) |
 | `trading.yaml: feature_engineering` | `trading.yaml: feature_engineering` | `domains.yaml: feature_engineering` | CFG-FREEZE-SSOT-06 | ✅ DONE (this task) |
 
 ### How Detection Works
@@ -179,7 +179,7 @@ if feature_eng_found:
 | T4 | `trading.yaml` with `feature_engineering` + non-strict | `WARNING` |
 | T5 | Clean config (no deprecated sections) + strict | Load success |
 | T6a | Sanity: `features.yaml` + strict | `ValueError` (TASK 06 regression) |
-| T6b | Sanity: `trading.yaml: mean_reversion_1m` + strict | `ValueError` (TASK 08 regression) |
+| T6b | Sanity: `trading.yaml: mean_reversion` + strict | `ValueError` (TASK 08 regression) |
 
 ### CI Gate
 **File**: `.github/workflows/ci.yml`
@@ -237,7 +237,7 @@ strict-config:
 ### Before (Deprecated)
 ```yaml
 # config/aurora/trading.yaml (OLD WAY - FORBIDDEN)
-mean_reversion_1m:  # ❌ ValueError in strict mode
+mean_reversion:  # ❌ ValueError in strict mode
   enabled: true
   lookback: 60
 ```
@@ -246,9 +246,9 @@ mean_reversion_1m:  # ❌ ValueError in strict mode
 
 **Step 1**: Create strategy profile
 ```yaml
-# config/aurora/strategies/mean_reversion_1m.yaml
+# config/aurora/strategies/mean_reversion.yaml
 strategy:
-  name: mean_reversion_1m
+  name: mean_reversion
   version: v1.0.0
   enabled: true
 
@@ -263,7 +263,7 @@ parameters:
 # config/aurora/strategies.yaml
 assignments:
   BTCUSDT:
-    - mean_reversion_1m  # References strategies/mean_reversion_1m.yaml
+    - mean_reversion  # References strategies/mean_reversion.yaml
 ```
 
 **Step 3**: No changes needed in trading.yaml (clean runtime config only)
@@ -280,7 +280,7 @@ assignments:
 ```bash
 # Check for deprecated patterns
 grep -r "feature_engineering" config/aurora/trading.yaml
-grep -r "mean_reversion_1m" config/aurora/trading.yaml
+grep -r "mean_reversion" config/aurora/trading.yaml
 ls config/aurora/features.yaml 2>/dev/null && echo "⚠️  features.yaml exists (orphaned)"
 ```
 

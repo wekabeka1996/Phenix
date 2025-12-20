@@ -11,6 +11,8 @@ import time
 from typing import Dict, Any, Optional
 from pathlib import Path
 
+from apps.reference.utils.accessors import aget
+
 
 class AuroraLogAdapter:
     """
@@ -36,7 +38,7 @@ class AuroraLogAdapter:
         self.logger.setLevel(getattr(logging, level.upper()))
 
         # Avoid duplicate handlers
-        already = any(isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", "") == str(self.log_file)
+        already = any(isinstance(h, logging.FileHandler) and aget(h, "baseFilename", "") == str(self.log_file)
                       for h in self.logger.handlers)
         if not already:
             # File handler with trade-specific format

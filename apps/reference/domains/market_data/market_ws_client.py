@@ -104,8 +104,8 @@ class MarketWSClient:
         """Parse and route incoming messages."""
         try:
             data = json.loads(raw_msg)
-            stream = data.get("stream", "")
-            payload = data.get("data", {})
+            stream = data["stream"] if "stream" in data else ""
+            payload = data["data"] if "data" in data else {}
 
             if "bookTicker" in stream:
                 self.on_book_ticker(payload)

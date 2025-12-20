@@ -60,14 +60,14 @@ class VolatilityAlphaModel(AlphaModel):
         """
 
         # Extract features
-        atr_ratio = Decimal(str(features.get('atr_ratio', 1)))
-        bb_width = Decimal(str(features.get('bb_width', 0.05)))
-        bb_width_change = Decimal(str(features.get('bb_width_change', 0)))
-        rv_1h = Decimal(str(features.get('realized_volatility_1h', 0)))
-        rv_1d = Decimal(str(features.get('realized_volatility_1d', 0)))
+        atr_ratio = Decimal(str(features["atr_ratio"] if "atr_ratio" in features else 1))
+        bb_width = Decimal(str(features["bb_width"] if "bb_width" in features else 0.05))
+        bb_width_change = Decimal(str(features["bb_width_change"] if "bb_width_change" in features else 0))
+        rv_1h = Decimal(str(features["realized_volatility_1h"] if "realized_volatility_1h" in features else 0))
+        rv_1d = Decimal(str(features["realized_volatility_1d"] if "realized_volatility_1d" in features else 0))
         vol_vol_ratio = Decimal(
-            str(features.get('volume_volatility_ratio', 1)))
-        range_ratio = Decimal(str(features.get('price_range_ratio', 1)))
+            str(features["volume_volatility_ratio"] if "volume_volatility_ratio" in features else 1))
+        range_ratio = Decimal(str(features["price_range_ratio"] if "price_range_ratio" in features else 1))
 
         # ATR ratio signal: >1 = higher volatility, <1 = lower volatility
         atr_signal = atr_ratio - Decimal('1.0')  # Center on 0

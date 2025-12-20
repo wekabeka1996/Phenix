@@ -51,7 +51,7 @@ def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profil
     if with_aurora:
         strategy_list.append("aurora")
     if with_mr_assignment:
-        strategy_list.append("mean_reversion_1m")
+        strategy_list.append("mean_reversion")
     if strategy_list:
         assignments["BTCUSDT"] = strategy_list
 
@@ -61,7 +61,7 @@ def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profil
     strategies_dir.mkdir(parents=True, exist_ok=True)
 
     if not with_mr_profile:
-        mr_path = strategies_dir / "mean_reversion_1m.yaml"
+        mr_path = strategies_dir / "mean_reversion.yaml"
         if mr_path.exists():
             mr_path.unlink()
 
@@ -88,11 +88,11 @@ class TestRegistryDrivenLoading:
         loader = ConfigLoader(config_dir=config_dir)
         config = loader.load_config()
         
-        # VERIFY: mean_reversion_1m config loaded from profile (not hardcoded)
-        assert hasattr(config, "mean_reversion_1m")
-        assert config.mean_reversion_1m is not None
-        assert config.mean_reversion_1m.enabled is True
-        assert config.mean_reversion_1m.timeframe_sec == 60
+        # VERIFY: mean_reversion config loaded from profile (not hardcoded)
+        assert hasattr(config, "mean_reversion")
+        assert config.mean_reversion is not None
+        assert config.mean_reversion.enabled is True
+        assert config.mean_reversion.timeframe_sec == 60
     
     def test_assigned_strategy_missing_profile_fails(self, tmp_path):
         """
@@ -111,7 +111,7 @@ class TestRegistryDrivenLoading:
         
         # VERIFY: error message mentions missing profile
         error_msg = str(exc_info.value)
-        assert "mean_reversion_1m" in error_msg
+        assert "mean_reversion" in error_msg
         assert "profile missing" in error_msg.lower() or "missing" in error_msg.lower()
     
     def test_unassigned_strategy_profile_not_loaded(self, tmp_path):
@@ -128,8 +128,8 @@ class TestRegistryDrivenLoading:
         loader = ConfigLoader(config_dir=config_dir)
         config = loader.load_config()
         
-        # VERIFY: mean_reversion_1m NOT loaded (not in assignments)
-        assert config.mean_reversion_1m is None
+        # VERIFY: mean_reversion NOT loaded (not in assignments)
+        assert config.mean_reversion is None
     
     def test_multiple_strategies_assigned_all_loaded(self, tmp_path):
         """
@@ -145,6 +145,6 @@ class TestRegistryDrivenLoading:
         config = loader.load_config()
         
         # VERIFY: BOTH profiles loaded
-        assert hasattr(config, "mean_reversion_1m")
-        assert config.mean_reversion_1m is not None
-        assert config.mean_reversion_1m.enabled is True
+        assert hasattr(config, "mean_reversion")
+        assert config.mean_reversion is not None
+        assert config.mean_reversion.enabled is True

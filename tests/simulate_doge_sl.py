@@ -13,7 +13,7 @@ def main():
 
     # Extract DOGE settings
     try:
-        doge_cfg = cfg["trading"]["mean_reversion_1m"]["assets"]["DOGEUSDT"]
+        doge_cfg = cfg["trading"]["mean_reversion"]["assets"]["DOGEUSDT"]
         sl_pct = doge_cfg.get("sl_pct")
         print(f"Loaded DOGE Config:")
         print(f"  sl_pct: {sl_pct}")

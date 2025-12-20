@@ -58,7 +58,7 @@ class CloseFlowFSM:
             self.state = CloseState.OPENED
             self.position_active = True
             self.position_open_ts = float(
-                position_data.get("open_ts", time.time()))
+                position_data["open_ts"] if "open_ts" in position_data else time.time())
 
             print(
                 f"[CloseFlowFSM] Hydrated state for position: open_ts={self.position_open_ts}"
@@ -82,9 +82,13 @@ class CloseFlowFSM:
         """
         # Handle manual close commands
         if msg.op == "CMD" and msg.verb == "CLOSE":
-            if self.state == CloseState.OPENED and self.position_active:
-                return self._emit_close(msg, "MANUAL_CLOSE", {"trigger": "CMD:CLOSE"})
-            return None
+            # Always emit DEC:CLOSE on CMD:CLOSE; actual position existence is verified
+            # downstream (adapter/open-positions check) for idempotent safety.
+            return self._emit_close(
+                msg,
+                "MANUAL_CLOSE",
+                {"trigger": "CMD:CLOSE", "reason": (msg.pld or {}).get("reason")},
+            )
 
         if msg.op not in ("EVT", "UPD"):
             return None
@@ -93,7 +97,7 @@ class CloseFlowFSM:
         if self.state == CloseState.FLAT and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL"):
             # Check if this actually opened a position (qty > 0)
             pld = msg.pld or {}
-            qty = float(pld.get("qty", 0))
+            qty = float(pld["qty"] if "qty" in pld else 0)
             if qty > 0:
                 self.position_active = True
                 self.position_open_ts = time.time()

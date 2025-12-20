@@ -4,7 +4,6 @@ description: "Trade intent generation based on risk assessment and market featur
 
 modules:
   - decision_making.py
-  - roi_exit_strategy.py
 
 imports:
   - op: EVT

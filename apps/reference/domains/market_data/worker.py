@@ -46,6 +46,11 @@ sys.path.insert(0, str(project_root))
 from apps.reference.domains.market_data.websocket_aggregator import WebSocketAggregator
 
 
+def _dget(d: Dict[str, Any], key: str, default: Any) -> Any:
+    """Defaulting dict access without using the default-arg form of `dict.get` (TASK25 policy)."""
+    return d[key] if key in d else default
+
+
 def _configure_worker_logging(log_dir: Path) -> logging.Logger:
     """
     Configure logging for the worker process.
@@ -133,31 +138,55 @@ class MarketDataWorker:
         self._ticks_emitted = 0
         self._ticks_dropped = 0
         self._last_heartbeat = 0
+
+        # WS activity tracking (monotonic seconds)
+        now_mono = time.monotonic()
+        self._last_ws_text_mono = now_mono
+        self._last_book_ticker_mono = now_mono
+        self._last_trade_mono = now_mono
         
         # Parse config
         # CFG-RUNTIME-INSTRUMENTS-SSOT-ALIGN-10: Use canonical config.instruments (not trading.instruments)
-        instruments_canonical = config_dict.get("instruments", {})
+        instruments_canonical = _dget(config_dict, "instruments", {})
         self._symbols = list(instruments_canonical.keys())
         
         # Legacy path (for diagnostics only, not used for decisions)
-        trading = config_dict.get("trading", {})
-        instruments_legacy = trading.get("instruments", {})
+        trading = _dget(config_dict, "trading", {})
+        instruments_legacy = _dget(trading, "instruments", {})
         
-        market_data_cfg = trading.get("market_data", {})
-        macro_sync = market_data_cfg.get("macro_sync", {})
-        self._anchors = macro_sync.get("anchors", [])
-        self._poll_interval = market_data_cfg.get("poll_interval_sec", 1)
+        market_data_cfg = _dget(trading, "market_data", {})
+        macro_sync = _dget(market_data_cfg, "macro_sync", {})
+        self._anchors = _dget(macro_sync, "anchors", [])
+        self._poll_interval = _dget(market_data_cfg, "poll_interval_sec", 1)
+
+        # System-level market data settings (strict: no defaults/fallbacks)
+        system = _dget(config_dict, "system", None)
+        if not isinstance(system, dict):
+            raise ValueError("Missing required config path: system")
+        system_md = _dget(system, "market_data", None)
+        if not isinstance(system_md, dict):
+            raise ValueError("Missing required config path: system.market_data")
+
+        ws_heartbeat_sec = _dget(system_md, "ws_heartbeat_sec", None)
+        ws_receive_timeout_sec = _dget(system_md, "ws_receive_timeout_sec", None)
+        if not isinstance(ws_heartbeat_sec, (int, float)) or ws_heartbeat_sec <= 0:
+            raise ValueError("Invalid required config: system.market_data.ws_heartbeat_sec (must be > 0)")
+        if not isinstance(ws_receive_timeout_sec, (int, float)) or ws_receive_timeout_sec <= 0:
+            raise ValueError("Invalid required config: system.market_data.ws_receive_timeout_sec (must be > 0)")
+
+        self._ws_heartbeat_sec = float(ws_heartbeat_sec)
+        self._ws_receive_timeout_sec = float(ws_receive_timeout_sec)
         
         # Determine mode (live vs testnet)
-        config_dict.get("binance_api", {})
-        domain_config = trading.get("domain_configuration", {})
-        md_config = domain_config.get("market_data", {})
-        self._mode = md_config.get("trading_mode", "testnet")
+        _dget(config_dict, "binance_api", {})
+        domain_config = _dget(trading, "domain_configuration", {})
+        md_config = _dget(domain_config, "market_data", {})
+        self._mode = _dget(md_config, "trading_mode", "testnet")
         
         # CFG-RUNTIME-BOOTSTRAP-07: Startup proof logging
         # Log config source and symbols count BEFORE fail-fast check
-        config_name = config_dict.get("_config_name", "<unknown>")
-        config_dir = config_dict.get("_config_dir", "<unknown>")
+        config_name = _dget(config_dict, "_config_name", "<unknown>")
+        config_dir = _dget(config_dict, "_config_dir", "<unknown>")
         symbols_count = len(self._symbols)
         symbols_preview = self._symbols[:10] if symbols_count > 10 else self._symbols
         
@@ -234,7 +263,9 @@ class MarketDataWorker:
         self._logger.info(
             f"MarketDataWorker initialized: symbols={self._symbols}, "
             f"anchors={self._anchors}, mode={self._mode}, "
-            f"orjson={USE_ORJSON}"
+            f"orjson={USE_ORJSON}, "
+            f"ws_heartbeat_sec={self._ws_heartbeat_sec}, "
+            f"ws_receive_timeout_sec={self._ws_receive_timeout_sec}"
         )
     
     def _get_ws_url(self) -> str:
@@ -304,26 +335,36 @@ class MarketDataWorker:
             return
         
         try:
-            symbol = msg.get("s", "")
-            
+            symbol = _dget(msg, "s", "")
+
             if event_type == "bookTicker":
+                self._last_book_ticker_mono = time.monotonic()
+                ts_ms = _dget(msg, "E", 0)
+                if ts_ms <= 0:
+                    return
                 self._aggregator.on_book_ticker(
                     symbol=symbol,
-                    bid_price=msg.get("b", "0"),
-                    bid_size=msg.get("B", "0"),
-                    ask_price=msg.get("a", "0"),
-                    ask_size=msg.get("A", "0"),
-                    ts=msg.get("E", int(time.time() * 1000))
+                    bid_price=_dget(msg, "b", "0"),
+                    bid_size=_dget(msg, "B", "0"),
+                    ask_price=_dget(msg, "a", "0"),
+                    ask_size=_dget(msg, "A", "0"),
+                    ts=ts_ms,
                 )
                 # State updated, periodic_emit will handle emission
                 
             elif event_type == "aggTrade":
+                self._last_trade_mono = time.monotonic()
+                ts_ms = _dget(msg, "T", 0)
+                if ts_ms <= 0:
+                    ts_ms = _dget(msg, "E", 0)
+                if ts_ms <= 0:
+                    return
                 self._aggregator.on_trade(
                     symbol=symbol,
-                    price=msg.get("p", "0"),
-                    quantity=msg.get("q", "0"),
-                    is_buyer_maker=msg.get("m", False),
-                    ts=msg.get("T", int(time.time() * 1000)),
+                    price=_dget(msg, "p", "0"),
+                    quantity=_dget(msg, "q", "0"),
+                    is_buyer_maker=_dget(msg, "m", False),
+                    ts=ts_ms,
                     trade_id=msg.get("a")
                 )
                 self._ticks_received += 1
@@ -338,6 +379,7 @@ class MarketDataWorker:
     async def _send_heartbeat(self) -> None:
         """Send periodic heartbeat to indicate worker is alive."""
         while self._running:
+            now_mono = time.monotonic()
             msg = {
                 "type": self.MSG_TYPE_HEARTBEAT,
                 "ts": int(time.time() * 1000),
@@ -345,7 +387,10 @@ class MarketDataWorker:
                     "ticks_received": self._ticks_received,
                     "ticks_emitted": self._ticks_emitted,
                     "ticks_dropped": self._ticks_dropped,
-                    "queue_size": self._queue.qsize() if hasattr(self._queue, 'qsize') else -1
+                    "queue_size": self._queue.qsize() if hasattr(self._queue, 'qsize') else -1,
+                    "ws_text_silence_sec": round(now_mono - self._last_ws_text_mono, 3),
+                    "book_ticker_silence_sec": round(now_mono - self._last_book_ticker_mono, 3),
+                    "trade_silence_sec": round(now_mono - self._last_trade_mono, 3),
                 }
             }
             self._put_with_backpressure(msg)
@@ -366,7 +411,7 @@ class MarketDataWorker:
             self._logger.info(f"Connecting to WebSocket: {ws_url}")
             
             try:
-                async with self._session.ws_connect(ws_url) as ws:
+                async with self._session.ws_connect(ws_url, heartbeat=self._ws_heartbeat_sec) as ws:
                     self._ws = ws
                     self._logger.info(f"✅ Connected to Binance WebSocket ({ws_url})")
                     
@@ -376,9 +421,25 @@ class MarketDataWorker:
                     self._logger.info(f"✅ Subscribed to {len(payload['params'])} streams")
                     
                     retry_delay = 1.0
-                    
-                    async for msg in ws:
+                    self._last_ws_text_mono = time.monotonic()
+
+                    # Use explicit receive timeout to detect "silent stall" connections.
+                    while self._running:
+                        try:
+                            msg = await ws.receive(timeout=self._ws_receive_timeout_sec)
+                        except asyncio.TimeoutError:
+                            silence = time.monotonic() - self._last_ws_text_mono
+                            self._logger.warning(
+                                f"⚠️ No WS messages for {silence:.1f}s; reconnecting (url={ws_url})"
+                            )
+                            try:
+                                await ws.close()
+                            except Exception:
+                                pass
+                            break
+
                         if msg.type == aiohttp.WSMsgType.TEXT:
+                            self._last_ws_text_mono = time.monotonic()
                             try:
                                 if USE_ORJSON:
                                     data = orjson.loads(msg.data)
@@ -390,9 +451,16 @@ class MarketDataWorker:
                         elif msg.type == aiohttp.WSMsgType.ERROR:
                             self._logger.error(f"WebSocket error: {ws.exception()}")
                             break
-                        elif msg.type == aiohttp.WSMsgType.CLOSED:
-                            self._logger.info("WebSocket closed by server")
+                        elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING, aiohttp.WSMsgType.CLOSED):
+                            self._logger.info(
+                                f"WebSocket closed (type={msg.type}, code={getattr(msg, 'data', None)})"
+                            )
                             break
+                        elif msg.type in (aiohttp.WSMsgType.PING, aiohttp.WSMsgType.PONG):
+                            continue
+                        else:
+                            # Keep this DEBUG to avoid log spam on hot path.
+                            self._logger.debug(f"Unhandled WS message type: {msg.type}")
             
             except asyncio.CancelledError:
                 self._logger.info("WebSocket loop cancelled")
@@ -444,12 +512,13 @@ class MarketDataWorker:
                 for anchor in self._anchors:
                     if anchor in self._aggregator.state:
                         price = self._aggregator.state[anchor].get("latest_price")
-                        if price:
+                        ts_ms = int(self._aggregator.state[anchor].get("last_price_ts_ms") or 0)
+                        if price and ts_ms > 0:
                             anchor_msg = {
                                 "type": self.MSG_TYPE_ANCHOR,
                                 "anchor": anchor,
                                 "price": str(price),
-                                "ts": int(time.time() * 1000)
+                                "ts_ms": ts_ms,
                             }
                             self._put_with_backpressure(anchor_msg)
                 

@@ -50,6 +50,8 @@ class MarketDataConnector:
     def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         if aiohttp is None:
             raise ImportError("aiohttp is required for MarketDataConnector")
+        if isinstance(config, dict):
+            raise TypeError("MarketDataConnector requires AuroraConfig, got dict")
         """
         Initialize the connector with validated Config V2 object.
 
@@ -136,7 +138,7 @@ class MarketDataConnector:
             "Anchor updates are now event-driven (EVT:ANCHOR_UPDATED)."
         )
 
-    async def _emit_anchor_update(self, anchor: str, price: str) -> None:
+    async def _emit_anchor_update(self, anchor: str, price: str, ts_ms: int) -> None:
         """
         Emit anchor price update as FSM event.
         
@@ -145,7 +147,7 @@ class MarketDataConnector:
         """
         self.fsm.emit(
             event_name="EVT:ANCHOR_UPDATED",
-            payload={"anchor": anchor, "price": price},
+            payload={"anchor": anchor, "price": price, "ts_ms": int(ts_ms)},
             why=f"Anchor price update for {anchor}",
         )
 
@@ -207,12 +209,14 @@ class MarketDataConnector:
         try:
             if event_type == "bookTicker":
                 # Order Book Ticker Update
-                symbol = msg.get("s", "")
-                bid_price = msg.get("b", "0")
-                bid_qty = msg.get("B", "0")
-                ask_price = msg.get("a", "0")
-                ask_qty = msg.get("A", "0")
-                ts = msg.get("E", int(time.time() * 1000))
+                symbol = msg["s"] if "s" in msg else ""
+                bid_price = msg["b"] if "b" in msg else "0"
+                bid_qty = msg["B"] if "B" in msg else "0"
+                ask_price = msg["a"] if "a" in msg else "0"
+                ask_qty = msg["A"] if "A" in msg else "0"
+                if "E" not in msg:
+                    return
+                ts = msg["E"]
 
                 self.aggregator.on_book_ticker(
                     symbol=symbol,
@@ -226,12 +230,14 @@ class MarketDataConnector:
 
             elif event_type == "aggTrade":
                 # Aggregated Trade Event (replaces raw 'trade' for performance)
-                symbol = msg.get("s", "")
-                price = msg.get("p", "0")
-                qty = msg.get("q", "0")
+                symbol = msg["s"] if "s" in msg else ""
+                price = msg["p"] if "p" in msg else "0"
+                qty = msg["q"] if "q" in msg else "0"
                 # True if buyer is maker (sell)
-                is_buyer_maker = msg.get("m", False)
-                ts = msg.get("T", int(time.time() * 1000))
+                is_buyer_maker = msg["m"] if "m" in msg else False
+                ts = msg["T"] if "T" in msg else (msg["E"] if "E" in msg else 0)
+                if ts <= 0:
+                    return
                 # Aggregate Trade ID for deduplication
                 trade_id = msg.get("a")
 
@@ -428,8 +434,18 @@ class MarketDataConnector:
             LOG.debug(f"🔍 Tick data for {symbol}: {tick}")
 
             # Defensive: Check required keys exist
-            required_keys = ["ts", "price", "bid", "ask", "mid", "bid_size",
-                             "ask_size", "buy_volume", "sell_volume", "data_source"]
+            required_keys = [
+                "ts",
+                "price",
+                "bid",
+                "ask",
+                "mid",
+                "bid_size",
+                "ask_size",
+                "buy_volume",
+                "sell_volume",
+                "data_source",
+            ]
             missing_keys = [key for key in required_keys if key not in tick]
             if missing_keys:
                 LOG.error(
@@ -447,9 +463,20 @@ class MarketDataConnector:
                 "ask_size": tick["ask_size"],  # ✅ NOW REAL!
                 "buy_volume": tick["buy_volume"],  # ✅ NOW REAL!
                 "sell_volume": tick["sell_volume"],  # ✅ NOW REAL!
+                # Optional trade metadata (TASK31 additive)
+                "buy_count": tick["buy_count"] if "buy_count" in tick else None,
+                "sell_count": tick["sell_count"] if "sell_count" in tick else None,
+                "buy_notional": tick["buy_notional"] if "buy_notional" in tick else None,
+                "sell_notional": tick["sell_notional"] if "sell_notional" in tick else None,
+                "trades_dropped_out_of_order": tick["trades_dropped_out_of_order"]
+                if "trades_dropped_out_of_order" in tick
+                else None,
                 "data_type": "market_tick_aggregated",
                 "data_source": tick["data_source"],
-                "debug_info": f"BID/ASK: {tick.get('bid_ask_count', 'N/A')}, Trades: {tick.get('trade_count', 'N/A')}",
+                "debug_info": (
+                    f"BID/ASK: {tick['bid_ask_count'] if 'bid_ask_count' in tick else 'N/A'}, "
+                    f"Trades: {tick['trade_count'] if 'trade_count' in tick else 'N/A'}"
+                ),
             }
 
             self.fsm.emit(
@@ -458,11 +485,18 @@ class MarketDataConnector:
                 why=f"Real-time market tick for {symbol} from {tick['data_source']}",
             )
 
+            trade_count = tick.get("trade_count")
+            buy_trade_count = "N/A"
+            sell_trade_count = "N/A"
+            if trade_count:
+                buy_trade_count = str(trade_count).split(":")[1].split()[0]
+                sell_trade_count = str(trade_count).split(":")[2]
+
             LOG.info(
                 f"📊 {symbol} Tick: bid={tick['bid_size']}@{tick['bid']}, "
                 f"ask={tick['ask_size']}@{tick['ask']}, "
-                f"trades: BUY={tick.get('trade_count', 'N/A').split(':')[1].split()[0] if tick.get('trade_count') else 'N/A'} "
-                f"SELL={tick.get('trade_count', 'N/A').split(':')[2] if tick.get('trade_count') else 'N/A'}"
+                f"trades: BUY={buy_trade_count} "
+                f"SELL={sell_trade_count}"
             )
 
         except Exception as e:

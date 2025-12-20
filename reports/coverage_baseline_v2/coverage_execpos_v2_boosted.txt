@@ -1,0 +1,50 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.1, pluggy-1.6.0
+rootdir: /home/wekabeka/Музыка/Phenix
+configfile: pytest.ini
+plugins: asyncio-1.3.0, anyio-4.11.0, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 17 items
+
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py . [  5%]
+.....                                                                    [ 35%]
+tests/domains/execution_position/test_execpos_event_ordering_v1.py ....  [ 58%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py ... [ 76%]
+...                                                                      [ 94%]
+tests/domains/execution_position/test_execpos_processed_events_cap_v1.py F [100%]
+
+=================================== FAILURES ===================================
+______________ test_execpos_processed_events_unbounded_leak_risk _______________
+tests/domains/execution_position/test_execpos_processed_events_cap_v1.py:35: in test_execpos_processed_events_unbounded_leak_risk
+    pytest.fail(f"MEMORY LEAK RISK: _processed_events grew to {size} without capping. Unbounded growth detected.")
+E   Failed: MEMORY LEAK RISK: _processed_events grew to 10000 without capping. Unbounded growth detected.
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.3-final-0 ________________
+
+Name                                                              Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------------------------------------
+apps/reference/domains/execution_position/__init__.py                 0      0      0      0   100%
+apps/reference/domains/execution_position/aurora_log_adapter.py      77     55     40      1    20%   43->53, 83-121, 143-162, 188-214, 236-249
+apps/reference/domains/execution_position/contracts.py              172     80     46      0    42%   105-112, 118-128, 134-141, 147-160, 166-178, 208-215, 227-247, 303-320, 358-361, 380-384
+apps/reference/domains/execution_position/drift_monitor.py          111    111     34      0     0%   19-265
+apps/reference/domains/execution_position/exposure_guard.py         519    392    146      8    21%   46-47, 86, 113, 166, 169, 180, 220-279, 286-345, 355, 369-390, 440-1199, 1217-1244, 1268-1272, 1282-1295, 1313-1334, 1355-1358, 1367-1369, 1375, 1408-1441, 1452-1466, 1476-1491
+apps/reference/domains/execution_position/fsm.py                   1270    947    444     58    23%   55-57, 64-65, 79-102, 113, 137-140, 174->179, 176-177, 179->183, 224-225, 240, 242, 245, 252-256, 268, 269->279, 274->279, 276-277, 286, 288->303, 291, 296->303, 301-302, 314->324, 319, 327->361, 330-351, 366, 368->374, 370, 389-393, 397-401, 410, 412->420, 414, 417-418, 429-432, 438->exit, 440-441, 448, 451, 454-455, 470, 474-476, 480->478, 492-493, 503-505, 510, 516, 528-541, 546, 549, 556-559, 564, 566, 568, 570-573, 580-581, 586-598, 602-621, 626-629, 646-649, 669-673, 680-706, 716, 719, 724-741, 762-764, 769-771, 780->exit, 796-798, 813-825, 828->840, 842-845, 867-871, 876-882, 886-893, 905-919, 927-928, 946-953, 976-998, 1006-1015, 1019-1119, 1123-1911, 1915-1977, 1981-1988, 1993-2025, 2029-2172, 2176-2177, 2181-2182, 2186-2187, 2195-2267, 2271-2275, 2284-2356, 2365-2404, 2409-2413, 2421-2473, 2485-2491, 2509-2570, 2574-2585, 2594-2647
+apps/reference/domains/execution_position/fsm_close.py               66     13     12      4    76%   67-70, 87, 90, 112-115, 160, 164-166
+apps/reference/domains/execution_position/fsm_manage.py             664    403    260     47    36%   29-32, 99, 107->110, 111->118, 114, 126->130, 168, 172, 176, 202-226, 243-251, 258-265, 286, 296, 320, 377-380, 413, 420-422, 425-439, 449-494, 498, 508-537, 543-771, 775-777, 795, 799-812, 826-830, 837, 847-861, 873-877, 885->892, 889-890, 903->908, 905->908, 922->929, 924->929, 926->929, 929->941, 932-937, 963->971, 965->967, 967->971, 988, 1004-1021, 1033, 1040->1051, 1045-1046, 1051->1091, 1055-1081, 1092-1094, 1097->1102, 1110-1112, 1125-1217, 1236, 1246-1247, 1252, 1262-1271, 1279, 1290-1301, 1359-1376, 1380, 1389-1418, 1422-1442
+apps/reference/domains/execution_position/fsm_open.py               161     47     64     23    64%   59, 77-79, 97->115, 103-110, 131, 133, 150, 176-179, 201-204, 211-214, 217->241, 219-222, 231-234, 254-260, 269-274, 284->288, 289, 291, 293, 296->302, 321-323, 332-348, 353->355, 367, 371-372
+apps/reference/domains/execution_position/idempotent_cancel.py       92     50     20      0    38%   96-116, 135-141, 173-276, 287-289, 293-296
+apps/reference/domains/execution_position/metrics_aggregator.py     124     46     14      1    57%   39-52, 69-81, 100-114, 137->exit, 142-155, 159-160, 164, 169-171, 175-179, 199-202, 222-235, 246-257, 270-299, 303, 307
+apps/reference/domains/execution_position/metrics_collector.py      143    111     26      0    19%   84-96, 107-134, 140-153, 157-161, 165-166, 170-171, 175-176, 180-181, 185-186, 190-192, 196-197, 201-202, 206-207, 211-249, 281-298, 302-315, 319-366, 370-400
+apps/reference/domains/execution_position/order_guardian.py          58     35      8      0    35%   28-50, 61, 65, 69, 73, 77, 81, 85, 89, 93, 96, 99, 104, 108-111, 115-118
+apps/reference/domains/execution_position/order_index.py             67     67     18      0     0%   8-163
+apps/reference/domains/execution_position/soft_clip.py               70     39     12      0    38%   21-22, 89-154
+apps/reference/domains/execution_position/utils.py                  136    123     76      0     6%   22-33, 43-45, 64-120, 133-146, 157-170, 196-232, 240-260, 273
+apps/reference/domains/execution_position/utils_event_bus.py         25     17     10      0    23%   18, 28-30, 48-57, 67-71
+apps/reference/domains/execution_position/watchdog.py               216    130     58      4    34%   105-119, 127-140, 147-156, 162-167, 197-198, 213-223, 227-231, 235-240, 261, 274-426, 442->exit, 447-449, 454
+-------------------------------------------------------------------------------------------------------------
+TOTAL                                                              3971   2666   1288    146    28%
+=========================== short test summary info ============================
+FAILED tests/domains/execution_position/test_execpos_processed_events_cap_v1.py::test_execpos_processed_events_unbounded_leak_risk
+========================= 1 failed, 16 passed in 1.10s =========================

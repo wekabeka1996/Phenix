@@ -83,7 +83,7 @@
 # Додати:
 #   decision_making:
 #     strategies:
-#       mean_reversion_1m:
+#       mean_reversion:
 #         enabled: false  # Start disabled, enable after testing
 #         config_path: "../trading_1m_best_optuna.yaml"
 #         weight: 0.3  # 30% allocation vs existing strategies

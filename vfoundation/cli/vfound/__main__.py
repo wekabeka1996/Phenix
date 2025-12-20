@@ -183,10 +183,7 @@ def drift_batch(
     import types
     from importlib.machinery import ModuleSpec
 
-    drift_monitor_path = (
-        _cli_root / "apps" / "reference" / "domains" /
-        "execution_position" / "drift_monitor.py"
-    )
+    drift_monitor_path = (_cli_root / "apps" / "monitoring" / "drift_monitor.py")
     spec: ModuleSpec | None = importlib.util.spec_from_file_location(
         "drift_monitor", drift_monitor_path
     )

@@ -90,6 +90,31 @@ c_bridge_retry_total = Counter(
     "bridge_retry_total", "Bridge defer retries", ["symbol"]
 )
 
+# Warmup/readiness gating (TASK24)
+c_warmup_block_total = Counter(
+    "warmup_block_total",
+    "Warmup/readiness blocks (fail-closed, no trading until READY)",
+    ["domain", "reason"],
+)
+
+# Data quality (TASK24)
+c_data_quality_drop_total = Counter(
+    "data_quality_drop_total",
+    "Data-quality drops/ignores (explicit, no silent degrade)",
+    ["domain", "reason"],
+)
+c_data_quality_bad_dt_total = Counter(
+    "data_quality_bad_dt_total",
+    "Bad dt observations (dt<=0) for time-normalized features",
+    ["domain"],
+)
+
+# RetryScheduler loop contract (TASK24)
+c_retry_scheduler_no_loop_total = Counter(
+    "retry_scheduler_no_loop_total",
+    "RetryScheduler schedule attempts without a running event loop (fail-fast contract)",
+)
+
 # Order lifecycle metrics (AUR-004)
 c_order_state_total = Counter(
     "order_state_total", "Order state changes", ["status"])
@@ -194,6 +219,18 @@ def inc_bridge_deferred(reason: str, symbol: str) -> None:
 
 def inc_bridge_retry(symbol: str) -> None:
     c_bridge_retry_total.labels(symbol=symbol).inc()
+
+def inc_warmup_block(domain: str, reason: str) -> None:
+    c_warmup_block_total.labels(domain=domain, reason=reason).inc()
+
+def inc_data_quality_drop(domain: str, reason: str) -> None:
+    c_data_quality_drop_total.labels(domain=domain, reason=reason).inc()
+
+def inc_data_quality_bad_dt(domain: str) -> None:
+    c_data_quality_bad_dt_total.labels(domain=domain).inc()
+
+def inc_retry_scheduler_no_loop() -> None:
+    c_retry_scheduler_no_loop_total.inc()
 
 
 def inc_order_state(status: str) -> None:

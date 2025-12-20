@@ -1,0 +1,333 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.1, pluggy-1.6.0
+rootdir: /home/wekabeka/Музыка/Phenix
+configfile: pytest.ini
+testpaths: tests, apps/reference/domains/feature_engineering/tests, apps/reference/domains/decision_making/tests
+plugins: asyncio-1.3.0, anyio-4.11.0, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1135 items / 8 skipped
+
+tests/adapters/test_binance_adapter.py .......s..s.......s..s            [  1%]
+tests/api/test_api_health.py .                                           [  2%]
+tests/api/test_api_main.py ....                                          [  2%]
+tests/api/test_api_security.py ...                                       [  2%]
+tests/audit/test_execution_position_dead_modules_event_emission.py ...   [  2%]
+tests/bugfixes/test_p1_002_adapter_precision.py F                        [  2%]
+tests/config/test_config_symbols_one_truth.py ......                     [  3%]
+tests/config/test_feature_engineering_strict_extra_forbid.py .           [  3%]
+tests/config/test_features_yaml_deprecated_strict.py ...                 [  3%]
+tests/config/test_loader_rejects_config_meta_keys.py .                   [  3%]
+tests/config/test_mr_trading_yaml_deprecated_strict.py .....             [  4%]
+tests/config/test_optional_required_null_autofill.py .                   [  4%]
+tests/config/test_regime_yaml_strict_validation.py ...                   [  4%]
+tests/config/test_root_forbid_extra_keys.py ..                           [  4%]
+tests/config/test_strategies_registry_strict.py ......                   [  5%]
+tests/config/test_strategy_profiles_registry_load.py ....                [  5%]
+tests/config/test_strict_default_and_ci_gates.py .........               [  6%]
+tests/config/test_strict_forbid_typos.py .                               [  6%]
+tests/config/test_task28_hybrid_mode_config_contract.py .                [  6%]
+tests/config/test_task28_schema_no_optional_required_trap.py ....        [  7%]
+tests/config/test_timeframe_sec_ssot_precedence.py ...                   [  7%]
+tests/config/test_toplevel_forbid_enforcement.py ...........             [  8%]
+tests/config/test_typed_dict_any_configs.py .................            [  9%]
+tests/contracts/test_intent_deferred_schema_additive.py ...              [ 10%]
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py . [ 10%]
+.....                                                                    [ 10%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py EEE [ 10%]
+EEE                                                                      [ 11%]
+tests/domains/feature_engineering/test_task30_macro_sync_resampler_math.py . [ 11%]
+....                                                                     [ 11%]
+tests/domains/market_data/test_task30_anchor_ts_propagation.py ..        [ 11%]
+tests/domains/test_aurora_log_adapter.py .                               [ 11%]
+tests/domains/test_bar_resampler.py .........................            [ 14%]
+tests/domains/test_config_loader.py ...........s......                   [ 15%]
+tests/domains/test_contracts.py .                                        [ 15%]
+tests/domains/test_decision_making_trade_intent_validation.py ...        [ 16%]
+tests/domains/test_drift_monitor.py ..                                   [ 16%]
+tests/domains/test_execution_position_contracts.py ..................... [ 18%]
+..                                                                       [ 18%]
+tests/domains/test_execution_position_utils.py ......................... [ 20%]
+............                                                             [ 21%]
+tests/domains/test_indicators.py ..........................              [ 23%]
+tests/domains/test_mean_reversion_strategy.py .......................... [ 26%]
+                                                                         [ 26%]
+tests/domains/test_metrics_collector.py .                                [ 26%]
+tests/domains/test_regime_detector.py .....                              [ 26%]
+tests/domains/test_regime_mapping.py ................................... [ 29%]
+......                                                                   [ 30%]
+tests/domains/test_watchdog_polling_fix.py ..                            [ 30%]
+tests/dr/test_dr_loader.py .........                                     [ 31%]
+tests/e2e/test_s1_warmup_gate.py ...                                     [ 31%]
+tests/e2e/test_s2_macro_sync_async.py ...                                [ 31%]
+tests/e2e/test_s3_volume_spike_dt.py ...                                 [ 31%]
+tests/e2e/test_s4_regime_uncertain_ohlc.py ...                           [ 32%]
+tests/e2e/test_s5_retry_scheduler_bounded.py ...                         [ 32%]
+tests/e2e/test_s6_intent_order_idempotency.py ....                       [ 32%]
+tests/integration/test_aurora_core_flow.py .                             [ 32%]
+tests/integration/test_binance_ws_order_index_correlation.py ..          [ 33%]
+tests/integration/test_config_startup_validation.py ssssssssssss         [ 34%]
+tests/integration/test_daily_gate_block_open.py sss                      [ 34%]
+tests/integration/test_decision_qos_features_burst.py .                  [ 34%]
+tests/integration/test_decision_to_execution_flow.py .                   [ 34%]
+tests/integration/test_dm_logger_writes.py .                             [ 34%]
+tests/integration/test_end_to_end_analytics_to_execution.py .            [ 34%]
+tests/integration/test_exposure_release_hooks.py sssssss                 [ 35%]
+tests/integration/test_features_full_chain_happy.py s                    [ 35%]
+tests/integration/test_graceful_shutdown.py s                            [ 35%]
+tests/integration/test_happy_path_dec_open.py s                          [ 35%]
+tests/integration/test_live_bridge_to_marketdata.py s                    [ 35%]
+tests/integration/test_metrics_summary.py .....                          [ 36%]
+tests/integration/test_open_exposure_guard.py sss                        [ 36%]
+tests/integration/test_order_lifecycle_scenarios.py .....                [ 36%]
+tests/integration/test_panic_killswitch.py ssssss                        [ 37%]
+tests/integration/test_regime_detector_event_flow.py ...                 [ 37%]
+tests/integration/test_resilience_scenarios.py ....                      [ 38%]
+tests/integration/test_startup.py .                                      [ 38%]
+tests/integration/test_statdump_endpoint.py s                            [ 38%]
+tests/order_guardian/test_cleanup_before_close_by_parent.py ........     [ 38%]
+tests/order_guardian/test_fsm_delegation.py ........                     [ 39%]
+tests/order_guardian/test_no_adapter_logic_left.py ............          [ 40%]
+tests/order_guardian/test_register_and_link.py ..........                [ 41%]
+tests/runtime/test_config_contract_block_normalization.py ..             [ 41%]
+tests/runtime/test_config_helpers_not_imported.py .                      [ 41%]
+tests/runtime/test_e2e_smoke_contract_minimal.py ...                     [ 42%]
+tests/runtime/test_main_no_dict_injection.py .                           [ 42%]
+tests/runtime/test_no_new_domain_resolver_usage.py .                     [ 42%]
+tests/runtime/test_no_runtime_config_fallbacks.py ..............         [ 43%]
+tests/runtime/test_order_index_wiring_failclosed.py ..                   [ 43%]
+tests/runtime/test_p1_instrument_overrides_no_fallbacks.py .....         [ 44%]
+tests/runtime/test_task24_decision_making_warmup_gate.py ..              [ 44%]
+tests/runtime/test_task24_feature_engineering_correctness.py ..........  [ 45%]
+tests/runtime/test_task24_policy_gates.py ......                         [ 45%]
+tests/runtime/test_task24_regime_detector_correctness.py .......         [ 46%]
+tests/runtime/test_task24_retry_scheduler_contracts.py .....             [ 46%]
+tests/runtime/test_task25_domains_reject_dict_config.py ..               [ 46%]
+tests/runtime/test_task25_market_data_proxy_no_config_to_dict.py .       [ 47%]
+tests/runtime/test_task27_config_symbols_no_import_time_get_config.py .  [ 47%]
+tests/runtime/test_task27_trading_risk_dict_contract.py ..               [ 47%]
+tests/runtime/test_task28_no_config_singleton_in_domains.py .            [ 47%]
+tests/test_90_percent_target.py .......                                  [ 48%]
+tests/test_acl_message_contracts.py ...........                          [ 48%]
+tests/test_auto_tpsl_reconciliation.py ................................. [ 51%]
+...                                                                      [ 52%]
+tests/test_backtest_engine.py .........                                  [ 52%]
+tests/test_circuit_breaker.py ........                                   [ 53%]
+tests/test_cli_coverage.py ....                                          [ 54%]
+tests/test_config_auto_trading.py .                                      [ 54%]
+tests/test_config_env_overrides.py ....................                  [ 55%]
+tests/test_config_loading_externalized.py ...                            [ 56%]
+tests/test_contracts.py ...                                              [ 56%]
+tests/test_coverage_boost.py .......                                     [ 57%]
+tests/test_coverage_final_push.py ...                                    [ 57%]
+tests/test_debug_drift_integration.py .....                              [ 57%]
+tests/test_drift_unit.py ...........                                     [ 58%]
+tests/test_ensemble.py ...............                                   [ 60%]
+tests/test_exact_90_percent.py ........                                  [ 60%]
+tests/test_execpos_contracts_pydantic_v2.py ..........................   [ 62%]
+tests/test_execution_management.py .............                         [ 64%]
+tests/test_features_signals_core.py ...............                      [ 65%]
+tests/test_final_90_percent.py ....                                      [ 65%]
+tests/test_final_90_push.py ..........                                   [ 66%]
+tests/test_final_coverage_push.py ......                                 [ 67%]
+tests/test_idempotency_edge_cases.py .........                           [ 68%]
+tests/test_idempotency_ttl.py ...........                                [ 68%]
+tests/test_market_data_proxy.py ...........                              [ 69%]
+tests/test_market_data_worker.py ..........                              [ 70%]
+tests/test_metrics_drift_integration.py ......                           [ 71%]
+tests/test_metrics_smoke.py ....                                         [ 71%]
+tests/test_normalized_reject_reasons.py .......                          [ 72%]
+tests/test_orchestrator_fsm.py ........                                  [ 73%]
+tests/test_order_guardian_grace_period.py ..                             [ 73%]
+tests/test_performance_monitor.py ................                       [ 74%]
+tests/test_phase10_documentation.py .....                                [ 75%]
+tests/test_phase3_psi_vector.py ..                                       [ 75%]
+tests/test_phase5_regression.py ........                                 [ 75%]
+tests/test_phase7_performance.py ......                                  [ 76%]
+tests/test_phase8_backtest.py .......                                    [ 77%]
+tests/test_phase9_tuning.py ..............                               [ 78%]
+tests/test_retry_cb_edge_cases.py ...                                    [ 78%]
+tests/test_routing_idempotency.py ...                                    [ 78%]
+tests/test_single_flight_routing.py ....                                 [ 79%]
+tests/test_testnet_checks.py .....                                       [ 79%]
+tests/test_tpsl_placement.py ..........                                  [ 80%]
+tests/test_trade_intent_logging.py .                                     [ 80%]
+tests/test_ttl_cache.py .....................                            [ 82%]
+tests/test_wal_additional.py .......                                     [ 83%]
+tests/test_wal_coverage.py ............                                  [ 84%]
+tests/test_wal_fallback.py ...........                                   [ 85%]
+tests/test_wal_gc.py ......                                              [ 85%]
+tests/test_wal_replay.py ..........                                      [ 86%]
+tests/test_why_chain.py ......                                           [ 87%]
+tests/test_why_chain_message_preservation.py .                           [ 87%]
+tests/test_ws_direct.py s                                                [ 87%]
+tests/tooling/test_build_project_atlas.py .                              [ 87%]
+tests/unit/test_idempotent_cancel.py .................                   [ 88%]
+tests/unit/test_idempotent_cancel_logic.py ......                        [ 89%]
+tests/unit/test_metrics_aggregator.py .................                  [ 90%]
+tests/unit/test_metrics_collector.py .........                           [ 91%]
+tests/unit/test_nrr_mapping_catalog.py .....                             [ 92%]
+tests/unit/test_phase6_integration.py ..........                         [ 92%]
+tests/unit/test_qos_nrr012.py sss                                        [ 93%]
+tests/unit/test_soft_clip_engine.py ........                             [ 93%]
+tests/unit/test_utils_event_bus.py .......                               [ 94%]
+tests/units/test_apps_binance_adapter.py ..........                      [ 95%]
+tests/units/test_binance_adapter_session.py F                            [ 95%]
+tests/units/test_binance_adapter_unit.py .                               [ 95%]
+tests/units/test_feature_math_basic.py .                                 [ 95%]
+tests/units/test_features_payload_validation.py .                        [ 95%]
+tests/units/test_fsm_emit_compat.py ...                                  [ 96%]
+tests/units/test_fsm_emit_compat_missing_fields.py .                     [ 96%]
+tests/units/test_metrics_summary_parse.py ..                             [ 96%]
+tests/units/test_metrics_update.py .                                     [ 96%]
+tests/units/test_order_index.py ..............                           [ 97%]
+tests/units/test_quiet_hours.py .....                                    [ 98%]
+tests/units/test_roi_exit_strategy.py ........                           [ 98%]
+tests/units/test_vfoundation_binance_adapter_json_coerce.py ..           [ 98%]
+tests/units/test_vfoundation_binance_adapter_unit.py ...s                [ 99%]
+tests/vfoundation/core/test_fsm_core_error_handling.py .                 [ 99%]
+tests/vfoundation/obs/test_entropy_monitor.py .......                    [100%]
+
+==================================== ERRORS ====================================
+_________ ERROR at setup of test_manage_does_not_emit_adjust_when_flat _________
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/domains/execution_position/conftest.py:112: in fsm_harness
+    fsm = ExecPosFSM(bus=bus, config=fsm_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ExecPosFSM.__init__() got an unexpected keyword argument 'bus'
+______ ERROR at setup of test_manage_tpsl_values_respect_side_invariants _______
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/domains/execution_position/conftest.py:112: in fsm_harness
+    fsm = ExecPosFSM(bus=bus, config=fsm_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ExecPosFSM.__init__() got an unexpected keyword argument 'bus'
+___________ ERROR at setup of test_manage_idempotency_on_adjustment ____________
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/domains/execution_position/conftest.py:112: in fsm_harness
+    fsm = ExecPosFSM(bus=bus, config=fsm_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ExecPosFSM.__init__() got an unexpected keyword argument 'bus'
+____ ERROR at setup of test_manage_handles_missing_market_data_fail_closed _____
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/domains/execution_position/conftest.py:112: in fsm_harness
+    fsm = ExecPosFSM(bus=bus, config=fsm_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ExecPosFSM.__init__() got an unexpected keyword argument 'bus'
+__________ ERROR at setup of test_manage_max_hold_time_triggers_close __________
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/domains/execution_position/conftest.py:112: in fsm_harness
+    fsm = ExecPosFSM(bus=bus, config=fsm_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ExecPosFSM.__init__() got an unexpected keyword argument 'bus'
+______ ERROR at setup of test_manage_emits_modify_only_when_auto_enabled _______
+.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:728: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/domains/execution_position/conftest.py:112: in fsm_harness
+    fsm = ExecPosFSM(bus=bus, config=fsm_config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: ExecPosFSM.__init__() got an unexpected keyword argument 'bus'
+=================================== FAILURES ===================================
+_______________ test_decimal_precision_is_preserved_on_response ________________
+tests/bugfixes/test_p1_002_adapter_precision.py:57: in test_decimal_precision_is_preserved_on_response
+    positions = await adapter.get_open_positions()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/adapters/binance_adapter.py:613: in get_open_positions
+    raise last_exception
+apps/reference/adapters/binance_adapter.py:544: in get_open_positions
+    raw = await self._request("GET", "/fapi/v2/positionRisk", params)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/adapters/binance_adapter.py:307: in _request
+    return await _do(method, base_params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/adapters/binance_adapter.py:297: in _do
+    raise _make_binance_error(r, err)
+E   apps.reference.adapters.binance_adapter.BinanceAPIError: [401] {"code":-2014,"msg":"API-key format invalid."} (no-nrr)
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.adapters.binance_adapter:binance_adapter.py:607 get_open_positions() attempt 1 failed: [401] {"code":-2014,"msg":"API-key format invalid."} (no-nrr), retrying in 200ms
+WARNING  apps.reference.adapters.binance_adapter:binance_adapter.py:607 get_open_positions() attempt 2 failed: [401] {"code":-2014,"msg":"API-key format invalid."} (no-nrr), retrying in 500ms
+WARNING  apps.reference.adapters.binance_adapter:binance_adapter.py:607 get_open_positions() attempt 3 failed: [401] {"code":-2014,"msg":"API-key format invalid."} (no-nrr), retrying in 1000ms
+ERROR    apps.reference.adapters.binance_adapter:binance_adapter.py:611 get_open_positions() failed after 4 attempts: [401] {"code":-2014,"msg":"API-key format invalid."} (no-nrr)
+________________ test_adapter_exposes_session_and_uses_request _________________
+tests/units/test_binance_adapter_session.py:42: in test_adapter_exposes_session_and_uses_request
+    resp = await ad.get_account_balance()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/adapters/binance_adapter.py:673: in get_account_balance
+    return await self._request("GET", path)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/adapters/binance_adapter.py:307: in _request
+    return await _do(method, base_params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/adapters/binance_adapter.py:291: in _do
+    await self._sync_time(False)
+apps/reference/adapters/binance_adapter.py:257: in _sync_time
+    server_ms = await self._server_time()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/adapters/binance_adapter.py:232: in _server_time
+    r = await self.session.get(f"{self.base_url}/fapi/v1/time")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: object MagicMock can't be used in 'await' expression
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.3-final-0 ________________
+
+Name                                                              Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------------------------------------
+apps/reference/domains/execution_position/__init__.py                 0      0      0      0   100%
+apps/reference/domains/execution_position/aurora_log_adapter.py      77     34     40     12    47%   43->53, 92->94, 94->96, 96->98, 99, 101, 103, 110->112, 112->114, 114->116, 117, 119, 143-162, 188-214, 236-249
+apps/reference/domains/execution_position/contracts.py              172     36     46      2    74%   126, 158, 208-215, 227-247, 303-320, 358-361
+apps/reference/domains/execution_position/drift_monitor.py          111    111     34      0     0%   19-265
+apps/reference/domains/execution_position/exposure_guard.py         519    415    146      4    17%   46-47, 113, 166, 169, 180, 220-279, 286-345, 355, 369-390, 402-419, 440-1199, 1217-1244, 1268-1272, 1282-1295, 1313-1334, 1345-1379, 1383-1392, 1408-1441, 1452-1466, 1476-1491
+apps/reference/domains/execution_position/fsm.py                   1270    950    444     42    23%   55-57, 97-100, 113, 137-140, 174->179, 176-177, 179->183, 224-225, 240, 242, 245, 252-256, 268, 274->279, 276-277, 291, 296->303, 301-302, 314->324, 319, 327->361, 330-351, 366, 368->374, 372, 389-393, 397-401, 410, 412->420, 414, 417-418, 429-432, 438->exit, 440-441, 448, 451, 475->474, 480->478, 492-493, 504-505, 530-531, 535-536, 541, 546, 549, 564, 566, 568, 580-581, 586-598, 602-621, 626-629, 638-741, 756-781, 789-871, 876-882, 887, 892-893, 905-919, 927-928, 946-953, 976-998, 1006-1015, 1019-1119, 1123-1911, 1915-1977, 1981-1988, 1993-2025, 2029-2172, 2176-2177, 2181-2182, 2186-2187, 2195-2267, 2271-2275, 2284-2356, 2365-2404, 2409-2413, 2421-2473, 2485-2491, 2509-2570, 2574-2585, 2601-2647
+apps/reference/domains/execution_position/fsm_close.py               66     13     12      4    76%   67-70, 87, 90, 112-115, 160, 164-166
+apps/reference/domains/execution_position/fsm_manage.py             664    610    260      0     6%   29-32, 61-135, 166-178, 202-226, 243-251, 258-265, 283-303, 317-321, 337-364, 377-380, 393-504, 508-537, 543-771, 775-777, 794-869, 873-877, 884-895, 902-911, 921-941, 945, 960-990, 1004-1021, 1032-1114, 1125-1217, 1227-1301, 1309-1336, 1340-1342, 1359-1376, 1380, 1389-1418, 1422-1442
+apps/reference/domains/execution_position/fsm_open.py               161     47     64     23    64%   59, 77-79, 97->115, 103-110, 131, 133, 150, 176-179, 201-204, 211-214, 217->241, 219-222, 231-234, 254-260, 269-274, 284->288, 289, 291, 293, 296->302, 321-323, 332-348, 353->355, 367, 371-372
+apps/reference/domains/execution_position/idempotent_cancel.py       92     14     20      6    80%   101, 111-114, 138-141, 175->198, 192->198, 238-252, 276, 287-289
+apps/reference/domains/execution_position/metrics_aggregator.py     124      5     14      2    93%   137->exit, 199-202, 295->exit, 307
+apps/reference/domains/execution_position/metrics_collector.py      143     10     26      6    91%   142->145, 159->exit, 175-176, 196-197, 206-207, 308, 331->339, 347->343, 361-363
+apps/reference/domains/execution_position/order_guardian.py          58     22      8      4    61%   29, 37, 40->50, 44, 61, 65, 69, 73, 77, 81, 85, 89, 93, 99, 104, 108-111, 115-118
+apps/reference/domains/execution_position/order_index.py             67      2     18      3    94%   128, 154->156, 157
+apps/reference/domains/execution_position/soft_clip.py               70      6     12      2    88%   21-22, 104-105, 138-139
+apps/reference/domains/execution_position/utils.py                  136     27     76     13    76%   25, 32, 76, 78->107, 82->107, 88-91, 92->107, 95-98, 101->107, 111-118, 134-138, 144, 166->170, 201-205
+apps/reference/domains/execution_position/utils_event_bus.py         25      0     10      1    97%   48->exit
+apps/reference/domains/execution_position/watchdog.py               216     83     58     16    57%   109->114, 118-119, 127-140, 147-156, 162-167, 197-198, 217-220, 227-231, 235-240, 275, 301, 306, 307->310, 311, 316-318, 331-333, 350->354, 362-410, 416-426, 442->exit, 447-449, 454
+-------------------------------------------------------------------------------------------------------------
+TOTAL                                                              3971   2385   1288    140    36%
+=========================== short test summary info ============================
+FAILED tests/bugfixes/test_p1_002_adapter_precision.py::test_decimal_precision_is_preserved_on_response
+FAILED tests/units/test_binance_adapter_session.py::test_adapter_exposes_session_and_uses_request
+ERROR tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_does_not_emit_adjust_when_flat
+ERROR tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_tpsl_values_respect_side_invariants
+ERROR tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_idempotency_on_adjustment
+ERROR tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_handles_missing_market_data_fail_closed
+ERROR tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_max_hold_time_triggers_close
+ERROR tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_emits_modify_only_when_auto_enabled
+======= 2 failed, 1081 passed, 54 skipped, 6 errors in 66.76s (0:01:06) ========
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/home/wekabeka/Музыка/Phenix/apps/reference/domains/market_data/proxy.py", line 351, in _cleanup_worker
+    LOG.info("Worker process already stopped")
+Message: 'Worker process already stopped'
+Arguments: ()
+--- Logging error ---
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/logging/__init__.py", line 1163, in emit
+    stream.write(msg + self.terminator)
+ValueError: I/O operation on closed file.
+Call stack:
+  File "/home/wekabeka/Музыка/Phenix/apps/reference/domains/market_data/proxy.py", line 351, in _cleanup_worker
+    LOG.info("Worker process already stopped")
+Message: 'Worker process already stopped'
+Arguments: ()

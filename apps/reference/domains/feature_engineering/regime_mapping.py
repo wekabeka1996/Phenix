@@ -197,12 +197,12 @@ def get_mr_sizing_multiplier(
     # Try config first
     if config_sizing:
         regime_name = flat_regime.name  # e.g., "FLAT_LOW"
-        regime_cfg = config_sizing.get(regime_name, {})
+        regime_cfg = config_sizing[regime_name] if regime_name in config_sizing else {}
         if isinstance(regime_cfg, dict) and "sizing_mult" in regime_cfg:
             return Decimal(str(regime_cfg["sizing_mult"]))
     
     # Fallback to hardcoded defaults
-    return _DEFAULT_SIZING_MULTIPLIERS.get(flat_regime, Decimal("1.0"))
+    return _DEFAULT_SIZING_MULTIPLIERS[flat_regime] if flat_regime in _DEFAULT_SIZING_MULTIPLIERS else Decimal("1.0")
 
 
 def get_mr_stop_multiplier(
@@ -227,12 +227,12 @@ def get_mr_stop_multiplier(
     # Try config first
     if config_sizing:
         regime_name = flat_regime.name
-        regime_cfg = config_sizing.get(regime_name, {})
+        regime_cfg = config_sizing[regime_name] if regime_name in config_sizing else {}
         if isinstance(regime_cfg, dict) and "stop_mult" in regime_cfg:
             return Decimal(str(regime_cfg["stop_mult"]))
     
     # Fallback to hardcoded defaults
-    return _DEFAULT_STOP_MULTIPLIERS.get(flat_regime, Decimal("1.0"))
+    return _DEFAULT_STOP_MULTIPLIERS[flat_regime] if flat_regime in _DEFAULT_STOP_MULTIPLIERS else Decimal("1.0")
 
 
 def get_mr_target_multiplier(
@@ -257,12 +257,12 @@ def get_mr_target_multiplier(
     # Try config first
     if config_sizing:
         regime_name = flat_regime.name
-        regime_cfg = config_sizing.get(regime_name, {})
+        regime_cfg = config_sizing[regime_name] if regime_name in config_sizing else {}
         if isinstance(regime_cfg, dict) and "target_mult" in regime_cfg:
             return Decimal(str(regime_cfg["target_mult"]))
     
     # Fallback to hardcoded defaults
-    return _DEFAULT_TARGET_MULTIPLIERS.get(flat_regime, Decimal("1.0"))
+    return _DEFAULT_TARGET_MULTIPLIERS[flat_regime] if flat_regime in _DEFAULT_TARGET_MULTIPLIERS else Decimal("1.0")
 
 
 @dataclass

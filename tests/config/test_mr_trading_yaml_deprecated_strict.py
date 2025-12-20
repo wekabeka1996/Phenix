@@ -1,5 +1,5 @@
 """
-Tests for mean_reversion_1m deprecated detection in trading.yaml.
+Tests for mean_reversion deprecated detection in trading.yaml.
 
 CFG-STRATEGIES-SSOT-05-MR-TRADING-YAML-BURN-DOWN-STRICT
 """
@@ -25,22 +25,22 @@ def _read_canonical_strategy_profile(rel_path: str) -> str:
 
 
 def _set_mean_reversion_in_trading_yaml(config_dir: Path, mr_config: dict | None) -> None:
-    """Inject/remove deprecated top-level mean_reversion_1m key in trading.yaml."""
+    """Inject/remove deprecated top-level mean_reversion key in trading.yaml."""
     trading_path = config_dir / "trading.yaml"
     data = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise AssertionError("trading.yaml did not parse to a dict")
 
     if mr_config is None:
-        data.pop("mean_reversion_1m", None)
+        data.pop("mean_reversion", None)
     else:
-        data["mean_reversion_1m"] = mr_config
+        data["mean_reversion"] = mr_config
 
     trading_path.write_text(yaml.dump(data), encoding="utf-8")
 
 
 class TestMeanReversionTradingYamlDeprecated:
-    """Test that mean_reversion_1m in trading.yaml is detected as deprecated."""
+    """Test that mean_reversion in trading.yaml is detected as deprecated."""
     
     def test_mr_in_trading_yaml_strict_mode_crashes(self, tmp_path):
         """
@@ -75,7 +75,7 @@ class TestMeanReversionTradingYamlDeprecated:
             
             # VERIFY: error message mentions deprecated MR in trading.yaml
             error_msg = str(exc_info.value)
-            assert "mean_reversion_1m" in error_msg.lower()
+            assert "mean_reversion" in error_msg.lower()
             assert "deprecated" in error_msg.lower()
             assert "trading.yaml" in error_msg.lower()
             assert "strategy profile" in error_msg.lower() or "strategies/" in error_msg.lower()
@@ -141,20 +141,20 @@ class TestMeanReversionTradingYamlDeprecated:
         strategies_dir.mkdir(parents=True, exist_ok=True)
         
         # Use canonical profile to satisfy strict schema (zero-defaults => keys required).
-        (strategies_dir / "mean_reversion_1m.yaml").write_text(
-            _read_canonical_strategy_profile("mean_reversion_1m.yaml"), encoding="utf-8"
+        (strategies_dir / "mean_reversion.yaml").write_text(
+            _read_canonical_strategy_profile("mean_reversion.yaml"), encoding="utf-8"
         )
         
         # Assign MR in strategies.yaml
         strategies_yaml = {
             "version": "1.0.0",
             "assignments": {
-                "BTCUSDT": ["mean_reversion_1m"]
+                "BTCUSDT": ["mean_reversion"]
             },
             "arbitration": {
                 "mode": "priority",
                 "priority": {
-                    "mean_reversion_1m": 1
+                    "mean_reversion": 1
                 },
                 "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
             }
@@ -167,16 +167,16 @@ class TestMeanReversionTradingYamlDeprecated:
         
         # VERIFY: MR config loaded from profile
         assert config is not None
-        assert hasattr(config, "mean_reversion_1m")
-        assert config.mean_reversion_1m is not None
-        assert config.mean_reversion_1m.enabled is True
+        assert hasattr(config, "mean_reversion")
+        assert config.mean_reversion is not None
+        assert config.mean_reversion.enabled is True
         # Canonical profile: BTCUSDT override uses bb_window=40
-        assert config.mean_reversion_1m.assets["BTCUSDT"].strategy.bb_window == 40
+        assert config.mean_reversion.assets["BTCUSDT"].strategy.bb_window == 40
         
         # VERIFY: strategy registry loaded
         assert hasattr(config, "strategies_registry")
         assert config.strategies_registry is not None
-        assert config.strategies_registry.assignments["BTCUSDT"] == ["mean_reversion_1m"]
+        assert config.strategies_registry.assignments["BTCUSDT"] == ["mean_reversion"]
     
     def test_mr_profile_missing_when_assigned_fails(self, tmp_path):
         """
@@ -189,12 +189,12 @@ class TestMeanReversionTradingYamlDeprecated:
         # Base config: ensure deprecated MR is not present in trading.yaml
         _set_mean_reversion_in_trading_yaml(config_dir, None)
         
-        # Create strategies dir but NO mean_reversion_1m.yaml
+        # Create strategies dir but NO mean_reversion.yaml
         strategies_dir = config_dir / "strategies"
         strategies_dir.mkdir(parents=True, exist_ok=True)
 
         # Canonical config includes this profile; remove it to simulate missing profile.
-        mr_profile_path = strategies_dir / "mean_reversion_1m.yaml"
+        mr_profile_path = strategies_dir / "mean_reversion.yaml"
         if mr_profile_path.exists():
             mr_profile_path.unlink()
         
@@ -202,12 +202,12 @@ class TestMeanReversionTradingYamlDeprecated:
         strategies_yaml = {
             "version": "1.0.0",
             "assignments": {
-                "BTCUSDT": ["mean_reversion_1m"]
+                "BTCUSDT": ["mean_reversion"]
             },
             "arbitration": {
                 "mode": "priority",
                 "priority": {
-                    "mean_reversion_1m": 1
+                    "mean_reversion": 1
                 },
                 "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
             }
@@ -222,6 +222,6 @@ class TestMeanReversionTradingYamlDeprecated:
         
         # VERIFY: error mentions missing profile
         error_msg = str(exc_info.value)
-        assert "mean_reversion_1m" in error_msg.lower()
+        assert "mean_reversion" in error_msg.lower()
         assert "missing" in error_msg.lower() or "not found" in error_msg.lower()
         assert "profile" in error_msg.lower() or "strategies/" in error_msg.lower()

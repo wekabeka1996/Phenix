@@ -61,57 +61,57 @@ Plan for adding default values to canonical YAML files.
 | MeanReversionConfig.bb_std_dev | skip | 2.0 | config/aurora/trading.yaml | trading.decision.mean_reversion.bb_std_dev |
 | MeanReversionConfig.min_vol_atr | skip | 0.001 | config/aurora/trading.yaml | trading.decision.mean_reversion.min_vol_atr |
 | MeanReversionConfig.allowed_regimes | add | None | config/aurora/trading.yaml | trading.decision.mean_reversion.allowed_regimes |
-| MRStrategyParamsConfig.bb_window | skip | 20 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.bb_window |
-| MRStrategyParamsConfig.bb_num_std | skip | 2.0 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.bb_num_std |
-| MRStrategyParamsConfig.atr_window | skip | 14 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.atr_window |
-| MRStrategyParamsConfig.rsi_window | skip | 14 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.rsi_window |
-| MRStrategyParamsConfig.entry_threshold | skip | 0.05 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.entry_threshold |
-| MRStrategyParamsConfig.rsi_oversold | skip | 30 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.rsi_oversold |
-| MRStrategyParamsConfig.rsi_overbought | skip | 70 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.rsi_overbought |
-| MRStrategyParamsConfig.min_bars | skip | 25 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.min_bars |
-| MRStrategyParamsConfig.min_bb_width | skip | 0.001 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.min_bb_width |
-| MRStrategyParamsConfig.max_bb_width | skip | 0.05 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.max_bb_width |
-| MRStrategyParamsConfig.sl_atr_mult | skip | 1.5 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.sl_atr_mult |
-| MRStrategyParamsConfig.tp_to_mid | skip | True | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.tp_to_mid |
-| MRStrategyParamsConfig.cooldown_sec | skip | 60 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy.cooldown_sec |
-| MRRegimeThresholdsConfig.high_vol_pct | skip | 0.003 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.regime_thresholds.high_vol_pct |
-| MRRegimeThresholdsConfig.low_vol_pct | skip | 0.001 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.regime_thresholds.low_vol_pct |
-| MRStrategyOverrideConfig.bb_window | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy_override.bb_window |
-| MRStrategyOverrideConfig.bb_num_std | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy_override.bb_num_std |
-| MRStrategyOverrideConfig.min_bb_width | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy_override.min_bb_width |
-| MRStrategyOverrideConfig.entry_threshold | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy_override.entry_threshold |
-| MRStrategyOverrideConfig.tp_to_mid | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy_override.tp_to_mid |
-| MRStrategyOverrideConfig.sl_atr_mult | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy_override.sl_atr_mult |
-| MRStrategyOverrideConfig.cooldown_sec | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy_override.cooldown_sec |
-| MRAssetRiskConfig.position_size_usd | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.asset_risk.position_size_usd |
-| MRAssetRiskConfig.max_risk_score | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.asset_risk.max_risk_score |
-| MRAssetConfig.enabled | skip | True | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.enabled |
-| MRAssetConfig.strategy | skip | {'bb_window': 20, 'bb_num_std': 2.0, 'atr_window': 14, 'rsi_window': 14, 'entry_threshold': 0.05, 'rsi_oversold': 30, 'rsi_overbought': 70, 'min_bars': 25, 'min_bb_width': 0.001, 'max_bb_width': 0.05, 'sl_atr_mult': 1.5, 'tp_to_mid': True, 'cooldown_sec': 60} | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy |
-| MRAssetConfig.risk | skip | {'position_size_usd': 100, 'max_concurrent_positions': 3, 'daily_loss_limit_usd': 50, 'expected_pnl_multiplier': 1.5, 'fees_pct': 0.0004, 'slippage_pct': 0.0002} | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk |
-| MRAssetConfig.bb_window | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.bb_window |
-| MRAssetConfig.min_vol_atr | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.min_vol_atr |
-| MRAssetConfig.sl_pct | add | None | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.sl_pct |
-| MRAssetConfig.allowed_regimes | skip | [] | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.allowed_regimes |
-| MRAssetConfig.position_mode | skip | DYNAMIC | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.position_mode |
-| MRRegimeSizingConfig.sizing_mult | skip | 1.0 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.regime_sizing.sizing_mult |
-| MRRegimeSizingConfig.stop_mult | skip | 1.0 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.regime_sizing.stop_mult |
-| MRRegimeSizingConfig.target_mult | skip | 1.0 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.regime_sizing.target_mult |
-| MRRiskConfig.position_size_usd | skip | 100 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk.position_size_usd |
-| MRRiskConfig.max_concurrent_positions | skip | 3 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk.max_concurrent_positions |
-| MRRiskConfig.daily_loss_limit_usd | skip | 50 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk.daily_loss_limit_usd |
-| MRRiskConfig.expected_pnl_multiplier | skip | 1.5 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk.expected_pnl_multiplier |
-| MRRiskConfig.fees_pct | skip | 0.0004 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk.fees_pct |
-| MRRiskConfig.slippage_pct | skip | 0.0002 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk.slippage_pct |
-| MeanReversion1mStrategyConfig.model_config | skip | extra=allow | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.model_config |
-| MeanReversion1mStrategyConfig.enabled | skip | True | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.enabled |
-| MeanReversion1mStrategyConfig.timeframe_sec | skip | 60 | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.timeframe_sec |
-| MeanReversion1mStrategyConfig.strategy | skip | {'bb_window': 20, 'bb_num_std': 2.0, 'atr_window': 14, 'rsi_window': 14, 'entry_threshold': 0.05, 'rsi_oversold': 30, 'rsi_overbought': 70, 'min_bars': 25, 'min_bb_width': 0.001, 'max_bb_width': 0.05, 'sl_atr_mult': 1.5, 'tp_to_mid': True, 'cooldown_sec': 60} | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.strategy |
-| MeanReversion1mStrategyConfig.regime_thresholds | skip | {'high_vol_pct': 0.003, 'low_vol_pct': 0.001} | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.regime_thresholds |
-| MeanReversion1mStrategyConfig.assets | skip | {'DOGEUSDT': {'enabled': False, 'bb_window': 20, 'min_vol_atr': 0.01, 'sl_pct': 0.0197, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}, 'BTCUSDT': {'enabled': True, 'strategy': {'bb_window': 40, 'bb_num_std': 2.3, 'min_bb_width': 0.006, 'entry_threshold': 0.05, 'tp_to_mid': True, 'cooldown_sec': 0}, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL'], 'risk': {'position_size_usd': 150}}, 'XRPUSDT': {'enabled': False, 'bb_window': 20, 'min_vol_atr': 0.01, 'sl_pct': 0.0144, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}, 'ETHUSDT': {'enabled': False, 'bb_window': 120, 'min_vol_atr': 0.025, 'sl_pct': 0.0282, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}, 'SOLUSDT': {'enabled': False, 'bb_window': 60, 'min_vol_atr': 0.02, 'sl_pct': 0.0156, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}} | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.assets |
-| MeanReversion1mStrategyConfig.regime_sizing | skip | {'FLAT_LOW': {'sizing_mult': 0.8, 'stop_mult': 0.6, 'target_mult': 0.8}, 'FLAT_NORMAL': {'sizing_mult': 1.0, 'stop_mult': 1.0, 'target_mult': 1.0}, 'FLAT_HIGH': {'sizing_mult': 0.7, 'stop_mult': 1.5, 'target_mult': 1.2}, 'sizing_mult': 1.0, 'stop_mult': 1.0, 'target_mult': 1.0} | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.regime_sizing |
-| MeanReversion1mStrategyConfig.allowed_regimes | skip | [] | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.allowed_regimes |
-| MeanReversion1mStrategyConfig.risk | skip | {'position_size_usd': 100, 'max_concurrent_positions': 3, 'daily_loss_limit_usd': 50, 'expected_pnl_multiplier': 1.5, 'fees_pct': 0.0004, 'slippage_pct': 0.0002} | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.risk |
-| MeanReversion1mStrategyConfig.emit_trade_intent_directly | skip | True | config/aurora/strategies/mean_reversion_1m.yaml | mean_reversion_1m.emit_trade_intent_directly |
+| MRStrategyParamsConfig.bb_window | skip | 20 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.bb_window |
+| MRStrategyParamsConfig.bb_num_std | skip | 2.0 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.bb_num_std |
+| MRStrategyParamsConfig.atr_window | skip | 14 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.atr_window |
+| MRStrategyParamsConfig.rsi_window | skip | 14 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.rsi_window |
+| MRStrategyParamsConfig.entry_threshold | skip | 0.05 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.entry_threshold |
+| MRStrategyParamsConfig.rsi_oversold | skip | 30 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.rsi_oversold |
+| MRStrategyParamsConfig.rsi_overbought | skip | 70 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.rsi_overbought |
+| MRStrategyParamsConfig.min_bars | skip | 25 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.min_bars |
+| MRStrategyParamsConfig.min_bb_width | skip | 0.001 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.min_bb_width |
+| MRStrategyParamsConfig.max_bb_width | skip | 0.05 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.max_bb_width |
+| MRStrategyParamsConfig.sl_atr_mult | skip | 1.5 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.sl_atr_mult |
+| MRStrategyParamsConfig.tp_to_mid | skip | True | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.tp_to_mid |
+| MRStrategyParamsConfig.cooldown_sec | skip | 60 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy.cooldown_sec |
+| MRRegimeThresholdsConfig.high_vol_pct | skip | 0.003 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.regime_thresholds.high_vol_pct |
+| MRRegimeThresholdsConfig.low_vol_pct | skip | 0.001 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.regime_thresholds.low_vol_pct |
+| MRStrategyOverrideConfig.bb_window | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy_override.bb_window |
+| MRStrategyOverrideConfig.bb_num_std | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy_override.bb_num_std |
+| MRStrategyOverrideConfig.min_bb_width | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy_override.min_bb_width |
+| MRStrategyOverrideConfig.entry_threshold | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy_override.entry_threshold |
+| MRStrategyOverrideConfig.tp_to_mid | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy_override.tp_to_mid |
+| MRStrategyOverrideConfig.sl_atr_mult | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy_override.sl_atr_mult |
+| MRStrategyOverrideConfig.cooldown_sec | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy_override.cooldown_sec |
+| MRAssetRiskConfig.position_size_usd | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.asset_risk.position_size_usd |
+| MRAssetRiskConfig.max_risk_score | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.asset_risk.max_risk_score |
+| MRAssetConfig.enabled | skip | True | config/aurora/strategies/mean_reversion.yaml | mean_reversion.enabled |
+| MRAssetConfig.strategy | skip | {'bb_window': 20, 'bb_num_std': 2.0, 'atr_window': 14, 'rsi_window': 14, 'entry_threshold': 0.05, 'rsi_oversold': 30, 'rsi_overbought': 70, 'min_bars': 25, 'min_bb_width': 0.001, 'max_bb_width': 0.05, 'sl_atr_mult': 1.5, 'tp_to_mid': True, 'cooldown_sec': 60} | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy |
+| MRAssetConfig.risk | skip | {'position_size_usd': 100, 'max_concurrent_positions': 3, 'daily_loss_limit_usd': 50, 'expected_pnl_multiplier': 1.5, 'fees_pct': 0.0004, 'slippage_pct': 0.0002} | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk |
+| MRAssetConfig.bb_window | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.bb_window |
+| MRAssetConfig.min_vol_atr | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.min_vol_atr |
+| MRAssetConfig.sl_pct | add | None | config/aurora/strategies/mean_reversion.yaml | mean_reversion.sl_pct |
+| MRAssetConfig.allowed_regimes | skip | [] | config/aurora/strategies/mean_reversion.yaml | mean_reversion.allowed_regimes |
+| MRAssetConfig.position_mode | skip | DYNAMIC | config/aurora/strategies/mean_reversion.yaml | mean_reversion.position_mode |
+| MRRegimeSizingConfig.sizing_mult | skip | 1.0 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.regime_sizing.sizing_mult |
+| MRRegimeSizingConfig.stop_mult | skip | 1.0 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.regime_sizing.stop_mult |
+| MRRegimeSizingConfig.target_mult | skip | 1.0 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.regime_sizing.target_mult |
+| MRRiskConfig.position_size_usd | skip | 100 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk.position_size_usd |
+| MRRiskConfig.max_concurrent_positions | skip | 3 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk.max_concurrent_positions |
+| MRRiskConfig.daily_loss_limit_usd | skip | 50 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk.daily_loss_limit_usd |
+| MRRiskConfig.expected_pnl_multiplier | skip | 1.5 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk.expected_pnl_multiplier |
+| MRRiskConfig.fees_pct | skip | 0.0004 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk.fees_pct |
+| MRRiskConfig.slippage_pct | skip | 0.0002 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk.slippage_pct |
+| MeanReversion1mStrategyConfig.model_config | skip | extra=allow | config/aurora/strategies/mean_reversion.yaml | mean_reversion.model_config |
+| MeanReversion1mStrategyConfig.enabled | skip | True | config/aurora/strategies/mean_reversion.yaml | mean_reversion.enabled |
+| MeanReversion1mStrategyConfig.timeframe_sec | skip | 60 | config/aurora/strategies/mean_reversion.yaml | mean_reversion.timeframe_sec |
+| MeanReversion1mStrategyConfig.strategy | skip | {'bb_window': 20, 'bb_num_std': 2.0, 'atr_window': 14, 'rsi_window': 14, 'entry_threshold': 0.05, 'rsi_oversold': 30, 'rsi_overbought': 70, 'min_bars': 25, 'min_bb_width': 0.001, 'max_bb_width': 0.05, 'sl_atr_mult': 1.5, 'tp_to_mid': True, 'cooldown_sec': 60} | config/aurora/strategies/mean_reversion.yaml | mean_reversion.strategy |
+| MeanReversion1mStrategyConfig.regime_thresholds | skip | {'high_vol_pct': 0.003, 'low_vol_pct': 0.001} | config/aurora/strategies/mean_reversion.yaml | mean_reversion.regime_thresholds |
+| MeanReversion1mStrategyConfig.assets | skip | {'DOGEUSDT': {'enabled': False, 'bb_window': 20, 'min_vol_atr': 0.01, 'sl_pct': 0.0197, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}, 'BTCUSDT': {'enabled': True, 'strategy': {'bb_window': 40, 'bb_num_std': 2.3, 'min_bb_width': 0.006, 'entry_threshold': 0.05, 'tp_to_mid': True, 'cooldown_sec': 0}, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL'], 'risk': {'position_size_usd': 150}}, 'XRPUSDT': {'enabled': False, 'bb_window': 20, 'min_vol_atr': 0.01, 'sl_pct': 0.0144, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}, 'ETHUSDT': {'enabled': False, 'bb_window': 120, 'min_vol_atr': 0.025, 'sl_pct': 0.0282, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}, 'SOLUSDT': {'enabled': False, 'bb_window': 60, 'min_vol_atr': 0.02, 'sl_pct': 0.0156, 'allowed_regimes': ['FLAT_LOW', 'FLAT_NORMAL', 'FLAT_HIGH']}} | config/aurora/strategies/mean_reversion.yaml | mean_reversion.assets |
+| MeanReversion1mStrategyConfig.regime_sizing | skip | {'FLAT_LOW': {'sizing_mult': 0.8, 'stop_mult': 0.6, 'target_mult': 0.8}, 'FLAT_NORMAL': {'sizing_mult': 1.0, 'stop_mult': 1.0, 'target_mult': 1.0}, 'FLAT_HIGH': {'sizing_mult': 0.7, 'stop_mult': 1.5, 'target_mult': 1.2}, 'sizing_mult': 1.0, 'stop_mult': 1.0, 'target_mult': 1.0} | config/aurora/strategies/mean_reversion.yaml | mean_reversion.regime_sizing |
+| MeanReversion1mStrategyConfig.allowed_regimes | skip | [] | config/aurora/strategies/mean_reversion.yaml | mean_reversion.allowed_regimes |
+| MeanReversion1mStrategyConfig.risk | skip | {'position_size_usd': 100, 'max_concurrent_positions': 3, 'daily_loss_limit_usd': 50, 'expected_pnl_multiplier': 1.5, 'fees_pct': 0.0004, 'slippage_pct': 0.0002} | config/aurora/strategies/mean_reversion.yaml | mean_reversion.risk |
+| MeanReversion1mStrategyConfig.emit_trade_intent_directly | skip | True | config/aurora/strategies/mean_reversion.yaml | mean_reversion.emit_trade_intent_directly |
 | StrategiesArbitrationLoggingConfig.rejected_why_prefix | skip | ARBITRATION_REJECT | config/aurora/strategies.yaml | strategies_registry.arbitration.logging.rejected_why_prefix |
 | StrategiesArbitrationLoggingConfig.log_level | skip | INFO | config/aurora/strategies.yaml | strategies_registry.arbitration.logging.log_level |
 | StrategiesArbitrationConfig.mode | skip | priority | config/aurora/strategies.yaml | strategies_registry.arbitration.mode |
@@ -481,7 +481,7 @@ Plan for adding default values to canonical YAML files.
 | AuroraConfig.instruments | add | {} | config/aurora/system.yaml | instruments |
 | AuroraConfig.aurora_instruments | add | {} | config/aurora/system.yaml | aurora_instruments |
 | AuroraConfig.strategies_registry | add | None | config/aurora/system.yaml | strategies_registry |
-| AuroraConfig.mean_reversion_1m | add | None | config/aurora/system.yaml | mean_reversion_1m |
+| AuroraConfig.mean_reversion | add | None | config/aurora/system.yaml | mean_reversion |
 | AuroraConfig.decision | add | None | config/aurora/system.yaml | decision |
 | AuroraConfig.execution | add | None | config/aurora/system.yaml | execution |
 | AuroraConfig.brackets | add | None | config/aurora/system.yaml | brackets |

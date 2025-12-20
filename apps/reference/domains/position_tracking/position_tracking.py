@@ -15,6 +15,7 @@ from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal  # WAL module for disaster recovery
 from apps.reference.config_loader import AuroraConfig
+from apps.reference.config_contract import ConfigContractError
 from apps.reference.domain_config import DomainConfigResolver
 
 # Import AlertManager for manual intervention alerts
@@ -212,7 +213,7 @@ class PositionTracking:
         price = _d(payload["price"])
         quantity = _d(payload["quantity"])
         ts = payload["ts"]
-        fees = _d(payload.get("fees", 0))
+        fees = _d(payload.get("fees"))
         venue = payload["venue"]
 
         # Convert side to quantity sign
@@ -316,14 +317,12 @@ class PositionTracking:
         payload = event.pld
 
         # Update equity from account data
-        total_wallet_balance = _d(payload.get("totalWalletBalance", 0))
-        total_unrealized_profit = _d(payload.get("totalUnrealizedProfit", 0))
-        total_cross_wallet_balance = _d(
-            payload.get(
-                "totalCrossWalletBalance",
-                total_wallet_balance - total_unrealized_profit,
-            )
-        )
+        total_wallet_balance = _d(payload.get("totalWalletBalance"))
+        total_unrealized_profit = _d(payload.get("totalUnrealizedProfit"))
+        if "totalCrossWalletBalance" in payload:
+            total_cross_wallet_balance = _d(payload.get("totalCrossWalletBalance"))
+        else:
+            total_cross_wallet_balance = total_wallet_balance - total_unrealized_profit
 
         self._equity = total_wallet_balance
 
@@ -350,7 +349,9 @@ class PositionTracking:
                 )
 
         # Update positions from account data
-        account_positions = payload.get("positions", [])
+        account_positions = payload.get("positions")
+        if account_positions is None:
+            account_positions = []
 
         self.logger.info(
             f"📊 SYNC: Received {len(account_positions)} positions from Binance")
@@ -360,15 +361,15 @@ class PositionTracking:
 
         for pos in account_positions:
             symbol = pos["symbol"]
-            quantity = _d(pos.get("positionAmt", 0))
+            quantity = _d(pos.get("positionAmt"))
             binance_symbols.add(symbol)
 
             if abs(quantity) > self.quantity_min_threshold:  # Only track non-zero positions
-                old_qty = self._positions.get(symbol, {}).get(
-                    "quantity", decimal.Decimal("0"))
+                prev = self._positions[symbol] if symbol in self._positions else {}
+                old_qty = prev["quantity"] if "quantity" in prev else decimal.Decimal("0")
                 self._positions[symbol] = {
                     "quantity": quantity,
-                    "avg_price": _d(pos.get("entryPrice", 0)),
+                    "avg_price": _d(pos.get("entryPrice")),
                     "venues": ["binance"],  # Assume Binance venue
                 }
                 if old_qty != quantity:
@@ -394,7 +395,7 @@ class PositionTracking:
 
             # Send alerts for each manually closed position
             for symbol in manually_closed:
-                position_details = self._positions.get(symbol, {})
+                position_details = self._positions[symbol] if symbol in self._positions else {}
 
                 # Alert via AlertManager if available
                 if self.alert_manager:
@@ -426,10 +427,10 @@ class PositionTracking:
                 self._realized_pnl
             ),  # Preserve Decimal precision as string
             "unrealized_pnl": str(
-                _d(payload.get("totalUnrealizedProfit", 0))
+                _d(payload.get("totalUnrealizedProfit"))
             ),  # Preserve Decimal precision as string
             "available_balance": str(
-                _d(payload.get("maxWithdrawAmount", self._equity))
+                _d(payload["maxWithdrawAmount"] if "maxWithdrawAmount" in payload else self._equity)
             ),  # Available margin for new positions
             "positions": self._get_positions_snapshot(),
             "open_positions_usd": str(
@@ -483,7 +484,9 @@ class PositionTracking:
 
         # Balance updates provide asset balances, but equity is tracked via account updates
         # We can use this for additional validation or logging
-        assets = payload.get("assets", [])
+        assets = payload.get("assets")
+        if assets is None:
+            assets = []
         self.logger.info(
             f"Balance update received: {len(assets)} assets with balance > 0"
         )
@@ -569,22 +572,18 @@ class PositionTracking:
             return None
 
         # Compute free equity (available for new positions)
-        equity_free_usdt = _d(usdt_asset.get("balance", "0"))
+        equity_free_usdt = _d(usdt_asset.get("balance"))
 
         # Compute cross equity (total wallet balance including unrealized P&L)
         if account_data:
             # From ACCOUNT_UPDATE: use totalCrossWalletBalance + totalUnrealizedProfit
-            equity_cross_usdt = _d(
-                account_data.get("totalCrossWalletBalance", "0")
-            ) + _d(account_data.get("totalUnrealizedProfit", "0"))
-            equity_ts = account_data.get("updateTime", int(time.time() * 1000))
+            equity_cross_usdt = _d(account_data.get("totalCrossWalletBalance")) + _d(account_data.get("totalUnrealizedProfit"))
+            equity_ts = account_data["updateTime"] if "updateTime" in account_data else int(time.time() * 1000)
             why = "equity_from_account_update"
         else:
             # From BALANCE_UPDATE: use crossWalletBalance + crossUnPnl
-            equity_cross_usdt = _d(usdt_asset.get("crossWalletBalance", "0")) + _d(
-                usdt_asset.get("crossUnPnl", "0")
-            )
-            equity_ts = usdt_asset.get("updateTime", int(time.time() * 1000))
+            equity_cross_usdt = _d(usdt_asset.get("crossWalletBalance")) + _d(usdt_asset.get("crossUnPnl"))
+            equity_ts = usdt_asset["updateTime"] if "updateTime" in usdt_asset else int(time.time() * 1000)
             why = "equity_from_balance_update"
 
         return {
@@ -607,13 +606,10 @@ class PositionTracking:
 
         Based on aurora/positions/ logic adapted for FSM events.
         """
-        existing = self._positions.get(
-            symbol,
-            {
-                "quantity": decimal.Decimal("0"),
-                "avg_price": decimal.Decimal("0"),
-                "venues": [],
-            },
+        existing = (
+            self._positions[symbol]
+            if symbol in self._positions
+            else {"quantity": decimal.Decimal("0"), "avg_price": decimal.Decimal("0"), "venues": []}
         )
 
         pos_qty = existing["quantity"]
@@ -703,10 +699,12 @@ class PositionTracking:
         if positions:
             # Use positionRisk API data (most accurate)
             for p in positions:
-                symbol = p.get("symbol", "unknown")
-                position_amt = _d(p.get("positionAmt", "0"))
-                entry_price = _d(p.get("entryPrice", "0"))
-                mark_price = _d(p.get("markPrice", "0"))
+                symbol = p.get("symbol")
+                if symbol is None:
+                    symbol = "unknown"
+                position_amt = _d(p.get("positionAmt"))
+                entry_price = _d(p.get("entryPrice"))
+                mark_price = _d(p.get("markPrice"))
 
                 if abs(position_amt) > self.quantity_min_threshold and mark_price > decimal.Decimal("0"):
                     # unrealized_pnl = (mark_price - entry_price) * position_amt
@@ -727,9 +725,9 @@ class PositionTracking:
                     continue
 
                 # Try to get mark price from cache
-                mark_price_data = self._mark_prices.get(symbol, {})
-                mark_price = _d(mark_price_data.get("mark_price", "0"))
-                mark_ts = mark_price_data.get("ts_ms", 0)
+                mark_price_data = self._mark_prices[symbol] if symbol in self._mark_prices else {}
+                mark_price = _d(mark_price_data.get("mark_price"))
+                mark_ts = mark_price_data["ts_ms"] if "ts_ms" in mark_price_data else 0
 
                 # Check if mark price is fresh enough
                 if mark_price > decimal.Decimal("0") and (now_ms - mark_ts) < self._mark_price_stale_ms:
@@ -812,7 +810,7 @@ class PositionTracking:
             for p in positions:
                 # Extract notional: try positionRisk fields first, fallback to calculation
                 notional = _d(p.get("notional") or (
-                    _d(p.get("positionAmt", "0")) *
+                    _d(p.get("positionAmt")) *
                     _d(p.get("markPrice") or p.get("entryPrice") or "0")
                 ))
 
@@ -826,7 +824,7 @@ class PositionTracking:
                 total_margin += margin
 
                 self.logger.debug(
-                    f"Position margin for {p.get('symbol', 'unknown')}: notional={notional}, lev={lev}, margin={margin}"
+                    f"Position margin for {(p.get('symbol') if p.get('symbol') is not None else 'unknown')}: notional={notional}, lev={lev}, margin={margin}"
                 )
         else:
             # Fallback to internal position data with leverage from config
@@ -885,7 +883,7 @@ class PositionTracking:
             for p in positions:
                 # Extract notional
                 notional = _d(p.get("notional") or (
-                    _d(p.get("positionAmt", "0")) *
+                    _d(p.get("positionAmt")) *
                     _d(p.get("markPrice") or p.get("entryPrice") or "0")
                 ))
 
@@ -898,7 +896,7 @@ class PositionTracking:
                 margin = abs(notional) / lev
 
                 # Determine side from positionAmt sign
-                amount = _d(p.get("positionAmt", "0"))
+                amount = _d(p.get("positionAmt"))
                 if amount > 0:
                     long_margin += margin
                 elif amount < 0:
@@ -947,29 +945,14 @@ class PositionTracking:
 
     def _get_leverage_config(self) -> Any:
         """
-        Extract leverage_defaults config with Pydantic and dict support.
+        Extract leverage_defaults config from strict typed config.
 
-        EXP-LEVERAGE-002: Centralized leverage config extraction.
-
-        Returns:
-            Dict or Pydantic model with leverage_defaults
+        EXP-LEVERAGE-002: Centralized leverage config extraction (fail-closed).
         """
-        try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                if hasattr(self.config.trading, 'execution') and self.config.trading.execution:
-                    if hasattr(self.config.trading.execution, 'exposure') and self.config.trading.execution.exposure:
-                        return self.config.trading.execution.exposure.leverage_defaults or {}
-                return {}
-            elif isinstance(self.config, dict):
-                return (
-                    self.config.get("trading", {})
-                    .get("execution", {})
-                    .get("exposure", {})
-                    .get("leverage_defaults", {})
-                )
-            return {}
-        except (AttributeError, TypeError):
-            return {}
+        exec_cfg = self.config.trading.execution
+        if exec_cfg is None or exec_cfg.exposure is None:
+            raise ConfigContractError(path="trading.execution.exposure", why="Missing exposure config (leverage_defaults).")
+        return exec_cfg.exposure.leverage_defaults
 
     def _resolve_default_leverage(self, leverage_config: Any) -> str:
         """
@@ -986,23 +969,16 @@ class PositionTracking:
         """
         DEFAULT_FALLBACK = "20"
 
-        if isinstance(leverage_config, dict):
-            # Check __default__ first (config_models.py standard), then "default" (legacy)
-            val = leverage_config.get("__default__")
-            if val is not None:
-                return str(val)
-            val = leverage_config.get("default")
-            if val is not None:
-                return str(val)
-            return DEFAULT_FALLBACK
-        elif hasattr(leverage_config, '__default__'):
-            val = getattr(leverage_config, '__default__', None)
-            if val is not None:
-                return str(val)
-        elif hasattr(leverage_config, 'default'):
-            val = getattr(leverage_config, 'default', None)
-            if val is not None:
-                return str(val)
+        if not isinstance(leverage_config, dict):
+            raise ConfigContractError(path="trading.execution.exposure.leverage_defaults", why="Expected dict leverage_defaults")
+
+        # Check __default__ first (config_models.py standard), then "default" (legacy)
+        val = leverage_config.get("__default__")
+        if val is not None:
+            return str(val)
+        val = leverage_config.get("default")
+        if val is not None:
+            return str(val)
 
         return DEFAULT_FALLBACK
 
@@ -1024,10 +1000,9 @@ class PositionTracking:
         """
         symbol_leverage_val = None
 
-        if isinstance(leverage_config, dict):
-            symbol_leverage_val = leverage_config.get(symbol)
-        elif leverage_config is not None:
-            symbol_leverage_val = getattr(leverage_config, symbol, None)
+        if not isinstance(leverage_config, dict):
+            raise ConfigContractError(path="trading.execution.exposure.leverage_defaults", why="Expected dict leverage_defaults")
+        symbol_leverage_val = leverage_config.get(symbol)
 
         if symbol_leverage_val is not None:
             try:
@@ -1101,17 +1076,8 @@ class PositionTracking:
         state_hash = hashlib.sha256(state_str.encode("utf-8")).hexdigest()
 
         # Build snapshot with metadata
-        try:
-            if hasattr(self.config, 'system') and self.config.system:
-                worker_id = self.config.system.worker_id if hasattr(
-                    self.config.system, 'worker_id') else "unknown"
-            elif isinstance(self.config, dict):
-                worker_id = self.config.get(
-                    "system", {}).get("worker_id", "unknown")
-            else:
-                worker_id = "unknown"
-        except (AttributeError, TypeError):
-            worker_id = "unknown"
+        # NOTE: worker_id is legacy metadata and is not part of the typed config contract.
+        worker_id = "unknown"
 
         snapshot = {
             "domain": "position_tracking",
@@ -1151,7 +1117,7 @@ class PositionTracking:
         """
         try:
             state_to_load = snapshot_data["state"]
-            state_hash_field = snapshot_data.get("state_hash", "")
+            state_hash_field = snapshot_data["state_hash"] if "state_hash" in snapshot_data else ""
             expected_hash = (
                 state_hash_field.split(":")[-1] if state_hash_field else None
             )
@@ -1168,10 +1134,13 @@ class PositionTracking:
 
             # Restore positions (convert strings back to Decimal)
             positions_loaded: Dict[str, Dict[str, Any]] = {}
-            for symbol, pos in state_to_load.get("positions", {}).items():
+            positions_block = state_to_load["positions"] if "positions" in state_to_load else {}
+            for symbol, pos in positions_block.items():
                 try:
-                    qty = decimal.Decimal(str(pos.get("qty", "0")))
-                    avg_price = decimal.Decimal(str(pos.get("avg_price", "0")))
+                    qty_raw = pos["qty"] if "qty" in pos else "0"
+                    avg_price_raw = pos["avg_price"] if "avg_price" in pos else "0"
+                    qty = decimal.Decimal(str(qty_raw))
+                    avg_price = decimal.Decimal(str(avg_price_raw))
                 except (ValueError, TypeError, decimal.InvalidOperation) as e:
                     self.logger.error(
                         f"Invalid numeric in snapshot for {symbol}: {e}")
@@ -1180,11 +1149,11 @@ class PositionTracking:
                 positions_loaded[symbol] = {
                     "quantity": qty,
                     "avg_price": avg_price,
-                    "venues": pos.get("venues", []),
+                    "venues": pos["venues"] if "venues" in pos else [],
                 }
 
             # Restore portfolio/equity if present
-            portfolio = state_to_load.get("portfolio", {})
+            portfolio = state_to_load["portfolio"] if "portfolio" in state_to_load else {}
             equity_str = portfolio.get("equity")
             balance_str = portfolio.get("balance")
 
@@ -1209,8 +1178,9 @@ class PositionTracking:
             # Apply restored positions
             self._positions = positions_loaded
 
+            snapshot_ts = snapshot_data["timestamp_utc"] if "timestamp_utc" in snapshot_data else "unknown"
             self.logger.info(
-                f"Successfully loaded state from snapshot created at {snapshot_data.get('timestamp_utc', 'unknown')}. "
+                f"Successfully loaded state from snapshot created at {snapshot_ts}. "
                 f"Restored {len(self._positions)} positions."
             )
 

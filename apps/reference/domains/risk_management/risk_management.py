@@ -195,9 +195,9 @@ class RiskManagement:
                 f"PORTFOLIO RISK BLOCK: {daily_reason.get('detail')} - {daily_reason.get('why')}"
             )
             # Log specific why code
-            detail = daily_reason.get("detail", "UNKNOWN")
-            val = daily_reason.get("drawdown_pct", "0")
-            limit = daily_reason.get("limit_pct", "0")
+            detail = daily_reason["detail"] if "detail" in daily_reason else "UNKNOWN"
+            val = daily_reason["drawdown_pct"] if "drawdown_pct" in daily_reason else "0"
+            limit = daily_reason["limit_pct"] if "limit_pct" in daily_reason else "0"
             
             logger.warning(
                 format_why_with_details(
@@ -208,7 +208,7 @@ class RiskManagement:
             return {"is_trading_allowed": False}
             
         # Check shadow mode warning
-        if daily_reason.get("would_block", False):
+        if bool(daily_reason["would_block"]) if "would_block" in daily_reason else False:
              # Shadow mode detected a breach
              self.logger.warning(
                 f"SHADOW RISK WARNING: {daily_reason.get('would_block_reason')} would block in enforced mode."
@@ -297,26 +297,13 @@ class RiskManagement:
         issues = []
         warnings = []
 
-        try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                thresholds = (
-                    self.config.trading.risk.trading_allowed_thresholds
-                    if self.config.trading.risk and self.config.trading.risk
-                    else {}
-                )
-            elif isinstance(self.config, dict):
-                thresholds = self.config.get("trading", {}).get(
-                    "risk", {}).get("trading_allowed_thresholds", {})
-            else:
-                thresholds = {}
-        except (AttributeError, TypeError):
-            thresholds = {}
-
         required_thresholds = ["max_risk_score"]
 
         for threshold_name in required_thresholds:
-            threshold_val = thresholds.get(threshold_name) if isinstance(thresholds, dict) else (
-                getattr(thresholds, threshold_name, None) if hasattr(thresholds, threshold_name) else None)
+            try:
+                threshold_val = getattr(self.domain_config.trading_allowed_thresholds, threshold_name)
+            except AttributeError:
+                threshold_val = None
             if threshold_val is None:
                 issues.append(f"Missing required threshold: {threshold_name}")
             else:
@@ -332,27 +319,19 @@ class RiskManagement:
                         f"Invalid threshold value for {threshold_name}: {value}")
 
         # Check risk score weights
-        try:
-            if hasattr(self.config, 'risk_score_weights') and self.config.risk_score_weights:
-                risk_weights = self.config.risk_score_weights
-            elif isinstance(self.config, dict):
-                risk_weights = self.config.get("risk_score_weights", {})
-            else:
-                risk_weights = {}
-        except (AttributeError, TypeError):
-            risk_weights = {}
-
         required_weights = ["delta_price_pct",
                             "obi", "tfi", "absorption_inverse"]
 
         total_weight = decimal.Decimal("0")
         for weight_name in required_weights:
-            weight_val = risk_weights.get(weight_name) if isinstance(risk_weights, dict) else (
-                getattr(risk_weights, weight_name, None) if hasattr(risk_weights, weight_name) else None)
+            try:
+                weight_val = getattr(self.domain_config.risk_score_weights, weight_name)
+            except AttributeError:
+                weight_val = None
             if weight_val is None:
                 issues.append(f"Missing required risk weight: {weight_name}")
             else:
-                value = risk_weights[weight_name]
+                value = weight_val
                 try:
                     dec_value = _to_dec(value)
                     if dec_value < 0:
@@ -363,51 +342,22 @@ class RiskManagement:
                     issues.append(
                         f"Invalid risk weight value for {weight_name}: {value}")
 
-        # Check total weight is reasonable (should sum to ~1.0)
-        if total_weight < decimal.Decimal("0.5") or total_weight > decimal.Decimal("2.0"):
+        # Check total weight is reasonable (configured range)
+        weight_min = decimal.Decimal(str(self.domain_config.validation.total_weight_min))
+        weight_max = decimal.Decimal(str(self.domain_config.validation.total_weight_max))
+        if total_weight < weight_min or total_weight > weight_max:
             warnings.append(
                 f"Total risk weights sum to {float(total_weight):.3f}, expected ~1.0")
 
-        # Check circuit breaker settings
-        try:
-            if hasattr(self.config, 'circuit_breaker'):
-                circuit_breaker = self.config.circuit_breaker if self.config.circuit_breaker else {}
-            elif isinstance(self.config, dict):
-                circuit_breaker = self.config.get("circuit_breaker", {})
-            else:
-                circuit_breaker = {}
-        except (AttributeError, TypeError):
-            circuit_breaker = {}
-
-        if isinstance(circuit_breaker, dict) and "max_consecutive_losses" in circuit_breaker:
-            max_losses = circuit_breaker["max_consecutive_losses"]
-            if not isinstance(max_losses, int) or max_losses < 1:
-                issues.append(
-                    f"max_consecutive_losses must be positive integer, got: {max_losses}")
-        elif hasattr(circuit_breaker, 'max_consecutive_losses'):
-            max_losses = circuit_breaker.max_consecutive_losses
-            if not isinstance(max_losses, int) or max_losses < 1:
-                issues.append(
-                    f"max_consecutive_losses must be positive integer, got: {max_losses}")
-
-        if isinstance(circuit_breaker, dict) and "cooldown_minutes" in circuit_breaker:
-            cooldown = circuit_breaker["cooldown_minutes"]
-            if not isinstance(cooldown, (int, float)) or cooldown < 0:
-                issues.append(
-                    f"cooldown_minutes must be non-negative number, got: {cooldown}")
-        elif hasattr(circuit_breaker, 'cooldown_minutes'):
-            cooldown = circuit_breaker.cooldown_minutes
-            if not isinstance(cooldown, (int, float)) or cooldown < 0:
-                issues.append(
-                    f"cooldown_minutes must be non-negative number, got: {cooldown}")
+        circuit_breaker: dict[str, Any] = {}
 
         return {
             "valid": len(issues) == 0,
             "issues": issues,
             "warnings": warnings,
             "config_summary": {
-                "thresholds": thresholds,
-                "risk_weights": risk_weights,
+                "thresholds": self.domain_config.trading_allowed_thresholds.model_dump(mode="json"),
+                "risk_weights": self.domain_config.risk_score_weights.model_dump(mode="json"),
                 "total_weight": float(total_weight),
                 "circuit_breaker": circuit_breaker
             }
@@ -517,48 +467,15 @@ class RiskManagement:
             Config object with delta_price_pct, obi, tfi, absorption_inverse
             
         Raises:
-            ValueError: If config is missing required section
+            ConfigContractError: If weights are empty/missing (fail-closed)
         """
-        # Try domains config (preferred)
-        if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'risk_management'):
-            weights = getattr(self.config.domains.risk_management, 'risk_score_weights', None)
-            if weights is not None:
-                return weights
-        
-        # Try dict config
-        if isinstance(self.config, dict):
-            # Strict dict access (Contract P1)
-            try:
-                weights = self.config["domains"]["risk_management"]["risk_score_weights"]
-            except KeyError:
-                weights = None
-            
-            if not weights:
-                raise ConfigContractError(path="domains.risk_management.risk_score_weights", why="Dict is empty or missing")
-
-                # Convert to object-like for consistent access
-                class WeightsObj:
-                    pass
-                obj = WeightsObj()
-                
-                # STRICT: No defaults. If key missing, let it be None (or fail validation downstream)
-                # But here we want to ensure we don't inject defaults.
-                # Actually earlier validation checks for None.
-                for key in ["delta_price_pct", "obi", "tfi", "absorption_inverse"]:
-                    if key not in weights:
-                        raise ConfigContractError(
-                            path=f"domains.risk_management.risk_score_weights.{key}", 
-                            why="Missing required weight key"
-                        )
-                    setattr(obj, key, weights[key])
-                return obj
-        
-        # FINAL FALLBACK: Fail closed
-        # Production MUST have domains.risk_management.risk_score_weights
-        raise ConfigContractError(
-            path="domains.risk_management.risk_score_weights",
-            why="empty or missing"
-        )
+        weights = self.domain_config.risk_score_weights
+        if weights is None:
+            raise ConfigContractError(
+                path="domains.risk_management.risk_score_weights",
+                why="risk_score_weights empty or missing",
+            )
+        return weights
 
     def _get_max_risk_score(self) -> decimal.Decimal:
         """

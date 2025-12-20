@@ -22,7 +22,7 @@ enabled:
   - XRPUSDT
 
 # Instruments with Mean Reversion 1M strategy enabled
-mean_reversion_1m_enabled:
+mean_reversion_enabled:
   - DOGEUSDT   # Champion 🥇 (+$387)
   - XRPUSDT    # Silver 🥈 (+$121)
   - BTCUSDT    # Bronze 🥉 (+$103)

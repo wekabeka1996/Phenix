@@ -10,7 +10,7 @@ from pathlib import Path
 # Add vfoundation to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "vfoundation"))
 
-from apps.reference.domains.execution_position.drift_monitor import (
+from apps.monitoring.drift_monitor import (
     compute_drift,
     aggregate_drift_metrics,
     ConfusionMatrix,

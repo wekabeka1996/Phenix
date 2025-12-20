@@ -29,7 +29,7 @@ Inventory of all defaults and extra='allow' in config_models.py BaseModel classe
 | AuroraConfig | hotreload_whitelist | AnnAssign | Field(default=None, description='Hot-reload allowlist') | 1845 |
 | AuroraConfig | instruments | AnnAssign | Field(default_factory=dict, description='Canonical instrument precision map (symbol -> tick_size/step_size)') | 1806 |
 | AuroraConfig | logging | AnnAssign | Field(default=None, description='Logging configuration') | 1842 |
-| AuroraConfig | mean_reversion_1m | AnnAssign | Field(default=None, description='Mean Reversion 1m strategy config (loaded from strategy profile SSOT)') | 1825 |
+| AuroraConfig | mean_reversion | AnnAssign | Field(default=None, description='Mean Reversion 1m strategy config (loaded from strategy profile SSOT)') | 1825 |
 | AuroraConfig | models | AnnAssign | Field(default=None, description='Regime detection models from regime.yaml') | 1839 |
 | AuroraConfig | ops | AnnAssign | Field(default_factory=OpsConfig) | 1797 |
 | AuroraConfig | runtime | AnnAssign | Field(default=None, description='Runtime configuration') | 1847 |

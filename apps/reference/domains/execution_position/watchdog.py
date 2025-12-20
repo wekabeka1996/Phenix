@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Set, Any, Callable
 from enum import Enum
 
+from apps.reference.utils.accessors import dget
+
 LOG = logging.getLogger(__name__)
 
 
@@ -51,9 +53,9 @@ class OrderTimeoutWatchdog:
     ):
         self.config = config or {}
         # Load from config if available, else use defaults
-        self.ack_ttl_ms = self.config.get("ack_ttl_ms", ack_ttl_ms)
-        self.fill_ttl_ms = self.config.get("fill_ttl_ms", fill_ttl_ms)
-        self.check_interval_ms = self.config.get("check_interval_ms", check_interval_ms)
+        self.ack_ttl_ms = self.config["ack_ttl_ms"] if "ack_ttl_ms" in self.config else ack_ttl_ms
+        self.fill_ttl_ms = self.config["fill_ttl_ms"] if "fill_ttl_ms" in self.config else fill_ttl_ms
+        self.check_interval_ms = self.config["check_interval_ms"] if "check_interval_ms" in self.config else check_interval_ms
         self.on_timeout_callback = on_timeout_callback
 
         # Track orders by order_id
@@ -79,7 +81,7 @@ class OrderTimeoutWatchdog:
         self._rest_detected_cancels_total = 0
 
         # 🔧 POLLING FIX: Global RPS throttle for REST polling
-        self._rps_limit = self.config.get("rps_limit", 10)  # Max 10 requests per second globally
+        self._rps_limit = self.config["rps_limit"] if "rps_limit" in self.config else 10  # Max 10 requests per second globally
         self._rps_window_start = 0
         self._rps_request_count = 0
         self._rps_throttle_hits = 0
@@ -284,11 +286,15 @@ class OrderTimeoutWatchdog:
             # Poll each tracked order individually
             for order_id in tracked_order_ids:
                 # Get poll metadata for this order
-                meta = self._poll_meta.get(order_id, {
-                    'next_poll_at': 0,
-                    'attempts': 0,
-                    'backoff_ms': 1000  # Start with 1 second backoff
-                })
+                meta = (
+                    self._poll_meta[order_id]
+                    if order_id in self._poll_meta
+                    else {
+                        "next_poll_at": 0,
+                        "attempts": 0,
+                        "backoff_ms": 1000,  # Start with 1 second backoff
+                    }
+                )
 
                 # Check if we should poll this order (respect backoff)
                 if current_time_ms < meta['next_poll_at']:
@@ -315,13 +321,13 @@ class OrderTimeoutWatchdog:
                     order_status = await self.get_order_fn(symbol, order_id)
 
                     if order_status:
-                        status = str(order_status.get("status", "")).upper()
+                        status = str(dget(order_status, "status", "")).upper()
                         executed_qty = float(
-                            order_status.get("executedQty", 0))
+                            dget(order_status, "executedQty", 0))
 
                         if status == "FILLED" and executed_qty > 0:
                             # Check if already processed (idempotency)
-                            if meta.get('terminal', False):
+                            if bool(dget(meta, "terminal", False)):
                                 LOG.debug(
                                     f"🔧 POLLING SKIP: {order_id} already processed (terminal=True)")
                                 continue
@@ -336,8 +342,8 @@ class OrderTimeoutWatchdog:
                                 "orderId": order_id,
                                 "symbol": symbol,
                                 "quantity": executed_qty,
-                                "price": float(order_status.get("avgPrice", 0)),
-                                "client_order_id": order_status.get("clientOrderId", ""),
+                                "price": float(dget(order_status, "avgPrice", 0)),
+                                "client_order_id": dget(order_status, "clientOrderId", ""),
                                 "rid": None  # Will be looked up from correlation store
                             }
 
@@ -355,7 +361,7 @@ class OrderTimeoutWatchdog:
 
                         elif status in ("CANCELED", "REJECTED", "EXPIRED"):
                             # Check if already processed (idempotency)
-                            if meta.get('terminal', False):
+                            if bool(dget(meta, "terminal", False)):
                                 LOG.debug(
                                     f"🔧 POLLING SKIP: {order_id} already processed (terminal=True)")
                                 continue
@@ -370,7 +376,7 @@ class OrderTimeoutWatchdog:
                                 "orderId": order_id,
                                 "symbol": symbol,
                                 "status": status,
-                                "client_order_id": order_status.get("clientOrderId", ""),
+                                "client_order_id": dget(order_status, "clientOrderId", ""),
                                 "rid": None  # Will be looked up from correlation store
                             }
 
@@ -396,7 +402,7 @@ class OrderTimeoutWatchdog:
                         # Order not found, might be cancelled
                         LOG.debug(f"🔧 POLLING: Order {order_id} not found")
                         # Check if already processed (idempotency)
-                        if not meta.get('terminal', False):
+                        if not bool(dget(meta, "terminal", False)):
                             self.on_order_cancel(order_id)
                             meta['terminal'] = True
                         # Reset backoff

@@ -11,6 +11,7 @@ Tests the proxy component that bridges the worker process with the main FSM:
 import asyncio
 import queue
 from unittest.mock import MagicMock, patch, AsyncMock
+from types import SimpleNamespace
 import pytest
 
 # Import the proxy components
@@ -45,6 +46,10 @@ class MockConfig:
     
     def __init__(self, config_dict: dict):
         self._config = config_dict
+        self.instruments = config_dict.get("instruments", {})
+        sys_cfg = config_dict.get("system", {})
+        md_cfg = sys_cfg.get("market_data", {}) if isinstance(sys_cfg, dict) else {}
+        self.system = SimpleNamespace(market_data=SimpleNamespace(**md_cfg))
     
     def model_dump(self, mode: str = "python") -> dict:
         return self._config
@@ -63,8 +68,9 @@ class TestProxyTickEmission:
         """Test that ticks are emitted with correct payload format."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
@@ -109,8 +115,9 @@ class TestProxyTickEmission:
         """Test that tick counter is incremented."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
@@ -138,8 +145,9 @@ class TestProxyAnchorEmission:
         """Test that anchor updates are emitted with correct payload."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"ETHUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"ETHUSDT": {}},
                 "market_data": {
                     "macro_sync": {"anchors": ["BTCUSDT"]},
                     "poll_interval_sec": 1,
@@ -153,7 +161,7 @@ class TestProxyAnchorEmission:
             "type": "anchor",
             "anchor": "BTCUSDT",
             "price": "95000.00",
-            "ts": 1234567890000,
+            "ts_ms": 1234567890000,
         }
         
         proxy._emit_anchor_update(anchor_data)
@@ -164,6 +172,7 @@ class TestProxyAnchorEmission:
         assert event["event_name"] == "EVT:ANCHOR_UPDATED"
         assert event["payload"]["anchor"] == "BTCUSDT"
         assert event["payload"]["price"] == "95000.00"
+        assert event["payload"]["ts_ms"] == 1234567890000
 
 
 class TestProxyHeartbeat:
@@ -173,8 +182,9 @@ class TestProxyHeartbeat:
         """Test that heartbeat updates proxy state."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
@@ -207,26 +217,38 @@ class TestProxyConfigSerialization:
         fsm = MockFSM()
         
         class PydanticV2Config:
+            instruments = {"BTCUSDT": {}}
+            system = SimpleNamespace(
+                market_data=SimpleNamespace(
+                    queue_maxsize=10000,
+                    proxy_batch_size=100,
+                    proxy_queue_get_timeout_sec=0.01,
+                    proxy_idle_sleep_sec=0.01,
+                )
+            )
             def model_dump(self, mode="python"):
                 return {"key": "value", "mode": mode}
         
         proxy = MarketDataProxy(fsm=fsm, config=PydanticV2Config())
         result = proxy._get_config_dict()
         
-        assert result == {"key": "value", "mode": "json"}
+        assert result["key"] == "value"
+        assert result["mode"] == "json"
+        # Proxy attaches runtime metadata for worker bootstrap diagnostics
+        assert result["_config_name"] == "aurora"
+        assert result["_config_dir"] == "config/aurora"
 
-    def test_get_config_dict_dict_passthrough(self):
-        """Test config serialization with plain dict."""
+    def test_proxy_rejects_plain_dict_config(self):
+        """MarketDataProxy requires a Pydantic-like config object, not a raw dict."""
         fsm = MockFSM()
         
         config_dict = {
-            "trading": {"instruments": {"BTCUSDT": {}}},
+            "instruments": {"BTCUSDT": {}},
+            "trading": {"market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1}},
         }
         
-        proxy = MarketDataProxy(fsm=fsm, config=config_dict)
-        result = proxy._get_config_dict()
-        
-        assert result == config_dict
+        with pytest.raises(TypeError, match="requires AuroraConfig"):
+            _ = MarketDataProxy(fsm=fsm, config=config_dict)
 
 
 class TestProxyDeprecation:
@@ -236,8 +258,9 @@ class TestProxyDeprecation:
         """Test that deprecated method logs warning but doesn't fail."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
@@ -259,8 +282,9 @@ class TestProxyMetrics:
         """Test that metrics property returns correct structure."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
@@ -288,24 +312,25 @@ class TestProxyBatchProcessing:
         """Test that batch size is configured correctly."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
         
         proxy = MarketDataProxy(fsm=fsm, config=config)
         
-        assert proxy.BATCH_SIZE == 100
-        assert proxy.QUEUE_MAXSIZE == 10000
+        assert proxy._batch_size == 100
+        assert proxy._queue_maxsize == 10000
 
-    @pytest.mark.asyncio
-    async def test_consume_queue_processes_ticks(self):
+    def test_consume_queue_processes_ticks(self):
         """Test that _consume_queue processes tick messages."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {"macro_sync": {"anchors": []}, "poll_interval_sec": 1},
             },
         })
@@ -327,33 +352,27 @@ class TestProxyBatchProcessing:
             proxy._ipc_queue.put_nowait(msg)
         
         # Run one iteration (stop after first batch)
-        async def run_once():
-            proxy._running = True
-            # Process batch
-            items_processed = 0
-            while items_processed < proxy.BATCH_SIZE:
-                try:
-                    item = proxy._ipc_queue.get_nowait()
-                    msg_type = item.get("type")
-                    if msg_type == MarketDataWorker.MSG_TYPE_TICK:
-                        proxy._emit_tick(item)
-                        items_processed += 1
-                except Exception:
-                    break
-            await asyncio.sleep(0)
-        
-        await run_once()
+        items_processed = 0
+        while items_processed < proxy._batch_size:
+            try:
+                item = proxy._ipc_queue.get_nowait()
+                msg_type = item.get("type")
+                if msg_type == MarketDataWorker.MSG_TYPE_TICK:
+                    proxy._emit_tick(item)
+                    items_processed += 1
+            except Exception:
+                break
         
         assert len(fsm.emitted_events) == 5
         assert proxy._ticks_emitted == 5
 
-    @pytest.mark.asyncio
-    async def test_consume_queue_handles_mixed_messages(self):
+    def test_consume_queue_handles_mixed_messages(self):
         """Test that _consume_queue handles different message types."""
         fsm = MockFSM()
         config = MockConfig({
+            "instruments": {"BTCUSDT": {}, "ETHUSDT": {}},
+            "system": {"market_data": {"queue_maxsize": 10000, "proxy_batch_size": 100, "proxy_queue_get_timeout_sec": 0.01, "proxy_idle_sleep_sec": 0.01}},
             "trading": {
-                "instruments": {"BTCUSDT": {}},
                 "market_data": {"macro_sync": {"anchors": ["ETHUSDT"]}, "poll_interval_sec": 1},
             },
         })
@@ -374,6 +393,7 @@ class TestProxyBatchProcessing:
             "type": MarketDataWorker.MSG_TYPE_ANCHOR,
             "anchor": "ETHUSDT",
             "price": "3500.00",
+            "ts_ms": 1234567890000,
         })
         proxy._ipc_queue.put_nowait({
             "type": MarketDataWorker.MSG_TYPE_HEARTBEAT,

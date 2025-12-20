@@ -17,6 +17,11 @@ system:
     local_queue_maxsize: 10000
     emit_workers: 4
     tick_ttl_ms: 2000
+    ws_heartbeat_sec: 20.0
+    ws_receive_timeout_sec: 60.0
+    proxy_batch_size: 100
+    proxy_queue_get_timeout_sec: 0.01
+    proxy_idle_sleep_sec: 0.01
 
 # REQUIRED: ops config (OpsConfig)
 ops:
@@ -38,6 +43,8 @@ bridge:
   retry_scheduler:
     max_attempts: 5
     min_retry_delay_ms: 500
+    backoff_factor: 2.0
+    jitter_ms: 50
 
 # NOTE: binance_api is now defined in trading.yaml with correct env var names
 # pointing to .env file (BINANCE_FUTURES_API_KEY_LIVE, BINANCE_TESTNET_API_KEY, etc.)
@@ -131,4 +138,3 @@ trading:
     websocket_streams:
       - "bookTicker"  # For OBI (Order Book Imbalance)
       - "trade"       # For TFI (Trade Flow Imbalance) and delta_price
-

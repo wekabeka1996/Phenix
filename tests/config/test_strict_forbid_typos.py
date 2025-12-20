@@ -20,7 +20,14 @@ def test_trading_config_typos_fail_validation(tmp_path: Path) -> None:
         config_dir / "system.yaml",
         {
             "trading_mode": "testnet",
-            "bridge": {"retry_scheduler": {"max_attempts": 5, "min_retry_delay_ms": 500}},
+            "bridge": {
+                "retry_scheduler": {
+                    "max_attempts": 5,
+                    "min_retry_delay_ms": 500,
+                    "backoff_factor": 2.0,
+                    "jitter_ms": 0,
+                }
+            },
         },
     )
     _write_yaml(
@@ -62,4 +69,3 @@ def test_trading_config_typos_fail_validation(tmp_path: Path) -> None:
     loader = ConfigLoader(config_dir=config_dir)
     with pytest.raises(ValidationError):
         loader.load_config()
-

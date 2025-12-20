@@ -15,7 +15,7 @@ def _ensure_dir(p: str) -> None:
 
 
 def _get_log_path() -> str:
-    log_dir = os.environ.get("DM_LOG_DIR", "logs")
+    log_dir = os.environ["DM_LOG_DIR"] if "DM_LOG_DIR" in os.environ else "logs"
     return os.path.join(log_dir, "domain_decision_making.log")
 
 

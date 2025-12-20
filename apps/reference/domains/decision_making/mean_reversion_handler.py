@@ -4,21 +4,23 @@ Mean Reversion Decision Handler.
 Track B: Integrates Mean Reversion 1m Strategy into DecisionMaking workflow.
 
 This handler:
-1. Receives tick data via on_tick() from FeatureEngineering
+1. Receives tick data via EVT:MARKET_TICK_RECEIVED
 2. Aggregates ticks into 1m bars via BarResampler
 3. Computes MR signals via MeanReversion1mStrategy
-4. Emits EVT:TRADE_INTENT_PROPOSED when signal is actionable
+4. Emits EVT:STRATEGY_SIGNAL_PRODUCED when signal is actionable
 
-Feature flag: enabled via config.mean_reversion_1m.enabled (default: false)
+Feature flag: enabled via config.mean_reversion.enabled (default: false)
 """
 
 import logging
 import time
 import uuid
+import json
 from decimal import Decimal
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
+from apps.reference.utils.accessors import aget
 
 # Import MR strategy components
 from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
@@ -28,6 +30,7 @@ from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
     MRSignalType,
 )
 from apps.reference.config_models import (
+    AuroraConfig,
     MeanReversion1mStrategyConfig,
     MRStrategyParamsConfig,
     MRAssetConfig,
@@ -49,32 +52,36 @@ class MeanReversionHandler:
     2. Strategy processes tick → bar resampling → MR signal
     3. If signal is actionable → emit EVT:TRADE_INTENT_PROPOSED
     
-    Feature flag: Controlled by mean_reversion_1m.enabled config.
+    Feature flag: Controlled by mean_reversion.enabled config.
     """
     
-    def __init__(
-        self,
-        fsm: "FSMCore",
-        config: Dict[str, Any],
-        decision_making: Any,  # DecisionMaking instance for intent emission
-    ) -> None:
+    def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         """
         Initialize Mean Reversion handler.
         
         Args:
             fsm: FSMCore instance for event emission
-            config: Full application config (dict or Pydantic)
-            decision_making: Parent DecisionMaking instance
+            config: Full application config (typed AuroraConfig)
         """
         self.fsm = fsm
         self.config = config
-        self.dm = decision_making
         self.logger = LOG.getChild("MRHandler")
+        self.mlog = logging.getLogger("domain_mean_reversion")
         
         # Parse MR config
         self._mr_config: Optional[MeanReversion1mStrategyConfig] = None
         self._enabled: bool = False
         self._enabled_symbols: set[str] = set()
+        self._per_symbol_regime: Dict[str, str] = {}
+        self._last_tick_ts_ms: Dict[str, int] = {}
+        self._stats: Dict[str, int] = {
+            "ticks_seen": 0,
+            "ticks_dropped_missing_ts": 0,
+            "ticks_dropped_out_of_order": 0,
+            "bars_completed": 0,
+            "signals_emitted": 0,
+            "neutral_bars": 0,
+        }
         
         self._parse_config()
         
@@ -92,10 +99,38 @@ class MeanReversionHandler:
             f"symbols={list(self._enabled_symbols)}, "
             f"strategies={list(self._strategies.keys())}"
         )
+        self.mlog.info(
+            "MR_INIT %s",
+            json.dumps(
+                {
+                    "strategy_id": "mean_reversion",
+                    "enabled": self._enabled,
+                    "enabled_symbols": sorted(self._enabled_symbols),
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+    def register(self) -> None:
+        """Attach FSM listeners (ticks + regime)."""
+        if not self._enabled:
+            return
+        self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self._on_market_tick)
+        self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
+        self.mlog.info(
+            "MR_REGISTER %s",
+            json.dumps(
+                {
+                    "events": ["EVT:MARKET_TICK_RECEIVED", "EVT:REGIME_DETECTED"],
+                    "enabled_symbols": sorted(self._enabled_symbols),
+                },
+                ensure_ascii=False,
+            ),
+        )
     
     def _get_mr_assigned_symbols(self) -> set[str]:
         """
-        Get symbols that have mean_reversion_1m assigned in strategies_registry.
+        Get symbols that have mean_reversion assigned in strategies_registry.
         
         CFG-STRATEGIES-SSOT-02-MR-HANDLER-STRICT-CONTRACT:
         MR is "potentially active" if assigned in registry OR enabled=True in config.
@@ -105,7 +140,7 @@ class MeanReversionHandler:
         if hasattr(self.config, 'strategies_registry') and self.config.strategies_registry:
             assignments = self.config.strategies_registry.assignments
             for symbol, strategies in assignments.items():
-                if "mean_reversion_1m" in strategies:
+                if "mean_reversion" in strategies:
                     mr_symbols.add(symbol)
         
         return mr_symbols
@@ -122,17 +157,16 @@ class MeanReversionHandler:
         mr_assigned_symbols = self._get_mr_assigned_symbols()
         
         # Try Pydantic config (ONLY typed access)
-        if hasattr(self.config, 'mean_reversion_1m') and self.config.mean_reversion_1m is not None:
-            self._mr_config = self.config.mean_reversion_1m
-            self._enabled = self._mr_config.enabled
+        if hasattr(self.config, 'mean_reversion') and self.config.mean_reversion is not None:
+            self._mr_config = self.config.mean_reversion
         else:
             # MR config missing
             if mr_assigned_symbols:
                 # FAIL-CLOSED: MR assigned but config missing
                 raise ValueError(
-                    f"❌ CRITICAL: mean_reversion_1m assigned to symbols {mr_assigned_symbols} "
-                    f"but config.mean_reversion_1m is missing or invalid. "
-                    f"Required: config.mean_reversion_1m (typed Pydantic) must be present."
+                    f"❌ CRITICAL: mean_reversion assigned to symbols {mr_assigned_symbols} "
+                    f"but config.mean_reversion is missing or invalid. "
+                    f"Required: config.mean_reversion (typed Pydantic) must be present."
                 )
             else:
                 # MR not assigned and config missing → disabled (fail-closed, no noise)
@@ -140,9 +174,13 @@ class MeanReversionHandler:
                 self._enabled = False
                 return
         
-        if not self._enabled:
-            self.logger.info("Mean Reversion 1m strategy is disabled by config")
-            return
+        # TASK32: Strategy activation is SSOT-driven via strategies_registry.assignments.
+        # Keep config.enabled as a safety flag but fail-closed on conflicts.
+        if mr_assigned_symbols and not bool(self._mr_config.enabled):
+            raise ValueError(
+                f"❌ CRITICAL: mean_reversion is assigned to symbols {mr_assigned_symbols} "
+                f"but mean_reversion.enabled=false. Resolve SSOT conflict."
+            )
         
         # Collect enabled symbols
         if self._mr_config and self._mr_config.assets:
@@ -151,11 +189,31 @@ class MeanReversionHandler:
                     if asset_cfg.enabled:
                         self._enabled_symbols.add(symbol)
                 elif isinstance(asset_cfg, dict):
-                    if asset_cfg.get('enabled', False):
-                        self._enabled_symbols.add(symbol)
+                    raise TypeError("mean_reversion.assets must contain typed MRAssetConfig values, got dict")
+
+        missing_assets = sorted([s for s in mr_assigned_symbols if not self._mr_config or s not in self._mr_config.assets])
+        disabled_assets = sorted(
+            [
+                s
+                for s in mr_assigned_symbols
+                if self._mr_config
+                and s in self._mr_config.assets
+                and isinstance(self._mr_config.assets[s], MRAssetConfig)
+                and not bool(self._mr_config.assets[s].enabled)
+            ]
+        )
+        if missing_assets or disabled_assets:
+            raise ValueError(
+                f"❌ CRITICAL: mean_reversion assigned symbols must exist and be enabled in mean_reversion.assets. "
+                f"missing={missing_assets} disabled={disabled_assets}"
+            )
+
+        # Final activation is assignment ∩ enabled assets.
+        self._enabled_symbols = set(mr_assigned_symbols) & set(self._enabled_symbols)
+        self._enabled = bool(self._enabled_symbols)
         
         if not self._enabled_symbols:
-            self.logger.warning("MR 1m enabled but no symbols are enabled in assets config")
+            self.logger.info("Mean Reversion 1m: no assigned+enabled symbols; handler disabled")
             self._enabled = False
             
     def _init_strategies(self) -> None:
@@ -165,7 +223,7 @@ class MeanReversionHandler:
 
         timeframe_sec = self._mr_config.timeframe_sec
         if timeframe_sec <= 0:
-            raise ValueError(f"mean_reversion_1m.timeframe_sec must be positive, got {timeframe_sec}")
+            raise ValueError(f"mean_reversion.timeframe_sec must be positive, got {timeframe_sec}")
         
         # Global base config
         base_strat_cfg = self._mr_config.strategy
@@ -200,7 +258,9 @@ class MeanReversionHandler:
             
             # Apply asset-specific overrides
             asset_cfg = self._mr_config.assets.get(symbol)
-            if asset_cfg and getattr(asset_cfg, 'strategy', None):
+            if isinstance(asset_cfg, dict):
+                raise TypeError("mean_reversion.assets must contain typed MRAssetConfig values, got dict")
+            if asset_cfg is not None and hasattr(asset_cfg, "strategy") and asset_cfg.strategy is not None:
                 strat_override = asset_cfg.strategy
                 # Check for overrides
                 if strat_override.bb_window is not None: config.bb_window = strat_override.bb_window
@@ -254,7 +314,7 @@ class MeanReversionHandler:
         signal = strategy.on_tick(symbol, price, volume, timestamp_ms)
         
         if signal and signal.is_signal:
-            self._handle_signal(signal)
+            self._emit_signal(signal)
         
         return signal
     
@@ -270,16 +330,11 @@ class MeanReversionHandler:
             strategy.set_regime(symbol, regime)
             self.logger.debug(f"[{symbol}] MR regime updated: {regime}")
     
-    def _handle_signal(self, signal: MRSignal) -> None:
-        """
-        Handle actionable MR signal.
-        
-        Emits EVT:TRADE_INTENT_PROPOSED via DecisionMaking.
-        """
+    def _emit_signal(self, signal: MRSignal) -> None:
         symbol = signal.symbol
         
         # Track signal
-        self._signal_counts[symbol] = self._signal_counts.get(symbol, 0) + 1
+        self._signal_counts[symbol] = (self._signal_counts[symbol] if symbol in self._signal_counts else 0) + 1
         self._last_signal_time[symbol] = time.time()
         
         self.logger.info(
@@ -289,12 +344,9 @@ class MeanReversionHandler:
             f"why={signal.why}"
         )
         
-        # Build TradeIntent payload
         rid = str(uuid.uuid4())
         side = signal.side  # "BUY" or "SELL"
         
-        # Get per-asset config for this symbol
-        sl_pct = self._get_asset_sl_pct(symbol)
         position_size_usd = self._get_position_size_usd(symbol)
         
         # FAIL-CLOSED: missing position_size → block signal
@@ -314,47 +366,218 @@ class MeanReversionHandler:
             if signal.mr_params and signal.mr_params.sizing_mult:
                 qty = qty * Decimal(str(signal.mr_params.sizing_mult))
         
-        # Calculate SL price from sl_pct if configured
-        if sl_pct is not None:
-            if side == "BUY":
-                stop_price = signal.entry_price * (Decimal("1") - Decimal(str(sl_pct)))
-            else:
-                stop_price = signal.entry_price * (Decimal("1") + Decimal(str(sl_pct)))
-        else:
-            stop_price = signal.stop_price
-        
-        trade_intent = {
+        pld = {
+            "strategy_id": "mean_reversion",
             "symbol": symbol,
             "side": side,
-            "entry_price": str(signal.entry_price),
-            "stop_price": str(stop_price),
-            "target_price": str(signal.target_price),
-            "position_size_usd": float(position_size_usd),
-            "qty": str(qty),  # FIX: Include calculated qty
-            "strategy": "mean_reversion_1m",
-            "regime": signal.flat_regime.name if signal.flat_regime else "UNKNOWN",
-            "confidence": float(signal.confidence),
-            "rid": rid,
-            "timestamp_ms": signal.timestamp_ms,
+            "score": float(signal.confidence),
             "why": signal.why,
+            "ts_ms": int(signal.timestamp_ms),
+            "rid": rid,
+            "why_chain": [signal.why],
+            "position_size_usd": float(position_size_usd),
+            "qty_hint": str(qty),
+            "price_ctx": {
+                "entry_price": str(signal.entry_price),
+                "stop_price": str(signal.stop_price) if signal.stop_price else None,
+                "target_price": str(signal.target_price) if signal.target_price else None,
+            },
+            "regime": signal.flat_regime.name if signal.flat_regime else "UNKNOWN",
             "mr_params": {
                 "sizing_mult": float(signal.mr_params.sizing_mult) if signal.mr_params else 1.0,
                 "stop_mult": float(signal.mr_params.stop_mult) if signal.mr_params else 1.0,
                 "target_mult": float(signal.mr_params.target_mult) if signal.mr_params else 1.0,
             },
         }
-        
-        # Emit via FSM
+
         self.fsm.emit(
-            "EVT:TRADE_INTENT_PROPOSED",
-            payload=trade_intent,
-            why=f"MR_{signal.signal_type.name}",
-            data_ref=[f"mr_signal_{rid}"]
+            "EVT:STRATEGY_SIGNAL_PRODUCED",
+            payload=pld,
+            why=f"strategy_signal:mean_reversion:{signal.signal_type.name}",
+            data_ref=[f"mr_signal_{rid}"],
+        )
+        self._stats["signals_emitted"] += 1
+
+        bb = signal.bb
+        self.mlog.info(
+            "MR_SIGNAL %s",
+            json.dumps(
+                {
+                    "symbol": symbol,
+                    "side": side,
+                    "confidence": float(signal.confidence),
+                    "ts_ms": int(signal.timestamp_ms),
+                    "entry_price": str(signal.entry_price) if signal.entry_price is not None else None,
+                    "stop_price": str(signal.stop_price) if signal.stop_price is not None else None,
+                    "target_price": str(signal.target_price) if signal.target_price is not None else None,
+                    "flat_regime": signal.flat_regime.name if signal.flat_regime else None,
+                    "why": signal.why,
+                    "bb_upper": str(bb.upper) if bb else None,
+                    "bb_mid": str(bb.mid) if bb else None,
+                    "bb_lower": str(bb.lower) if bb else None,
+                    "bb_width": float(bb.width) if bb else None,
+                    "pct_b": float(bb.pct_b) if bb else None,
+                    "atr": str(signal.atr) if signal.atr is not None else None,
+                    "mr_params": pld.get("mr_params"),
+                    "position_size_usd": float(position_size_usd),
+                    "qty_hint": str(qty),
+                    "counters": dict(self._stats),
+                },
+                ensure_ascii=False,
+            ),
         )
         
         self.logger.info(
-            f"[{symbol}] EVT:TRADE_INTENT_PROPOSED emitted: {side} @ {signal.entry_price}"
+            f"[{symbol}] EVT:STRATEGY_SIGNAL_PRODUCED emitted: {side} @ {signal.entry_price}"
         )
+
+    def _on_regime_detected(self, event: Message) -> None:
+        try:
+            pld = event.pld or {}
+            if isinstance(pld, dict):
+                symbol = str(pld.get("symbol") or "")
+                regime = str(pld.get("regime") or pld.get("overall_regime") or "")
+            else:
+                symbol = str(getattr(pld, "symbol", "") or "")
+                regime = str(aget(pld, "regime", "") or aget(pld, "overall_regime", "") or "")
+
+            if not symbol or symbol not in self._enabled_symbols:
+                return
+            if not regime:
+                return
+            self._per_symbol_regime[symbol] = regime
+            self.on_regime(symbol, regime)
+        except Exception as e:
+            self.logger.debug(f"MRHandler: failed to process EVT:REGIME_DETECTED: {e}")
+
+    def _on_market_tick(self, event: Message) -> None:
+        if not self._enabled:
+            return
+
+        pld = event.pld
+        try:
+            if isinstance(pld, dict):
+                symbol = str(pld.get("symbol") or "")
+                price = Decimal(str(pld.get("price") or 0))
+                raw_ts = pld.get("timestamp_ms")
+                if raw_ts in (None, 0, "0", ""):
+                    raw_ts = pld.get("ts")
+                timestamp_ms = int(raw_ts or 0)
+                if 0 < timestamp_ms < 1_000_000_000_000:
+                    timestamp_ms = timestamp_ms * 1000
+
+                raw_vol = pld.get("volume")
+                if raw_vol is None:
+                    bv_raw = pld.get("buy_volume") or "0"
+                    sv_raw = pld.get("sell_volume") or "0"
+                    raw_vol = Decimal(str(bv_raw)) + Decimal(str(sv_raw))
+                volume = Decimal(str(raw_vol or 0))
+            else:
+                symbol = str(getattr(pld, "symbol", "") or "")
+                price = Decimal(str(aget(pld, "price", 0)))
+                raw_ts = aget(pld, "timestamp_ms", None)
+                if raw_ts in (None, 0, "0", ""):
+                    raw_ts = aget(pld, "ts", 0)
+                timestamp_ms = int(raw_ts or 0)
+                if 0 < timestamp_ms < 1_000_000_000_000:
+                    timestamp_ms = timestamp_ms * 1000
+                raw_vol = aget(pld, "volume", None)
+                if raw_vol is None:
+                    raw_vol = (aget(pld, "buy_volume", 0) or 0) + (aget(pld, "sell_volume", 0) or 0)
+                volume = Decimal(str(raw_vol or 0))
+
+            if not symbol or symbol not in self._enabled_symbols:
+                return
+            if timestamp_ms <= 0:
+                self._stats["ticks_dropped_missing_ts"] += 1
+                return
+
+            regime = self._per_symbol_regime.get(symbol)
+            last_ts = self._last_tick_ts_ms.get(symbol, 0)
+            if last_ts and timestamp_ms < last_ts:
+                self._stats["ticks_dropped_out_of_order"] += 1
+                self.mlog.debug(
+                    "MR_TICK_DROP %s",
+                    json.dumps(
+                        {
+                            "symbol": symbol,
+                            "reason": "out_of_order",
+                            "ts_ms": timestamp_ms,
+                            "last_ts_ms": last_ts,
+                            "counters": dict(self._stats),
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                return
+            self._last_tick_ts_ms[symbol] = timestamp_ms
+            self._stats["ticks_seen"] += 1
+
+            self.mlog.debug(
+                "MR_TICK %s",
+                json.dumps(
+                    {
+                        "symbol": symbol,
+                        "price": str(price),
+                        "volume": str(volume),
+                        "ts_ms": timestamp_ms,
+                        "regime": regime,
+                        "counters": dict(self._stats),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+            signal = self.on_tick(symbol, price, volume, timestamp_ms, regime)
+            if signal is None:
+                return
+
+            try:
+                strat = self._strategies.get(symbol)
+                if strat is not None:
+                    st = strat.get_state(symbol)
+                    if st.bars:
+                        bar = st.bars[-1]
+                        self._stats["bars_completed"] += 1
+                        self.mlog.debug(
+                            "MR_BAR %s",
+                            json.dumps(
+                                {
+                                    "symbol": symbol,
+                                    "start_ts_ms": bar.start_ts_ms,
+                                    "end_ts_ms": bar.end_ts_ms,
+                                    "open": str(bar.open),
+                                    "high": str(bar.high),
+                                    "low": str(bar.low),
+                                    "close": str(bar.close),
+                                    "volume": str(bar.volume),
+                                    "trade_count": int(bar.trade_count),
+                                    "bb": {
+                                        "upper": str(st.bb.upper),
+                                        "mid": str(st.bb.mid),
+                                        "lower": str(st.bb.lower),
+                                        "width": float(st.bb.width),
+                                        "pct_b": float(st.bb.pct_b),
+                                    }
+                                    if st.bb is not None
+                                    else None,
+                                    "atr": str(st.atr) if st.atr is not None else None,
+                                    "rsi": float(st.rsi) if st.rsi is not None else None,
+                                    "regime": regime,
+                                    "signal_type": signal.signal_type.name,
+                                    "signal_why": signal.why,
+                                    "counters": dict(self._stats),
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
+            except Exception:
+                pass
+
+            if not signal.is_signal:
+                self._stats["neutral_bars"] += 1
+        except Exception as e:
+            self.logger.debug(f"MRHandler: failed to process EVT:MARKET_TICK_RECEIVED: {e}")
     
     def _get_asset_sl_pct(self, symbol: str) -> Optional[float]:
         """Get SL % for symbol from per-asset config."""

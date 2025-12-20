@@ -185,7 +185,7 @@ class AccountObserver:
             )
 
             # Log with correlation
-            corr_id_log = payload.get("corr_id", "unknown")
+            corr_id_log = payload["corr_id"] if "corr_id" in payload else "unknown"
             self.logger.info(
                 f"ORDER_STATE_CHANGED: FILL for order_id={order_id}, "
                 f"corr_id={corr_id_log}, symbol={payload['symbol']}, "
@@ -212,7 +212,7 @@ class AccountObserver:
         )  # Preserve precision, handle sign
         ts = trade["time"]  # Already in milliseconds
         # Preserve precision as string
-        fees = str(trade.get("commission", "0.0"))
+        fees = str(trade["commission"] if "commission" in trade else "0.0")
 
         return {
             "symbol": symbol,

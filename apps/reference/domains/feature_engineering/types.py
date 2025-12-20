@@ -53,6 +53,12 @@ class HotState:
     vol_hist: Deque[float] = field(default_factory=deque)
     # FTR-03: Welford stats for O(1) volume mean/stddev
     vol_stats: tuple[int, float, float] = (0, 0.0, 0.0)  # (count, mean, m2)
+
+    # TASK24.C2: Time-normalized volume_spike (Decimal-only)
+    volume_rate_hist: Deque[decimal.Decimal] = field(default_factory=deque)
+    volume_rate_current: Optional[decimal.Decimal] = None
+    volume_spike_ready: bool = False
+    volume_spike_not_ready_reason: Optional[str] = None
     
     # Volatility state
     range_window_start_ts: Optional[int] = None
@@ -61,10 +67,24 @@ class HotState:
     range_hist: Deque[float] = field(default_factory=deque)  # Changed to float for Welford
     # FTR-03: Welford stats for O(1) range mean/stddev
     range_stats: tuple[int, float, float] = (0, 0.0, 0.0)  # (count, mean, m2)
+
+    # TASK24.C3: Volatility readiness (explicit)
+    volatility_state_ready: bool = False
+    volatility_state_not_ready_reason: Optional[str] = None
     
     # Returns for macro_sync
     returns_buffer: Deque[float] = field(default_factory=deque)
     prev_price: Optional[decimal.Decimal] = None
+
+    # TASK24.C1: Macro sync readiness (explicit)
+    macro_sync_ready: bool = False
+    macro_sync_not_ready_reason: Optional[str] = None
+
+    # TASK31: Large trade imbalance readiness (explicit)
+    large_trade_imbalance_ready: bool = False
+    large_trade_imbalance_not_ready_reason: Optional[str] = None
+    large_trade_imbalance_trades_used: int = 0
+    large_trade_imbalance_dropped_out_of_order: int = 0
 
 
 @dataclass
@@ -113,12 +133,12 @@ class FeatureEngineeringConfig:
     """
     __slots__ = ('_cfg',)
     
-    def __init__(self, config: Union["DomainConfigResolver", "AuroraConfig", dict]):
+    def __init__(self, config: Union["DomainConfigResolver", "AuroraConfig"]):
         """
         Initialize with config source.
         
         Args:
-            config: DomainConfigResolver, AuroraConfig, or dict
+            config: DomainConfigResolver or AuroraConfig
         """
         self._cfg = self._resolve_config(config)
     
@@ -140,11 +160,9 @@ class FeatureEngineeringConfig:
             resolver = DomainConfigResolver(config)
             return resolver.get_feature_engineering()
         
-        # Strict Object Config: No dict support (Task 18)
-        if hasattr(config, "dict") or isinstance(config, dict):
-             # Fail fast if someone tries to pass a dict or a Pydantic model masquerading as dict
-             if isinstance(config, dict):
-                 raise TypeError("FeatureEngineeringConfig requires AuroraConfig or DomainConfigResolver, got dict")
+        # Strict object config: no dict support (TASK25).
+        if isinstance(config, dict):
+            raise TypeError("FeatureEngineeringConfig requires AuroraConfig or DomainConfigResolver, got dict")
         
         raise TypeError(f"Invalid config type for FeatureEngineering: {type(config)}")
     
@@ -219,6 +237,30 @@ class FeatureEngineeringConfig:
     @property
     def volume_spike_cap(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.volume_spike.cap_max))
+
+    @property
+    def volume_spike_sma_len(self) -> int:
+        return int(self._cfg.volume_spike.sma_len)
+
+    @property
+    def volume_spike_eps(self) -> decimal.Decimal:
+        return decimal.Decimal(str(self._cfg.volume_spike.eps))
+
+    @property
+    def large_trade_imbalance_window_ms(self) -> int:
+        return int(self._cfg.large_trade_imbalance.window_ms)
+
+    @property
+    def large_trade_imbalance_min_trades(self) -> int:
+        return int(self._cfg.large_trade_imbalance.min_trades)
+
+    @property
+    def large_trade_imbalance_eps(self) -> decimal.Decimal:
+        return decimal.Decimal(str(self._cfg.large_trade_imbalance.eps))
+
+    @property
+    def large_trade_imbalance_use_notional(self) -> bool:
+        return bool(self._cfg.large_trade_imbalance.use_notional)
     
     @property
     def volatility_state_cap(self) -> decimal.Decimal:
@@ -227,14 +269,42 @@ class FeatureEngineeringConfig:
     @property
     def macro_sync_enabled(self) -> bool:
         return self._cfg.macro_sync.enabled
-    
+
+    @property
+    def macro_sync_time_diff_threshold_ms(self) -> int:
+        return int(self._cfg.macro_sync.time_diff_threshold_ms)
+
+    @property
+    def macro_sync_ttl_ms(self) -> int:
+        return int(self._cfg.macro_sync.ttl_ms)
+
     @property
     def macro_sync_anchors(self) -> list:
         return self._cfg.macro_sync.anchors
+
+    @property
+    def macro_sync_align_mode(self) -> str:
+        return str(self._cfg.macro_sync.align_mode)
+
+    @property
+    def macro_sync_anchor_update_from_ticks(self) -> bool:
+        return bool(self._cfg.macro_sync.anchor_update_from_ticks)
     
     @property
     def macro_sync_window(self) -> int:
         return self._cfg.macro_sync.window
+
+    @property
+    def macro_sync_bin_ms(self) -> int:
+        return int(self._cfg.macro_sync.bin_ms)
+
+    @property
+    def macro_sync_max_gap_bins(self) -> int:
+        return int(self._cfg.macro_sync.max_gap_bins)
+
+    @property
+    def macro_sync_eps(self) -> float:
+        return float(self._cfg.macro_sync.eps)
     
     @property
     def macro_sync_min_buffer(self) -> int:
@@ -243,6 +313,10 @@ class FeatureEngineeringConfig:
     @property
     def delta_price_spike_filter_ms(self) -> int:
         return self._cfg.delta_price.spike_filter_ms
+
+    @property
+    def ms_per_sec(self) -> int:
+        return int(self._cfg.defaults.ms_per_sec)
     
     # =========================================================================
     # DEFAULT VALUES - No more magic numbers!
@@ -276,9 +350,10 @@ class FeatureEngineeringConfig:
     def futures_enabled(self) -> bool:
         """Whether Futures features (funding_rate, OI) are enabled."""
         try:
-            return getattr(self._cfg, 'futures', None) is not None and self._cfg.futures.enabled
+            futures_cfg = self._cfg.futures
         except AttributeError:
             return False
+        return futures_cfg is not None and futures_cfg.enabled
     
     @property
     def funding_extreme_threshold(self) -> decimal.Decimal:

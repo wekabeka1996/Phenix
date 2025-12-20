@@ -1,0 +1,249 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.1, pluggy-1.6.0 -- /home/wekabeka/Музыка/Phenix/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/wekabeka/Музыка/Phenix
+configfile: pytest.ini
+plugins: asyncio-1.3.0, anyio-4.11.0, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 36 items
+
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_no_action_when_not_opened PASSED [  2%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_fail_closed_when_missing_market_snapshot PASSED [  5%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_fail_closed_when_missing_instrument_specs PASSED [  8%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_emits_bracket_on_entry_once FAILED [ 11%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_does_not_flip_side FAILED [ 13%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_long FAILED [ 16%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_short FAILED [ 19%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_trailing_stop_monotonicity PASSED [ 22%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_respects_reduce_only_on_close_intent FAILED [ 25%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_idempotency_on_modify_same_key PASSED [ 27%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_max_hold_triggers_close_or_signal FAILED [ 30%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_no_modify_when_price_did_not_move_enough PASSED [ 33%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_missing_equity FAILED [ 36%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_stale_portfolio FAILED [ 38%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_equity_utilization FAILED [ 41%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_portfolio_fraction FAILED [ 44%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_long_utilization FAILED [ 47%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_short_utilization PASSED [ 50%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_directional_ratio_long_heavy FAILED [ 52%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_leverage_cap FAILED [ 55%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_allow_when_within_limits FAILED [ 58%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_boundary_exactly_at_limit PASSED [ 61%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_reserve_and_release FAILED [ 63%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_fallback_mode_reduction FAILED [ 66%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_soft_clip_instead_of_reject FAILED [ 69%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_per_symbol_concentration_breach PASSED [ 72%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_open_cmd_to_open_flow FAILED [ 75%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_ack_to_state_update FAILED [ 77%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_fill_to_position_update FAILED [ 80%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_duplicate_fill_event_is_ignored PASSED [ 83%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_out_of_order_fill_before_ack_does_not_corrupt_state PASSED [ 86%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_ack_missing_then_timeout_triggers_safe_path PASSED [ 88%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_adapter_error_emits_error_event FAILED [ 91%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_cancel_retry_stops_at_max_retries PASSED [ 94%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_watchdog_triggers_deadline_callback FAILED [ 97%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_processed_events_growth_is_bounded_or_flagged PASSED [100%]
+
+=================================== FAILURES ===================================
+___________________ test_manage_emits_bracket_on_entry_once ____________________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:58: in test_manage_emits_bracket_on_entry_once
+    assert res1.verb == "PLACE_ORDER" # Placing brackets
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert 'BATCH' == 'PLACE_ORDER'
+E     
+E     - PLACE_ORDER
+E     + BATCH
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122832274176'>' mode is incomplete. Execution will be simulated.
+________________________ test_manage_does_not_flip_side ________________________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:75: in test_manage_does_not_flip_side
+    assert manage.position_side == "BUY"
+E   AssertionError: assert None == 'BUY'
+E    +  where None = <apps.reference.domains.execution_position.fsm_manage.ManageFlowFSM object at 0x76589538d340>.position_side
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122833717648'>' mode is incomplete. Execution will be simulated.
+___________________ test_manage_tp_sl_relative_to_entry_long ___________________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:85: in test_manage_tp_sl_relative_to_entry_long
+    assert sl < Decimal("50000")
+           ^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: '<' not supported between instances of 'NoneType' and 'decimal.Decimal'
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122833312944'>' mode is incomplete. Execution will be simulated.
+__________________ test_manage_tp_sl_relative_to_entry_short ___________________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:96: in test_manage_tp_sl_relative_to_entry_short
+    assert sl > Decimal("50000")
+           ^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: '>' not supported between instances of 'NoneType' and 'decimal.Decimal'
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122835503936'>' mode is incomplete. Execution will be simulated.
+_______________ test_manage_respects_reduce_only_on_close_intent _______________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:131: in test_manage_respects_reduce_only_on_close_intent
+    assert res is not None
+E   assert None is not None
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122830315888'>' mode is incomplete. Execution will be simulated.
+________________ test_manage_max_hold_triggers_close_or_signal _________________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:162: in test_manage_max_hold_triggers_close_or_signal
+    assert res is not None
+E   assert None is not None
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122829862752'>' mode is incomplete. Execution will be simulated.
+________________________ test_guard_deny_missing_equity ________________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:14: in test_guard_deny_missing_equity
+    assert "missing_equity" in res["reason"] or "PORTFOLIO_EMPTY" in res["reason"]
+E   AssertionError: assert ('missing_equity' in 'EQUITY_UNKNOWN' or 'PORTFOLIO_EMPTY' in 'EQUITY_UNKNOWN')
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+_______________________ test_guard_deny_stale_portfolio ________________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:23: in test_guard_deny_stale_portfolio
+    assert "stale" in res["reason"].lower()
+E   AssertionError: assert 'stale' in 'equity_unknown'
+E    +  where 'equity_unknown' = <built-in method lower of str object at 0x765895b1d370>()
+E    +    where <built-in method lower of str object at 0x765895b1d370> = 'EQUITY_UNKNOWN'.lower
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+____________________ test_guard_deny_max_equity_utilization ____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:35: in test_guard_deny_max_equity_utilization
+    assert "EQUITY_UTILIZATION_BREACH" in res["reason"]
+E   AssertionError: assert 'EQUITY_UTILIZATION_BREACH' in 'EQUITY_UNKNOWN'
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+____________________ test_guard_deny_max_portfolio_fraction ____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:47: in test_guard_deny_max_portfolio_fraction
+    assert "PORTFOLIO_FRACTION_BREACH" in res["reason"]
+E   AssertionError: assert 'PORTFOLIO_FRACTION_BREACH' in 'EQUITY_UNKNOWN'
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+_____________________ test_guard_deny_max_long_utilization _____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:64: in test_guard_deny_max_long_utilization
+    assert "LONG_UTILIZATION_BREACH" in res["reason"]
+E   AssertionError: assert 'LONG_UTILIZATION_BREACH' in 'EQUITY_UNKNOWN'
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+_________________ test_guard_deny_directional_ratio_long_heavy _________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:106: in test_guard_deny_directional_ratio_long_heavy
+    assert "DIRECTIONAL_RATIO_BREACH" in res["reason"]
+E   AssertionError: assert 'DIRECTIONAL_RATIO_BREACH' in 'EQUITY_UNKNOWN'
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+_________________________ test_guard_deny_leverage_cap _________________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:118: in test_guard_deny_leverage_cap
+    assert "LEVERAGE_CAP_BREACH" in res["reason"]
+E   AssertionError: assert 'LEVERAGE_CAP_BREACH' in 'EQUITY_UNKNOWN'
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+_____________________ test_guard_allow_when_within_limits ______________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:125: in test_guard_allow_when_within_limits
+    assert res["allowed"] is True
+E   assert False is True
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+________________________ test_guard_reserve_and_release ________________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:142: in test_guard_reserve_and_release
+    guard.reserve("order_1", Decimal("500"), symbol="BTCUSDT", side="BUY")
+apps/reference/domains/execution_position/exposure_guard.py:1220: in reserve
+    symbol_leverage = self.resolve_symbol_leverage(
+apps/reference/domains/execution_position/exposure_guard.py:378: in resolve_symbol_leverage
+    raise ConfigContractError(
+E   apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.execution.exposure.leverage_defaults' Reason='Expected dict, got <class 'unittest.mock.MagicMock'>'
+______________________ test_guard_fallback_mode_reduction ______________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:160: in test_guard_fallback_mode_reduction
+    assert "FALLBACK_MODE_BREACH" in res["reason"] or "EQUITY_UTILIZATION_BREACH" in res["reason"]
+E   AssertionError: assert ('FALLBACK_MODE_BREACH' in 'EQUITY_UNKNOWN' or 'EQUITY_UTILIZATION_BREACH' in 'EQUITY_UNKNOWN')
+------------------------------ Captured log call -------------------------------
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:236 FALLBACK_MODE_ENTERED: reason=TEST, policy=fail_closed, risk_reduction_pct=0.5
+ERROR    apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:279 ALERT_MANAGER_ERROR: Failed to send fallback alert - No module named 'vfoundation.core.alert_manager'
+WARNING  apps.reference.domains.execution_position.exposure_guard.ExposureGuard:exposure_guard.py:508 EXPOSURE_FAIL_CLOSED: EQUITY_UNKNOWN - equity not available yet
+____________________ test_guard_soft_clip_instead_of_reject ____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:172: in test_guard_soft_clip_instead_of_reject
+    guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/domains/execution_position/exposure_guard.py:121: in __init__
+    self.soft_limit_config = self._load_soft_limit_config()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/domains/execution_position/exposure_guard.py:180: in _load_soft_limit_config
+    raise ConfigContractError(path=f"trading.risk.soft_limits.{k}", why="Missing required key")
+E   apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits.directional_ratio_max' Reason='Missing required key'
+____________________ test_fsm_routes_open_cmd_to_open_flow _____________________
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py:22: in test_fsm_routes_open_cmd_to_open_flow
+    mock_flow.handle.assert_called_once()
+/usr/lib/python3.12/unittest/mock.py:923: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'handle' to have been called once. Called 0 times.
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122836119568'>' mode is incomplete. Execution will be simulated.
+_____________________ test_fsm_routes_ack_to_state_update ______________________
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py:35: in test_fsm_routes_ack_to_state_update
+    fsm.watchdog.on_ack.assert_called_once()
+/usr/lib/python3.12/unittest/mock.py:923: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'on_ack' to have been called once. Called 0 times.
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122830444160'>' mode is incomplete. Execution will be simulated.
+___________________ test_fsm_routes_fill_to_position_update ____________________
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py:47: in test_fsm_routes_fill_to_position_update
+    fsm.handle(msg)
+apps/reference/domains/execution_position/fsm.py:1033: in handle
+    open_flow, manage_flow, close_flow = self._get_or_create_flows(symbol)
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/reference/domains/execution_position/fsm.py:999: in _get_or_create_flows
+    self.open_flows[symbol],
+    ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'BTCUSDT'
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122827612912'>' mode is incomplete. Execution will be simulated.
+___________________ test_fsm_adapter_error_emits_error_event ___________________
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py:92: in test_fsm_adapter_error_emits_error_event
+    fsm.adapter.place_order.side_effect = Exception("API DOWN")
+    ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'place_order'
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122829941024'>' mode is incomplete. Execution will be simulated.
+_________________ test_fsm_watchdog_triggers_deadline_callback _________________
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py:118: in test_fsm_watchdog_triggers_deadline_callback
+    fsm._on_watchdog_timeout("c1", "FILL_TIMEOUT")
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'ExecPosFSM' object has no attribute '_on_watchdog_timeout'
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130122824741664'>' mode is incomplete. Execution will be simulated.
+=========================== short test summary info ============================
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_emits_bracket_on_entry_once - AssertionError: assert 'BATCH' == 'PLACE_ORDER'
+  
+  - PLACE_ORDER
+  + BATCH
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_does_not_flip_side - AssertionError: assert None == 'BUY'
+ +  where None = <apps.reference.domains.execution_position.fsm_manage.ManageFlowFSM object at 0x76589538d340>.position_side
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_long - TypeError: '<' not supported between instances of 'NoneType' and 'decimal.Decimal'
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_short - TypeError: '>' not supported between instances of 'NoneType' and 'decimal.Decimal'
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_respects_reduce_only_on_close_intent - assert None is not None
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_max_hold_triggers_close_or_signal - assert None is not None
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_missing_equity - AssertionError: assert ('missing_equity' in 'EQUITY_UNKNOWN' or 'PORTFOLIO_EMPTY' in 'EQUITY_UNKNOWN')
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_stale_portfolio - AssertionError: assert 'stale' in 'equity_unknown'
+ +  where 'equity_unknown' = <built-in method lower of str object at 0x765895b1d370>()
+ +    where <built-in method lower of str object at 0x765895b1d370> = 'EQUITY_UNKNOWN'.lower
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_equity_utilization - AssertionError: assert 'EQUITY_UTILIZATION_BREACH' in 'EQUITY_UNKNOWN'
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_portfolio_fraction - AssertionError: assert 'PORTFOLIO_FRACTION_BREACH' in 'EQUITY_UNKNOWN'
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_long_utilization - AssertionError: assert 'LONG_UTILIZATION_BREACH' in 'EQUITY_UNKNOWN'
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_directional_ratio_long_heavy - AssertionError: assert 'DIRECTIONAL_RATIO_BREACH' in 'EQUITY_UNKNOWN'
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_leverage_cap - AssertionError: assert 'LEVERAGE_CAP_BREACH' in 'EQUITY_UNKNOWN'
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_allow_when_within_limits - assert False is True
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_reserve_and_release - apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.execution.exposure.leverage_defaults' Reason='Expected dict, got <class 'unittest.mock.MagicMock'>'
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_fallback_mode_reduction - AssertionError: assert ('FALLBACK_MODE_BREACH' in 'EQUITY_UNKNOWN' or 'EQUITY_UTILIZATION_BREACH' in 'EQUITY_UNKNOWN')
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_soft_clip_instead_of_reject - apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits.directional_ratio_max' Reason='Missing required key'
+FAILED tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_open_cmd_to_open_flow - AssertionError: Expected 'handle' to have been called once. Called 0 times.
+FAILED tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_ack_to_state_update - AssertionError: Expected 'on_ack' to have been called once. Called 0 times.
+FAILED tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_fill_to_position_update - KeyError: 'BTCUSDT'
+FAILED tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_adapter_error_emits_error_event - AttributeError: 'NoneType' object has no attribute 'place_order'
+FAILED tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_watchdog_triggers_deadline_callback - AttributeError: 'ExecPosFSM' object has no attribute '_on_watchdog_timeout'
+======================== 22 failed, 14 passed in 1.02s =========================

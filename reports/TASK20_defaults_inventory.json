@@ -3340,7 +3340,7 @@
   },
   {
     "class": "AuroraConfig",
-    "field": "mean_reversion_1m",
+    "field": "mean_reversion",
     "type": "AnnAssign",
     "default": "Field(default=None, description='Mean Reversion 1m strategy config (loaded from strategy profile SSOT)')",
     "line": 1825

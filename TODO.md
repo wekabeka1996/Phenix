@@ -1,3 +1,35 @@
+---
+
+## ✅ TASK 29 — TEST-COVERAGE-PUSH-V1-EXEC_POS — COMPLETE
+
+- [x] Boost total coverage from 31% to 39% (+8% delta)
+- [x] Implement Matrix-driven tests for `ExposureGuard` (33% → 49%)
+- [x] Implement Scenario-driven tests for `ManageFlowFSM` (48% → 55%)
+- [x] Implement Routing/Recovery tests for `ExecPosFSM`
+- [x] Generate Coverage Delta Report (`reports/execpos_coverage_push_v1/execpos_delta.md`)
+- [x] Identify 3 critical bugs (Memory Leak, Missing `reduce_only`, Watchdog Routing)
+
+---
+
+## ⏳ TASK 30 — FIX-PACK-01: EXECUTION-POSITION-CORE-BUGS — TODO
+
+- [ ] [F1-01] Fix Memory Leak: Implement TTL-capping for `ExecPosFSM._processed_events`
+- [ ] [F1-02] Fix Contract: Add `reduce_only` to `CLOSE_POSITION` message in `fsm_manage.py`
+- [ ] [F1-03] Fix Routing: Route `EVT:ORDER_ACK` from bus to `watchdog.on_order_ack` in `fsm.py`
+- [ ] [F1-04] Fix Logic: Investigate and fix failing `ExposureGuard` limit checks (breach logic)
+- [ ] [F1-05] Verify all bug-fix regression tests pass
+
+---
+
+## ✅ TASK26 — TEST-COVERAGE-BASELINE-EXEC_POS-01 — COMPLETE
+
+- [x] Create Risk Map (`reports/coverage_baseline/execpos_risk_map.md`)
+- [x] Implement Diagnostic Test Suite (`tests/domains/execution_position`)
+- [x] Verify Critical Contracts (MinNotional, Fail-Closed, TTL)
+- [x] Generate Diagnostics Report (`reports/coverage_baseline/execpos_diagnostics_report.md`)
+
+---
+
 ## ✅ TASK20: CFG-ZERO-DEFAULTS-INVENTORY-AND-GATE-P1-20 — COMPLETE
 
 - [x] Create `tools/inventory_config_defaults.py` (AST parser for defaults)
@@ -6,6 +38,65 @@
 - [x] Update `Copilot_Master_Roadmap.md` with completion entry
 - [x] Update JOURNAL.md with detailed completion log
 - [x] Ensure `pytest -q tests/config` passes (69/69 tests green)
+
+---
+
+## ✅ TASK23.FIX — CFG-VALIDATION-FIELD-REQUIRED-OPTIONAL-NULL-AUTOFILL + REMOVE-LEGACY-REQUIRED-ALIASES — COMPLETE
+
+- [x] Add `--autofill-optional-nulls` + `--config-dir` to `tools/autofill_config_defaults_into_yaml.py`
+- [x] Ensure autofill does not reshape SSOT files (no wrapper keys like `domains:` inside `domains.yaml`)
+- [x] Remove forbidden SSOT mirrors from `TradingConfig` (no `trading.instruments/domains/...` second truth)
+- [x] Add regression test `tests/config/test_optional_required_null_autofill.py`
+- [x] Generate reports: `reports/TASK23FIX_optional_null_plan.md` + `reports/TASK23FIX_optional_null_applied.md`
+- [x] Validate: `pytest -q tests/config tests/runtime` green
+
+---
+
+## ✅ TASK24 — CORE-CORRECTNESS-HARDENING-P1 — COMPLETE
+
+- [x] Add forensic audits (`reports/TASK24A_*`)
+- [x] Enforce warmup/readiness gating in DecisionMaking (fail-closed) + `warmup_block_total`
+- [x] Fix FeatureEngineering: macro_sync (tail/ttl), volume_spike (dt-normalized), volatility readiness
+- [x] Make RegimeDetector strict + ATR True Range/Wilder + data-quality gates
+- [x] Harden RetryScheduler/AuroraBridge: scheduler-owned attempts, config-driven policy, no-loop fail-fast, emit_compat-only
+- [x] Add runtime + policy tests; validate `pytest -q tests/config tests/runtime`
+
+---
+
+## ✅ TASK25 — CFG-RUNTIME-LEGACY-PURGE-P1-25 — COMPLETE
+
+- [x] Forensic sweep report: `reports/TASK25A_domains_legacy_hits.md`
+- [x] Purge legacy patterns in `apps/reference/domains/**/*.py`:
+  - [x] 0 `.get(..., default)`
+  - [x] 0 `getattr(..., default)`
+  - [x] dict config rejected fail-fast (`TypeError`)
+- [x] MarketDataProxy: no `config.to_dict()` fallback (uses `model_dump()` only)
+- [x] Add policy + behavioral tests:
+  - [x] `tests/runtime/test_task25_no_legacy_config_access_in_domains.py`
+  - [x] `tests/runtime/test_task25_market_data_proxy_no_config_to_dict.py`
+  - [x] `tests/runtime/test_task25_domains_reject_dict_config.py`
+- [x] Validate: `pytest -q tests/config tests/runtime` green
+
+---
+
+## ✅ TASK28 — CONFIG HARDENING: Remove Optional-required Trap + Minimize Hydration (P1) — COMPLETE
+
+- [x] Fix Optional-required traps in root/meta/strategy blocks (schema-level)
+- [x] Remove schema-compensation hydration from `apps/reference/config_loader.py` (no `setdefault(...)`)
+- [x] Add merge hook `_merge_config_fragments()` for testable pre-validation merge
+- [x] Make `symbols_to_track` policy explicit + deterministic (schema validator)
+- [x] Add tests:
+  - [x] `tests/config/test_task28_schema_no_optional_required_trap.py`
+  - [x] `tests/runtime/test_task28_no_config_singleton_in_domains.py`
+- [x] Forensic report: `reports/TASK28_config_hardening_report.md`
+
+---
+
+## ✅ ORDER-INDEX-FAILCLOSED-01 — COMPLETE
+
+- [x] Make `domains.execution_position.order_index.ttl_sec` fail-closed at wiring time (no silent skip)
+- [x] Add tests: `tests/runtime/test_order_index_wiring_failclosed.py`
+- [x] Update `JOURNAL.md`
 
 ---
 # Aurora Refactoring TODO
@@ -85,12 +176,12 @@
 - [x] [B3-01] Add FLAT regime mapping — regime_mapping.py (34 tests)
 - [x] [B4-01] Create MeanReversion1mStrategy module — mean_reversion_strategy.py (25 tests)
 - [x] [B4-02] Add feature_engineering __init__.py exports — all modules exported
-- [x] [B4-03] Create 1m MR config — config/aurora/strategies/mean_reversion_1m.yaml
+- [x] [B4-03] Create 1m MR config — config/aurora/strategies/mean_reversion.yaml
 - [x] [B4-04] Clean up config_models.py duplicates — removed DecisionConfig/exposure dups
 
 ## ✅ Track B5: MR Integration in DecisionMaking — COMPLETE
 - [x] [B5-01] Add MR 1m Pydantic models to config_models.py (MeanReversion1mStrategyConfig, etc.)
-- [x] [B5-02] Update ConfigLoader to load strategies/mean_reversion_1m.yaml
+- [x] [B5-02] Update ConfigLoader to load strategies/mean_reversion.yaml
 - [x] [B5-03] Create MeanReversionHandler in decision_making/ — mean_reversion_handler.py
 - [x] [B5-04] Wire MR handler into DecisionMaking.__init__() — decision_making.py
 - [x] [B5-05] Add EVT:TICK_RECEIVED listener → on_tick → MRSignal → EVT:TRADE_INTENT_PROPOSED
@@ -99,6 +190,8 @@
 - [x] [B5-08] Add regime_sizing parameter to MeanReversion1mStrategy — mean_reversion_strategy.py
 - [x] [B5-09] Add tests for MR handler — test_mean_reversion_handler.py (16 tests)
 - [x] [B5-10] Add tests for config_sizing — test_regime_mapping.py (+7 tests)
+- [x] TASK26: Real Coverage Baseline V2 (Real coverage, Risk Map, ManageFlow Tests)
+- [ ] TASK27: Fix Memory Leak and Time-Sync in ExecPos
 - [x] [B5-11] Fix UnboundLocalError in fsm_manage.py (LOG shadowing) — fsm_manage.py
 
 ## ✅ Phase C: Config Completion & Validation — COMPLETE
@@ -118,8 +211,8 @@
 
 ### C2: Додати DOGEUSDT + Enable 1m MR (30m) 🔴 HIGH — **+$88/міс**
 - [ ] [C2-01] Add instruments.DOGEUSDT — trading.yaml
-- [ ] [C2-02] Set mean_reversion_1m.enabled: true — mean_reversion_1m.yaml
-- [ ] [C2-03] Verify DOGEUSDT asset config (bb_window=20, sl=1.97%) — mean_reversion_1m.yaml
+- [ ] [C2-02] Set mean_reversion.enabled: true — mean_reversion.yaml
+- [ ] [C2-03] Verify DOGEUSDT asset config (bb_window=20, sl=1.97%) — mean_reversion.yaml
 
 ### C3: Оновити SOLUSDT до Phase 3 (20m) 🟡 MEDIUM — **+$117/міс**
 - [ ] [C3-01] Update weights from best_aurora_SOLUSDT_3m_phase3.json — trading.yaml
@@ -169,7 +262,9 @@
 - **Tech Debt:** ✅ Complete (stubs removed, duplicates cleaned)
 - **Track B (B1-B5):** ✅ Complete (133 tests: bar_resampler+indicators+regime+strategy+handler)
 - **Phase C (Config):** 🔄 In Progress (0/7 sub-phases)
-- **Total tests passing:** 189
+- **TASK 29 (Coverage Push v1):** ✅ Complete (+8% Gain)
+- **TASK 30 (Fix Pack 01):** ⏳ Pending
+- **Total tests passing:** 212 (including 23/29 new v1 tests)
 
 ## 📈 Optuna Results (from new_alpha docs)
 

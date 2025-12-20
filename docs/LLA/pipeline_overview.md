@@ -137,5 +137,5 @@ Key gates (see `decision_flow_diagram.md` for detailed diagram):
   - Regime affects:
     - signal thresholds (`trading.decision.regime_threshold_multipliers`).
     - sizing multipliers (`trading.decision.sizing_modifiers`).
-    - per‑instrument `allowed_regimes` in `trading.mean_reversion_1m.assets.*.allowed_regimes` and aurora instruments.
+    - per‑instrument `allowed_regimes` in `trading.mean_reversion.assets.*.allowed_regimes` and aurora instruments.
   - `regime_filter?` gate in Decision flow blocks trading for disallowed regimes.

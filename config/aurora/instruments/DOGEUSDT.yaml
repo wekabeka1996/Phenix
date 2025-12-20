@@ -84,7 +84,7 @@ aurora:
   cooldown_sec: 210            # Optuna: 3.5 min (AURORA_FULLSCALE_OPTIMIZATION_FINAL.md)
 
 # Mean Reversion 1M Strategy (Track B) — CHAMPION 🥇
-mean_reversion_1m:
+mean_reversion:
   enabled: true
   strategy:
     bb_window: 20

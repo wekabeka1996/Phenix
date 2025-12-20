@@ -73,9 +73,9 @@ AuroraConfig.instruments:
 AuroraConfig.logging:
   file: config/aurora/system.yaml
   path: logging
-AuroraConfig.mean_reversion_1m:
+AuroraConfig.mean_reversion:
   file: config/aurora/system.yaml
-  path: mean_reversion_1m
+  path: mean_reversion
 AuroraConfig.models:
   file: config/aurora/system.yaml
   path: models
@@ -734,128 +734,128 @@ LoggingConfig.rotation:
   file: config/aurora/system.yaml
   path: system.logging.rotation
 MRAssetConfig.allowed_regimes:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.allowed_regimes
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.allowed_regimes
 MRAssetConfig.bb_window:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.bb_window
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.bb_window
 MRAssetConfig.enabled:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.enabled
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.enabled
 MRAssetConfig.min_vol_atr:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.min_vol_atr
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.min_vol_atr
 MRAssetConfig.position_mode:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.position_mode
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.position_mode
 MRAssetConfig.risk:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk
 MRAssetConfig.sl_pct:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.sl_pct
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.sl_pct
 MRAssetConfig.strategy:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy
 MRAssetRiskConfig.max_risk_score:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.asset_risk.max_risk_score
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.asset_risk.max_risk_score
 MRAssetRiskConfig.position_size_usd:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.asset_risk.position_size_usd
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.asset_risk.position_size_usd
 MRRegimeSizingConfig.sizing_mult:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.regime_sizing.sizing_mult
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.regime_sizing.sizing_mult
 MRRegimeSizingConfig.stop_mult:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.regime_sizing.stop_mult
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.regime_sizing.stop_mult
 MRRegimeSizingConfig.target_mult:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.regime_sizing.target_mult
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.regime_sizing.target_mult
 MRRegimeThresholdsConfig.high_vol_pct:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.regime_thresholds.high_vol_pct
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.regime_thresholds.high_vol_pct
 MRRegimeThresholdsConfig.low_vol_pct:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.regime_thresholds.low_vol_pct
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.regime_thresholds.low_vol_pct
 MRRiskConfig.daily_loss_limit_usd:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk.daily_loss_limit_usd
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk.daily_loss_limit_usd
 MRRiskConfig.expected_pnl_multiplier:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk.expected_pnl_multiplier
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk.expected_pnl_multiplier
 MRRiskConfig.fees_pct:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk.fees_pct
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk.fees_pct
 MRRiskConfig.max_concurrent_positions:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk.max_concurrent_positions
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk.max_concurrent_positions
 MRRiskConfig.position_size_usd:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk.position_size_usd
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk.position_size_usd
 MRRiskConfig.slippage_pct:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk.slippage_pct
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk.slippage_pct
 MRStrategyOverrideConfig.bb_num_std:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy_override.bb_num_std
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy_override.bb_num_std
 MRStrategyOverrideConfig.bb_window:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy_override.bb_window
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy_override.bb_window
 MRStrategyOverrideConfig.cooldown_sec:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy_override.cooldown_sec
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy_override.cooldown_sec
 MRStrategyOverrideConfig.entry_threshold:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy_override.entry_threshold
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy_override.entry_threshold
 MRStrategyOverrideConfig.min_bb_width:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy_override.min_bb_width
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy_override.min_bb_width
 MRStrategyOverrideConfig.sl_atr_mult:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy_override.sl_atr_mult
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy_override.sl_atr_mult
 MRStrategyOverrideConfig.tp_to_mid:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy_override.tp_to_mid
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy_override.tp_to_mid
 MRStrategyParamsConfig.atr_window:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.atr_window
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.atr_window
 MRStrategyParamsConfig.bb_num_std:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.bb_num_std
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.bb_num_std
 MRStrategyParamsConfig.bb_window:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.bb_window
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.bb_window
 MRStrategyParamsConfig.cooldown_sec:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.cooldown_sec
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.cooldown_sec
 MRStrategyParamsConfig.entry_threshold:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.entry_threshold
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.entry_threshold
 MRStrategyParamsConfig.max_bb_width:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.max_bb_width
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.max_bb_width
 MRStrategyParamsConfig.min_bars:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.min_bars
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.min_bars
 MRStrategyParamsConfig.min_bb_width:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.min_bb_width
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.min_bb_width
 MRStrategyParamsConfig.rsi_overbought:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.rsi_overbought
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.rsi_overbought
 MRStrategyParamsConfig.rsi_oversold:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.rsi_oversold
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.rsi_oversold
 MRStrategyParamsConfig.rsi_window:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.rsi_window
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.rsi_window
 MRStrategyParamsConfig.sl_atr_mult:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.sl_atr_mult
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.sl_atr_mult
 MRStrategyParamsConfig.tp_to_mid:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy.tp_to_mid
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy.tp_to_mid
 MacroSyncConfig.align_mode:
   file: config/aurora/trading.yaml
   path: trading.market_data.macro_sync.align_mode
@@ -938,35 +938,35 @@ MaxRiskScoreConfig.value:
   file: config/aurora/trading.yaml
   path: trading.decision.max_risk_score.value
 MeanReversion1mStrategyConfig.allowed_regimes:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.allowed_regimes
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.allowed_regimes
 MeanReversion1mStrategyConfig.assets:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.assets
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.assets
 MeanReversion1mStrategyConfig.emit_trade_intent_directly:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.emit_trade_intent_directly
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.emit_trade_intent_directly
 MeanReversion1mStrategyConfig.enabled:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.enabled
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.enabled
 MeanReversion1mStrategyConfig.model_config:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.model_config
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.model_config
 MeanReversion1mStrategyConfig.regime_sizing:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.regime_sizing
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.regime_sizing
 MeanReversion1mStrategyConfig.regime_thresholds:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.regime_thresholds
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.regime_thresholds
 MeanReversion1mStrategyConfig.risk:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.risk
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.risk
 MeanReversion1mStrategyConfig.strategy:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.strategy
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.strategy
 MeanReversion1mStrategyConfig.timeframe_sec:
-  file: config/aurora/strategies/mean_reversion_1m.yaml
-  path: mean_reversion_1m.timeframe_sec
+  file: config/aurora/strategies/mean_reversion.yaml
+  path: mean_reversion.timeframe_sec
 MeanReversionConfig.allowed_regimes:
   file: config/aurora/trading.yaml
   path: trading.decision.mean_reversion.allowed_regimes

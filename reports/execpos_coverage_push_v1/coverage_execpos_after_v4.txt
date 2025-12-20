@@ -1,0 +1,121 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.1, pluggy-1.6.0 -- /home/wekabeka/Музыка/Phenix/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/wekabeka/Музыка/Phenix
+configfile: pytest.ini
+plugins: asyncio-1.3.0, anyio-4.11.0, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 46 items
+
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py::test_diag_fail_closed_missing_portfolio PASSED [  2%]
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py::test_diag_reject_below_min_notional PASSED [  4%]
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py::test_diag_idempotency_duplicate_open PASSED [  6%]
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py::test_diag_partial_fill_accounting PASSED [  8%]
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py::test_diag_reduce_only_close_safety PASSED [ 10%]
+tests/domains/execution_position/test_execpos_contract_diagnostics_v1.py::test_diag_ttl_timeout_safety PASSED [ 13%]
+tests/domains/execution_position/test_execpos_event_ordering_v1.py::test_ack_portfolio_fill_order PASSED [ 15%]
+tests/domains/execution_position/test_execpos_event_ordering_v1.py::test_fill_before_ack_out_of_order PASSED [ 17%]
+tests/domains/execution_position/test_execpos_event_ordering_v1.py::test_portfolio_lagging_after_open PASSED [ 19%]
+tests/domains/execution_position/test_execpos_event_ordering_v1.py::test_duplicate_fill_idempotency PASSED [ 21%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_open_to_open_flow PASSED [ 23%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_ack_via_on_order_ack FAILED [ 26%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_fill_to_position_update PASSED [ 28%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_duplicate_fill_event_is_ignored PASSED [ 30%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_out_of_order_fill_before_ack_does_not_corrupt_state PASSED [ 32%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_ack_missing_then_timeout_triggers_safe_path PASSED [ 34%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_adapter_error_emits_error_event PASSED [ 36%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_watchdog_triggers_deadline_callback PASSED [ 39%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_processed_events_growth_is_bounded_or_flagged PASSED [ 41%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_does_not_emit_adjust_when_flat PASSED [ 43%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_tpsl_values_respect_side_invariants PASSED [ 45%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_idempotency_on_adjustment PASSED [ 47%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_handles_missing_market_data_fail_closed PASSED [ 50%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_max_hold_time_triggers_close PASSED [ 52%]
+tests/domains/execution_position/test_execpos_manage_contracts_v1.py::test_manage_emits_modify_only_when_auto_enabled PASSED [ 54%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_no_action_when_not_opened PASSED [ 56%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_fail_closed_when_missing_market_snapshot PASSED [ 58%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_fail_closed_when_missing_instrument_specs PASSED [ 60%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_emits_bracket_on_entry_once PASSED [ 63%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_does_not_flip_side PASSED [ 65%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_long PASSED [ 67%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_short PASSED [ 69%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_trailing_stop_monotonicity PASSED [ 71%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_respects_reduce_only_on_close_intent FAILED [ 73%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_idempotency_on_modify_same_key PASSED [ 76%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_max_hold_triggers_close_or_signal PASSED [ 78%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_no_modify_when_price_did_not_move_enough PASSED [ 80%]
+tests/domains/execution_position/test_execpos_processed_events_cap_v1.py::test_execpos_processed_events_unbounded_leak_risk PASSED [ 82%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_missing_equity PASSED [ 84%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_stale_portfolio PASSED [ 86%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_equity_utilization FAILED [ 89%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_portfolio_fraction FAILED [ 91%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_long_utilization FAILED [ 93%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_directional_ratio_long_heavy FAILED [ 95%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_allow_when_within_limits PASSED [ 97%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_reserve_and_release PASSED [100%]
+
+=================================== FAILURES ===================================
+_____________________ test_fsm_routes_ack_via_on_order_ack _____________________
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py:30: in test_fsm_routes_ack_via_on_order_ack
+    fsm.watchdog.on_order_ack.assert_called()
+/usr/lib/python3.12/unittest/mock.py:913: in assert_called
+    raise AssertionError(msg)
+E   AssertionError: Expected 'on_order_ack' to have been called.
+_______________ test_manage_respects_reduce_only_on_close_intent _______________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:106: in test_manage_respects_reduce_only_on_close_intent
+    assert str(res.pld.get("reduceOnly", "")).lower() == "true" or res.pld.get("reduce_only") is True
+E   AssertionError: assert ('' == 'true'
+E     
+E     - true or None is True)
+E    +  where None = <built-in method get of dict object at 0x7d17b822bf00>('reduce_only')
+E    +    where <built-in method get of dict object at 0x7d17b822bf00> = {'elapsed_sec': 20.0, 'max_hold_sec': 10, 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', ...}.get
+E    +      where {'elapsed_sec': 20.0, 'max_hold_sec': 10, 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', ...} = Message(v=1, op='DEC', verb='CLOSE_POSITION', src='execution_position', dst='execution_position', rid='f1e8e7b2-68bb-48d0-86dd-08a95bf5ebd0', span_id='347daad0ad49430ab2126686254fa1ba', parent_span_id=None, ts=1766248569157, ttl_ms=2000, key=None, idempotent_key=None, pld={'symbol': 'BTCUSDT', 'side': 'SELL', 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', 'elapsed_sec': 20.0, 'max_hold_sec': 10}, why='max_hold_timeout_20s', why_explain_ref=None, intent=None, data_ref=[], sig=None, mode='live', mode_contract=None, corr_id=None, oco_group_id=None, parent_client_order_id=None, link_ack_id=None, link_fill_id=None).pld
+____________________ test_guard_deny_max_equity_utilization ____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:50: in test_guard_deny_max_equity_utilization
+    assert res["allowed"] is False
+E   assert True is False
+____________________ test_guard_deny_max_portfolio_fraction ____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:63: in test_guard_deny_max_portfolio_fraction
+    assert res["allowed"] is False
+E   assert True is False
+_____________________ test_guard_deny_max_long_utilization _____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:82: in test_guard_deny_max_long_utilization
+    assert res["allowed"] is False
+E   assert True is False
+_________________ test_guard_deny_directional_ratio_long_heavy _________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:104: in test_guard_deny_directional_ratio_long_heavy
+    assert res["allowed"] is False
+E   assert True is False
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.3-final-0 ________________
+
+Name                                                              Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------------------------------------
+apps/reference/domains/execution_position/__init__.py                 0      0   100%
+apps/reference/domains/execution_position/aurora_log_adapter.py      77     55    29%   83-121, 143-162, 188-214, 236-249
+apps/reference/domains/execution_position/contracts.py              172     69    60%   105-112, 118-128, 134-141, 147-160, 166-178, 208-215, 227-247, 310-318, 380-384
+apps/reference/domains/execution_position/drift_monitor.py          111    111     0%   19-265
+apps/reference/domains/execution_position/exposure_guard.py         519    273    47%   46-47, 86, 113, 166, 169, 180, 220-279, 286-345, 371, 378, 449-453, 460-462, 465-470, 499-502, 531-552, 581-640, 673-680, 687-696, 709, 745-747, 751-752, 773, 789-931, 941-1073, 1078-1197, 1282-1295, 1313-1334, 1355-1358, 1367-1369, 1375, 1408-1441, 1454, 1459-1463, 1477, 1482-1486
+apps/reference/domains/execution_position/fsm.py                   1210    917    24%   56-58, 65-66, 80-103, 114, 138-141, 177-178, 225-226, 241, 243, 246, 253-257, 269, 277-278, 287, 292, 302-303, 462, 465, 468-469, 484, 488-490, 506-507, 513-520, 524, 530, 542-555, 559-573, 577-595, 600-612, 616-635, 640-643, 660-663, 683-687, 694-720, 730, 733, 738-755, 776-778, 783-785, 816-818, 832-844, 861-864, 886-890, 895-901, 905-912, 917-989, 1000-1001, 1025-1034, 1043-1044, 1048-1050, 1059, 1064-1079, 1082, 1086, 1090-1098, 1104-1136, 1142-1930, 1934-1996, 2000-2007, 2012-2044, 2072-2191, 2195-2196, 2200-2201, 2205-2206, 2224-2286, 2290-2294, 2303-2375, 2384-2423, 2428-2432, 2440-2492, 2504-2510, 2528-2589, 2593-2604, 2613-2666
+apps/reference/domains/execution_position/fsm_close.py               66     13    80%   67-70, 87, 90, 112-115, 160, 164-166
+apps/reference/domains/execution_position/fsm_manage.py             664    297    55%   29-32, 99, 114, 172, 176, 202-226, 243-251, 258-265, 286, 296, 320, 377-380, 420-422, 425-439, 468-477, 482-483, 498, 523-537, 544-554, 565-571, 574-575, 593-594, 607-610, 620-623, 627-637, 660, 668, 672-677, 691-693, 735-746, 767-771, 777, 799-812, 826-830, 837, 847-861, 873-877, 889-890, 932-937, 988, 1004-1021, 1033, 1045-1046, 1055-1081, 1092-1094, 1110-1112, 1125-1217, 1236, 1247, 1252, 1263-1271, 1279, 1290-1299, 1359-1376, 1380, 1392-1393, 1412-1418, 1422-1442
+apps/reference/domains/execution_position/fsm_open.py               161     47    71%   59, 77-79, 103-110, 131, 133, 150, 176-179, 201-204, 211-214, 219-222, 231-234, 254-260, 269-274, 289, 291, 293, 321-323, 332-348, 367, 371-372
+apps/reference/domains/execution_position/idempotent_cancel.py       92     50    46%   96-116, 135-141, 173-276, 287-289, 293-296
+apps/reference/domains/execution_position/metrics_aggregator.py     124     46    63%   39-52, 69-81, 100-114, 142-155, 159-160, 164, 169-171, 175-179, 199-202, 222-235, 246-257, 270-299, 303, 307
+apps/reference/domains/execution_position/metrics_collector.py      143    111    22%   84-96, 107-134, 140-153, 157-161, 165-166, 170-171, 175-176, 180-181, 185-186, 190-192, 196-197, 201-202, 206-207, 211-249, 281-298, 302-315, 319-366, 370-400
+apps/reference/domains/execution_position/order_guardian.py          58     35    40%   28-50, 61, 65, 69, 73, 77, 81, 85, 89, 93, 96, 99, 104, 108-111, 115-118
+apps/reference/domains/execution_position/order_index.py             67     67     0%   8-163
+apps/reference/domains/execution_position/soft_clip.py               70     39    44%   21-22, 89-154
+apps/reference/domains/execution_position/utils.py                  136    123    10%   22-33, 43-45, 64-120, 133-146, 157-170, 196-232, 240-260, 273
+apps/reference/domains/execution_position/utils_event_bus.py         25     17    32%   18, 28-30, 48-57, 67-71
+apps/reference/domains/execution_position/watchdog.py               216    133    38%   95-97, 105-119, 127-140, 147-156, 162-167, 197-198, 213-223, 227-231, 235-240, 261, 274-426, 447-449, 454
+-----------------------------------------------------------------------------------------------
+TOTAL                                                              3911   2403    39%
+=========================== short test summary info ============================
+FAILED tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_ack_via_on_order_ack
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_respects_reduce_only_on_close_intent
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_equity_utilization
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_portfolio_fraction
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_long_utilization
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_directional_ratio_long_heavy
+========================= 6 failed, 40 passed in 1.50s =========================

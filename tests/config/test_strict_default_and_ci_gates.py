@@ -160,11 +160,11 @@ def test_sanity_mean_reversion_in_trading_yaml_strict(minimal_config, clean_env)
     """T6b: Sanity check MR in trading.yaml deprecation still works (TASK 08)."""
     config_dir = minimal_config
     
-    # Add deprecated mean_reversion_1m to trading.yaml (preserve required structure)
+    # Add deprecated mean_reversion to trading.yaml (preserve required structure)
     trading_path = config_dir / "trading.yaml"
     payload = yaml.safe_load(trading_path.read_text())
     assert isinstance(payload, dict)
-    payload["mean_reversion_1m"] = {"enabled": True}
+    payload["mean_reversion"] = {"enabled": True}
     trading_path.write_text(yaml.safe_dump(payload, sort_keys=False))
     
     # Strict mode
@@ -172,5 +172,5 @@ def test_sanity_mean_reversion_in_trading_yaml_strict(minimal_config, clean_env)
     
     loader = ConfigLoader(config_dir=config_dir)
     from apps.reference.config_contract import ConfigContractError
-    with pytest.raises(ConfigContractError, match="DEPRECATED: mean_reversion_1m detected in trading.yaml"):
+    with pytest.raises(ConfigContractError, match="DEPRECATED: mean_reversion detected in trading.yaml"):
         loader.load_config()

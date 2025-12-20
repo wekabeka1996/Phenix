@@ -14,11 +14,12 @@ import logging
 import time
 from decimal import Decimal, ROUND_DOWN
 from enum import Enum
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
-from apps.reference.config_models import AuroraConfig, create_aurora_config, AuroraInstrumentConfig
+from apps.reference.config_models import AuroraConfig, AuroraInstrumentConfig
+from apps.reference.utils.accessors import aget, dget
 
 LOG = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class ManageFlowFSM:
 
     def __init__(
         self,
-        config: Optional[Union[Dict[str, Any], AuroraConfig]] = None,
+        config: Optional[AuroraConfig] = None,
     ):
         self.state = ManageState.FLAT
 
@@ -94,19 +95,9 @@ class ManageFlowFSM:
         self._closing_position: bool = False
         self._closing_position_ts: float = 0.0
 
-        # Configuration: Unify to AuroraConfig
-        if config is None:
-            self.config = AuroraConfig()
-        elif isinstance(config, dict):
-            try:
-                self.config = create_aurora_config(config)
-            except Exception as e:
-                # Fallback for partial dicts in tests
-                import logging
-                logging.getLogger(__name__).warning(f"Config validation failed, using default: {e}")
-                self.config = AuroraConfig()
-        else:
-            self.config = config
+        if isinstance(config, dict):
+            raise TypeError("ManageFlowFSM requires typed AuroraConfig, got dict")
+        self.config = AuroraConfig() if config is None else config
 
         # Extract commonly used configs for easier access
         self._manage_cfg = self.config.trading.execution.manage if self.config.trading.execution else None
@@ -118,7 +109,11 @@ class ManageFlowFSM:
 
         self._wait_mode_bars = 2
         if self._manage_cfg and self._manage_cfg.emergency:
-             self._wait_mode_bars = int(self._manage_cfg.emergency.get("wait_mode_bars", 2))
+            emergency_cfg = self._manage_cfg.emergency
+            if isinstance(emergency_cfg, dict):
+                self._wait_mode_bars = int(emergency_cfg["wait_mode_bars"] if "wait_mode_bars" in emergency_cfg else 2)
+            else:
+                self._wait_mode_bars = int(aget(emergency_cfg, "wait_mode_bars", 2))
         
         self._wait_mode_until_ts: int = 0
 
@@ -141,6 +136,8 @@ class ManageFlowFSM:
             "fsm_adjust_decisions_total": 0,
             "fsm_bracket_orders_placed": 0,
             "fsm_trailing_adjustments": 0,
+            "fsm_max_hold_timeouts": 0,
+            "fsm_partial_exits_total": 0,
             "fsm_errors_total": 0,
         }
 
@@ -244,12 +241,12 @@ class ManageFlowFSM:
             Any value may be None if not configured.
         """
         instr_cfg = self._get_aurora_instr_cfg(symbol)
-        if instr_cfg is not None and getattr(instr_cfg, 'take_profit', None) is not None:
-            tp = instr_cfg.take_profit
+        tp = aget(instr_cfg, "take_profit", None) if instr_cfg is not None else None
+        if tp is not None:
             return (
-                getattr(tp, 'tp_low_ratio', None),
-                getattr(tp, 'tp_high_ratio', None),
-                getattr(tp, 'partial_exit_pct', None),
+                aget(tp, "tp_low_ratio", None),
+                aget(tp, "tp_high_ratio", None),
+                aget(tp, "partial_exit_pct", None),
             )
         return None, None, None
 
@@ -284,23 +281,23 @@ class ManageFlowFSM:
         """
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instr_cfg(symbol)
-        if instr_cfg is not None and getattr(instr_cfg, 'trailing_stop', None) is not None:
-            ts = instr_cfg.trailing_stop
+        ts = aget(instr_cfg, "trailing_stop", None) if instr_cfg is not None else None
+        if ts is not None:
             return (
                 bool(ts.enabled),
-                getattr(ts, 'activation_pct', None),
-                getattr(ts, 'trail_pct', None),
-                getattr(ts, 'min_update_interval_sec', 5) or 5,
+                aget(ts, "activation_pct", None),
+                aget(ts, "trail_pct", None),
+                int(aget(ts, "min_update_interval_sec", 5) or 5),
             )
 
         # 2. Fallback to global trailing dict
-        trailing = getattr(self.config, 'trailing', None) or {}
+        trailing = aget(self.config, "trailing", None) or {}
         if isinstance(trailing, dict):
             return (
-                bool(trailing.get("enable", False)),
+                bool(dget(trailing, "enable", False)),
                 trailing.get("activation_profit_atr_k"),  # Legacy name
                 trailing.get("step_bps"),  # Legacy: bps not pct
-                int(trailing.get("cooldown_sec", 5)),
+                int(dget(trailing, "cooldown_sec", 5)),
             )
 
         return False, None, None, 5
@@ -318,8 +315,9 @@ class ManageFlowFSM:
             max_hold_sec or None if not configured.
         """
         instr_cfg = self._get_aurora_instr_cfg(symbol)
-        if instr_cfg is not None and getattr(instr_cfg, 'exit', None) is not None:
-            return getattr(instr_cfg.exit, 'max_hold_sec', None)
+        exit_cfg = aget(instr_cfg, "exit", None) if instr_cfg is not None else None
+        if exit_cfg is not None:
+            return aget(exit_cfg, "max_hold_sec", None)
         return None
 
     def _check_max_hold_time(self, msg: Message, elapsed_sec: float) -> Optional[Message]:
@@ -341,8 +339,8 @@ class ManageFlowFSM:
             return None
 
         if elapsed_sec >= max_hold_sec:
-            self._metrics["fsm_max_hold_timeouts"] = self._metrics.get(
-                "fsm_max_hold_timeouts", 0) + 1
+            self._metrics["fsm_max_hold_timeouts"] = int(self._metrics["fsm_max_hold_timeouts"]) + 1
+            msg_pld = msg.pld or {}
 
             # Emit close position message
             return Message(
@@ -351,11 +349,12 @@ class ManageFlowFSM:
                 src="execution_position",
                 dst="execution_position",
                 rid=msg.rid,
-                why=f"max_hold_timeout_{int(elapsed_sec)}s",
+                why=f"max_hold_timeout_{int(elapsed_sec)}s_reduce_only",
                 pld={
-                    "symbol": self.symbol or (msg.pld or {}).get("symbol", ""),
+                    "symbol": self.symbol or (msg_pld["symbol"] if "symbol" in msg_pld else ""),
                     "side": self._get_opposite_side(),
                     "qty": str(self.position_qty),
+                    "reduce_only": True,
                     "reason": "MAX_HOLD_TIME_EXCEEDED",
                     "elapsed_sec": elapsed_sec,
                     "max_hold_sec": max_hold_sec,
@@ -402,7 +401,7 @@ class ManageFlowFSM:
                 verb="MANAGE_SKIPPED",
                 src="execution_position",
                 dst="any",
-                rid=getattr(msg, "rid", None) or "",
+                rid=aget(msg, "rid", None) or "",
                 why="manage_disabled",
                 pld={
                     "symbol": pld_symbol,
@@ -432,7 +431,7 @@ class ManageFlowFSM:
                     verb="MANAGE_SKIPPED",
                     src="execution_position",
                     dst="any",
-                    rid=getattr(msg, "rid", None) or "",
+                    rid=aget(msg, "rid", None) or "",
                     why="wait_mode_active",
                     pld={"symbol": pld_symbol, "reason": "wait_mode"},
                     data_ref=msg.data_ref.copy() if msg.data_ref else [],
@@ -449,10 +448,12 @@ class ManageFlowFSM:
             # 🔍 CRITICAL FIX: Distinguish between ENTRY and EXIT fills
             # If this is an EXIT order (TP/SL), position is CLOSING, not opening!
             pld = msg.pld or {}
-            order_type = pld.get("order_type") or pld.get("type", "")
-            close_position = str(pld.get("closePosition", "")).lower() == "true" or \
-                str(pld.get("cp", "")).lower() == "true"
-            is_reduce_only = str(pld.get("reduceOnly", "")).lower() == "true"
+            order_type = pld.get("order_type") or (pld["type"] if "type" in pld else "")
+            close_position = (
+                str(pld["closePosition"] if "closePosition" in pld else "").lower() == "true"
+                or str(pld["cp"] if "cp" in pld else "").lower() == "true"
+            )
+            is_reduce_only = str(pld["reduceOnly"] if "reduceOnly" in pld else "").lower() == "true"
 
             # 🔍 DIAGNOSTIC: Log all FILL events in FLAT state
             LOG.debug(f"FILL event in FLAT: verb={msg.verb}, "
@@ -507,8 +508,8 @@ class ManageFlowFSM:
         """Update position state on fill event."""
         try:
             pld = msg.pld or {}
-            qty = Decimal(str(pld.get("qty", 0)))
-            price = Decimal(str(pld.get("price", 0)))
+            qty = Decimal(str(pld["qty"] if "qty" in pld else 0))
+            price = Decimal(str(pld["price"] if "price" in pld else 0))
             side = pld.get("side")  # BUY or SELL
             symbol = pld.get("symbol")  # Phase 0: extract symbol from fill event
 
@@ -604,8 +605,8 @@ class ManageFlowFSM:
                 is_take_profit=False,
             )
             if not is_sl_valid:
-                self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
-                    "fsm_bracket_validation_failed", 0) + 1
+                cur = self._metrics["fsm_bracket_validation_failed"] if "fsm_bracket_validation_failed" in self._metrics else 0
+                self._metrics["fsm_bracket_validation_failed"] = cur + 1
                 self.state = ManageState.TRACKING
                 return None
 
@@ -617,8 +618,8 @@ class ManageFlowFSM:
                 is_take_profit=True,
             )
             if not is_tp1_valid:
-                self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
-                    "fsm_bracket_validation_failed", 0) + 1
+                cur = self._metrics["fsm_bracket_validation_failed"] if "fsm_bracket_validation_failed" in self._metrics else 0
+                self._metrics["fsm_bracket_validation_failed"] = cur + 1
                 self.state = ManageState.TRACKING
                 return None
 
@@ -631,8 +632,8 @@ class ManageFlowFSM:
                     is_take_profit=True,
                 )
                 if not is_tp2_valid:
-                    self._metrics["fsm_bracket_validation_failed"] = self._metrics.get(
-                        "fsm_bracket_validation_failed", 0) + 1
+                    cur = self._metrics["fsm_bracket_validation_failed"] if "fsm_bracket_validation_failed" in self._metrics else 0
+                    self._metrics["fsm_bracket_validation_failed"] = cur + 1
                     self.state = ManageState.TRACKING
                     return None
 
@@ -681,8 +682,8 @@ class ManageFlowFSM:
             self.tp1_price = tp1_price
             self.tp2_price = tp2_price
             self.tp_price = tp1_price  # Backward compat
-            self._metrics["fsm_bracket_offset_applied"] = self._metrics.get(
-                "fsm_bracket_offset_applied", 0) + 1
+            cur = self._metrics["fsm_bracket_offset_applied"] if "fsm_bracket_offset_applied" in self._metrics else 0
+            self._metrics["fsm_bracket_offset_applied"] = cur + 1
 
             # === QUANTITY CALCULATION: TP1 partial, TP2 remainder ===
             total_qty = self.position_qty
@@ -823,8 +824,9 @@ class ManageFlowFSM:
         instr_cfg = self._get_aurora_instr_cfg(symbol)
         if instr_cfg is not None:
             # Get exit config (SL)
-            if getattr(instr_cfg, 'exit', None) is not None:
-                sl_pct = getattr(instr_cfg.exit, 'sl_pct', None)
+            exit_cfg = aget(instr_cfg, "exit", None)
+            if exit_cfg is not None:
+                sl_pct = aget(exit_cfg, "sl_pct", None)
             # Get take_profit config (TP1/TP2)
             tp_low_ratio, tp_high_ratio, partial_exit_pct = self._get_take_profit_params(symbol)
 
@@ -919,11 +921,11 @@ class ManageFlowFSM:
         """Quantize prices to tick_size from instruments config."""
         tick_size = None
         if symbol and self.config and hasattr(self.config, 'trading'):
-            instruments = getattr(self.config.trading, 'instruments', None)
+            instruments = aget(self.config.trading, "instruments", None)
             if instruments:
                 inst = instruments.get(symbol)
                 if inst:
-                    tick_size = getattr(inst, 'tick_size', None)
+                    tick_size = aget(inst, "tick_size", None)
 
         if tick_size:
             try:
@@ -967,8 +969,9 @@ class ManageFlowFSM:
                  price_protect = brackets.price_protect
 
         # Build payload
+        msg_pld = msg.pld or {}
         payload = {
-            "symbol": msg.pld.get("symbol", ""),
+            "symbol": msg_pld["symbol"] if "symbol" in msg_pld else "",
             "side": side,
             "qty": qty,
             "order_type": order_type,
@@ -981,7 +984,7 @@ class ManageFlowFSM:
         }
 
         # For STOP_MARKET/TAKE_PROFIT_MARKET with closePosition=true, don't send qty
-        if "STOP" in order_type and order_type != "STOP_LOSS" and getattr(self, 'closePosition', False):
+        if "STOP" in order_type and order_type != "STOP_LOSS" and bool(aget(self, "closePosition", False)):
             # Remove qty for close-position orders (Binance manages qty automatically)
             payload.pop("qty", None)
 
@@ -1039,8 +1042,12 @@ class ManageFlowFSM:
                  # Assuming emergency is a dict in Pydantic model for now based on config_models.py
                  # emergency: Dict[str, Any] = Field(default_factory=dict)
                  em_cfg = self._manage_cfg.emergency
-                 emergency_enabled = bool(em_cfg.get("enable", False))
-                 emergency_sl_bps = int(em_cfg.get("emergency_sl_bps", 100))
+                 if isinstance(em_cfg, dict):
+                     emergency_enabled = bool(dget(em_cfg, "enable", False))
+                     emergency_sl_bps = int(dget(em_cfg, "emergency_sl_bps", 100))
+                 else:
+                     emergency_enabled = bool(aget(em_cfg, "enable", False))
+                     emergency_sl_bps = int(aget(em_cfg, "emergency_sl_bps", 100))
 
             if emergency_enabled and msg.op == "UPD" and msg.verb == "MARKET_DATA":
                 pld = msg.pld or {}
@@ -1074,7 +1081,7 @@ class ManageFlowFSM:
                                 self.position_entry_price * (Decimal("1") + sl_em_bps / Decimal("10000")))
                             return self._emit_place_order(
                                 msg,
-                                client_id=f"{getattr(msg,'rid','')}_emergency_sl",
+                                client_id=f"{aget(msg, 'rid', '')}_emergency_sl",
                                 order_type="STOP_MARKET",
                                 side=self.position_side or "",
                                 qty=str(self.position_qty),
@@ -1118,7 +1125,7 @@ class ManageFlowFSM:
         """
         pld = msg.pld or {}
         order_id = pld.get("orderId")
-        client_order_id = pld.get("clientOrderId", "")
+        client_order_id = pld["clientOrderId"] if "clientOrderId" in pld else ""
 
         if not order_id:
             return None
@@ -1161,7 +1168,7 @@ class ManageFlowFSM:
                 filled_qty = self.position_qty * filled_pct
                 self.position_qty = self.position_qty - filled_qty
                 LOG.info(f"[ManageFlowFSM] Position reduced: filled={filled_qty}, remaining={self.position_qty}")
-                self._metrics["fsm_partial_exits_total"] = self._metrics.get("fsm_partial_exits_total", 0) + 1
+                self._metrics["fsm_partial_exits_total"] = int(self._metrics["fsm_partial_exits_total"]) + 1
 
             # Clear TP1, keep TP2 as "runner"
             self.tp1_order_id = None
@@ -1331,7 +1338,8 @@ class ManageFlowFSM:
 
     def _emit_cancel_order(self, msg: Message, order_id: str, why: str) -> Message:
         """Emit DEC:CANCEL_ORDER with symbol included for adapter call."""
-        symbol = (msg.pld or {}).get("symbol", "")
+        msg_pld = msg.pld or {}
+        symbol = msg_pld["symbol"] if "symbol" in msg_pld else ""
         return Message(
             op="DEC",
             verb="CANCEL_ORDER",
@@ -1386,12 +1394,12 @@ class ManageFlowFSM:
                 return
 
             # Restore position data
-            self.position_qty = Decimal(
-                str(state_data.get("qty", 0))) if state_data.get("qty") else None
-            self.position_entry_price = Decimal(str(state_data.get(
-                "entry_price", 0))) if state_data.get("entry_price") else None
+            qty_value = state_data.get("qty")
+            entry_price_value = state_data.get("entry_price")
+            self.position_qty = Decimal(str(qty_value)) if qty_value else None
+            self.position_entry_price = Decimal(str(entry_price_value)) if entry_price_value else None
             self.position_side = state_data.get("side")
-            self.position_open_ts = float(state_data.get("open_ts", 0))
+            self.position_open_ts = float(state_data["open_ts"] if "open_ts" in state_data else 0)
 
             # Restore bracket data
             self.sl_order_id = state_data.get("sl_order_id")

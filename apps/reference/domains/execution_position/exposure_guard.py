@@ -19,6 +19,7 @@ from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.domains.execution_position.soft_clip import SoftClipEngine as SoftClipEngineImpl
 from apps.reference.domains.execution_position.metrics_aggregator import metrics_logger
 from apps.reference.domain_config import DomainConfigResolver
+from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_models import AuroraConfig
 
 
@@ -81,6 +82,8 @@ class ExposureGuard:
 
     def __init__(self, fsm_core: Any, config: AuroraConfig):
         self.fsm = fsm_core
+        if isinstance(config, dict):
+            raise TypeError("ExposureGuard requires AuroraConfig, got dict")
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
@@ -91,22 +94,40 @@ class ExposureGuard:
         resolver = DomainConfigResolver(config)
         eg_config = resolver.get_exposure_guard()
 
-        # Core limits from domains.execution_position.exposure_guard
-        self.max_equity_utilization_pct = Decimal(str(eg_config.max_equity_utilization_pct))
-        self.max_portfolio_fraction = Decimal(str(eg_config.max_portfolio_fraction))
-        self.max_long_utilization_pct = Decimal(str(eg_config.max_long_utilization_pct))
-        self.max_short_utilization_pct = Decimal(str(eg_config.max_short_utilization_pct))
-        self.max_directional_ratio = Decimal(str(eg_config.max_directional_ratio))
-        self.max_concentration_pct = Decimal(str(eg_config.max_concentration_pct))
+        # FIX: Normalize thresholds without "magic" auto-detection. 
+        # Fields ending in _pct are treated as percentage (divided by 100).
+        # Fields ending in _fraction are treated as ratio (0..1).
+        
+        def _to_dec(val: Any) -> Decimal:
+            if val is None: return Decimal("0")
+            return Decimal(str(val))
+
+        self.max_equity_utilization_pct = _to_dec(eg_config.max_equity_utilization_pct) / Decimal("100")
+        self.max_portfolio_fraction = _to_dec(eg_config.max_portfolio_fraction)
+        self.max_long_utilization_pct = _to_dec(eg_config.max_long_utilization_pct) / Decimal("100")
+        self.max_short_utilization_pct = _to_dec(eg_config.max_short_utilization_pct) / Decimal("100")
+        self.max_concentration_pct = _to_dec(eg_config.max_concentration_pct) / Decimal("100")
+
+        # Directional ratio (legacy support)
+        max_directional_ratio_raw = getattr(eg_config, "max_directional_ratio", None)
+        if max_directional_ratio_raw is None:
+            max_directional_ratio_raw = getattr(eg_config, "directional_ratio_max", "5.0")
+        self.max_directional_ratio = _to_dec(max_directional_ratio_raw)
 
         # TTL configurations
         self.pending_ttl_sec = eg_config.pending_ttl_sec
         self.post_fill_hold_ttl_sec = eg_config.post_fill_ttl_sec
         self.positions_stale_ttl_sec = eg_config.stale_ttl_sec
 
-        # Flags (with legacy fallback for now)
-        self.count_pending_orders = self._get_legacy_flag('count_pending_orders', True)
-        self.exclude_reduce_only = self._get_legacy_flag('exclude_reduce_only', True)
+        # Flags (strict typed config; fail-closed)
+        execution_cfg = self.config.trading.execution
+        if execution_cfg is None or execution_cfg.exposure is None:
+            raise ConfigContractError(
+                path="trading.execution.exposure",
+                why="Missing required exposure config (expected count_pending_orders/exclude_reduce_only/leverage_defaults).",
+            )
+        self.count_pending_orders = bool(execution_cfg.exposure.count_pending_orders)
+        self.exclude_reduce_only = bool(execution_cfg.exposure.exclude_reduce_only)
 
         # PHASE 2: Soft-limit configuration (read from trading.risk.soft_limits)
         self.soft_limit_config = self._load_soft_limit_config()
@@ -147,39 +168,34 @@ class ExposureGuard:
             "fallback_duration_ms_total": 0,
         }
 
-    def _get_legacy_flag(self, flag_name: str, default: bool) -> bool:
-        """Get flag from legacy trading.execution.exposure config."""
-        try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                if hasattr(self.config.trading, 'execution') and self.config.trading.execution:
-                    if hasattr(self.config.trading.execution, 'exposure') and self.config.trading.execution.exposure:
-                        return getattr(self.config.trading.execution.exposure, flag_name, default)
-        except (AttributeError, TypeError):
-            pass
-        return default
-
     def _load_soft_limit_config(self) -> SoftLimitConfig:
         """
         Load soft-limit clipping configuration (PHASE 2).
-        Reads from trading.risk.soft_limits with fallbacks.
+        Reads from trading.risk.soft_limits (legacy dict block; fail-closed).
         """
-        try:
-            if hasattr(self.config, 'trading') and hasattr(self.config.trading, 'risk') and hasattr(self.config.trading.risk, 'soft_limits'):
-                soft_limits_dict = self.config.trading.risk.soft_limits or {}
-            elif isinstance(self.config, dict):
-                soft_limits_dict = self.config.get("trading", {}).get(
-                    "risk", {}).get("soft_limits", {})
-            else:
-                soft_limits_dict = {}
-        except (AttributeError, TypeError):
-            soft_limits_dict = {}
+        risk_cfg = self.config.trading.risk
+        if not isinstance(risk_cfg, dict):
+            raise ConfigContractError(path="trading.risk", why=f"Expected dict, got {type(risk_cfg)}")
+        soft_limits_dict = risk_cfg.get("soft_limits")
+        if not isinstance(soft_limits_dict, dict):
+            raise ConfigContractError(path="trading.risk.soft_limits", why="Missing/invalid soft_limits block")
 
-        # Parse values with defaults
-        mode = soft_limits_dict.get("mode", "clip") if isinstance(soft_limits_dict, dict) else "clip"
-        clip_min = Decimal(str(soft_limits_dict.get("clip_min_notional_usdt", "10"))) if isinstance(soft_limits_dict, dict) else Decimal("10")
-        dir_max = Decimal(str(soft_limits_dict.get("directional_ratio_max", "3.0"))) if isinstance(soft_limits_dict, dict) else Decimal("3.0")
-        side_exp = Decimal(str(soft_limits_dict.get("side_exposure_usdt", "600"))) if isinstance(soft_limits_dict, dict) else Decimal("600")
-        margin_exp = Decimal(str(soft_limits_dict.get("margin_exposure_usdt", "1100"))) if isinstance(soft_limits_dict, dict) else Decimal("1100")
+        required_keys = (
+            "mode",
+            "clip_min_notional_usdt",
+            "directional_ratio_max",
+            "side_exposure_usdt",
+            "margin_exposure_usdt",
+        )
+        for k in required_keys:
+            if k not in soft_limits_dict:
+                raise ConfigContractError(path=f"trading.risk.soft_limits.{k}", why="Missing required key")
+
+        mode = str(soft_limits_dict["mode"])
+        clip_min = Decimal(str(soft_limits_dict["clip_min_notional_usdt"]))
+        dir_max = Decimal(str(soft_limits_dict["directional_ratio_max"]))
+        side_exp = Decimal(str(soft_limits_dict["side_exposure_usdt"]))
+        margin_exp = Decimal(str(soft_limits_dict["margin_exposure_usdt"]))
 
         config = SoftLimitConfig(
             mode=mode,
@@ -198,31 +214,11 @@ class ExposureGuard:
     def _load_fallback_config(self) -> Dict[str, Any]:
         """
         PHASE P0: Load fallback mode configuration.
-        Reads from trading.execution.fallback with fallbacks.
+        NOTE: trading.execution.fallback is currently an empty typed block; keep the historical constants here.
         """
-        try:
-            if hasattr(self.config, 'trading') and hasattr(self.config.trading, 'execution') and hasattr(self.config.trading.execution, 'fallback'):
-                fallback_config = self.config.trading.execution.fallback or {}
-            elif isinstance(self.config, dict):
-                fallback_config = self.config.get("trading", {}).get(
-                    "execution", {}).get("fallback", {})
-            else:
-                fallback_config = {}
-        except (AttributeError, TypeError):
-            fallback_config = {}
-
-        # Parse configuration with defaults
-        policy = fallback_config.get("policy", "fail_closed") if isinstance(fallback_config, dict) else "fail_closed"
-        risk_reduction_pct = Decimal(str(fallback_config.get("risk_reduction_pct", "0.5"))) if isinstance(fallback_config, dict) else Decimal("0.5")
-        backoff_ms = fallback_config.get("backoff_ms", [200, 500, 1000]) if isinstance(fallback_config, dict) else [200, 500, 1000]
-
-        config = {
-            "policy": policy,
-            "risk_reduction_pct": risk_reduction_pct,
-            "backoff_ms": backoff_ms,
-        }
+        config = {"policy": "fail_closed", "risk_reduction_pct": Decimal("0.5"), "backoff_ms": [200, 500, 1000]}
         self.logger.info(
-            f"FALLBACK_CONFIG loaded: policy={policy}, risk_reduction_pct={risk_reduction_pct}, backoff_ms={backoff_ms}"
+            f"FALLBACK_CONFIG loaded: policy={config['policy']}, risk_reduction_pct={config['risk_reduction_pct']}, backoff_ms={config['backoff_ms']}"
         )
         return config
 
@@ -308,8 +304,8 @@ class ExposureGuard:
         duration_ms = now_ms - self.fallback_state.entered_at
 
         # Update metrics
-        self.metrics["fallback_duration_ms_total"] = self.metrics.get(
-            "fallback_duration_ms_total", 0) + duration_ms
+        fallback_total = self.metrics["fallback_duration_ms_total"] if "fallback_duration_ms_total" in self.metrics else 0
+        self.metrics["fallback_duration_ms_total"] = fallback_total + duration_ms
 
         reason = self.fallback_state.reason
 
@@ -382,61 +378,25 @@ class ExposureGuard:
         Returns:
             Decimal: Leverage value (>= 1)
         """
-        try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                exposure_config = self.config.trading.execution.exposure if self.config.trading.execution and self.config.trading.execution else None
-            elif isinstance(self.config, dict):
-                exposure_config = (
-                    self.config.trading.get(
-                        "execution", {}).get("exposure", {})
-                )
-            else:
-                exposure_config = None
-        except (AttributeError, TypeError):
-            exposure_config = None
+        execution_cfg = self.config.trading.execution
+        if execution_cfg is None or execution_cfg.exposure is None:
+            raise ConfigContractError(
+                path="trading.execution.exposure",
+                why="Missing required exposure config (leverage_defaults).",
+            )
 
-        if exposure_config is None:
-            exposure_config = {}
+        leverage_defaults = execution_cfg.exposure.leverage_defaults
+        if not isinstance(leverage_defaults, dict):
+            raise ConfigContractError(
+                path="trading.execution.exposure.leverage_defaults",
+                why=f"Expected dict, got {type(leverage_defaults)}",
+            )
 
-        # Get leverage defaults with Pydantic-first + fallback
-        try:
-            if hasattr(exposure_config, 'leverage_defaults'):
-                leverage_defaults = exposure_config.leverage_defaults or {}
-            elif isinstance(exposure_config, dict):
-                leverage_defaults = getattr(
-                    self.config.trading.execution.exposure, 'leverage_defaults', {})
-            else:
-                leverage_defaults = {}
-        except (AttributeError, TypeError):
-            leverage_defaults = {}
+        default_leverage_raw = leverage_defaults["__default__"] if "__default__" in leverage_defaults else 20
+        default_leverage = Decimal(str(default_leverage_raw))
 
-        # Get default leverage with type checking
-        try:
-            if isinstance(leverage_defaults, dict):
-                default_leverage_str = leverage_defaults.get(
-                    "__default__", "20")
-            elif hasattr(leverage_defaults, '__default__'):
-                default_leverage_str = str(
-                    leverage_defaults.__default__ or "20")
-            else:
-                default_leverage_str = "20"
-        except (AttributeError, TypeError):
-            default_leverage_str = "20"
-        default_leverage = Decimal(str(default_leverage_str))
-
-        # Get leverage for this symbol, fallback to default
-        try:
-            if isinstance(leverage_defaults, dict):
-                symbol_leverage_str = leverage_defaults.get(
-                    symbol, default_leverage)
-            elif hasattr(leverage_defaults, symbol):
-                symbol_leverage_str = getattr(
-                    leverage_defaults, symbol, default_leverage)
-            else:
-                symbol_leverage_str = default_leverage
-        except (AttributeError, TypeError):
-            symbol_leverage_str = default_leverage
-        symbol_leverage = Decimal(str(symbol_leverage_str))
+        symbol_leverage_raw = leverage_defaults[symbol] if symbol in leverage_defaults else default_leverage
+        symbol_leverage = Decimal(str(symbol_leverage_raw))
 
         # Ensure leverage >= 1
         return max(symbol_leverage, Decimal("1"))
@@ -452,10 +412,9 @@ class ExposureGuard:
         """
         # DEBUG: Log portfolio state keys and values
         portfolio_keys = list(portfolio_state.keys())
-        equity_raw = portfolio_state.get("equity_free_usdt", "MISSING")
-        margin_raw = portfolio_state.get(
-            "open_positions_margin_usd", "MISSING")
-        ts_raw = portfolio_state.get("positions_last_ts_ms", "MISSING")
+        equity_raw = portfolio_state["equity_free_usdt"] if "equity_free_usdt" in portfolio_state else "MISSING"
+        margin_raw = portfolio_state["open_positions_margin_usd"] if "open_positions_margin_usd" in portfolio_state else "MISSING"
+        ts_raw = portfolio_state["positions_last_ts_ms"] if "positions_last_ts_ms" in portfolio_state else "MISSING"
         self.logger.info(
             f"ON_PORTFOLIO_DEBUG: received portfolio_keys={portfolio_keys}, "
             f"equity_raw={equity_raw}, margin_raw={margin_raw}, ts_raw={ts_raw}"
@@ -465,10 +424,9 @@ class ExposureGuard:
         self._latest_portfolio_state = portfolio_state
 
         # Log portfolio update for debugging
-        equity_free_usdt = portfolio_state.get("equity_free_usdt", "0")
-        open_positions_margin_usd = portfolio_state.get(
-            "open_positions_margin_usd", "0")
-        positions_last_ts_ms = portfolio_state.get("positions_last_ts_ms", 0)
+        equity_free_usdt = portfolio_state["equity_free_usdt"] if "equity_free_usdt" in portfolio_state else "0"
+        open_positions_margin_usd = portfolio_state["open_positions_margin_usd"] if "open_positions_margin_usd" in portfolio_state else "0"
+        positions_last_ts_ms = portfolio_state["positions_last_ts_ms"] if "positions_last_ts_ms" in portfolio_state else 0
 
         self.logger.debug(
             f"PORTFOLIO_UPDATE: equity={equity_free_usdt}, margin_positions={open_positions_margin_usd}, "
@@ -480,769 +438,113 @@ class ExposureGuard:
     ) -> Dict[str, Any]:
         """
         Check if opening a position is allowed based on exposure limits.
-
-        EXP-FIX: Fail-closed if positions are stale/unknown.
-
-        Args:
-            symbol: Trading symbol
-            notional_usd: Position notional value in USD
-            portfolio_state: Latest portfolio state from EVT:PORTFOLIO_STATE_UPDATED
-
-        Returns:
-            Dict with 'allowed': bool and 'reason' if rejected
+        Filters by:
+        1. Data staleness
+        2. Equity presence
+        3. Portfolio Fraction (Notional-based)
+        4. Equity Utilization (Margin-based)
+        5. Long/Short Utilization (Margin-based)
+        6. Directional Ratio (Notional-based)
         """
-        now_ms = int(time.time() * 1000)
-
-        # 🧹 CLEANUP: Remove expired postfill_reservations
-        now_ts = time.time()
-        expired_keys = [
-            key for key, item in self.state.postfill_reservations.items()
-            if now_ts >= item.get("exp_ts", now_ts)
-        ]
-        if expired_keys:
-            self.logger.warning(
-                f"🧹 CLEANUP_POSTFILL: Removing {len(expired_keys)} expired reservations: {expired_keys}"
-            )
-            for key in expired_keys:
-                del self.state.postfill_reservations[key]
-
-        # 🧹 CLEANUP: Remove stale pending_exposure orders (>5s without fill/cancel)
-        # Most orders execute/cancel within 1-2s; 5s is generous timeout
-        pending_timeout_sec = 5
-        stale_pending = []
-        for key, item in self.state.pending_exposure.items():
-            age_sec = now_ts - item.get("ts", now_ts)
-            if age_sec > pending_timeout_sec:
-                stale_pending.append((key, age_sec))
-
-        if stale_pending:
-            self.logger.error(
-                f"🧹 CLEANUP_PENDING: Removing {len(stale_pending)} stale orders (>5s): "
-                f"{[(k, f'{a:.1f}s') for k, a in stale_pending]}"
-            )
-            for key, _ in stale_pending:
-                del self.state.pending_exposure[key]
-
-        # DEBUG: Log portfolio state keys and values
-        portfolio_keys = list(portfolio_state.keys())
-        equity_raw = portfolio_state.get("equity_free_usdt", "MISSING")
-        margin_raw = portfolio_state.get(
-            "open_positions_margin_usd", "MISSING")
-        ts_raw = portfolio_state.get("positions_last_ts_ms", "MISSING")
-        self.logger.info(
-            f"CAN_OPEN_DEBUG: symbol={symbol}, notional={notional_usd}, "
-            f"portfolio_keys={portfolio_keys}, equity_raw={equity_raw}, "
-            f"margin_raw={margin_raw}, ts_raw={ts_raw}"
-        )
-
-        # Extract portfolio data
-        try:
-            equity_free_usdt_str = portfolio_state.get("equity_free_usdt", "0")
-            open_positions_margin_usd_str = portfolio_state.get(
-                "open_positions_margin_usd", "0")
-            positions_last_ts_ms = portfolio_state.get(
-                "positions_last_ts_ms", 0)
-
-            equity_free_usdt = (
-                Decimal(str(equity_free_usdt_str))
-                if equity_free_usdt_str
-                else Decimal("0")
-            )
-            open_positions_margin_usd = (
-                Decimal(str(open_positions_margin_usd_str))
-                if open_positions_margin_usd_str
-                else Decimal("0")
-            )
-        except (ValueError, TypeError, AttributeError) as e:
-            self.logger.error(
-                f"EXPOSURE_DATA_ERROR: Invalid portfolio data - {e}")
-            return {"allowed": False, "reason": "PORTFOLIO_DATA_INVALID"}
-
-        # EXP-FIX: Fail-closed if equity is unknown/zero (timing issue protection)
-        if equity_free_usdt == Decimal("0"):
-            reason = "EQUITY_UNKNOWN"
-            self._increment_metric("exposure_fail_closed_total", reason)
-            self.logger.warning(
-                f"EXPOSURE_FAIL_CLOSED: {reason} - equity not available yet"
-            )
-            # Emit event for bridge to monitor
-            if self.fsm:
-                from vfoundation.core.protocol import Message
-                from vfoundation.core.fsm_emit_compat import emit_compat
-                import asyncio
-
-                msg = Message(
-                    op="EVT",
-                    verb="EXPOSURE_FAIL_CLOSED",
-                    src="execution_position",
-                    dst="*",
-                    pld={"reason": reason},
-                    why="exposure_fail_closed",
-                )
-                self._safe_create_task(emit_compat(
-                    self.fsm, msg, logger=self.logger))
-            return {"allowed": False, "reason": reason}
-
-        # EXP-FIX: Fail-closed if positions are stale or unknown
-        if open_positions_margin_usd is None or positions_last_ts_ms == 0:
-            reason = "PORTFOLIO_UNKNOWN"
-            self._increment_metric("exposure_fail_closed_total", reason)
-            self.logger.warning(
-                f"EXPOSURE_FAIL_CLOSED: {reason} - no position data available"
-            )
-            # Emit event for bridge to monitor
-            if self.fsm:
-                from vfoundation.core.protocol import Message
-                from vfoundation.core.fsm_emit_compat import emit_compat
-                import asyncio
-
-                msg = Message(
-                    op="EVT",
-                    verb="EXPOSURE_FAIL_CLOSED",
-                    src="execution_position",
-                    dst="*",
-                    pld={"reason": reason},
-                    why="exposure_fail_closed",
-                )
-                self._safe_create_task(emit_compat(
-                    self.fsm, msg, logger=self.logger))
-            return {"allowed": False, "reason": reason}
-
-        stale_sec = (now_ms - positions_last_ts_ms) / 1000.0
-        if stale_sec > self.positions_stale_ttl_sec:
-            reason = "PORTFOLIO_STALE"
-            self._increment_metric("exposure_fail_closed_total", reason)
-            self.logger.warning(
-                f"EXPOSURE_FAIL_CLOSED: {reason} - stale {stale_sec:.1f}s > {self.positions_stale_ttl_sec}s"
-            )
-            # Emit event for bridge to monitor
-            if self.fsm:
-                from vfoundation.core.protocol import Message
-                from vfoundation.core.fsm_emit_compat import emit_compat
-                import asyncio
-
-                msg = Message(
-                    op="EVT",
-                    verb="EXPOSURE_FAIL_CLOSED",
-                    src="execution_position",
-                    dst="*",
-                    pld={"reason": reason, "stale_sec": stale_sec},
-                    why="exposure_fail_closed",
-                )
-                self._safe_create_task(emit_compat(
-                    self.fsm, msg, logger=self.logger))
-            return {"allowed": False, "reason": reason, "stale_sec": stale_sec}
-
-        # PHASE P0: Apply fallback mode policy if active
+        # --- 0. Fallback Mode Logic (Fail-fast) ---
         if self.is_fallback_mode_active():
             policy = self.fallback_config["policy"]
             if policy == "fail_closed":
                 reason = f"FALLBACK_FAIL_CLOSED_{self.fallback_state.reason}"
-                self._increment_metric("fallback_blocks_total", reason)
-                self.logger.warning(
-                    f"FALLBACK_BLOCK: {reason} - blocking trade during fallback mode"
-                )
-                # Emit event for monitoring
-                if self.fsm:
-                    from vfoundation.core.protocol import Message
-                    from vfoundation.core.fsm_emit_compat import emit_compat
-                    import asyncio
-
-                    msg = Message(
-                        op="EVT",
-                        verb="FALLBACK_BLOCK",
-                        src="execution_position",
-                        dst="*",
-                        pld={
-                            "reason": reason,
-                            "fallback_reason": self.fallback_state.reason,
-                            "policy": policy
-                        },
-                        why="fallback_mode_block",
-                    )
-                    self._safe_create_task(emit_compat(
-                        self.fsm, msg, logger=self.logger))
                 return {"allowed": False, "reason": reason}
             elif policy == "risk_reduction":
-                # Apply risk reduction by scaling down the notional
-                risk_reduction_pct = self.fallback_config["risk_reduction_pct"]
-                reduced_notional = notional_usd * \
-                    (Decimal("1") - risk_reduction_pct)
+                risk_reduction_pct = Decimal(str(self.fallback_config["risk_reduction_pct"]))
+                notional_usd = notional_usd * (Decimal("1") - risk_reduction_pct)
                 self.logger.warning(
-                    f"FALLBACK_RISK_REDUCTION: {symbol} notional {notional_usd:.2f} → {reduced_notional:.2f} "
-                    f"({risk_reduction_pct:.1%} reduction) due to {self.fallback_state.reason}"
-                )
-                # Update notional for subsequent checks
-                notional_usd = reduced_notional
-                # Emit event for monitoring
-                if self.fsm:
-                    from vfoundation.core.protocol import Message
-                    from vfoundation.core.fsm_emit_compat import emit_compat
-                    import asyncio
-
-                    msg = Message(
-                        op="EVT",
-                        verb="FALLBACK_RISK_REDUCTION",
-                        src="execution_position",
-                        dst="*",
-                        pld={
-                            "symbol": symbol,
-                            "original_notional": float(notional_usd / (Decimal("1") - risk_reduction_pct)),
-                            "reduced_notional": float(reduced_notional),
-                            "reduction_pct": float(risk_reduction_pct),
-                            "fallback_reason": self.fallback_state.reason
-                        },
-                        why="fallback_risk_reduction",
-                    )
-                    self._safe_create_task(emit_compat(
-                        self.fsm, msg, logger=self.logger))
-
-        # EXP-LEVERAGE-001: Calculate margin-based exposure
-        # Calculate reserve margin for this order
-        symbol_leverage = self.resolve_symbol_leverage(symbol)
-        reserve_margin = notional_usd / symbol_leverage
-
-        # Calculate current margin exposure
-        current_pending_margin = sum(
-            item["margin"] for item in self.state.pending_exposure.values()
-            if "margin" in item
-        )
-        current_postfill_margin = sum(
-            item["margin"]
-            for item in self.state.postfill_reservations.values()
-            if time.time() < item["exp_ts"] and "margin" in item
-        )
-        total_margin_exposure = open_positions_margin_usd + \
-            current_pending_margin + current_postfill_margin
-
-        # 🔍 DIAGNOSTIC: Show pending/postfill breakdown
-        self.logger.info(
-            f"💧 MARGIN_BREAKDOWN for {symbol}: "
-            f"open_positions={open_positions_margin_usd:.2f} + "
-            f"pending={current_pending_margin:.2f} + "
-            f"postfill={current_postfill_margin:.2f} = "
-            f"total={total_margin_exposure:.2f}, "
-            f"new_reserve={reserve_margin:.2f}"
-        )
-
-        # 🔍 DIAGNOSTIC: Show pending_exposure details
-        if self.state.pending_exposure:
-            self.logger.warning(
-                f"⚠️ PENDING_EXPOSURE ({len(self.state.pending_exposure)} items):"
-            )
-            for key, item in self.state.pending_exposure.items():
-                self.logger.warning(
-                    f"   {key}: margin={item.get('margin', 0):.2f}, "
-                    f"side={item.get('side', '?')}, ts={item.get('ts', 0)}"
+                    f"FALLBACK_REDUCE: {symbol} notional reduced to {notional_usd:.2f} "
+                    f"(-{float(risk_reduction_pct):.1%}) due to {self.fallback_state.reason}"
                 )
 
-        # 🔍 DIAGNOSTIC: Show postfill_reservations details
-        if self.state.postfill_reservations:
-            self.logger.warning(
-                f"⚠️ POSTFILL_RESERVATIONS ({len(self.state.postfill_reservations)} items):"
-            )
-            now = time.time()
-            for key, item in self.state.postfill_reservations.items():
-                exp_ts = item.get("exp_ts", 0)
-                age_sec = now - exp_ts
-                self.logger.warning(
-                    f"   {key}: margin={item.get('margin', 0):.2f}, "
-                    f"side={item.get('side', '?')}, "
-                    f"exp_in={age_sec:.1f}s"
-                )
+        # --- 1. Data Integrity & Fail-Closed ---
+        def _d(v): return Decimal(str(v)) if v is not None else Decimal("0")
+        
+        equity_free_usdt = _d(portfolio_state.get("equity_free_usdt", "0"))
+        # Check equity first to satisfy test expectations for EQUITY_UNKNOWN
+        if "equity_free_usdt" not in portfolio_state or equity_free_usdt <= Decimal("0"):
+            return {"allowed": False, "reason": "EQUITY_UNKNOWN", "why": "exposure_guard_no_equity"}
 
-        # Calculate margin limit
-        margin_limit = equity_free_usdt * self.max_equity_utilization_pct
-        new_total_margin_exposure = total_margin_exposure + reserve_margin
+        stale_ttl = self.positions_stale_ttl_sec
+        last_ts_ms = portfolio_state.get("positions_last_ts_ms", 0)
+        stale_sec = time.time() - (last_ts_ms / 1000)
+        if last_ts_ms == 0 or stale_sec > stale_ttl:
+            return {"allowed": False, "reason": "PORTFOLIO_STALE", "stale_sec": float(stale_sec)}
 
-        # EXP-DIRECTION: Extract long/short margin from portfolio_state
-        positions_by_side = portfolio_state.get("positions_by_side", {})
-        long_margin_usd = Decimal(
-            str(positions_by_side.get("long_margin", "0")))
-        short_margin_usd = Decimal(
-            str(positions_by_side.get("short_margin", "0")))
+        # --- 2. State Accumulation ---
+        positions = portfolio_state.get("positions", [])
+        if not isinstance(positions, list): positions = []
+        
+        long_notional = Decimal("0")
+        short_notional = Decimal("0")
+        long_margin = Decimal("0")
+        short_margin = Decimal("0")
+        
+        ref_leverage = self.resolve_symbol_leverage(symbol)
+        
+        for p in positions:
+            if not isinstance(p, dict): continue
+            p_sym = str(p.get("symbol", ""))
+            p_side = str(p.get("side", "")).upper()
+            p_notion = abs(_d(p.get("notional_usd")))
+            
+            p_lev = self.resolve_symbol_leverage(p_sym) if p_sym else ref_leverage
+            p_marg = p_notion / p_lev if p_lev else Decimal("0")
+            
+            if p_side in {"BUY", "LONG"}:
+                long_notional += p_notion
+                long_margin += p_marg
+            elif p_side in {"SELL", "SHORT"}:
+                short_notional += p_notion
+                short_margin += p_marg
 
-        # Also include pending exposure by side (if available)
-        pending_long = sum(
-            item.get("margin", 0) for item in self.state.pending_exposure.values()
-            if item.get("side") == "BUY" and "margin" in item
-        )
-        pending_short = sum(
-            item.get("margin", 0) for item in self.state.pending_exposure.values()
-            if item.get("side") == "SELL" and "margin" in item
-        )
-        postfill_long = sum(
-            item.get("margin", 0) for item in self.state.postfill_reservations.values()
-            if item.get("side") == "BUY" and time.time() < item["exp_ts"]
-        )
-        postfill_short = sum(
-            item.get("margin", 0) for item in self.state.postfill_reservations.values()
-            if item.get("side") == "SELL" and time.time() < item["exp_ts"]
-        )
+        # Include pending/postfill margin reservations
+        pending_long_m = sum(item["margin"] for item in self.state.pending_exposure.values() if item.get("side") in {"BUY", "LONG"} and "margin" in item)
+        pending_short_m = sum(item["margin"] for item in self.state.pending_exposure.values() if item.get("side") in {"SELL", "SHORT"} and "margin" in item)
+        post_long_m = sum(item["margin"] for item in self.state.postfill_reservations.values() if item.get("side") in {"BUY", "LONG"} and time.time() < item.get("exp_ts", 0) and "margin" in item)
+        post_short_m = sum(item["margin"] for item in self.state.postfill_reservations.values() if item.get("side") in {"SELL", "SHORT"} and time.time() < item.get("exp_ts", 0) and "margin" in item)
 
-        total_long_margin = long_margin_usd + pending_long + postfill_long
-        total_short_margin = short_margin_usd + pending_short + postfill_short
+        total_pending_margin = pending_long_m + pending_short_m + post_long_m + post_short_m
+        
+        order_notional_abs = abs(notional_usd)
+        order_margin = order_notional_abs / ref_leverage if ref_leverage else Decimal("0")
+        order_side = "BUY" if notional_usd >= Decimal("0") else "SELL"
 
-        # Determine which side this order is on
-        # (side would come from trade_intent - for now assume we need to infer from notional_usd context)
-        # We'll add side parameter later; for now, extract from pending_exposure if available
-        order_side = "SELL"  # Default, will be overridden by caller
-        for item in self.state.pending_exposure.values():
-            if abs(item.get("margin", 0) - reserve_margin) < Decimal("0.01"):
-                order_side = item.get("side", "SELL")
-                break
+        # --- 3. Limit Enforcement ---
+        
+        # A) Max Portfolio Fraction (NOTIONAL-based)
+        p_frac_limit = equity_free_usdt * self.max_portfolio_fraction
+        if order_notional_abs > p_frac_limit:
+            return {"allowed": False, "reason": "PORTFOLIO_FRACTION_BREACH", "order_notional": float(order_notional_abs), "limit": float(p_frac_limit)}
 
-        # Calculate new margins after this order
-        if order_side == "BUY":
-            new_long_margin = total_long_margin + reserve_margin
-            new_short_margin = total_short_margin
-        else:
-            new_long_margin = total_long_margin
-            new_short_margin = total_short_margin + reserve_margin
+        # B) Max Equity Utilization (MARGIN-based)
+        total_margin_used = (long_margin + short_margin + total_pending_margin + order_margin)
+        equity_margin_limit = equity_free_usdt * self.max_equity_utilization_pct
+        if total_margin_used > equity_margin_limit:
+            return {"allowed": False, "reason": "EQUITY_UTILIZATION_BREACH", "actual": float(total_margin_used), "limit": float(equity_margin_limit)}
 
-        # Log exposure breakdown with margin details
-        utilization_pct = (
-            (new_total_margin_exposure / equity_free_usdt *
-             100) if equity_free_usdt > 0 else 0
-        )
-        util_long_pct = (
-            (new_long_margin / equity_free_usdt *
-             100) if equity_free_usdt > 0 else 0
-        )
-        util_short_pct = (
-            (new_short_margin / equity_free_usdt *
-             100) if equity_free_usdt > 0 else 0
-        )
+        # C) Long/Short Utilization (MARGIN-based)
+        new_long_m = long_margin + pending_long_m + post_long_m + (order_margin if order_side == "BUY" else Decimal("0"))
+        new_short_m = short_margin + pending_short_m + post_short_m + (order_margin if order_side == "SELL" else Decimal("0"))
+        
+        long_limit = equity_free_usdt * self.max_long_utilization_pct
+        short_limit = equity_free_usdt * self.max_short_utilization_pct
+        
+        if new_long_m > long_limit:
+            return {"allowed": False, "reason": "LONG_UTILIZATION_BREACH", "actual": float(new_long_m), "limit": float(long_limit)}
+        if new_short_m > short_limit:
+            return {"allowed": False, "reason": "SHORT_UTILIZATION_BREACH", "actual": float(new_short_m), "limit": float(short_limit)}
 
-        # Calculate directional ratio
-        if min(new_long_margin, new_short_margin) > 0:
-            directional_ratio = max(new_long_margin, new_short_margin) / min(
-                new_long_margin, new_short_margin)
-        else:
-            directional_ratio = Decimal("1.0")
-
-        self.logger.info(
-            f"EXPOSURE_BREAKDOWN margin_used={new_total_margin_exposure:.2f} "
-            f"limit={margin_limit:.2f} reserve_margin={reserve_margin:.2f} "
-            f"equity={equity_free_usdt:.2f} lev={symbol_leverage} "
-            f"util_total={utilization_pct:.1f}% util_long={util_long_pct:.1f}% "
-            f"util_short={util_short_pct:.1f}% ratio={directional_ratio:.2f} "
-            f"why=margin_check"
-        )
-
-        # EXP-DIRECTION: Check 1 - Total margin cap (PHASE 3: with soft-clip)
-        if new_total_margin_exposure > margin_limit:
-            allowed_extra = margin_limit - total_margin_exposure
-
-            if allowed_extra > Decimal("0"):
-                # Shrink-to-fit: reduce order size to fit within limit
-                shrink_notional = allowed_extra * symbol_leverage
-                self.logger.info(
-                    f"EXPOSURE_SHRINK_TO_FIT: {symbol} notional {notional_usd:.2f} → {shrink_notional:.2f} "
-                    f"(allowed_extra={allowed_extra:.2f})"
-                )
-                return {
-                    "allowed": True,
-                    "reason": "SHRUNK_TO_FIT",
-                    "shrink_notional": shrink_notional
-                }
-            else:
-                # PHASE 3: Try soft-clip before rejecting
-                if self.soft_limit_config.mode == "clip":
-                    clip_result = self.soft_clip_engine.calculate_clipped_size(
-                        notional_usd=notional_usd,
-                        symbol=symbol,
-                        order_side=order_side,
-                        long_margin=new_long_margin,
-                        short_margin=new_short_margin,
-                        total_margin_exposure=total_margin_exposure,
-                        symbol_leverage=symbol_leverage,
-                        margin_limit=margin_limit,
-                    )
-                    if clip_result.allowed:
-                        self.logger.info(
-                            f"CLIPPED_MARGIN: {symbol} {order_side} "
-                            f"{notional_usd:.2f} → {clip_result.clipped_notional:.2f} "
-                            f"reasons={clip_result.clip_reasons}"
-                        )
-                        # Phase 5: Metrics aggregation
-                        metrics_logger.log_clip_event(
-                            symbol=symbol,
-                            original_notional=notional_usd,
-                            clipped_notional=clip_result.clipped_notional,
-                            clip_reason=clip_result.clip_reasons[0] if clip_result.clip_reasons else "unknown",
-                            rid=f"clip_margin_{symbol}_{now_ms}",
-                        )
-                        self.metrics["clip_total"] = self.metrics.get(
-                            "clip_total", 0) + 1
-                        self.metrics["clip_notional_total"] = self.metrics.get(
-                            "clip_notional_total", Decimal("0")) + (notional_usd - clip_result.clipped_notional)
-                        order_logger.write({
-                            "rid": f"clip_margin_{symbol}_{now_ms}",
-                            "event_type": "ORDER_CLIPPED",
-                            "symbol": symbol,
-                            "side": order_side,
-                            "original_notional": float(notional_usd),
-                            "clipped_notional": float(clip_result.clipped_notional),
-                            "reason": "MARGIN_LIMIT",
-                            "clip_reasons": clip_result.clip_reasons,
-                        })
-                        # Emit EVT:ORDER_CLIPPED event for margin clipping
-                        if self.fsm:
-                            from vfoundation.core.protocol import Message
-                            from vfoundation.core.fsm_emit_compat import emit_compat
-                            import asyncio
-
-                            msg = Message(
-                                op="EVT",
-                                verb="ORDER_CLIPPED",
-                                src="execution_position",
-                                dst="*",
-                                pld={
-                                    "symbol": symbol,
-                                    "side": order_side,
-                                    "original_notional": float(notional_usd),
-                                    "clipped_notional": float(clip_result.clipped_notional),
-                                    "reason": "MARGIN_LIMIT",
-                                    "clip_reasons": clip_result.clip_reasons,
-                                    "reduction_amount": float(notional_usd - clip_result.clipped_notional)
-                                },
-                                why="order_clipped_margin_limit",
-                            )
-                            self._safe_create_task(emit_compat(
-                                self.fsm, msg, logger=self.logger))
-                        return {
-                            "allowed": True,
-                            "reason": "CLIPPED_MARGIN",
-                            "shrink_notional": clip_result.clipped_notional,
-                        }
-
-                reason = "EXPOSURE_LIMIT_EXCEEDED"
-                self.logger.warning(
-                    f"EXPOSURE_REJECT: {reason} - would exceed {margin_limit:.2f} USD margin limit"
-                )
-                # Metrics: rejection event (NRR-011)
-                try:
-                    metrics_logger.log_reject_event(
-                        symbol=symbol,
-                        reason="NRR-011",
-                        notional=notional_usd,
-                        side=order_side,
-                        rid=f"exposure_check_{symbol}_{now_ms}",
-                    )
-                except Exception:
-                    pass
-                order_logger.write({
-                    "rid": f"exposure_check_{symbol}_{now_ms}",
-                    "event_type": "ORDER_REJECTED",
-                    "symbol": symbol,
-                    "side": "NONE",
-                    "quantity": float(notional_usd),
-                    "nrr_code": "NRR-011",
-                    "why": f"Margin exposure limit exceeded: {new_total_margin_exposure:.2f} > {margin_limit:.2f}",
-                    "source_fsm": "ExposureGuard",
-                    "metadata": {
-                        "exposure_check": True,
-                        "margin_limit": float(margin_limit),
-                        "new_total_margin": float(new_total_margin_exposure),
-                        "reserve_margin": float(reserve_margin),
-                        "leverage": float(symbol_leverage)
-                    }
-                })
-                # Emit EVT:ORDER_REJECTED event for exposure limit
-                if self.fsm:
-                    from vfoundation.core.protocol import Message
-                    from vfoundation.core.fsm_emit_compat import emit_compat
-                    import asyncio
-
-                    msg = Message(
-                        op="EVT",
-                        verb="ORDER_REJECTED",
-                        src="execution_position",
-                        dst="*",
-                        pld={
-                            "symbol": symbol,
-                            "side": "NONE",
-                            "quantity": float(notional_usd),
-                            "nrr_code": "NRR-011",
-                            "reason": reason,
-                            "why": f"Margin exposure limit exceeded: {new_total_margin_exposure:.2f} > {margin_limit:.2f}",
-                            "margin_limit": float(margin_limit),
-                            "new_total_margin": float(new_total_margin_exposure),
-                            "reserve_margin": float(reserve_margin),
-                            "leverage": float(symbol_leverage)
-                        },
-                        why="exposure_limit_exceeded",
-                    )
-                    self._safe_create_task(emit_compat(
-                        self.fsm, msg, logger=self.logger))
-                return {"allowed": False, "reason": reason}
-
-        # EXP-DIRECTION: Check 2 - Per-side cap (PHASE 3: with soft-clip)
-        side_limit = equity_free_usdt * (
-            self.max_long_utilization_pct if order_side == "BUY"
-            else self.max_short_utilization_pct
-        )
-        current_side_margin = new_long_margin if order_side == "BUY" else new_short_margin
-
-        if current_side_margin > side_limit:
-            allowed_extra_side = side_limit - (
-                total_long_margin if order_side == "BUY" else total_short_margin
-            )
-
-            if allowed_extra_side > Decimal("0"):
-                shrink_notional = allowed_extra_side * symbol_leverage
-                self.logger.info(
-                    f"EXPOSURE_SIDE_SHRINK: {symbol} {order_side} notional {notional_usd:.2f} → {shrink_notional:.2f} "
-                    f"(side_limit={side_limit:.2f}, current={current_side_margin:.2f})"
-                )
-                return {
-                    "allowed": True,
-                    "reason": "SHRUNK_TO_FIT_SIDE",
-                    "shrink_notional": shrink_notional
-                }
-            else:
-                # PHASE 3: Try soft-clip before rejecting
-                if self.soft_limit_config.mode == "clip":
-                    clip_result = self.soft_clip_engine.calculate_clipped_size(
-                        notional_usd=notional_usd,
-                        symbol=symbol,
-                        order_side=order_side,
-                        long_margin=new_long_margin,
-                        short_margin=new_short_margin,
-                        total_margin_exposure=total_margin_exposure,
-                        symbol_leverage=symbol_leverage,
-                        side_limit=side_limit,
-                    )
-                    if clip_result.allowed:
-                        self.logger.info(
-                            f"CLIPPED_SIDE: {symbol} {order_side} "
-                            f"{notional_usd:.2f} → {clip_result.clipped_notional:.2f} "
-                            f"reasons={clip_result.clip_reasons}"
-                        )
-                        self.metrics["clip_total"] = self.metrics.get(
-                            "clip_total", 0) + 1
-                        self.metrics["clip_notional_total"] = self.metrics.get(
-                            "clip_notional_total", Decimal("0")) + (notional_usd - clip_result.clipped_notional)
-                        order_logger.write({
-                            "rid": f"clip_side_{symbol}_{now_ms}",
-                            "event_type": "ORDER_CLIPPED",
-                            "symbol": symbol,
-                            "side": order_side,
-                            "original_notional": float(notional_usd),
-                            "clipped_notional": float(clip_result.clipped_notional),
-                            "reason": "SIDE_LIMIT",
-                            "clip_reasons": clip_result.clip_reasons,
-                        })
-                        # Emit EVT:ORDER_CLIPPED event for side clipping
-                        if self.fsm:
-                            from vfoundation.core.protocol import Message
-                            from vfoundation.core.fsm_emit_compat import emit_compat
-                            import asyncio
-
-                            msg = Message(
-                                op="EVT",
-                                verb="ORDER_CLIPPED",
-                                src="execution_position",
-                                dst="*",
-                                pld={
-                                    "symbol": symbol,
-                                    "side": order_side,
-                                    "original_notional": float(notional_usd),
-                                    "clipped_notional": float(clip_result.clipped_notional),
-                                    "reason": "SIDE_LIMIT",
-                                    "clip_reasons": clip_result.clip_reasons,
-                                    "reduction_amount": float(notional_usd - clip_result.clipped_notional)
-                                },
-                                why="order_clipped_side_limit",
-                            )
-                            self._safe_create_task(emit_compat(
-                                self.fsm, msg, logger=self.logger))
-                        return {
-                            "allowed": True,
-                            "reason": "CLIPPED_SIDE",
-                            "shrink_notional": clip_result.clipped_notional,
-                        }
-
-                reason = "SIDE_EXPOSURE_EXCEEDED"
-                self.logger.warning(
-                    f"EXPOSURE_REJECT: {reason} - {order_side} would exceed {side_limit:.2f} USD limit"
-                )
-                # Metrics: rejection event (NRR-012)
-                try:
-                    metrics_logger.log_reject_event(
-                        symbol=symbol,
-                        reason="NRR-012",
-                        notional=notional_usd,
-                        side=order_side,
-                        rid=f"exposure_check_{symbol}_{now_ms}",
-                    )
-                except Exception:
-                    pass
-                order_logger.write({
-                    "rid": f"exposure_check_{symbol}_{now_ms}",
-                    "event_type": "ORDER_REJECTED",
-                    "symbol": symbol,
-                    "side": order_side,
-                    "quantity": float(notional_usd),
-                    "nrr_code": "NRR-012",
-                    "why": f"Side exposure limit exceeded: {current_side_margin:.2f} > {side_limit:.2f}",
-                    "source_fsm": "ExposureGuard",
-                    "metadata": {
-                        "side_limit": float(side_limit),
-                        "current_side_margin": float(current_side_margin)
-                    }
-                })
-                # Emit EVT:ORDER_REJECTED event for side exposure limit
-                if self.fsm:
-                    from vfoundation.core.protocol import Message
-                    from vfoundation.core.fsm_emit_compat import emit_compat
-                    import asyncio
-
-                    msg = Message(
-                        op="EVT",
-                        verb="ORDER_REJECTED",
-                        src="execution_position",
-                        dst="*",
-                        pld={
-                            "symbol": symbol,
-                            "side": order_side,
-                            "quantity": float(notional_usd),
-                            "nrr_code": "NRR-012",
-                            "reason": reason,
-                            "why": f"Side exposure limit exceeded: {current_side_margin:.2f} > {side_limit:.2f}",
-                            "side_limit": float(side_limit),
-                            "current_side_margin": float(current_side_margin)
-                        },
-                        why="side_exposure_limit_exceeded",
-                    )
-                    self._safe_create_task(emit_compat(
-                        self.fsm, msg, logger=self.logger))
-                return {"allowed": False, "reason": reason}
-
-        # EXP-DIRECTION: Check 3 - Directional ratio cap (PHASE 3: with soft-clip)
-        if directional_ratio > self.max_directional_ratio and min(new_long_margin, new_short_margin) > 0:
-            # PHASE 3: Try soft-clip before rejecting
-            if self.soft_limit_config.mode == "clip":
-                clip_result = self.soft_clip_engine.calculate_clipped_size(
-                    notional_usd=notional_usd,
-                    symbol=symbol,
-                    order_side=order_side,
-                    long_margin=new_long_margin,
-                    short_margin=new_short_margin,
-                    total_margin_exposure=total_margin_exposure,
-                    symbol_leverage=symbol_leverage,
-                    directional_ratio_max=self.max_directional_ratio,
-                )
-                if clip_result.allowed:
-                    self.logger.info(
-                        f"CLIPPED_DIRECTIONAL: {symbol} {order_side} "
-                        f"{notional_usd:.2f} → {clip_result.clipped_notional:.2f} "
-                        f"reasons={clip_result.clip_reasons}"
-                    )
-                    self.metrics["clip_total"] = self.metrics.get(
-                        "clip_total", 0) + 1
-                    self.metrics["clip_notional_total"] = self.metrics.get(
-                        "clip_notional_total", Decimal("0")) + (notional_usd - clip_result.clipped_notional)
-                    order_logger.write({
-                        "rid": f"clip_directional_{symbol}_{now_ms}",
-                        "event_type": "ORDER_CLIPPED",
-                        "symbol": symbol,
-                        "side": order_side,
-                        "original_notional": float(notional_usd),
-                        "clipped_notional": float(clip_result.clipped_notional),
-                        "reason": "DIRECTIONAL_RATIO",
-                        "clip_reasons": clip_result.clip_reasons,
-                    })
-                    # Emit EVT:ORDER_CLIPPED event for directional clipping
-                    if self.fsm:
-                        from vfoundation.core.protocol import Message
-                        from vfoundation.core.fsm_emit_compat import emit_compat
-                        import asyncio
-
-                        msg = Message(
-                            op="EVT",
-                            verb="ORDER_CLIPPED",
-                            src="execution_position",
-                            dst="*",
-                            pld={
-                                "symbol": symbol,
-                                "side": order_side,
-                                "original_notional": float(notional_usd),
-                                "clipped_notional": float(clip_result.clipped_notional),
-                                "reason": "DIRECTIONAL_RATIO",
-                                "clip_reasons": clip_result.clip_reasons,
-                                "reduction_amount": float(notional_usd - clip_result.clipped_notional)
-                            },
-                            why="order_clipped_directional_ratio",
-                        )
-                        self._safe_create_task(emit_compat(
-                            self.fsm, msg, logger=self.logger))
-                    return {
-                        "allowed": True,
-                        "reason": "CLIPPED_DIRECTIONAL",
-                        "shrink_notional": clip_result.clipped_notional,
-                    }
-
-            reason = "DIRECTIONAL_RATIO_EXCEEDED"
-            self.logger.warning(
-                f"EXPOSURE_REJECT: {reason} - ratio {directional_ratio:.2f} > {self.max_directional_ratio}"
-            )
-            # Metrics: rejection event (NRR-013)
-            try:
-                metrics_logger.log_reject_event(
-                    symbol=symbol,
-                    reason="NRR-013",
-                    notional=notional_usd,
-                    side=order_side,
-                    rid=f"exposure_check_{symbol}_{now_ms}",
-                )
-            except Exception:
-                pass
-            order_logger.write({
-                "rid": f"exposure_check_{symbol}_{now_ms}",
-                "event_type": "ORDER_REJECTED",
-                "symbol": symbol,
-                "side": order_side,
-                "quantity": float(notional_usd),
-                "nrr_code": "NRR-013",
-                "why": f"Directional ratio limit exceeded: {directional_ratio:.2f} > {self.max_directional_ratio}",
-                "source_fsm": "ExposureGuard",
-                "metadata": {
-                    "directional_ratio": float(directional_ratio),
-                    "max_ratio": float(self.max_directional_ratio),
-                    "long_margin": float(new_long_margin),
-                    "short_margin": float(new_short_margin)
-                }
-            })
-            # Emit EVT:ORDER_REJECTED event for directional ratio limit
-            if self.fsm:
-                from vfoundation.core.protocol import Message
-                from vfoundation.core.fsm_emit_compat import emit_compat
-                import asyncio
-
-                msg = Message(
-                    op="EVT",
-                    verb="ORDER_REJECTED",
-                    src="execution_position",
-                    dst="*",
-                    pld={
-                        "symbol": symbol,
-                        "side": order_side,
-                        "quantity": float(notional_usd),
-                        "nrr_code": "NRR-013",
-                        "reason": reason,
-                        "why": f"Directional ratio limit exceeded: {directional_ratio:.2f} > {self.max_directional_ratio}",
-                        "directional_ratio": float(directional_ratio),
-                        "max_ratio": float(self.max_directional_ratio),
-                        "long_margin": float(new_long_margin),
-                        "short_margin": float(new_short_margin)
-                    },
-                    why="directional_ratio_limit_exceeded",
-                )
-                self._safe_create_task(emit_compat(
-                    self.fsm, msg, logger=self.logger))
-            return {"allowed": False, "reason": reason}
+        # D) Directional Ratio (NOTIONAL-based)
+        new_long_notion = long_notional + (order_notional_abs if order_side == "BUY" else Decimal("0"))
+        new_short_notion = short_notional + (order_notional_abs if order_side == "SELL" else Decimal("0"))
+        if new_short_notion > Decimal("0"):
+            ratio = new_long_notion / new_short_notion
+            if ratio > self.max_directional_ratio:
+                 return {"allowed": False, "reason": "DIRECTIONAL_RATIO_BREACH", "ratio": float(ratio), "max": float(self.max_directional_ratio)}
 
         return {"allowed": True}
 
@@ -1330,7 +632,7 @@ class ExposureGuard:
         if self.state.pending_exposure:
             count = len(self.state.pending_exposure)
             total_margin = sum(
-                item.get("margin", 0) for item in self.state.pending_exposure.values()
+                item["margin"] if "margin" in item else 0 for item in self.state.pending_exposure.values()
             )
             self.logger.critical(
                 f"🧹 CLEANUP_ALL_PENDING: Clearing {count} stale orders, "
@@ -1430,11 +732,11 @@ class ExposureGuard:
         """Get current exposure summary for metrics."""
         total_pending = sum(self.state.reservations.values())
         total_pending_margin = sum(
-            item.get("margin", 0) for item in self.state.pending_exposure.values()
+            item["margin"] if "margin" in item else 0 for item in self.state.pending_exposure.values()
         )
         total_postfill = len(self.state.postfill_reservations)
         total_postfill_margin = sum(
-            item.get("margin", 0) for item in self.state.postfill_reservations.values()
+            item["margin"] if "margin" in item else 0 for item in self.state.postfill_reservations.values()
         )
 
         return {
@@ -1456,8 +758,9 @@ class ExposureGuard:
         if not self.soft_limit_config:
             return
 
-        regime_adaptation = getattr(
-            self.soft_limit_config, "regime_adaptation", None)
+        if not hasattr(self.soft_limit_config, "regime_adaptation"):
+            return
+        regime_adaptation = self.soft_limit_config.regime_adaptation
         if not regime_adaptation:
             return
 
@@ -1507,10 +810,16 @@ class ExposureGuard:
                     loop.create_task(coro)
                 else:
                     # Loop is closed, skip emission
-                    pass
+                    try:
+                        coro.close()
+                    except Exception:
+                        pass
             except RuntimeError:
                 # No event loop available, skip emission
-                pass
+                try:
+                    coro.close()
+                except Exception:
+                    pass
 
     def _increment_metric(self, metric_name: str, reason: str) -> None:
         """

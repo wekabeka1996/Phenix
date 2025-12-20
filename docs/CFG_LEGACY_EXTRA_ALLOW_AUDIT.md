@@ -79,10 +79,10 @@ class MeanReversion1mStrategyConfig(BaseModel):
 - Strategy profiles (CFG-STRATEGIES-SSOT-05) are now SSOT
 - This may be inline legacy (deprecated in TASK 08)
 
-**Context**: Loader has deprecation detection for `trading.yaml: mean_reversion_1m`
+**Context**: Loader has deprecation detection for `trading.yaml: mean_reversion`
 
 **Action**:
-1. Confirm: is this model still used for profiles (`strategies/mean_reversion_1m.yaml`)?
+1. Confirm: is this model still used for profiles (`strategies/mean_reversion.yaml`)?
 2. If YES (profiles) → keep but convert to `extra='forbid'` with complete schema
 3. If NO (only legacy inline) → remove or stub
 

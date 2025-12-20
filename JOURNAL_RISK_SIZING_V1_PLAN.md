@@ -48,7 +48,7 @@
   - бере сигнали з `MeanReversion1mStrategy`,
   - емісить `EVT:TRADE_INTENT_PROPOSED` у своєму DTO‑форматі.
 - **Розмір позиції** в MR:
-  - фіксований `position_size_usd` (`config/aurora/trading.yaml:330`–:361) або з `config/aurora/strategies/mean_reversion_1m.yaml`,
+  - фіксований `position_size_usd` (`config/aurora/trading.yaml:330`–:361) або з `config/aurora/strategies/mean_reversion.yaml`,
   - `_get_position_size_usd()` повертає `Decimal(position_size_usd)` — **не залежить від equity/SL_bps/volatility**.
 - **SL/TP** для MR:
   - можуть братись з `sl_pct` per asset у MR‑конфігу + ATR‑множники,

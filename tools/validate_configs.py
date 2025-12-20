@@ -11,9 +11,13 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 import yaml
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover
+    def load_dotenv(*args, **kwargs):
+        return False
 
-# Load environment variables from .env file
+# Load environment variables from .env file (best-effort)
 load_dotenv()
 
 

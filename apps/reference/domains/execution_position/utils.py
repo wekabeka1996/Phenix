@@ -11,6 +11,7 @@ __all__ = [
     "calc_tp_sl_from_mark",
     "validate_not_immediate",
     "opposite_side",
+    "BoundedEventDeduper",
 ]
 
 # ---- price quantization helpers ----
@@ -271,3 +272,51 @@ def opposite_side(side: str) -> str:
         Opposite side.
     """
     return "SELL" if side == "BUY" else "BUY"
+
+
+class BoundedEventDeduper(set):
+    """
+    Bounded idempotency tracker with TTL and MaxSize.
+    Inherits from set to maintain compatibility with existing tests and FSM logic.
+    """
+
+    def __init__(self, max_size: int = 100000, ttl_ms: int = 86400000):
+        super().__init__()
+        from collections import OrderedDict
+        self.max_size = max_size
+        self.ttl_ms = ttl_ms
+        self._ts: OrderedDict[str, int] = OrderedDict()
+
+    def seen(self, event_key: str) -> bool:
+        """Check if event was already processed."""
+        return event_key in self
+
+    def add(self, event_key: str, now_ms: int | None = None):
+        """Mark event as processed and prune old entries."""
+        if now_ms is None:
+            now_ms = int(time.time() * 1000)
+        
+        super().add(event_key)
+        if event_key in self._ts:
+            self._ts.move_to_end(event_key)
+        self._ts[event_key] = now_ms
+        self.prune(now_ms)
+
+    def prune(self, now_ms: int):
+        """Evict by TTL and then by MaxSize."""
+        # 1. TTL Prune (Oldest first)
+        while self._ts:
+            first_key = next(iter(self._ts))
+            first_ts = self._ts[first_key]
+            if now_ms - first_ts > self.ttl_ms:
+                self._ts.popitem(last=False)
+                if first_key in self:
+                    super().remove(first_key)
+            else:
+                break
+
+        # 2. Size Prune
+        while len(self._ts) > self.max_size:
+            evict_key, _ = self._ts.popitem(last=False)
+            if evict_key in self:
+                super().remove(evict_key)

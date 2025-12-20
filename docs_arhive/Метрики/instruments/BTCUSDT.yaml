@@ -86,7 +86,7 @@ aurora:
   # Rolling windows (EMA, volume) use global config from domains.yaml
 
 # Mean Reversion 1M Strategy (Track B)
-mean_reversion_1m:
+mean_reversion:
   enabled: true
   strategy:
     bb_window: 40

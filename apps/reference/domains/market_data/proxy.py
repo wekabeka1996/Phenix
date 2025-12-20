@@ -23,6 +23,8 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
 
+from apps.reference.utils.accessors import aget
+
 from .worker import worker_entrypoint, MarketDataWorker
 
 LOG = logging.getLogger(__name__)
@@ -42,10 +44,6 @@ class MarketDataProxy:
     - set_feature_engineering() - DEPRECATED (no-op for backward compatibility)
     """
     
-    # Batch processing configuration
-    BATCH_SIZE = 100  # Process up to 100 items before yielding (was 50)
-    QUEUE_MAXSIZE = 10000  # Maximum queue size (increased for burst handling)
-    
     def __init__(self, fsm: "FSMCore", config: Any) -> None:
         """
         Initialize the proxy.
@@ -55,6 +53,8 @@ class MarketDataProxy:
             config: AuroraConfig object (will be serialized for worker)
         """
         self._fsm = fsm
+        if isinstance(config, dict):
+            raise TypeError("MarketDataProxy requires AuroraConfig, got dict")
         self._config = config
         self._running = False
         
@@ -69,39 +69,99 @@ class MarketDataProxy:
         self._batches_processed = 0
         self._last_heartbeat_ts = 0
         self._worker_alive = False
+
+        # System-level market data settings.
+        # Intentionally NOT validated/loaded here:
+        # - runtime config must come from YAML + resolver + pydantic validation
+        # - unit/runtime smoke tests may construct MarketDataProxy with a light stub config
+        # Strict validation happens when starting the worker (start_async).
+        self._queue_maxsize: Optional[int] = None
+        self._batch_size: Optional[int] = None
+        self._queue_get_timeout_sec: Optional[float] = None
+        self._idle_sleep_sec: Optional[float] = None
+
+        # If config already carries system.market_data (e.g. real runtime config or unit-test MockConfig),
+        # we can load settings immediately. This keeps strict validation and avoids any defaults.
+        if hasattr(self._config, "system") and hasattr(getattr(self._config, "system"), "market_data"):
+            self._load_system_market_data_settings()
         
         # Extract symbols for logging
-        cfg_dict = self._get_config_dict()
-        instruments = cfg_dict.get("instruments", {})
-        self._symbols = list(instruments.keys())
+        instruments = getattr(self._config, "instruments", {}) if self._config is not None else {}
+        if isinstance(instruments, dict):
+            self._symbols = list(instruments.keys())
+        else:
+            self._symbols = []
         
         LOG.info(
             f"MarketDataProxy initialized: symbols={self._symbols}, "
-            f"batch_size={self.BATCH_SIZE}, queue_maxsize={self.QUEUE_MAXSIZE}"
+            "system.market_data settings pending (loaded on start_async)"
         )
+
+    def _load_system_market_data_settings(self) -> None:
+        """Load and validate system.market_data settings strictly.
+
+        Must be backed by YAML-resolved, pydantic-validated config in real runtime.
+        """
+        try:
+            system_md = self._config.system.market_data
+        except Exception as e:
+            raise ValueError("Missing required config path: system.market_data") from e
+
+        qms = getattr(system_md, "queue_maxsize", None)
+        pbs = getattr(system_md, "proxy_batch_size", None)
+        qto = getattr(system_md, "proxy_queue_get_timeout_sec", None)
+        iss = getattr(system_md, "proxy_idle_sleep_sec", None)
+
+        if not isinstance(qms, int) or qms <= 0:
+            raise ValueError("Invalid required config: system.market_data.queue_maxsize (must be int > 0)")
+        if not isinstance(pbs, int) or pbs <= 0:
+            raise ValueError("Invalid required config: system.market_data.proxy_batch_size (must be int > 0)")
+        if not isinstance(qto, (int, float)) or qto <= 0:
+            raise ValueError("Invalid required config: system.market_data.proxy_queue_get_timeout_sec (must be > 0)")
+        if not isinstance(iss, (int, float)) or iss <= 0:
+            raise ValueError("Invalid required config: system.market_data.proxy_idle_sleep_sec (must be > 0)")
+
+        self._queue_maxsize = int(qms)
+        self._batch_size = int(pbs)
+        self._queue_get_timeout_sec = float(qto)
+        self._idle_sleep_sec = float(iss)
     
     def _get_config_dict(self) -> Dict[str, Any]:
         """Convert config to dict for serialization to worker process.
         
         CFG-RUNTIME-BOOTSTRAP-07: Add metadata for diagnostic logging.
         """
-        if hasattr(self._config, "model_dump"):
-            # Pydantic V2
-            config_dict = self._config.model_dump(mode="json")
-        elif hasattr(self._config, "dict"):
-            # Pydantic V1
-            config_dict = self._config.dict()
-        elif hasattr(self._config, "to_dict"):
-            config_dict = self._config.to_dict()
-        elif isinstance(self._config, dict):
-            config_dict = self._config.copy()
-        else:
-            raise ValueError(f"Cannot serialize config of type {type(self._config)}")
+        if not hasattr(self._config, "model_dump"):
+            raise TypeError(f"MarketDataProxy requires Pydantic config with model_dump(), got {type(self._config)}")
+
+        config_dict = self._config.model_dump(mode="json")
         
         # CFG-RUNTIME-BOOTSTRAP-07: Add metadata for worker diagnostic logging
         # This allows worker to log WHERE config came from (bootstrap proof)
-        config_dict["_config_name"] = getattr(self._config, "_config_name", "aurora")
-        config_dict["_config_dir"] = getattr(self._config, "_config_dir", "config/aurora")
+        config_name = None
+        config_dir = None
+        try:
+            raw_name = aget(self._config, "_config_name", None)
+            if isinstance(raw_name, str) and raw_name:
+                config_name = raw_name
+            raw_dir = aget(self._config, "_config_dir", None)
+            if isinstance(raw_dir, str) and raw_dir:
+                config_dir = raw_dir
+        except Exception:
+            pass
+
+        if config_name is None or config_dir is None:
+            try:
+                raw_name = self._config.system_meta.runtime.config_name
+                if isinstance(raw_name, str) and raw_name:
+                    config_name = raw_name
+                raw_dir = self._config.system_meta.runtime.config_dir
+                if isinstance(raw_dir, str) and raw_dir:
+                    config_dir = raw_dir
+            except Exception:
+                pass
+        config_dict["_config_name"] = config_name or "aurora"
+        config_dict["_config_dir"] = config_dir or "config/aurora"
         
         return config_dict
     
@@ -119,8 +179,12 @@ class MarketDataProxy:
     def _emit_tick(self, tick_data: Dict[str, Any]) -> None:
         """Emit a market tick event to FSM."""
         try:
-            symbol = tick_data.get("symbol", "UNKNOWN")
-            data = tick_data.get("data", tick_data)
+            symbol = tick_data.get("symbol")
+            if symbol is None:
+                symbol = "UNKNOWN"
+            data = tick_data.get("data")
+            if data is None:
+                data = tick_data
             
             payload = {
                 "ts": data.get("ts"),
@@ -133,8 +197,14 @@ class MarketDataProxy:
                 "ask_size": data.get("ask_size"),
                 "buy_volume": data.get("buy_volume"),
                 "sell_volume": data.get("sell_volume"),
+                # Optional trade metadata (TASK31 additive)
+                "buy_count": data.get("buy_count"),
+                "sell_count": data.get("sell_count"),
+                "buy_notional": data.get("buy_notional"),
+                "sell_notional": data.get("sell_notional"),
+                "trades_dropped_out_of_order": data.get("trades_dropped_out_of_order"),
                 "data_type": "market_tick_aggregated",
-                "data_source": data.get("data_source", "multiprocess_worker"),
+                "data_source": data.get("data_source") if data.get("data_source") is not None else "multiprocess_worker",
             }
             
             self._fsm.emit(
@@ -152,10 +222,15 @@ class MarketDataProxy:
         try:
             anchor = anchor_data.get("anchor")
             price = anchor_data.get("price")
+            ts_ms = anchor_data.get("ts_ms")
+            if ts_ms is None:
+                ts_ms = anchor_data.get("ts")
+            if ts_ms is None:
+                raise ValueError("Anchor update missing required ts_ms (exchange timestamp)")
             
             self._fsm.emit(
                 event_name="EVT:ANCHOR_UPDATED",
-                payload={"anchor": anchor, "price": price},
+                payload={"anchor": anchor, "price": price, "ts_ms": int(ts_ms)},
                 why=f"Anchor price update for {anchor} from worker process"
             )
             
@@ -164,14 +239,20 @@ class MarketDataProxy:
     
     def _handle_heartbeat(self, heartbeat_data: Dict[str, Any]) -> None:
         """Process worker heartbeat."""
-        self._last_heartbeat_ts = heartbeat_data.get("ts", 0)
+        ts = heartbeat_data.get("ts")
+        self._last_heartbeat_ts = int(ts) if ts is not None else 0
         self._worker_alive = True
         
-        metrics = heartbeat_data.get("metrics", {})
+        metrics = heartbeat_data.get("metrics")
+        if not isinstance(metrics, dict):
+            metrics = {}
+        queue_size = metrics.get("queue_size")
+        ticks_received = metrics.get("ticks_received")
+        ticks_dropped = metrics.get("ticks_dropped")
         LOG.debug(
-            f"Worker heartbeat: queue_size={metrics.get('queue_size', -1)}, "
-            f"ticks_received={metrics.get('ticks_received', 0)}, "
-            f"ticks_dropped={metrics.get('ticks_dropped', 0)}"
+            f"Worker heartbeat: queue_size={queue_size if queue_size is not None else -1}, "
+            f"ticks_received={ticks_received if ticks_received is not None else 0}, "
+            f"ticks_dropped={ticks_dropped if ticks_dropped is not None else 0}"
         )
     
     def _consume_queue_sync(self) -> None:
@@ -182,17 +263,23 @@ class MarketDataProxy:
         which handles OrderGuardian polling.
         """
         LOG.info("Queue consumer thread started")
+
+        if self._batch_size is None or self._queue_get_timeout_sec is None or self._idle_sleep_sec is None:
+            raise RuntimeError(
+                "MarketDataProxy system.market_data settings are not loaded. "
+                "Provide YAML->Pydantic config with system.market_data or call start_async()."
+            )
         empty_cycles = 0
         
         while self._running:
             batch_start = time.perf_counter()
             items_processed = 0
             
-            # Process up to BATCH_SIZE items
-            while items_processed < self.BATCH_SIZE:
+            # Process up to configured batch size
+            while items_processed < self._batch_size:
                 try:
-                    # Blocking get with shorter timeout for faster response
-                    msg = self._ipc_queue.get(timeout=0.01)  # 10ms timeout (was 100ms)
+                    # Blocking get with config-driven timeout for faster response
+                    msg = self._ipc_queue.get(timeout=self._queue_get_timeout_sec)
                     msg_type = msg.get("type")
                     
                     if msg_type == MarketDataWorker.MSG_TYPE_TICK:
@@ -234,7 +321,7 @@ class MarketDataProxy:
             
             # Small sleep to avoid busy-waiting when queue is empty
             if items_processed == 0:
-                time.sleep(0.01)  # 10ms when idle
+                time.sleep(self._idle_sleep_sec)
         
         LOG.info("Queue consumer thread stopped")
     
@@ -276,9 +363,18 @@ class MarketDataProxy:
             return
         
         LOG.info("Starting MarketDataProxy...")
+
+        # Strict config validation/loading from YAML-resolved pydantic config.
+        # If config is a stub (tests), start_async should not be called.
+        self._load_system_market_data_settings()
+
+        assert self._queue_maxsize is not None
+        assert self._batch_size is not None
+        assert self._queue_get_timeout_sec is not None
+        assert self._idle_sleep_sec is not None
         
         # Create IPC queue with maxsize for backpressure
-        self._ipc_queue = Queue(maxsize=self.QUEUE_MAXSIZE)
+        self._ipc_queue = Queue(maxsize=self._queue_maxsize)
         
         # Serialize config for worker
         config_dict = self._get_config_dict()

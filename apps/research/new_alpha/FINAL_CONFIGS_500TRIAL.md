@@ -126,7 +126,7 @@
 ## 📋 PYTHON КОНФІГ ДЛЯ AURORA
 
 ```python
-MEAN_REVERSION_1M_CONFIGS = {
+MEAN_REVERSION_CONFIGS = {
     "BTCUSDT": {
         "bb_window": 20,
         "min_vol_atr": 0.008,
@@ -176,7 +176,7 @@ SLIPPAGE = 0.0001   # 0.01%
 ## 🎯 YAML КОНФІГ ДЛЯ AURORA
 
 ```yaml
-mean_reversion_1m:
+mean_reversion:
   enabled: true
   assets:
     - symbol: BTCUSDT

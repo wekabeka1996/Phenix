@@ -29,7 +29,7 @@ def adapter():
         config=MOCK_CONFIG
     )
     # Mock session
-    client.session = AsyncMock(spec=httpx.AsyncClient)
+    client.session = AsyncMock()
     client.session.request = AsyncMock()
     return client
 

@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import time
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from apps.reference.domains.decision_making.decision_making import DecisionMaking
+
+
+class _Bus:
+    def __init__(self) -> None:
+        self.listeners: dict[str, list[object]] = {}
+        self.emitted: list[tuple[str, dict]] = []
+
+    def listen(self, event: str, handler: object) -> None:
+        self.listeners.setdefault(event, []).append(handler)
+
+    def emit(self, event_name: str, payload: dict | None = None, why: str | None = None, data_ref: object = None) -> None:
+        self.emitted.append((event_name, payload or {}))
+
+
+def _dm_cfg():
+    qos = SimpleNamespace(
+        exposure_block_cooldown_sec=0,
+        max_intents_per_minute_per_symbol=1000,
+        mode="monitor",
+        symbol_cooldown_sec=0,
+        enforce=False,
+    )
+    position_sizing = SimpleNamespace(min_position_size_usd=10, liquidity_based_cap_usd=10_000)
+    arming = SimpleNamespace(require_regime_warmup=False, retry_backoff_ms=0, max_attempts=1)
+    features = SimpleNamespace(ttl_sec=60)
+    bar_gating = SimpleNamespace(enable=False, bar_ms=60_000)
+    behavior_fsm = SimpleNamespace(enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5)
+    signals = SimpleNamespace(normalize=True)
+    return SimpleNamespace(
+        qos=qos,
+        position_sizing=position_sizing,
+        arming=arming,
+        features=features,
+        bar_gating=bar_gating,
+        behavior_fsm=behavior_fsm,
+        signals=signals,
+    )
+
+
+def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
+    symbol = "BTCUSDT"
+    now_ms = int(time.time() * 1000)
+
+    bus = _Bus()
+
+    strategies_registry = SimpleNamespace(
+        assignments={symbol: ["s1", "s2"]},
+        arbitration=SimpleNamespace(
+            mode="priority",
+            priority={"s1": 1, "s2": 2},
+            logging=SimpleNamespace(rejected_why_prefix="ARBITRATION_REJECT", log_level="INFO"),
+        ),
+    )
+
+    cfg = SimpleNamespace(
+        trading=SimpleNamespace(tca_prefs={"max_slippage_bps": 1, "max_latency_ms": 100, "maker_preference": "maker"},
+                               risk_budgets={"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 100},
+                               decision=SimpleNamespace(signal_threshold=0.0)),
+        domains=SimpleNamespace(
+            position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
+            risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
+        ),
+        instruments={symbol: SimpleNamespace(tick_size=0.1, step_size=0.001)},
+        aurora_instruments={},
+        strategies_registry=strategies_registry,
+    )
+
+    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+        MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
+        dm = DecisionMaking(fsm=bus, config=cfg)  # type: ignore[arg-type]
+
+    dm.latest_portfolio = {"positions": [], "equity": "1000", "positions_last_ts_ms": now_ms}
+    dm.symbol_states[symbol]["features"] = {"symbol": symbol, "ts": now_ms, "features": {"price": 100}}
+    dm.symbol_states[symbol]["risk"] = {"symbol": symbol, "ts": now_ms, "risk_parameters": {"is_trading_allowed": True, "risk_score": 0.0}}
+
+    losing = SimpleNamespace(
+        pld={
+            "strategy_id": "s2",
+            "symbol": symbol,
+            "side": "BUY",
+            "score": 0.9,
+            "why": "loser",
+            "ts_ms": now_ms,
+            "rid": "r2",
+            "why_chain": ["loser"],
+            "position_size_usd": 100.0,
+            "qty_hint": "1",
+            "price_ctx": {"entry_price": "100"},
+        }
+    )
+    winning = SimpleNamespace(
+        pld={
+            "strategy_id": "s1",
+            "symbol": symbol,
+            "side": "BUY",
+            "score": 0.9,
+            "why": "winner",
+            "ts_ms": now_ms,
+            "rid": "r1",
+            "why_chain": ["winner"],
+            "position_size_usd": 100.0,
+            "qty_hint": "1",
+            "price_ctx": {"entry_price": "100"},
+        }
+    )
+
+    with patch.object(dm, "_warmup_gate_before_trade_intent", return_value=False):
+        dm._on_strategy_signal_gateway(losing)  # type: ignore[arg-type]
+        dm._on_strategy_signal_gateway(winning)  # type: ignore[arg-type]
+
+    intents = [pld for (evt, pld) in bus.emitted if evt == "EVT:TRADE_INTENT_PROPOSED"]
+    assert len(intents) == 1
+    assert intents[0]["strategy"] == "s1"

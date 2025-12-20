@@ -185,7 +185,7 @@ DOGEUSDT:
   min_notional: "10"
 ```
 
-### C2-02: Оновити mean_reversion_1m.yaml
+### C2-02: Оновити mean_reversion.yaml
 
 DOGEUSDT вже є в конфігу, але потрібно переконатися що `enabled: true`:
 
@@ -205,7 +205,7 @@ assets:
 ### C2-03: Глобально увімкнути 1m MR
 
 ```yaml
-mean_reversion_1m:
+mean_reversion:
   enabled: true          # CHANGE FROM false TO true!
 ```
 

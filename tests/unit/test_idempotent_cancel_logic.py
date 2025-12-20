@@ -74,6 +74,37 @@ class TestIdempotentCancelLogic:
         
         cancel_mock.assert_called_once()
 
+    async def test_double_cancel_is_idempotent_success(self):
+        """Second cancel returning -2011 must be treated as success."""
+        helper = IdempotentCancelHelper()
+
+        get_order_mock = AsyncMock(return_value={"status": "NEW", "orderId": "123"})
+
+        cancel_mock = AsyncMock(side_effect=[
+            {"status": "CANCELED", "orderId": "123"},
+            {"code": -2011, "msg": "Unknown order"},
+        ])
+
+        r1 = await helper.cancel_order_idempotent(
+            symbol="BTCUSDT",
+            order_id="123",
+            cancel_func=cancel_mock,
+            get_order_func=get_order_mock,
+            max_retries=1,
+        )
+        r2 = await helper.cancel_order_idempotent(
+            symbol="BTCUSDT",
+            order_id="123",
+            cancel_func=cancel_mock,
+            get_order_func=get_order_mock,
+            max_retries=1,
+        )
+
+        assert r1.success is True
+        assert r1.reason == "CANCEL_SUCCESS"
+        assert r2.success is True
+        assert r2.reason == "IDEMPOTENT_-2011_ABSORBED"
+
     async def test_cancel_order_idempotent_retries(self):
         """Test retry logic on transient errors."""
         helper = IdempotentCancelHelper()

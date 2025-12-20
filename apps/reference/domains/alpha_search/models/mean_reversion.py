@@ -58,13 +58,13 @@ class MeanReversionAlphaModel(AlphaModel):
         """
 
         # Extract features
-        bb_pos = Decimal(str(features.get('bb_position', 0.5)))
-        bb_width = Decimal(str(features.get('bb_width', 0.1)))
-        rsi = Decimal(str(features.get('rsi_14', 50)))
-        sma_dev = Decimal(str(features.get('price_sma_20_deviation', 0)))
-        vol_ratio = Decimal(str(features.get('volume_sma_ratio', 1)))
-        stoch_k = Decimal(str(features.get('stoch_k', 50)))
-        stoch_d = Decimal(str(features.get('stoch_d', 50)))
+        bb_pos = Decimal(str(features["bb_position"] if "bb_position" in features else 0.5))
+        bb_width = Decimal(str(features["bb_width"] if "bb_width" in features else 0.1))
+        rsi = Decimal(str(features["rsi_14"] if "rsi_14" in features else 50))
+        sma_dev = Decimal(str(features["price_sma_20_deviation"] if "price_sma_20_deviation" in features else 0))
+        vol_ratio = Decimal(str(features["volume_sma_ratio"] if "volume_sma_ratio" in features else 1))
+        stoch_k = Decimal(str(features["stoch_k"] if "stoch_k" in features else 50))
+        stoch_d = Decimal(str(features["stoch_d"] if "stoch_d" in features else 50))
 
         # BB position signal: 0 = lower band (strong buy), 1 = upper band (strong sell)
         # Convert to [-1, 1] where -1 = strong buy, +1 = strong sell

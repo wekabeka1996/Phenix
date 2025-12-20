@@ -83,7 +83,7 @@ class FeatureUtils:
                 current = current.get(segment)
             # Then try attribute access
             elif hasattr(current, segment):
-                current = getattr(current, segment, None)
+                current = getattr(current, segment)
             # Try __getitem__ for dict-like objects
             elif hasattr(current, "__getitem__"):
                 try:

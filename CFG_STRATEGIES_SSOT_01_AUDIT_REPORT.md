@@ -15,7 +15,7 @@
 
 **Критичні знахідки:**
 - ❌ Конфігурації **фрагментовані** між 5+ файлами без чіткого SSOT
-- ❌ **Дублікація**: `mean_reversion_1m` параметри існують у 3 місцях (trading.yaml, strategies/, instruments/)
+- ❌ **Дублікація**: `mean_reversion` параметри існують у 3 місцях (trading.yaml, strategies/, instruments/)
 - ❌ **Конфлікт enabled**: aurora.enabled у instruments/*.yaml vs aurora_instruments.yaml
 - ⚠️ **Мертві конфіги**: strategies/aurora_*.yaml не використовуються runtime
 - ⚠️ **Fallback hell**: 3-4 рівні fallback'ів для кожного параметру
@@ -47,9 +47,9 @@
 | **Клас/Entry Point** | `MeanReversion1mStrategy(config, timeframe_sec, regime_sizing)` |
 | **Інтеграція** | `apps/reference/domains/decision_making/mean_reversion_handler.py` (L1-372)<br>- `MeanReversionHandler.__init__()` (L52-95): парсить конфіг<br>- `MeanReversionHandler.on_tick()` (L207-237): агрегує тіки в бари<br>- Емітує `EVT:MR_SIGNAL_PRODUCED` → gateway `_on_mr_signal_gateway()` (L618-970) |
 | **Використовується** | - `DecisionMaking.__init__()` (L520-546): ініціалізує MR handler<br>- `DecisionMaking.on_tick()` (L589-614): форвардить тіки в MR handler<br>- `_on_mr_signal_gateway()` (L618+): застосовує gates (risk/regime/QoS/exposure/TTL)<br>- Емітує `EVT:TRADE_INTENT_PROPOSED` після проходження gates |
-| **Config Keys (читає)** | 1. `config.mean_reversion_1m.enabled` (L99, L521)<br>2. `config.mean_reversion_1m.assets[symbol].enabled` (L117-124)<br>3. `config.mean_reversion_1m.strategy.*` (L135-167): bb_window, bb_num_std, min_bb_width, etc.<br>4. `config.mean_reversion_1m.assets[symbol].strategy.*` (L169-185): per-symbol overrides<br>5. `config.mean_reversion_1m.allowed_regimes` (L154)<br>6. `config.mean_reversion_1m.assets[symbol].allowed_regimes` (L186)<br>7. `config.mean_reversion_1m.regime_sizing` (L140-151) |
-| **Fallback Chain** | `mean_reversion_1m.assets[symbol].strategy.*` → `mean_reversion_1m.strategy.*` (global) → MRStrategyConfig defaults |
-| **Дублі** | ❌ **КРИТИЧНІ ДУБЛІ**:<br>1. `trading.yaml::trading.mean_reversion_1m` (L142-197)<br>2. `strategies/mean_reversion_1m.yaml::mean_reversion_1m` (L14-158)<br>3. `instruments/{SYMBOL}.yaml::mean_reversion_1m` (L87-101 кожного)<br>**ConfigLoader читає** (L315-333): strategies/mean_reversion_1m.yaml → merge в `merged_config["mean_reversion_1m"]` |
+| **Config Keys (читає)** | 1. `config.mean_reversion.enabled` (L99, L521)<br>2. `config.mean_reversion.assets[symbol].enabled` (L117-124)<br>3. `config.mean_reversion.strategy.*` (L135-167): bb_window, bb_num_std, min_bb_width, etc.<br>4. `config.mean_reversion.assets[symbol].strategy.*` (L169-185): per-symbol overrides<br>5. `config.mean_reversion.allowed_regimes` (L154)<br>6. `config.mean_reversion.assets[symbol].allowed_regimes` (L186)<br>7. `config.mean_reversion.regime_sizing` (L140-151) |
+| **Fallback Chain** | `mean_reversion.assets[symbol].strategy.*` → `mean_reversion.strategy.*` (global) → MRStrategyConfig defaults |
+| **Дублі** | ❌ **КРИТИЧНІ ДУБЛІ**:<br>1. `trading.yaml::trading.mean_reversion` (L142-197)<br>2. `strategies/mean_reversion.yaml::mean_reversion` (L14-158)<br>3. `instruments/{SYMBOL}.yaml::mean_reversion` (L87-101 кожного)<br>**ConfigLoader читає** (L315-333): strategies/mean_reversion.yaml → merge в `merged_config["mean_reversion"]` |
 | **Режим роботи** | Bar-driven: агрегує тіки в 1m бари (BarResampler), генерує сигнал на закритті бару |
 
 ---
@@ -79,14 +79,14 @@
 
 | Config Key | File Location | Runtime Reader | Mode | Notes |
 |------------|---------------|----------------|------|-------|
-| `mean_reversion_1m.enabled` | trading.yaml L143 | `MeanReversionHandler._parse_config()` L99 | **PRIMARY** | Global enable/disable |
-| `mean_reversion_1m.timeframe_sec` | strategies/mean_reversion_1m.yaml L19 | `MeanReversionHandler._init_strategies()` L133 | **SSOT** | 60s bar aggregation |
-| `mean_reversion_1m.strategy.*` | **3 COPIES**:<br>1. trading.yaml L148-177<br>2. strategies/mean_reversion_1m.yaml L24-51<br>3. ConfigLoader merges (L315-333) | `MeanReversionHandler._init_strategies()` L135-167 | **DUPLICATE** | ⚠️ ConfigLoader читає strategies/*.yaml, але trading.yaml теж має копію! |
-| `mean_reversion_1m.assets[symbol].enabled` | trading.yaml L147, L164, L179 | `MeanReversionHandler._parse_config()` L117-124 | **PRIMARY** | Per-symbol enable |
-| `mean_reversion_1m.assets[symbol].strategy.*` | **2 COPIES**:<br>1. trading.yaml L148-177<br>2. instruments/{SYMBOL}.yaml L89-100 | `MeanReversionHandler._init_strategies()` L169-185 | **DUPLICATE** | ⚠️ Який має пріоритет? ConfigLoader не merge instruments/*.yaml MR секцію! |
-| `mean_reversion_1m.assets[symbol].allowed_regimes` | **2 COPIES**:<br>1. trading.yaml L157, L175, L190<br>2. instruments/{SYMBOL}.yaml L101 | `DecisionMaking._get_mr_allowed_regimes()` L1265-1295 | **DUPLICATE** | Fallback: `trading.mean_reversion_1m.assets[symbol].allowed_regimes` → `mean_reversion_1m.allowed_regimes` |
-| `mean_reversion_1m.regime_sizing` | strategies/mean_reversion_1m.yaml (NOT PRESENT in current file) | `MeanReversionHandler._init_strategies()` L140-151 | **MISSING** | Може бути в повному strategies/*.yaml |
-| **❌ mean_reversion_1m.assets[symbol].sl_pct** | trading.yaml L196 (COMMENTED OUT) | ❌ **REMOVED**: Phase 3 switched to dynamic ATR-based SL | **DEAD** | Comment: "REMOVED: Enable dynamic ATR-based SL" |
+| `mean_reversion.enabled` | trading.yaml L143 | `MeanReversionHandler._parse_config()` L99 | **PRIMARY** | Global enable/disable |
+| `mean_reversion.timeframe_sec` | strategies/mean_reversion.yaml L19 | `MeanReversionHandler._init_strategies()` L133 | **SSOT** | 60s bar aggregation |
+| `mean_reversion.strategy.*` | **3 COPIES**:<br>1. trading.yaml L148-177<br>2. strategies/mean_reversion.yaml L24-51<br>3. ConfigLoader merges (L315-333) | `MeanReversionHandler._init_strategies()` L135-167 | **DUPLICATE** | ⚠️ ConfigLoader читає strategies/*.yaml, але trading.yaml теж має копію! |
+| `mean_reversion.assets[symbol].enabled` | trading.yaml L147, L164, L179 | `MeanReversionHandler._parse_config()` L117-124 | **PRIMARY** | Per-symbol enable |
+| `mean_reversion.assets[symbol].strategy.*` | **2 COPIES**:<br>1. trading.yaml L148-177<br>2. instruments/{SYMBOL}.yaml L89-100 | `MeanReversionHandler._init_strategies()` L169-185 | **DUPLICATE** | ⚠️ Який має пріоритет? ConfigLoader не merge instruments/*.yaml MR секцію! |
+| `mean_reversion.assets[symbol].allowed_regimes` | **2 COPIES**:<br>1. trading.yaml L157, L175, L190<br>2. instruments/{SYMBOL}.yaml L101 | `DecisionMaking._get_mr_allowed_regimes()` L1265-1295 | **DUPLICATE** | Fallback: `trading.mean_reversion.assets[symbol].allowed_regimes` → `mean_reversion.allowed_regimes` |
+| `mean_reversion.regime_sizing` | strategies/mean_reversion.yaml (NOT PRESENT in current file) | `MeanReversionHandler._init_strategies()` L140-151 | **MISSING** | Може бути в повному strategies/*.yaml |
+| **❌ mean_reversion.assets[symbol].sl_pct** | trading.yaml L196 (COMMENTED OUT) | ❌ **REMOVED**: Phase 3 switched to dynamic ATR-based SL | **DEAD** | Comment: "REMOVED: Enable dynamic ATR-based SL" |
 
 ### Global Decision Parameters (trading.decision.*)
 
@@ -107,20 +107,20 @@
 
 | Config Key | Location | Why Dead | Impact |
 |------------|----------|----------|--------|
-| **strategies/aurora_*.yaml** (7 files) | config/aurora/strategies/ | ❌ ConfigLoader НЕ завантажує їх (тільки mean_reversion_1m.yaml) L315-323 | ⚠️ Misleading: виглядають як production конфіги, але не використовуються |
+| **strategies/aurora_*.yaml** (7 files) | config/aurora/strategies/ | ❌ ConfigLoader НЕ завантажує їх (тільки mean_reversion.yaml) L315-323 | ⚠️ Misleading: виглядають як production конфіги, але не використовуються |
 | `aurora.enabled` | instruments/{SYMBOL}.yaml L18-19 | ❌ DecisionMaking не перевіряє цей флаг при виклику alpha models | ❌ КРИТИЧНО: Неможливо disable Aurora per-symbol через конфіг! |
 | `aurora.ema_clamp` | instruments/BTCUSDT.yaml L74-77 | ❌ Grep по decision_making.py не знайшов використання | Можливо legacy, можливо planned |
 | `aurora.max_risk_score` | instruments/BTCUSDT.yaml L83-85 | ❌ Grep не знайшов | Можливо planned feature |
-| `mean_reversion_1m.assets[symbol].sl_pct` | trading.yaml L196 (commented) | ✅ Intentionally removed в Phase 3 (switched to ATR-based) | Not a bug, but shows evolution |
+| `mean_reversion.assets[symbol].sl_pct` | trading.yaml L196 (commented) | ✅ Intentionally removed в Phase 3 (switched to ATR-based) | Not a bug, but shows evolution |
 | `trading.decision.signal_weights` | trading.yaml L118-126 | ⚠️ Можливо використовується в alpha models (не верифіковано) | Needs deeper grep в domains/alpha_search/ |
 
 ### 🟠 DUPLICATE Configs (конфлікт SSOT)
 
 | Config Key | Locations | Conflict Description | Risk Level |
 |------------|-----------|---------------------|------------|
-| **mean_reversion_1m.strategy.\*** | 1. trading.yaml L148-177<br>2. strategies/mean_reversion_1m.yaml L24-51 | ConfigLoader merge strategies/*.yaml в `merged_config["mean_reversion_1m"]` (L333), але trading.yaml теж має `mean_reversion_1m.strategy` | 🔴 **HIGH**: Який має пріоритет? Deep_merge може перезаписати! |
-| **mean_reversion_1m.assets[symbol].strategy.\*** | 1. trading.yaml L148-177<br>2. instruments/{SYMBOL}.yaml L89-100 | instruments/*.yaml MR секція **НЕ MERGE** ConfigLoader'ом! Тільки `aurora` секція є в instruments SSOT | 🔴 **HIGH**: instruments/{SYMBOL}.yaml::mean_reversion_1m **IGNORED**! |
-| **mean_reversion_1m.assets[symbol].allowed_regimes** | 1. trading.yaml L157, L175, L190<br>2. instruments/{SYMBOL}.yaml L101 | Так само як вище — instruments/*.yaml MR ignored | 🟡 **MEDIUM**: Fallback працює, але дублікація confusing |
+| **mean_reversion.strategy.\*** | 1. trading.yaml L148-177<br>2. strategies/mean_reversion.yaml L24-51 | ConfigLoader merge strategies/*.yaml в `merged_config["mean_reversion"]` (L333), але trading.yaml теж має `mean_reversion.strategy` | 🔴 **HIGH**: Який має пріоритет? Deep_merge може перезаписати! |
+| **mean_reversion.assets[symbol].strategy.\*** | 1. trading.yaml L148-177<br>2. instruments/{SYMBOL}.yaml L89-100 | instruments/*.yaml MR секція **НЕ MERGE** ConfigLoader'ом! Тільки `aurora` секція є в instruments SSOT | 🔴 **HIGH**: instruments/{SYMBOL}.yaml::mean_reversion **IGNORED**! |
+| **mean_reversion.assets[symbol].allowed_regimes** | 1. trading.yaml L157, L175, L190<br>2. instruments/{SYMBOL}.yaml L101 | Так само як вище — instruments/*.yaml MR ignored | 🟡 **MEDIUM**: Fallback працює, але дублікація confusing |
 | **aurora.signal_threshold** | 1. instruments/BTCUSDT.yaml L79-81<br>2. trading.decision.signal_threshold L14 | DecisionMaking читає `aurora_instruments[symbol].signal_threshold` (L1455-1476), але цей ключ НЕ ІСНУЄ в aurora_instruments.yaml! Тільки в instruments/*.yaml як `aurora.signal_threshold` | 🔴 **CRITICAL**: Per-symbol override не працює! |
 
 ### 🟡 DANGEROUS Configs (неявна поведінка)
@@ -128,8 +128,8 @@
 | Config Key | Issue | Impact |
 |------------|-------|--------|
 | **aurora_instruments[symbol] fallback chain** | 3-4 рівні fallback для кожного параметру:<br>aurora_instruments → trading.decision.* → hardcoded | 🟡 Складно передбачити поведінку, якщо конфіг частково відсутній |
-| **mean_reversion_1m dual strategy** | MR конфіг має 2 джерела:<br>1. `config.mean_reversion_1m.*` (global + per-symbol)<br>2. Окремо `_get_mr_allowed_regimes()` читає з trading.mean_reversion_1m | 🟡 Inconsistent: один параметр може бути в одному місці, інший в іншому |
-| **aurora.enabled vs MR.enabled** | Aurora: enable/disable через instruments/{SYMBOL}.yaml::aurora.enabled (NOT USED)<br>MR: enable/disable через trading.mean_reversion_1m.assets[symbol].enabled | 🔴 **ASYMMETRY**: Неможливо disable Aurora через конфіг! |
+| **mean_reversion dual strategy** | MR конфіг має 2 джерела:<br>1. `config.mean_reversion.*` (global + per-symbol)<br>2. Окремо `_get_mr_allowed_regimes()` читає з trading.mean_reversion | 🟡 Inconsistent: один параметр може бути в одному місці, інший в іншому |
+| **aurora.enabled vs MR.enabled** | Aurora: enable/disable через instruments/{SYMBOL}.yaml::aurora.enabled (NOT USED)<br>MR: enable/disable через trading.mean_reversion.assets[symbol].enabled | 🔴 **ASYMMETRY**: Неможливо disable Aurora через конфіг! |
 | **ConfigLoader merge order** | deep_merge(system → trading → regime → strategies) L326-330<br>Але aurora_instruments.yaml merge окремо L445-497 | ⚠️ Можливі race conditions якщо ключі перетинаються |
 
 ---
@@ -147,7 +147,7 @@
 | **Entry point** | `DecisionMaking._make_decision_for_symbol()` | `MeanReversionHandler.on_tick()` → BarResampler → Strategy |
 | **Signal emission** | Одразу `EVT:TRADE_INTENT_PROPOSED` (після gates) | `EVT:MR_SIGNAL_PRODUCED` → `_on_mr_signal_gateway()` → gates → `EVT:TRADE_INTENT_PROPOSED` |
 | **Режим інтеграції** | Native в DecisionMaking (alpha registry) | External handler (MeanReversionHandler) |
-| **Конфіг SSOT** | `aurora_instruments.yaml` (root level) | `mean_reversion_1m.*` (під trading) |
+| **Конфіг SSOT** | `aurora_instruments.yaml` (root level) | `mean_reversion.*` (під trading) |
 
 ### Де проходить межа між Aurora і MR?
 
@@ -157,10 +157,10 @@
 
 **Конфігураційна межа (поточна):**
 - Aurora: `config.aurora_instruments[symbol].*`
-- MR: `config.mean_reversion_1m.assets[symbol].*`
+- MR: `config.mean_reversion.assets[symbol].*`
 
 **⚠️ ПРОБЛЕМА**: Межа розмита в:
-- `allowed_regimes`: є у обох (aurora_instruments.allowed_regimes + mean_reversion_1m.assets.allowed_regimes)
+- `allowed_regimes`: є у обох (aurora_instruments.allowed_regimes + mean_reversion.assets.allowed_regimes)
 - `regime_thresholds/sizing`: Aurora параметри, але впливають на MR через DecisionMaking gates
 - `exit.sl_pct`: Aurora параметр, але MR теж має sl_atr_mult (різна семантика)
 
@@ -210,7 +210,7 @@ config/aurora/strategies/
 │       ├── ETHUSDT: {...}  # Migrate from aurora_instruments.yaml
 │       └── BTCUSDT: {...}
 │
-└── mean_reversion_1m.yaml  # MR strategy params (EXISTS, needs cleanup)
+└── mean_reversion.yaml  # MR strategy params (EXISTS, needs cleanup)
     ├── global: {...}
     └── per_symbol: {...}  # Migrate from trading.yaml
 ```
@@ -222,14 +222,14 @@ config/aurora/strategies/
    - strategies/aurora_*.yaml (7 files, not loaded by ConfigLoader)
    - instruments/*.yaml::aurora.ema_clamp, max_risk_score (dead keys)
 2. ✅ **Remove duplicates**:
-   - DELETE trading.yaml::trading.mean_reversion_1m.assets[symbol].strategy (keep in strategies/mean_reversion_1m.yaml)
-   - DELETE instruments/{SYMBOL}.yaml::mean_reversion_1m (not loaded anyway)
+   - DELETE trading.yaml::trading.mean_reversion.assets[symbol].strategy (keep in strategies/mean_reversion.yaml)
+   - DELETE instruments/{SYMBOL}.yaml::mean_reversion (not loaded anyway)
 
 #### Phase 2: Consolidate MR (Medium Risk)
 3. ✅ **Single MR SSOT**:
-   - MOVE trading.yaml::trading.mean_reversion_1m → strategies/mean_reversion_1m.yaml (full merge)
-   - UPDATE ConfigLoader to ONLY load strategies/mean_reversion_1m.yaml (L315-333)
-   - REMOVE trading.yaml::trading.mean_reversion_1m completely
+   - MOVE trading.yaml::trading.mean_reversion → strategies/mean_reversion.yaml (full merge)
+   - UPDATE ConfigLoader to ONLY load strategies/mean_reversion.yaml (L315-333)
+   - REMOVE trading.yaml::trading.mean_reversion completely
 
 #### Phase 3: Separate Aurora Strategy SSOT (High Risk)
 4. ⚠️ **NEW strategies/aurora.yaml**:
@@ -243,7 +243,7 @@ config/aurora/strategies/
 
 #### Phase 4: Runtime Guards (Critical)
 6. 🔴 **Strategy conflict detection**:
-   - If symbol has BOTH aurora.enabled=true AND mean_reversion_1m.enabled=true:
+   - If symbol has BOTH aurora.enabled=true AND mean_reversion.enabled=true:
      - LOG WARNING
      - Apply strategy priority (Aurora > MR or vice versa)
      - OR: Allow both but add inter-strategy cooldown
@@ -268,7 +268,7 @@ config/aurora/strategies/
 
 ### ✅ SAFE NEXT STEPS:
 1. ✅ **DELETE** strategies/aurora_*.yaml (7 мертвих файлів)
-2. ✅ **CONSOLIDATE** mean_reversion_1m.yaml (видалити дублі з trading.yaml)
+2. ✅ **CONSOLIDATE** mean_reversion.yaml (видалити дублі з trading.yaml)
 3. ✅ **ADD** aurora.enabled field до Pydantic моделі + runtime check
 4. ✅ **DOCUMENT** strategy conflict resolution policy (Aurora vs MR для BTC)
 
@@ -290,9 +290,9 @@ config/aurora/strategies/
 - `apps/reference/domains/alpha_search/*.py` — Alpha models (not fully audited)
 
 **Config Files (Active):**
-- `config/aurora/trading.yaml` (496 lines) — trading.decision.*, trading.mean_reversion_1m.*
+- `config/aurora/trading.yaml` (496 lines) — trading.decision.*, trading.mean_reversion.*
 - `config/aurora/aurora_instruments.yaml` (253 lines) — Aurora per-symbol params (SSOT via CFG-AURORA-INSTRUMENTS-SSOT-01)
-- `config/aurora/strategies/mean_reversion_1m.yaml` (158 lines) — MR strategy params
+- `config/aurora/strategies/mean_reversion.yaml` (158 lines) — MR strategy params
 - `config/aurora/instruments/{SYMBOL}.yaml` (5 files) — Per-symbol instrument specs + aurora/MR sections
 
 **Config Files (Dead):**
@@ -319,7 +319,7 @@ config/aurora/strategies/
 
 **Config Loading:**
 - Main: `ConfigLoader.load_config()` L280-550
-- MR: `ConfigLoader.load_config()` L315-333 (strategies/mean_reversion_1m.yaml)
+- MR: `ConfigLoader.load_config()` L315-333 (strategies/mean_reversion.yaml)
 - Aurora: `ConfigLoader.load_config()` L445-497 (aurora_instruments.yaml)
 
 ---

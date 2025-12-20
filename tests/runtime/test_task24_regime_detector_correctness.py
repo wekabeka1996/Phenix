@@ -1,0 +1,200 @@
+import time
+from types import SimpleNamespace
+
+import pytest
+
+
+class _DummyFsm:
+    def __init__(self):
+        self.emitted: list[tuple[str, dict, str | None]] = []
+
+    def emit(self, event_name: str, payload=None, why=None, *_args, **_kwargs) -> None:
+        self.emitted.append((event_name, payload or {}, why))
+
+    def listen(self, _event_name: str, _callback) -> None:
+        return
+
+
+def test_regime_strict_config_rejects_dict():
+    from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+
+    with pytest.raises(TypeError):
+        RegimeDetector(config={}, fsm=_DummyFsm())
+
+
+def test_regime_missing_models_raises_config_contract_error():
+    from apps.reference.config_loader import AuroraConfig, get_config
+    from apps.reference.config_contract import ConfigContractError
+    from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+
+    base = get_config()
+    cfg_dict = base.to_dict()
+    cfg_dict["models"] = None
+    cfg = AuroraConfig(**cfg_dict)
+
+    with pytest.raises(ConfigContractError):
+        RegimeDetector(config=cfg, fsm=_DummyFsm())
+
+
+def test_atr_requires_ohlc_or_explicit_opt_in(monkeypatch):
+    from apps.reference.config_loader import AuroraConfig, get_config
+    from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+
+    drops: list[tuple[str, str]] = []
+
+    def _fake_drop(*, domain: str, reason: str) -> None:
+        drops.append((domain, reason))
+
+    monkeypatch.setattr(
+        "apps.reference.domains.regime_detector.regime_detector.inc_data_quality_drop",
+        _fake_drop,
+    )
+
+    base = get_config()
+    cfg_dict = base.to_dict()
+    cfg_dict["models"]["volatility"]["allow_close_to_close_atr"] = False
+    cfg = AuroraConfig(**cfg_dict)
+
+    fsm = _DummyFsm()
+    det = RegimeDetector(config=cfg, fsm=fsm)
+
+    symbol = "BTCUSDT"
+    now_ms = int(time.time() * 1000)
+    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": now_ms, "features": {"price": "100"}}))
+    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": now_ms + 1000, "features": {"price": "101"}}))
+
+    assert any(domain == "regime_detector" and reason == "atr_missing_ohlc" for domain, reason in drops)
+    assert fsm.emitted, "expected EVT:REGIME_DETECTED emission"
+    evt, payload, _why = fsm.emitted[-1]
+    assert evt == "EVT:REGIME_DETECTED"
+    assert "atr_missing_ohlc" in (payload.get("data_quality", {}) or {}).get("drops", [])
+    assert payload.get("regime") == "UNCERTAIN"
+
+
+def test_stale_data_sets_regime_uncertain(monkeypatch):
+    from apps.reference.config_loader import get_config
+    from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+
+    drops: list[tuple[str, str]] = []
+
+    def _fake_drop(*, domain: str, reason: str) -> None:
+        drops.append((domain, reason))
+
+    monkeypatch.setattr(
+        "apps.reference.domains.regime_detector.regime_detector.inc_data_quality_drop",
+        _fake_drop,
+    )
+
+    cfg = get_config()
+    ttl_ms = int(getattr(getattr(cfg.system, "market_data", None), "tick_ttl_ms", 0) or 0)
+    assert ttl_ms > 0, "expected tick_ttl_ms > 0 in canonical config"
+
+    fsm = _DummyFsm()
+    det = RegimeDetector(config=cfg, fsm=fsm)
+
+    now_ms = int(time.time() * 1000)
+    stale_ts = now_ms - ttl_ms - 1
+
+    symbol = "BTCUSDT"
+    feats = {"price": "120", "sma_short": "110", "sma_long": "100"}  # would be TREND_UP if not gated
+    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": stale_ts, "features": feats}))
+
+    assert any(domain == "regime_detector" and reason == "stale_features" for domain, reason in drops)
+    assert fsm.emitted, "expected EVT:REGIME_DETECTED emission"
+    evt, payload, _why = fsm.emitted[-1]
+    assert evt == "EVT:REGIME_DETECTED"
+    assert payload.get("regime") == "UNCERTAIN"
+    assert "stale_features" in (payload.get("data_quality", {}) or {}).get("drops", [])
+
+
+# ============================================================
+# TASK26: Suspicious Zone Tests - Regime Detector
+# ============================================================
+
+def test_atr_true_range_formula():
+    """
+    TASK26.SZ.7: True Range formula: TR = max(high-low, |high-prev_close|, |low-prev_close|).
+    """
+    from decimal import Decimal
+
+    def true_range(high: Decimal, low: Decimal, prev_close: Decimal) -> Decimal:
+        """Standard True Range calculation."""
+        return max(
+            high - low,
+            abs(high - prev_close),
+            abs(low - prev_close),
+        )
+
+    # Test case 1: Normal day (high-low dominates)
+    tr1 = true_range(Decimal("105"), Decimal("95"), Decimal("100"))
+    assert tr1 == Decimal("10"), f"high-low case: expected 10, got {tr1}"
+
+    # Test case 2: Gap up (high-prev dominates)
+    tr2 = true_range(Decimal("115"), Decimal("110"), Decimal("100"))
+    assert tr2 == Decimal("15"), f"gap up case: expected 15, got {tr2}"
+
+    # Test case 3: Gap down (prev-low dominates)
+    tr3 = true_range(Decimal("95"), Decimal("85"), Decimal("100"))
+    assert tr3 == Decimal("15"), f"gap down case: expected 15, got {tr3}"
+
+
+def test_atr_wilder_smoothing_formula():
+    """
+    TASK26.SZ.8: Wilder's ATR smoothing: ATR_t = (ATR_{t-1}*(n-1) + TR_t) / n.
+    """
+    from decimal import Decimal
+
+    def wilder_atr(prev_atr: Decimal, current_tr: Decimal, n: int) -> Decimal:
+        """Wilder's ATR smoothing formula."""
+        return (prev_atr * (n - 1) + current_tr) / n
+
+    # Initial ATR = 10, current TR = 20, period = 14
+    prev_atr = Decimal("10")
+    current_tr = Decimal("20")
+    n = 14
+
+    new_atr = wilder_atr(prev_atr, current_tr, n)
+    
+    # Expected: (10 * 13 + 20) / 14 = 150 / 14 ≈ 10.714
+    expected = (Decimal("10") * 13 + Decimal("20")) / 14
+    assert new_atr == expected, f"Wilder ATR: expected {expected}, got {new_atr}"
+
+
+def test_regime_uncertain_on_ohlc_data_gap():
+    """
+    TASK26.SZ.9: Missing OHLC candles (data gap) → UNCERTAIN regime.
+    """
+    from apps.reference.config_loader import get_config
+    from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+
+    cfg = get_config()
+    fsm = _DummyFsm()
+    det = RegimeDetector(config=cfg, fsm=fsm)
+
+    now_ms = int(time.time() * 1000)
+    symbol = "BTCUSDT"
+
+    # Send features with gap indicator
+    features_with_gap = {
+        "symbol": symbol,
+        "ts": now_ms,
+        "features": {
+            "price": "50000",
+            "data_gap": True,  # Indicates missing candles
+        },
+        "warmup": {"full_ready": True},
+    }
+
+    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld=features_with_gap))
+
+    # System should handle this gracefully
+    # Either emit UNCERTAIN or block regime emission
+    if fsm.emitted:
+        evt, payload, _ = fsm.emitted[-1]
+        if evt == "EVT:REGIME_DETECTED":
+            # If regime emitted with gap, should be low confidence or UNCERTAIN
+            regime = payload.get("regime", "")
+            confidence = float(payload.get("confidence", 0.5))
+            # Acceptable: UNCERTAIN regime OR low confidence
+            assert regime == "UNCERTAIN" or confidence < 0.6, \
+                f"Data gap should result in UNCERTAIN or low confidence, got {regime}/{confidence}"

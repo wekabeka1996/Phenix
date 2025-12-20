@@ -1,0 +1,104 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.1, pluggy-1.6.0 -- /home/wekabeka/Музыка/Phenix/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/wekabeka/Музыка/Phenix
+configfile: pytest.ini
+plugins: asyncio-1.3.0, anyio-4.11.0, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 33 items
+
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_no_action_when_not_opened PASSED [  3%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_fail_closed_when_missing_market_snapshot PASSED [  6%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_fail_closed_when_missing_instrument_specs PASSED [  9%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_emits_bracket_on_entry_once PASSED [ 12%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_does_not_flip_side PASSED [ 15%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_long PASSED [ 18%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_tp_sl_relative_to_entry_short PASSED [ 21%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_trailing_stop_monotonicity PASSED [ 24%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_respects_reduce_only_on_close_intent FAILED [ 27%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_idempotency_on_modify_same_key PASSED [ 30%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_max_hold_triggers_close_or_signal PASSED [ 33%]
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_no_modify_when_price_did_not_move_enough PASSED [ 36%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_missing_equity PASSED [ 39%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_stale_portfolio PASSED [ 42%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_equity_utilization FAILED [ 45%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_portfolio_fraction FAILED [ 48%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_long_utilization FAILED [ 51%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_short_utilization FAILED [ 54%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_directional_ratio_long_heavy FAILED [ 57%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_leverage_cap FAILED [ 60%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_allow_when_within_limits PASSED [ 63%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_reserve_and_release PASSED [ 66%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_fallback_mode_reduction PASSED [ 69%]
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_soft_clip_instead_of_reject PASSED [ 72%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_open_to_open_flow PASSED [ 75%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_ack_via_on_order_ack FAILED [ 78%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_fill_to_position_update PASSED [ 81%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_duplicate_fill_event_is_ignored PASSED [ 84%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_out_of_order_fill_before_ack_does_not_corrupt_state PASSED [ 87%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_ack_missing_then_timeout_triggers_safe_path PASSED [ 90%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_adapter_error_emits_error_event PASSED [ 93%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_watchdog_triggers_deadline_callback PASSED [ 96%]
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_processed_events_growth_is_bounded_or_flagged PASSED [100%]
+
+=================================== FAILURES ===================================
+_______________ test_manage_respects_reduce_only_on_close_intent _______________
+tests/domains/execution_position/test_execpos_manage_scenarios_v1.py:106: in test_manage_respects_reduce_only_on_close_intent
+    assert str(res.pld.get("reduceOnly", "")).lower() == "true" or res.pld.get("reduce_only") is True
+E   AssertionError: assert ('' == 'true'
+E     
+E     - true or None is True)
+E    +  where None = <built-in method get of dict object at 0x76ff03c5c580>('reduce_only')
+E    +    where <built-in method get of dict object at 0x76ff03c5c580> = {'symbol': 'BTCUSDT', 'side': 'SELL', 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', 'elapsed_sec': 20.0, 'max_hold_sec': 10}.get
+E    +      where {'symbol': 'BTCUSDT', 'side': 'SELL', 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', 'elapsed_sec': 20.0, 'max_hold_sec': 10} = Message(v=1, op='DEC', verb='CLOSE_POSITION', src='execution_position', dst='execution_position', rid='938ba934-b7dd-4482-ada9-11f93d810b9b', span_id='a7e361cc6ed0477c86389c4bc1f301c7', parent_span_id=None, ts=1766248491904, ttl_ms=2000, key=None, idempotent_key=None, pld={'symbol': 'BTCUSDT', 'side': 'SELL', 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', 'elapsed_sec': 20.0, 'max_hold_sec': 10}, why='max_hold_timeout_20s', why_explain_ref=None, intent=None, data_ref=[], sig=None, mode='live', mode_contract=None, corr_id=None, oco_group_id=None, parent_client_order_id=None, link_ack_id=None, link_fill_id=None).pld
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130837647311504'>' mode is incomplete. Execution will be simulated.
+____________________ test_guard_deny_max_equity_utilization ____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:43: in test_guard_deny_max_equity_utilization
+    assert res["allowed"] is False
+E   assert True is False
+____________________ test_guard_deny_max_portfolio_fraction ____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:54: in test_guard_deny_max_portfolio_fraction
+    assert res["allowed"] is False
+E   assert True is False
+_____________________ test_guard_deny_max_long_utilization _____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:71: in test_guard_deny_max_long_utilization
+    assert res["allowed"] is False
+E   assert True is False
+____________________ test_guard_deny_max_short_utilization _____________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:82: in test_guard_deny_max_short_utilization
+    assert res["allowed"] is False
+E   assert True is False
+_________________ test_guard_deny_directional_ratio_long_heavy _________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:102: in test_guard_deny_directional_ratio_long_heavy
+    assert res["allowed"] is False
+E   assert True is False
+_________________________ test_guard_deny_leverage_cap _________________________
+tests/domains/execution_position/test_exposure_guard_matrix_v1.py:113: in test_guard_deny_leverage_cap
+    assert res["allowed"] is False
+E   assert True is False
+_____________________ test_fsm_routes_ack_via_on_order_ack _____________________
+tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py:30: in test_fsm_routes_ack_via_on_order_ack
+    fsm.watchdog.on_order_ack.assert_called()
+/usr/lib/python3.12/unittest/mock.py:913: in assert_called
+    raise AssertionError(msg)
+E   AssertionError: Expected 'on_order_ack' to have been called.
+------------------------------ Captured log setup ------------------------------
+WARNING  apps.reference.domains.execution_position.fsm:fsm.py:321 Failed to initialize AlertManager in ExecPosFSM: AlertManager requires AuroraConfig, got <class 'unittest.mock.MagicMock'>
+ERROR    apps.reference.domains.execution_position.fsm:fsm.py:946 API configuration for execution in '<MagicMock name='mock.get_domain_mode()' id='130837644881184'>' mode is incomplete. Execution will be simulated.
+=========================== short test summary info ============================
+FAILED tests/domains/execution_position/test_execpos_manage_scenarios_v1.py::test_manage_respects_reduce_only_on_close_intent - AssertionError: assert ('' == 'true'
+  
+  - true or None is True)
+ +  where None = <built-in method get of dict object at 0x76ff03c5c580>('reduce_only')
+ +    where <built-in method get of dict object at 0x76ff03c5c580> = {'symbol': 'BTCUSDT', 'side': 'SELL', 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', 'elapsed_sec': 20.0, 'max_hold_sec': 10}.get
+ +      where {'symbol': 'BTCUSDT', 'side': 'SELL', 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', 'elapsed_sec': 20.0, 'max_hold_sec': 10} = Message(v=1, op='DEC', verb='CLOSE_POSITION', src='execution_position', dst='execution_position', rid='938ba934-b7dd-4482-ada9-11f93d810b9b', span_id='a7e361cc6ed0477c86389c4bc1f301c7', parent_span_id=None, ts=1766248491904, ttl_ms=2000, key=None, idempotent_key=None, pld={'symbol': 'BTCUSDT', 'side': 'SELL', 'qty': '1.0', 'reason': 'MAX_HOLD_TIME_EXCEEDED', 'elapsed_sec': 20.0, 'max_hold_sec': 10}, why='max_hold_timeout_20s', why_explain_ref=None, intent=None, data_ref=[], sig=None, mode='live', mode_contract=None, corr_id=None, oco_group_id=None, parent_client_order_id=None, link_ack_id=None, link_fill_id=None).pld
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_equity_utilization - assert True is False
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_portfolio_fraction - assert True is False
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_long_utilization - assert True is False
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_max_short_utilization - assert True is False
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_directional_ratio_long_heavy - assert True is False
+FAILED tests/domains/execution_position/test_exposure_guard_matrix_v1.py::test_guard_deny_leverage_cap - assert True is False
+FAILED tests/domains/execution_position/test_execpos_fsm_routing_recovery_v1.py::test_fsm_routes_ack_via_on_order_ack - AssertionError: Expected 'on_order_ack' to have been called.
+========================= 8 failed, 25 passed in 0.62s =========================

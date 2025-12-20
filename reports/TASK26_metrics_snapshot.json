@@ -1,0 +1,24 @@
+{
+  "generated_at": "2025-12-20T17:47:08Z",
+  "scenarios": [
+    {
+      "scenario": "test_macro_sync_valid_correlation_not_neutral",
+      "metrics": {
+        "warmup_blocks": 0,
+        "data_quality_drops": 0,
+        "retry_scheduler_no_loop": 0,
+        "intents_proposed": 0,
+        "intents_dropped": 0,
+        "guards_blocked": 0,
+        "no_trade_reasons": {}
+      }
+    }
+  ],
+  "summary": {
+    "total_warmup_blocks": 0,
+    "total_data_quality_drops": 0,
+    "total_retry_no_loop": 0,
+    "total_intents_proposed": 0,
+    "total_intents_dropped": 0
+  }
+}

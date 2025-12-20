@@ -13,6 +13,7 @@ except ImportError:
 from pydantic import ValidationError
 
 from .config_models import AuroraConfig as PydanticAuroraConfig
+from .config_models import SystemRuntimeMeta
 from .config_contract import ConfigContractError
 
 LOG = logging.getLogger(__name__)
@@ -91,7 +92,19 @@ class ConfigLoader:
             project_root = Path(__file__).resolve().parents[3]
             tests_dir = project_root / "tests" / "config" / "aurora"
             default_dir = Path(__file__).resolve().parent.parent.parent / "config" / "aurora"
-            self.config_dir = tests_dir if tests_dir.exists() else default_dir
+            required = (
+                "system.yaml",
+                "trading.yaml",
+                "regime.yaml",
+                "domains.yaml",
+                "instruments.yaml",
+                "aurora_instruments.yaml",
+                "strategies.yaml",
+            )
+            if tests_dir.exists() and all((tests_dir / f).exists() for f in required):
+                self.config_dir = tests_dir
+            else:
+                self.config_dir = default_dir
         
         # CFG-RUNTIME-BOOTSTRAP-07: Store config name for diagnostic logging
         self.config_name = "aurora"  # Default config name
@@ -158,11 +171,200 @@ class ConfigLoader:
         if isinstance(regime_config, dict) and "config_version" in regime_config:
             meta["regime_config_version"] = regime_config.pop("config_version")
 
-        # Keep required Optional keys present for Pydantic (zero-defaults contract).
-        meta.setdefault("system_config_version", None)
-        meta.setdefault("regime_config_version", None)
-
         return meta
+
+    def _merge_config_fragments(
+        self,
+        *,
+        system_config: Dict[str, Any],
+        trading_config: Dict[str, Any],
+        regime_config: Dict[str, Any],
+        domains_config: Dict[str, Any],
+        system_meta: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Merge YAML fragments into a single dict WITHOUT schema-compensation hydration.
+
+        TASK28 invariant:
+        - No setdefault-injection of optional/required keys to satisfy schema
+        - Only SSOT canonical merges + allowlisted legacy migration happens elsewhere
+        """
+
+        # Merge: trading_config (source) → system_config (destination)
+        merged_config: Dict[str, Any] = {}
+        deep_merge(system_config, merged_config)  # Copy system first
+        deep_merge(trading_config, merged_config)  # Overlay trading
+        deep_merge(regime_config, merged_config)   # Overlay regime (models, hmm, etc.)
+
+        # =========================================================================
+        # CANONICAL domains.yaml LOGIC (CFG-DOMAINS-STEP-01)
+        # =========================================================================
+        if 'domains' in domains_config:
+            merged_config['domains'] = domains_config['domains']
+        elif domains_config:
+            merged_config['domains'] = domains_config
+        else:
+            raise ValueError(
+                "❌ CRITICAL: No domains configuration found! "
+                "Expected config/aurora/domains.yaml (SSOT) with domain configs."
+            )
+
+        if 'trading' in merged_config and 'domains' in (merged_config.get('trading', {}) or {}):
+            msg = (
+                "⚠️  DEPRECATED: trading.domains detected! "
+                "This section is IGNORED. SSOT is config/aurora/domains.yaml. "
+                "Remove trading.domains from trading.yaml."
+            )
+            raise ConfigContractError(path="trading.domains", why=msg)
+
+        if not merged_config.get('domains'):
+            raise ValueError("❌ CRITICAL: domains config is empty after merge!")
+
+        # =========================================================================
+        # CANONICAL instruments.yaml LOGIC (CFG-INSTRUMENTS-AURORA-SSOT-01)
+        # =========================================================================
+
+        instruments_raw = self._load_yaml("instruments.yaml")
+        if isinstance(instruments_raw, dict) and "instruments" in instruments_raw and isinstance(
+            instruments_raw.get("instruments"), dict
+        ):
+            merged_config["instruments"] = instruments_raw["instruments"]
+        else:
+            merged_config["instruments"] = instruments_raw if isinstance(instruments_raw, dict) else {}
+
+        if not merged_config.get("instruments"):
+            raise ValueError(
+                "❌ CRITICAL: No instruments configuration found or instruments is empty! "
+                "Expected config/aurora/instruments.yaml (SSOT)."
+            )
+
+        trading_block = merged_config.get("trading")
+        if not isinstance(trading_block, dict):
+            raise ConfigContractError(
+                path="trading",
+                why="Invalid or missing trading block at root (expected mapping).",
+            )
+
+        trading_instruments = trading_block.get("instruments")
+        if isinstance(trading_instruments, dict) and trading_instruments:
+            msg = (
+                "⚠️  DEPRECATED: trading.instruments detected! "
+                "This section is IGNORED. SSOT is config/aurora/instruments.yaml. "
+                "Remove trading.instruments from trading.yaml."
+            )
+            raise ConfigContractError(path="trading.instruments", why=msg)
+
+        # =========================================================================
+        # CANONICAL strategies.yaml LOGIC (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
+        # =========================================================================
+        strict_mode = self._get_strict_mode()
+
+        strategies_raw: Dict[str, Any] = {}
+        try:
+            raw = self._load_yaml("strategies.yaml")
+            strategies_raw = raw if isinstance(raw, dict) else {}
+        except FileNotFoundError:
+            strategies_raw = {}
+
+        if not strategies_raw:
+            msg = (
+                "⚠️  strategies.yaml NOT found! "
+                "Expected config/aurora/strategies.yaml for strategy registry (assignments + arbitration)."
+            )
+            if strict_mode:
+                raise ValueError(msg)
+            LOG.warning(msg)
+            merged_config["strategies_registry"] = None
+        else:
+            merged_config["strategies_registry"] = strategies_raw
+
+        # =========================================================================
+        # REGISTRY-DRIVEN STRATEGY PROFILE LOADING (CFG-STRATEGIES-SSOT-03)
+        # =========================================================================
+
+        strategy_configs: Dict[str, Dict[str, Any]] = {}
+        if strategies_raw and "assignments" in strategies_raw:
+            assignments = strategies_raw.get("assignments")
+            if isinstance(assignments, dict):
+                strategy_ids = set()
+                for symbol, strat_list in assignments.items():
+                    if isinstance(strat_list, list):
+                        strategy_ids.update(strat_list)
+
+                strategies_dir = self.config_dir / "strategies"
+                for strategy_id in strategy_ids:
+                    profile_path = strategies_dir / f"{strategy_id}.yaml"
+                    if not profile_path.exists():
+                        raise ValueError(
+                            f"❌ CRITICAL: Strategy '{strategy_id}' assigned in strategies.yaml "
+                            f"but profile missing: {profile_path}. "
+                            f"Expected: config/aurora/strategies/{strategy_id}.yaml"
+                        )
+
+                    with open(profile_path, "r", encoding="utf-8-sig", errors="replace") as f:
+                        profile_raw = yaml.safe_load(f)
+
+                    if isinstance(profile_raw, dict):
+                        if strategy_id in profile_raw:
+                            strategy_configs[strategy_id] = profile_raw[strategy_id]
+                        else:
+                            strategy_configs[strategy_id] = profile_raw
+                        LOG.info(f"✅ Loaded strategy profile: {strategy_id} from {profile_path}")
+
+        for strategy_id, config_data in strategy_configs.items():
+            merged_config[strategy_id] = config_data
+
+        # =========================================================================
+        # CANONICAL aurora_instruments.yaml LOGIC (CFG-AURORA-INSTRUMENTS-SSOT-01-FIXPACK)
+        # =========================================================================
+
+        # Detect deprecated trading.aurora_instruments in RAW trading_config (BEFORE Pydantic parse)
+        if isinstance(trading_config, dict) and "aurora_instruments" in trading_config:
+            trading_aurora_instruments = trading_config.get("aurora_instruments")
+            if isinstance(trading_aurora_instruments, dict) and trading_aurora_instruments:
+                msg = (
+                    "⚠️  DEPRECATED: trading.aurora_instruments detected! "
+                    "This section is IGNORED. SSOT is config/aurora/aurora_instruments.yaml. "
+                    "Remove trading.aurora_instruments from trading.yaml."
+                )
+                raise ConfigContractError(path="trading.aurora_instruments", why=msg)
+
+        aurora_instruments_raw: Dict[str, Any] = {}
+        try:
+            raw = self._load_yaml("aurora_instruments.yaml")
+            aurora_instruments_raw = raw if isinstance(raw, dict) else {}
+        except FileNotFoundError:
+            aurora_instruments_raw = {}
+
+        if not aurora_instruments_raw:
+            msg = (
+                "⚠️  aurora_instruments.yaml NOT found! "
+                "Expected config/aurora/aurora_instruments.yaml for per-symbol Aurora overrides."
+            )
+            if strict_mode:
+                raise ValueError(msg)
+            LOG.warning(msg)
+            merged_config["aurora_instruments"] = {}
+        else:
+            if "aurora_instruments" in aurora_instruments_raw and isinstance(
+                aurora_instruments_raw.get("aurora_instruments"), dict
+            ):
+                merged_config["aurora_instruments"] = aurora_instruments_raw["aurora_instruments"]
+            else:
+                merged_config["aurora_instruments"] = aurora_instruments_raw
+
+        # Attach system_meta under dedicated namespace (no runtime injection here)
+        merged_config["system_meta"] = system_meta
+
+        return merged_config
+
+    def _inject_runtime_meta(self, config: AuroraConfig) -> AuroraConfig:
+        """Inject runtime-only metadata AFTER successful validation."""
+        runtime = SystemRuntimeMeta(config_name=self.config_name, config_dir=str(self.config_dir))
+        return config.model_copy(
+            update={
+                "system_meta": config.system_meta.model_copy(update={"runtime": runtime})
+            }
+        )
 
     def _resolve_mode_overrides(self, config: Dict[str, Any]) -> None:
         """Apply mode-specific decision overrides from decision[mode] → decision.
@@ -408,19 +610,19 @@ class ConfigLoader:
         # =========================================================================
         # DEPRECATED MR DETECTION (CFG-STRATEGIES-SSOT-05-MR-TRADING-YAML-BURN-DOWN)
         # =========================================================================
-        # mean_reversion_1m is DEPRECATED in trading.yaml (SSOT: strategy profile)
+        # mean_reversion is DEPRECATED in trading.yaml (SSOT: strategy profile)
         # Detect its presence and fail/warn based on strict mode
         # =========================================================================
-        if isinstance(trading_config, dict) and "mean_reversion_1m" in trading_config:
-            mr_section = trading_config.get("mean_reversion_1m")
+        if isinstance(trading_config, dict) and "mean_reversion" in trading_config:
+            mr_section = trading_config.get("mean_reversion")
             if isinstance(mr_section, dict) and mr_section:
                 msg = (
-                    "⚠️  DEPRECATED: mean_reversion_1m detected in trading.yaml! "
+                    "⚠️  DEPRECATED: mean_reversion detected in trading.yaml! "
                     "This section is IGNORED (strategy profiles have priority). "
-                    "SSOT for MR config: config/aurora/strategies/mean_reversion_1m.yaml. "
-                    "Action required: Remove mean_reversion_1m from trading.yaml."
+                    "SSOT for MR config: config/aurora/strategies/mean_reversion.yaml. "
+                    "Action required: Remove mean_reversion from trading.yaml."
                 )
-                raise ConfigContractError(path="trading.mean_reversion_1m", why=msg)
+                raise ConfigContractError(path="trading.mean_reversion", why=msg)
         
         # =========================================================================
         # DEPRECATED FEATURE_ENGINEERING DETECTION (CFG-FREEZE-SSOT-06)
@@ -458,301 +660,13 @@ class ConfigLoader:
             )
             raise ConfigContractError(path="trading.feature_engineering", why=msg)
 
-        # Merge: trading_config (source) → system_config (destination)
-        merged_config: Dict[str, Any] = {}
-        deep_merge(system_config, merged_config)  # Copy system first
-        deep_merge(trading_config, merged_config)  # Overlay trading
-        deep_merge(regime_config, merged_config)   # Overlay regime (models, hmm, etc.)
-        
-        # ============================================================================
-        # CANONICAL domains.yaml LOGIC (CFG-DOMAINS-STEP-01)
-        # ============================================================================
-        # ПРАВИЛО: domains.yaml → ЄДИНЕ ДЖЕРЕЛО ПРАВДИ для AuroraConfig.domains
-        # - domains.yaml завжди має пріоритет
-        # - trading.domains (якщо є) — DEPRECATED mirror, НЕ використовується
-        # ============================================================================
-        
-        legacy_used = False
-        
-        # 1. Якщо domains.yaml має 'domains' ключ → use it as canonical
-        if 'domains' in domains_config:
-            merged_config['domains'] = domains_config['domains']
-        # 2. Якщо domains.yaml — це самі дані (без обгортки), merge all content as domains
-        elif domains_config:
-            merged_config['domains'] = domains_config
-        else:
-            # CFG-TRADING-YAML-BURN-DOWN-02: FAIL FAST, no fallback to trading.domains
-            raise ValueError(
-                "❌ CRITICAL: No domains configuration found! "
-                "Expected config/aurora/domains.yaml (SSOT) with domain configs."
-            )
-        
-        # CFG-TRADING-YAML-BURN-DOWN-02: Detect deprecated trading.domains and FAIL in strict mode
-        if 'trading' in merged_config and 'domains' in merged_config.get('trading', {}):
-            msg = (
-                "⚠️  DEPRECATED: trading.domains detected! "
-                "This section is IGNORED. SSOT is config/aurora/domains.yaml. "
-                "Remove trading.domains from trading.yaml."
-            )
-            raise ConfigContractError(path="trading.domains", why=msg)
-
-        # Backward-compat mirror: expose canonical root domains under trading.domains
-        # without accepting trading.domains from trading.yaml.
-        trading_block = merged_config.setdefault("trading", {})
-        if isinstance(trading_block, dict) and "domains" not in trading_block:
-            trading_block["domains"] = merged_config.get("domains")
-        
-        # Consistency check
-        if not merged_config.get('domains'):
-            raise ValueError("❌ CRITICAL: domains config is empty after merge!")
-        
-        # ============================================================================
-        # END CANONICAL domains.yaml LOGIC
-        # ============================================================================
-
-        # =========================================================================
-        # CANONICAL instruments.yaml LOGIC (CFG-INSTRUMENTS-AURORA-SSOT-01)
-        # =========================================================================
-        # ПРАВИЛО: config/aurora/instruments.yaml → ЄДИНЕ ДЖЕРЕЛО ПРАВДИ для AuroraConfig.instruments
-        # - instruments.yaml завжди має пріоритет
-        # - trading.instruments — DEPRECATED mirror для legacy runtime
-        # =========================================================================
-
-        instruments_yaml_present = False
-        instruments_payload: Dict[str, Any] = {}
-        try:
-            instruments_raw = self._load_yaml("instruments.yaml")
-            instruments_yaml_present = True
-
-            if isinstance(instruments_raw, dict) and "instruments" in instruments_raw and isinstance(
-                instruments_raw.get("instruments"), dict
-            ):
-                instruments_payload = instruments_raw["instruments"]
-            else:
-                instruments_payload = instruments_raw if isinstance(instruments_raw, dict) else {}
-        except FileNotFoundError:
-            instruments_yaml_present = False
-
-        # Canonical mapping: merged_config['instruments']
-        if instruments_yaml_present:
-            merged_config["instruments"] = instruments_payload
-        else:
-            # CFG-TRADING-YAML-BURN-DOWN-02: FAIL FAST, no fallback to trading.instruments
-            raise ValueError(
-                "❌ CRITICAL: No instruments configuration found! "
-                "Expected config/aurora/instruments.yaml (SSOT)."
-            )
-
-        # CFG-TRADING-YAML-BURN-DOWN-02: Detect deprecated trading.instruments and FAIL in strict mode
-        trading_block = merged_config.setdefault("trading", {})
-        if not isinstance(trading_block, dict):
-            trading_block = {}
-            merged_config["trading"] = trading_block
-
-        trading_instruments = trading_block.get("instruments")
-        
-        if isinstance(trading_instruments, dict) and trading_instruments:
-            msg = (
-                "⚠️  DEPRECATED: trading.instruments detected! "
-                "This section is IGNORED. SSOT is config/aurora/instruments.yaml. "
-                "Remove trading.instruments from trading.yaml."
-            )
-            raise ConfigContractError(path="trading.instruments", why=msg)
-
-        if not merged_config.get("instruments"):
-            raise ValueError("❌ CRITICAL: instruments config is empty after merge!")
-
-        # =========================================================================
-        # END CANONICAL instruments.yaml LOGIC
-        # =========================================================================
-
-        # -------------------------------------------------------------------------
-        # TradingConfig strict-schema hydration (TASK22: zero defaults)
-        # -------------------------------------------------------------------------
-        # TradingConfig requires explicit keys even for Optional[...] fields.
-        # We keep SSOT policy (trading.yaml must NOT define these), but we inject
-        # canonical values here so Pydantic validation can succeed.
-        try:
-            trading_block = merged_config.setdefault("trading", {})
-            if not isinstance(trading_block, dict):
-                trading_block = {}
-                merged_config["trading"] = trading_block
-
-            # SSOT mirrors (must be injected, not read from trading.yaml)
-            trading_block.setdefault("domains", merged_config.get("domains"))
-            trading_block.setdefault("instruments", merged_config.get("instruments", {}))
-            trading_block.setdefault("aurora_instruments", merged_config.get("aurora_instruments", {}))
-
-            # Required field at trading.* level (historically existed under decision)
-            # Prefer explicit list from decision if present; else derive from instruments SSOT.
-            decision_block = trading_block.get("decision", {})
-            if isinstance(decision_block, dict) and isinstance(decision_block.get("symbols_to_track"), list):
-                trading_block.setdefault("symbols_to_track", decision_block.get("symbols_to_track"))
-            else:
-                trading_block.setdefault("symbols_to_track", list((merged_config.get("instruments") or {}).keys()))
-
-            # Deprecated in trading.yaml (SSOT is domains.yaml). Keep explicit null for schema.
-            trading_block.setdefault("feature_engineering", None)
-        except Exception:
-            # Best-effort hydration; strict validation will surface remaining issues.
-            pass
-
-        # =========================================================================
-        # CANONICAL strategies.yaml LOGIC (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
-        # =========================================================================
-        # ПРАВИЛО: config/aurora/strategies.yaml → ЄДИНЕ ДЖЕРЕЛО ПРАВДИ для strategy assignments + arbitration
-        # Strict mode: missing file → ValueError
-        # =========================================================================
-        import os
-        strict_mode = self._get_strict_mode()
-        
-        strategies_yaml_present = False
-        strategies_payload: Dict[str, Any] = {}
-        try:
-            strategies_raw = self._load_yaml("strategies.yaml")
-            strategies_yaml_present = True
-            
-            if isinstance(strategies_raw, dict):
-                strategies_payload = strategies_raw
-        except FileNotFoundError:
-            strategies_yaml_present = False
-        
-        # Fail-closed in strict mode
-        if not strategies_yaml_present:
-            msg = (
-                "⚠️  strategies.yaml NOT found! "
-                "Expected config/aurora/strategies.yaml for strategy registry (assignments + arbitration)."
-            )
-            if strict_mode:
-                raise ValueError(msg)
-            else:
-                LOG.warning(msg)
-                merged_config["strategies_registry"] = None
-        else:
-            merged_config["strategies_registry"] = strategies_payload
-        
-        # =========================================================================
-        # END CANONICAL strategies.yaml LOGIC
-        # =========================================================================
-
-        # =========================================================================
-        # REGISTRY-DRIVEN STRATEGY PROFILE LOADING (CFG-STRATEGIES-SSOT-03)
-        # =========================================================================
-        # ПРАВИЛО: Завантажувати strategy profiles YAML ЛИШЕ за strategies_registry.assignments
-        # - Не сканувати директорію
-        # - Strict: strategy_id в assignments але файл відсутній → ValueError
-        # =========================================================================
-        
-        strategy_configs: Dict[str, Dict[str, Any]] = {}
-        
-        if strategies_payload and "assignments" in strategies_payload:
-            assignments = strategies_payload["assignments"]
-            if isinstance(assignments, dict):
-                # Collect unique strategy_ids from all assignments
-                strategy_ids = set()
-                for symbol, strat_list in assignments.items():
-                    if isinstance(strat_list, list):
-                        strategy_ids.update(strat_list)
-                
-                # Load each strategy profile from config/aurora/strategies/{id}.yaml
-                strategies_dir = self.config_dir / "strategies"
-                for strategy_id in strategy_ids:
-                    profile_path = strategies_dir / f"{strategy_id}.yaml"
-                    
-                    if not profile_path.exists():
-                        # FAIL-CLOSED: assigned strategy missing profile → ValueError
-                        raise ValueError(
-                            f"❌ CRITICAL: Strategy '{strategy_id}' assigned in strategies.yaml "
-                            f"but profile missing: {profile_path}. "
-                            f"Expected: config/aurora/strategies/{strategy_id}.yaml"
-                        )
-                    
-                    try:
-                        with open(profile_path, "r", encoding="utf-8-sig", errors="replace") as f:
-                            profile_raw = yaml.safe_load(f)
-                        
-                        if isinstance(profile_raw, dict):
-                            # Support both wrapped format ({strategy_id: {...}}) and flat
-                            if strategy_id in profile_raw:
-                                strategy_configs[strategy_id] = profile_raw[strategy_id]
-                            else:
-                                strategy_configs[strategy_id] = profile_raw
-                            
-                            LOG.info(f"✅ Loaded strategy profile: {strategy_id} from {profile_path}")
-                    except Exception as e:
-                        raise ValueError(
-                            f"❌ CRITICAL: Failed to parse strategy profile '{strategy_id}' "
-                            f"from {profile_path}: {e}"
-                        )
-        
-        # Inject strategy configs at root level (e.g., mean_reversion_1m)
-        for strategy_id, config_data in strategy_configs.items():
-            merged_config[strategy_id] = config_data
-
-        # Zero-defaults contract: optional strategy profile blocks must be present.
-        # When strategies.yaml is missing or a strategy isn't assigned, keep explicit null.
-        merged_config.setdefault("aurora", None)
-        merged_config.setdefault("mean_reversion_1m", None)
-        
-        # =========================================================================
-        # END REGISTRY-DRIVEN STRATEGY PROFILE LOADING
-        # =========================================================================
-
-        # =========================================================================
-        # CANONICAL aurora_instruments.yaml LOGIC (CFG-AURORA-INSTRUMENTS-SSOT-01-FIXPACK)
-        # =========================================================================
-        # ПРАВИЛО: config/aurora/aurora_instruments.yaml → ЄДИНЕ ДЖЕРЕЛО ПРАВДИ для AuroraConfig.aurora_instruments
-        # - aurora_instruments.yaml завжди має пріоритет
-        # - trading.aurora_instruments — DEPRECATED (fail-closed в strict mode)
-        # =========================================================================
-        
-        # STEP 1: Detect deprecated trading.aurora_instruments in RAW trading_config (BEFORE Pydantic parse)
-        if isinstance(trading_config, dict) and "aurora_instruments" in trading_config:
-            trading_aurora_instruments = trading_config.get("aurora_instruments")
-            if isinstance(trading_aurora_instruments, dict) and trading_aurora_instruments:
-                msg = (
-                    "⚠️  DEPRECATED: trading.aurora_instruments detected! "
-                    "This section is IGNORED. SSOT is config/aurora/aurora_instruments.yaml. "
-                    "Remove trading.aurora_instruments from trading.yaml."
-                )
-                raise ConfigContractError(path="trading.aurora_instruments", why=msg)
-
-        # STEP 2: Load aurora_instruments.yaml (CANONICAL SSOT)
-        aurora_instruments_yaml_present = False
-        aurora_instruments_payload: Dict[str, Any] = {}
-        try:
-            aurora_instruments_raw = self._load_yaml("aurora_instruments.yaml")
-            aurora_instruments_yaml_present = True
-
-            # Support both wrapped and flat formats
-            if isinstance(aurora_instruments_raw, dict):
-                if "aurora_instruments" in aurora_instruments_raw and isinstance(
-                    aurora_instruments_raw.get("aurora_instruments"), dict
-                ):
-                    aurora_instruments_payload = aurora_instruments_raw["aurora_instruments"]
-                else:
-                    # Flat format (symbol keys at root)
-                    aurora_instruments_payload = aurora_instruments_raw
-        except FileNotFoundError:
-            aurora_instruments_yaml_present = False
-
-        # STEP 3: Fail-closed policy in strict mode
-        if not aurora_instruments_yaml_present:
-            msg = (
-                "⚠️  aurora_instruments.yaml NOT found! "
-                "Expected config/aurora/aurora_instruments.yaml for per-symbol Aurora overrides."
-            )
-            if strict_mode:
-                raise ValueError(msg)
-            else:
-                LOG.warning(msg)
-                merged_config["aurora_instruments"] = {}
-        else:
-            merged_config["aurora_instruments"] = aurora_instruments_payload
-
-        # =========================================================================
-        # END CANONICAL aurora_instruments.yaml LOGIC
-        # =========================================================================
+        merged_config = self._merge_config_fragments(
+            system_config=system_config,
+            trading_config=trading_config,
+            regime_config=regime_config,
+            domains_config=domains_config,
+            system_meta=system_meta,
+        )
 
         # Enforce service key hygiene before validation
         for key in list(merged_config.keys()):
@@ -765,15 +679,31 @@ class ConfigLoader:
         # Migrate legacy root.guardian block into execution.order_guardian to satisfy strict root schema
         guardian_block = merged_config.pop("guardian", None)
         if isinstance(guardian_block, dict):
-            exec_block = merged_config.setdefault("execution", {})
-            if isinstance(exec_block, dict):
-                exec_block.setdefault("order_guardian", guardian_block)
+            import copy
 
-        # Attach system_meta (service/runtime data) under dedicated namespace
-        system_meta.setdefault("runtime", {})
-        system_meta["runtime"].setdefault("config_name", self.config_name)
-        system_meta["runtime"].setdefault("config_dir", str(self.config_dir))
-        merged_config["system_meta"] = system_meta
+            root_exec = merged_config.get("execution")
+            if isinstance(root_exec, dict):
+                exec_block = root_exec
+            else:
+                trading_exec = None
+                trading_block = merged_config.get("trading")
+                if isinstance(trading_block, dict):
+                    trading_exec = trading_block.get("execution")
+
+                # Prefer cloning trading.execution as the base to keep schema-valid required fields.
+                exec_block = copy.deepcopy(trading_exec) if isinstance(trading_exec, dict) else {}
+                merged_config["execution"] = exec_block
+
+            if "order_guardian" in exec_block and exec_block.get("order_guardian") is not None:
+                raise ConfigContractError(
+                    path="execution.order_guardian",
+                    why=(
+                        "Conflicting guardian configuration sources: found legacy root.guardian AND "
+                        "execution.order_guardian. Keep only one (prefer execution.order_guardian)."
+                    ),
+                )
+
+            exec_block["order_guardian"] = guardian_block
 
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)
@@ -790,36 +720,14 @@ class ConfigLoader:
         # TASK23B: Enforce SSOT precedence for timeframe_sec
         self._apply_timeframe_sec_ssot_precedence(resolved_config)
 
-        # --- NEW: Validate through Pydantic (startup validation) ---
         try:
-            pydantic_config = PydanticAuroraConfig(**resolved_config)
+            config = AuroraConfig(**resolved_config)
             LOG.info(
-                f"✅ Configuration validated for trading_mode: '{pydantic_config.trading_mode}'"
+                f"✅ Configuration validated for trading_mode: '{config.trading_mode}'"
             )
-            # Back-compat mapping: expose trading.execution at root 'execution' if missing
-            try:
-                if 'execution' not in resolved_config:
-                    tr = resolved_config.get('trading', {}) or {}
-                    if isinstance(tr, dict) and tr.get('execution') is not None:
-                        resolved_config['execution'] = tr.get('execution')
-            except Exception:
-                pass
-            
-            # CFG-RUNTIME-BOOTSTRAP-07: Add metadata for diagnostic logging
-            # Store config source information under system_meta.runtime (strict-safe)
-            try:
-                if isinstance(resolved_config, dict):
-                    system_meta_block = resolved_config.setdefault("system_meta", {})
-                    if isinstance(system_meta_block, dict):
-                        runtime_block = system_meta_block.setdefault("runtime", {})
-                        if isinstance(runtime_block, dict):
-                            runtime_block.setdefault("config_name", self.config_name)
-                            runtime_block.setdefault("config_dir", str(self.config_dir))
-            except Exception:
-                pass
-            
-            # Convert back to our legacy-compatible wrapper
-            return AuroraConfig(**resolved_config)
+
+            # CFG-RUNTIME-BOOTSTRAP-07: runtime-only meta injection (post-validation)
+            return self._inject_runtime_meta(config)
         except ValidationError as e:
             LOG.error("❌ Configuration validation failed:")
             for error in e.errors():
@@ -832,7 +740,7 @@ class ConfigLoader:
 
         Contract (TASK23B):
         1) aurora_instruments.<SYM>.timeframe_sec (if set) wins
-        2) mean_reversion_1m.timeframe_sec from strategy profile
+        2) mean_reversion.timeframe_sec from strategy profile
         3) If both absent while strategy assigned -> fail-closed (ConfigContractError)
         """
         if not isinstance(resolved_config, dict):
@@ -852,7 +760,7 @@ class ConfigLoader:
                 continue
             if not isinstance(strategy_ids, list):
                 continue
-            if "mean_reversion_1m" in strategy_ids:
+            if "mean_reversion" in strategy_ids:
                 assigned_symbols.append(symbol)
 
         if not assigned_symbols:
@@ -881,15 +789,15 @@ class ConfigLoader:
                     why=f"Invalid timeframe_sec override: {raw!r} ({e})",
                 )
 
-        mr_block = resolved_config.get("mean_reversion_1m")
+        mr_block = resolved_config.get("mean_reversion")
         if mr_block is None:
             mr_dict: dict = {}
         elif isinstance(mr_block, dict):
             mr_dict = mr_block
         else:
             raise ConfigContractError(
-                path="mean_reversion_1m",
-                why=f"Expected dict for mean_reversion_1m config, got {type(mr_block).__name__}",
+                path="mean_reversion",
+                why=f"Expected dict for mean_reversion config, got {type(mr_block).__name__}",
             )
 
         profile_raw = mr_dict.get("timeframe_sec", None)
@@ -898,7 +806,7 @@ class ConfigLoader:
             if len(overrides) != 1:
                 raise ConfigContractError(
                     path="aurora_instruments.*.timeframe_sec",
-                    why=f"Conflicting timeframe_sec overrides for mean_reversion_1m across assigned symbols: {sorted(overrides)}",
+                    why=f"Conflicting timeframe_sec overrides for mean_reversion across assigned symbols: {sorted(overrides)}",
                 )
             effective = next(iter(overrides))
             if effective <= 0:
@@ -907,26 +815,26 @@ class ConfigLoader:
                     why=f"timeframe_sec override must be positive, got {effective}",
                 )
             mr_dict["timeframe_sec"] = effective
-            resolved_config["mean_reversion_1m"] = mr_dict
+            resolved_config["mean_reversion"] = mr_dict
             return
 
         if profile_raw is None:
             raise ConfigContractError(
-                path="mean_reversion_1m.timeframe_sec",
-                why="Missing timeframe_sec for assigned strategy mean_reversion_1m. Set aurora_instruments.<SYM>.timeframe_sec or mean_reversion_1m.timeframe_sec",
+                path="mean_reversion.timeframe_sec",
+                why="Missing timeframe_sec for assigned strategy mean_reversion. Set aurora_instruments.<SYM>.timeframe_sec or mean_reversion.timeframe_sec",
             )
 
         try:
             profile_tf = int(profile_raw)
         except Exception as e:
             raise ConfigContractError(
-                path="mean_reversion_1m.timeframe_sec",
+                path="mean_reversion.timeframe_sec",
                 why=f"Invalid timeframe_sec value: {profile_raw!r} ({e})",
             )
 
         if profile_tf <= 0:
             raise ConfigContractError(
-                path="mean_reversion_1m.timeframe_sec",
+                path="mean_reversion.timeframe_sec",
                 why=f"timeframe_sec must be positive, got {profile_tf}",
             )
 

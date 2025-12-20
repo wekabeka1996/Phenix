@@ -47,7 +47,7 @@ class ExecutionManagement:
                 "rid": rid,
                 "event_type": "EVT:TRADE_INTENT_PROPOSED",
                 "domain": "execution_management",
-                "symbol": event.pld.get("instrument", "unknown"),
+                "symbol": event.pld["instrument"] if "instrument" in event.pld else "unknown",
                 "stage": "event_receipt",
                 "handler": "on_trade_intent",
             },
@@ -57,7 +57,10 @@ class ExecutionManagement:
 
         # Extract trade intent data
         trade_intent = event.pld
-        symbol = trade_intent.get("instrument", "unknown")
+        symbol = trade_intent["instrument"] if "instrument" in trade_intent else "unknown"
+        order = trade_intent.get("order") or {}
+        qty = order.get("qty")
+        price = order.get("price")
 
         chain_logger.info(
             "Event processed",
@@ -70,8 +73,8 @@ class ExecutionManagement:
                 "handler": "on_trade_intent",
                 "action": "trade_intent_received",
                 "side": trade_intent.get("side"),
-                "quantity": trade_intent.get("order", {}).get("qty"),
-                "price": trade_intent.get("order", {}).get("price"),
+                "quantity": qty,
+                "price": price,
             },
         )
 
@@ -98,5 +101,5 @@ class ExecutionManagement:
         # For now, just log the intent
         self.logger.info(
             f"Trade intent processed: {trade_intent.get('side')} "
-            f"{trade_intent.get('order', {}).get('qty')} {symbol}"
+            f"{qty} {symbol}"
         )

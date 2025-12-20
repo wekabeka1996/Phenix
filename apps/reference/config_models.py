@@ -227,13 +227,14 @@ class MRStrategyOverrideConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
-    bb_window: Optional[int] = Field(description='BB window size')
-    bb_num_std: Optional[float] = Field(description='BB std multiplier')
-    min_bb_width: Optional[float] = Field(description='Min BB width filter')
-    entry_threshold: Optional[float] = Field(description='Entry distance threshold')
-    tp_to_mid: Optional[bool] = Field(description='TP to mid vs outer band')
-    sl_atr_mult: Optional[float] = Field(description='SL ATR multiplier override')
-    cooldown_sec: Optional[int] = Field(description='Cooldown between trades')
+    bb_window: Optional[int] = Field(default=None, description='BB window size')
+    bb_num_std: Optional[float] = Field(default=None, description='BB std multiplier')
+    min_bb_width: Optional[float] = Field(default=None, description='Min BB width filter')
+    entry_threshold: Optional[float] = Field(default=None, description='Entry distance threshold')
+    tp_to_mid: Optional[bool] = Field(default=None, description='TP to mid vs outer band')
+    sl_atr_mult: Optional[float] = Field(default=None, description='SL ATR multiplier override')
+    cooldown_sec: Optional[int] = Field(default=None, description='Cooldown between trades')
+    allowed_regimes: Optional[List[str]] = Field(default=None, description='Override allowed regimes for this symbol')
 
 
 class MRAssetRiskConfig(BaseModel):
@@ -243,8 +244,8 @@ class MRAssetRiskConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
-    position_size_usd: Optional[float] = Field(description='Position size in USD')
-    max_risk_score: Optional[float] = Field(description='Max risk score threshold')
+    position_size_usd: Optional[float] = Field(default=None, description='Position size in USD')
+    max_risk_score: Optional[float] = Field(default=None, description='Max risk score threshold')
 
 
 class MRAssetConfig(BaseModel):
@@ -257,10 +258,10 @@ class MRAssetConfig(BaseModel):
     enabled: bool = Field()
     
     # NEW: Typed strategy overrides
-    strategy: Optional[MRStrategyOverrideConfig] = Field(description='Strategy parameter overrides for this symbol')
+    strategy: Optional[MRStrategyOverrideConfig] = Field(default=None, description='Strategy parameter overrides for this symbol')
     
     # NEW: Typed risk config
-    risk: Optional[MRAssetRiskConfig] = Field(description='Risk configuration for this symbol')
+    risk: Optional[MRAssetRiskConfig] = Field(default=None, description='Risk configuration for this symbol')
     
     # Legacy flat fields (kept for backward compatibility, will be deprecated)
     bb_window: Optional[int] = Field()
@@ -303,7 +304,7 @@ class MeanReversion1mStrategyConfig(BaseModel):
     """
     Full configuration for Mean Reversion 1m Strategy.
     
-    Config is provided via root.mean_reversion_1m (loaded from strategy profile SSOT).
+    Config is provided via root.mean_reversion (loaded from strategy profile SSOT).
     """
     model_config = ConfigDict(extra='forbid')
     
@@ -441,7 +442,7 @@ class DecisionConfig(BaseModel):
     sizing_modifiers: Dict[str, float] = Field(description='Regime-specific multipliers')
     regime_thresholds: Dict[str, float] = Field(description='Regime-specific signal thresholds')
     regime_threshold_multipliers: Dict[str, float] = Field(description='Regime threshold multipliers')
-    symbols_to_track: Optional[List[str]] = Field(description='DEPRECATED: Use instruments SSOT')
+    symbols_to_track: Optional[List[str]] = Field(default=None, description='DEPRECATED: Use instruments SSOT')
     neutral_threshold: Optional[float] = Field(description='Neutral zone threshold')
 
 
@@ -560,6 +561,7 @@ class VolatilityRegimeModelConfig(BaseModel):
     enabled: bool = Field(description='Enable volatility regime detection')
     atr_period: int = Field(ge=1, description='ATR calculation period')
     atr_sma_length: int = Field(ge=10, description='ATR SMA length for baseline')
+    allow_close_to_close_atr: bool = Field(description='Allow close-to-close TR/ATR when OHLC is unavailable (explicit opt-in)')
     threshold_multiplier: float = Field(ge=1.0, description='High vol threshold (ATR > threshold_mult * avg)')
     low_vol_multiplier: float = Field(ge=0.0, le=1.0, description='Low vol threshold (ATR < low_vol_mult * avg)')
     high_vol_confidence_multiplier: float = Field(ge=1.0, description='Confidence scaling for high vol')
@@ -663,7 +665,7 @@ class ExecutionConfig(BaseModel):
     preflight_backoff_ms: Optional[List[int]] = Field(description='DEPRECATED: No consumption found')
     min_post_interval_per_symbol_ms: Optional[int] = Field(description='DEPRECATED')
     allow_trade_with_guardian_tidy_only: Optional[bool] = Field(description='DEPRECATED')
-    order_guardian: Optional[Dict[str, Any]] = Field(description='DEPRECATED: Guardian not config')
+    order_guardian: Optional[Dict[str, Any]] = Field(default=None, description='DEPRECATED: Guardian not config')
 
 
 class MacroSyncConfig(BaseModel):
@@ -857,6 +859,22 @@ class VolumeSpikeConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     cap_max: float = Field(gt=1.0, le=10.0, description='Maximum cap for volume spike ratio (e.g., 3.0 = 300% of average)')
+    sma_len: int = Field(ge=2, le=1000, description='SMA length for time-normalized volume rate samples')
+    eps: float = Field(gt=0.0, le=1.0, description='Epsilon for spike denominator (avoid divide-by-zero)')
+
+
+class LargeTradeImbalanceConfig(BaseModel):
+    """Large trade imbalance configuration (TASK31)."""
+    model_config = ConfigDict(extra='forbid')
+
+    window_ms: int = Field(
+        ge=1000,
+        le=600000,
+        description="Window size in milliseconds for trade aggregation (must match market_data window for correctness)",
+    )
+    min_trades: int = Field(ge=1, le=100000, description="Minimum number of trades in window required to mark ready=true")
+    eps: float = Field(gt=0.0, le=1.0, description="Epsilon for denominator guard (avoid divide-by-zero)")
+    use_notional: bool = Field(description="If true, use notional (qty*price) instead of qty for imbalance")
 
 
 class MacroSyncMetricsConfig(BaseModel):
@@ -865,8 +883,12 @@ class MacroSyncMetricsConfig(BaseModel):
     
     enabled: bool = Field(description='Enable macro sync correlation calculation')
     time_diff_threshold_ms: int = Field(ge=100, le=60000, description='Maximum time difference (ms) between ticks for return calculation')
+    ttl_ms: int = Field(ge=100, le=600000, description='Anchor staleness TTL (ms). If anchor older than ttl_ms → macro_sync NOT_READY')
     min_buffer_size: int = Field(ge=2, le=100, description='Minimum buffer size before computing correlation')
     window: int = Field(ge=10, le=1000, description='Rolling window size for correlation calculation')
+    bin_ms: int = Field(default=1000, ge=250, le=5000, description='Time-grid bin size in ms for Macro Sync V2 alignment')
+    max_gap_bins: int = Field(default=2, ge=0, le=120, description='Max consecutive missing bins allowed before NOT_READY (Macro Sync V2)')
+    eps: float = Field(default=1e-12, gt=0.0, le=1e-3, description='Epsilon for sigma/variance guards (Macro Sync V2)')
     anchors: List[str] = Field(min_length=1, description='Anchor symbols for correlation (market leaders)')
     
     # P0-6 FIX: Add align_mode for length mismatch handling
@@ -950,6 +972,7 @@ class FeatureEngineeringDomainConfig(BaseModel):
     # Normalization configs
     ema_bias: EmaBiasConfig = Field()
     volume_spike: VolumeSpikeConfig = Field()
+    large_trade_imbalance: LargeTradeImbalanceConfig = Field()
     volatility_state: VolatilityStateConfig = Field()
     depth_imbalance: DepthImbalanceConfig = Field()
     delta_price: DeltaPriceConfig = Field()
@@ -1320,13 +1343,20 @@ class TradingConfig(BaseModel):
     mode: str = Field(description='testnet | production | live')
     decision: DecisionConfig = Field()
     execution: Optional[ExecutionConfig] = Field()
-    # SSOT: config/aurora/instruments.yaml provides canonical precision (tick_size/step_size)
-    instruments: Dict[str, InstrumentPrecisionSpec] = Field()
-    aurora_instruments: Dict[str, AuroraInstrumentConfig] = Field(description='Per-instrument Aurora strategy configuration (Optuna results)')
-    symbols_to_track: List[str] = Field(description='List of symbols to track for multi-TF aggregation')
+    symbols_to_track: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "List of symbols to track for multi-TF aggregation. "
+            "If omitted, it is derived deterministically from trading.decision.symbols_to_track."
+        ),
+    )
     market_data: Optional[MarketDataConfig] = Field()
-    feature_engineering: Optional[FeatureEngineeringConfig] = Field()
-    domains: DomainsConfig = Field()  # NEW: Domain-specific configurations
+    
+    # NOTE (TASK23.FIX.B): Forbidden SSOT mirrors are intentionally NOT part of TradingConfig.
+    # - instruments SSOT: root.instruments (config/aurora/instruments.yaml)
+    # - aurora_instruments SSOT: root.aurora_instruments (config/aurora/aurora_instruments.yaml)
+    # - domains SSOT: root.domains (config/aurora/domains.yaml)
+    # - feature_engineering SSOT: domains.yaml (domain config), not trading.yaml
     
     # Legacy risk config (still used by DailyRiskState etc)
     risk: Dict[str, Any] = Field(description='Legacy risk configuration (daily gate, etc)')
@@ -1344,6 +1374,30 @@ class TradingConfig(BaseModel):
     # CRITICAL: Domain-level mode configuration (Hybrid Mode)
     # Default is all-testnet for safety. Production MUST explicitly set live modes!
     domain_configuration: DomainConfigurationConfig = Field(description='Domain-level trading mode configuration for hybrid mode (live data + testnet execution)')
+
+    @model_validator(mode='after')
+    def _derive_symbols_to_track(self) -> "TradingConfig":
+        """Derive symbols_to_track deterministically (no loader hydration).
+
+        Policy (TASK28):
+        - Preferred source: trading.symbols_to_track (explicit)
+        - Fallback source: trading.decision.symbols_to_track (legacy)
+        - If both missing/empty: fail-closed
+        """
+
+        if self.symbols_to_track is None:
+            decision_symbols = getattr(self.decision, "symbols_to_track", None)
+            if isinstance(decision_symbols, list) and decision_symbols:
+                self.symbols_to_track = [str(s) for s in decision_symbols]
+
+        if not isinstance(self.symbols_to_track, list) or not self.symbols_to_track:
+            raise ValueError(
+                "Missing trading.symbols_to_track (and no fallback trading.decision.symbols_to_track)."
+            )
+
+        # Normalize to strings for stability
+        self.symbols_to_track = [str(s) for s in self.symbols_to_track]
+        return self
 
 
 class BinanceApiEnv(BaseModel):
@@ -1369,6 +1423,8 @@ class RetrySchedulerConfig(BaseModel):
 
     max_attempts: int = Field(..., description="Max retry attempts for deferred intents")
     min_retry_delay_ms: int = Field(..., description="Minimum retry delay (ms)")
+    backoff_factor: float = Field(..., description="Retry backoff factor (>=1.0)")
+    jitter_ms: int = Field(..., description="Optional jitter added to delay (ms, >=0)")
 
 
 class BridgeConfig(BaseModel):
@@ -1417,6 +1473,11 @@ class SystemMarketDataConfig(BaseModel):
     local_queue_maxsize: int = Field(..., description="Max size of local queue (proxy internal)")
     emit_workers: int = Field(..., description="Thread pool size for non-blocking FSM.emit()")
     tick_ttl_ms: int = Field(..., description="Max age of tick data in ms — older ticks are DROPPED")
+    ws_heartbeat_sec: float = Field(..., description="aiohttp WS heartbeat interval (sec) to keep connection alive")
+    ws_receive_timeout_sec: float = Field(..., description="Max time without WS messages (sec) before reconnect")
+    proxy_batch_size: int = Field(..., description="Proxy consumer: max items processed per batch")
+    proxy_queue_get_timeout_sec: float = Field(..., description="Proxy consumer: blocking get() timeout (sec)")
+    proxy_idle_sleep_sec: float = Field(..., description="Proxy consumer: sleep when queue is empty (sec)")
 
 
 class SystemConfig(BaseModel):
@@ -1424,7 +1485,7 @@ class SystemConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     logging: LoggingConfig = Field()
-    market_data: Optional[SystemMarketDataConfig] = Field(description='Market data system settings')
+    market_data: Optional[SystemMarketDataConfig] = Field(default=None, description='Market data system settings')
 
 
 class SystemRuntimeMeta(BaseModel):
@@ -1432,8 +1493,8 @@ class SystemRuntimeMeta(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    config_name: Optional[str] = Field(description='Identifier of the loaded config profile')
-    config_dir: Optional[str] = Field(description='Filesystem path of the config directory in use')
+    config_name: Optional[str] = Field(default=None, description='Identifier of the loaded config profile')
+    config_dir: Optional[str] = Field(default=None, description='Filesystem path of the config directory in use')
 
 
 class SystemMetaConfig(BaseModel):
@@ -1441,8 +1502,8 @@ class SystemMetaConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    system_config_version: Optional[str] = Field()
-    regime_config_version: Optional[str] = Field()
+    system_config_version: Optional[str] = Field(default=None)
+    regime_config_version: Optional[str] = Field(default=None)
     sequential_tests: Dict[str, Any] = Field()
     risk_core: Dict[str, Any] = Field()
     kelly: Dict[str, Any] = Field()
@@ -1451,7 +1512,7 @@ class SystemMetaConfig(BaseModel):
     hotreload_whitelist: List[Any] = Field()
     hardening: Dict[str, Any] = Field()
     position_tracking: Dict[str, Any] = Field()
-    runtime: SystemRuntimeMeta = Field()
+    runtime: Optional[SystemRuntimeMeta] = Field(default=None)
 
 
 class AuroraConfig(BaseModel):
@@ -1480,7 +1541,7 @@ class AuroraConfig(BaseModel):
     bridge: BridgeConfig = Field(...)
     
     # Domain configs (New)
-    domains: Optional[DomainsConfig] = Field(description='Domain-specific configurations')
+    domains: DomainsConfig = Field(description='Domain-specific configurations')
 
     # Canonical instruments SSOT (config/aurora/instruments.yaml)
     instruments: Dict[str, InstrumentPrecisionSpec] = Field(description='Canonical instrument precision map (symbol -> tick_size/step_size)')
@@ -1490,19 +1551,21 @@ class AuroraConfig(BaseModel):
     
     # Strategies registry SSOT (config/aurora/strategies.yaml)
     # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION
-    strategies_registry: Optional[StrategiesRegistryConfig] = Field(description='Strategy assignments + arbitration config (from strategies.yaml)')
+    strategies_registry: Optional[StrategiesRegistryConfig] = Field(default=None, description='Strategy assignments + arbitration config (from strategies.yaml)')
     
     # Strategy configs (Track B, optional root-level overrides)
-    mean_reversion_1m: Optional[MeanReversion1mStrategyConfig] = Field(description='Mean Reversion 1m strategy config (loaded from strategy profile SSOT)')
+    mean_reversion: Optional[MeanReversion1mStrategyConfig] = Field(default=None, description='Mean Reversion 1m strategy config (loaded from strategy profile SSOT)')
 
     # App-specific overrides
-    decision: Optional[DecisionConfig] = Field(description='Override trading.decision if set')
-    execution: Optional[ExecutionConfig] = Field(description='Override trading.execution if set')
-    brackets: Optional[BracketsConfig] = Field()
-    trailing: Dict[str, Any] = Field()
+    # TASK23.FIX.B: Legacy root aliases must NOT be required.
+    # If provided explicitly, they act as overrides; otherwise they should not block startup.
+    decision: Optional[DecisionConfig] = Field(default=None, description='Override trading.decision if set')
+    execution: Optional[ExecutionConfig] = Field(default=None, description='Override trading.execution if set')
+    brackets: Optional[BracketsConfig] = Field(default=None)
+    trailing: Dict[str, Any] = Field(default_factory=dict)
     
     # Regime Detector Config (loaded from regime.yaml, Pydantic-validated)
-    models: Optional[RegimeModelsConfig] = Field(description='Regime detection models from regime.yaml')
+    models: Optional[RegimeModelsConfig] = Field(default=None, description='Regime detection models from regime.yaml')
 
     # regime.yaml SSOT (top-level keys)
     hmm: Dict[str, Any] = Field(description='HMM regime detector config (from regime.yaml)')
@@ -1510,7 +1573,7 @@ class AuroraConfig(BaseModel):
     hotreload_whitelist: List[str] = Field(description='Hot-reload allowlist (from regime.yaml)')
 
     # Strategy profile SSOT (loaded registry-driven; may be null if not assigned)
-    aurora: Optional[Dict[str, Any]] = Field(description='Aurora strategy global config (from strategies/aurora.yaml)')
+    aurora: Optional[Dict[str, Any]] = Field(default=None, description='Aurora strategy global config (from strategies/aurora.yaml)')
 
     @field_validator('trading_mode')
     @classmethod
@@ -1533,6 +1596,16 @@ class AuroraConfig(BaseModel):
                 # Optionally sync them or raise an error
                 v.mode = info.data['trading_mode']
         return v
+
+    @model_validator(mode='after')
+    def _backcompat_root_execution_alias(self) -> "AuroraConfig":
+        """Back-compat: expose trading.execution at root execution if root is unset.
+
+        This is a deterministic aliasing rule and must not be implemented via loader dict mutation.
+        """
+        if self.execution is None and getattr(self.trading, "execution", None) is not None:
+            self.execution = self.trading.execution
+        return self
 
 
 # Convenience function for creating config from dict

@@ -162,16 +162,23 @@ def _strip_optional(annotation: Any) -> Any:
     return annotation
 
 
-def iter_optional_required_paths() -> Iterable[Tuple[str, str]]:
-    """Yield (key, dotted_path) for Optional-required fields in the merged AuroraConfig schema."""
+def iter_optional_required_paths() -> Iterable[Tuple[str, str, Any]]:
+    """Yield (key, dotted_path, inner_type) for Optional-required fields in AuroraConfig schema."""
     from apps.reference.config_models import AuroraConfig
 
     exclude_toplevel = {
         # Runtime-injected/service namespace; never write into YAML.
         "system_meta",
+        # SSOT blocks loaded from separate YAMLs or registry-driven profiles;
+        # never materialize these as `null` keys inside their own SSOT files.
+        "domains",
+        "strategies_registry",
+        "models",
+        "aurora",
+        "mean_reversion",
     }
 
-    def walk(model: type[BaseModel], prefix: list[str]) -> Iterable[Tuple[str, str]]:
+    def walk(model: type[BaseModel], prefix: list[str]) -> Iterable[Tuple[str, str, Any]]:
         for field_name, field_info in model.model_fields.items():
             if prefix == [] and field_name in exclude_toplevel:
                 continue
@@ -181,8 +188,9 @@ def iter_optional_required_paths() -> Iterable[Tuple[str, str]]:
             key = f"{model.__name__}.{field_name}"
 
             if field_info.is_required() and _is_optional(field_info.annotation):
-                yield key, dotted_path
-                continue  # If key is missing, we only add null at this level.
+                yield key, dotted_path, _strip_optional(field_info.annotation)
+                # Also walk nested schema so we can fill Optional-required keys
+                # inside this object when the parent mapping exists in YAML.
 
             inner = _strip_optional(field_info.annotation)
             if isinstance(inner, type) and issubclass(inner, BaseModel):
@@ -193,7 +201,7 @@ def iter_optional_required_paths() -> Iterable[Tuple[str, str]]:
 
 def apply_optional_null_autofill(
     *,
-    mapping: Dict[str, Dict[str, str]],
+    config_dir: Path,
     dry_run: bool,
 ) -> List[Dict[str, Any]]:
     """Add explicit null for missing Optional-required keys."""
@@ -201,34 +209,34 @@ def apply_optional_null_autofill(
 
     top_level_to_file = {
         # Trading bundle
-        "trading": "config/aurora/trading.yaml",
-        "binance_api": "config/aurora/trading.yaml",
+        "trading": "trading.yaml",
+        "binance_api": "trading.yaml",
 
         # System bundle
-        "system": "config/aurora/system.yaml",
-        "ops": "config/aurora/system.yaml",
-        "bridge": "config/aurora/system.yaml",
-        "logging": "config/aurora/system.yaml",
-        "account_observer": "config/aurora/system.yaml",
+        "system": "system.yaml",
+        "ops": "system.yaml",
+        "bridge": "system.yaml",
+        "logging": "system.yaml",
+        "account_observer": "system.yaml",
 
         # SSOT bundles
-        "domains": "config/aurora/domains.yaml",
-        "instruments": "config/aurora/instruments.yaml",
-        "aurora_instruments": "config/aurora/aurora_instruments.yaml",
-        "strategies_registry": "config/aurora/strategies.yaml",
-        "models": "config/aurora/regime.yaml",
-        "hmm": "config/aurora/regime.yaml",
-        "features": "config/aurora/regime.yaml",
-        "hotreload_whitelist": "config/aurora/regime.yaml",
+        "domains": "domains.yaml",
+        "instruments": "instruments.yaml",
+        "aurora_instruments": "aurora_instruments.yaml",
+        "strategies_registry": "strategies.yaml",
+        "models": "regime.yaml",
+        "hmm": "regime.yaml",
+        "features": "regime.yaml",
+        "hotreload_whitelist": "regime.yaml",
     }
 
-    for key, dotted_path in iter_optional_required_paths():
+    for key, dotted_path, inner_type in iter_optional_required_paths():
         top = dotted_path.split(".", 1)[0]
         file_rel = top_level_to_file.get(top)
         if not file_rel:
             continue
 
-        yaml_file = Path(file_rel)
+        yaml_file = config_dir / file_rel
         yaml_path = dotted_path
 
         if yaml_file.exists():
@@ -238,6 +246,19 @@ def apply_optional_null_autofill(
                 data = {}
         else:
             data = {}
+
+        # Respect existing SSOT file shape (wrapped vs flat) to avoid creating "second truth".
+        # - domains.yaml is typically flat (decision_making/feature_engineering at root)
+        # - strategies.yaml is flat (version/assignments/arbitration at root)
+        # - aurora_instruments.yaml is typically flat (SYMBOL keys at root)
+        if top in {"domains", "aurora_instruments"}:
+            if isinstance(data, dict) and top not in data and "." in dotted_path:
+                # Write under flat root (strip "domains." / "aurora_instruments.")
+                yaml_path = dotted_path.split(".", 1)[1]
+
+        if top == "strategies_registry":
+            if "." in dotted_path:
+                yaml_path = dotted_path.split(".", 1)[1]
 
         existing_value = get_nested_value(data, yaml_path)
         if existing_value is not MISSING:
@@ -251,15 +272,57 @@ def apply_optional_null_autofill(
             })
             continue
 
+        # Guard: do not invent intermediate objects for nested keys.
+        # Only set a nested key if its parent path exists as a mapping.
+        if "." in yaml_path:
+            parent_path, _leaf = yaml_path.rsplit(".", 1)
+            parent_val = get_nested_value(data, parent_path)
+            if parent_val is MISSING:
+                changes.append({
+                    'key': key,
+                    'action': 'skip',
+                    'reason': 'parent missing (no intermediate creation)',
+                    'existing_value': None,
+                    'file': str(yaml_file),
+                    'path': yaml_path,
+                })
+                continue
+            if parent_val is None:
+                changes.append({
+                    'key': key,
+                    'action': 'skip',
+                    'reason': 'parent is null (optional object intentionally null)',
+                    'existing_value': None,
+                    'file': str(yaml_file),
+                    'path': yaml_path,
+                })
+                continue
+            if not isinstance(parent_val, dict):
+                raise ValueError(
+                    f"Refusing to autofill '{yaml_path}' into non-mapping parent '{parent_path}'. "
+                    f"Found type={type(parent_val).__name__}"
+                )
+
+        # TASK23.FIX.A: Optional required fields -> explicit null,
+        # but for Optional[list]/Optional[dict] we prefer empty collection.
+        value_to_set: Any = None
+        try:
+            if inner_type in (dict, Dict):
+                value_to_set = {}
+            elif inner_type in (list, List):
+                value_to_set = []
+        except Exception:
+            value_to_set = None
+
         if not dry_run:
-            set_nested_value(data, yaml_path, None)
+            set_nested_value(data, yaml_path, value_to_set)
             with open(yaml_file, 'w', encoding='utf-8') as f:
                 yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
         changes.append({
             'key': key,
             'action': 'add_null',
-            'value': None,
+            'value': value_to_set,
             'file': str(yaml_file),
             'path': yaml_path,
         })
@@ -316,10 +379,10 @@ def parse_default_value(default_str: str) -> Any:
 def generate_plan_report(changes: List[Dict[str, Any]], output_file: Path) -> None:
     """Generate the patch plan report."""
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write('# TASK23A Optional-null YAML Patch Plan\n\n')
+        f.write('# TASK23.FIX Optional-null YAML Patch Plan\n\n')
         f.write('Plan for adding missing config keys into canonical YAML SSOT.\n')
         f.write('- `add_default`: add missing model default values (TASK21A compatibility)\n')
-        f.write('- `add_null`: add explicit `null` for Optional-required fields (TASK23A)\n\n')
+        f.write('- `add_null`: add explicit `null` for Optional-required fields (TASK23.FIX)\n\n')
         f.write('| Key | Action | Value | File | Path |\n')
         f.write('|-----|--------|-------|------|------|\n')
         
@@ -336,14 +399,14 @@ def main():
     parser = argparse.ArgumentParser(description='Auto-fill config defaults into YAML')
     parser.add_argument('--inventory', default='reports/TASK20_defaults_inventory.json', help='Inventory JSON file')
     parser.add_argument('--mapping', default='tools/config_default_path_map.yaml', help='Mapping YAML file')
+    parser.add_argument('--config-dir', default='config/aurora', help='Target config directory (default: config/aurora)')
     parser.add_argument('--include-inventory-defaults', action='store_true', default=False, help='Also apply TASK21A-style default autofill from inventory (unsafe for TASK23 unless inventory is clean)')
     parser.add_argument('--dry-run', action='store_true', help='Dry run mode')
     parser.add_argument('--apply', action='store_true', help='Apply changes')
     parser.add_argument('--fail-on-unknown-mapping', action='store_true', help='Fail if mapping missing')
-    parser.add_argument('--optional-null-required', action='store_true', default=True, help='Autofill explicit null for Optional-required fields (TASK23A)')
-    parser.add_argument('--no-optional-null-required', action='store_false', dest='optional_null_required', help='Disable Optional-required null autofill')
-    parser.add_argument('--plan-report', default='reports/TASK23A_optional_null_patch_plan.md', help='Plan report output')
-    parser.add_argument('--applied-report', default='reports/TASK23A_optional_null_patch_applied.md', help='Applied report output')
+    parser.add_argument('--autofill-optional-nulls', action='store_true', default=False, help='Autofill explicit nulls for Optional-required fields (TASK23.FIX.A)')
+    parser.add_argument('--plan-report', default='reports/TASK23FIX_optional_null_plan.md', help='Plan report output')
+    parser.add_argument('--applied-report', default='reports/TASK23FIX_optional_null_applied.md', help='Applied report output')
     
     args = parser.parse_args()
     
@@ -353,17 +416,22 @@ def main():
     
     inventory_file = Path(args.inventory)
     mapping_file = Path(args.mapping)
+    config_dir = Path(args.config_dir)
     
     if args.include_inventory_defaults and not inventory_file.exists():
         print(f"Inventory file not found: {inventory_file}")
         return
     
-    if not mapping_file.exists():
+    if args.include_inventory_defaults and not mapping_file.exists():
         print(f"Mapping file not found: {mapping_file}")
+        return
+
+    if not config_dir.exists():
+        print(f"Config dir not found: {config_dir}")
         return
     
     inventory = load_inventory(inventory_file) if args.include_inventory_defaults else []
-    mapping = load_mapping(mapping_file)
+    mapping = load_mapping(mapping_file) if args.include_inventory_defaults else {}
     
     changes = []
     errors = []
@@ -379,8 +447,8 @@ def main():
                 else:
                     print(f"Warning: {e}")
 
-    if args.optional_null_required:
-        changes.extend(apply_optional_null_autofill(mapping=mapping, dry_run=not args.apply))
+    if args.autofill_optional_nulls:
+        changes.extend(apply_optional_null_autofill(config_dir=config_dir, dry_run=not args.apply))
     
     if errors:
         for error in errors:

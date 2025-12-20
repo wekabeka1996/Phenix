@@ -8,17 +8,36 @@ real features (OBI, TFI) for trading decisions.
 import asyncio
 import decimal
 import logging
+import math
 from collections import deque
+from dataclasses import dataclass
 from typing import Dict, Any, Optional, Callable
-from datetime import datetime, timedelta
 
 LOG = logging.getLogger(__name__)
+
+_SIDE_BUY = "buy"
+_SIDE_SELL = "sell"
+
+
+@dataclass(frozen=True, slots=True)
+class TradeTick:
+    ts_ms: int
+    qty: float
+    side: str  # "buy" | "sell" (aggressor side)
+    price: Optional[float]
+    trade_id: Optional[Any] = None
 
 
 class WebSocketAggregator:
     """Aggregates WebSocket data streams into market tick events."""
 
-    def __init__(self, symbols: list[str], window_seconds: int = 60, anchors: Optional[list[str]] = None):
+    def __init__(
+        self,
+        symbols: list[str],
+        window_seconds: int = 60,
+        anchors: Optional[list[str]] = None,
+        out_of_order_tolerance_ms: int = 0,
+    ):
         """
         Initialize the aggregator.
 
@@ -30,6 +49,8 @@ class WebSocketAggregator:
         self.symbols = symbols
         self.window_seconds = window_seconds
         self.anchors = anchors or []
+        self.window_ms = int(window_seconds) * 1000
+        self.out_of_order_tolerance_ms = max(0, int(out_of_order_tolerance_ms))
 
         # All symbols we track (trading + anchors)
         all_tracked = set(symbols + self.anchors)
@@ -44,14 +65,24 @@ class WebSocketAggregator:
                 "ask_size": decimal.Decimal(0),
                 "bid_ask_time": None,
                 # Trade flow data (windowed)
-                "trades_window": deque(),  # (time, is_seller_maker, trade_id)
+                "trades_window": deque(),  # deque[TradeTick]
                 "seen_trade_ids": set(),
-                "buy_trades": 0,
-                "sell_trades": 0,
-                "window_start_time": None,
+                "buy_trades": 0,  # count
+                "sell_trades": 0,  # count
+                "buy_qty": 0.0,
+                "sell_qty": 0.0,
+                "buy_notional": 0.0,
+                "sell_notional": 0.0,
+                "trades_dropped_out_of_order": 0,
+                "trades_dropped_missing_ts": 0,
+                "trades_dropped_bad_qty": 0,
                 # Price history
                 "prices": deque(maxlen=10),
                 "latest_price": decimal.Decimal(0),
+                # Exchange-derived timestamps (ms) for SSOT time alignment
+                "last_book_ts_ms": 0,
+                "last_trade_ts_ms": 0,
+                "last_price_ts_ms": 0,
             }
             for symbol in all_tracked
         }
@@ -73,7 +104,7 @@ class WebSocketAggregator:
         Set callback to be called when an anchor price is updated.
 
         Args:
-            callback: Async function(anchor_symbol, price)
+            callback: Async function(anchor_symbol, price, ts_ms)
         """
         self.on_anchor_update_callback = callback
 
@@ -106,6 +137,7 @@ class WebSocketAggregator:
         state["ask_price"] = decimal.Decimal(ask_price)
         state["ask_size"] = decimal.Decimal(ask_size)
         state["bid_ask_time"] = ts
+        state["last_book_ts_ms"] = int(ts) if ts else 0
 
         # Removed LOG.debug for hot path optimization
 
@@ -127,38 +159,69 @@ class WebSocketAggregator:
             return
 
         state = self.state[symbol]
-        
-        # Deduplication check
-        if trade_id is not None:
-            if trade_id in state["seen_trade_ids"]:
+
+        ts_ms = int(ts) if ts else 0
+        if ts_ms <= 0:
+            state["trades_dropped_missing_ts"] += 1
+            return
+
+        try:
+            qty = float(quantity)
+        except Exception:
+            state["trades_dropped_bad_qty"] += 1
+            return
+        if (not math.isfinite(qty)) or qty <= 0:
+            state["trades_dropped_bad_qty"] += 1
+            return
+
+        try:
+            trade_price = float(price)
+        except Exception:
+            trade_price = None
+        if trade_price is not None and ((not math.isfinite(trade_price)) or trade_price <= 0):
+            trade_price = None
+
+        # Deduplication check (only for accepted trades; do not "burn" ids on drops)
+        if trade_id is not None and trade_id in state["seen_trade_ids"]:
+            return
+
+        last_ts_ms = int(state["last_trade_ts_ms"] or 0)
+        if last_ts_ms > 0 and ts_ms < last_ts_ms:
+            lag_ms = last_ts_ms - ts_ms
+            if lag_ms <= self.out_of_order_tolerance_ms:
+                ts_ms = last_ts_ms
+            else:
+                state["trades_dropped_out_of_order"] += 1
                 return
+
+        if trade_id is not None:
             state["seen_trade_ids"].add(trade_id)
 
-        # Use provided timestamp if available, otherwise current time
-        # Note: We use datetime for window comparison
-        if ts > 0:
-            current_time = datetime.fromtimestamp(ts / 1000.0)
-        else:
-            current_time = datetime.now()
+        # Binance futures aggTrade: m=True (buyer is maker) => aggressor SELL.
+        side = _SIDE_SELL if is_buyer_maker else _SIDE_BUY
 
-        # Initialize window if needed
-        if state["window_start_time"] is None:
-            state["window_start_time"] = current_time
-
-        # OPTIMIZATION: Don't clean up on every trade!
-        # Just append. We will clean up lazily in periodic_emit or get_market_tick.
-        
-        # Add new trade
-        state["trades_window"].append((current_time, is_buyer_maker, trade_id))
-        if is_buyer_maker:
-            state["sell_trades"] += 1
-        else:
+        # OPTIMIZATION: don't clean up on every trade; cleanup happens lazily.
+        state["trades_window"].append(
+            TradeTick(ts_ms=ts_ms, qty=qty, side=side, price=trade_price, trade_id=trade_id)
+        )
+        if side == _SIDE_BUY:
             state["buy_trades"] += 1
+            state["buy_qty"] += qty
+            if trade_price is not None:
+                state["buy_notional"] += qty * trade_price
+        else:
+            state["sell_trades"] += 1
+            state["sell_qty"] += qty
+            if trade_price is not None:
+                state["sell_notional"] += qty * trade_price
 
-        # Update price (Use float for speed, convert to Decimal only when needed)
-        # state["latest_price"] = decimal.Decimal(price) 
-        state["latest_price"] = float(price)
-        state["prices"].append(state["latest_price"])
+        # Update price (use float for speed; convert to Decimal only when needed)
+        if trade_price is not None:
+            state["latest_price"] = trade_price
+            state["prices"].append(state["latest_price"])
+        # Exchange-derived timestamp for the last price update (SSOT)
+        state["last_trade_ts_ms"] = ts_ms
+        state["last_price_ts_ms"] = ts_ms
 
         # Trigger anchor update callback if this is an anchor
         if symbol in self.anchors and self.on_anchor_update_callback:
@@ -173,21 +236,26 @@ class WebSocketAggregator:
     def _cleanup_window(self, symbol: str) -> None:
         """Lazy cleanup of old trades from the window."""
         state = self.state[symbol]
-        current_time = datetime.now()
-        window_cutoff = current_time - timedelta(seconds=self.window_seconds)
-        
-        while state["trades_window"] and state["trades_window"][0][0] < window_cutoff:
-            popped = state["trades_window"].popleft()
-            old_is_seller_maker = popped[1]
-            old_trade_id = popped[2] if len(popped) > 2 else None
-            
-            if old_is_seller_maker:
-                state["sell_trades"] = max(0, state["sell_trades"] - 1)
-            else:
+        current_ts_ms = max(int(state["last_book_ts_ms"] or 0), int(state["last_trade_ts_ms"] or 0))
+        if current_ts_ms <= 0:
+            return
+        window_cutoff_ts_ms = current_ts_ms - self.window_ms
+
+        while state["trades_window"] and state["trades_window"][0].ts_ms < window_cutoff_ts_ms:
+            popped: TradeTick = state["trades_window"].popleft()
+            if popped.side == _SIDE_BUY:
                 state["buy_trades"] = max(0, state["buy_trades"] - 1)
-            
-            if old_trade_id is not None and old_trade_id in state["seen_trade_ids"]:
-                state["seen_trade_ids"].remove(old_trade_id)
+                state["buy_qty"] -= popped.qty
+                if popped.price is not None:
+                    state["buy_notional"] -= popped.qty * popped.price
+            else:
+                state["sell_trades"] = max(0, state["sell_trades"] - 1)
+                state["sell_qty"] -= popped.qty
+                if popped.price is not None:
+                    state["sell_notional"] -= popped.qty * popped.price
+
+            if popped.trade_id is not None and popped.trade_id in state["seen_trade_ids"]:
+                state["seen_trade_ids"].remove(popped.trade_id)
 
     def get_market_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
@@ -211,43 +279,24 @@ class WebSocketAggregator:
         if state["bid_ask_time"] is None or not state["prices"]:
             return None
 
-        # LAZY CLEANUP: Clean up old trades now, before calculation
-        current_time = datetime.now()
-        window_cutoff = current_time - timedelta(seconds=self.window_seconds)
-        
-        # This loop is O(k) where k is number of EXPIRED trades. 
-        # Since we do this 1/sec, k will be roughly (trades_per_sec * 1).
-        # Much better than doing it on every trade!
-        while state["trades_window"] and state["trades_window"][0][0] < window_cutoff:
-            popped = state["trades_window"].popleft()
-            old_is_seller_maker = popped[1]
-            old_trade_id = popped[2] if len(popped) > 2 else None
-            
-            if old_is_seller_maker:
-                state["sell_trades"] = max(0, state["sell_trades"] - 1)
-            else:
-                state["buy_trades"] = max(0, state["buy_trades"] - 1)
-            
-            if old_trade_id is not None and old_trade_id in state["seen_trade_ids"]:
-                state["seen_trade_ids"].remove(old_trade_id)
-
         # Calculate features
         bid_size = state["bid_size"]
         ask_size = state["ask_size"]
         buy_trades = state["buy_trades"]
         sell_trades = state["sell_trades"]
+        buy_qty = float(state["buy_qty"])
+        sell_qty = float(state["sell_qty"])
 
         # OBI: Order Book Imbalance
         depth = bid_size + ask_size
         obi = (bid_size - ask_size) / \
             depth if depth > 0 else decimal.Decimal(0)
 
-        # TFI: Trade Flow Imbalance
-        total_trades = buy_trades + sell_trades
+        # TFI: Trade Flow Imbalance (volume-weighted)
+        total_qty = buy_qty + sell_qty
         tfi = (
-            decimal.Decimal(buy_trades - sell_trades) /
-            decimal.Decimal(total_trades)
-            if total_trades > 0
+            decimal.Decimal(str((buy_qty - sell_qty) / total_qty))
+            if total_qty > 0
             else decimal.Decimal(0)
         )
 
@@ -272,8 +321,13 @@ class WebSocketAggregator:
             "mid": str((state["bid_price"] + state["ask_price"]) / 2),
             "bid_size": str(bid_size),  # NOW REAL!
             "ask_size": str(ask_size),  # NOW REAL!
-            "buy_volume": str(buy_trades),  # Real trade count
-            "sell_volume": str(sell_trades),  # Real trade count
+            "buy_volume": str(buy_qty),  # quantity (windowed)
+            "sell_volume": str(sell_qty),  # quantity (windowed)
+            "buy_count": int(buy_trades),
+            "sell_count": int(sell_trades),
+            "buy_notional": str(float(state["buy_notional"])),
+            "sell_notional": str(float(state["sell_notional"])),
+            "trades_dropped_out_of_order": int(state["trades_dropped_out_of_order"]),
             "features": {
                 "obi": str(obi),
                 "tfi": str(tfi),
@@ -304,8 +358,9 @@ class WebSocketAggregator:
                 for anchor in self.anchors:
                     if anchor in self.state:
                         price = self.state[anchor]["latest_price"]
-                        if price and self.on_anchor_update_callback:
-                            await self.on_anchor_update_callback(anchor, str(price))
+                        ts_ms = int(self.state[anchor].get("last_price_ts_ms") or 0)
+                        if price and self.on_anchor_update_callback and ts_ms > 0:
+                            await self.on_anchor_update_callback(anchor, str(price), ts_ms)
 
                 await asyncio.sleep(interval_seconds)
             except Exception as e:

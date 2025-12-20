@@ -216,7 +216,7 @@ class IdempotentCancelHelper:
 
                 # Check for Binance error codes
                 error_code = result.get("code")
-                error_msg = result.get("msg", "")
+                error_msg = result["msg"] if "msg" in result else ""
 
                 # -2011: Unknown order (order missing = already gone or never existed)
                 if error_code == -2011 or "Unknown order" in error_msg:

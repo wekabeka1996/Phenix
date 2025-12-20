@@ -39,6 +39,40 @@
       "description": "The name of the model used for detection, e.g., 'HMM_v1'.",
       "minLength": 1,
       "maxLength": 50
+    },
+    "warmup": {
+      "type": "object",
+      "description": "Warmup/readiness state for RegimeDetector (TASK24 additive)",
+      "properties": {
+        "full_ready": { "type": "boolean" },
+        "ticks_seen": { "type": "integer" },
+        "ready": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["full_ready", "ticks_seen"],
+      "additionalProperties": false
+    },
+    "data_quality": {
+      "type": "object",
+      "description": "Data-quality signals for regime detection (TASK24 additive)",
+      "properties": {
+        "drops": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["drops"],
+      "additionalProperties": false
     }
   },
   "required": ["ts", "symbol", "regime", "confidence", "source_model"],

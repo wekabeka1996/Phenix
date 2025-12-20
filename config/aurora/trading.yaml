@@ -93,9 +93,14 @@ trading:
       macro_sync: 0.1
   tca_prefs:
     max_slippage_pct: 0.5
+    max_slippage_bps: 10
+    max_latency_ms: 500
+    maker_preference: neutral
     preferred_venue: binance
     execution_priority: speed
   risk_budgets:
+    trade_cvar95_max_bps: 100
+    session_cvar95_max_bps: 200
     max_portfolio_risk_pct: 5.0
     max_single_position_risk_pct: 1.0
     max_daily_loss_pct: 2.0

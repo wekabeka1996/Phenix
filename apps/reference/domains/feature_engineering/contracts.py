@@ -9,7 +9,7 @@ This module follows ADDITIVE-ONLY versioning: V2 extends V1.
 """
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -94,6 +94,10 @@ class FeaturesCalculatedPayloadV1(BaseModel):
     ts: int = Field(..., description="Timestamp in milliseconds")
     symbol: str = Field(..., description="Trading symbol (e.g., BTCUSDT)")
     features: Dict[str, str] = Field(..., description="Feature values as strings")
+    warmup: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional warmup/readiness state for FeatureEngineering (TASK24 additive)",
+    )
 
 
 def parse_features_v1(features: Dict[str, str]) -> FeatureSetV1:

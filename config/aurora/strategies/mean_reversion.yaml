@@ -1,0 +1,212 @@
+# ==================================================================================
+# 1m Mean Reversion Strategy Configuration
+# ==================================================================================
+# Phase B4: Production configuration for Mean Reversion 1m strategy
+#
+# This config defines parameters for the bar-based MR strategy that uses:
+# - Bollinger Bands for entry signals
+# - FLAT regime filtering
+# - ATR-based stops adjusted by regime type
+#
+# Source: Optuna R&D (500 trials per asset, January 2024)
+# ==================================================================================
+
+mean_reversion:
+  # Global enable/disable
+  # CFG-STRATEGIES-SSOT-05: SSOT for MR config (no longer in trading.yaml)
+  enabled: true
+  
+  # Timeframe for bar aggregation
+  timeframe_sec: 60  # 1-minute bars
+
+  # Global allowed regimes whitelist (default; can be overridden per-asset)
+  allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+
+  # MR emission mode
+  emit_trade_intent_directly: false
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Strategy Parameters (global defaults)
+  # ─────────────────────────────────────────────────────────────────────────────
+  strategy:
+    # Bollinger Bands
+    bb_window: 20
+    bb_num_std: 2.0
+    
+    # Other indicators
+    atr_window: 14
+    rsi_window: 14
+    
+    # Entry thresholds
+    entry_threshold: 0.05      # %B threshold (5% inside band)
+    rsi_oversold: 30
+    rsi_overbought: 70
+    
+    # Minimum bars before generating signals
+    min_bars: 25
+    
+    # BB width filters (avoid too tight/wide ranges)
+    min_bb_width: 0.001        # 0.1%
+    max_bb_width: 0.05         # 5%
+    
+    # Stop loss (ATR multiple)
+    sl_atr_mult: 1.5
+    
+    # Take profit: target mid BB
+    tp_to_mid: true
+    
+    # Cooldown between signals (seconds)
+    cooldown_sec: 60
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # FLAT Regime Thresholds (for regime classification)
+  # ─────────────────────────────────────────────────────────────────────────────
+  regime_thresholds:
+    high_vol_pct: 0.003        # 0.3% ATR → FLAT_HIGH
+    low_vol_pct: 0.001         # 0.1% ATR → FLAT_LOW
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Per-Asset Configurations
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Champion parameters from Phase 3 Track B production testing
+  # Source: trading.yaml optimization (December 2025)
+  
+  assets:
+    # --- DOGE (CHAMPION 🥇) ---
+    DOGEUSDT:
+      enabled: true
+      position_mode: "STRICT"
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      strategy:
+        bb_window: 20
+        bb_num_std: 2.1
+        min_bb_width: 0.005  # (min_vol_atr from report)
+        entry_threshold: 0.05
+        # Exit parameters
+        sl_atr_mult: 1.5     # Base, overridden below
+        tp_to_mid: false     # False for outer band target
+        cooldown_sec: 210
+      # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for "жирні" угоди
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      risk:
+        position_size_usd: 150
+        max_risk_score: null
+
+    # --- BTC (BRONZE 🥉) ---
+    BTCUSDT:
+      enabled: true
+      position_mode: "STRICT"
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      strategy:
+        bb_window: 40
+        bb_num_std: 2.3
+        min_bb_width: 0.006
+        entry_threshold: 0.05
+        tp_to_mid: true      # Default behavior
+        sl_atr_mult: null
+        cooldown_sec: 0      # No cooldown
+      # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL"]
+      risk:
+        position_size_usd: 150
+        max_risk_score: null
+    
+    # --- XRP (SILVER 🥈) ---
+    XRPUSDT:
+      enabled: true
+      position_mode: "STRICT"
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      strategy:
+        bb_window: 40
+        bb_num_std: 2.5
+        min_bb_width: 0.007
+        entry_threshold: 0.05
+        tp_to_mid: true
+        sl_atr_mult: null
+        cooldown_sec: 165
+      # Regime Gating - XRP stable (+$121) - similar to DOGE
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      risk:
+        position_size_usd: 150
+        max_risk_score: null
+    
+    # --- Optional assets (disabled) ---
+    ETHUSDT:
+      enabled: false
+      position_mode: "STRICT"
+      strategy:
+        bb_window: null
+        bb_num_std: null
+        min_bb_width: null
+        entry_threshold: null
+        tp_to_mid: null
+        sl_atr_mult: null
+        cooldown_sec: null
+      risk:
+        position_size_usd: null
+        max_risk_score: null
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+
+    SOLUSDT:
+      enabled: false
+      position_mode: "STRICT"
+      strategy:
+        bb_window: null
+        bb_num_std: null
+        min_bb_width: null
+        entry_threshold: null
+        tp_to_mid: null
+        sl_atr_mult: null
+        cooldown_sec: null
+      risk:
+        position_size_usd: null
+        max_risk_score: null
+      bb_window: null
+      min_vol_atr: null
+      sl_pct: null
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Regime Sizing Multipliers
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Adjust position size based on FLAT regime type
+  
+  regime_sizing:
+    FLAT_LOW:
+      sizing_mult: 0.8         # Smaller size in low vol
+      stop_mult: 0.6           # Tighter stops
+      target_mult: 0.8         # Smaller targets
+    
+    FLAT_NORMAL:
+      sizing_mult: 1.0         # Standard size
+      stop_mult: 1.0           # Standard stops
+      target_mult: 1.0         # Standard targets
+    
+    FLAT_HIGH:
+      sizing_mult: 0.7         # Smaller size in high vol
+      stop_mult: 1.5           # Wider stops
+      target_mult: 1.2         # Larger targets
+  
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Risk Management
+  # ─────────────────────────────────────────────────────────────────────────────
+  risk:
+    position_size_usd: 100     # Base position size
+    max_concurrent_positions: 3
+    daily_loss_limit_usd: 50
+    
+    # Fee-aware expected PnL filter
+    expected_pnl_multiplier: 1.5  # expected_pnl > cost * 1.5
+    
+    # Slippage and fees (for expected PnL calculation)
+    fees_pct: 0.0004           # 0.04% taker fee
+    slippage_pct: 0.0002       # 0.02% estimated slippage

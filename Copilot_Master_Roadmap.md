@@ -22,3 +22,19 @@
   - Plan/applied reports generated (reports/TASK21A_yaml_patch_plan.md, reports/TASK21A_yaml_patch_applied.md)
   - SSOT cleanup: deprecated configs rejected/removed; bridge required; trading.yaml cleanup
   - Tests added/updated: config strictness + runtime fail-closed contracts
+
+- [x] TASK23.FIX: Optional-required null autofill + remove legacy SSOT aliases
+  - `tools/autofill_config_defaults_into_yaml.py --autofill-optional-nulls` + reports
+  - `TradingConfig` SSOT mirror fields removed (no second-truth in `trading.*`)
+  - Loader/test fixtures hardened; `pytest -q tests/config tests/runtime` green
+
+- [x] TASK24: Core correctness hardening (Feature/Regime/Retry)
+  - Warmup/readiness gating in DecisionMaking (fail-closed) + `warmup_block_total`
+  - FeatureEngineering fixes: `macro_sync` tail/ttl, dt-normalized `volume_spike`, volatility readiness
+  - RegimeDetector strict typed config + ATR True Range/Wilder + data-quality fail-closed gates
+  - RetryScheduler attempt SSOT, config-driven backoff/jitter, no-loop fail-fast, emit_compat-only + policy tests
+
+- [x] TASK25: Runtime legacy config purge (domains)
+  - Removed dict-thinking patterns in `apps/reference/domains/**` (`.get(..., default)`, `getattr(..., default)`, config `.to_dict()` fallback)
+  - Fail-fast: dict passed as config → `TypeError`
+  - Added AST policy gate + behavioral tests (`tests/runtime/test_task25_*`)

@@ -65,7 +65,7 @@ def validate_priorities_for_hybrid_symbols(self) -> 'StrategiesRegistryConfig':
     return self
 ```
 
-**Impact**: BTC має `[aurora, mean_reversion_1m]`, але priority тільки для aurora → `ValueError` на старті.
+**Impact**: BTC має `[aurora, mean_reversion]`, але priority тільки для aurora → `ValueError` на старті.
 
 ---
 
@@ -170,11 +170,11 @@ def test_missing_priority_for_hybrid_symbol_fails(...):
 assignments:
   BTCUSDT:
     - aurora
-    - mean_reversion_1m  # HYBRID
+    - mean_reversion  # HYBRID
 arbitration:
   priority:
     aurora: 1
-    # MISSING: mean_reversion_1m
+    # MISSING: mean_reversion
 """
     with pytest.raises(ValueError) as exc_info:
         loader.load_config()
@@ -194,7 +194,7 @@ arbitration:
 def test_unknown_mode_blocks_all_strategies(...):
     """Test L: Unknown arbitration mode blocks all strategies (fail-closed defense-in-depth)."""
     invalid_registry.arbitration.mode = "weird_unknown_mode"
-    invalid_registry.assignments = {"BTCUSDT": ["aurora", "mean_reversion_1m"]}  # Hybrid
+    invalid_registry.assignments = {"BTCUSDT": ["aurora", "mean_reversion"]}  # Hybrid
     
     result = dm._check_strategy_arbitration("BTCUSDT", "aurora")
     
@@ -210,10 +210,10 @@ def test_unknown_mode_blocks_all_strategies(...):
 ```python
 def test_missing_priority_blocks_strategy_runtime(...):
     """Test M: Missing priority for assigned strategy blocks at runtime (defense-in-depth)."""
-    registry_no_priority.assignments = {"BTCUSDT": ["aurora", "mean_reversion_1m"]}
-    registry_no_priority.arbitration.priority = {"aurora": 1}  # MISSING: mean_reversion_1m
+    registry_no_priority.assignments = {"BTCUSDT": ["aurora", "mean_reversion"]}
+    registry_no_priority.arbitration.priority = {"aurora": 1}  # MISSING: mean_reversion
     
-    result = dm._check_strategy_arbitration("BTCUSDT", "mean_reversion_1m")
+    result = dm._check_strategy_arbitration("BTCUSDT", "mean_reversion")
     
     assert result["allowed"] is False
     assert "missing_priority" in result["reason"].lower()
@@ -277,8 +277,8 @@ tests/domains/decision_making/test_btc_arbitration_deterministic.py::test_missin
 |----------|------------------|--------|--------|
 | **mode = "prioirty"** (typo) | Pydantic (startup) | ❌ FAIL | ValidationError: mode must be 'priority' |
 | **mode = "round_robin"** | Pydantic (startup) | ❌ FAIL | ValidationError: mode must be 'priority' |
-| **BTC: priority missing for MR** | Pydantic (startup) | ❌ FAIL | ValueError: missing_priority for 'mean_reversion_1m' |
-| **Runtime: priority missing** | DecisionMaking | ❌ BLOCK | `ARBITRATION_REJECT:missing_priority:mean_reversion_1m` |
+| **BTC: priority missing for MR** | Pydantic (startup) | ❌ FAIL | ValueError: missing_priority for 'mean_reversion' |
+| **Runtime: priority missing** | DecisionMaking | ❌ BLOCK | `ARBITRATION_REJECT:missing_priority:mean_reversion` |
 | **Runtime: unknown mode** | DecisionMaking | ❌ BLOCK | `ARBITRATION_REJECT:unknown_mode_weird` |
 | **Symbol not in registry** | DecisionMaking | ❌ BLOCK | `ARBITRATION_REJECT:symbol_not_in_registry` |
 | **Strategy not assigned** | DecisionMaking | ❌ BLOCK | `ARBITRATION_REJECT:strategy_not_assigned_to_symbol` |

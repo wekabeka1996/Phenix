@@ -16,6 +16,7 @@ from collections import defaultdict
 from decimal import Decimal
 from typing import Dict, Any, Optional, TYPE_CHECKING, List, Tuple
 from apps.reference.config_contract import ConfigContractError
+from apps.reference.utils.accessors import aget, dget
 
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal
@@ -31,7 +32,11 @@ from .decision_context import DecisionContext, create_decision_context
 # CFG-DOMAINS-STEP-02: Import AuroraConfig for type enforcement
 from apps.reference.config_models import AuroraConfig
 
-from apps.reference.telemetry.metrics import inc_decision_deferred, inc_config_contract_violation
+from apps.reference.telemetry.metrics import (
+    inc_decision_deferred,
+    inc_config_contract_violation,
+    inc_warmup_block,
+)
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
 from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.contracts.reject_reasons import RejectReason, normalize_config_error
@@ -42,13 +47,7 @@ from apps.reference.domain_config import DomainConfigResolver
 # Phase 0: Import Aurora per-instrument config
 from apps.reference.config_models import AuroraInstrumentConfig
 
-# Track B: Import Mean Reversion handler
-try:
-    from .mean_reversion_handler import MeanReversionHandler as _MeanReversionHandler
-    MEAN_REVERSION_AVAILABLE = True
-except ImportError:
-    MEAN_REVERSION_AVAILABLE = False
-    _MeanReversionHandler = None  # type: ignore[assignment]
+from vfoundation.core.protocol import truncate_why
 
 # Import AlertManager for risk gating
 try:
@@ -63,7 +62,6 @@ try:
     from apps.reference.domains.alpha_search import (
         AlphaModelRegistry,
         MomentumAlphaModel,
-        MeanReversionAlphaModel,
         VolatilityAlphaModel
     )
     ALPHA_MODELS_AVAILABLE = True
@@ -73,7 +71,6 @@ except ImportError:
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
     from apps.reference.telemetry.alerts import AlertManager
-    from .mean_reversion_handler import MeanReversionHandler
 
 chain_logger = logging.getLogger("event_chain")
 
@@ -101,7 +98,7 @@ class DecisionMaking:
         if isinstance(config, dict):
             raise TypeError(
                 f"DecisionMaking requires AuroraConfig, got dict. "
-                "Pass config directly (not config.to_dict())"
+                "Pass AuroraConfig directly (not dict)"
             )
         
         self.fsm = fsm
@@ -166,7 +163,6 @@ class DecisionMaking:
             self.alpha_registry = AlphaModelRegistry()
             # Register baseline models
             self.alpha_registry.register(MomentumAlphaModel())
-            self.alpha_registry.register(MeanReversionAlphaModel())
             self.alpha_registry.register(VolatilityAlphaModel())
             self.logger.info(
                 f"Alpha models initialized: {self.alpha_registry.list_models()}")
@@ -268,143 +264,51 @@ class DecisionMaking:
         self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
         self.fsm.listen("EVT:EXPOSURE_SUMMARY_UPDATED",
                         self.update_exposure_cache)
-        
-        # Track B: Initialize Mean Reversion handler (feature-flagged)
-        self._mr_handler: Optional["MeanReversionHandler"] = None
-        if MEAN_REVERSION_AVAILABLE and _MeanReversionHandler is not None:
-            try:
-                self._mr_handler = _MeanReversionHandler(
-                    fsm=self.fsm,
-                    config=self.config,
-                    decision_making=self
-                )
-                if self._mr_handler.enabled:
-                    self.logger.info(
-                        f"✅ MeanReversionHandler enabled for symbols: "
-                        f"{list(self._mr_handler._enabled_symbols)}"
-                    )
-                    # Listen for tick events for MR processing
-                    # FIX: MarketDataConnector emits EVT:MARKET_TICK_RECEIVED, not EVT:TICK_RECEIVED
-                    self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self._on_tick_for_mr)
-                    
-                    # STRICT SEQUENTIAL TRADING CONTRACT: Listen for MR signals in gateway mode
-                    # When emit_trade_intent_directly=false, MR emits MR_SIGNAL_PRODUCED
-                    # and DM applies all gates before emitting TRADE_INTENT_PROPOSED
-                    self.fsm.listen("EVT:MR_SIGNAL_PRODUCED", self._on_mr_signal_gateway)
-                else:
-                    self.logger.info("MeanReversionHandler initialized but disabled by config")
-            except Exception as e:
-                self.logger.error(
-                    f"CRITICAL: MeanReversionHandler FAILED to initialize: {e}. "
-                    f"DOGE/XRP MR strategy will NOT trade! Check config/aurora/trading.yaml"
-                )
-                self._mr_handler = None
-                self._mr_init_failed = True  # Flag for health checks
-        else:
-            self.logger.debug("MeanReversion module not available")
+        self.fsm.listen("EVT:STRATEGY_SIGNAL_PRODUCED", self._on_strategy_signal_gateway)
+        self.logger.info("Strategy-gateway enabled: listening for EVT:STRATEGY_SIGNAL_PRODUCED")
 
-    def _on_tick_for_mr(self, event: Message) -> None:
+    def _on_strategy_signal_gateway(self, event: Message) -> None:
         """
-        Forward tick events to Mean Reversion handler.
-        
-        Track B: Wiring tick → BarResampler → MRSignal → TradeIntent
-        """
-        if not self._mr_handler or not self._mr_handler.enabled:
-            return
-        
-        try:
-            pld = event.pld
-            if isinstance(pld, dict):
-                symbol = pld.get("symbol", "")
-                price = Decimal(str(pld.get("price", 0)))
-                # Market tick contract uses `ts` (ms), not `timestamp_ms`.
-                raw_ts = pld.get("timestamp_ms")
-                if raw_ts in (None, 0, "0", ""):
-                    raw_ts = pld.get("ts")
-                timestamp_ms = int(raw_ts or 0)
-
-                # Backward/forward compat: if ts is accidentally seconds, normalize to ms.
-                # (Binance timestamps are ms; seconds here would stall BarResampler for hours.)
-                if 0 < timestamp_ms < 1_000_000_000_000:
-                    timestamp_ms = timestamp_ms * 1000
-
-                # Market tick contract has buy/sell volumes, not a single `volume`.
-                raw_vol = pld.get("volume")
-                if raw_vol is None:
-                    try:
-                        bv = Decimal(str(pld.get("buy_volume", "0") or "0"))
-                        sv = Decimal(str(pld.get("sell_volume", "0") or "0"))
-                        raw_vol = bv + sv
-                    except Exception:
-                        raw_vol = Decimal("0")
-                volume = Decimal(str(raw_vol or 0))
-            elif hasattr(pld, 'symbol'):
-                symbol = pld.symbol
-                price = Decimal(str(getattr(pld, 'price', 0)))
-                timestamp_ms = int(getattr(pld, 'timestamp_ms', 0) or getattr(pld, 'ts', 0) or 0)
-                if 0 < timestamp_ms < 1_000_000_000_000:
-                    timestamp_ms = timestamp_ms * 1000
-                raw_vol = getattr(pld, 'volume', None)
-                if raw_vol is None:
-                    raw_vol = (getattr(pld, 'buy_volume', 0) or 0) + (getattr(pld, 'sell_volume', 0) or 0)
-                volume = Decimal(str(raw_vol or 0))
-            else:
-                return
-            
-            if not symbol or not self._mr_handler.is_symbol_enabled(symbol):
-                return
-            
-            # Get current regime for this symbol
-            regime = None
-            if symbol in self._per_symbol_regimes:
-                regime = self._per_symbol_regimes[symbol].get("regime")
-            elif self.latest_regime and isinstance(self.latest_regime, dict):
-                regime = self.latest_regime.get("regime") or self.latest_regime.get("overall_regime")
-            
-            # Process tick through MR handler
-            self._mr_handler.on_tick(symbol, price, volume, timestamp_ms, regime)
-            
-        except Exception as e:
-            self.logger.warning(f"Error processing tick for MR: {e}")
-
-    def _on_mr_signal_gateway(self, event: Message) -> None:
-        """
-        Gateway for MR signals: apply all gates before emitting TRADE_INTENT_PROPOSED.
+        Gateway for strategy signals: apply universal gates before emitting TRADE_INTENT_PROPOSED.
         
         STRICT SEQUENTIAL TRADING CONTRACT (Commit 3):
-        When emit_trade_intent_directly=false, MR emits EVT:MR_SIGNAL_PRODUCED.
-        This handler applies the same gates as Aurora/Track A:
+        Strategies emit EVT:STRATEGY_SIGNAL_PRODUCED and DecisionMaking applies the same gates as Aurora:
         1. Risk gate (is_trading_allowed, risk_score)
-        2. Regime gate (check regime compatibility)
-        3. QoS gate (cooldown, rate limiting)
-        4. Exposure gate (portfolio limits)
-        5. TTL gate (features freshness)
+        2. QoS gate (cooldown, rate limiting)
+        3. Exposure gate (portfolio limits)
+        4. TTL gate (features freshness)
         
         Only after passing all gates, emit EVT:TRADE_INTENT_PROPOSED.
         """
         try:
             pld = event.pld
             if not isinstance(pld, dict):
-                self.logger.warning("MR_SIGNAL_PRODUCED: invalid payload (not dict)")
+                self.logger.warning("STRATEGY_SIGNAL_PRODUCED: invalid payload (not dict)")
                 return
             
+            strategy_id = pld.get("strategy_id")
             symbol = pld.get("symbol")
             side = pld.get("side")
-            rid = pld.get("rid", f"mr-{int(time.time())}")
-            why_chain = pld.get("why_chain", [])
+            rid = pld.get("rid") or f"sig-{uuid.uuid4()}"
+            why_chain = pld["why_chain"] if "why_chain" in pld else []
             
-            if not symbol or not side:
-                self.logger.warning(f"MR_SIGNAL_PRODUCED: missing symbol or side")
+            if not strategy_id or not symbol or not side:
+                self.logger.warning("STRATEGY_SIGNAL_PRODUCED: missing strategy_id/symbol/side")
+                return
+
+            side = str(side).upper()
+            if side not in ("BUY", "SELL"):
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: invalid side={side!r}")
                 return
             
-            self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: Processing {side} signal rid={rid}")
+            self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Processing {side} signal rid={rid} strategy_id={strategy_id}")
 
             # === GATE 0: STRATEGY ARBITRATION ===
             # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check if this strategy is allowed
-            arbitration_result = self._check_strategy_arbitration(symbol, "mean_reversion_1m")
+            arbitration_result = self._check_strategy_arbitration(symbol, str(strategy_id))
             if not arbitration_result["allowed"]:
                 self.logger.info(
-                    f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Strategy arbitration blocked: {arbitration_result['reason']}"
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Arbitration blocked ({strategy_id}): {arbitration_result['reason']}"
                 )
                 self._record_blocked_intent(symbol)
                 return
@@ -415,27 +319,27 @@ class DecisionMaking:
             if guard_state.get("until_refresh"):
                 now_ms = int(time.time() * 1000)
                 retry_key = self._stable_retry_key(
-                    prefix="mr",
+                    prefix=str(strategy_id),
                     symbol=symbol,
                     rid=rid,
                     side=side,
-                    ts_ms=pld.get("ts"),
+                    ts_ms=pld.get("ts_ms"),
                 )
                 retry_sec = self._get_risk_skew_config("until_refresh_retry_sec", 30)
                 self.logger.error(
-                    f"[{symbol}] MR_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH (risk_skew_guard active)"
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH (risk_skew_guard active)"
                 )
                 self._emit_intent_deferred_v1(
                     symbol=symbol,
                     reason="NRR-RISK-SKEW-UNTIL-REFRESH",
                     retry_key=retry_key,
                     next_allowed_ts=now_ms + int(retry_sec * 1000),
-                    original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                    original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
                     original_payload_min=dict(pld),
                     attempt=1,
                     max_attempts=5,
                     why_chain=(why_chain or []) + ["NO_TRADE_UNTIL_REFRESH", "risk_skew_guard"],
-                    context="mr_signal_gateway:risk_skew_until_refresh",
+                    context="strategy_signal_gateway:risk_skew_until_refresh",
                 )
                 self._record_blocked_intent(symbol)
                 return
@@ -447,38 +351,39 @@ class DecisionMaking:
             # Fail-closed: if risk data not yet received, DEFER instead of crash
             if not latest_risk:
                 self.logger.warning(
-                    f"[{symbol}] MR_SIGNAL_GATEWAY: DEFER - Risk data not yet received (NRR-DATA-NOT-READY)"
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER - Risk data not yet received (NRR-DATA-NOT-READY)"
                 )
                 now_ms = int(time.time() * 1000)
                 retry_key = self._stable_retry_key(
-                    prefix="mr",
+                    prefix=str(strategy_id),
                     symbol=symbol,
                     rid=rid,
                     side=side,
-                    ts_ms=pld.get("ts"),
+                    ts_ms=pld.get("ts_ms"),
                 )
                 self._emit_intent_deferred_v1(
                     symbol=symbol,
                     reason="NRR-DATA-NOT-READY",
                     retry_key=retry_key,
                     next_allowed_ts=now_ms + 500,
-                    original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                    original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
                     original_payload_min=dict(pld),
                     attempt=1,
                     max_attempts=5,
                     why_chain=(why_chain or []) + ["missing:risk", "fail_closed"],
-                    context="mr_signal_gateway:risk_not_ready",
+                    context="strategy_signal_gateway:risk_not_ready",
                 )
                 self._record_blocked_intent(symbol)
                 return
             
             if latest_risk:
-                is_allowed = latest_risk.get("risk_parameters", {}).get("is_trading_allowed", True)
-                risk_score = float(latest_risk.get("risk_parameters", {}).get("risk_score", 0))
+                risk_params = latest_risk.get("risk_parameters") or {}
+                is_allowed = risk_params["is_trading_allowed"] if "is_trading_allowed" in risk_params else True
+                risk_score = float(risk_params["risk_score"] if "risk_score" in risk_params else 0)
                 
                 if not is_allowed:
                     self.logger.warning(
-                        f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Risk gate blocked, is_trading_allowed=False"
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Risk gate blocked, is_trading_allowed=False"
                     )
                     self._record_blocked_intent(symbol)
                     return
@@ -491,7 +396,7 @@ class DecisionMaking:
                 # If both missing -> BLOCK.
                 max_risk = -1.0
                 try:
-                    instr_cfg = self._get_aurora_instrument_config(symbol)
+                    instr_cfg = self._get_aurora_instrument_cfg(symbol)
                     if instr_cfg and hasattr(instr_cfg, 'max_risk_score'):
                         max_risk = float(instr_cfg.max_risk_score)
                     else:
@@ -523,17 +428,17 @@ class DecisionMaking:
                 
                 if risk_score > max_risk:
                     self.logger.warning(
-                        f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Risk score {risk_score:.3f} > {max_risk}"
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Risk score {risk_score:.3f} > {max_risk}"
                     )
                     self._record_blocked_intent(symbol)
                     return
                 
                 # === GATE 1.5: RISK SKEW GATE (Commit 5) ===
                 # Check if risk.ts is too far from features.ts (stale risk data)
-                risk_ts = latest_risk.get("ts", 0)
+                risk_ts = latest_risk["ts"] if "ts" in latest_risk else 0
                 # Use symbol_states SSOT (not self.latest_features which doesn't exist)
                 features_data = self.symbol_states[symbol].get("features") or {}
-                features_ts = features_data.get("ts", 0)
+                features_ts = features_data["ts"] if "ts" in features_data else 0
                 
                 if risk_ts > 0 and features_ts > 0:
                     skew_sec = abs(features_ts - risk_ts) / 1000
@@ -551,7 +456,7 @@ class DecisionMaking:
                         )
 
                         try:
-                            window_start_ms = int(state.get("window_start_ms", now_ms))
+                            window_start_ms = int(state["window_start_ms"] if "window_start_ms" in state else now_ms)
                         except Exception:
                             window_start_ms = now_ms
                             state["window_start_ms"] = now_ms
@@ -561,32 +466,32 @@ class DecisionMaking:
                             state["window_start_ms"] = now_ms
 
                         try:
-                            state["defer_count"] = int(state.get("defer_count", 0)) + 1
+                            state["defer_count"] = int(state["defer_count"] if "defer_count" in state else 0) + 1
                         except Exception:
                             state["defer_count"] = 1
 
-                        defer_count = int(state.get("defer_count", 1))
+                        defer_count = int(state["defer_count"] if "defer_count" in state else 1)
                         
                         if defer_count >= max_defer:
                             state["until_refresh"] = True
                             self.logger.error(
-                                f"[{symbol}] MR_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH - "
+                                f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH - "
                                 f"Risk skew exceeded {defer_count} times (max {max_defer}). "
                                 f"NRR-RISK-STALE skew={skew_sec:.1f}s > max={max_skew_sec}s"
                             )
                         else:
                             self.logger.warning(
-                                f"[{symbol}] MR_SIGNAL_GATEWAY: DEFER - "
+                                f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER - "
                                 f"NRR-RISK-STALE skew={skew_sec:.1f}s > max={max_skew_sec}s. "
                                 f"Defer {defer_count}/{max_defer}"
                             )
                             now_ms = int(time.time() * 1000)
                             retry_key = self._stable_retry_key(
-                                prefix="mr",
+                                prefix=str(strategy_id),
                                 symbol=symbol,
                                 rid=rid,
                                 side=side,
-                                ts_ms=pld.get("ts"),
+                                ts_ms=pld.get("ts_ms"),
                             )
                             cooldown_sec = self._get_risk_skew_config("defer_cooldown_sec", 2)
                             self._emit_intent_deferred_v1(
@@ -594,7 +499,7 @@ class DecisionMaking:
                                 reason="NRR-RISK-STALE",
                                 retry_key=retry_key,
                                 next_allowed_ts=now_ms + int(cooldown_sec * 1000),
-                                original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                                original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
                                 original_payload_min=dict(pld),
                                 attempt=defer_count,
                                 max_attempts=max_defer,
@@ -604,27 +509,12 @@ class DecisionMaking:
                                     f"skew_sec:{skew_sec:.3f}",
                                     f"defer_count:{defer_count}",
                                 ],
-                                context="mr_signal_gateway:risk_skew",
+                                context="strategy_signal_gateway:risk_skew",
                             )
                         self._record_blocked_intent(symbol)
                         return
             
-            # === GATE 2: REGIME GATE ===
-            regime_data = self._per_symbol_regimes.get(symbol, {})
-            current_regime = regime_data.get("regime")
-            
-            # MR symbols only allowed in FLAT regimes
-            # MR symbols allowed regimes (SSOT from config)
-            mr_allowed_regimes = self._get_mr_allowed_regimes(symbol)
-            
-            if current_regime and current_regime not in mr_allowed_regimes:
-                self.logger.info(
-                    f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Regime {current_regime} not in MR allowed list"
-                )
-                self._record_blocked_intent(symbol)
-                return
-            
-            # === GATE 2.5: FLAT/FLIP GATE (D3 - Flip Orchestration) ===
+            # === GATE 2: FLIP GATE (D3 - Flip Orchestration) ===
             # OPEN only allowed when position_state(symbol) == FLAT
             # If opposite-side position exists → initiate flip (close→wait→open)
             # If same-side position exists → BLOCK (anti-pyramiding)
@@ -632,46 +522,51 @@ class DecisionMaking:
                 symbol=symbol,
                 intent_side=side,
                 original_pld=pld,
-                source="mr"
+                source=str(strategy_id)
             )
             
             if flip_result:
                 # Intent was blocked or deferred
                 if flip_result == "FLIP_CLOSE_PENDING":
                     self.logger.info(
-                        f"[{symbol}] MR_SIGNAL_GATEWAY: FLIP initiated - close emitted, OPEN deferred"
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: FLIP initiated - close emitted, OPEN deferred"
                     )
                 elif flip_result == "ANTI_PYRAMIDING_BLOCK":
                     self.logger.warning(
-                        f"[{symbol}] MR_SIGNAL_GATEWAY: BLOCK - Same-side pyramiding not allowed"
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: BLOCK - Same-side pyramiding not allowed"
                     )
                 else:
                     # NRR-PORTFOLIO-UNKNOWN or other
                     self.logger.warning(
-                        f"[{symbol}] MR_SIGNAL_GATEWAY: BLOCK - {flip_result}"
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: BLOCK - {flip_result}"
                     )
                     if flip_result == "NRR-PORTFOLIO-UNKNOWN":
                         now_ms = int(time.time() * 1000)
                         # Position Tracking Stale TTL (Strict)
-                        stale_ttl_sec_f = float(getattr(self.config.domains.position_tracking, 'positions_stale_ttl_sec', 5.0))
+                        stale_ttl_raw = aget(
+                            self.config.domains.position_tracking,
+                            "positions_stale_ttl_sec",
+                            None,
+                        )
+                        stale_ttl_sec_f = float(stale_ttl_raw) if stale_ttl_raw is not None else 5.0
                         retry_key = self._stable_retry_key(
-                            prefix="mr",
+                            prefix=str(strategy_id),
                             symbol=symbol,
                             rid=rid,
                             side=side,
-                            ts_ms=pld.get("ts"),
+                            ts_ms=pld.get("ts_ms"),
                         )
                         self._emit_intent_deferred_v1(
                             symbol=symbol,
                             reason="NRR-PORTFOLIO-UNKNOWN",
                             retry_key=retry_key,
                             next_allowed_ts=now_ms + int(stale_ttl_sec_f * 1000),
-                            original_event_name="EVT:MR_SIGNAL_PRODUCED",
+                            original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
                             original_payload_min=dict(pld),
                             attempt=1,
                             max_attempts=5,
                             why_chain=(why_chain or []) + ["portfolio_unknown", "fail_closed"],
-                            context="mr_gateway_flip_check",
+                            context="strategy_gateway_flip_check",
                         )
                 
                 self._record_blocked_intent(symbol)
@@ -680,7 +575,7 @@ class DecisionMaking:
             # === GATE 3: QOS GATE ===
             qos_allowed, qos_reason = self._qos_allow(symbol)
             if not qos_allowed:
-                self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - QoS blocked: {qos_reason}")
+                self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - QoS blocked: {qos_reason}")
                 self._record_blocked_intent(symbol)
                 return
             
@@ -689,74 +584,104 @@ class DecisionMaking:
             # Using get() without default returns None if missing, so we check robustness
             position_size_usd = pld.get("position_size_usd")
             if position_size_usd is None:
-                 self.logger.warning(f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Missing position_size_usd")
+                 self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Missing position_size_usd")
                  self._record_blocked_intent(symbol)
                  return
             
             if not self._precheck_exposure_cache(symbol, side, float(position_size_usd)):
-                self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Exposure limit exceeded")
+                self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Exposure limit exceeded")
                 self._record_blocked_intent(symbol)
                 return
             
             # === GATE 5: TTL GATE (features freshness) ===
             # Use symbol_states SSOT (not self.latest_features which doesn't exist)
             features_data = self.symbol_states[symbol].get("features") or {}
-            features_ts = features_data.get("ts", 0)
+            features_ts = features_data["ts"] if "ts" in features_data else 0
             current_ms = int(time.time() * 1000)
             features_age_sec = (current_ms - features_ts) / 1000 if features_ts > 0 else float('inf')
             
             if features_age_sec > self.features_ttl_sec:
                 self.logger.info(
-                    f"[{symbol}] MR_SIGNAL_GATEWAY: REJECT - Features stale "
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Features stale "
                     f"(age={features_age_sec:.1f}s > ttl={self.features_ttl_sec}s)"
                 )
                 self._record_blocked_intent(symbol)
                 return
+
+            # === GATE 6: WARMUP / READINESS (TASK24.B) ===
+            if self._warmup_gate_before_trade_intent(
+                symbol=symbol,
+                rid=rid,
+                reduce_only=False,
+                context="strategy_signal_gateway:pre_emit",
+            ):
+                return
             
             # === ALL GATES PASSED: EMIT TRADE_INTENT_PROPOSED ===
-            self.logger.info(f"[{symbol}] MR_SIGNAL_GATEWAY: All gates passed, emitting TRADE_INTENT_PROPOSED")
-            
-            price_ctx = pld.get("price_ctx", {})
+            self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: All gates passed, emitting TRADE_INTENT_PROPOSED")
+
+            ts_ms = pld.get("ts_ms")
+            if ts_ms in (None, 0, "0", ""):
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Missing ts_ms")
+                self._record_blocked_intent(symbol)
+                return
+            timestamp_ms = int(ts_ms)
+            if 0 < timestamp_ms < 1_000_000_000_000:
+                timestamp_ms = timestamp_ms * 1000
+
+            price_ctx = pld.get("price_ctx") if isinstance(pld.get("price_ctx"), dict) else {}
+            entry_price = price_ctx.get("entry_price")
+            if entry_price in (None, "", "0", 0):
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Missing entry_price")
+                self._record_blocked_intent(symbol)
+                return
+
+            qty_str = pld.get("qty_hint")
+            if qty_str in (None, "", "0", 0):
+                try:
+                    qty_str = str(decimal.Decimal(str(position_size_usd)) / decimal.Decimal(str(entry_price)))
+                except Exception:
+                    qty_str = "0"
             
             trade_intent = {
                 "instrument": symbol,
                 "symbol": symbol,
                 "side": side,
                 "order": {
-                    "qty": str(pld.get("qty_hint", "0")),
-                    "price": str(price_ctx.get("entry_price", "0")),
+                    "qty": str(qty_str),
+                    "price": str(entry_price),
                     "type": "LIMIT"
                 },
-                "strategy": "mean_reversion_1m",
-                "strategy_id": "MR",
+                "strategy": str(strategy_id),
+                "strategy_id": str(strategy_id),
                 "source": "dm_gateway",  # Indicates came through DM gateway
-                "entry_price": str(price_ctx.get("entry_price")),
+                "entry_price": str(entry_price),
                 "stop_price": str(price_ctx.get("stop_price")) if price_ctx.get("stop_price") else None,
                 "target_price": str(price_ctx.get("target_price")) if price_ctx.get("target_price") else None,
-                "position_size_usd": position_size_usd,
-                "qty": str(pld.get("qty_hint", "0")),
-                "regime": pld.get("flat_regime", "UNKNOWN"),
-                "confidence": pld.get("confidence", 0.0),
+                "position_size_usd": float(position_size_usd),
+                "qty": str(qty_str),
+                "regime": pld.get("regime") if pld.get("regime") else "UNKNOWN",
+                "confidence": pld["score"] if "score" in pld else (pld["confidence"] if "confidence" in pld else 0.0),
                 "rid": rid,
-                "timestamp_ms": pld.get("ts", int(time.time() * 1000)),
+                "timestamp_ms": timestamp_ms,
                 "why": ",".join(why_chain) if isinstance(why_chain, list) else str(why_chain),
                 "why_chain": why_chain,
-                "cooldown_class": pld.get("cooldown_class", "mr_entry"),
-                "mr_params": pld.get("mr_params", {}),
+                "cooldown_class": pld["cooldown_class"] if "cooldown_class" in pld else str(strategy_id),
+                "strategy_params": pld.get("strategy_params") or pld.get("mr_params") or {},
             }
             
             self.fsm.emit(
                 "EVT:TRADE_INTENT_PROPOSED",
                 payload=trade_intent,
-                why=f"MR_GATEWAY_{side}",
-                data_ref=[f"mr_gateway_{rid}"]
+                why=f"STRATEGY_GATEWAY_{side}",
+                data_ref=[f"strategy_gateway_{rid}"]
             )
             
             self._record_accepted_intent(symbol)
             self._record_qos_intent(symbol)  # Update QoS state
             
             self.logger.info(
-                f"[{symbol}] MR_SIGNAL_GATEWAY: EVT:TRADE_INTENT_PROPOSED emitted: {side}"
+                f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: EVT:TRADE_INTENT_PROPOSED emitted: {side} ({strategy_id})"
             )
             
         except ConfigContractError as e:
@@ -777,7 +702,7 @@ class DecisionMaking:
             return
 
         except Exception as e:
-            self.logger.error(f"MR_SIGNAL_GATEWAY error: {e}", exc_info=True)
+            self.logger.error(f"STRATEGY_SIGNAL_GATEWAY error: {e}", exc_info=True)
 
     def _qos_allow(
         self, symbol: str, is_exposure_block: bool = False
@@ -797,7 +722,7 @@ class DecisionMaking:
         # Check exposure block cooldown (only for exposure-related checks)
         if is_exposure_block:
             last_exposure_block: float = float(
-                self._qos_state.get("last_exposure_block", 0.0))
+                dget(self._qos_state, "last_exposure_block", 0.0))
             time_since_last_block = current_time - last_exposure_block
             if time_since_last_block < self.qos_exposure_block_cooldown_sec:
                 remaining = self.qos_exposure_block_cooldown_sec - time_since_last_block
@@ -808,9 +733,8 @@ class DecisionMaking:
                 return False, NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED
 
         # Check symbol cooldown (prevents rapid-fire decisions for same symbol)
-        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
-            "symbol_cooldowns", {})
-        last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
+        symbol_cooldowns: dict[str, Any] = dget(self._qos_state, "symbol_cooldowns", {})
+        last_decision: float = float(dget(symbol_cooldowns, symbol, 0.0))
         time_since_last_decision = current_time - last_decision
         symbol_cooldown_limit = self._get_symbol_cooldown(symbol)
         if time_since_last_decision < symbol_cooldown_limit:
@@ -821,11 +745,10 @@ class DecisionMaking:
             return False, NormalizedRejectReasons.RATE_LIMIT_EXCEEDED
 
         # Check rate limit (intents per minute per symbol) - separate from cooldown
-        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
-            "symbol_intent_counts", {})
+        symbol_intent_counts: dict[str, Any] = dget(self._qos_state, "symbol_intent_counts", {})
         intent_data: dict[str, Any] = symbol_intent_counts[symbol]
-        window_elapsed = current_time - \
-            intent_data.get("window_start", current_time)
+        window_start = intent_data["window_start"] if "window_start" in intent_data else current_time
+        window_elapsed = current_time - window_start
 
         # Reset window if more than a minute has passed
         if window_elapsed >= 60:
@@ -844,8 +767,7 @@ class DecisionMaking:
     def _update_symbol_cooldown(self, symbol: str) -> None:
         """Update cooldown timestamp for symbol (prevents rapid-fire decisions)."""
         current_time = time.time()
-        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
-            "symbol_cooldowns", {})
+        symbol_cooldowns: dict[str, Any] = dget(self._qos_state, "symbol_cooldowns", {})
         symbol_cooldowns[symbol] = current_time
         self.logger.debug(
             f"[{symbol}] QoS cooldown updated: ts={current_time}")
@@ -884,10 +806,17 @@ class DecisionMaking:
 
     def _update_intent_count(self, symbol: str) -> None:
         """Update intent count for rate limiting."""
-        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
-            "symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts.get(
-            symbol, {"count": 0, "window_start": time.time()})
+        if "symbol_intent_counts" in self._qos_state:
+            symbol_intent_counts: dict[str, Any] = self._qos_state["symbol_intent_counts"]
+        else:
+            symbol_intent_counts = {}
+            self._qos_state["symbol_intent_counts"] = symbol_intent_counts
+
+        if symbol in symbol_intent_counts:
+            intent_data: dict[str, Any] = symbol_intent_counts[symbol]
+        else:
+            intent_data = {"count": 0, "window_start": time.time()}
+            symbol_intent_counts[symbol] = intent_data
         intent_data["count"] += 1
         self.logger.debug(
             f"[{symbol}] QoS intent count updated: count={intent_data['count']}"
@@ -899,26 +828,23 @@ class DecisionMaking:
 
         # Check exposure block cooldown
         last_exposure_block: float = float(
-            self._qos_state.get("last_exposure_block", 0.0))
+            dget(self._qos_state, "last_exposure_block", 0.0))
         if current_time - last_exposure_block < self.qos_exposure_block_cooldown_sec:
             return {"allowed": False, "reason": NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED}
 
         # Check symbol cooldown (per-symbol limit)
-        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
-            "symbol_cooldowns", {})
-        last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
+        symbol_cooldowns: dict[str, Any] = dget(self._qos_state, "symbol_cooldowns", {})
+        last_decision: float = float(dget(symbol_cooldowns, symbol, 0.0))
         symbol_cooldown_limit = self._get_symbol_cooldown(symbol)
         if current_time - last_decision < symbol_cooldown_limit:
             return {"allowed": False, "reason": NormalizedRejectReasons.SYMBOL_COOLDOWN_ACTIVE}
 
         # Check rate limit
-        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
-            "symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts.get(
-            symbol, {"count": 0, "window_start": current_time})
-        window_end: float = float(intent_data.get(
-            "window_start", current_time)) + 60
-        intent_count: int = int(intent_data.get("count", 0))
+        symbol_intent_counts: dict[str, Any] = dget(self._qos_state, "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts[symbol] if symbol in symbol_intent_counts else {"count": 0, "window_start": current_time}
+        window_start = float(intent_data["window_start"] if "window_start" in intent_data else current_time)
+        window_end: float = window_start + 60
+        intent_count: int = int(intent_data["count"] if "count" in intent_data else 0)
         if current_time < window_end and intent_count >= self.qos_max_intents_per_minute_per_symbol:
             return {"allowed": False, "reason": NormalizedRejectReasons.RATE_LIMIT_EXCEEDED}
 
@@ -930,22 +856,19 @@ class DecisionMaking:
         next_allowed = current_time
 
         # Check symbol cooldown (uses per-symbol resolver)
-        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
-            "symbol_cooldowns", {})
-        last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
+        symbol_cooldowns: dict[str, Any] = dget(self._qos_state, "symbol_cooldowns", {})
+        last_decision: float = float(dget(symbol_cooldowns, symbol, 0.0))
         cooldown_duration = self._get_symbol_cooldown(symbol)
 
         cooldown_end: float = last_decision + cooldown_duration
         next_allowed = max(next_allowed, cooldown_end)
 
         # Check rate limit window
-        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
-            "symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts.get(
-            symbol, {"count": 0, "window_start": current_time})
-        window_end: float = float(intent_data.get(
-            "window_start", current_time)) + 60
-        intent_count: int = int(intent_data.get("count", 0))
+        symbol_intent_counts: dict[str, Any] = dget(self._qos_state, "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts[symbol] if symbol in symbol_intent_counts else {"count": 0, "window_start": current_time}
+        window_start = float(intent_data["window_start"] if "window_start" in intent_data else current_time)
+        window_end: float = window_start + 60
+        intent_count: int = int(intent_data["count"] if "count" in intent_data else 0)
         if intent_count >= self.qos_max_intents_per_minute_per_symbol:
             next_allowed = max(next_allowed, window_end)
 
@@ -956,17 +879,13 @@ class DecisionMaking:
         current_time = time.time()
 
         # Update symbol cooldown
-        symbol_cooldowns: dict[str, Any] = self._qos_state.get(
-            "symbol_cooldowns", {})
+        symbol_cooldowns: dict[str, Any] = dget(self._qos_state, "symbol_cooldowns", {})
         symbol_cooldowns[symbol] = current_time
 
         # Update rate limit counters
-        symbol_intent_counts: dict[str, Any] = self._qos_state.get(
-            "symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts.get(
-            symbol, {"count": 0, "window_start": current_time})
-        window_start: float = float(
-            intent_data.get("window_start", current_time))
+        symbol_intent_counts: dict[str, Any] = dget(self._qos_state, "symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts[symbol]
+        window_start: float = float(intent_data["window_start"] if "window_start" in intent_data else current_time)
         window_end: float = window_start + 60
 
         if current_time >= window_end:
@@ -1046,7 +965,7 @@ class DecisionMaking:
         
         Args:
             symbol: Trading pair symbol
-            strategy_id: Strategy identifier ("aurora", "mean_reversion_1m")
+            strategy_id: Strategy identifier (e.g., "aurora")
             
         Returns:
             Dict with keys:
@@ -1058,7 +977,7 @@ class DecisionMaking:
             return {"allowed": True, "reason": ""}
         
         # Get assigned strategies for this symbol
-        assignments = self.strategies_registry.assignments.get(symbol, [])
+        assignments = self.strategies_registry.assignments[symbol] if symbol in self.strategies_registry.assignments else []
         
         # If symbol not in registry, block (fail-closed)
         if not assignments:
@@ -1091,13 +1010,13 @@ class DecisionMaking:
                     }
             
             # Get priorities for all assigned strategies
-            priorities = {s: arb.priority.get(s, 999) for s in assignments}
+            priorities = {s: arb.priority[s] for s in assignments}
             
             # Current strategy priority
-            current_priority = priorities.get(strategy_id, 999)
+            current_priority = priorities[strategy_id]
             
             # Find highest priority strategy (lowest number)
-            highest_priority_strategy = min(assignments, key=lambda s: priorities.get(s, 999))
+            highest_priority_strategy = min(assignments, key=lambda s: priorities[s])
             highest_priority = priorities[highest_priority_strategy]
             
             # Allow if current strategy has highest priority
@@ -1114,36 +1033,6 @@ class DecisionMaking:
                 "allowed": False,
                 "reason": f"ARBITRATION_REJECT:unknown_mode_{arb.mode}"[:80]
             }
-
-    def _get_mr_allowed_regimes(self, symbol: str) -> List[str]:
-        """
-        Get allowed regimes for MR strategy (SSOT).
-        
-        Fallback chain:
-        1. mean_reversion_1m.assets.<SYMBOL>.allowed_regimes
-        2. mean_reversion_1m.allowed_regimes (Global)
-        3. Hardcoded default
-        """
-        default_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-        
-        default_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-        
-        # Strict Config Access
-        mr_config = self.config.mean_reversion_1m
-        if not mr_config:
-             return default_regimes
-
-        # 1. Asset Override
-        if symbol in mr_config.assets:
-             asset_cfg = mr_config.assets[symbol]
-             if asset_cfg.allowed_regimes:
-                 return asset_cfg.allowed_regimes
-
-        # 2. Global Config
-        if mr_config.allowed_regimes:
-             return mr_config.allowed_regimes
-
-        return default_regimes
 
     def _get_symbol_cooldown(self, symbol: str) -> int:
         """
@@ -1162,7 +1051,7 @@ class DecisionMaking:
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         if instr_cfg is not None:
-            cooldown = getattr(instr_cfg, 'cooldown_sec', None)
+            cooldown = aget(instr_cfg, "cooldown_sec", None)
             if cooldown is not None:
                 return int(cooldown)
 
@@ -1189,12 +1078,12 @@ class DecisionMaking:
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         if instr_cfg is not None:
-            value = getattr(instr_cfg, param, None)
+            value = aget(instr_cfg, param, None)
             if value is not None:
                 return value
 
         # 2. Fallback to global trading.decision.* (Strict)
-        global_value = getattr(self.config.trading.decision, param, default)
+        global_value = aget(self.config.trading.decision, param, default)
         return global_value if global_value is not None else default
 
     def _get_side_bias_params(self, symbol: str) -> tuple:
@@ -1216,11 +1105,11 @@ class DecisionMaking:
 
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
-        if instr_cfg is not None and getattr(instr_cfg, 'side_bias', None) is not None:
-            sb = instr_cfg.side_bias
-            penalty = getattr(sb, 'penalty_factor', None)
-            window = getattr(sb, 'window_sec', None)
-            target = getattr(sb, 'target_ratio', None)
+        sb = aget(instr_cfg, "side_bias", None)
+        if sb is not None:
+            penalty = aget(sb, "penalty_factor", None)
+            window = aget(sb, "window_sec", None)
+            target = aget(sb, "target_ratio", None)
             return (
                 penalty if penalty is not None else default_penalty,
                 window if window is not None else default_window,
@@ -1250,7 +1139,7 @@ class DecisionMaking:
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         if instr_cfg is not None:
-            thresholds = getattr(instr_cfg, 'regime_thresholds', None)
+            thresholds = aget(instr_cfg, "regime_thresholds", None)
             if thresholds is not None:
                 return thresholds
 
@@ -1274,7 +1163,7 @@ class DecisionMaking:
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         if instr_cfg is not None:
-            sizing = getattr(instr_cfg, 'regime_sizing', None)
+            sizing = aget(instr_cfg, "regime_sizing", None)
             if sizing is not None:
                 # Convert Pydantic model to dict if needed
                 if hasattr(sizing, 'model_dump'):
@@ -1304,7 +1193,7 @@ class DecisionMaking:
         # 1. Try per-instrument config (Phase 3+)
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         if instr_cfg is not None:
-            st_cfg = getattr(instr_cfg, 'signal_threshold', None)
+            st_cfg = aget(instr_cfg, "signal_threshold", None)
             if st_cfg is not None and st_cfg.enabled:
                 if st_cfg.value is not None:
                     return decimal.Decimal(str(st_cfg.value))
@@ -1430,7 +1319,7 @@ class DecisionMaking:
             # Check if regime sizing is enabled for this symbol
             # NOTE: sym_cfg can be dict (from YAML) or Pydantic model (if typed later)
             if isinstance(sym_cfg, dict):
-                sym_enabled = sym_cfg.get("enabled", False)
+                sym_enabled = sym_cfg["enabled"] if "enabled" in sym_cfg else False
                 if "low_vol_multiplier" not in sym_cfg:
                      raise ConfigContractError(path=f"regime.multipliers.{symbol}.low_vol_multiplier", why="Missing low_vol_multiplier", symbol=symbol)
                 low_mult = sym_cfg["low_vol_multiplier"]
@@ -1555,7 +1444,7 @@ class DecisionMaking:
         try:
             try:
                 if isinstance(event.pld, dict):
-                    symbol = event.pld.get("symbol", "unknown")
+                    symbol = event.pld["symbol"] if "symbol" in event.pld else "unknown"
                 elif hasattr(event, 'pld') and event.pld:
                     symbol = event.pld.symbol if hasattr(
                         event.pld, 'symbol') else "unknown"
@@ -1581,19 +1470,8 @@ class DecisionMaking:
                 pass
 
             # Update per-symbol regime cache if available
-            if isinstance(event.pld, dict):
-                regime = event.pld.get("flat_regime")
-                if regime:
-                    if symbol not in self._per_symbol_regimes:
-                        self._per_symbol_regimes[symbol] = {}
-                    self._per_symbol_regimes[symbol]["regime"] = regime
-                    self._per_symbol_regimes[symbol]["ts"] = time.time()
-                # Also cache warmup status
-                warmup = event.pld.get("warmup")
-                if warmup and isinstance(warmup, dict):
-                    if symbol not in self._per_symbol_regimes:
-                        self._per_symbol_regimes[symbol] = {}
-                    self._per_symbol_regimes[symbol]["warmup"] = warmup
+            # NOTE: Regime + regime warmup are owned by RegimeDetector only (EVT:REGIME_DETECTED).
+            # FeatureEngineering warmup must not be treated as RegimeDetector warmup.
 
             # Define feats for alpha calculation
             try:
@@ -1609,7 +1487,7 @@ class DecisionMaking:
 
             self.dlog.write(
                 "FEATURES_RX",
-                getattr(event, "rid", None),
+                aget(event, "rid", None),
                 {"symbol": symbol, "keys": list(feats.keys())},
             )
 
@@ -1692,7 +1570,7 @@ class DecisionMaking:
     def on_risk(self, event: Message) -> None:
         try:
             if isinstance(event.pld, dict):
-                symbol = event.pld.get("symbol", "unknown")
+                symbol = event.pld["symbol"] if "symbol" in event.pld else "unknown"
             elif hasattr(event, 'pld') and event.pld:
                 symbol = event.pld.symbol if hasattr(
                     event.pld, 'symbol') else "unknown"
@@ -1739,10 +1617,10 @@ class DecisionMaking:
 
         self.dlog.write(
             "RISK_RX",
-            getattr(event, "rid", None),
+            aget(event, "rid", None),
             {
                 "symbol": symbol,
-                "trading_allowed": bool(rp.get("is_trading_allowed", False)),
+                "trading_allowed": bool(rp["is_trading_allowed"] if "is_trading_allowed" in rp else False),
                 "raw": rp,
             },
         )
@@ -1782,19 +1660,20 @@ class DecisionMaking:
             self._cached_equity_cross_usdt = equity_cross_usdt
 
         self.latest_portfolio = portfolio_data
+        positions = portfolio_data["positions"] if isinstance(portfolio_data, dict) and "positions" in portfolio_data else []
         self.logger.info(
-            f"   Equity: {portfolio_data.get('equity')}, Positions: {len(portfolio_data.get('positions', []))}"
+            f"   Equity: {portfolio_data.get('equity') if isinstance(portfolio_data, dict) else None}, Positions: {len(positions)}"
         )
 
         self.dlog.write(
             "PORTFOLIO_RX",
-            getattr(event, "rid", None),
+            aget(event, "rid", None),
             {
                 "equity": str(
                     self._cached_equity_free_usdt
-                    or portfolio_data.get("equity_free_usdt", "0")
+                    or (portfolio_data["equity_free_usdt"] if isinstance(portfolio_data, dict) and "equity_free_usdt" in portfolio_data else "0")
                 ),
-                "positions_count": len(portfolio_data.get("positions", [])),
+                "positions_count": len(positions),
             },
         )
 
@@ -1803,7 +1682,7 @@ class DecisionMaking:
         
         # Contract v1.0: Extract and cache warmup state
         if isinstance(event.pld, dict):
-            warmup = event.pld.get("warmup", {})
+            warmup = event.pld["warmup"] if "warmup" in event.pld else {}
             self._latest_warmup = warmup
             symbol = event.pld.get("symbol")
             
@@ -1824,24 +1703,17 @@ class DecisionMaking:
                 self._handle_regime_flip(symbol, self._per_symbol_regimes[symbol])
             
             # Guard: Block trades if not full_ready
-            full_ready = bool(warmup.get("full_ready", False)) if self.arming_require_regime_warmup else bool(warmup.get("full_ready", True))
+            full_ready = (
+                bool(warmup["full_ready"] if "full_ready" in warmup else False)
+                if self.arming_require_regime_warmup
+                else bool(warmup["full_ready"] if "full_ready" in warmup else True)
+            )
             if symbol and not full_ready:
+                ticks_seen = warmup["ticks_seen"] if "ticks_seen" in warmup else 0
                 self.logger.info(
                     f"[{symbol}] RegimeContract: warmup phase (full_ready=false, " 
-                    f"ticks={warmup.get('ticks_seen', 0)})"
+                    f"ticks={ticks_seen})"
                 )
-        
-        # Track B: Forward regime to MR handler
-        if self._mr_handler and self._mr_handler.enabled:
-            try:
-                pld = event.pld
-                if isinstance(pld, dict):
-                    symbol = pld.get("symbol")
-                    regime = pld.get("regime") or pld.get("overall_regime")
-                    if symbol and regime:
-                        self._mr_handler.on_regime(symbol, regime)
-            except Exception as e:
-                self.logger.debug(f"Error forwarding regime to MR handler: {e}")
         
         # Minimal behavior FSM mapping (if enabled)
         if self._behavior_enabled and event and event.pld:
@@ -1868,13 +1740,13 @@ class DecisionMaking:
             if not portfolio:
                 return
 
-            pos_list = portfolio.get("positions", [])
+            pos_list = portfolio["positions"] if "positions" in portfolio else []
             curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
             
             if not curr_pos:
                 return
                 
-            qty_val = float(curr_pos.get("positionAmt", 0))
+            qty_val = float(curr_pos["positionAmt"] if "positionAmt" in curr_pos else 0)
             if abs(qty_val) < 1e-9:
                 return
                 
@@ -1940,6 +1812,87 @@ class DecisionMaking:
 
         return is_ready
 
+    def _warmup_not_ready(self, symbol: str, reason: str, *, details: str | None = None) -> None:
+        why = truncate_why(f"WARMUP_NOT_READY:{reason}")
+        inc_warmup_block(domain="decision_making", reason=reason)
+        if details:
+            self.logger.warning(f"[{symbol}] {why} {details}")
+        else:
+            self.logger.warning(f"[{symbol}] {why}")
+
+    def _warmup_gate_before_trade_intent(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        reduce_only: bool,
+        context: str,
+    ) -> bool:
+        """
+        TASK24.B: Fail-closed readiness gate.
+
+        Contract: while NOT_READY → no new TRADE_INTENT_PROPOSED (reduce_only closes allowed).
+        """
+        if reduce_only:
+            return False
+
+        if not self.latest_portfolio:
+            self._warmup_not_ready(symbol, "portfolio_missing", details=f"context={context} rid={rid}")
+            self._record_blocked_intent(symbol)
+            return True
+
+        state = self.symbol_states.get(symbol) or {}
+        features_evt = state.get("features") if isinstance(state, dict) else None
+        if not isinstance(features_evt, dict):
+            self._warmup_not_ready(symbol, "features_missing", details=f"context={context} rid={rid}")
+            self._record_blocked_intent(symbol)
+            return True
+        if not self._features_ready(symbol, features_evt):
+            self._warmup_not_ready(symbol, "features_stale", details=f"context={context} rid={rid}")
+            self._record_blocked_intent(symbol)
+            return True
+
+        risk_evt = state.get("risk") if isinstance(state, dict) else None
+        if risk_evt is None:
+            self._warmup_not_ready(symbol, "risk_missing", details=f"context={context} rid={rid}")
+            self._record_blocked_intent(symbol)
+            return True
+
+        warmup = None
+        if symbol in self._per_symbol_regimes:
+            warmup = self._per_symbol_regimes[symbol].get("warmup")
+        if warmup is None:
+            warmup = aget(self, "_latest_warmup", None)
+
+        warmup_dict = warmup if isinstance(warmup, dict) else None
+        if warmup_dict is None:
+            self._warmup_not_ready(symbol, "regime_warmup_missing", details=f"context={context} rid={rid}")
+            self._record_blocked_intent(symbol)
+            return True
+        if not bool(warmup_dict["full_ready"] if "full_ready" in warmup_dict else False):
+            ticks_seen = warmup_dict["ticks_seen"] if "ticks_seen" in warmup_dict else 0
+            self._warmup_not_ready(
+                symbol,
+                "regime_not_ready",
+                details=f"context={context} rid={rid} ticks_seen={ticks_seen}",
+            )
+            self._record_blocked_intent(symbol)
+            return True
+
+        # FeatureEngineering warmup contract (optional field in EVT:FEATURES_CALCULATED).
+        fe_warmup = features_evt.get("warmup")
+        fe_warmup_dict = fe_warmup if isinstance(fe_warmup, dict) else None
+        if fe_warmup_dict is None:
+            self._warmup_not_ready(symbol, "features_warmup_missing", details=f"context={context} rid={rid}")
+            self._record_blocked_intent(symbol)
+            return True
+        if not bool(fe_warmup_dict["full_ready"] if "full_ready" in fe_warmup_dict else False):
+            self._warmup_not_ready(symbol, "features_not_ready", details=f"context={context} rid={rid}")
+            self._record_blocked_intent(symbol)
+            return True
+
+        return False
+
     def _check_and_trigger_decision_for_symbol(self, symbol: str) -> None:
         if not self.latest_portfolio:
             self.logger.debug(
@@ -1958,7 +1911,7 @@ class DecisionMaking:
             if not features_ready:
                 # XAI instrumentation: features not ready
                 now_ts = time.time() * 1000
-                features_ts = state["features"].get("ts", 0)
+                features_ts = state["features"]["ts"] if "ts" in state["features"] else 0
                 lag_ms = now_ts - features_ts
                 ttl_ms = self.features_ttl_sec * 1000
 
@@ -1974,10 +1927,20 @@ class DecisionMaking:
         # If we have both features and risk, make decision immediately
         # TTL gate enabled: requires fresh features within ttl_sec (default 30s)
         if has_features and has_risk and features_ready:
+            rid = str(uuid.uuid4())
+
+            feats_evt = state["features"] or {}
+            if not isinstance(feats_evt, dict):
+                raise ConfigContractError(path="features", why="Expected dict payload for features event")
+            ts = feats_evt.get("ts")
+            if ts is None:
+                raise ConfigContractError(path="features.ts", why="Missing required ts in features payload", symbol=symbol)
+            ts = int(ts)
+
             # Optional bar gating (e.g., M15) to avoid multiple decisions per bar
             if self._bar_gating_enabled:
                 feats = state["features"] or {}
-                ts = int(feats.get("ts", 0))
+                ts = int(feats["ts"] if "ts" in feats else 0)
                 if ts > 0 and self._bar_ms > 0:
                     bar_index = ts // self._bar_ms
                     last_idx = self._last_bar_index.get(symbol)
@@ -1987,43 +1950,19 @@ class DecisionMaking:
                         return
                     self._last_bar_index[symbol] = bar_index
             
-            # ========== REGIME GATING (Phase 2.2 Fix) ==========
-            # Block trades in disallowed regimes (e.g., ETH in HIGH_VOLATILITY)
             instr_cfg = self._get_aurora_instrument_cfg(symbol)
-            if instr_cfg:
-                allowed_regimes = getattr(instr_cfg, 'allowed_regimes', None)
-                if allowed_regimes:
-                    # Get current regime name FOR THIS SYMBOL (per-symbol regime)
-                    current_regime = None
-                    # First try per-symbol regime cache
-                    if symbol in self._per_symbol_regimes:
-                        current_regime = self._per_symbol_regimes[symbol].get("regime")
-                    # Fallback to global latest_regime (legacy)
-                    elif self.latest_regime and isinstance(self.latest_regime, dict):
-                        current_regime = self.latest_regime.get("regime") or self.latest_regime.get("overall_regime")
-                    
-                    if current_regime and current_regime not in allowed_regimes:
-                        self.logger.info(
-                            f"[{symbol}] REGIME_GATE_BLOCKED: {current_regime} not in {allowed_regimes}"
-                        )
-                        return  # Skip this symbol - regime not allowed
-            # ==================================================
-            
+            is_aurora_symbol = bool(instr_cfg is not None and instr_cfg.enabled)
+
             # ========== CONTRACT v1.0: WARMUP GUARD (AURORA ONLY) ==========
-            # Block trades if RegimeDetector is still in warmup phase
-            # BUGFIX: Only apply to Aurora instruments, not MR strategy
-            is_aurora_symbol = instr_cfg is not None and instr_cfg.enabled
-            
             if is_aurora_symbol:
-                # Get per-symbol warmup state
                 warmup = None
                 if symbol in self._per_symbol_regimes:
                     warmup = self._per_symbol_regimes[symbol].get("warmup")
-                else:
-                    warmup = getattr(self, "_latest_warmup", None)
 
                 warmup_dict = warmup if isinstance(warmup, dict) else None
-                warmup_full_ready = bool(warmup_dict.get("full_ready", False)) if warmup_dict else False
+                warmup_full_ready = bool(
+                    warmup_dict["full_ready"] if warmup_dict and "full_ready" in warmup_dict else False
+                )
 
                 if self.arming_require_regime_warmup and not warmup_full_ready:
                     now_ms = int(time.time() * 1000)
@@ -2042,36 +1981,67 @@ class DecisionMaking:
                         attempt=1,
                         max_attempts=int(self.arming_max_attempts),
                         why_chain=["arming_required", "warmup_not_ready"],
-                        context="decision_making:on_features:warmup_guard",
+                        context="decision_making:_check_and_trigger_decision_for_symbol:warmup_guard",
                     )
                     self._record_blocked_intent(symbol)
                     return
 
-                # Legacy behavior (arming disabled): only block when warmup explicitly says full_ready=false.
-                if (not self.arming_require_regime_warmup) and warmup_dict and (not bool(warmup_dict.get("full_ready", True))):
-                    ticks_seen = warmup_dict.get("ticks_seen", 0)
+                if (
+                    (not self.arming_require_regime_warmup)
+                    and warmup_dict
+                    and (not bool(warmup_dict["full_ready"] if "full_ready" in warmup_dict else True))
+                ):
+                    ticks_seen = warmup_dict["ticks_seen"] if "ticks_seen" in warmup_dict else 0
                     self.logger.info(
                         f"[{symbol}] WARMUP_GUARD_BLOCKED (Aurora): full_ready=false (ticks_seen={ticks_seen})"
                     )
-                    return  # Skip - RegimeDetector not warmed up for Aurora
-                
-                # REMOVED: UNCERTAIN regime block - now handled via allowed_regimes config
-            # ================================================================
-            
-            self.logger.info(
-                f"[{symbol}] ✅ All data ready! Triggering decision...")
-            
-            # Use per-symbol regime with fallback to global
-            symbol_regime = self._per_symbol_regimes.get(symbol, {}) if hasattr(self, '_per_symbol_regimes') else {}
-            effective_regime = symbol_regime if symbol_regime else self.latest_regime
-            
+                    return
+
+            # ========== REGIME GATING (Phase 2.2 Fix) ==========
+            if instr_cfg:
+                allowed_regimes = instr_cfg.allowed_regimes
+                if allowed_regimes:
+                    current_regime = None
+                    if symbol in self._per_symbol_regimes:
+                        current_regime = self._per_symbol_regimes[symbol].get("regime")
+
+                    if not current_regime:
+                        now_ms = int(time.time() * 1000)
+                        retry_key = self._stable_retry_key(prefix="regime", symbol=symbol, rid=rid, ts_ms=ts)
+                        self.logger.warning(
+                            f"[{symbol}] REGIME_GATE_DEFER: missing regime (allowed_regimes={allowed_regimes})"
+                        )
+                        self._emit_intent_deferred_v1(
+                            symbol=symbol,
+                            reason="NRR-REGIME-MISSING",
+                            retry_key=retry_key,
+                            next_allowed_ts=now_ms + max(0, int(self.arming_retry_backoff_ms)),
+                            original_event_name="EVT:ARMING_RECHECK",
+                            original_payload_min={"symbol": symbol, "rid": rid},
+                            attempt=1,
+                            max_attempts=int(self.arming_max_attempts),
+                            why_chain=["arming_required", "regime_missing"],
+                            context="decision_making:_check_and_trigger_decision_for_symbol:regime_gate",
+                        )
+                        self._record_blocked_intent(symbol)
+                        return
+
+                    if current_regime not in allowed_regimes:
+                        self.logger.info(
+                            f"[{symbol}] REGIME_GATE_BLOCKED: {current_regime} not in {allowed_regimes}"
+                        )
+                        return
+            # ==================================================
+            self.logger.info(f"[{symbol}] ✅ All data ready! Triggering decision...")
+
+            effective_regime = self._per_symbol_regimes.get(symbol)
+
             decision_context = {
                 "features": state["features"],
                 "risk_params": state["risk"],
                 "portfolio": self.latest_portfolio,
                 "regime": effective_regime,
             }
-            rid = str(uuid.uuid4())
             self.dlog.write("DECISION_TRIGGER", rid, {"symbol": symbol})
             self._make_decision_for_symbol(symbol, decision_context, rid)
             return
@@ -2080,27 +2050,33 @@ class DecisionMaking:
         if has_features and not has_risk:
             # Check if risk assessment happened recently (within last 30 seconds)
             # This handles the race condition where features arrive after risk assessment
-            risk_assessment_time = getattr(state, '_last_risk_time', 0)
+            risk_assessment_time = state["_last_risk_time"] if "_last_risk_time" in state else 0
             current_time = time.time()
             if current_time - risk_assessment_time < 30:  # 30 second window
-                cached_risk = getattr(state, '_cached_risk', None)
+                cached_risk = state["_cached_risk"] if "_cached_risk" in state else None
                 if cached_risk:
                     self.logger.info(
                         f"[{symbol}] ✅ Using cached risk assessment from "
                         f"{current_time - risk_assessment_time:.1f}s ago")
                     state["risk"] = cached_risk
                     
-                    # Use per-symbol regime with fallback to global
-                    symbol_regime = self._per_symbol_regimes.get(symbol, {}) if hasattr(self, '_per_symbol_regimes') else {}
-                    effective_regime = symbol_regime if symbol_regime else self.latest_regime
-                    
+                    rid = str(uuid.uuid4())
+                    feats_evt = state["features"] or {}
+                    if not isinstance(feats_evt, dict):
+                        raise ConfigContractError(path="features", why="Expected dict payload for features event")
+                    ts = feats_evt.get("ts")
+                    if ts is None:
+                        raise ConfigContractError(path="features.ts", why="Missing required ts in features payload", symbol=symbol)
+                    ts = int(ts)
+
+                    effective_regime = self._per_symbol_regimes.get(symbol)
+
                     decision_context = {
                         "features": state["features"],
                         "risk_params": state["risk"],
                         "portfolio": self.latest_portfolio,
                         "regime": effective_regime,
                     }
-                    rid = str(uuid.uuid4())
                     self.dlog.write("DECISION_TRIGGER", rid, {
                                     "symbol": symbol, "cached_risk": True})
                     self._make_decision_for_symbol(
@@ -2144,18 +2120,22 @@ class DecisionMaking:
             warmup = None
             if symbol in self._per_symbol_regimes:
                 warmup = self._per_symbol_regimes[symbol].get("warmup")
-            else:
-                warmup = getattr(self, "_latest_warmup", None)
 
             warmup_dict = warmup if isinstance(warmup, dict) else None
-            warmup_full_ready = bool(warmup_dict.get("full_ready", False)) if warmup_dict else False
+            warmup_full_ready = bool(warmup_dict["full_ready"] if warmup_dict and "full_ready" in warmup_dict else False)
             if not warmup_full_ready:
                 now_ms = int(time.time() * 1000)
+                features_evt = context["features"] if "features" in context else None
+                if not isinstance(features_evt, dict):
+                    raise ConfigContractError(path="features", why="Missing/invalid features payload in decision context", symbol=symbol)
+                features_evt_ts = features_evt.get("ts")
+                if features_evt_ts is None:
+                    raise ConfigContractError(path="features.ts", why="Missing required ts in features payload", symbol=symbol)
                 retry_key = self._stable_retry_key(
                     prefix="arming",
                     symbol=symbol,
                     rid=rid,
-                    ts_ms=int(context.get("features", {}).get("ts", 0)) or None,
+                    ts_ms=int(features_evt_ts),
                 )
                 reason = "NRR-ARMING-NOT-READY" if warmup_dict else "NRR-ARMING-WARMUP-MISSING"
                 self._emit_intent_deferred_v1(
@@ -2175,7 +2155,7 @@ class DecisionMaking:
 
         # Busy guard: prevent infinite defer loops during cooldown
         current_time_ms = int(time.time() * 1000)  # Convert to milliseconds for comparison
-        next_allowed = self._qos_next_allowed_ts.get(symbol, 0)  # Already in milliseconds
+        next_allowed = self._qos_next_allowed_ts[symbol] if symbol in self._qos_next_allowed_ts else 0  # Already in milliseconds
         if current_time_ms < next_allowed:
             remaining_sec = (next_allowed - current_time_ms) / 1000.0  # Convert back to seconds for logging
             self.logger.warning(
@@ -2187,9 +2167,10 @@ class DecisionMaking:
 
         # Idempotency guard: prevent spam on same features (SSOT)
         features_data = context["features"]["features"]
-        current_features_ts = context["features"].get("ts", 0)
+        features_evt = context["features"]
+        current_features_ts = features_evt["ts"] if "ts" in features_evt else 0
         
-        last_success_ts = self._last_successful_features_ts.get(symbol, 0)
+        last_success_ts = self._last_successful_features_ts[symbol] if symbol in self._last_successful_features_ts else 0
         if current_features_ts > 0 and current_features_ts <= last_success_ts:
             # We already generated a successful intent for this feature snapshot.
             # Don't spam duplication or logs.
@@ -2239,11 +2220,9 @@ class DecisionMaking:
                 # XAI instrumentation: qos_defer
                 cooldown_left_ms = (next_allowed_ts - time.time() *
                                     1000) if next_allowed_ts > time.time() * 1000 else 0
-                symbol_intent_counts: dict[str, Any] = self._qos_state.get(
-                    "symbol_intent_counts", {})
-                intent_data: dict[str, Any] = symbol_intent_counts.get(symbol, {
-                                                                       "count": 0})
-                intent_count: int = int(intent_data.get("count", 0))
+                symbol_intent_counts: dict[str, Any] = dget(self._qos_state, "symbol_intent_counts", {})
+                intent_data: dict[str, Any] = symbol_intent_counts[symbol] if symbol in symbol_intent_counts else {"count": 0}
+                intent_count: int = int(intent_data["count"] if "count" in intent_data else 0)
                 rate_state = f"count={intent_count}"
                 self.logger.warning(
                     format_why_with_details(
@@ -2318,7 +2297,7 @@ class DecisionMaking:
         equity_str = (
             self._cached_equity_free_usdt
             or portfolio.get("equity_free_usdt")
-            or portfolio.get("equity", "0")
+            or (portfolio["equity"] if "equity" in portfolio else "0")
         )
         equity = decimal.Decimal(str(equity_str))
 
@@ -2355,7 +2334,8 @@ class DecisionMaking:
 
         regime = context.get("regime")
 
-        if not risk_params.get("is_trading_allowed", False):
+        is_trading_allowed = bool(risk_params["is_trading_allowed"]) if "is_trading_allowed" in risk_params else False
+        if not is_trading_allowed:
             reject_reason = "Trading not allowed by risk manager"
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
@@ -2410,8 +2390,6 @@ class DecisionMaking:
         if not signal_weights:
              signal_weights = trading_config.decision.signal_weights.model_dump()
 
-        self.logger.info(f"DEBUG signal_weights for {symbol}: {signal_weights}")
-
         # Compute signal score; optionally normalize components into [0,1]
         # FTR-07: Use DecisionContext for typed access to features
         psi_vector: Dict[str, Any] = {}
@@ -2443,7 +2421,8 @@ class DecisionMaking:
             depth_imbalance_phi = ctx.liquidity.depth_imbalance
 
             # macro_sync still from raw dict (not in Views yet)
-            macro_sync_phi = _to_dec(features_data.get("macro_sync", 0))
+            macro_sync_raw = features_data["macro_sync"] if "macro_sync" in features_data else 0
+            macro_sync_phi = _to_dec(macro_sync_raw)
 
             def _norm_m11_to_01(x: decimal.Decimal) -> decimal.Decimal:
                 try:
@@ -2479,7 +2458,7 @@ class DecisionMaking:
                 "macro_sync": macro_sync_phi,
             }
             signal_score = sum(
-                decimal.Decimal(str(phi_map.get(f, 0))) *
+                decimal.Decimal(str(dget(phi_map, f, 0))) *
                 decimal.Decimal(str(w))
                 for f, w in signal_weights.items()
             )
@@ -2507,7 +2486,7 @@ class DecisionMaking:
             }
         else:
             signal_score = sum(
-                decimal.Decimal(str(features_data.get(f, 0.0))) *
+                decimal.Decimal(str(features_data[f] if f in features_data else 0.0)) *
                 decimal.Decimal(str(w))
                 for f, w in signal_weights.items()
             )
@@ -2546,11 +2525,14 @@ class DecisionMaking:
         sell_bias_penalty_factor = decimal.Decimal(str(sell_bias_penalty_factor_raw))
 
         # Track intents per side (you can also extract from order_logger if needed)
-        if symbol not in getattr(self, '_side_intent_window', {}):
-            self._side_intent_window = getattr(self, '_side_intent_window', {})
-            self._side_intent_window[symbol] = {"buys": [], "sells": []}
+        side_intent_window = aget(self, "_side_intent_window", None)
+        if side_intent_window is None:
+            side_intent_window = {}
+            self._side_intent_window = side_intent_window
+        if symbol not in side_intent_window:
+            side_intent_window[symbol] = {"buys": [], "sells": []}
 
-        window_data = self._side_intent_window[symbol]
+        window_data = side_intent_window[symbol]
         # Remove old entries outside the window
         window_data["buys"] = [ts for ts in window_data["buys"]
                                if current_time - ts < bias_window_sec]
@@ -2711,9 +2693,10 @@ class DecisionMaking:
         # Attach PSI snapshot and regime info for explainability
         if self.latest_regime:
             try:
+                regime_conf_raw = regime["confidence"] if (isinstance(regime, dict) and "confidence" in regime) else 0
                 psi_vector.update({
                     "regime": regime.get("regime") if regime else None,
-                    "regime_conf": float(decimal.Decimal(str((regime or {}).get("confidence", 0))))
+                    "regime_conf": float(decimal.Decimal(str(regime_conf_raw)))
                 })
             except Exception:
                 pass
@@ -2733,7 +2716,7 @@ class DecisionMaking:
             current_regime = regime.get("regime")
             # Optional behavior FSM gate: allow entry only in IdleFlat
             if self._behavior_enabled:
-                beh = self._behavior_state.get(symbol, "IdleFlat")
+                beh = self._behavior_state[symbol] if symbol in self._behavior_state else "IdleFlat"
                 if beh != "IdleFlat":
                     reject_reason = f"behavior_gate_{beh}_disallows_entry"
                     normalized_reason = NormalizedRejectReasons.normalize(
@@ -2809,13 +2792,11 @@ class DecisionMaking:
         try:
             sizing_mods = self._get_regime_sizing(symbol)
             if regime_name not in sizing_mods:
-                  raise ConfigContractError(path=f"regime.multipliers.{symbol}.{regime_name}", why="Missing specific regime multiplier", symbol=symbol)
+                raise ConfigContractError(path=f"regime.multipliers.{symbol}.{regime_name}", why="Missing specific regime multiplier", symbol=symbol)
             sizing_meta["regime_multiplier"] = decimal.Decimal(str(sizing_mods[regime_name]))
         except Exception:
             pass
         # Kelly fraction (optional): derive from config when available
-        # Kelly fraction (optional): derive from config when available (Strict)
-        # Kelly fraction (optional): derive from config when available (Strict)
         try:
             kelly_cfg = self.config.trading.decision.kelly
             if kelly_cfg.base_probability is not None:
@@ -2823,13 +2804,21 @@ class DecisionMaking:
                 cap = decimal.Decimal(str(kelly_cfg.kelly_cap))
                 alpha = decimal.Decimal(str(kelly_cfg.kelly_alpha))
 
-                brackets_cfg = self.config.trading.execution.brackets
-                if not brackets_cfg.sl.fixed_bps:
-                     raise ConfigContractError(path="trading.execution.brackets.sl.fixed_bps", why="Missing fixed_bps", symbol=symbol)
+                exec_cfg = self.config.trading.execution
+                manage_cfg = exec_cfg.manage if exec_cfg is not None else None
+                brackets_cfg = manage_cfg.brackets if manage_cfg is not None else None
+                if brackets_cfg is None:
+                    raise ConfigContractError(
+                        path="trading.execution.manage.brackets",
+                        why="Missing brackets config",
+                        symbol=symbol,
+                    )
+                if not (brackets_cfg.sl and brackets_cfg.sl.fixed_bps):
+                    raise ConfigContractError(path="trading.execution.manage.brackets.sl.fixed_bps", why="Missing fixed_bps", symbol=symbol)
                 sl_bps_val = decimal.Decimal(str(brackets_cfg.sl.fixed_bps))
 
-                if not brackets_cfg.tp.fixed_bps:
-                     raise ConfigContractError(path="trading.execution.brackets.tp.fixed_bps", why="Missing fixed_bps", symbol=symbol)
+                if not (brackets_cfg.tp and brackets_cfg.tp.fixed_bps):
+                    raise ConfigContractError(path="trading.execution.manage.brackets.tp.fixed_bps", why="Missing fixed_bps", symbol=symbol)
                 tp_bps_val = decimal.Decimal(str(brackets_cfg.tp.fixed_bps))
 
                 if sl_bps_val <= 0:
@@ -2872,7 +2861,7 @@ class DecisionMaking:
             # Edge condition: p * (r+1) - 1 > 0  => p > 1/(r+1)
             # If not met, f* <= 0.
             if full_kelly < 0:
-                 full_kelly = decimal.Decimal("0")
+                full_kelly = decimal.Decimal("0")
 
             kelly_fraction = full_kelly * alpha
             kelly_fraction = max(decimal.Decimal("0"), min(cap, kelly_fraction))
@@ -3017,7 +3006,7 @@ class DecisionMaking:
     ) -> tuple[Optional[decimal.Decimal], str]:
         why_chain = []
         portfolio = context["portfolio"]
-        equity = decimal.Decimal(str(portfolio.get("equity", "0")))
+        equity = decimal.Decimal(str(portfolio["equity"] if "equity" in portfolio else "0"))
 
 
 
@@ -3029,8 +3018,12 @@ class DecisionMaking:
         kappa_liq = float(pos_config.liquidity_kappa)
         if kappa_mode == "dynamic":
             try:
-                features_event = context.get("features", {}) or {}
-                feats = features_event.get("features", {}) or {}
+                features_event = context["features"] if ("features" in context and context["features"]) else {}
+                feats = (
+                    features_event["features"]
+                    if (isinstance(features_event, dict) and "features" in features_event and features_event["features"])
+                    else {}
+                )
                 lk = feats.get("liquidity_kappa")
                 if lk is not None:
                     kappa_liq = decimal.Decimal(str(lk))
@@ -3050,8 +3043,11 @@ class DecisionMaking:
                 kappa_dec = decimal.Decimal("1")
 
             # brackets may be absent in some configs; guard accordingly
-            # brackets: trading.execution.brackets.sl.fixed_bps
-            sl_bps_val = self.config.trading.execution.brackets.sl.fixed_bps
+            # brackets: trading.execution.manage.brackets.sl.fixed_bps
+            exec_cfg = self.config.trading.execution
+            manage_cfg = exec_cfg.manage if exec_cfg is not None else None
+            brackets_cfg = manage_cfg.brackets if manage_cfg is not None else None
+            sl_bps_val = brackets_cfg.sl.fixed_bps if (brackets_cfg and brackets_cfg.sl) else None
             try:
                 sl_bps_dec = decimal.Decimal(str(sl_bps_val))
             except Exception:
@@ -3063,7 +3059,7 @@ class DecisionMaking:
                      ) if sl_bps_dec else decimal.Decimal("0.005")
             q_notional = (q_dec * equity / denom)
             # Kelly path (if provided)
-            sizing_meta = context.get("_sizing_meta", {}) or {}
+            sizing_meta = context["_sizing_meta"] if ("_sizing_meta" in context and context["_sizing_meta"]) else {}
             kelly_fraction = sizing_meta.get("kelly_fraction")
             if isinstance(kelly_fraction, decimal.Decimal) and kelly_fraction > 0:
                 kelly_notional = kelly_fraction * equity
@@ -3120,8 +3116,9 @@ class DecisionMaking:
             # Apply liquidity cap as a hard ceiling
             if final_pos_size_usd > self.liq_cap_usd:
                 final_pos_size_usd = self.liq_cap_usd
+            regime_multiplier_disp = sizing_meta["regime_multiplier"] if "regime_multiplier" in sizing_meta else "N/A"
             why_parts.append(
-                f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={sizing_meta.get('regime_multiplier','N/A')} m_vol={volatility_multiplier} kappa={kappa_dec}")
+                f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={regime_multiplier_disp} m_vol={volatility_multiplier} kappa={kappa_dec}")
         else:
             final_pos_size_usd = min(
                 self.liq_cap_usd, equity * decimal.Decimal("0.1")
@@ -3233,12 +3230,23 @@ class DecisionMaking:
             )
             self._record_blocked_intent(symbol)
             return
+
+        if self._warmup_gate_before_trade_intent(
+            symbol=symbol,
+            rid=rid,
+            reduce_only=reduce_only,
+            context="decision_making:_propose_trade_intent",
+        ):
+            return
         
         # Z-01 FIX: Read tca_prefs from config (Strict P1)
         tca = self._tca_prefs
         # Safe extraction helper (handles dict or Pydantic)
         def _get_strict(obj, key, err_msg):
-            val = getattr(obj, key, None) if hasattr(obj, key) else (obj.get(key) if isinstance(obj, dict) else None)
+            if isinstance(obj, dict):
+                val = obj[key] if key in obj else None
+            else:
+                val = aget(obj, key, None)
             if val is None:
                 raise ValueError(err_msg)
             return val
@@ -3322,14 +3330,16 @@ class DecisionMaking:
         if not self.latest_portfolio:
             return "UNKNOWN"
             
-        pos_list = self.latest_portfolio.get("positions", [])
+        portfolio = self.latest_portfolio
+        pos_list = portfolio["positions"] if (isinstance(portfolio, dict) and "positions" in portfolio) else []
         curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
         
         if not curr_pos:
             return "FLAT"
             
         try:
-            qty = float(curr_pos.get("positionAmt", 0))
+            qty_val = curr_pos["positionAmt"] if "positionAmt" in curr_pos else 0
+            qty = float(qty_val)
         except (ValueError, TypeError):
             return "UNKNOWN"
             
@@ -3363,9 +3373,11 @@ class DecisionMaking:
         close_side = "SELL" if pos_state == "LONG" else "BUY"
         
         # Get qty from portfolio
-        pos_list = self.latest_portfolio.get("positions", [])
+        portfolio = self.latest_portfolio
+        pos_list = portfolio["positions"] if (isinstance(portfolio, dict) and "positions" in portfolio) else []
         curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
-        qty = abs(float(curr_pos.get("positionAmt", 0)))
+        qty_val = curr_pos["positionAmt"] if (curr_pos and "positionAmt" in curr_pos) else 0
+        qty = abs(float(qty_val))
         
         self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Emitting CLOSE {close_side} {qty} (reduce_only)")
         
@@ -3411,11 +3423,14 @@ class DecisionMaking:
         context: str | None = None,
     ) -> None:
         now_ms = int(time.time() * 1000)
-        # Strict Config
         try:
-             ttl_ms = self.config.trading.decision.retry_ttl_ms
-        except AttributeError:
-             ttl_ms = 300_000
+            ttl_ms = int(self.config.trading.decision.retry_ttl_ms)
+        except AttributeError as e:
+            raise ConfigContractError(
+                path="trading.decision.retry_ttl_ms",
+                why=f"Missing required strict config field: {e}",
+                symbol=symbol,
+            )
         payload: Dict[str, Any] = {
             "retry_key": retry_key,
             "symbol": symbol,
@@ -3438,7 +3453,7 @@ class DecisionMaking:
         }
         if context:
             payload["context"] = context
-        self.fsm.emit("EVT:INTENT_DEFERRED", payload)
+        self.fsm.emit("EVT:INTENT_DEFERRED", payload, why=f"intent_deferred:{reason}")
 
     def _schedule_open_retry(self, symbol: str, original_context: dict, cooldown_ms: int, reason: str) -> None:
         """Emit EVT:INTENT_DEFERRED to schedule retry after close."""
@@ -3461,7 +3476,7 @@ class DecisionMaking:
         }
         
         self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Deferring OPEN until {next_ts} (reason: {reason})")
-        self.fsm.emit("EVT:INTENT_DEFERRED", payload)
+        self.fsm.emit("EVT:INTENT_DEFERRED", payload, why=f"intent_deferred:{reason}")
 
     def clear_internal_state_for_symbol(self, symbol: str) -> None:
         # Do not clear state - it serves as SSOT cache for MR Gateway and other async strategies.
@@ -3502,15 +3517,14 @@ class DecisionMaking:
         blocked_pct = (self.intents_blocked_total /
                        self.intents_seen_total) * 100
         # Use lower threshold for testnet mode to increase exploration
+        mode = "production"
         try:
-            if hasattr(self.config, 'trading') and self.config.trading:
-                mode = self.config.trading.mode if hasattr(
-                    self.config.trading, 'mode') else "production"
-            elif isinstance(self.config, dict):
-                mode = self.config.trading.mode
-            else:
-                mode = "production"
-        except (AttributeError, TypeError):
+            trading = aget(self.config, "trading", None)
+            if trading:
+                mode_val = aget(trading, "mode", None)
+                if mode_val is not None:
+                    mode = str(mode_val)
+        except Exception:
             mode = "production"
 
         threshold_pct = 20.0 if mode == "testnet" else 50.0  # Lower threshold for testnet
@@ -3537,7 +3551,7 @@ class DecisionMaking:
         """Update exposure cache from EVT:EXPOSURE_SUMMARY_UPDATED events."""
         try:
             payload = event.pld or {}
-            exposure_summary = payload.get("exposure_summary", {})
+            exposure_summary = payload["exposure_summary"] if "exposure_summary" in payload else {}
             if exposure_summary:
                 self._exposure_cache = exposure_summary
                 self._exposure_cache_timestamp = time.time()
@@ -3565,10 +3579,9 @@ class DecisionMaking:
                 return True
 
             # Get exposure data for symbol
-            symbol_exposure = self._exposure_cache.get(symbol, {})
-            current_exposure = symbol_exposure.get("current_exposure_usd", 0.0)
-            max_exposure = symbol_exposure.get(
-                "max_exposure_usd", float('inf'))
+            symbol_exposure = self._exposure_cache[symbol] if symbol in self._exposure_cache else {}
+            current_exposure = symbol_exposure["current_exposure_usd"] if "current_exposure_usd" in symbol_exposure else 0.0
+            max_exposure = symbol_exposure["max_exposure_usd"] if "max_exposure_usd" in symbol_exposure else float("inf")
 
             # Calculate projected exposure after this trade
             projected_exposure = current_exposure + notional_usd
@@ -3657,7 +3670,12 @@ class DecisionMaking:
         
         # Get stale TTL for retry delay
         # Get stale TTL for retry delay (Strict)
-        stale_ttl_sec = float(getattr(self.config.domains.position_tracking, 'positions_stale_ttl_sec', 5.0))
+        stale_ttl_raw = aget(
+            self.config.domains.position_tracking,
+            "positions_stale_ttl_sec",
+            None,
+        )
+        stale_ttl_sec = float(stale_ttl_raw) if stale_ttl_raw is not None else 5.0
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
         
         # Prepare minimal original event for deferred retry
@@ -3716,7 +3734,12 @@ class DecisionMaking:
         
         # Get stale TTL for retry delay
         # Get stale TTL for retry delay (Strict)
-        stale_ttl_sec = float(getattr(self.config.domains.position_tracking, 'positions_stale_ttl_sec', 5.0))
+        stale_ttl_raw = aget(
+            self.config.domains.position_tracking,
+            "positions_stale_ttl_sec",
+            None,
+        )
+        stale_ttl_sec = float(stale_ttl_raw) if stale_ttl_raw is not None else 5.0
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
         
         self.logger.info(
@@ -3729,7 +3752,7 @@ class DecisionMaking:
             "symbol": symbol,
             "reason": "FLIP_CLOSE",
             "retry_key": retry_key,  # For idempotency
-            "rid": original_pld.get("rid", f"flip_close_{retry_key}"),
+            "rid": original_pld["rid"] if "rid" in original_pld else f"flip_close_{retry_key}",
         }
         
         self.fsm.emit("CMD:CLOSE", close_pld)
@@ -3740,16 +3763,21 @@ class DecisionMaking:
             "payload_min": {
                 "symbol": symbol,
                 "side": intent_side,
-                "qty_hint": original_pld.get("qty_hint", original_pld.get("position_size_usd")),
+                "qty_hint": (
+                    original_pld["qty_hint"]
+                    if "qty_hint" in original_pld
+                    else (original_pld["position_size_usd"] if "position_size_usd" in original_pld else None)
+                ),
                 "price_ctx": original_pld.get("price_ctx"),
-                "strategy_id": original_pld.get("strategy_id", source),
+                "strategy_id": original_pld["strategy_id"] if "strategy_id" in original_pld else source,
                 "cooldown_class": "flip",
-                "rid": original_pld.get("rid", f"flip_{retry_key}"),
+                "rid": original_pld["rid"] if "rid" in original_pld else f"flip_{retry_key}",
             }
         }
         
         # Build why_chain for debugging
-        why_chain = original_pld.get("why_chain", []).copy() if isinstance(original_pld.get("why_chain"), list) else []
+        why_chain_raw = original_pld.get("why_chain")
+        why_chain = why_chain_raw.copy() if isinstance(why_chain_raw, list) else []
         why_chain.extend(["opposite_position_exists", "flip_close_emitted"])
         
         self._emit_intent_deferred_v1(
@@ -3798,17 +3826,18 @@ class DecisionMaking:
                 )
                 return False  # NOT FLAT - will trigger DEFER
             
-            positions = self.latest_portfolio.get("positions", [])
+            portfolio = self.latest_portfolio
+            positions = portfolio["positions"] if (isinstance(portfolio, dict) and "positions" in portfolio) else []
             if not positions:
                 return True  # Empty positions = confirmed FLAT
             
             for pos in positions:
-                pos_symbol = pos.get("symbol", "")
+                pos_symbol = pos["symbol"] if "symbol" in pos else ""
                 if pos_symbol != symbol:
                     continue
                     
                 # Check positionAmt (Binance format)
-                qty_str = pos.get("positionAmt", "0")
+                qty_str = pos["positionAmt"] if "positionAmt" in pos else "0"
                 try:
                     qty = abs(float(qty_str))
                 except (ValueError, TypeError):
@@ -3845,7 +3874,7 @@ class DecisionMaking:
             # Direct Pydantic access
             risk_skew = self.config.domains.decision_making.risk_skew
             if risk_skew:
-                return getattr(risk_skew, key, default)
+                return aget(risk_skew, key, default)
             return default
         except (AttributeError, TypeError):
             # Risk skew optional feature
@@ -3872,8 +3901,8 @@ class DecisionMaking:
             )
         
         spec = instruments[symbol]
-        tick_size = getattr(spec, 'tick_size', None)
-        step_size = getattr(spec, 'step_size', None)
+        tick_size = aget(spec, "tick_size", None)
+        step_size = aget(spec, "step_size", None)
         
         if tick_size is None or step_size is None:
             raise ValueError(

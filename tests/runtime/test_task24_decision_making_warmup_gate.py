@@ -1,0 +1,74 @@
+import logging
+import time
+
+
+def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
+    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+
+    blocks: list[tuple[str, str]] = []
+
+    def _fake_inc_warmup_block(*, domain: str, reason: str) -> None:
+        blocks.append((domain, reason))
+
+    monkeypatch.setattr(
+        "apps.reference.domains.decision_making.decision_making.inc_warmup_block",
+        _fake_inc_warmup_block,
+    )
+
+    dm = DecisionMaking.__new__(DecisionMaking)
+    dm.logger = logging.getLogger("tests.task24.decision_making")
+
+    dm.features_ttl_sec = 60
+    dm.latest_portfolio = {"ok": True}
+    dm.symbol_states = {}
+    dm._per_symbol_regimes = {}
+    dm._latest_warmup = {"full_ready": False, "ticks_seen": 1}
+    dm._record_blocked_intent = lambda _symbol: None
+
+    symbol = "BTCUSDT"
+    now_ms = int(time.time() * 1000)
+    dm.symbol_states[symbol] = {
+        "features": {"ts": now_ms, "warmup": {"full_ready": True}},
+        "risk": {},
+    }
+
+    blocked = dm._warmup_gate_before_trade_intent(
+        symbol=symbol,
+        rid="rid-1",
+        reduce_only=False,
+        context="test",
+    )
+    assert blocked is True
+    assert any(domain == "decision_making" and reason == "regime_not_ready" for domain, reason in blocks)
+
+
+def test_decision_making_reduce_only_bypasses_warmup_gate(monkeypatch):
+    from apps.reference.domains.decision_making.decision_making import DecisionMaking
+
+    called = {"n": 0}
+
+    def _fake_inc_warmup_block(*, domain: str, reason: str) -> None:
+        called["n"] += 1
+
+    monkeypatch.setattr(
+        "apps.reference.domains.decision_making.decision_making.inc_warmup_block",
+        _fake_inc_warmup_block,
+    )
+
+    dm = DecisionMaking.__new__(DecisionMaking)
+    dm.logger = logging.getLogger("tests.task24.decision_making")
+    dm.latest_portfolio = None
+    dm.symbol_states = {}
+    dm._per_symbol_regimes = {}
+    dm._latest_warmup = None
+    dm._record_blocked_intent = lambda _symbol: None
+
+    blocked = dm._warmup_gate_before_trade_intent(
+        symbol="BTCUSDT",
+        rid="rid-2",
+        reduce_only=True,
+        context="test",
+    )
+    assert blocked is False
+    assert called["n"] == 0
+

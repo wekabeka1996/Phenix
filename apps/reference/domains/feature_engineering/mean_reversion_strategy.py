@@ -266,7 +266,7 @@ class MeanReversion1mStrategy:
     
     def get_regime(self, symbol: str) -> str:
         """Get current regime for symbol."""
-        return self._regimes.get(symbol, "UNCERTAIN")
+        return self._regimes[symbol] if symbol in self._regimes else "UNCERTAIN"
     
     def on_tick(
         self,
