@@ -95,8 +95,9 @@ SOLUSDT:
     target_ratio: 0.5
   
   regime_sizing:
-    HIGH_VOLATILITY: 0.6      # Reduce risk in high vol
-    LOW_VOLATILITY: 2.0       # Aggressive sizing in low vol
+    HIGH_VOLATILITY: 5.0      # $169.35 - enough for 1 SOL minimum
+    LOW_VOLATILITY: 6.0       # $203.22 - aggressive sizing
+    MEAN_REVERSION: 5.0       # $169.35 - balanced
 
   exit:
     sl_pct: 0.027             # 2.7% stop-loss
@@ -268,12 +269,14 @@ BTCUSDT:
   regime_thresholds:
     HIGH_VOLATILITY: 1.2
     LOW_VOLATILITY: 0.9
+    # TEMP: lowered to verify MR (mean-reversion regime) order placement in shadow-live
+    MEAN_REVERSION: 0.5
     DEFAULT: 1.0
 
   regime_sizing:
-    HIGH_VOLATILITY: 0.5
-    LOW_VOLATILITY: 1.5
-    MEAN_REVERSION: 1.0
+    HIGH_VOLATILITY: 3.0      # $101.61 - enough for BTC minimum
+    LOW_VOLATILITY: 4.0       # $135.48 - aggressive sizing
+    MEAN_REVERSION: 3.5       # $118.55 - balanced
 
   exit:
     sl_pct: 0.02
@@ -290,7 +293,7 @@ BTCUSDT:
     trail_pct: 0.01
     min_update_interval_sec: 5
 
-  allowed_regimes: ["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "FLAT_LOW", "FLAT_NORMAL"]
+  allowed_regimes: ["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "MEAN_REVERSION", "FLAT_LOW", "FLAT_NORMAL"]
 
   execution: null
   ema_clamp: null

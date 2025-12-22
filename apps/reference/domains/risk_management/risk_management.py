@@ -63,6 +63,23 @@ class RiskManagement:
         from apps.reference.domain_config import DomainConfigResolver
         self.resolver = DomainConfigResolver(config)
         self.domain_config = self.resolver.get_risk_management()
+
+        # TASK47: DEV/SHADOW ONLY — disable daily loss/drawdown gate (never enable in live/prod).
+        self._debug_disable_daily_loss_limit = bool(
+            getattr(getattr(config.domains, "debug", None), "disable_daily_loss_limit", False)
+        )
+        if self._debug_disable_daily_loss_limit:
+            self.logger.warning(
+                "TASK47: DEBUG OVERRIDE ACTIVE: disable_daily_loss_limit=True (DEV/SHADOW ONLY)"
+            )
+            try:
+                self.fsm.emit(
+                    "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
+                    payload={"flag": "disable_daily_loss_limit", "why": "daily_loss_gate_disabled"},
+                    why="debug_override_active",
+                )
+            except Exception:
+                pass
         
         # ETAP4: Unified Daily Risk State
         from apps.reference.domains.risk_management.daily_gate import DailyRiskState
@@ -190,22 +207,43 @@ class RiskManagement:
         daily_allowed, daily_reason = self.daily_risk_state.can_open()
         
         if not daily_allowed:
-            # Blocked by Daily Gate (Enforced or Legacy)
-            self.logger.critical(
-                f"PORTFOLIO RISK BLOCK: {daily_reason.get('detail')} - {daily_reason.get('why')}"
-            )
-            # Log specific why code
-            detail = daily_reason["detail"] if "detail" in daily_reason else "UNKNOWN"
-            val = daily_reason["drawdown_pct"] if "drawdown_pct" in daily_reason else "0"
-            limit = daily_reason["limit_pct"] if "limit_pct" in daily_reason else "0"
-            
-            logger.warning(
-                format_why_with_details(
-                    WhyCode.RISK_DRAWDOWN_LIMIT if "DRAWDOWN" in str(detail) else WhyCode.RISK_NOT_ALLOWED,
-                    f"gate={detail} value={val} limit={limit}"
+            if getattr(self, "_debug_disable_daily_loss_limit", False):
+                # DEV/SHADOW override: allow opens but surface the would-block reason.
+                self.logger.warning(
+                    f"TASK47: Daily gate would block ({daily_reason.get('detail')}), "
+                    "but override active; allowing (why=daily_loss_gate_disabled)"
                 )
-            )
-            return {"is_trading_allowed": False}
+                try:
+                    self.fsm.emit(
+                        "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
+                        payload={
+                            "flag": "disable_daily_loss_limit",
+                            "why": "daily_loss_gate_disabled",
+                        },
+                        why="debug_override_active",
+                    )
+                except Exception:
+                    pass
+                daily_reason = dict(daily_reason or {})
+                daily_reason["would_block"] = True
+                daily_reason["would_block_reason"] = daily_reason.get("why") or "daily_gate_blocked"
+            else:
+                # Blocked by Daily Gate (Enforced or Legacy)
+                self.logger.critical(
+                    f"PORTFOLIO RISK BLOCK: {daily_reason.get('detail')} - {daily_reason.get('why')}"
+                )
+                # Log specific why code
+                detail = daily_reason["detail"] if "detail" in daily_reason else "UNKNOWN"
+                val = daily_reason["drawdown_pct"] if "drawdown_pct" in daily_reason else "0"
+                limit = daily_reason["limit_pct"] if "limit_pct" in daily_reason else "0"
+                
+                logger.warning(
+                    format_why_with_details(
+                        WhyCode.RISK_DRAWDOWN_LIMIT if "DRAWDOWN" in str(detail) else WhyCode.RISK_NOT_ALLOWED,
+                        f"gate={detail} value={val} limit={limit}"
+                    )
+                )
+                return {"is_trading_allowed": False}
             
         # Check shadow mode warning
         if bool(daily_reason["would_block"]) if "would_block" in daily_reason else False:

@@ -1,5 +1,12 @@
 # Domain-specific configurations
 
+debug:
+  # DEV/SHADOW ONLY: disables position stale gate. Never enable in live.
+  disable_positions_stale_gate: false
+
+  # DEV/SHADOW ONLY: disables daily drawdown/loss limit gate. Never enable in live.
+  disable_daily_loss_limit: false
+
 decision_making:
   position_sizing:
     min_position_size_usd: 10
@@ -9,6 +16,10 @@ decision_making:
     kappa_mode: dynamic
     liquidity_kappa_mode: dynamic
     risk_contract_v1: null
+    sizing:
+      # TASK42: 5% equity, no fixed_qty, no fixed_notional
+      mode: percent_equity
+      percent_equity: 0.05
   
   qos:
     exposure_block_cooldown_sec: 10
@@ -174,6 +185,15 @@ execution_position:
   
   order_index:
     ttl_sec: 3600
+  
+  # TASK51-C: In-flight order reconciliation config
+  inflight_reconcile:
+    inflight_ttl_sec: 60      # TTL before reconciliation check (seconds)
+    max_ttl_sec: 120          # Force-clear after this TTL (seconds)
+    reconcile_interval_sec: 10  # Interval between reconcile attempts
+    reconcile_retries: 3      # Number of REST retries
+    reconcile_backoff_ms: 500 # Backoff between retries
+    verbose_logging: true     # Log reconciliation details
   
   metrics_collector:
     window_size_minutes: 60

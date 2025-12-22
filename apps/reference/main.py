@@ -111,6 +111,26 @@ class AuroraBridge:
         from apps.reference.domain_config import DomainConfigResolver
         resolver = DomainConfigResolver(config)
         self._ttl_sec = int(resolver.get_position_tracking().positions_stale_ttl_sec)
+
+        # TASK47: DEV/SHADOW ONLY — disable portfolio stale TTL gate (never enable in live/prod).
+        self._debug_disable_positions_stale_gate = bool(
+            getattr(getattr(config.domains, "debug", None), "disable_positions_stale_gate", False)
+        )
+        if self._debug_disable_positions_stale_gate:
+            self.logger.warning(
+                "TASK47: DEBUG OVERRIDE ACTIVE: disable_positions_stale_gate=True (DEV/SHADOW ONLY)"
+            )
+            try:
+                self.fsm.emit(
+                    "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
+                    payload={
+                        "flag": "disable_positions_stale_gate",
+                        "why": "portfolio_stale_gate_disabled",
+                    },
+                    why="debug_override_active",
+                )
+            except Exception:
+                pass
         
         # D2: Initialize reliable retry scheduler (strict object config)
         retry_config = config.bridge.retry_scheduler
@@ -173,6 +193,83 @@ class AuroraBridge:
         next_allowed_ts = self._qos_next_allowed_ts_per_symbol.get(symbol, 0)
         current_ts = int(time.time() * 1000)
         return current_ts >= next_allowed_ts
+
+    # =========================================================================
+    # TASK47c-C: Capacity Gate (L1)
+    # =========================================================================
+    
+    def _check_capacity_gate(self, intent_msg: Message) -> tuple[bool, str, str]:
+        """Check if intent passes capacity gate (max_notional by leverage).
+        
+        TASK47c-C: Capacity Gate L1 implementation.
+        Formula: max_notional = equity_free_usdt * target_leverage * max_notional_utilization
+        
+        Args:
+            intent_msg: TRADE_INTENT_PROPOSED message
+            
+        Returns:
+            Tuple of (allowed: bool, reason: str, log_details: str)
+            - allowed=True: proceed to dispatch
+            - allowed=False: drop with reason
+        """
+        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol") or ""
+        order_details = intent_msg.pld.get("order", {})
+        
+        # 1. Get notional from payload or calculate
+        notional = intent_msg.pld.get("notional") or order_details.get("notional")
+        
+        if notional is None:
+            # Calculate from qty * price_ref
+            qty = order_details.get("qty")
+            price_ref = (
+                order_details.get("price_ref")
+                or intent_msg.pld.get("price_ref")
+                or intent_msg.pld.get("entry_price")
+                or order_details.get("price")
+                or intent_msg.pld.get("price")
+            )
+            
+            if qty is None or price_ref is None:
+                return (False, "missing_price_ref", f"symbol={symbol} qty={qty} price_ref={price_ref}")
+            
+            try:
+                notional = abs(float(qty)) * float(price_ref)
+            except (TypeError, ValueError) as e:
+                return (False, "invalid_qty_price", f"symbol={symbol} qty={qty} price_ref={price_ref} error={e}")
+        else:
+            notional = float(notional)
+        
+        # 2. Get per-instrument execution config (TASK47c-A SSOT)
+        instrument_specs = self.config.instruments.get(symbol) if self.config.instruments else None
+        if instrument_specs is None:
+            return (False, "missing_instrument_config", f"symbol={symbol} not in instruments")
+        
+        execution_config = getattr(instrument_specs, "execution", None)
+        if execution_config is None:
+            return (False, "missing_execution_config", f"symbol={symbol} has no execution config")
+        
+        target_leverage = execution_config.target_leverage
+        max_notional_utilization = execution_config.max_notional_utilization
+        
+        # 3. Get equity_free_usdt from portfolio
+        equity_free_usdt = self._last_portfolio.get("equity_free_usdt", 0)
+        if equity_free_usdt <= 0:
+            # Defensive: no equity data = fail-closed
+            return (False, "missing_equity_data", f"symbol={symbol} equity_free_usdt={equity_free_usdt}")
+        
+        # 4. Calculate max_notional
+        max_notional = equity_free_usdt * target_leverage * max_notional_utilization
+        
+        # 5. Compare
+        log_details = (
+            f"symbol={symbol} notional={notional:.2f} max_notional={max_notional:.2f} "
+            f"equity={equity_free_usdt:.2f} leverage={target_leverage} utilization={max_notional_utilization}"
+        )
+        
+        if notional > max_notional:
+            return (False, "capacity_exceeded", log_details)
+        
+        return (True, "ok", log_details)
 
     async def on_portfolio_state_updated(self, event: Message) -> None:
         """Handle fresh portfolio updates and flush deferred intents."""
@@ -331,6 +428,27 @@ class AuroraBridge:
             self._dispatch_open(event)
             return
 
+        # TASK47: DEV/SHADOW override — do NOT block on stale/missing portfolio.
+        if getattr(self, "_debug_disable_positions_stale_gate", False):
+            self.logger.warning(
+                "BRIDGE: portfolio stale but override active; proceeding OPEN (why=portfolio_stale_gate_disabled)"
+            )
+            try:
+                override_evt = Message(
+                    op="EVT",
+                    verb="CONFIG_DEBUG_OVERRIDE_ACTIVE",
+                    src="bridge",
+                    dst="*",
+                    rid=event.rid,
+                    pld={"flag": "disable_positions_stale_gate", "why": "portfolio_stale_gate_disabled"},
+                    why="debug_override_active",
+                )
+                await emit_compat(self.fsm, override_evt, logger=self.logger)
+            except Exception:
+                pass
+            self._dispatch_open(event)
+            return
+
         # Portfolio stale - defer the intent
         key = event.pld.get("idempotent_key") or event.rid or str(time.time())
         self._deferred[key] = event
@@ -393,7 +511,7 @@ class AuroraBridge:
 
     async def _flush_deferred_if_fresh(self) -> None:
         """Flush deferred intents if portfolio is now fresh and QoS allows."""
-        if not self._is_portfolio_fresh():
+        if not self._is_portfolio_fresh() and not getattr(self, "_debug_disable_positions_stale_gate", False):
             return
 
         dropped_count = 0
@@ -475,6 +593,35 @@ class AuroraBridge:
             self._dispatch_close(intent_msg)
             return
 
+        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol") or ""
+        
+        # TASK47c-C: Capacity Gate - check before proceeding
+        allowed, reason, log_details = self._check_capacity_gate(intent_msg)
+        if not allowed:
+            # Log structured capacity gate rejection
+            self.logger.warning(f"CAPACITY_GATE_REJECT: {log_details}")
+            
+            # Emit INTENT_DROPPED
+            drop_evt = Message(
+                op="EVT",
+                verb="INTENT_DROPPED",
+                src="bridge",
+                dst="*",
+                rid=intent_msg.rid,
+                pld={
+                    "reason": reason,
+                    "symbol": symbol,
+                    "idempotent_key": intent_msg.pld.get("idempotent_key"),
+                    "details": log_details[:80],  # Truncate to 80 chars
+                },
+                why=f"capacity_gate_{reason}"[:80],
+            )
+            try:
+                self.fsm.emit("EVT:INTENT_DROPPED", drop_evt.pld, drop_evt.why)
+            except Exception as e:
+                self.logger.error(f"Failed to emit INTENT_DROPPED: {e}")
+            return
+
         self.logger.info(
             f"BRIDGE: Converting TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {intent_msg.pld.get('instrument', 'unknown')} to CMD:OPEN"
         )
@@ -512,6 +659,11 @@ class AuroraBridge:
             "target_price": intent_msg.pld.get("target_price"),
             "sl_pct": intent_msg.pld.get("sl_pct"),
         }
+
+        # TASK40: Use the business rid (from payload) as the command rid to keep
+        # OrderIndex correlation stable end-to-end (intent -> cmd -> entry).
+        stable_rid = str(command_payload.get("rid") or intent_msg.rid)
+        command_payload["rid"] = stable_rid
 
         # XAI instrumentation: exec_open_enter
         from vfoundation.core.why_codes import WhyCode, format_why_with_details
@@ -554,6 +706,7 @@ class AuroraBridge:
             verb="OPEN",
             src="decision_making",  # Source is decision_making
             dst="execution_position",
+            rid=stable_rid,
             parent_span_id=intent_msg.span_id,  # Link to parent event for tracing
             intent="COMMAND",  # v2.2: Classify as command
             why=bridge_why,  # Preserve first WHY for backward compatibility
@@ -567,6 +720,21 @@ class AuroraBridge:
 
         # Handle the command directly with execution_position FSM
         if execution_position is not None:
+            # TASK40: Mark "open intent in-flight" early (before the exchange ACK)
+            # to stop order storms on repeated signals.
+            try:
+                if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                    self.fsm.order_index.upsert_from_open(  # type: ignore[attr-defined]
+                        rid=stable_rid,
+                        idempotent_key=str(command_payload.get("idempotent_key") or stable_rid),
+                        clientOrderId=None,
+                        symbol=str(command_payload.get("symbol") or ""),
+                        side=str(command_payload.get("side") or ""),
+                        order_type="ENTRY_INTENT",
+                    )
+            except Exception:
+                pass
+
             result = execution_position.handle(open_command)
             if result:
                 self.logger.info(
@@ -583,6 +751,14 @@ class AuroraBridge:
                     self.logger.error(
                         f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}"
                     )
+                    # Unblock guard on immediate execution rejection.
+                    try:
+                        if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                            ref = self.fsm.order_index.get(rid=stable_rid)  # type: ignore[attr-defined]
+                            if ref is not None:
+                                self.fsm.order_index.mark_terminal(ref)  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
         else:
             self.logger.error("BRIDGE: execution_position FSM not initialized")
 

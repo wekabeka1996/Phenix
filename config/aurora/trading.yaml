@@ -52,6 +52,10 @@ trading:
       kappa_mode: dynamic
       liquidity_kappa_mode: dynamic
       risk_contract_v1: null
+      sizing:
+        # TASK42: 15% equity for BTC compatibility (was 5%)
+        mode: percent_equity
+        percent_equity: 0.15
     sizing_modifiers:
       HIGH_VOLATILITY: 0.6
       LOW_VOLATILITY: 1.2

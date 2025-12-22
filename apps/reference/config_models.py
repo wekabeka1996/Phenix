@@ -26,15 +26,45 @@ class InstrumentSpec(BaseModel):
 class InstrumentPrecisionSpec(BaseModel):
     """Canonical Aurora instrument precision (SSOT from instruments.yaml).
 
+    TASK50: Added min_qty and min_notional for fail-closed qty normalization.
     Keep this model permissive (extra=allow) to avoid breaking exchange-specific tails.
     tick_size/step_size are enforced for active symbols via loader fail-fast checks.
     """
 
     model_config = ConfigDict(extra='forbid')
 
-    symbol: Optional[str] = Field()
-    tick_size: Optional[float] = Field()
-    step_size: Optional[float] = Field()
+    symbol: Optional[str] = Field(default=None)
+    tick_size: Optional[str] = Field(default=None, description='Price precision')
+    step_size: Optional[str] = Field(default=None, description='Quantity precision (LOT_SIZE stepSize)')
+    min_qty: Optional[str] = Field(default=None, description='Minimum quantity (LOT_SIZE minQty)')
+    min_notional: Optional[str] = Field(default=None, description='Minimum notional value (MIN_NOTIONAL)')
+
+
+class InstrumentExecutionConfig(BaseModel):
+    """Per-instrument execution settings for leverage and margin control (TASK47c).
+    
+    All fields are MANDATORY for LIVE execution mode.
+    Missing any field in LIVE mode → startup crash (fail-closed).
+    
+    GAP-LEV-01 + GAP-MAR-01: Leverage and margin mode must be part of execution contract.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    margin_mode: Literal["isolated", "cross"] = Field(
+        description='Binance margin mode. ISOLATED = per-position margin, CROSS = shared wallet margin.'
+    )
+    target_leverage: int = Field(
+        ge=1, le=125,
+        description='Target leverage for this instrument (1-125). Must match or be set on exchange.'
+    )
+    leverage_policy: Literal["verify_only", "set_and_verify"] = Field(
+        description='verify_only = reject if mismatch. set_and_verify = set margin+leverage then verify.'
+    )
+    max_notional_utilization: float = Field(
+        ge=0.0, le=1.0,
+        description='Max notional as fraction of available capacity (0.0-1.0). Used for L1 capacity gate.'
+    )
+
 
 
 class SignalWeights(BaseModel):
@@ -115,6 +145,56 @@ class RiskContractV1Config(BaseModel):
     regime_sizing: Dict[str, RegimeSizingSymbolConfig] = Field(description='Per-symbol regime-based sizing config')
 
 
+class SizingV2Config(BaseModel):
+    """Sizing Contract V2: explicit sizing modes (no hidden fallbacks)."""
+    model_config = ConfigDict(extra='forbid')
+
+    mode: Literal["percent_equity", "fixed_notional_usd", "fixed_qty"] = Field(
+        description="Sizing mode: percent_equity | fixed_notional_usd | fixed_qty"
+    )
+    percent_equity: Optional[float] = Field(
+        default=None,
+        description="Fraction of equity to allocate (0..1], required when mode=percent_equity",
+    )
+    fixed_notional_usd: Optional[float] = Field(
+        default=None,
+        description="Fixed USD notional to allocate, required when mode=fixed_notional_usd",
+    )
+    fixed_qty: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-symbol fixed quantity (e.g., SOLUSDT: 1.0), required when mode=fixed_qty",
+    )
+
+    @model_validator(mode="after")
+    def validate_mode_requirements(self) -> "SizingV2Config":
+        if self.mode == "percent_equity":
+            if self.percent_equity is None:
+                raise ValueError("position_sizing.sizing.percent_equity is required when mode=percent_equity")
+            if not (0.0 < float(self.percent_equity) <= 1.0):
+                raise ValueError("position_sizing.sizing.percent_equity must be in (0, 1]")
+            return self
+
+        if self.mode == "fixed_notional_usd":
+            if self.fixed_notional_usd is None:
+                raise ValueError("position_sizing.sizing.fixed_notional_usd is required when mode=fixed_notional_usd")
+            if float(self.fixed_notional_usd) <= 0.0:
+                raise ValueError("position_sizing.sizing.fixed_notional_usd must be > 0")
+            return self
+
+        if self.mode == "fixed_qty":
+            if not self.fixed_qty:
+                raise ValueError("position_sizing.sizing.fixed_qty must be non-empty when mode=fixed_qty")
+            for symbol, qty in self.fixed_qty.items():
+                try:
+                    q = float(qty)
+                except Exception as e:
+                    raise ValueError(f"position_sizing.sizing.fixed_qty[{symbol!r}] must be numeric") from e
+                if q <= 0.0:
+                    raise ValueError(f"position_sizing.sizing.fixed_qty[{symbol!r}] must be > 0")
+            return self
+
+        return self
+
 
 class PositionSizingConfig(BaseModel):
     """Position sizing configuration."""
@@ -129,6 +209,12 @@ class PositionSizingConfig(BaseModel):
     
     # Risk-Sizing V1 contract (ETAP1: config-only, not used in runtime)
     risk_contract_v1: Optional[RiskContractV1Config] = Field(description='Risk-Sizing V1 contract (ETAP1: disabled by default)')
+
+    # TASK39: Sizing Contract V2 (explicit sizing modes; no legacy 10% fallback).
+    sizing: Optional[SizingV2Config] = Field(
+        default=None,
+        description="Sizing Contract V2: percent_equity | fixed_notional_usd | fixed_qty.",
+    )
 
 
 
@@ -354,6 +440,7 @@ class StrategiesArbitrationConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     mode: Literal['priority'] = Field(description="Arbitration mode: 'priority' (only supported mode, lower number = higher priority)")
+    window_ms: int = Field(description="Decision window size in ms for multi-strategy arbitration (SSOT; no silent defaults).")
     priority: Dict[str, int] = Field(description='Strategy priority ranks (lower = higher priority)')
     logging: StrategiesArbitrationLoggingConfig = Field()
 
@@ -1140,12 +1227,24 @@ class ExecutionPositionDomainConfig(BaseModel):
     idempotent_cancel: IdempotentCancelConfig = Field()
     utils: ExecutionUtilsConfig = Field()
 
+class DomainsDebugConfig(BaseModel):
+    """Debug / shadow-only switches for domain gates (fail-closed in live/prod)."""
+    model_config = ConfigDict(extra='forbid')
+
+    disable_positions_stale_gate: bool = Field(
+        description="DEV/SHADOW ONLY: disables position stale TTL gate (AuroraBridge portfolio freshness)."
+    )
+    disable_daily_loss_limit: bool = Field(
+        description="DEV/SHADOW ONLY: disables daily loss/drawdown gate (RiskManagement DailyRiskState)."
+    )
+
 
 # Top-Level Domains Configuration
 class DomainsConfig(BaseModel):
     """Top-level domains configuration container (CANONICAL)."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation, fail-fast on unknown fields
     
+    debug: DomainsDebugConfig = Field()
     decision_making: DecisionMakingDomainConfig = Field()
     feature_engineering: FeatureEngineeringDomainConfig = Field()
     risk_management: RiskManagementDomainConfig = Field()

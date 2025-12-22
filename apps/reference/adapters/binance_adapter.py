@@ -824,6 +824,269 @@ class BinanceAdapter(AbstractExchangeAdapter):
         params = {"symbol": symbol}
         return await self._request("GET", path, params)
 
+    # =========================================================================
+    # TASK47c-B: Leverage and Margin Mode Methods
+    # =========================================================================
+    # 
+    # CRITICAL: Hedge Mode Handling (TASK47c-B-FIX-01)
+    # 
+    # Binance positionRisk returns multiple entries per symbol in Hedge mode:
+    # - positionSide: BOTH (One-way mode) or LONG/SHORT (Hedge mode)
+    # 
+    # Strategy (fail-closed):
+    # 1. Collect ALL entries for the symbol
+    # 2. If ONE entry with positionSide=BOTH → use it (One-way mode)
+    # 3. If MULTIPLE entries (LONG/SHORT) → verify they have SAME leverage/marginType
+    #    - If consistent → return the value
+    #    - If inconsistent → FAIL-CLOSED (NRR-024)
+    # 4. If NO entries → FAIL (NRR-024)
+    # =========================================================================
+
+    def _extract_position_entries(self, result: list, symbol: str) -> list:
+        """Extract all position risk entries for a symbol.
+        
+        Returns list of dicts with symbol, positionSide, leverage, marginType.
+        Note: isolated is preserved as-is (None if missing) for fail-closed detection.
+        """
+        entries = []
+        for pos in result:
+            if pos.get("symbol") == symbol:
+                entries.append({
+                    "positionSide": pos.get("positionSide", "BOTH"),
+                    "leverage": int(float(pos.get("leverage", 1))),
+                    "marginType": pos.get("marginType", ""),
+                    # Preserve None if not present (for fail-closed detection)
+                    "isolated": pos.get("isolated"),  # None if missing
+                })
+        return entries
+
+    async def get_current_leverage(self, symbol: str) -> int:
+        """Get current leverage for a symbol from exchange.
+        
+        TASK47c-B: LeverageService L0 support.
+        Uses /fapi/v2/positionRisk to get current leverage.
+        
+        TASK47c-B-FIX-01: Hedge mode determinism (fail-closed)
+        - One-way mode (BOTH): single entry, use directly
+        - Hedge mode (LONG/SHORT): verify all entries have SAME leverage
+        - Inconsistent leverage across sides → NRR-024 fail-closed
+        
+        Args:
+            symbol: Trading symbol (e.g., "BTCUSDT")
+            
+        Returns:
+            Current leverage as integer (1-125)
+            
+        Raises:
+            BinanceAPIError: On any ambiguity or error (fail-closed)
+        """
+        path = "/fapi/v2/positionRisk"
+        params = {"symbol": symbol}
+        result = await self._request("GET", path, params)
+        
+        if not isinstance(result, list) or len(result) == 0:
+            raise BinanceAPIError(
+                code=-1,
+                msg=f"No position risk data for {symbol}",
+                nrr_code="NRR-024"
+            )
+        
+        entries = self._extract_position_entries(result, symbol)
+        
+        if len(entries) == 0:
+            raise BinanceAPIError(
+                code=-1,
+                msg=f"Symbol {symbol} not found in position risk",
+                nrr_code="NRR-024"
+            )
+        
+        # Collect all unique leverage values
+        leverage_values = set(e["leverage"] for e in entries)
+        
+        if len(leverage_values) != 1:
+            # FAIL-CLOSED: Inconsistent leverage across position sides (Hedge mode issue)
+            sides = [f"{e['positionSide']}={e['leverage']}x" for e in entries]
+            raise BinanceAPIError(
+                code=-1,
+                msg=f"Inconsistent leverage for {symbol} across sides: {', '.join(sides)}",
+                nrr_code="NRR-024"
+            )
+        
+        leverage = leverage_values.pop()
+        LOG.debug(f"LEVERAGE_GET: {symbol} = {leverage}x (entries: {len(entries)})")
+        return leverage
+
+    async def set_leverage(self, symbol: str, leverage: int) -> bool:
+        """Set leverage for a symbol on exchange.
+        
+        TASK47c-B: LeverageService L0 support.
+        Uses /fapi/v1/leverage endpoint.
+        
+        Note: Binance sets leverage for ALL position sides with one call.
+        
+        Args:
+            symbol: Trading symbol (e.g., "BTCUSDT")
+            leverage: Leverage to set (1-125)
+            
+        Returns:
+            True on success
+            
+        Raises:
+            BinanceAPIError: On failure
+        """
+        path = "/fapi/v1/leverage"
+        params = {
+            "symbol": symbol,
+            "leverage": leverage,
+        }
+        result = await self._request("POST", path, params)
+        actual = result.get("leverage")
+        LOG.info(f"LEVERAGE_SET: {symbol} -> {leverage}x (response: {actual})")
+        
+        # Verify the set took effect
+        if actual is not None and int(actual) != leverage:
+            raise BinanceAPIError(
+                code=-1,
+                msg=f"Leverage set mismatch: requested {leverage}, got {actual}",
+                nrr_code="NRR-022"
+            )
+        return True
+
+    def _normalize_margin_type(self, entry: dict) -> str:
+        """Normalize margin type from positionRisk entry.
+        
+        TASK47c-B-FIX-02: Stable marginType mapping
+        
+        Handles:
+        - marginType: "isolated" | "cross" | "crossed" (string, case-insensitive)
+        - isolated: true/false (boolean fallback)
+        
+        Returns:
+            "isolated" or "cross"
+        """
+        # Primary: marginType field (case-insensitive)
+        margin_type = str(entry.get("marginType", "")).strip().lower()
+        
+        if margin_type == "isolated":
+            return "isolated"
+        elif margin_type in ("cross", "crossed"):
+            return "cross"
+        
+        # Fallback: isolated boolean field
+        isolated_flag = entry.get("isolated")
+        if isinstance(isolated_flag, bool):
+            return "isolated" if isolated_flag else "cross"
+        if isinstance(isolated_flag, str):
+            return "isolated" if isolated_flag.lower() == "true" else "cross"
+        
+        # FAIL-CLOSED: Unknown margin type
+        raise BinanceAPIError(
+            code=-1,
+            msg=f"Unknown marginType: '{entry.get('marginType')}' (isolated={entry.get('isolated')})",
+            nrr_code="NRR-024"
+        )
+
+    async def get_margin_mode(self, symbol: str) -> str:
+        """Get current margin mode for a symbol from exchange.
+        
+        TASK47c-B: LeverageService L0 support.
+        Uses /fapi/v2/positionRisk to get marginType.
+        
+        TASK47c-B-FIX-01: Hedge mode determinism (fail-closed)
+        - One-way mode (BOTH): single entry, use directly
+        - Hedge mode (LONG/SHORT): verify all entries have SAME marginType
+        - Inconsistent margin mode across sides → NRR-024 fail-closed
+        
+        TASK47c-B-FIX-02: Stable marginType mapping
+        - Handles marginType string (cross/crossed/isolated)
+        - Handles isolated boolean fallback
+        - Unknown values → fail-closed
+        
+        Args:
+            symbol: Trading symbol (e.g., "BTCUSDT")
+            
+        Returns:
+            Margin mode: "isolated" or "cross"
+            
+        Raises:
+            BinanceAPIError: On any ambiguity or error (fail-closed)
+        """
+        path = "/fapi/v2/positionRisk"
+        params = {"symbol": symbol}
+        result = await self._request("GET", path, params)
+        
+        if not isinstance(result, list) or len(result) == 0:
+            raise BinanceAPIError(
+                code=-1,
+                msg=f"No position risk data for {symbol}",
+                nrr_code="NRR-024"
+            )
+        
+        entries = self._extract_position_entries(result, symbol)
+        
+        if len(entries) == 0:
+            raise BinanceAPIError(
+                code=-1,
+                msg=f"Symbol {symbol} not found in position risk",
+                nrr_code="NRR-024"
+            )
+        
+        # Normalize and collect all unique margin modes
+        margin_modes = set()
+        for entry in entries:
+            mode = self._normalize_margin_type(entry)
+            margin_modes.add(mode)
+        
+        if len(margin_modes) != 1:
+            # FAIL-CLOSED: Inconsistent margin mode across position sides
+            sides = [f"{e['positionSide']}={self._normalize_margin_type(e)}" for e in entries]
+            raise BinanceAPIError(
+                code=-1,
+                msg=f"Inconsistent margin mode for {symbol} across sides: {', '.join(sides)}",
+                nrr_code="NRR-024"
+            )
+        
+        margin_mode = margin_modes.pop()
+        LOG.debug(f"MARGIN_MODE_GET: {symbol} = {margin_mode} (entries: {len(entries)})")
+        return margin_mode
+
+    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
+        """Set margin mode for a symbol on exchange.
+        
+        TASK47c-B: LeverageService L0 support.
+        Uses /fapi/v1/marginType endpoint.
+        
+        Args:
+            symbol: Trading symbol (e.g., "BTCUSDT")
+            mode: Margin mode ("isolated" or "cross")
+            
+        Returns:
+            True on success
+            
+        Raises:
+            BinanceAPIError: On failure (except -4046: no need to change)
+        """
+        # Binance uses ISOLATED and CROSSED for marginType values
+        margin_type = "ISOLATED" if mode.lower() == "isolated" else "CROSSED"
+        
+        path = "/fapi/v1/marginType"
+        params = {
+            "symbol": symbol,
+            "marginType": margin_type,
+        }
+        
+        try:
+            result = await self._request("POST", path, params)
+            LOG.info(f"MARGIN_MODE_SET: {symbol} -> {mode} ({margin_type})")
+            return True
+        except BinanceAPIError as e:
+            # -4046: No need to change margin type (already correct)
+            if e.code == -4046:
+                LOG.debug(f"MARGIN_MODE_SET: {symbol} already {mode} (no change needed)")
+                return True
+            raise
+
+
     async def create_stop_market_order(self, order_params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a STOP_MARKET order.
@@ -846,20 +1109,21 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Args:
             symbol: Trading pair.
             side: BUY or SELL.
-            quantity: Order quantity.
+            quantity: Order quantity (MUST be pre-normalized by caller via normalize_qty).
             new_client_order_id: Optional client order ID.
 
         Returns:
             Order response.
+        
+        TASK50: Removed quantize_quantity call - qty normalization is now done
+        at dispatch boundary (fsm.py) with fail-closed semantics. No double rounding.
         """
-        # quantize qty according to exchange filters and validate min notional
-        qty = await self.quantize_quantity(symbol, quantity)
-
+        # TASK50: qty is already normalized by caller, pass directly to exchange
         params = {
             "symbol": symbol,
             "side": side.upper(),
             "type": "MARKET",
-            "quantity": qty,
+            "quantity": quantity,  # Pre-normalized, no bump-up
         }
         if new_client_order_id:
             params["newClientOrderId"] = new_client_order_id

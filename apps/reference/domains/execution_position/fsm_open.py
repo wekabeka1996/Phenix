@@ -42,6 +42,8 @@ class OpenFlowFSM:
 
     Shadow-mode: validates contracts, generates DEC, but no live orders.
     Guards (fail-closed): min_notional, qty/price steps, cooldown.
+    
+    TASK47c-E: Leverage verification before DEC:OPEN.
     """
 
     def __init__(
@@ -50,6 +52,8 @@ class OpenFlowFSM:
         guard_enabled: bool = True,
         config: Optional[AuroraConfig] = None,
         metrics_collector: Optional[MetricsCollector] = None,
+        leverage_service: Optional[Any] = None,
+        is_live_execution: bool = False,
     ):
         self.state = OpenState.IDLE
         self.cooldown_sec = cooldown_sec
@@ -68,6 +72,23 @@ class OpenFlowFSM:
             "fsm_errors_total": 0,
         }
         self.idempotency_store: Dict[str, float] = {}
+        
+        # TASK47c-E: LeverageService integration
+        self.leverage_service = leverage_service
+        self.is_live_execution = is_live_execution
+        
+        # Fail-closed: LIVE mode requires leverage_service
+        if is_live_execution and leverage_service is None:
+            raise RuntimeError(
+                "LeverageService is required for LIVE execution mode. "
+                "Pass leverage_service to OpenFlowFSM or set is_live_execution=False for shadow/dev."
+            )
+        
+        if leverage_service is None:
+            self.logger.warning(
+                "TASK47c-E: OpenFlowFSM initialized without LeverageService. "
+                "Leverage verification will be SKIPPED (shadow/dev mode only)."
+            )
         
         # Idempotency window from config (default 60s)
         try:
@@ -370,3 +391,72 @@ class OpenFlowFSM:
         """Reset FSM state (for testing)."""
         self.state = OpenState.IDLE
         self.last_open_ts = 0.0
+
+    # =========================================================================
+    # TASK47c-E: Async Handle with Leverage Verification
+    # =========================================================================
+    
+    async def handle_async(self, msg: Message) -> Optional[Message]:
+        """Async handler that performs leverage verification before DEC:OPEN.
+        
+        TASK47c-E: Wire leverage verification into production flow.
+        
+        1. Check leverage via LeverageService (if configured)
+        2. If leverage check fails → return ERR (no DEC:OPEN)
+        3. If leverage check passes → delegate to sync handle()
+        
+        Args:
+            msg: CMD:OPEN message
+            
+        Returns:
+            DEC:OPEN if all checks pass, ERR if any check fails
+        """
+        if msg.op != "CMD" or msg.verb != "OPEN":
+            return self.handle(msg)
+        
+        symbol = msg.pld.get("symbol", "")
+        
+        # TASK47c-E: Leverage verification before DEC:OPEN
+        if self.leverage_service is not None:
+            # Get per-instrument execution config
+            instruments = self.config.instruments or {}
+            specs = instruments.get(symbol)
+            execution_config = getattr(specs, "execution", None) if specs else None
+            
+            if execution_config is not None:
+                leverage_policy = execution_config.leverage_policy
+                expected_leverage = execution_config.target_leverage
+                expected_margin_mode = execution_config.margin_mode
+                
+                # Call appropriate method based on policy
+                if leverage_policy == "set_and_verify":
+                    result = await self.leverage_service.set_and_verify(
+                        symbol, expected_leverage, expected_margin_mode
+                    )
+                else:  # "verify_only" is default
+                    result = await self.leverage_service.verify(
+                        symbol, expected_leverage, expected_margin_mode
+                    )
+                
+                # If verification failed, reject
+                if not result.ok:
+                    self.logger.error(
+                        f"LEVERAGE_GATE_REJECT: {result.why} (symbol={symbol}, "
+                        f"actual_leverage={result.actual_leverage}, expected={expected_leverage})"
+                    )
+                    return self._reject(
+                        msg,
+                        f"LEVERAGE_FAIL:{result.error_code or 'UNKNOWN'}",
+                        f"leverage verification failed: {result.why[:60]}",
+                    )
+                
+                self.logger.info(
+                    f"LEVERAGE_GATE_PASS: {symbol} leverage={result.actual_leverage} "
+                    f"margin_mode={result.actual_margin_mode}"
+                )
+            else:
+                # No execution config for this symbol - log but proceed (for non-trading symbols)
+                self.logger.debug(f"No execution config for {symbol}, skipping leverage check")
+        
+        # All leverage checks passed (or skipped), proceed with sync handler
+        return self.handle(msg)

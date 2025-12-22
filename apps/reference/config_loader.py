@@ -112,6 +112,54 @@ class ConfigLoader:
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
             load_dotenv(env_path)
+
+    @staticmethod
+    def _flatten_leaf_paths(data: Any, *, prefix: str = "") -> Dict[str, Any]:
+        """Flatten a nested mapping into leaf dot-paths for duplicate detection.
+
+        Dicts are traversed recursively; lists/scalars are treated as leaf values.
+        """
+        out: Dict[str, Any] = {}
+        if isinstance(data, dict):
+            for k, v in data.items():
+                key = str(k)
+                path = f"{prefix}.{key}" if prefix else key
+                if isinstance(v, dict):
+                    out.update(ConfigLoader._flatten_leaf_paths(v, prefix=path))
+                else:
+                    out[path] = v
+        else:
+            if prefix:
+                out[prefix] = data
+        return out
+
+    def _fail_on_duplicate_paths(self, *, sources: Dict[str, Dict[str, Any]]) -> None:
+        """TASK47: crash-on-duplicate config paths across YAML fragments (fail-closed)."""
+        seen: Dict[str, Dict[str, Any]] = {}
+        for src_name, src_dict in sources.items():
+            flat = self._flatten_leaf_paths(src_dict)
+            for path, val in flat.items():
+                bucket = seen.setdefault(path, {})
+                bucket[src_name] = val
+
+        dupes = {path: srcs for path, srcs in seen.items() if len(srcs) > 1}
+        if not dupes:
+            return
+
+        lines: list[str] = []
+        for path in sorted(dupes.keys())[:25]:
+            srcs = ", ".join(sorted(dupes[path].keys()))
+            lines.append(f"- {path}: {srcs}")
+        more = "" if len(dupes) <= 25 else f"\n... and {len(dupes) - 25} more"
+        raise ConfigContractError(
+            path="config_loader.duplicates",
+            why=(
+                "Duplicate config paths detected across YAML sources (SSOT violation). "
+                "Move each parameter to exactly one file.\n"
+                + "\n".join(lines)
+                + more
+            ),
+        )
     
     @staticmethod
     def _get_strict_mode() -> bool:
@@ -160,13 +208,25 @@ class ConfigLoader:
                 "kelly": "kelly",
                 "calibrator": "calibrator",
                 "hawkes": "hawkes",
-                "hotreload_whitelist": "hotreload_whitelist",
                 "hardening": "hardening",
                 "position_tracking": "position_tracking",
             }
             for src_key, dst_key in mapping.items():
                 if src_key in system_config:
                     meta[dst_key] = system_config.pop(src_key)
+
+        # Ensure system_meta always contains required keys (SystemMetaConfig is strict).
+        # These are runtime/meta-only and must not participate in SSOT dedup checks.
+        if "position_tracking" not in meta:
+            meta["position_tracking"] = {}
+        if "hotreload_whitelist" not in meta:
+            # Source of truth is regime.yaml root.hotreload_whitelist (keep it there; copy for meta).
+            wl = []
+            if isinstance(regime_config, dict):
+                wl_val = regime_config.get("hotreload_whitelist")
+                if isinstance(wl_val, list):
+                    wl = wl_val
+            meta["hotreload_whitelist"] = wl
 
         if isinstance(regime_config, dict) and "config_version" in regime_config:
             meta["regime_config_version"] = regime_config.pop("config_version")
@@ -558,7 +618,62 @@ class ConfigLoader:
             missing_sorted = "; ".join(sorted(missing))
             raise ValueError(f"Missing instruments precision: {missing_sorted}")
 
-    def load_config(self) -> AuroraConfig:
+    def _validate_execution_config_for_live(self, resolved_config: Dict[str, Any]) -> None:
+        """TASK47c-A: Fail-closed validation for LIVE execution.
+        
+        Validates that all active symbols have complete execution config:
+        - margin_mode (isolated | cross)
+        - target_leverage (1-125)
+        - leverage_policy (verify_only | set_and_verify)
+        - max_notional_utilization (0.0-1.0)
+        
+        This is MANDATORY for LIVE execution. Missing any field → ValueError (startup crash).
+        
+        Raises:
+            ValueError: If any active symbol is missing execution fields
+        """
+        active_symbols = self._extract_active_symbols(resolved_config)
+        if not active_symbols:
+            return
+        
+        instruments = resolved_config.get("instruments")
+        if not isinstance(instruments, dict):
+            raise ValueError(
+                "LIVE execution fail-closed: instruments map is missing or invalid"
+            )
+        
+        required_fields = ("margin_mode", "target_leverage", "leverage_policy", "max_notional_utilization")
+        missing: list[str] = []
+        
+        for symbol in active_symbols:
+            spec = instruments.get(symbol)
+            if not isinstance(spec, dict):
+                missing.append(f"{symbol} missing instrument spec")
+                continue
+            
+            # Check for execution config (can be at root level or nested under 'execution')
+            execution = spec.get("execution", spec)
+            
+            for field in required_fields:
+                if execution.get(field) is None:
+                    missing.append(f"{symbol} missing execution.{field}")
+        
+        if missing:
+            missing_sorted = "; ".join(sorted(missing[:10]))  # Limit to first 10
+            more = f" (and {len(missing) - 10} more)" if len(missing) > 10 else ""
+            raise ValueError(
+                f"LIVE execution fail-closed: Missing required execution config. "
+                f"All active symbols need margin_mode, target_leverage, leverage_policy, max_notional_utilization. "
+                f"Missing: {missing_sorted}{more}"
+            )
+
+
+    def load_config(
+        self,
+        *,
+        strict_mode: bool | None = None,
+        is_live_execution: bool = False,
+    ) -> AuroraConfig:
         """Load and validate configuration using Pydantic.
 
         This method:
@@ -566,10 +681,16 @@ class ConfigLoader:
         2. Resolves environment variables
         3. Applies mode-specific overrides
         4. Validates through Pydantic (fails fast if invalid)
+        5. (TASK47c) Validates execution config for LIVE mode (fail-closed)
+
+        Args:
+            strict_mode: Override for strict config validation mode (default: env-based)
+            is_live_execution: If True, fail-closed validation for execution fields
 
         Raises:
             ValidationError: If config doesn't match Pydantic schema
             FileNotFoundError: If config files missing
+            ValueError: If LIVE execution missing required execution config
         """
         try:
             system_config = self._load_yaml("system.yaml")
@@ -579,14 +700,25 @@ class ConfigLoader:
             LOG.error(f"Config file error: {e}")
             raise
 
-        system_meta = self._extract_system_meta(system_config, regime_config)
-        
         # Load domains.yaml (optional if trading.yaml has domains)
         domains_config: Dict[str, Any] = {}
         try:
             domains_config = self._load_yaml("domains.yaml")
         except FileNotFoundError:
             LOG.info("domains.yaml not found")
+
+        # TASK47: crash-on-duplicate leaf paths across the primary YAML fragments.
+        # Run BEFORE any schema/meta extraction can mask shadowed values.
+        self._fail_on_duplicate_paths(
+            sources={
+                "system.yaml": system_config if isinstance(system_config, dict) else {},
+                "trading.yaml": trading_config if isinstance(trading_config, dict) else {},
+                "regime.yaml": regime_config if isinstance(regime_config, dict) else {},
+                "domains.yaml": domains_config if isinstance(domains_config, dict) else {},
+            }
+        )
+
+        system_meta = self._extract_system_meta(system_config, regime_config)
         
         # =========================================================================
         # DEPRECATED FILE DETECTION (CFG-FEATURES-REGIME-SSOT-04)
@@ -714,6 +846,10 @@ class ConfigLoader:
         # Startup fail-fast: precision check for active symbols
         self._fail_fast_validate_instruments_precision(resolved_config)
 
+        # TASK47c-A: Fail-closed execution config validation for LIVE mode
+        if is_live_execution:
+            self._validate_execution_config_for_live(resolved_config)
+
         # CFG-TRADING-YAML-BURN-DOWN-01: Check for SSOT conflicts
         self._validate_ssot_conflicts(resolved_config)
 
@@ -725,6 +861,26 @@ class ConfigLoader:
             LOG.info(
                 f"✅ Configuration validated for trading_mode: '{config.trading_mode}'"
             )
+
+            # TASK47: Debug disables are DEV/SHADOW only (testnet execution). Fail-closed in live/prod.
+            try:
+                debug_cfg = getattr(config.domains, "debug", None)
+                if debug_cfg is not None and str(config.trading.mode).lower() in ("live", "production"):
+                    if bool(getattr(debug_cfg, "disable_positions_stale_gate", False)):
+                        raise ConfigContractError(
+                            path="domains.debug.disable_positions_stale_gate",
+                            why="Debug override forbidden in live/production trading.mode",
+                        )
+                    if bool(getattr(debug_cfg, "disable_daily_loss_limit", False)):
+                        raise ConfigContractError(
+                            path="domains.debug.disable_daily_loss_limit",
+                            why="Debug override forbidden in live/production trading.mode",
+                        )
+            except ConfigContractError:
+                raise
+            except Exception:
+                # Keep loader tolerant to older configs without domains.debug.
+                pass
 
             # CFG-RUNTIME-BOOTSTRAP-07: runtime-only meta injection (post-validation)
             return self._inject_runtime_meta(config)

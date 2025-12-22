@@ -50,6 +50,15 @@ from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult
 # Import OrderGuardian for TP/SL cleanup
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 
+# TASK50: Import qty normalizer for fail-closed quantity validation
+from apps.reference.domains.execution_position.qty_normalizer import (
+    normalize_qty,
+    verify_ack_qty,
+    NRR_QTY_ROUNDED_TO_ZERO,
+    NRR_QTY_BELOW_MIN_QTY,
+    NRR_NOTIONAL_BELOW_MIN,
+)
+
 # Import AlertManager for circuit breaker alerts
 try:
     from apps.reference.telemetry.alerts import AlertManager
@@ -837,6 +846,15 @@ class ExecPosFSM:
         LOG.debug(
             f"[FILL] Processing FILL for {symbol} order {order_id}, qty={filled_qty} (rid={rid})")
 
+        # TASK40: Mark entry order terminal in OrderIndex (unblocks one-open-order guard).
+        try:
+            if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                ref = self.fsm.order_index.get(exchangeOrderId=str(order_id))  # type: ignore[attr-defined]
+                if ref is not None:
+                    self.fsm.order_index.mark_terminal(ref)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         # PHASE A2 FIX: Inject cached intent data into ManageFlowFSM
         if rid in self._pending_intent_data:
             intent_data = self._pending_intent_data[rid]
@@ -1526,7 +1544,7 @@ class ExecPosFSM:
 
             symbol = decision.pld["symbol"]
             side = decision.pld["side"].upper()
-            qty = decision.pld["qty"]
+            raw_qty = decision.pld["qty"]
 
             # Get mark price and filters
             mark = await self.adapter.get_mark_price(symbol)
@@ -1537,6 +1555,81 @@ class ExecPosFSM:
                     for f in exchange_info["symbols"][0]["filters"]
                     if f["filterType"] == "PRICE_FILTER"
                 )
+            )
+
+            # TASK50: Get instrument filters from config (SSOT)
+            # and normalize qty with fail-closed semantics
+            instrument_spec = None
+            if hasattr(self.config, "instruments") and self.config.instruments:
+                instrument_spec = self.config.instruments.get(symbol)
+
+            if instrument_spec:
+                step_size = instrument_spec.step_size or "1"
+                min_qty = instrument_spec.min_qty or "0"
+                min_notional = instrument_spec.min_notional
+            else:
+                # Fallback: try to get from exchange_info
+                lot_filter = next(
+                    (f for f in exchange_info["symbols"][0]["filters"]
+                     if f["filterType"] == "LOT_SIZE"), {}
+                )
+                step_size = lot_filter.get("stepSize", "1")
+                min_qty = lot_filter.get("minQty", "0")
+                min_notional_filter = next(
+                    (f for f in exchange_info["symbols"][0]["filters"]
+                     if f["filterType"] == "MIN_NOTIONAL"), {}
+                )
+                min_notional = min_notional_filter.get("notional")
+
+            # TASK50: Normalize qty - fail-closed, no silent bump-ups
+            norm_result = normalize_qty(
+                raw_qty=raw_qty,
+                price=mark,
+                step_size=step_size,
+                min_qty=min_qty,
+                min_notional=min_notional,
+            )
+
+            if not norm_result.ok:
+                LOG.warning(
+                    f"❌ [{symbol}] QTY_NORMALIZE_REJECTED: {norm_result.why} "
+                    f"(raw_qty={norm_result.raw_qty}, rounded={norm_result.rounded_qty}, "
+                    f"min_qty={norm_result.min_qty}, min_notional={norm_result.min_notional})"
+                )
+                # Log to order_log for forensics
+                order_logger.log(
+                    event_type="QTY_NORMALIZE_REJECTED",
+                    symbol=symbol,
+                    side=side,
+                    quantity=str(raw_qty),
+                    rid=decision.rid,
+                    adapter_response=norm_result.to_dict(),
+                    why=norm_result.why,
+                )
+                # Emit rejection event
+                reject_msg = Message(
+                    op="EVT",
+                    verb="ORDER_REJECTED",
+                    src="execution_position",
+                    dst="decision_making",
+                    rid=decision.rid,
+                    pld={
+                        "symbol": symbol,
+                        "side": side,
+                        "raw_qty": str(raw_qty),
+                        "reason": norm_result.why,
+                        "norm_result": norm_result.to_dict(),
+                    },
+                    why=norm_result.why,
+                )
+                await emit_compat(self.fsm, reject_msg, logger=LOG)
+                return
+
+            # Use normalized qty
+            qty = str(norm_result.qty)
+            LOG.info(
+                f"✅ [{symbol}] QTY_NORMALIZED: raw={raw_qty} → normalized={qty} "
+                f"(step={step_size}, min_qty={min_qty})"
             )
 
             # TP/SL bps extraction
@@ -1649,12 +1742,19 @@ class ExecPosFSM:
             )
 
             # Log to OrderLoggerV1
+            # TASK50: Added qty normalization context for forensics
             order_logger.write({
                 "rid": decision.rid,
                 "event_type": "ORDER_PLACED",
                 "symbol": symbol,
                 "side": side,
                 "quantity": float(qty),
+                "qty_raw": float(raw_qty) if raw_qty else None,
+                "qty_normalized": float(qty),
+                "step_size": str(step_size),
+                "min_qty": str(min_qty),
+                "min_notional": str(min_notional) if min_notional else None,
+                "qty_notional_usd": float(norm_result.notional) if norm_result.notional else None,
                 "client_order_id": entry_id,
                 "order_id": str(entry_resp["orderId"]),
                 "source_fsm": "ExecPosFSM",
@@ -2398,6 +2498,19 @@ class ExecPosFSM:
 
         LOG.info(
             f"CANCEL_EVENT: Processing cancellation for {symbol} order {order_id}")
+
+        # TASK40: Mark order terminal in OrderIndex (unblocks one-open-order guard).
+        try:
+            if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                ref = None
+                if order_id:
+                    ref = self.fsm.order_index.get(exchangeOrderId=str(order_id))  # type: ignore[attr-defined]
+                if ref is None and client_order_id:
+                    ref = self.fsm.order_index.get(clientOrderId=str(client_order_id))  # type: ignore[attr-defined]
+                if ref is not None:
+                    self.fsm.order_index.mark_terminal(ref)  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         # Emit exposure summary update after cancellation
         try:

@@ -1,0 +1,31 @@
+{
+  "decision_making": {
+    "mode": "percent_equity",
+    "percent_equity": 0.05,
+    "fixed_notional_usd": null,
+    "fixed_qty": {}
+  },
+  "risk_limits": {
+    "risk_score_weights": {
+      "delta_price_pct": 0.1,
+      "obi": 0.3,
+      "tfi": 0.3,
+      "absorption_inverse": 0.3
+    },
+    "trading_allowed_thresholds": {
+      "max_risk_score": 0.96
+    },
+    "validation": {
+      "total_weight_min": 0.5,
+      "total_weight_max": 2.0
+    },
+    "use_absorption_penalty": false
+  },
+  "universe": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "DOGEUSDT",
+    "XRPUSDT"
+  ]
+}

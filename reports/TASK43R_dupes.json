@@ -1,0 +1,30 @@
+{
+  "position_tracking.positions_stale_ttl_sec": {
+    "config/aurora/domains.yaml": 15,
+    "config/aurora/system.yaml": 8
+  },
+  "config_version": {
+    "config/aurora/regime.yaml": "1.0.0",
+    "config/aurora/system.yaml": "1.0.1"
+  },
+  "hotreload_whitelist[0]": {
+    "config/aurora/regime.yaml": "hmm.sticky_kappa",
+    "config/aurora/system.yaml": "sequential_tests.wald.mu1"
+  },
+  "hotreload_whitelist[1]": {
+    "config/aurora/regime.yaml": "hmm.update_interval",
+    "config/aurora/system.yaml": "sequential_tests.glr.min_samples"
+  },
+  "hotreload_whitelist[2]": {
+    "config/aurora/regime.yaml": "hmm.change_conf_min",
+    "config/aurora/system.yaml": "kelly.fraction_cap"
+  },
+  "trading.market_data.websocket_streams[0]": {
+    "config/aurora/system.yaml": "bookTicker",
+    "config/aurora/trading.yaml": "bookTicker"
+  },
+  "trading.market_data.websocket_streams[1]": {
+    "config/aurora/system.yaml": "trade",
+    "config/aurora/trading.yaml": "trade"
+  }
+}

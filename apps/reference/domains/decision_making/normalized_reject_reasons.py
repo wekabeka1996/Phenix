@@ -36,6 +36,12 @@ class NormalizedRejectReasons:
     SYMBOL_COOLDOWN_ACTIVE = "NRR-017"
     EXCHANGE_REJECTED_ORDER = "NRR-018"
     ORDER_TIMEOUT_EXPIRED = "NRR-019"
+    # TASK47c-B: Leverage/Margin verification codes
+    LEVERAGE_MISMATCH = "NRR-020"
+    MARGIN_MODE_MISMATCH = "NRR-021"
+    LEVERAGE_SET_FAILED = "NRR-022"
+    MARGIN_MODE_SET_FAILED = "NRR-023"
+    LEVERAGE_VERIFY_FAILED = "NRR-024"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex patterns for normalization
@@ -167,6 +173,12 @@ class NormalizedRejectReasons:
             cls.SYMBOL_COOLDOWN_ACTIVE: "Symbol cooldown period is active",
             cls.EXCHANGE_REJECTED_ORDER: "Exchange rejected the order",
             cls.ORDER_TIMEOUT_EXPIRED: "Order timeout expired",
+            # TASK47c-B: Leverage/Margin verification descriptions
+            cls.LEVERAGE_MISMATCH: "Exchange leverage does not match expected value",
+            cls.MARGIN_MODE_MISMATCH: "Exchange margin mode does not match expected value",
+            cls.LEVERAGE_SET_FAILED: "Failed to set leverage on exchange",
+            cls.MARGIN_MODE_SET_FAILED: "Failed to set margin mode on exchange",
+            cls.LEVERAGE_VERIFY_FAILED: "Failed to verify leverage settings (API error)",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
 

@@ -123,6 +123,10 @@ class DecisionMaking:
         # Contract State: pending flips {symbol: {desired_open_intent, created_ts, ...}}
         self._pending_flips: Dict[str, Dict[str, Any]] = {}
 
+        # TASK47: Strategy arbitration is windowed (avoid permanent suppression on hybrid symbols).
+        # State: symbol -> (window_id, winner_strategy_id)
+        self._arb_window_winner: Dict[str, tuple[int, str]] = {}
+
         # Cache for equity values to prevent zero-overwrite
         self._cached_equity_free_usdt: Optional[str] = None
         self._cached_equity_cross_usdt: Optional[str] = None
@@ -305,7 +309,12 @@ class DecisionMaking:
 
             # === GATE 0: STRATEGY ARBITRATION ===
             # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check if this strategy is allowed
-            arbitration_result = self._check_strategy_arbitration(symbol, str(strategy_id))
+            arbitration_result = self._check_strategy_arbitration(
+                symbol,
+                str(strategy_id),
+                ts_ms=int(pld.get("ts_ms")) if pld.get("ts_ms") is not None else None,
+                commit=False,
+            )
             if not arbitration_result["allowed"]:
                 self.logger.info(
                     f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Arbitration blocked ({strategy_id}): {arbitration_result['reason']}"
@@ -580,14 +589,36 @@ class DecisionMaking:
                 return
             
             # === GATE 4: EXPOSURE GATE (pre-check) ===
-            # P1 FIX: No default 100.0. Signal must provide size or we block/error.
-            # Using get() without default returns None if missing, so we check robustness
-            position_size_usd = pld.get("position_size_usd")
-            if position_size_usd is None:
-                 self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Missing position_size_usd")
-                 self._record_blocked_intent(symbol)
-                 return
-            
+            # TASK39: Size is computed by DecisionMaking (Sizing Contract v2), not supplied by strategy.
+            price_ctx = pld.get("price_ctx") if isinstance(pld.get("price_ctx"), dict) else {}
+            entry_price = price_ctx.get("entry_price")
+            if entry_price in (None, "", "0", 0):
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Missing entry_price")
+                self._record_blocked_intent(symbol)
+                return
+            try:
+                entry_price_dec = decimal.Decimal(str(entry_price))
+            except Exception:
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Invalid entry_price")
+                self._record_blocked_intent(symbol)
+                return
+
+            if not self.latest_portfolio:
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - portfolio_missing")
+                self._record_blocked_intent(symbol)
+                return
+
+            sizing_ctx = {
+                "portfolio": self.latest_portfolio,
+                "features": self.symbol_states[symbol].get("features") if symbol in self.symbol_states else {},
+            }
+            qty_dec, why_sizing = self._calculate_position_size(symbol, entry_price_dec, side, sizing_ctx)
+            if qty_dec is None:
+                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Sizing not ready: {why_sizing}")
+                self._record_blocked_intent(symbol)
+                return
+
+            position_size_usd = float(qty_dec * entry_price_dec)
             if not self._precheck_exposure_cache(symbol, side, float(position_size_usd)):
                 self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Exposure limit exceeded")
                 self._record_blocked_intent(symbol)
@@ -629,60 +660,23 @@ class DecisionMaking:
             if 0 < timestamp_ms < 1_000_000_000_000:
                 timestamp_ms = timestamp_ms * 1000
 
-            price_ctx = pld.get("price_ctx") if isinstance(pld.get("price_ctx"), dict) else {}
-            entry_price = price_ctx.get("entry_price")
-            if entry_price in (None, "", "0", 0):
-                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Missing entry_price")
-                self._record_blocked_intent(symbol)
-                return
+            if isinstance(why_chain, list):
+                why_chain.append(str(why_sizing))
 
-            qty_str = pld.get("qty_hint")
-            if qty_str in (None, "", "0", 0):
-                try:
-                    qty_str = str(decimal.Decimal(str(position_size_usd)) / decimal.Decimal(str(entry_price)))
-                except Exception:
-                    qty_str = "0"
-            
-            trade_intent = {
-                "instrument": symbol,
-                "symbol": symbol,
-                "side": side,
-                "order": {
-                    "qty": str(qty_str),
-                    "price": str(entry_price),
-                    "type": "LIMIT"
-                },
-                "strategy": str(strategy_id),
-                "strategy_id": str(strategy_id),
-                "source": "dm_gateway",  # Indicates came through DM gateway
-                "entry_price": str(entry_price),
-                "stop_price": str(price_ctx.get("stop_price")) if price_ctx.get("stop_price") else None,
-                "target_price": str(price_ctx.get("target_price")) if price_ctx.get("target_price") else None,
-                "position_size_usd": float(position_size_usd),
-                "qty": str(qty_str),
-                "regime": pld.get("regime") if pld.get("regime") else "UNKNOWN",
-                "confidence": pld["score"] if "score" in pld else (pld["confidence"] if "confidence" in pld else 0.0),
-                "rid": rid,
-                "timestamp_ms": timestamp_ms,
-                "why": ",".join(why_chain) if isinstance(why_chain, list) else str(why_chain),
-                "why_chain": why_chain,
-                "cooldown_class": pld["cooldown_class"] if "cooldown_class" in pld else str(strategy_id),
-                "strategy_params": pld.get("strategy_params") or pld.get("mr_params") or {},
-            }
-            
-            self.fsm.emit(
-                "EVT:TRADE_INTENT_PROPOSED",
-                payload=trade_intent,
-                why=f"STRATEGY_GATEWAY_{side}",
-                data_ref=[f"strategy_gateway_{rid}"]
+            self._propose_trade_intent(
+                symbol=symbol,
+                side=side,
+                qty=decimal.Decimal(str(qty_dec)),
+                price=decimal.Decimal(str(entry_price_dec)),
+                why_chain=why_chain if isinstance(why_chain, list) else [str(why_chain)],
+                rid=rid,
+                reduce_only=False,
+                strategy_id=str(strategy_id),
+                decision_ts_ms=timestamp_ms,
             )
-            
-            self._record_accepted_intent(symbol)
-            self._record_qos_intent(symbol)  # Update QoS state
-            
-            self.logger.info(
-                f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: EVT:TRADE_INTENT_PROPOSED emitted: {side} ({strategy_id})"
-            )
+
+            # Update QoS state for successful decision (same as legacy decision path).
+            self._update_qos_state(symbol)
             
         except ConfigContractError as e:
             # TASK 17: Central Interception Point for Config Contract Violations
@@ -957,7 +951,14 @@ class DecisionMaking:
         
         return aurora_instruments.get(symbol)  # Already Pydantic-typed, no conversion needed
 
-    def _check_strategy_arbitration(self, symbol: str, strategy_id: str) -> Dict[str, Any]:
+    def _check_strategy_arbitration(
+        self,
+        symbol: str,
+        strategy_id: str,
+        *,
+        ts_ms: int | None = None,
+        commit: bool = False,
+    ) -> Dict[str, Any]:
         """
         Check if strategy is allowed to generate intent for symbol based on arbitration rules.
         
@@ -997,7 +998,7 @@ class DecisionMaking:
         if len(assignments) == 1:
             return {"allowed": True, "reason": ""}
         
-        # Multi-strategy case: check arbitration
+        # Multi-strategy case: windowed arbitration (TASK47).
         arb = self.strategies_registry.arbitration
         
         if arb.mode == "priority":
@@ -1006,27 +1007,34 @@ class DecisionMaking:
                 if strat not in arb.priority:
                     return {
                         "allowed": False,
-                        "reason": f"ARBITRATION_REJECT:missing_priority:{strat}"[:80]
+                        "reason": f"ARBITRATION_REJECT:missing_priority:{strat}"[:80],
                     }
-            
-            # Get priorities for all assigned strategies
-            priorities = {s: arb.priority[s] for s in assignments}
-            
-            # Current strategy priority
-            current_priority = priorities[strategy_id]
-            
-            # Find highest priority strategy (lowest number)
-            highest_priority_strategy = min(assignments, key=lambda s: priorities[s])
-            highest_priority = priorities[highest_priority_strategy]
-            
-            # Allow if current strategy has highest priority
-            if current_priority == highest_priority:
+
+            # If no decision clock is provided, do NOT permanently suppress a strategy.
+            # In this mode, arbitration reduces to assignment validation only.
+            if ts_ms is None:
                 return {"allowed": True, "reason": ""}
-            else:
-                return {
-                    "allowed": False,
-                    "reason": f"{arb.logging.rejected_why_prefix}:priority_{highest_priority_strategy}_wins"[:80]
-                }
+
+            try:
+                window_ms = int(arb.window_ms)
+            except Exception:
+                return {"allowed": False, "reason": "ARBITRATION_REJECT:invalid_window_ms"[:80]}
+            if window_ms <= 0:
+                return {"allowed": False, "reason": "ARBITRATION_REJECT:invalid_window_ms"[:80]}
+
+            window_id = int(ts_ms) // window_ms
+            existing = self._arb_window_winner.get(symbol)
+            if existing is not None and existing[0] == window_id:
+                winner = existing[1]
+                if winner != strategy_id:
+                    return {
+                        "allowed": False,
+                        "reason": f"{arb.logging.rejected_why_prefix}:window_claimed_by_{winner}"[:80],
+                    }
+
+            if commit:
+                self._arb_window_winner[symbol] = (window_id, strategy_id)
+            return {"allowed": True, "reason": ""}
         else:
             # Unknown arbitration mode - fail-closed (defense-in-depth)
             return {
@@ -2994,7 +3002,15 @@ class DecisionMaking:
             return
 
         self._propose_trade_intent(
-            symbol, side, qty, price_ref, why_chain, rid
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            price=price_ref,
+            why_chain=why_chain,
+            rid=rid,
+            reduce_only=False,
+            strategy_id="aurora",
+            decision_ts_ms=int(current_features_ts) if current_features_ts else None,
         )
 
         # Update idempotency guard (SUCCESS)
@@ -3012,7 +3028,8 @@ class DecisionMaking:
 
         # Strict Config for Dynamic Sizing via Domains
         pos_config = self.config.domains.decision_making.position_sizing
-        
+        sizing_meta = context["_sizing_meta"] if ("_sizing_meta" in context and context["_sizing_meta"]) else {}
+
         q_risk = pos_config.risk_fraction_q
         kappa_mode = str(pos_config.liquidity_kappa_mode).lower()
         kappa_liq = float(pos_config.liquidity_kappa)
@@ -3032,7 +3049,55 @@ class DecisionMaking:
 
         final_pos_size_usd: decimal.Decimal
         why_parts: list[str] = []
-        if q_risk is not None:
+
+        # TASK39: Sizing Contract V2 (explicit modes, no legacy fallback).
+        sizing_v2 = getattr(pos_config, "sizing", None)
+        if sizing_v2 is not None:
+            mode = str(getattr(sizing_v2, "mode", "") or "")
+            if not mode:
+                return None, "NRR-SIZING-CONTRACT-MISSING"
+            if price <= 0:
+                return None, "NRR-SIZING-INVALID-PRICE"
+
+            if mode == "fixed_qty":
+                fixed_qty_map = getattr(sizing_v2, "fixed_qty", {}) or {}
+                raw_qty_val = fixed_qty_map.get(symbol)
+                if raw_qty_val is None:
+                    return None, "NRR-SIZING-FIXED-QTY-MISSING"
+                try:
+                    raw_qty = decimal.Decimal(str(raw_qty_val))
+                except Exception:
+                    return None, "NRR-SIZING-FIXED-QTY-INVALID"
+                if raw_qty <= 0:
+                    return None, "NRR-SIZING-FIXED-QTY-INVALID"
+                final_pos_size_usd = raw_qty * price
+            elif mode == "fixed_notional_usd":
+                raw_notional = getattr(sizing_v2, "fixed_notional_usd", None)
+                if raw_notional is None:
+                    return None, "NRR-SIZING-FIXED-NOTIONAL-MISSING"
+                try:
+                    final_pos_size_usd = decimal.Decimal(str(raw_notional))
+                except Exception:
+                    return None, "NRR-SIZING-FIXED-NOTIONAL-INVALID"
+            elif mode == "percent_equity":
+                pct = getattr(sizing_v2, "percent_equity", None)
+                if pct is None:
+                    return None, "NRR-SIZING-PCT-MISSING"
+                try:
+                    pct_dec = decimal.Decimal(str(pct))
+                except Exception:
+                    return None, "NRR-SIZING-PCT-INVALID"
+                if pct_dec <= 0 or pct_dec > 1:
+                    return None, "NRR-SIZING-PCT-INVALID"
+                final_pos_size_usd = equity * pct_dec
+            else:
+                return None, "NRR-SIZING-MODE-INVALID"
+
+            if final_pos_size_usd > self.liq_cap_usd:
+                final_pos_size_usd = self.liq_cap_usd
+            why_parts.append(f"sizing=v2:{mode}")
+
+        elif q_risk is not None:
             try:
                 q_dec = decimal.Decimal(str(q_risk))
             except Exception:
@@ -3120,23 +3185,18 @@ class DecisionMaking:
             why_parts.append(
                 f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={regime_multiplier_disp} m_vol={volatility_multiplier} kappa={kappa_dec}")
         else:
-            final_pos_size_usd = min(
-                self.liq_cap_usd, equity * decimal.Decimal("0.1")
-            )  # Legacy sizing fallback
-            why_parts.append("sizing=legacy_10pct_equity")
+            # TASK39: Removed legacy equity*0.1 fallback. Missing explicit sizing contract → fail-closed.
+            return None, "NRR-SIZING-CONTRACT-MISSING"
 
-        msg = (
-            f"[{symbol}] POSITION_SIZE_CALC: equity=${equity}, " +
-            f"10%=${equity * decimal.Decimal('0.1')}, liq_cap=${self.liq_cap_usd}, " +
-            f"final=${final_pos_size_usd}"
-        )  # noqa: E501
-        self.logger.info(msg)
+        self.logger.info(
+            f"[{symbol}] POSITION_SIZE_CALC: equity=${equity}, liq_cap=${self.liq_cap_usd}, final=${final_pos_size_usd}"
+        )
 
         # ETAP3: Apply risk_contract_v1 regime sizing or cap
         rc_cap_notional = self._compute_risk_contract_cap_notional(symbol, equity)
         
         # Get volatility_state from sizing_meta (already computed above in legacy logic)
-        vol_state = sizing_meta.get("volatility_state") if q_risk is not None else None
+        vol_state = sizing_meta.get("volatility_state") if isinstance(sizing_meta, dict) else None
         
         # Try regime-scaled notional first (ETAP3: only for symbols with regime_sizing.enabled=true)
         regime_target = self._compute_regime_scaled_notional(
@@ -3193,7 +3253,10 @@ class DecisionMaking:
             return None, f"{reject_reason} (NRR: {normalized_reason})"
 
         qty = final_pos_size_usd / price
-        rounded_qty = qty.quantize(step_size, rounding=decimal.ROUND_DOWN)
+        try:
+            rounded_qty = (qty / step_size).to_integral_value(rounding=decimal.ROUND_DOWN) * step_size
+        except Exception:
+            rounded_qty = qty.quantize(step_size, rounding=decimal.ROUND_DOWN)
 
         self.logger.info(
             f"[{symbol}] QTY_CALC: price=${price}, "
@@ -3221,9 +3284,12 @@ class DecisionMaking:
         rid: str,
         reduce_only: bool = False,
         strategy_id: str = "aurora",  # CFG-STRATEGIES-SSOT-01: Add strategy_id
+        decision_ts_ms: int | None = None,
     ) -> None:
         # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check strategy arbitration
-        arbitration_result = self._check_strategy_arbitration(symbol, strategy_id)
+        arbitration_result = self._check_strategy_arbitration(
+            symbol, strategy_id, ts_ms=decision_ts_ms, commit=False
+        )
         if not arbitration_result["allowed"]:
             self.logger.info(
                 f"[{symbol}] TRADE_INTENT_BLOCKED: Strategy arbitration rejected: {arbitration_result['reason']}"
@@ -3238,6 +3304,44 @@ class DecisionMaking:
             context="decision_making:_propose_trade_intent",
         ):
             return
+
+        # TASK49: Atomic CAS guard for ENTRY orders (fixes TOCTOU race from TASK40).
+        # Uses try_reserve_entry() to atomically check + reserve in single lock hold.
+        # This prevents duplicate ENTRY orders when multiple ticks arrive quickly.
+        if not reduce_only:
+            try:
+                if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                    # Try atomic reservation - returns False if another ENTRY in-flight
+                    if not self.fsm.order_index.try_reserve_entry(symbol, rid):  # type: ignore[attr-defined]
+                        now_ms = int(time.time() * 1000)
+                        retry_key = f"order_in_flight:{symbol}:{rid}"
+                        self.logger.info(
+                            f"[{symbol}] TRADE_INTENT_DEFERRED: NRR-ORDER-IN-FLIGHT (retry_key={retry_key})"
+                        )
+                        inc_decision_deferred("NRR-ORDER-IN-FLIGHT", symbol)
+                        self._emit_intent_deferred_v1(
+                            symbol=symbol,
+                            reason="NRR-ORDER-IN-FLIGHT",
+                            retry_key=retry_key,
+                            next_allowed_ts=now_ms + 1000,
+                            original_event_name="EVT:TRADE_INTENT_PROPOSED",
+                            original_payload_min={
+                                "symbol": symbol,
+                                "side": side,
+                                "rid": rid,
+                                "strategy_id": strategy_id,
+                            },
+                            attempt=1,
+                            max_attempts=3,
+                            why_chain=(why_chain or []) + ["order_in_flight"],
+                            context="decision_making:one_open_order_guard",
+                        )
+                        self._record_blocked_intent(symbol)
+                        return
+                    # Reservation succeeded - intent will be emitted below
+            except Exception:
+                # Fail-open: if order_index is unavailable, don't block trading.
+                pass
         
         # Z-01 FIX: Read tca_prefs from config (Strict P1)
         tca = self._tca_prefs
@@ -3272,6 +3376,8 @@ class DecisionMaking:
         trade_intent = {
             "instrument": symbol,
             "side": side,
+            # TASK32: Strategy-agnostic DecisionMaking still tags intents with the originating strategy_id.
+            "strategy": strategy_id,
             "order": {
                 "qty": str(qty),
                 "price": str(price),
@@ -3295,6 +3401,15 @@ class DecisionMaking:
             "schema_ref": "...",
             "idempotent_key": str(uuid.uuid4()),
         }
+
+        # TASK47: Commit windowed arbitration only for intents that are about to be emitted.
+        commit_result = self._check_strategy_arbitration(symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)
+        if not commit_result["allowed"]:
+            self.logger.info(
+                f"[{symbol}] TRADE_INTENT_BLOCKED: Strategy arbitration rejected: {commit_result['reason']}"
+            )
+            self._record_blocked_intent(symbol)
+            return
 
         # Record accepted intent for risk gate monitoring
         self._record_accepted_intent(symbol)

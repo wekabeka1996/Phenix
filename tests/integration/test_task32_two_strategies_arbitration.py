@@ -54,6 +54,7 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
         assignments={symbol: ["s1", "s2"]},
         arbitration=SimpleNamespace(
             mode="priority",
+            window_ms=1000,
             priority={"s1": 1, "s2": 2},
             logging=SimpleNamespace(rejected_why_prefix="ARBITRATION_REJECT", log_level="INFO"),
         ),
@@ -64,6 +65,16 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
                                risk_budgets={"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 100},
                                decision=SimpleNamespace(signal_threshold=0.0)),
         domains=SimpleNamespace(
+            decision_making=SimpleNamespace(
+                position_sizing=SimpleNamespace(
+                    min_position_size_usd=10,
+                    liquidity_based_cap_usd=10_000,
+                    risk_fraction_q=None,
+                    liquidity_kappa_mode="dynamic",
+                    liquidity_kappa=1.0,
+                    sizing=SimpleNamespace(mode="percent_equity", percent_equity=0.02, fixed_notional_usd=None, fixed_qty=None),
+                )
+            ),
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
             risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
         ),
@@ -112,8 +123,8 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
     )
 
     with patch.object(dm, "_warmup_gate_before_trade_intent", return_value=False):
-        dm._on_strategy_signal_gateway(losing)  # type: ignore[arg-type]
         dm._on_strategy_signal_gateway(winning)  # type: ignore[arg-type]
+        dm._on_strategy_signal_gateway(losing)  # type: ignore[arg-type]
 
     intents = [pld for (evt, pld) in bus.emitted if evt == "EVT:TRADE_INTENT_PROPOSED"]
     assert len(intents) == 1

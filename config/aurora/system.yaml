@@ -85,14 +85,6 @@ hawkes:
   update_interval_ms: 100
   window_ms: 1000
   bivariate: false
-hotreload_whitelist:
-  - sequential_tests.wald.mu1
-  - sequential_tests.glr.min_samples
-  - kelly.fraction_cap
-  - hawkes.update_interval_ms
-  - hawkes.window_ms
-  - hawkes.eta_max
-
 # AURORA_HARDENING_V1 - Enterprise reliability features
 hardening:
   ttl_config:
@@ -120,21 +112,3 @@ hardening:
     hash_algorithm: "sha256"     # Hash algorithm for integrity checks
 account_observer:
   poll_interval: 5
-
-position_tracking:
-  positions_stale_ttl_sec: 8  # TTL for portfolio freshness check in bridge
-
-trading:
-  # Track these symbols for trading and monitoring
-  symbols_to_track:
-    - "SOLUSDT"
-    - "ETHUSDT"
-    - "DOGEUSDT"
-    - "XRPUSDT"
-    - "BTCUSDT"
-
-  market_data:
-    # Market data streams for feature engineering
-    websocket_streams:
-      - "bookTicker"  # For OBI (Order Book Imbalance)
-      - "trade"       # For TFI (Trade Flow Imbalance) and delta_price

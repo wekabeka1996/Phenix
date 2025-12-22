@@ -1,4 +1,3 @@
-config_version: 1.0.0
 hmm:
   enabled: true
   K: 3               # number of hidden states (>=2)
@@ -14,11 +13,11 @@ features:
   obi_window: 60      # samples for order book imbalance smoothing
   spread_min_ticks: 1 # used for normalization safeguards
   micro_return_window: 1
+
 hotreload_whitelist:
   - hmm.sticky_kappa
   - hmm.update_interval
   - hmm.change_conf_min
-
 models:
   sma_trend:
     sma_short_period: 10

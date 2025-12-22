@@ -137,6 +137,99 @@ class OrderIndex:
         with self._lock:
             ref.terminal = True
 
+    def has_in_flight_entry(self, symbol: str) -> bool:
+        """Return True if there's a non-terminal ENTRY order for this symbol.
+
+        Used by DecisionMaking to enforce "one open order per symbol" (TASK40).
+        """
+        if not symbol:
+            return False
+        symbol = str(symbol)
+        with self._lock:
+            for ref in self._by_rid.values():
+                if ref.terminal:
+                    continue
+                if ref.symbol != symbol:
+                    continue
+                # Entry orders have clientOrderId like ENTRY-<hash> once placed;
+                # before that, bridge may insert a placeholder with order_type=ENTRY_INTENT.
+                if ref.clientOrderId and str(ref.clientOrderId).startswith("ENTRY-"):
+                    return True
+                if str(ref.order_type or "").upper() == "ENTRY_INTENT":
+                    return True
+            return False
+
+    def try_reserve_entry(self, symbol: str, rid: str) -> bool:
+        """
+        Atomic CAS (Compare-And-Swap) reserve for ENTRY intent.
+
+        TASK49: Fixes TOCTOU race condition by combining check + reserve into single
+        atomic operation. Must be called from DecisionMaking BEFORE emitting
+        TRADE_INTENT_PROPOSED.
+
+        Args:
+            symbol: Trading symbol to reserve entry for
+            rid: Request ID for tracking
+
+        Returns:
+            True if reservation succeeded (no in-flight entry existed),
+            False if another entry is already in-flight (reservation denied).
+
+        Thread-safe: Uses RLock to guarantee atomicity.
+        """
+        if not symbol or not rid:
+            return False
+        symbol = str(symbol)
+        rid = str(rid)
+
+        with self._lock:
+            # Check: Is there already an in-flight ENTRY for this symbol?
+            for ref in self._by_rid.values():
+                if ref.terminal:
+                    continue
+                if ref.symbol != symbol:
+                    continue
+                if ref.clientOrderId and str(ref.clientOrderId).startswith("ENTRY-"):
+                    return False  # Deny: another ENTRY in-flight
+                if str(ref.order_type or "").upper() == "ENTRY_INTENT":
+                    return False  # Deny: another ENTRY_INTENT in-flight
+
+            # Reserve: Create ENTRY_INTENT placeholder immediately
+            ref = OrderRef(
+                rid=rid,
+                idempotent_key=rid,  # Use rid as idempotent_key for early reserve
+                symbol=symbol,
+                side="",  # Will be filled by upsert_from_open later
+                order_type="ENTRY_INTENT",
+            )
+            self._by_rid[rid] = ref
+            return True  # Grant: reservation successful
+
+    def cancel_reservation(self, rid: str) -> bool:
+        """
+        Cancel a previously made reservation (e.g., if trade intent is blocked downstream).
+
+        TASK49: Called when trade intent fails arbitration or other checks after
+        try_reserve_entry succeeded but before actual order placement.
+
+        Args:
+            rid: Request ID used in try_reserve_entry
+
+        Returns:
+            True if reservation was found and cancelled, False otherwise.
+        """
+        if not rid:
+            return False
+        rid = str(rid)
+
+        with self._lock:
+            ref = self._by_rid.get(rid)
+            if ref and str(ref.order_type or "").upper() == "ENTRY_INTENT" and not ref.clientOrderId:
+                # Only cancel if it's an uncommitted reservation (no clientOrderId yet)
+                self._by_rid.pop(rid, None)
+                return True
+            return False
+
     def expire(self) -> int:
         """
         Remove expired order references based on TTL.

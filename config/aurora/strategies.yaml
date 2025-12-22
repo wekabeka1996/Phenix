@@ -59,6 +59,10 @@ assignments:
 arbitration:
   mode: priority
 
+  # Decision window (ms): priority arbitration applies only within the same window.
+  # This prevents permanent suppression of the lower-priority strategy on hybrid symbols (e.g. BTC).
+  window_ms: 1000
+
   # Priority ranks (lower = higher priority)
   # Якщо Aurora і MR одночасно хочуть трейдити BTC:
   # - Aurora має пріоритет 1 (вищий)
