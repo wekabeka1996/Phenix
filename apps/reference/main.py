@@ -46,6 +46,7 @@ from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversi
 # from apps.reference.data.feature_store import FeatureStore
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
+from vfoundation.dr import wal
 from apps.reference.telemetry.alerts import AlertManager
 from vfoundation.core.fsm_emit_compat import emit_compat
 from vfoundation.core import FSMCore
@@ -237,7 +238,10 @@ class AuroraBridge:
             except (TypeError, ValueError) as e:
                 return (False, "invalid_qty_price", f"symbol={symbol} qty={qty} price_ref={price_ref} error={e}")
         else:
-            notional = float(notional)
+            try:
+                notional = float(notional)
+            except (TypeError, ValueError) as e:
+                return (False, "invalid_notional", f"symbol={symbol} notional={notional} error={e}")
         
         # 2. Get per-instrument execution config (TASK47c-A SSOT)
         instrument_specs = self.config.instruments.get(symbol) if self.config.instruments else None
@@ -248,11 +252,28 @@ class AuroraBridge:
         if execution_config is None:
             return (False, "missing_execution_config", f"symbol={symbol} has no execution config")
         
-        target_leverage = execution_config.target_leverage
-        max_notional_utilization = execution_config.max_notional_utilization
+        try:
+            target_leverage = float(execution_config.target_leverage)
+            max_notional_utilization = float(execution_config.max_notional_utilization)
+        except (TypeError, ValueError) as e:
+            return (
+                False,
+                "invalid_execution_config",
+                f"symbol={symbol} target_leverage={getattr(execution_config, 'target_leverage', None)} "
+                f"max_notional_utilization={getattr(execution_config, 'max_notional_utilization', None)} error={e}",
+            )
         
         # 3. Get equity_free_usdt from portfolio
-        equity_free_usdt = self._last_portfolio.get("equity_free_usdt", 0)
+        equity_free_usdt_raw = self._last_portfolio.get("equity_free_usdt", 0)
+        try:
+            equity_free_usdt = float(equity_free_usdt_raw)
+        except (TypeError, ValueError) as e:
+            return (
+                False,
+                "invalid_equity_data",
+                f"symbol={symbol} equity_free_usdt={equity_free_usdt_raw} error={e}",
+            )
+
         if equity_free_usdt <= 0:
             # Defensive: no equity data = fail-closed
             return (False, "missing_equity_data", f"symbol={symbol} equity_free_usdt={equity_free_usdt}")
@@ -616,6 +637,13 @@ class AuroraBridge:
                 },
                 why=f"capacity_gate_{reason}"[:80],
             )
+
+            # WAL: persist drop decision for post-mortem and DR traceability.
+            # Best-effort: do not crash bridge on WAL issues.
+            try:
+                wal.append(drop_evt.model_dump())
+            except Exception as wal_e:
+                self.logger.warning(f"Failed to write INTENT_DROPPED to WAL: {wal_e}")
             try:
                 self.fsm.emit("EVT:INTENT_DROPPED", drop_evt.pld, drop_evt.why)
             except Exception as e:
@@ -713,6 +741,13 @@ class AuroraBridge:
             pld=command_payload,
             data_ref=event_why_chain,  # Full WHY chain (validated list[str])
         )
+
+        # WAL: persist CMD:OPEN emission so WAL contains non-account lifecycle evidence.
+        # Best-effort: do not block or crash bridge on WAL issues.
+        try:
+            wal.append(open_command.model_dump())
+        except Exception as wal_e:
+            self.logger.warning(f"Failed to write CMD:OPEN to WAL: {wal_e}")
 
         self.logger.info(
             f"BRIDGE: Dispatched CMD:OPEN with rid={open_command.rid}, parent_span={intent_msg.span_id}"
@@ -1119,123 +1154,138 @@ logs_dir.mkdir(exist_ok=True)
 root_logger = logging.getLogger()
 root_logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-# Create console handler
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(getattr(logging, log_level, logging.INFO))
-console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(message)s")
-console_handler.setFormatter(console_formatter)
-console_handler.stream.reconfigure(encoding="utf-8")  # type: ignore
-root_logger.addHandler(console_handler)
+# NOTE: This module is imported by some tests via importlib. Without a guard,
+# the module-level logging setup below adds duplicate handlers, causing double
+# (or N×) log lines in `logs/*.log` during a single pytest run.
+_AURORA_LOGGING_TAG = "_aurora_main_logging_configured"
+_aurora_logging_already_configured = any(
+    getattr(h, _AURORA_LOGGING_TAG, False) for h in root_logger.handlers
+)
 
-# File handler for detailed logs
-log_file = logs_dir / "aurora_core.log"
-file_handler = RotatingFileHandler(
-    log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-)
-file_handler.setLevel(logging.DEBUG)  # Log everything to the file
-file_formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-file_handler.setFormatter(file_formatter)
-root_logger.addHandler(file_handler)
+# Configure handlers only once per process.
+if not _aurora_logging_already_configured:
 
-# Domain-specific log handlers
-domain_handlers = {}
+    def _tag(handler: logging.Handler) -> logging.Handler:
+        setattr(handler, _AURORA_LOGGING_TAG, True)
+        return handler
 
-# Feature Engineering domain logs
-fe_log_file = logs_dir / "domain_feature_engineering.log"
-fe_handler = RotatingFileHandler(
-    fe_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-fe_handler.setLevel(logging.DEBUG)
-fe_handler.setFormatter(file_formatter)
-fe_handler.addFilter(
-    lambda record: record.name.startswith(
-        "apps.reference.domains.feature_engineering")
-)
-domain_handlers["feature_engineering"] = fe_handler
-root_logger.addHandler(fe_handler)
+    # Create console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(getattr(logging, log_level, logging.INFO))
+    console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(message)s")
+    console_handler.setFormatter(console_formatter)
+    console_handler.stream.reconfigure(encoding="utf-8")  # type: ignore
+    root_logger.addHandler(_tag(console_handler))
 
-# Risk Management domain logs
-rm_log_file = logs_dir / "domain_risk_management.log"
-rm_handler = RotatingFileHandler(
-    rm_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-rm_handler.setLevel(logging.DEBUG)
-rm_handler.setFormatter(file_formatter)
-rm_handler.addFilter(
-    lambda record: record.name.startswith(
-        "apps.reference.domains.risk_management")
-)
-domain_handlers["risk_management"] = rm_handler
-root_logger.addHandler(rm_handler)
+    # File handler for detailed logs
+    log_file = logs_dir / "aurora_core.log"
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    file_handler.setLevel(logging.DEBUG)  # Log everything to the file
+    file_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(file_formatter)
+    root_logger.addHandler(_tag(file_handler))
 
-# Decision Making domain logs
-dm_log_file = logs_dir / "domain_decision_making.log"
-dm_handler = RotatingFileHandler(
-    dm_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-dm_handler.setLevel(logging.DEBUG)
-dm_handler.setFormatter(file_formatter)
-dm_handler.addFilter(
-    lambda record: record.name.startswith(
-        "apps.reference.domains.decision_making")
-)
-domain_handlers["decision_making"] = dm_handler
-root_logger.addHandler(dm_handler)
+    # Domain-specific log handlers
+    domain_handlers = {}
 
-# Execution Management domain logs
-em_log_file = logs_dir / "domain_execution_management.log"
-em_handler = RotatingFileHandler(
-    em_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-em_handler.setLevel(logging.DEBUG)
-em_handler.setFormatter(file_formatter)
-em_handler.addFilter(
-    lambda record: record.name.startswith(
-        "apps.reference.domains.execution_position")
-)
-domain_handlers["execution_management"] = em_handler
-root_logger.addHandler(em_handler)
+    # Feature Engineering domain logs
+    fe_log_file = logs_dir / "domain_feature_engineering.log"
+    fe_handler = RotatingFileHandler(
+        fe_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    fe_handler.setLevel(logging.DEBUG)
+    fe_handler.setFormatter(file_formatter)
+    fe_handler.addFilter(
+        lambda record: record.name.startswith(
+            "apps.reference.domains.feature_engineering")
+    )
+    domain_handlers["feature_engineering"] = fe_handler
+    root_logger.addHandler(_tag(fe_handler))
 
-# Regime Detector domain logs
-rd_log_file = logs_dir / "domain_regime_detector.log"
-rd_handler = RotatingFileHandler(
-    rd_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-rd_handler.setLevel(logging.DEBUG)
-rd_handler.setFormatter(file_formatter)
-rd_handler.addFilter(
-    lambda record: record.name.startswith(
-        "apps.reference.domains.regime_detector")
-)
-domain_handlers["regime_detector"] = rd_handler
-root_logger.addHandler(rd_handler)
+    # Risk Management domain logs
+    rm_log_file = logs_dir / "domain_risk_management.log"
+    rm_handler = RotatingFileHandler(
+        rm_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    rm_handler.setLevel(logging.DEBUG)
+    rm_handler.setFormatter(file_formatter)
+    rm_handler.addFilter(
+        lambda record: record.name.startswith(
+            "apps.reference.domains.risk_management")
+    )
+    domain_handlers["risk_management"] = rm_handler
+    root_logger.addHandler(_tag(rm_handler))
 
-# Mean Reversion strategy logs (separate file, strategy-level telemetry)
-mr_log_file = logs_dir / "domain_mean_reversion.log"
-mr_handler = RotatingFileHandler(
-    mr_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-)
-mr_handler.setLevel(logging.DEBUG)
-mr_handler.setFormatter(file_formatter)
-mr_handler.addFilter(lambda record: record.name.startswith("domain_mean_reversion"))
-domain_handlers["mean_reversion"] = mr_handler
-root_logger.addHandler(mr_handler)
+    # Decision Making domain logs
+    dm_log_file = logs_dir / "domain_decision_making.log"
+    dm_handler = RotatingFileHandler(
+        dm_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    dm_handler.setLevel(logging.DEBUG)
+    dm_handler.setFormatter(file_formatter)
+    dm_handler.addFilter(
+        lambda record: record.name.startswith(
+            "apps.reference.domains.decision_making")
+    )
+    domain_handlers["decision_making"] = dm_handler
+    root_logger.addHandler(_tag(dm_handler))
 
-# Event Chain structured logs (JSON format)
-chain_log_file = logs_dir / "event_chain.log"
-chain_handler = RotatingFileHandler(
-    chain_log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-)
-chain_handler.setLevel(logging.INFO)
-json_formatter = JSONFormatter()
-chain_handler.setFormatter(json_formatter)
-chain_handler.addFilter(
-    lambda record: hasattr(record, "rid") or record.name == "event_chain"
-)
-domain_handlers["event_chain"] = chain_handler
-root_logger.addHandler(chain_handler)
+    # Execution Management domain logs
+    em_log_file = logs_dir / "domain_execution_management.log"
+    em_handler = RotatingFileHandler(
+        em_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    em_handler.setLevel(logging.DEBUG)
+    em_handler.setFormatter(file_formatter)
+    em_handler.addFilter(
+        lambda record: record.name.startswith(
+            "apps.reference.domains.execution_position")
+    )
+    domain_handlers["execution_management"] = em_handler
+    root_logger.addHandler(_tag(em_handler))
+
+    # Regime Detector domain logs
+    rd_log_file = logs_dir / "domain_regime_detector.log"
+    rd_handler = RotatingFileHandler(
+        rd_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    rd_handler.setLevel(logging.DEBUG)
+    rd_handler.setFormatter(file_formatter)
+    rd_handler.addFilter(
+        lambda record: record.name.startswith(
+            "apps.reference.domains.regime_detector")
+    )
+    domain_handlers["regime_detector"] = rd_handler
+    root_logger.addHandler(_tag(rd_handler))
+
+    # Mean Reversion strategy logs (separate file, strategy-level telemetry)
+    mr_log_file = logs_dir / "domain_mean_reversion.log"
+    mr_handler = RotatingFileHandler(
+        mr_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    mr_handler.setLevel(logging.DEBUG)
+    mr_handler.setFormatter(file_formatter)
+    mr_handler.addFilter(lambda record: record.name.startswith("domain_mean_reversion"))
+    domain_handlers["mean_reversion"] = mr_handler
+    root_logger.addHandler(_tag(mr_handler))
+
+    # Event Chain structured logs (JSON format)
+    chain_log_file = logs_dir / "event_chain.log"
+    chain_handler = RotatingFileHandler(
+        chain_log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    chain_handler.setLevel(logging.INFO)
+    json_formatter = JSONFormatter()
+    chain_handler.setFormatter(json_formatter)
+    chain_handler.addFilter(
+        lambda record: hasattr(record, "rid") or record.name == "event_chain"
+    )
+    domain_handlers["event_chain"] = chain_handler
+    root_logger.addHandler(_tag(chain_handler))
 
 LOG = logging.getLogger("AuroraCore")
 

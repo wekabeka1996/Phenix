@@ -3,6 +3,8 @@ Smoke tests for /metrics endpoint and router performance metrics
 """
 
 import time
+import pytest
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from vfoundation.obs.debug_api import app, record_router_timing
 

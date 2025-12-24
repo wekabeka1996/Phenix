@@ -28,8 +28,8 @@ def make_assignments(symbol_strategies: Dict[str, List[str]]) -> Dict[str, List[
     return symbol_strategies
 
 
-def make_aurora_instruments(symbol_configs: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    """Create mock aurora_instruments.yaml."""
+def make_aurora_assets(symbol_configs: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Create mock strategies/aurora.yaml::aurora.assets."""
     return symbol_configs
 
 
@@ -91,9 +91,9 @@ class TestRegimeAllowlistContract:
     """Test RegimeAllowlistContract validation logic."""
     
     def test_extract_strategy_config(self):
-        """Should extract config from assignments and aurora_instruments."""
+        """Should extract config from assignments and strategies/aurora.yaml::aurora.assets."""
         assignments = {"DOGEUSDT": ["mean_reversion"]}
-        aurora_instruments = {
+        aurora_assets = {
             "DOGEUSDT": {
                 "allowed_regimes": ["FLAT_LOW", "FLAT_NORMAL"],
             }
@@ -102,7 +102,7 @@ class TestRegimeAllowlistContract:
         config = RegimeAllowlistContract.extract_strategy_config(
             "DOGEUSDT",
             assignments,
-            aurora_instruments,
+            aurora_assets,
         )
         
         assert config.symbol == "DOGEUSDT"
@@ -169,7 +169,7 @@ class TestMRBlockingExplainable:
         TASK51-B Test 1: MR blocking should be explainable.
         
         When a regime blocks MR trading, the reason must be:
-        1. Traceable to aurora_instruments.yaml
+        1. Traceable to strategies/aurora.yaml::aurora.assets
         2. Include the blocked regime and allowed list
         """
         explanation = RegimeAllowlistContract.explain_blocking(
@@ -185,7 +185,7 @@ class TestMRBlockingExplainable:
         # Must show current regime
         assert "MEAN_REVERSION" in explanation
         # Must reference config source
-        assert "aurora_instruments.yaml" in explanation
+        assert "strategies/aurora.yaml" in explanation
     
     def test_mr_enabled_when_allowlisted(self):
         """
@@ -194,7 +194,7 @@ class TestMRBlockingExplainable:
         When FLAT regimes are in allowed_regimes, MR should work.
         """
         assignments = {"DOGEUSDT": ["mean_reversion"]}
-        aurora_instruments = {
+        aurora_assets = {
             "DOGEUSDT": {
                 "allowed_regimes": ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
             }
@@ -203,7 +203,7 @@ class TestMRBlockingExplainable:
         # Should not raise
         RegimeAllowlistContract.validate_all(
             assignments,
-            aurora_instruments,
+            aurora_assets,
             fail_on_critical=True,
         )
         
@@ -211,7 +211,7 @@ class TestMRBlockingExplainable:
         config = RegimeAllowlistContract.extract_strategy_config(
             "DOGEUSDT",
             assignments,
-            aurora_instruments,
+            aurora_assets,
         )
         assert config.allows_mr_regimes is True
         assert config.is_mr_enabled_but_blocked is False
@@ -287,7 +287,7 @@ class TestStartupHook:
                 "BTCUSDT": ["aurora", "mean_reversion"],
             },
         }
-        aurora_instruments_yaml = {
+        aurora_assets_yaml = {
             "BTCUSDT": {
                 "allowed_regimes": ["FLAT_LOW", "MEAN_REVERSION", "TREND_UP"],
             },
@@ -296,7 +296,7 @@ class TestStartupHook:
         # Should not raise
         validate_strategy_regime_config(
             strategies_yaml,
-            aurora_instruments_yaml,
+            aurora_assets_yaml,
             mode="live",
         )
     

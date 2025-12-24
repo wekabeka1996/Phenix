@@ -1,26 +1,349 @@
 # ==============================================================================
-# Aurora Strategy Profile
+# Aurora Strategy Profile — SSOT
 # ==============================================================================
-# CFG-STRATEGIES-SSOT-03: Registry-driven strategy profile
-#
-# Aurora is the tick-based multi-signal alpha strategy with regime awareness.
-# This profile defines default parameters for Aurora strategy.
-#
-# NOTE: Per-symbol overrides are in config/aurora/aurora_instruments.yaml
+# CFG-STRATEGY-SSOT-FREEZE-02:
+# - Strategy policy SSOT: this file (no policy in trading.yaml/domains.yaml)
+# - Global Aurora policy: aurora.decision (migrated from trading.yaml)
+# - Per-symbol Aurora params: aurora.assets (migrated from aurora_instruments.yaml)
 # ==============================================================================
 
 aurora:
-  # Global enable/disable
   enabled: true
-  
-  # Strategy type
   type: tick_based
-  
-  # Description
   description: "Tick-based multi-signal alpha strategy with regime awareness"
-  
-  # Placeholder for future Aurora-specific global params
-  # Currently Aurora params are primarily in:
-  # - config/aurora/trading.yaml (decision thresholds, filters)
-  # - config/aurora/aurora_instruments.yaml (per-symbol overrides)
-  # - config/aurora/regime.yaml (regime detection)
+
+  # Global Aurora policy (DecisionConfig)
+  decision:
+    testnet:
+      signal_threshold: null
+    production:
+      signal_threshold: null
+    signal_threshold: 0.1
+    neutral_threshold: 0.18
+    symbols_to_track:
+      - BTCUSDT
+      - ETHUSDT
+      - SOLUSDT
+      - DOGEUSDT
+      - XRPUSDT
+    behavior_fsm:
+      enable: false
+      high_vol_multiplier: 2.0
+      low_vol_multiplier: 0.5
+    regime_threshold_multipliers:
+      HIGH_VOLATILITY: 1.2
+      LOW_VOLATILITY: 0.9
+      MEAN_REVERSION: 1.05
+      TREND_UP: 1.0
+      TREND_DOWN: 1.0
+      UNCERTAIN: 1.15
+      DEFAULT: 1.0
+    side_bias_min_score: null
+    side_bias_window_sec: 60
+    side_bias_target_ratio: 0.6
+    side_bias_penalty_factor: 0.5
+    cooldown_sec: 10
+    retry_ttl_ms: 5000
+    retry_max_count: 3
+    retry_backoff_factor: 1.5
+    regime_thresholds:
+      HIGH_VOLATILITY: 0.12
+      LOW_VOLATILITY: 0.09
+      MEAN_REVERSION: 0.105
+      TREND_UP: 0.1
+      TREND_DOWN: 0.1
+      UNCERTAIN: 0.115
+      DEFAULT: 0.1
+    kelly:
+      base_probability: 0.5
+      kelly_cap: 0.25
+      kelly_alpha: 0.8
+      payoff_ratio_r: 1.5
+    qos:
+      mode: defer
+      enforce: false
+      exposure_block_cooldown_sec: 30
+      symbol_cooldown_sec: 1
+      max_intents_per_minute_per_symbol: 60
+    signals:
+      normalize: false
+      enable_new_metrics: true
+    bar_gating: null
+    roi_exit: null
+    mean_reversion: null
+    signal_weights:
+      obi: 0.15
+      tfi: 0.15
+      delta_price: 0.1
+      ema_bias: 0.15
+      volume_spike: 0.1
+      volatility_state: 0.1
+      depth_imbalance: 0.15
+      macro_sync: 0.1
+
+  # Per-symbol overrides (AuroraInstrumentConfig)
+  assets:
+    # ETHUSDT - Phase 3+ Optuna optimized parameters
+    # Source: aurora_optimal_full_v1.yaml, aurora_phase3_production.yaml
+    ETHUSDT:
+      enabled: true
+      position_mode: "STRICT"
+      weights:
+        ema: 0.058
+        volume: 0.241
+        macro: 0.131
+        liquidity: 0.341
+        obi: 0.155
+        tfi: 0.093
+        volatility: 0.036
+        depth_imbalance: 0.256
+        delta_price: 0.253
+
+      side_bias:
+        penalty_factor: 0.9
+        window_sec: 600
+        target_ratio: 0.6
+
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.3
+        LOW_VOLATILITY: 0.85
+        MEAN_REVERSION: 1.05
+        DEFAULT: 1.0
+
+      regime_sizing:
+        HIGH_VOLATILITY: 0.3
+        LOW_VOLATILITY: 1.9
+        MEAN_REVERSION: 0.8
+
+      exit:
+        sl_pct: 0.019
+        max_hold_sec: 900
+
+      take_profit:
+        tp_low_ratio: 0.4
+        tp_high_ratio: 1.4
+        partial_exit_pct: 0.7
+
+      trailing_stop:
+        enabled: false
+        activation_pct: 0.003
+        trail_pct: 0.006
+        min_update_interval_sec: 5
+
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY", "MEAN_REVERSION"]
+
+      execution: null
+      ema_clamp: null
+      signal_threshold: null
+      cooldown_sec: null
+      timeframe_sec: null
+
+    # SOLUSDT - Phase 3 Optuna optimized parameters
+    SOLUSDT:
+      weights:
+        ema: 0.12
+        volume: 0.18
+        macro: 0.10
+        liquidity: 0.25
+        obi: 0.14
+        tfi: 0.09
+        volatility: 0.05
+        depth_imbalance: 0.20
+        delta_price: 0.22
+      enabled: true
+      position_mode: "STRICT"
+
+      side_bias:
+        penalty_factor: 0.0
+        window_sec: 300
+        target_ratio: 0.5
+      
+      regime_sizing:
+        HIGH_VOLATILITY: 5.0
+        LOW_VOLATILITY: 6.0
+        MEAN_REVERSION: 5.0
+
+      exit:
+        sl_pct: 0.0216
+        max_hold_sec: 180
+
+      take_profit:
+        tp_low_ratio: 0.36
+        tp_high_ratio: 0.60
+        partial_exit_pct: 0.31
+
+      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION"]
+
+      trailing_stop:
+        enabled: true
+        activation_pct: 0.046
+        trail_pct: 0.018
+        min_update_interval_sec: 5
+
+      regime_thresholds: null
+      execution: null
+      ema_clamp: null
+      signal_threshold: null
+      cooldown_sec: null
+      timeframe_sec: null
+
+    # DOGEUSDT - Phase 3+ derived from Mean Reversion optimization
+    DOGEUSDT:
+      enabled: true
+      position_mode: "STRICT"
+      weights:
+        ema: 0.15
+        volume: 0.15
+        macro: 0.10
+        liquidity: 0.20
+        obi: 0.15
+        tfi: 0.12
+        volatility: 0.08
+        depth_imbalance: 0.15
+        delta_price: 0.15
+
+      side_bias:
+        penalty_factor: 0.3
+        window_sec: 300
+        target_ratio: 0.6
+
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.5
+        LOW_VOLATILITY: 0.85
+        MEAN_REVERSION: 0.9
+        DEFAULT: 1.0
+
+      regime_sizing:
+        HIGH_VOLATILITY: 0.4
+        LOW_VOLATILITY: 1.5
+        MEAN_REVERSION: 1.2
+
+      exit:
+        sl_pct: 0.0197
+        max_hold_sec: 660
+
+      take_profit:
+        tp_low_ratio: 0.5
+        tp_high_ratio: 1.0
+        partial_exit_pct: 0.6
+
+      trailing_stop:
+        enabled: true
+        activation_pct: 0.015
+        trail_pct: 0.008
+        min_update_interval_sec: 5
+
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "LOW_VOLATILITY", "MEAN_REVERSION"]
+
+      execution: null
+      ema_clamp: null
+      signal_threshold: null
+      cooldown_sec: null
+      timeframe_sec: null
+
+    # XRPUSDT - Phase 3+ from Optuna optimization
+    XRPUSDT:
+      weights:
+        ema: 0.427
+        volume: 0.385
+        macro: 0.469
+        liquidity: 0.199
+        obi: 0.120
+        tfi: 0.402
+        volatility: 0.367
+        depth_imbalance: 0.392
+        delta_price: 0.028
+      enabled: true
+      position_mode: "STRICT"
+
+      side_bias:
+        penalty_factor: 0.4
+        window_sec: 600
+        target_ratio: 0.6
+
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.9
+        LOW_VOLATILITY: 0.95
+        DEFAULT: 1.0
+
+      regime_sizing:
+        HIGH_VOLATILITY: 0.1
+        LOW_VOLATILITY: 1.7
+        MEAN_REVERSION: 0.8
+
+      exit:
+        sl_pct: 0.0144
+        max_hold_sec: 660
+
+      take_profit:
+        tp_low_ratio: 0.5
+        tp_high_ratio: 1.0
+        partial_exit_pct: 0.5
+
+      trailing_stop:
+        enabled: false
+        activation_pct: 0.02
+        trail_pct: 0.01
+        min_update_interval_sec: 5
+
+      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_LOW", "FLAT_NORMAL", "MEAN_REVERSION"]
+
+      execution: null
+      ema_clamp: null
+      signal_threshold: null
+      cooldown_sec: null
+      timeframe_sec: null
+
+    # BTCUSDT - baseline params
+    BTCUSDT:
+      weights:
+        ema: 0.15
+        volume: 0.15
+        macro: 0.15
+        liquidity: 0.15
+        obi: 0.10
+        tfi: 0.10
+        volatility: 0.10
+        depth_imbalance: 0.05
+        delta_price: 0.05
+      enabled: true
+      position_mode: "STRICT"
+
+      side_bias:
+        penalty_factor: 0.5
+        window_sec: 600
+        target_ratio: 0.6
+
+      regime_thresholds:
+        HIGH_VOLATILITY: 1.2
+        LOW_VOLATILITY: 0.9
+        MEAN_REVERSION: 0.5
+        DEFAULT: 1.0
+
+      regime_sizing:
+        HIGH_VOLATILITY: 3.0
+        LOW_VOLATILITY: 4.0
+        MEAN_REVERSION: 3.5
+
+      exit:
+        sl_pct: 0.02
+        max_hold_sec: 600
+
+      take_profit:
+        tp_low_ratio: 0.5
+        tp_high_ratio: 1.0
+        partial_exit_pct: 0.5
+
+      trailing_stop:
+        enabled: false
+        activation_pct: 0.02
+        trail_pct: 0.01
+        min_update_interval_sec: 5
+
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "MEAN_REVERSION", "FLAT_LOW", "FLAT_NORMAL"]
+
+      execution: null
+      ema_clamp: null
+      signal_threshold: null
+      cooldown_sec: null
+      timeframe_sec: null

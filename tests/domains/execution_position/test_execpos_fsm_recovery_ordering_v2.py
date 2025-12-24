@@ -10,9 +10,10 @@ from decimal import Decimal
 def fsm_config():
     cfg = MagicMock()
     # Mock symbols and instruments
-    cfg.aurora_instruments = {
+    cfg.strategies.aurora.assets = {
         "BTCUSDT": MagicMock(symbol="BTCUSDT", tick_size=0.1, step_size=0.001)
     }
+    cfg.strategies.aurora.decision.bar_gating = None
     cfg.trading = MagicMock()
     cfg.trading.execution = MagicMock()
     cfg.trading.execution.order_guardian = {"unified": True}
@@ -29,6 +30,14 @@ def fsm_config():
     eg.max_directional_ratio = "2.0"
     eg.positions_stale_ttl_sec = "5"
     cfg.domains.execution_position.exposure_guard = eg
+
+    # Force shadow adapter path by providing incomplete API creds (prevents real adapter init).
+    cfg.binance_api.testnet.api_key = ""
+    cfg.binance_api.testnet.api_secret = ""
+    cfg.binance_api.testnet.rest_url = ""
+    cfg.binance_api.live.api_key = ""
+    cfg.binance_api.live.api_secret = ""
+    cfg.binance_api.live.rest_url = ""
     
     return cfg
 
@@ -191,6 +200,7 @@ async def test_fsm_timeout_triggers_handler(exec_pos_fsm):
     deadline.rid = "r1"
     deadline.client_order_id = "cid1"
 
+    exec_pos_fsm.shadow_mode = False
     with patch.object(exec_pos_fsm, '_cancel_order', new_callable=AsyncMock) as mock_cancel:
         await exec_pos_fsm._handle_order_timeout(deadline)
         mock_cancel.assert_called_once_with("BTCUSDT", "ord_timeout")
@@ -456,6 +466,7 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
     exec_pos_fsm.config = cfg
     
     exec_pos_fsm.adapter.base_url = "https://fapi.binance.com"
+    exec_pos_fsm.shadow_mode = False
     
     symbol = "BTCUSDT"
     msg = Message(op="DEC", verb="OPEN", src="s", dst="d", pld={"symbol": symbol, "side": "BUY", "qty": "0.1"}, rid="open_1")
@@ -463,7 +474,14 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
     # Mocks
     exec_pos_fsm.adapter.get_mark_price = AsyncMock(return_value=50000.0)
     exec_pos_fsm.adapter.get_exchange_info = AsyncMock(return_value={
-        "symbols": [{"symbol": symbol, "filters": [{"filterType": "PRICE_FILTER", "tickSize": "0.1"}]}]
+        "symbols": [{
+            "symbol": symbol,
+            "filters": [
+                {"filterType": "PRICE_FILTER", "tickSize": "0.1"},
+                {"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001", "maxQty": "10000"},
+                {"filterType": "MIN_NOTIONAL", "notional": "5"},
+            ],
+        }]
     })
     # Ensure entry_resp is a real dict
     entry_resp = {"orderId": 12345}

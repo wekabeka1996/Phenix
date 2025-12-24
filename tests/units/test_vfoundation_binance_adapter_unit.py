@@ -24,6 +24,7 @@ sys.modules["vfoundation.adapters.binance_adapter"] = ba_mod
 
 
 def test_norm_params_converts_and_filters():
+    pytest.importorskip("httpx")
     a = ba_mod.BinanceAdapter(
         api_key="k", api_secret="s", base_url="https://test")
     params = {"a": None, "b": True, "c": Decimal("1.2300"), "d": 5}
@@ -35,6 +36,7 @@ def test_norm_params_converts_and_filters():
 
 
 def test_to_decimal_and_rounding_and_errors():
+    pytest.importorskip("httpx")
     a = ba_mod.BinanceAdapter(
         api_key="k", api_secret="s", base_url="https://test")
     assert a._to_decimal("1.5") == Decimal("1.5")
@@ -51,6 +53,7 @@ def test_to_decimal_and_rounding_and_errors():
 
 
 def test_sign_build_is_deterministic(monkeypatch):
+    pytest.importorskip("httpx")
     a = ba_mod.BinanceAdapter(
         api_key="KKEY", api_secret="SSECRET", base_url="https://test"
     )

@@ -11,6 +11,13 @@ instruments:
     tick_size: "0.01"
     min_qty: "1"          # Binance testnet: minQty=1
     min_notional: "5"     # Binance testnet: notional=5
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 10
+      leverage_policy: "verify_only"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.06
     
   ETHUSDT:
     symbol: "ETHUSDT"
@@ -18,6 +25,13 @@ instruments:
     tick_size: "0.01"
     min_qty: "0.001"
     min_notional: "5"
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 10
+      leverage_policy: "verify_only"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.06
     
   BTCUSDT:
     symbol: "BTCUSDT"
@@ -25,6 +39,13 @@ instruments:
     tick_size: "0.1"
     min_qty: "0.001"
     min_notional: "100"
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 20
+      leverage_policy: "verify_only"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.06
     
   DOGEUSDT:
     symbol: "DOGEUSDT"
@@ -32,6 +53,13 @@ instruments:
     tick_size: "0.00001"
     min_qty: "1"
     min_notional: "5"
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 10
+      leverage_policy: "verify_only"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.06
     
   XRPUSDT:
     symbol: "XRPUSDT"
@@ -39,3 +67,10 @@ instruments:
     tick_size: "0.0001"
     min_qty: "0.1"
     min_notional: "5"
+    execution:
+      margin_mode: "isolated"
+      target_leverage: 10
+      leverage_policy: "verify_only"
+      max_notional_utilization: 0.8
+    sizing:
+      margin_pct: 0.06

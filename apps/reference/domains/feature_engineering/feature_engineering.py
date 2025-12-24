@@ -440,6 +440,37 @@ class FeatureEngineering:
             time_diff = current_tick["ts"] - last_tick["ts"]
             self._last_tick_ts_ms = int((current_tick["ts"] if "ts" in current_tick else 0) or 0)
             self._ticks_seen[symbol] += 1
+
+            # P1-1 FIX: Early return on bad time_diff (out-of-order or duplicate tick)
+            # Do NOT update any state with bad dt - emit degraded features and return
+            if time_diff <= 0:
+                inc_data_quality_bad_dt(domain="feature_engineering")
+                inc_data_quality_drop(domain="feature_engineering", reason="bad_dt")
+                warmup_bad_dt = {
+                    "ticks_seen": int(self._ticks_seen[symbol]),
+                    "full_ready": False,
+                    "ready": {},
+                    "reasons": ["bad_dt:out_of_order_or_duplicate"],
+                }
+                features_bad_dt = {
+                    "price": str(price),
+                    "obi": str(self.cfg.zero_value),
+                    "tfi": str(self.cfg.zero_value),
+                    "delta_price": str(self.cfg.zero_value),
+                    "absorption": str(self.cfg.zero_value),
+                    "liquidity_kappa": str(self.cfg.neutral_value),
+                }
+                payload_bad_dt = {
+                    "ts": current_tick.get("ts", 0),
+                    "symbol": symbol,
+                    "features": features_bad_dt,
+                    "warmup": warmup_bad_dt,
+                    "data_quality": {"drops": ["bad_dt"], "notes": []},
+                }
+                self.fsm.emit("EVT:FEATURES_CALCULATED", payload=payload_bad_dt, why="features_degraded_bad_dt")
+                self.logger.warning(f"[{symbol}] Dropping tick: time_diff={time_diff}ms (out-of-order or duplicate)")
+                return
+
             if self._last_tick_ts_ms > 0 and price > 0:
                 self._macro_sync_resampler.update_symbol(symbol, ts_ms=self._last_tick_ts_ms, price=float(price))
 
@@ -482,6 +513,9 @@ class FeatureEngineering:
             # PHASE 1 FEATURES (conditional)
             # ================================================================
             if self.cfg.enable_new_metrics:
+                # Get hot state early for spread tracking
+                hot = self._get_symbol_state(symbol).hot
+                
                 # EMA Bias
                 self._update_ema(symbol, price)
                 features["ema_bias"] = str(self._compute_ema_bias(symbol))
@@ -514,20 +548,43 @@ class FeatureEngineering:
                 features["large_trade_imbalance"] = str(self._compute_large_trade_imbalance(symbol, current_tick))
                 
                 # Spread in basis points
-                best_bid_raw = (
-                    current_tick["best_bid"]
-                    if "best_bid" in current_tick
-                    else (current_tick["bid"] if "bid" in current_tick else price)
-                )
-                best_ask_raw = (
-                    current_tick["best_ask"]
-                    if "best_ask" in current_tick
-                    else (current_tick["ask"] if "ask" in current_tick else price)
-                )
-                best_bid = decimal.Decimal(str(best_bid_raw))
-                best_ask = decimal.Decimal(str(best_ask_raw))
-                mid_price = (best_bid + best_ask) / 2 if best_bid > 0 and best_ask > 0 else price
+                # P1-2 FIX: Track spread_ready - if bid/ask missing, spread is unreliable
+                spread_ready = True
+                spread_missing = False
+                
+                if "best_bid" in current_tick:
+                    best_bid_raw = current_tick["best_bid"]
+                elif "bid" in current_tick:
+                    best_bid_raw = current_tick["bid"]
+                else:
+                    best_bid_raw = None
+                    spread_missing = True
+                
+                if "best_ask" in current_tick:
+                    best_ask_raw = current_tick["best_ask"]
+                elif "ask" in current_tick:
+                    best_ask_raw = current_tick["ask"]
+                else:
+                    best_ask_raw = None
+                    spread_missing = True
+                
+                if spread_missing:
+                    # Do NOT fallback to price=0 spread - use neutral and mark not ready
+                    spread_ready = False
+                    best_bid = price
+                    best_ask = price
+                    mid_price = price
+                    inc_data_quality_drop(domain="feature_engineering", reason="spread_missing")
+                else:
+                    best_bid = decimal.Decimal(str(best_bid_raw))
+                    best_ask = decimal.Decimal(str(best_ask_raw))
+                    mid_price = (best_bid + best_ask) / 2 if best_bid > 0 and best_ask > 0 else price
+                
                 features["spread_bps"] = str(self._compute_spread_bps(best_bid, best_ask, mid_price))
+                
+                # Store spread readiness for warmup
+                hot.spread_ready = spread_ready
+                hot.spread_missing = spread_missing
 
                 # ================================================================
                 # FUTURES FEATURES (FTR-05: Config-Gated)
@@ -560,6 +617,7 @@ class FeatureEngineering:
                     "volume_spike": bool(hot.volume_spike_ready),
                     "volatility_state": bool(hot.volatility_state_ready),
                     "macro_sync": bool(hot.macro_sync_ready) if self.cfg.macro_sync_enabled else True,
+                    "spread_bps": bool(hot.spread_ready),  # P1-2 FIX: Include spread readiness
                 }
                 reasons: list[str] = []
                 if not hot.volume_spike_ready and hot.volume_spike_not_ready_reason:
@@ -574,6 +632,9 @@ class FeatureEngineering:
                 if (not hot.large_trade_imbalance_ready) and hot.large_trade_imbalance_not_ready_reason:
                     reasons.append(f"large_trade_imbalance:{hot.large_trade_imbalance_not_ready_reason}")
                     inc_data_quality_drop(domain="feature_engineering", reason="large_trade_imbalance_not_ready")
+                # P1-2 FIX: Add spread_missing to reasons
+                if hot.spread_missing:
+                    reasons.append("spread_bps:spread_missing")
 
                 warmup["ready"] = ready_map
                 warmup["reasons"] = reasons

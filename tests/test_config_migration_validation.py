@@ -137,7 +137,7 @@ class ConfigMigrationValidator:
                 errors.append(
                     f"[FAIL] NON-MIGRATED: {relative_path}:{line_num}\n"
                     f"   Line: {line_content.strip()}\n"
-                    f"   Expected: Pydantic attribute access (e.g., self.config.trading.decision.kelly_cap)\n"
+                    f"   Expected: Pydantic attribute access (e.g., self.config.strategies.aurora.decision.kelly.kelly_cap)\n"
                 )
 
         is_valid = len(errors) == 0

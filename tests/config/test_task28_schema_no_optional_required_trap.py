@@ -49,9 +49,7 @@ def test_optional_fields_have_defaults_or_not_optional_for_root_blocks() -> None
         AuroraConfig,
         [
             "strategies_registry",
-            "mean_reversion",
             "models",
-            "aurora",
         ],
     )
 
@@ -76,11 +74,8 @@ def test_loader_does_not_inject_required_optional_keys_before_validation(tmp_pat
     regime_obj.pop("config_version", None)
     _write_yaml(tmp_path / "regime.yaml", regime_obj)
 
-    # Ensure no strategies are assigned -> no optional strategy blocks should be injected at root
-    strategies_obj = yaml.safe_load((tmp_path / "strategies.yaml").read_text(encoding="utf-8"))
-    assert isinstance(strategies_obj, dict)
-    strategies_obj["assignments"] = {}
-    _write_yaml(tmp_path / "strategies.yaml", strategies_obj)
+    # Keep canonical strategies.yaml assignments:
+    # CFG-STRATEGY-SSOT-FREEZE-03 makes strategies.yaml mandatory for startup.
 
     loader = ConfigLoader(config_dir=tmp_path)
 
@@ -104,8 +99,9 @@ def test_loader_does_not_inject_required_optional_keys_before_validation(tmp_pat
     assert "system_config_version" not in merged["system_meta"], "versions must not be setdefault-injected"
     assert "regime_config_version" not in merged["system_meta"], "versions must not be setdefault-injected"
 
-    assert "aurora" not in merged, "optional strategy blocks must not be injected as null"
-    assert "mean_reversion" not in merged, "optional strategy blocks must not be injected as null"
+    assert isinstance(merged.get("strategies"), dict), "strategy profiles must be loaded under root.strategies"
+    assert merged["strategies"].get("aurora") is not None, "strategy profiles must be loaded from strategies.yaml (no null injection)"
+    assert merged["strategies"].get("mean_reversion") is not None, "strategy profiles must be loaded from strategies.yaml (no null injection)"
 
     # Full load should still validate and then inject runtime meta post-validation
     cfg = loader.load_config()
@@ -118,7 +114,7 @@ def test_symbols_to_track_policy_is_explicit_and_deterministic(tmp_path: Path) -
     repo_cfg = (Path(__file__).resolve().parents[2] / "config" / "aurora").resolve()
     _copy_tree(repo_cfg, tmp_path)
 
-    # Remove legacy system.yaml trading.symbols_to_track so fallback comes from decision.symbols_to_track
+    # Remove any legacy system.yaml trading.symbols_to_track (canonical is derived from strategies.yaml assignments)
     system_obj = yaml.safe_load((tmp_path / "system.yaml").read_text(encoding="utf-8"))
     assert isinstance(system_obj, dict)
     system_trading = system_obj.get("trading")
@@ -126,7 +122,7 @@ def test_symbols_to_track_policy_is_explicit_and_deterministic(tmp_path: Path) -
         system_trading.pop("symbols_to_track", None)
     _write_yaml(tmp_path / "system.yaml", system_obj)
 
-    # Ensure trading.symbols_to_track is absent; decision.symbols_to_track is present
+    # Ensure trading.symbols_to_track is absent (loader derives it from strategies.yaml assignments)
     trading_obj = yaml.safe_load((tmp_path / "trading.yaml").read_text(encoding="utf-8"))
     assert isinstance(trading_obj, dict)
     trading_block = trading_obj.get("trading")
@@ -138,11 +134,12 @@ def test_symbols_to_track_policy_is_explicit_and_deterministic(tmp_path: Path) -
     cfg1 = loader.load_config()
     cfg2 = loader.load_config()
 
-    decision_symbols = cfg1.trading.decision.symbols_to_track
-    assert isinstance(decision_symbols, list) and decision_symbols
+    assert cfg1.strategies_registry is not None
+    expected = sorted(cfg1.strategies_registry.assignments.keys())
+    assert expected
 
-    assert cfg1.trading.symbols_to_track == decision_symbols
-    assert cfg2.trading.symbols_to_track == decision_symbols
+    assert cfg1.trading.symbols_to_track == expected
+    assert cfg2.trading.symbols_to_track == expected
 
 
 def test_guardian_migration_only_allowed_root_mutation(tmp_path: Path) -> None:

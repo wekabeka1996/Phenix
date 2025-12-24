@@ -40,6 +40,8 @@ class Bar:
         trade_count: Number of trades in bar
         start_ts_ms: Bar start timestamp (milliseconds)
         end_ts_ms: Bar end timestamp (milliseconds)
+        gap_bars_skipped: Number of bars skipped due to gap (0 = no gap)
+        is_gap_bar: True if this bar was preceded by a gap
     """
     symbol: str
     timeframe_sec: int
@@ -51,6 +53,9 @@ class Bar:
     trade_count: int
     start_ts_ms: int
     end_ts_ms: int
+    # P2-1 FIX: Gap detection fields
+    gap_bars_skipped: int = 0
+    is_gap_bar: bool = False
 
     @property
     def mid(self) -> Decimal:
@@ -121,6 +126,7 @@ class BarResampler:
         # Metrics
         self._ticks_processed: int = 0
         self._bars_completed: int = 0
+        self._gaps_detected: int = 0  # P2-1 FIX: Track gap occurrences
 
     def add_tick(
         self,
@@ -173,8 +179,16 @@ class BarResampler:
             self._completed_bars.append(closed_bar)
             self._bars_completed += 1
             
-            # Start new bar (aligned to boundary)
+            # P2-1 FIX: Detect gap - how many bars were skipped?
             new_bar_start = self._align_to_bar_boundary(ts_ms)
+            expected_next_bar_start = bar_end_ts
+            gap_bars_skipped = (new_bar_start - expected_next_bar_start) // self.timeframe_ms
+            is_gap_bar = gap_bars_skipped > 0
+            
+            if is_gap_bar:
+                self._gaps_detected += 1
+            
+            # Start new bar (aligned to boundary)
             self._current_bar = Bar(
                 symbol=symbol,
                 timeframe_sec=self.timeframe_sec,
@@ -186,6 +200,8 @@ class BarResampler:
                 trade_count=1,
                 start_ts_ms=new_bar_start,
                 end_ts_ms=ts_ms,
+                gap_bars_skipped=int(gap_bars_skipped),
+                is_gap_bar=is_gap_bar,
             )
             
             return closed_bar
@@ -265,6 +281,7 @@ class BarResampler:
         self._completed_bars.clear()
         self._ticks_processed = 0
         self._bars_completed = 0
+        self._gaps_detected = 0  # P2-1 FIX
 
     def get_metrics(self) -> Dict[str, int]:
         """Get resampler metrics."""
@@ -273,6 +290,7 @@ class BarResampler:
             "bars_completed": self._bars_completed,
             "bars_in_memory": len(self._completed_bars),
             "has_current_bar": self._current_bar is not None,
+            "gaps_detected": self._gaps_detected,  # P2-1 FIX
         }
 
 

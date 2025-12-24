@@ -8,8 +8,34 @@ import yaml
 try:
     from dotenv import load_dotenv
 except ImportError:
-    def load_dotenv(*args, **kwargs):
-        pass
+    def load_dotenv(dotenv_path: str | Path | None = None, *args, **kwargs):  # type: ignore[no-redef]
+        """Minimal .env loader fallback (avoids hard dependency on python-dotenv).
+
+        Supports simple KEY=VALUE lines with optional quotes; ignores comments/blank lines.
+        """
+        if dotenv_path is None:
+            return False
+        try:
+            p = Path(dotenv_path)
+            if not p.exists():
+                return False
+            for raw_line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[len("export ") :].lstrip()
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip("'").strip('"')
+                if not key:
+                    continue
+                os.environ.setdefault(key, value)
+            return True
+        except Exception:
+            return False
 from pydantic import ValidationError
 
 from .config_models import AuroraConfig as PydanticAuroraConfig
@@ -19,7 +45,7 @@ from .config_contract import ConfigContractError
 LOG = logging.getLogger(__name__)
 
 
-def deep_merge(source, destination, *, _path: str = ""):
+def deep_merge(source, destination, *, _path: str = "", _provenance: Optional[Dict[str, str]] = None, _source_name: Optional[str] = None):
     """Deep merge ``source`` dict into ``destination`` dict (fail-closed on type conflicts)."""
     if not isinstance(destination, dict):
         raise ConfigContractError(
@@ -54,9 +80,11 @@ def deep_merge(source, destination, *, _path: str = ""):
                     )
 
             node = destination[key]
-            deep_merge(value, node, _path=path)
+            deep_merge(value, node, _path=path, _provenance=_provenance, _source_name=_source_name)
         else:
             destination[key] = value
+            if _provenance is not None and _source_name is not None:
+                _provenance[path] = _source_name
 
     return destination
 
@@ -66,7 +94,7 @@ class AuroraConfig(PydanticAuroraConfig):
     """
     AuroraConfig wrapper that provides Pydantic V2 validation with strict fail-closed behavior.
 
-    All config access must use typed attributes directly (e.g., config.trading.decision.signal_threshold).
+    All config access must use typed attributes directly (e.g., config.strategies.aurora.decision.signal_threshold).
     No .get() fallback interface - missing fields cause AttributeError at startup.
     """
 
@@ -98,7 +126,6 @@ class ConfigLoader:
                 "regime.yaml",
                 "domains.yaml",
                 "instruments.yaml",
-                "aurora_instruments.yaml",
                 "strategies.yaml",
             )
             if tests_dir.exists() and all((tests_dir / f).exists() for f in required):
@@ -112,6 +139,8 @@ class ConfigLoader:
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         if env_path.exists():
             load_dotenv(env_path)
+            
+        self.provenance_map: Dict[str, str] = {}
 
     @staticmethod
     def _flatten_leaf_paths(data: Any, *, prefix: str = "") -> Dict[str, Any]:
@@ -251,17 +280,21 @@ class ConfigLoader:
 
         # Merge: trading_config (source) → system_config (destination)
         merged_config: Dict[str, Any] = {}
-        deep_merge(system_config, merged_config)  # Copy system first
-        deep_merge(trading_config, merged_config)  # Overlay trading
-        deep_merge(regime_config, merged_config)   # Overlay regime (models, hmm, etc.)
+        deep_merge(system_config, merged_config, _provenance=self.provenance_map, _source_name="system.yaml")
+        deep_merge(trading_config, merged_config, _provenance=self.provenance_map, _source_name="trading.yaml")
+        deep_merge(regime_config, merged_config, _provenance=self.provenance_map, _source_name="regime.yaml")
 
         # =========================================================================
         # CANONICAL domains.yaml LOGIC (CFG-DOMAINS-STEP-01)
         # =========================================================================
         if 'domains' in domains_config:
             merged_config['domains'] = domains_config['domains']
+            flat_domains = self._flatten_leaf_paths(domains_config['domains'], prefix="domains")
+            for p in flat_domains: self.provenance_map[p] = "domains.yaml"
         elif domains_config:
             merged_config['domains'] = domains_config
+            flat_domains = self._flatten_leaf_paths(domains_config, prefix="domains")
+            for p in flat_domains: self.provenance_map[p] = "domains.yaml"
         else:
             raise ValueError(
                 "❌ CRITICAL: No domains configuration found! "
@@ -288,8 +321,12 @@ class ConfigLoader:
             instruments_raw.get("instruments"), dict
         ):
             merged_config["instruments"] = instruments_raw["instruments"]
+            flat_inst = self._flatten_leaf_paths(instruments_raw["instruments"], prefix="instruments")
+            for p in flat_inst: self.provenance_map[p] = "instruments.yaml"
         else:
             merged_config["instruments"] = instruments_raw if isinstance(instruments_raw, dict) else {}
+            flat_inst = self._flatten_leaf_paths(merged_config["instruments"], prefix="instruments")
+            for p in flat_inst: self.provenance_map[p] = "instruments.yaml"
 
         if not merged_config.get("instruments"):
             raise ValueError(
@@ -316,26 +353,27 @@ class ConfigLoader:
         # =========================================================================
         # CANONICAL strategies.yaml LOGIC (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
         # =========================================================================
-        strict_mode = self._get_strict_mode()
-
         strategies_raw: Dict[str, Any] = {}
         try:
             raw = self._load_yaml("strategies.yaml")
             strategies_raw = raw if isinstance(raw, dict) else {}
-        except FileNotFoundError:
-            strategies_raw = {}
-
+        except FileNotFoundError as e:
+            raise ConfigContractError(
+                path="strategies.yaml",
+                why=(
+                    "❌ CRITICAL: strategies.yaml missing. "
+                    "This file is the SSOT strategy assignment registry and is mandatory."
+                ),
+            ) from e
         if not strategies_raw:
-            msg = (
-                "⚠️  strategies.yaml NOT found! "
-                "Expected config/aurora/strategies.yaml for strategy registry (assignments + arbitration)."
+            raise ConfigContractError(
+                path="strategies.yaml",
+                why=(
+                    "❌ CRITICAL: strategies.yaml missing/empty. "
+                    "This file is the SSOT strategy assignment registry and is mandatory."
+                ),
             )
-            if strict_mode:
-                raise ValueError(msg)
-            LOG.warning(msg)
-            merged_config["strategies_registry"] = None
-        else:
-            merged_config["strategies_registry"] = strategies_raw
+        merged_config["strategies_registry"] = strategies_raw
 
         # =========================================================================
         # REGISTRY-DRIVEN STRATEGY PROFILE LOADING (CFG-STRATEGIES-SSOT-03)
@@ -364,53 +402,17 @@ class ConfigLoader:
                         profile_raw = yaml.safe_load(f)
 
                     if isinstance(profile_raw, dict):
-                        if strategy_id in profile_raw:
-                            strategy_configs[strategy_id] = profile_raw[strategy_id]
-                        else:
-                            strategy_configs[strategy_id] = profile_raw
+                        data_to_merge = profile_raw[strategy_id] if strategy_id in profile_raw else profile_raw
+                        strategy_configs[strategy_id] = data_to_merge
+                        
+                        flat_strat = self._flatten_leaf_paths(data_to_merge, prefix=f"strategies.{strategy_id}")
+                        for p in flat_strat:
+                            self.provenance_map[p] = f"strategies/{strategy_id}.yaml"
+                        
                         LOG.info(f"✅ Loaded strategy profile: {strategy_id} from {profile_path}")
 
-        for strategy_id, config_data in strategy_configs.items():
-            merged_config[strategy_id] = config_data
-
-        # =========================================================================
-        # CANONICAL aurora_instruments.yaml LOGIC (CFG-AURORA-INSTRUMENTS-SSOT-01-FIXPACK)
-        # =========================================================================
-
-        # Detect deprecated trading.aurora_instruments in RAW trading_config (BEFORE Pydantic parse)
-        if isinstance(trading_config, dict) and "aurora_instruments" in trading_config:
-            trading_aurora_instruments = trading_config.get("aurora_instruments")
-            if isinstance(trading_aurora_instruments, dict) and trading_aurora_instruments:
-                msg = (
-                    "⚠️  DEPRECATED: trading.aurora_instruments detected! "
-                    "This section is IGNORED. SSOT is config/aurora/aurora_instruments.yaml. "
-                    "Remove trading.aurora_instruments from trading.yaml."
-                )
-                raise ConfigContractError(path="trading.aurora_instruments", why=msg)
-
-        aurora_instruments_raw: Dict[str, Any] = {}
-        try:
-            raw = self._load_yaml("aurora_instruments.yaml")
-            aurora_instruments_raw = raw if isinstance(raw, dict) else {}
-        except FileNotFoundError:
-            aurora_instruments_raw = {}
-
-        if not aurora_instruments_raw:
-            msg = (
-                "⚠️  aurora_instruments.yaml NOT found! "
-                "Expected config/aurora/aurora_instruments.yaml for per-symbol Aurora overrides."
-            )
-            if strict_mode:
-                raise ValueError(msg)
-            LOG.warning(msg)
-            merged_config["aurora_instruments"] = {}
-        else:
-            if "aurora_instruments" in aurora_instruments_raw and isinstance(
-                aurora_instruments_raw.get("aurora_instruments"), dict
-            ):
-                merged_config["aurora_instruments"] = aurora_instruments_raw["aurora_instruments"]
-            else:
-                merged_config["aurora_instruments"] = aurora_instruments_raw
+        # Canonical runtime namespace (CFG-STRATEGY-SSOT-FREEZE-03)
+        merged_config["strategies"] = strategy_configs
 
         # Attach system_meta under dedicated namespace (no runtime injection here)
         merged_config["system_meta"] = system_meta
@@ -427,11 +429,11 @@ class ConfigLoader:
         )
 
     def _resolve_mode_overrides(self, config: Dict[str, Any]) -> None:
-        """Apply mode-specific decision overrides from decision[mode] → decision.
+        """Apply mode-specific decision overrides from strategies.aurora.decision[mode] → decision.
 
         This resolver activates profile-based configs:
-        - decision.testnet.* → decision.* (when trading_mode=testnet)
-        - decision.production.* → decision.* (when trading_mode=production)
+        - strategies.aurora.decision.testnet.* → decision.* (when trading_mode=testnet)
+        - strategies.aurora.decision.production.* → decision.* (when trading_mode=production)
 
         ALSO applies risk[mode] → risk.trading_allowed_thresholds for risk gates.
 
@@ -439,8 +441,11 @@ class ConfigLoader:
         """
         mode = config.get("trading_mode", "production")
         trading = config.get("trading", {})
-        decision = trading.get("decision", {})
         risk = trading.get("risk", {})
+
+        strategies = config.get("strategies", {})
+        aurora = strategies.get("aurora", {}) if isinstance(strategies, dict) else {}
+        decision = aurora.get("decision", {}) if isinstance(aurora, dict) else {}
 
         if not isinstance(decision, dict):
             return
@@ -499,36 +504,92 @@ class ConfigLoader:
         """Extract list of active/tradable symbols from already-loaded config sources.
 
         Priority (most explicit first):
-        1) trading.symbols_to_track
-        2) trading.decision.symbols_to_track
-        3) keys(config.aurora_instruments) — CANONICAL SSOT (CFG-AURORA-INSTRUMENTS-SSOT-01)
-        4) keys(config.instruments)
+        1) keys(strategies_registry.assignments) (SSOT)
+        2) trading.symbols_to_track (derived from SSOT unless explicitly set)
+        3) keys(config.instruments)
         """
 
+        sr = resolved_config.get("strategies_registry")
+        if isinstance(sr, dict):
+            assignments = sr.get("assignments")
+            if isinstance(assignments, dict) and assignments:
+                return [str(s) for s in assignments.keys()]
+
         trading = resolved_config.get("trading")
-        if not isinstance(trading, dict):
-            return []
-
-        symbols_to_track = trading.get("symbols_to_track")
-        if isinstance(symbols_to_track, list) and symbols_to_track:
-            return [str(s) for s in symbols_to_track]
-
-        decision = trading.get("decision")
-        if isinstance(decision, dict):
-            decision_symbols = decision.get("symbols_to_track")
-            if isinstance(decision_symbols, list) and decision_symbols:
-                return [str(s) for s in decision_symbols]
-
-        # CFG-AURORA-INSTRUMENTS-SSOT-01: Read from root config.aurora_instruments (CANONICAL)
-        aurora_instruments = resolved_config.get("aurora_instruments")
-        if isinstance(aurora_instruments, dict) and aurora_instruments:
-            return [str(s) for s in aurora_instruments.keys()]
+        if isinstance(trading, dict):
+            symbols_to_track = trading.get("symbols_to_track")
+            if isinstance(symbols_to_track, list) and symbols_to_track:
+                return [str(s) for s in symbols_to_track]
 
         instruments = resolved_config.get("instruments")
         if isinstance(instruments, dict) and instruments:
             return [str(s) for s in instruments.keys()]
 
         return []
+
+    def _apply_trading_symbols_to_track_ssot(self, resolved_config: Dict[str, Any]) -> None:
+        """Ensure trading.symbols_to_track exists and is SSOT-consistent.
+
+        Canonical rule (CFG-STRATEGY-SSOT-FREEZE-03):
+        - SSOT source for tracked symbols is strategies.yaml assignments keys.
+        - trading.symbols_to_track may be explicitly set, but must match SSOT in strict mode.
+        """
+        if not isinstance(resolved_config, dict):
+            return
+
+        trading = resolved_config.get("trading")
+        if not isinstance(trading, dict):
+            return
+
+        sr = resolved_config.get("strategies_registry")
+        assignments: dict[str, Any] = {}
+        if isinstance(sr, dict):
+            a = sr.get("assignments")
+            if isinstance(a, dict):
+                assignments = a
+
+        ssot_symbols = [str(s) for s in assignments.keys()] if assignments else []
+        existing = trading.get("symbols_to_track")
+        existing_symbols: list[str] = []
+        if isinstance(existing, list) and existing:
+            existing_symbols = [str(s) for s in existing]
+
+        strict_mode = self._get_strict_mode()
+
+        if ssot_symbols:
+            if existing_symbols and set(existing_symbols) != set(ssot_symbols):
+                msg = (
+                    "SSOT conflict: trading.symbols_to_track disagrees with strategies.yaml assignments. "
+                    f"trading.symbols_to_track={sorted(set(existing_symbols))} "
+                    f"strategies.yaml(assignments)={sorted(set(ssot_symbols))}. "
+                    "Fix: remove trading.symbols_to_track or make it match assignments keys."
+                )
+                if strict_mode:
+                    raise ConfigContractError(path="trading.symbols_to_track", why=msg)
+                LOG.warning("⚠️  %s", msg)
+                existing_symbols = []
+
+            if not existing_symbols:
+                trading["symbols_to_track"] = sorted(set(ssot_symbols))
+                self.provenance_map["trading.symbols_to_track"] = "strategies.yaml"
+                resolved_config["trading"] = trading
+                return
+
+            trading["symbols_to_track"] = sorted(set(existing_symbols))
+            resolved_config["trading"] = trading
+            return
+
+        # No assignments present: require explicit trading.symbols_to_track (fail-closed).
+        if not existing_symbols:
+            raise ConfigContractError(
+                path="trading.symbols_to_track",
+                why=(
+                    "Missing trading.symbols_to_track and strategies.yaml assignments is empty. "
+                    "Provide explicit trading.symbols_to_track or add assignments."
+                ),
+            )
+        trading["symbols_to_track"] = sorted(set(existing_symbols))
+        resolved_config["trading"] = trading
 
     def _validate_ssot_conflicts(self, resolved_config: Dict[str, Any]) -> None:
         """
@@ -581,7 +642,12 @@ class ConfigLoader:
                 LOG.warning(msg)
 
     def _fail_fast_validate_instruments_precision(self, resolved_config: Dict[str, Any]) -> None:
-        """Startup fail-fast: ensure tick_size & step_size exist for active symbols."""
+        """Startup fail-fast: ensure constraints exist for active symbols.
+
+        SIZING-MARGIN-FIRST-SSOT-02 depends on:
+        - tick_size, step_size
+        - min_qty, min_notional
+        """
 
         active_symbols = self._extract_active_symbols(resolved_config)
         if not active_symbols:
@@ -603,7 +669,7 @@ class ConfigLoader:
                 missing.append(f"{symbol} missing instrument spec")
                 continue
 
-            for field in ("tick_size", "step_size"):
+            for field in ("tick_size", "step_size", "min_qty", "min_notional"):
                 raw = spec.get(field)
                 if raw is None:
                     missing.append(f"{symbol} missing {field}")
@@ -664,6 +730,47 @@ class ConfigLoader:
             raise ValueError(
                 f"LIVE execution fail-closed: Missing required execution config. "
                 f"All active symbols need margin_mode, target_leverage, leverage_policy, max_notional_utilization. "
+                f"Missing: {missing_sorted}{more}"
+            )
+
+    def _validate_sizing_config_for_live(self, resolved_config: Dict[str, Any]) -> None:
+        """SIZING-MARGIN-FIRST-SSOT-02: Fail-closed validation for LIVE sizing SSOT.
+
+        Validates that all active symbols have:
+        - sizing.margin_pct in (0, 1]
+        """
+        active_symbols = self._extract_active_symbols(resolved_config)
+        if not active_symbols:
+            return
+
+        instruments = resolved_config.get("instruments")
+        if not isinstance(instruments, dict):
+            raise ValueError("LIVE sizing fail-closed: instruments map is missing or invalid")
+
+        missing: list[str] = []
+        for symbol in active_symbols:
+            spec = instruments.get(symbol)
+            if not isinstance(spec, dict):
+                missing.append(f"{symbol} missing instrument spec")
+                continue
+            sizing = spec.get("sizing", spec)
+            raw = sizing.get("margin_pct") if isinstance(sizing, dict) else None
+            if raw is None:
+                missing.append(f"{symbol} missing sizing.margin_pct")
+                continue
+            try:
+                pct = float(raw)
+                if not (0.0 < pct <= 1.0):
+                    missing.append(f"{symbol} invalid sizing.margin_pct")
+            except (TypeError, ValueError):
+                missing.append(f"{symbol} invalid sizing.margin_pct")
+
+        if missing:
+            missing_sorted = "; ".join(sorted(missing[:10]))
+            more = f" (and {len(missing) - 10} more)" if len(missing) > 10 else ""
+            raise ValueError(
+                "LIVE sizing fail-closed: Missing/invalid sizing config. "
+                "All active symbols need sizing.margin_pct in (0,1]. "
                 f"Missing: {missing_sorted}{more}"
             )
 
@@ -755,6 +862,38 @@ class ConfigLoader:
                     "Action required: Remove mean_reversion from trading.yaml."
                 )
                 raise ConfigContractError(path="trading.mean_reversion", why=msg)
+
+        # =========================================================================
+        # CFG-STRATEGY-SSOT-FREEZE-02: trading.decision must NOT live in trading.yaml
+        # =========================================================================
+        # Aurora policy SSOT moved to strategies/aurora.yaml (aurora.decision).
+        # trading.yaml must not contain strategy policy to prevent drift.
+        if isinstance(trading_config, dict):
+            t = trading_config.get("trading")
+            if isinstance(t, dict) and "decision" in t:
+                raise ConfigContractError(
+                    path="trading.decision",
+                    why=(
+                        "⚠️  DEPRECATED: trading.decision detected in trading.yaml! "
+                        "Strategy policy SSOT is strategies/aurora.yaml (aurora.decision). "
+                        "Action required: Remove trading.decision from trading.yaml."
+                    ),
+                )
+
+        # =========================================================================
+        # CFG-STRATEGY-SSOT-FREEZE-02: aurora_instruments.yaml retired
+        # =========================================================================
+        # Per-symbol Aurora params SSOT moved to strategies/aurora.yaml (aurora.assets).
+        aurora_instruments_yaml_path = self.config_dir / "aurora_instruments.yaml"
+        if aurora_instruments_yaml_path.exists():
+            raise ConfigContractError(
+                path="aurora_instruments.yaml",
+                why=(
+                    "⚠️  DEPRECATED: aurora_instruments.yaml detected! "
+                    "Per-symbol Aurora params SSOT moved to strategies/aurora.yaml (aurora.assets). "
+                    "Action required: Remove/migrate aurora_instruments.yaml."
+                ),
+            )
         
         # =========================================================================
         # DEPRECATED FEATURE_ENGINEERING DETECTION (CFG-FREEZE-SSOT-06)
@@ -843,12 +982,16 @@ class ConfigLoader:
         # Apply mode-specific decision overrides
         self._resolve_mode_overrides(resolved_config)
 
+        # Ensure tracked symbols are SSOT-consistent and present for strict TradingConfig
+        self._apply_trading_symbols_to_track_ssot(resolved_config)
+
         # Startup fail-fast: precision check for active symbols
         self._fail_fast_validate_instruments_precision(resolved_config)
 
         # TASK47c-A: Fail-closed execution config validation for LIVE mode
         if is_live_execution:
             self._validate_execution_config_for_live(resolved_config)
+            self._validate_sizing_config_for_live(resolved_config)
 
         # CFG-TRADING-YAML-BURN-DOWN-01: Check for SSOT conflicts
         self._validate_ssot_conflicts(resolved_config)
@@ -895,8 +1038,8 @@ class ConfigLoader:
         """Apply strict SSOT precedence for timeframe_sec.
 
         Contract (TASK23B):
-        1) aurora_instruments.<SYM>.timeframe_sec (if set) wins
-        2) mean_reversion.timeframe_sec from strategy profile
+        1) strategies.aurora.assets.<SYM>.timeframe_sec (if set) wins
+        2) strategies.mean_reversion.timeframe_sec from strategy profile
         3) If both absent while strategy assigned -> fail-closed (ConfigContractError)
         """
         if not isinstance(resolved_config, dict):
@@ -922,13 +1065,20 @@ class ConfigLoader:
         if not assigned_symbols:
             return
 
-        aurora_instruments = resolved_config.get("aurora_instruments")
-        if not isinstance(aurora_instruments, dict):
-            aurora_instruments = {}
+        strategies = resolved_config.get("strategies")
+        if not isinstance(strategies, dict):
+            strategies = {}
+
+        aurora_cfg = strategies.get("aurora")
+        aurora_assets: dict = {}
+        if isinstance(aurora_cfg, dict):
+            assets = aurora_cfg.get("assets")
+            if isinstance(assets, dict):
+                aurora_assets = assets
 
         overrides: set[int] = set()
         for symbol in assigned_symbols:
-            inst_cfg = aurora_instruments.get(symbol)
+            inst_cfg = aurora_assets.get(symbol)
             if not isinstance(inst_cfg, dict):
                 continue
             if "timeframe_sec" not in inst_cfg:
@@ -940,20 +1090,20 @@ class ConfigLoader:
                 overrides.add(int(raw))
             except Exception as e:
                 raise ConfigContractError(
-                    path=f"aurora_instruments.{symbol}.timeframe_sec",
+                    path=f"strategies.aurora.assets.{symbol}.timeframe_sec",
                     symbol=symbol,
                     why=f"Invalid timeframe_sec override: {raw!r} ({e})",
                 )
 
-        mr_block = resolved_config.get("mean_reversion")
+        mr_block = strategies.get("mean_reversion")
         if mr_block is None:
             mr_dict: dict = {}
         elif isinstance(mr_block, dict):
             mr_dict = mr_block
         else:
             raise ConfigContractError(
-                path="mean_reversion",
-                why=f"Expected dict for mean_reversion config, got {type(mr_block).__name__}",
+                path="strategies.mean_reversion",
+                why=f"Expected dict for strategies.mean_reversion config, got {type(mr_block).__name__}",
             )
 
         profile_raw = mr_dict.get("timeframe_sec", None)
@@ -961,36 +1111,37 @@ class ConfigLoader:
         if overrides:
             if len(overrides) != 1:
                 raise ConfigContractError(
-                    path="aurora_instruments.*.timeframe_sec",
+                    path="strategies.aurora.assets.*.timeframe_sec",
                     why=f"Conflicting timeframe_sec overrides for mean_reversion across assigned symbols: {sorted(overrides)}",
                 )
             effective = next(iter(overrides))
             if effective <= 0:
                 raise ConfigContractError(
-                    path="aurora_instruments.*.timeframe_sec",
+                    path="strategies.aurora.assets.*.timeframe_sec",
                     why=f"timeframe_sec override must be positive, got {effective}",
                 )
             mr_dict["timeframe_sec"] = effective
-            resolved_config["mean_reversion"] = mr_dict
+            strategies["mean_reversion"] = mr_dict
+            resolved_config["strategies"] = strategies
             return
 
         if profile_raw is None:
             raise ConfigContractError(
-                path="mean_reversion.timeframe_sec",
-                why="Missing timeframe_sec for assigned strategy mean_reversion. Set aurora_instruments.<SYM>.timeframe_sec or mean_reversion.timeframe_sec",
+                path="strategies.mean_reversion.timeframe_sec",
+                why="Missing timeframe_sec for assigned strategy mean_reversion. Set strategies.aurora.assets.<SYM>.timeframe_sec or strategies.mean_reversion.timeframe_sec",
             )
 
         try:
             profile_tf = int(profile_raw)
         except Exception as e:
             raise ConfigContractError(
-                path="mean_reversion.timeframe_sec",
+                path="strategies.mean_reversion.timeframe_sec",
                 why=f"Invalid timeframe_sec value: {profile_raw!r} ({e})",
             )
 
         if profile_tf <= 0:
             raise ConfigContractError(
-                path="mean_reversion.timeframe_sec",
+                path="strategies.mean_reversion.timeframe_sec",
                 why=f"timeframe_sec must be positive, got {profile_tf}",
             )
 

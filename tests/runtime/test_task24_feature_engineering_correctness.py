@@ -328,3 +328,162 @@ def test_volatility_state_not_ready_returns_explicit_neutral():
 
     # Should return neutral value when not ready
     assert vol == cfg.neutral_value, f"Not ready volatility should be neutral, got {vol}"
+
+
+# ============================================================
+# P1-1 / P1-2 Regression Tests
+# ============================================================
+
+def test_bad_dt_drops_tick_no_state_update(monkeypatch):
+    """
+    P1-1 REGRESSION: Out-of-order tick (time_diff <= 0) should not update any state.
+    
+    Contract: Bad dt → emit degraded features with full_ready=False, do not update buffers.
+    """
+    from apps.reference.config_loader import get_config
+    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+
+    drops: list[tuple[str, str]] = []
+
+    def _fake_drop(*, domain: str, reason: str) -> None:
+        drops.append((domain, reason))
+
+    def _fake_bad_dt(*, domain: str) -> None:
+        drops.append((domain, "bad_dt_metric"))
+
+    monkeypatch.setattr(
+        "apps.reference.domains.feature_engineering.feature_engineering.inc_data_quality_drop",
+        _fake_drop,
+    )
+    monkeypatch.setattr(
+        "apps.reference.domains.feature_engineering.feature_engineering.inc_data_quality_bad_dt",
+        _fake_bad_dt,
+    )
+
+    cfg = get_config()
+    fsm = _DummyFsm()
+    fe = FeatureEngineering(fsm=fsm, config=cfg)
+
+    symbol = "BTCUSDT"
+    now_ms = 1_000_000
+
+    # Step 1: First tick (no previous, skipped)
+    tick1 = SimpleNamespace(
+        verb="MARKET_TICK_RECEIVED",
+        pld={"symbol": symbol, "ts": now_ms, "price": "100", "bid_size": "10", "ask_size": "10", "buy_volume": "5", "sell_volume": "5"}
+    )
+    fe.on_market_tick(tick1)
+
+    # Step 2: Second tick (normal, should emit features)
+    tick2 = SimpleNamespace(
+        verb="MARKET_TICK_RECEIVED",
+        pld={"symbol": symbol, "ts": now_ms + 1000, "price": "101", "bid_size": "10", "ask_size": "10", "buy_volume": "5", "sell_volume": "5"}
+    )
+    fe.on_market_tick(tick2)
+    
+    emitted_before = len(fsm.emitted)
+    assert emitted_before >= 1, "expected at least one emission after second tick"
+
+    # Get state before bad tick
+    state_before = fe._get_symbol_state(symbol)
+    ema_before = state_before.hot.ema_short
+
+    # Step 3: Out-of-order tick (ts <= previous ts)
+    tick_bad = SimpleNamespace(
+        verb="MARKET_TICK_RECEIVED",
+        pld={"symbol": symbol, "ts": now_ms + 500, "price": "999", "bid_size": "10", "ask_size": "10", "buy_volume": "5", "sell_volume": "5"}
+    )
+    fe.on_market_tick(tick_bad)
+
+    # Assert: bad_dt was recorded
+    assert any(reason == "bad_dt" for _, reason in drops), \
+        f"expected bad_dt drop, got: {drops}"
+
+    # Assert: state NOT updated (EMA should be same)
+    state_after = fe._get_symbol_state(symbol)
+    assert state_after.hot.ema_short == ema_before, \
+        f"P1-1 VIOLATION: EMA updated on bad dt ({ema_before} → {state_after.hot.ema_short})"
+
+    # Assert: emitted degraded features with full_ready=False
+    last_event = fsm.emitted[-1]
+    evt_name, payload, why, _ = last_event
+    assert evt_name == "EVT:FEATURES_CALCULATED"
+    assert payload.get("warmup", {}).get("full_ready") is False, \
+        "bad_dt should emit with full_ready=False"
+    assert "bad_dt" in str(payload.get("warmup", {}).get("reasons", [])), \
+        "bad_dt should be in warmup reasons"
+
+
+def test_missing_bid_ask_sets_spread_not_ready(monkeypatch):
+    """
+    P1-2 REGRESSION: Missing best_bid/best_ask should NOT produce spread=0.
+    
+    Contract: Missing bid/ask → spread_ready=False, reason includes "spread_missing".
+    """
+    from apps.reference.config_loader import get_config
+    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+
+    drops: list[tuple[str, str]] = []
+
+    def _fake_drop(*, domain: str, reason: str) -> None:
+        drops.append((domain, reason))
+
+    monkeypatch.setattr(
+        "apps.reference.domains.feature_engineering.feature_engineering.inc_data_quality_drop",
+        _fake_drop,
+    )
+
+    cfg = get_config()
+    fsm = _DummyFsm()
+    fe = FeatureEngineering(fsm=fsm, config=cfg)
+
+    symbol = "BTCUSDT"
+    now_ms = 1_000_000
+
+    # Step 1: First tick
+    tick1 = SimpleNamespace(
+        verb="MARKET_TICK_RECEIVED",
+        pld={"symbol": symbol, "ts": now_ms, "price": "100", "bid_size": "10", "ask_size": "10", "buy_volume": "5", "sell_volume": "5"}
+    )
+    fe.on_market_tick(tick1)
+
+    # Step 2: Second tick WITHOUT best_bid/best_ask (only price)
+    tick2 = SimpleNamespace(
+        verb="MARKET_TICK_RECEIVED",
+        pld={
+            "symbol": symbol,
+            "ts": now_ms + 1000,
+            "price": "101",
+            "bid_size": "10",
+            "ask_size": "10",
+            "buy_volume": "5",
+            "sell_volume": "5",
+            # NO best_bid, NO best_ask, NO bid, NO ask → spread_missing
+        }
+    )
+    fe.on_market_tick(tick2)
+
+    # Assert: spread_missing was recorded
+    assert any(reason == "spread_missing" for _, reason in drops), \
+        f"expected spread_missing drop, got: {drops}"
+
+    # Assert: state has spread_ready=False
+    state = fe._get_symbol_state(symbol)
+    assert state.hot.spread_ready is False, \
+        "P1-2 VIOLATION: spread_ready should be False when bid/ask missing"
+    assert state.hot.spread_missing is True, \
+        "P1-2 VIOLATION: spread_missing should be True"
+
+    # Assert: warmup includes spread_bps=False in ready map
+    last_event = fsm.emitted[-1]
+    evt_name, payload, why, _ = last_event
+    assert evt_name == "EVT:FEATURES_CALCULATED"
+    
+    ready_map = payload.get("warmup", {}).get("ready", {})
+    assert ready_map.get("spread_bps") is False, \
+        f"spread_bps should be False in ready_map, got: {ready_map}"
+
+    # Assert: spread is NOT 0 (should be computed from fallback but marked not ready)
+    reasons = payload.get("warmup", {}).get("reasons", [])
+    assert any("spread" in r for r in reasons), \
+        f"spread_missing should be in reasons, got: {reasons}"

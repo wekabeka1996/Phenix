@@ -1,5 +1,43 @@
 ---
 
+## ✅ CFG-STRATEGY-SSOT-FREEZE-02 — STRATEGY SSOT FREEZE — COMPLETE
+
+- [x] Strategy configs mandatory + fail-closed (assigned strategy missing/invalid → startup raises)
+- [x] Aurora policy SSOT moved to `config/aurora/strategies/aurora.yaml` (global `aurora.decision` + per-symbol `aurora.assets`)
+- [x] Removed strategy-policy from `config/aurora/trading.yaml` (no `trading.decision`)
+- [x] Retired `config/aurora/aurora_instruments.yaml` → `config/aurora/archive/aurora_instruments.yaml`
+- [x] Added full contract tests (`tests/config/test_config_strategy_ssot_freeze.py`) + updated existing config tests
+- [x] Provenance/CLI: `tools/auroractl.py config-provenance` emits `stage=strategy` for strategy-sourced keys
+
+---
+
+## ✅ CFG-STRATEGY-SSOT-FREEZE-03 — REMOVE LEGACY RUNTIME PATHS — COMPLETE
+
+- [x] Runtime readers use `config.strategies.<id>.*` only (no `trading.decision.*` / `aurora_instruments.*`)
+- [x] Loader shims removed (strategy policy not injected into legacy namespaces)
+- [x] Full test suite stabilized (optional deps are explicitly skipped when missing)
+
+---
+
+## ✅ SIZING-MARGIN-FIRST-SSOT-02 — PER-SYMBOL MARGIN-FIRST SIZING — COMPLETE
+
+- [x] SSOT: `instruments.<SYM>.execution.target_leverage` + `instruments.<SYM>.sizing.margin_pct`
+- [x] Removed notional-first / legacy sizing keys (`percent_equity`, `fixed_notional_usd`, `fixed_qty`, `risk_contract_v1`)
+- [x] Runtime sizing is margin-first (rounded to step; validates `min_qty` + `min_notional`)
+- [x] Fail-closed in LIVE for missing `execution`/`sizing` on assigned symbols
+- [x] Tests added/updated (config + decision_making + gateway/integration) and full suite green
+
+---
+
+## ✅ MR-RISK-GATE-NONE-FIX-01 — ELIMINATE float(None) IN STRATEGY SIGNAL GATEWAY — COMPLETE
+
+- [x] Config contract: forbid `max_risk_score: null` as an “inherit” sentinel; omit key to inherit
+- [x] Config contract: `max_risk_score.enabled=true ⇒ value must be a number` (no null)
+- [x] Runtime gateway: missing/None risk_score emits deterministic `EVT:INTENT_DEFERRED` (`RISK_SCORE_MISSING`) instead of crashing
+- [x] Tests: config validators + runtime gateway behavior pinned; full suite green
+
+---
+
 ## ✅ TASK 29 — TEST-COVERAGE-PUSH-V1-EXEC_POS — COMPLETE
 
 - [x] Boost total coverage from 31% to 39% (+8% delta)
@@ -205,27 +243,27 @@
 **Джерело:** `apps/research/new_alpha/` — R&D документи з Optuna результатами
 
 ### C1: Додати XRPUSDT Config (30m) 🔴 HIGH — **+$74/міс**
-- [ ] [C1-01] Add instruments.XRPUSDT (step_size, tick_size) — trading.yaml
-- [ ] [C1-02] Add XRPUSDT + DOGEUSDT to symbols_to_track — trading.yaml
-- [ ] [C1-03] Add aurora_instruments.XRPUSDT (weights, side_bias, TP, trailing!) — trading.yaml
+- [ ] [C1-01] Add instruments.XRPUSDT (step_size, tick_size) — config/aurora/instruments.yaml
+- [ ] [C1-02] Add XRPUSDT + DOGEUSDT assignments (SSOT) — config/aurora/strategies.yaml
+- [ ] [C1-03] Add strategies.aurora.assets.XRPUSDT (weights, side_bias, TP, trailing!) — config/aurora/strategies/aurora.yaml
 
 ### C2: Додати DOGEUSDT + Enable 1m MR (30m) 🔴 HIGH — **+$88/міс**
-- [ ] [C2-01] Add instruments.DOGEUSDT — trading.yaml
+- [ ] [C2-01] Add instruments.DOGEUSDT — config/aurora/instruments.yaml
 - [ ] [C2-02] Set mean_reversion.enabled: true — mean_reversion.yaml
 - [ ] [C2-03] Verify DOGEUSDT asset config (bb_window=20, sl=1.97%) — mean_reversion.yaml
 
 ### C3: Оновити SOLUSDT до Phase 3 (20m) 🟡 MEDIUM — **+$117/міс**
-- [ ] [C3-01] Update weights from best_aurora_SOLUSDT_3m_phase3.json — trading.yaml
-- [ ] [C3-02] Update regime_sizing (0.6/2.0/0.7) — trading.yaml
-- [ ] [C3-03] Verify side_bias (Phase 3 says 0.0 but RESULTS_PHASE3 says 0.4!) — trading.yaml
+- [ ] [C3-01] Update weights from best_aurora_SOLUSDT_3m_phase3.json — config/aurora/strategies/aurora.yaml
+- [ ] [C3-02] Update regime_sizing (0.6/2.0/0.7) — config/aurora/strategies/aurora.yaml
+- [ ] [C3-03] Verify side_bias (Phase 3 says 0.0 but RESULTS_PHASE3 says 0.4!) — config/aurora/strategies/aurora.yaml
 
 ### C4: Оновити ETHUSDT Phase 3+ (20m) 🟡 MEDIUM — **+$50/міс**
-- [ ] [C4-01] Add TP params (tp_low_ratio=0.4, tp_high_ratio=1.4) — trading.yaml
-- [ ] [C4-02] Set trailing_stop.enabled: false — trading.yaml
-- [ ] [C4-03] Add execution.cooldown_sec: 15 — trading.yaml
+- [ ] [C4-01] Add TP params (tp_low_ratio=0.4, tp_high_ratio=1.4) — config/aurora/strategies/aurora.yaml
+- [ ] [C4-02] Set trailing_stop.enabled: false — config/aurora/strategies/aurora.yaml
+- [ ] [C4-03] Add execution.cooldown_sec: 15 — config/aurora/strategies/aurora.yaml
 
 ### C5: Валідація Config Loading (15m) 🔴 HIGH
-- [ ] [C5-01] Test all aurora_instruments load correctly — test_config_loading.py
+- [ ] [C5-01] Test all strategies.aurora.assets load correctly — test_config_loading.py
 - [ ] [C5-02] Test config fallback chain works — test_config_loading.py
 
 ### C6: End-to-End Multi-Symbol Test (1-2h) 🔴 HIGH

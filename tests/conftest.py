@@ -1,7 +1,21 @@
 import pytest
+import asyncio
+import inspect
 from unittest.mock import MagicMock
 from apps.reference.config_models import AuroraConfig, DomainsConfig
 from apps.reference.config_loader import ConfigLoader
+
+def pytest_pyfunc_call(pyfuncitem):  # type: ignore[override]
+    """Minimal async test runner (no pytest-asyncio dependency).
+
+    Runs `async def` tests via `asyncio.run(...)` so the suite works in minimal envs.
+    """
+    testfunction = pyfuncitem.obj
+    if inspect.iscoroutinefunction(testfunction):
+        funcargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}  # type: ignore[attr-defined]
+        asyncio.run(testfunction(**funcargs))
+        return True
+    return None
 
 @pytest.fixture
 def mock_fsm():

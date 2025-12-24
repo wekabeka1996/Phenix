@@ -50,9 +50,11 @@ def test_optional_required_null_autofill_enables_loader(tmp_path):
     cfg_dir = _copy_canonical_config_dir(tmp_path)
 
     # Remove a few Optional-but-required keys (strict schema expects explicit nulls).
+    aurora_yaml = cfg_dir / "strategies" / "aurora.yaml"
+    _delete_dotted_key(aurora_yaml, "aurora.decision.testnet")
+    _delete_dotted_key(aurora_yaml, "aurora.decision.production")
+
     trading_yaml = cfg_dir / "trading.yaml"
-    _delete_dotted_key(trading_yaml, "trading.decision.testnet")
-    _delete_dotted_key(trading_yaml, "trading.decision.production")
     _delete_dotted_key(trading_yaml, "trading.execution.manage.emergency")
 
     # Sanity: loader should fail before autofill.
@@ -86,8 +88,8 @@ def test_optional_required_null_autofill_enables_loader(tmp_path):
     )
 
     # Verify keys are now explicitly present (null/empty collection).
-    assert _get_dotted_key(trading_yaml, "trading.decision.testnet") is None
-    assert _get_dotted_key(trading_yaml, "trading.decision.production") is None
+    assert _get_dotted_key(aurora_yaml, "aurora.decision.testnet") is None
+    assert _get_dotted_key(aurora_yaml, "aurora.decision.production") is None
     assert _get_dotted_key(trading_yaml, "trading.execution.manage.emergency") is None
 
     # Loader should now succeed.

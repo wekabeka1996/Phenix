@@ -2,6 +2,9 @@
 Tests for Feature Store multi-timeframe aggregation
 """
 
+import pytest
+pytest.skip("FeatureStore tests require optional dependency duckdb", allow_module_level=True)
+
 from apps.reference.data.feature_store import FeatureStore
 import os
 import tempfile
@@ -9,9 +12,6 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import json
 import pandas as pd
-import pytest
-pytest.skip("Feature Store multi-timeframe - DuckDB API issues",
-            allow_module_level=True)
 
 
 class TestFeatureStoreMultiTimeframe:

@@ -52,6 +52,8 @@ def _dm_cfg():
         position_sizing=position_sizing,
         arming=arming,
         features=features,
+        # Used by DecisionMaking._get_regime_thresholds()
+        regime_threshold_multipliers={"DEFAULT": 1.0},
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
         signals=signals,
@@ -95,9 +97,6 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
                 enabled=True,
                 strategy=None,
                 risk=None,
-                bb_window=None,
-                min_vol_atr=None,
-                sl_pct=None,
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
                 position_mode="STRICT",
             )
@@ -119,16 +118,48 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
         trading=SimpleNamespace(
             tca_prefs={"max_slippage_bps": 1, "max_latency_ms": 100, "maker_preference": "maker"},
             risk_budgets={"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 100},
-            decision=SimpleNamespace(signal_threshold=0.0),
+            decision=SimpleNamespace(
+                # Strict access in DecisionMaking expects model_dump().
+                signal_weights=SimpleNamespace(model_dump=lambda: {"obi": 1.0}),
+            ),
         ),
         domains=SimpleNamespace(
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
             risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
         ),
-        instruments={symbol: SimpleNamespace(tick_size=0.1, step_size=0.001)},
-        aurora_instruments={},
+        instruments={
+            symbol: SimpleNamespace(
+                tick_size="0.1",
+                step_size="0.001",
+                min_qty="0.001",
+                min_notional="5",
+                execution=SimpleNamespace(
+                    margin_mode="isolated",
+                    target_leverage=10,
+                    leverage_policy="verify_only",
+                    max_notional_utilization=0.8,
+                ),
+                sizing=SimpleNamespace(margin_pct=0.02),
+            )
+        },
+        strategies=SimpleNamespace(
+            aurora=SimpleNamespace(
+                decision=SimpleNamespace(
+                    signal_threshold=0.0,
+                    retry_ttl_ms=1000,
+                    retry_max_count=1,
+                    retry_backoff_factor=1.0,
+                    regime_threshold_multipliers={"DEFAULT": 1.0},
+                    side_bias_penalty_factor=None,
+                    side_bias_window_sec=None,
+                    side_bias_target_ratio=None,
+                    kelly=None,
+                ),
+                assets={},
+            ),
+            mean_reversion=mr_cfg,
+        ),
         strategies_registry=strategies_registry,
-        mean_reversion=mr_cfg,
     )
 
     bus = _Bus()
@@ -149,10 +180,14 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
     plugins.register(MeanReversionPlugin())
     StrategyRuntime(fsm=bus, config=cfg, registry=plugins).start()  # type: ignore[arg-type]
 
-    with patch.object(dm, "_warmup_gate_before_trade_intent", return_value=False):
+    with patch.object(dm, "_warmup_gate_before_trade_intent", return_value=False), \
+         patch.object(dm, "_calculate_position_size", return_value=(Decimal("0.01"), "TEST_SIZING", None, {})):
+        # P0 FIX: Use LOW_VOLATILITY instead of MEAN_REVERSION
+        # MEAN_REVERSION now requires ATR data (fail-closed), but this test only sends 4 ticks
+        # LOW_VOLATILITY doesn't require ATR and always maps to FLAT_LOW
         bus.emit(
             "EVT:REGIME_DETECTED",
-            {"symbol": symbol, "regime": "MEAN_REVERSION", "warmup": {"full_ready": True}},
+            {"symbol": symbol, "regime": "LOW_VOLATILITY", "warmup": {"full_ready": True}},
         )
 
         base = (now_ms // 60_000) * 60_000
@@ -173,4 +208,4 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
     assert len(intents) == 1
     assert intents[0]["strategy"] == "mean_reversion"
     assert intents[0]["order"]["qty"] not in ("0", "0.0", "")
-    assert intents[0]["entry_price"] not in (None, "", "0")
+    assert intents[0]["order"]["price"] not in (None, "", "0")

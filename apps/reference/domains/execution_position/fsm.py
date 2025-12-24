@@ -863,8 +863,14 @@ class ExecPosFSM:
                 LOG.info(f"INJECTING_INTENT_DATA for {symbol} (rid={rid}): {intent_data}")
                 sl_price = intent_data.get("stop_price")
                 tp_price = intent_data.get("target_price")
-                if sl_price:
-                    manage_flow.set_intent_prices(sl_price=sl_price, tp_price=tp_price)
+                # BUG FIX: Check for real value, not just truthy ("None" string is truthy!)
+                sl_is_real = sl_price is not None and str(sl_price).strip().lower() != "none"
+                tp_is_real = tp_price is not None and str(tp_price).strip().lower() != "none"
+                if sl_is_real:
+                    manage_flow.set_intent_prices(sl_price=sl_price, tp_price=tp_price if tp_is_real else None)
+                    LOG.info(f"INTENT_PRICES_INJECTED for {symbol}: SL={sl_price}, TP={tp_price if tp_is_real else 'None'}")
+                else:
+                    LOG.debug(f"SKIP_INTENT_INJECTION for {symbol}: sl_price is None/invalid")
                 
                 # Cleanup cache after injection
                 self._pending_intent_data.pop(rid, None)
@@ -1083,26 +1089,36 @@ class ExecPosFSM:
         # Route to the correct FSM based on the message verb
         if msg.verb == "OPEN":
             # EXP-FIX: Fail-closed exposure check before processing CMD:OPEN
-            if self._check_exposure_fail_closed(msg):
-                return None  # Error already emitted
+            exposure_err = self._check_exposure_fail_closed(msg)
+            if exposure_err is not None:
+                return exposure_err
             result = open_flow.handle(msg)
             
             # PHASE A2 FIX: Capture TP/SL intent data if present
             if result and result.op == "DEC" and result.verb == "OPEN":
                 try:
                     pld = result.pld or {}
-                    # If we have special intent data, cache it
-                    if "stop_price" in pld or "target_price" in pld or "sl_pct" in pld:
-                        # Use rid as key (same rid used for fill)
-                        # Or specific field if needed. Here we trust rid linkage.
+                    # Helper to check for real values (not None, not "None" string)
+                    def _is_real_value(v) -> bool:
+                        return v is not None and str(v).strip().lower() != "none"
+                    
+                    # Extract values
+                    raw_stop = pld.get("stop_price")
+                    raw_target = pld.get("target_price")
+                    raw_sl_pct = pld.get("sl_pct")
+                    
+                    # Only cache if at least one value is real (not None/"None")
+                    if _is_real_value(raw_stop) or _is_real_value(raw_target) or _is_real_value(raw_sl_pct):
                         intent_data = {
-                            "stop_price": pld.get("stop_price"),
-                            "target_price": pld.get("target_price"),
-                            "sl_pct": pld.get("sl_pct"),
+                            "stop_price": raw_stop if _is_real_value(raw_stop) else None,
+                            "target_price": raw_target if _is_real_value(raw_target) else None,
+                            "sl_pct": raw_sl_pct if _is_real_value(raw_sl_pct) else None,
                             "timestamp": time.time()
                         }
                         self._pending_intent_data[result.rid] = intent_data
                         LOG.info(f"CAPTURED_INTENT_DATA for {result.rid}: {intent_data}")
+                    else:
+                        LOG.debug(f"SKIP_INTENT_CACHE for {result.rid}: all values are None")
                 except Exception as e:
                     LOG.error(f"Failed to capture intent data: {e}")
         elif msg.verb == "ORDER_STATE_CHANGED":
@@ -1597,14 +1613,17 @@ class ExecPosFSM:
                     f"min_qty={norm_result.min_qty}, min_notional={norm_result.min_notional})"
                 )
                 # Log to order_log for forensics
-                order_logger.log(
-                    event_type="QTY_NORMALIZE_REJECTED",
-                    symbol=symbol,
-                    side=side,
-                    quantity=str(raw_qty),
-                    rid=decision.rid,
-                    adapter_response=norm_result.to_dict(),
-                    why=norm_result.why,
+                order_logger.write(
+                    {
+                        "rid": decision.rid,
+                        "event_type": "QTY_NORMALIZE_REJECTED",
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": str(raw_qty),
+                        "nrr_code": norm_result.why,
+                        "adapter_response": norm_result.to_dict(),
+                        "why": norm_result.why,
+                    }
                 )
                 # Emit rejection event
                 reject_msg = Message(
@@ -2315,40 +2334,43 @@ class ExecPosFSM:
         _, _, close_f = self._get_or_create_flows(symbol)
         return close_f
 
-    def _check_exposure_fail_closed(self, msg: Message) -> bool:
+    def _check_exposure_fail_closed(self, msg: Message) -> Optional[Message]:
         """
         EXP-FIX: Check exposure limits with fail-closed behavior.
 
-        Returns True if request should be blocked (error already emitted).
+        Returns error Message if request should be blocked, else None.
         """
         pld = msg.pld or {}
         symbol = pld.get("symbol")
         qty = pld.get("qty")
         price_ref = pld.get("price_ref")
 
+        side_raw = pld.get("side")
+        side = str(side_raw).upper() if side_raw is not None else "BUY"
+        if side not in {"BUY", "SELL", "LONG", "SHORT"}:
+            side = "BUY"
+
         if not symbol or not qty or not price_ref:
             LOG.warning(
                 f"EXPOSURE_CHECK_SKIP: Missing required fields for {symbol}")
-            return False
+            return None
 
         try:
             # Calculate notional
-            notional_usd = Decimal(str(qty)) * Decimal(str(price_ref))
+            notional_abs = Decimal(str(qty)) * Decimal(str(price_ref))
+            notional_signed = -notional_abs if side in {"SELL", "SHORT"} else notional_abs
+
+            reduce_only = bool(pld.get("reduce_only", False))
+            reserve_key = pld.get("idempotent_key") or msg.rid or f"rid_{msg.rid}"
 
             # Check exposure with fail-closed logic
             exposure_check = self.exposure_guard.can_open(
-                symbol, notional_usd, self._latest_portfolio_state
+                symbol, notional_signed, self._latest_portfolio_state
             )
 
             if not exposure_check["allowed"]:
                 reason = exposure_check["reason"]
                 stale_sec = exposure_check["stale_sec"] if "stale_sec" in exposure_check else 0
-
-                # EXP-FIX: Paranoid fail-closed: reserve exposure even when blocking
-                # This protects against edge cases where our stale detection is wrong
-                reserve_key = pld.get(
-                    "idempotent_key") or msg.rid or f"rid_{msg.rid}"
-                self.exposure_guard.reserve(reserve_key, notional_usd)
 
                 # Emit ERR:OPEN with fail-closed reason
                 error_msg = Message(
@@ -2361,20 +2383,28 @@ class ExecPosFSM:
                         "reason": reason,
                         "stale_sec": stale_sec,
                         "symbol": symbol,
-                        "requested_notional": str(notional_usd),
+                        "side": side,
+                        "idempotent_key": str(pld.get("idempotent_key") or ""),
+                        "requested_notional": str(notional_signed),
                     },
                     why=f"exposure_fail_closed_{reason.lower()}",
+                )
+
+                # WAL: persist failure synchronously so CMD:OPEN never "vanishes".
+                try:
+                    wal.append(error_msg.model_dump())
+                except Exception as wal_e:
+                    LOG.warning(f"Failed to write ERR:OPEN to WAL: {wal_e}")
+
+                LOG.error(
+                    f"EXPOSURE_FAIL_CLOSED_OPEN_BLOCKED: rid={msg.rid} symbol={symbol} side={side} reason={reason} stale_sec={stale_sec}"
                 )
 
                 # EXP-FIX: Record fail-closed metric
                 if hasattr(self, "metrics_collector") and self.metrics_collector:
                     self.metrics_collector.record_exposure_fail_closed(reason)
 
-                # Emit error asynchronously
-                loop = self._get_async_loop()
-                if loop:
-                    self._submit_async(self._emit_error_async(error_msg), loop)
-                return True
+                return error_msg
 
             # EXP-FIX: Periodic shadow notional check (every 10 requests approx)
             self._shadow_check_counter += 1
@@ -2385,15 +2415,42 @@ class ExecPosFSM:
                     self._submit_async(self._check_shadow_notional(), loop)
 
             # Reserve exposure for successful check
-            reserve_key = pld.get(
-                "idempotent_key") or msg.rid or f"rid_{msg.rid}"
-            self.exposure_guard.reserve(reserve_key, notional_usd)
+            self.exposure_guard.reserve(
+                reserve_key,
+                notional_abs,
+                reduce_only=reduce_only,
+                symbol=str(symbol),
+                side=side,
+            )
 
-            return False
+            return None
 
         except Exception as e:
             LOG.error(f"EXPOSURE_CHECK_ERROR: {e}", exc_info=True)
-            return False
+
+            # Fail-closed on any exposure-check error.
+            reason = "EXPOSURE_CHECK_ERROR"
+            error_msg = Message(
+                op="ERR",
+                verb="OPEN",
+                src="execution_position",
+                dst=msg.src,
+                rid=msg.rid,
+                pld={
+                    "reason": reason,
+                    "symbol": symbol,
+                    "side": side,
+                    "idempotent_key": str(pld.get("idempotent_key") or ""),
+                },
+                why="exposure_fail_closed_exception",
+            )
+
+            try:
+                wal.append(error_msg.model_dump())
+            except Exception as wal_e:
+                LOG.warning(f"Failed to write ERR:OPEN(EXPOSURE_CHECK_ERROR) to WAL: {wal_e}")
+
+            return error_msg
 
     async def _emit_error_async(self, msg: Message) -> None:
         """Asynchronously emit an error message."""
@@ -2423,7 +2480,25 @@ class ExecPosFSM:
         price = pld["price"] if "price" in pld else 0
         try:
             notional_usd = Decimal(str(qty)) * Decimal(str(price))
-            self.exposure_guard.on_fill(reserve_key, notional_usd)
+            fill_symbol = pld.get("symbol")
+            if not fill_symbol:
+                fill_symbol = (
+                    self.exposure_guard.state.pending_exposure.get(reserve_key, {}).get("symbol")
+                    if hasattr(self.exposure_guard, "state") and hasattr(self.exposure_guard.state, "pending_exposure")
+                    else None
+                )
+            fill_symbol = str(fill_symbol or "UNKNOWN")
+
+            fill_side_raw = pld.get("side")
+            fill_side = str(fill_side_raw).upper() if fill_side_raw is not None else "UNKNOWN"
+            if fill_side == "UNKNOWN":
+                fill_side = (
+                    str(self.exposure_guard.state.pending_exposure.get(reserve_key, {}).get("side") or "UNKNOWN").upper()
+                    if hasattr(self.exposure_guard, "state") and hasattr(self.exposure_guard.state, "pending_exposure")
+                    else "UNKNOWN"
+                )
+
+            self.exposure_guard.on_fill(reserve_key, notional_usd, symbol=fill_symbol, side=fill_side)
 
             # EXP-FIX: Record post-fill hold metric
             if hasattr(self, "metrics_collector") and self.metrics_collector:
@@ -2435,8 +2510,8 @@ class ExecPosFSM:
             order_logger.write({
                 "rid": pld["rid"] if "rid" in pld else f"fill_{reserve_key}",
                 "event_type": "ORDER_STATE_CHANGED",
-                "symbol": pld["symbol"] if "symbol" in pld else "",
-                "side": pld["side"] if "side" in pld else "NONE",
+                "symbol": fill_symbol,
+                "side": fill_side,
                 "quantity": float(qty),
                 "price": float(price),
                 "client_order_id": pld["client_order_id"] if "client_order_id" in pld else "",

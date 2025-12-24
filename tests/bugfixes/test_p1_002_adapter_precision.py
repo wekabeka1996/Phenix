@@ -3,6 +3,7 @@ Test BUG-P1-002: Verify the new BinanceAdapter preserves Decimal precision on AP
 """
 
 import pytest
+pytest.importorskip("httpx")
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch, MagicMock
 

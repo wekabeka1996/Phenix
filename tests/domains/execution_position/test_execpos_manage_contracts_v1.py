@@ -70,6 +70,7 @@ def test_manage_idempotency_on_adjustment(fsm_harness):
     manage.position_entry_price = Decimal("50000")
     manage.sl_order_id = "sl_123"
     manage.sl_price = Decimal("49500")
+    manage.position_open_ts = 1000.0  # Must set to avoid max_hold_time triggering
     
     # Mock _check_trailing_stop to return an adjustment
     with patch("apps.reference.domains.execution_position.fsm_manage.time.time") as mock_time:
@@ -104,6 +105,7 @@ def test_manage_handles_missing_market_data_fail_closed(fsm_harness):
     manage.symbol = "BTCUSDT"
     manage.position_qty = Decimal("1.0")
     manage.position_entry_price = Decimal("50000")
+    manage.position_open_ts = time.time()  # Must set to avoid max_hold_time triggering
     
     # Message with missing price
     msg = Message(op="UPD", verb="MARKET_DATA", src="ws", dst="exec", pld={"symbol": "BTCUSDT"})

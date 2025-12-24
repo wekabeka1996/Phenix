@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import json
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +21,44 @@ from apps.reference.config_loader import ConfigLoader  # noqa: E402
 
 def cmd_config_validate(args: argparse.Namespace) -> int:
     loader = ConfigLoader(config_dir=Path(args.config_dir) if args.config_dir else None)
-    loader.load_config()
+    # Run with LIVE fail-closed checks enabled (execution + sizing SSOT).
+    loader.load_config(is_live_execution=True)
     print("CONFIG_OK")
+    return 0
+
+
+def cmd_config_provenance(args: argparse.Namespace) -> int:
+    loader = ConfigLoader(config_dir=Path(args.config_dir) if args.config_dir else None)
+    config = loader.load_config()
+    
+    provenance = []
+    flat_config = ConfigLoader._flatten_leaf_paths(config.model_dump())
+    
+    for key, val in flat_config.items():
+        # Heuristic for merge stage
+        stage = "override"
+        src = loader.provenance_map.get(key, "unknown")
+        if "system.yaml" in src: stage = "system"
+        elif "trading.yaml" in src: stage = "trading"
+        elif "domains.yaml" in src: stage = "domains"
+        elif "instruments.yaml" in src: stage = "instruments"
+        elif "strategies/" in src: stage = "strategy"
+        
+        provenance.append({
+            "key": key,
+            "effective_value": val,
+            "source_file": src,
+            "merge_stage": stage,  # legacy name (kept)
+            "stage": stage,
+            "notes": ""
+        })
+    
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(provenance, f, indent=2)
+    
+    print(f"PROVENANCE_DUMPED: {out_path}")
     return 0
 
 
@@ -37,9 +74,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_validate.set_defaults(func=cmd_config_validate)
 
+    p_prov = sub.add_parser("config-provenance", help="Dump effective config with provenance.")
+    p_prov.add_argument("--config", default="aurora", help="Config name (default: aurora)")
+    p_prov.add_argument("--out", required=True, help="Output file path")
+    p_prov.add_argument("--config-dir", default=None, help="Override config directory")
+    p_prov.set_defaults(func=cmd_config_provenance)
+
     ns = parser.parse_args(argv)
     return int(ns.func(ns))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    main(sys.argv[1:])

@@ -4,7 +4,7 @@ import time
 import json
 from decimal import Decimal
 from unittest.mock import MagicMock, AsyncMock, patch
-import httpx
+httpx = pytest.importorskip("httpx")
 
 from apps.reference.adapters.binance_adapter import BinanceAdapter, BinanceAPIError, ExchangeOrderParams
 
@@ -218,4 +218,3 @@ def test_idempotency_ledger(adapter):
     
     # Non-existent
     assert adapter.check_clientorderid_reuse("BTCUSDT", "cid_999") is None
-

@@ -33,7 +33,6 @@ class TestRegimeYamlStrictValidation:
         
         # Valid regime.yaml
         regime_yaml = {
-            "config_version": "1.0.0",
             "hmm": {
                 "enabled": True,
                 "K": 3
@@ -88,7 +87,6 @@ class TestRegimeYamlStrictValidation:
         
         # regime.yaml with EXTRA KEY in models
         regime_yaml = {
-            "config_version": "1.0.0",
             "hmm": {
                 "enabled": True
             },

@@ -69,9 +69,6 @@ def test_mean_reversion_logs_signal_with_indicators() -> None:
                 enabled=True,
                 strategy=None,
                 risk=None,
-                bb_window=None,
-                min_vol_atr=None,
-                sl_pct=None,
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
                 position_mode="STRICT",
             )
@@ -89,7 +86,7 @@ def test_mean_reversion_logs_signal_with_indicators() -> None:
         emit_trade_intent_directly=False,
     )
 
-    cfg = SimpleNamespace(strategies_registry=strategies_registry, mean_reversion=mr_cfg)
+    cfg = SimpleNamespace(strategies_registry=strategies_registry, strategies=SimpleNamespace(mean_reversion=mr_cfg))
     bus = _Bus()
 
     capture = _Capture()
@@ -102,7 +99,10 @@ def test_mean_reversion_logs_signal_with_indicators() -> None:
     handler.register()
 
     base = (now_ms // 60_000) * 60_000
-    bus.emit("EVT:REGIME_DETECTED", {"symbol": symbol, "regime": "MEAN_REVERSION"})
+    # P0 FIX: Use LOW_VOLATILITY instead of MEAN_REVERSION
+    # MEAN_REVERSION now requires ATR data (fail-closed), but this test only sends 4 ticks
+    # LOW_VOLATILITY doesn't require ATR and always maps to FLAT_LOW
+    bus.emit("EVT:REGIME_DETECTED", {"symbol": symbol, "regime": "LOW_VOLATILITY"})
     ticks = [
         (base + 0, Decimal("100")),
         (base + 60_000, Decimal("100")),

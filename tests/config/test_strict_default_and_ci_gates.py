@@ -122,13 +122,13 @@ def test_fail_fast_missing_required_key_in_trading_yaml(minimal_config, clean_en
     """Negative: missing required YAML key must fail fast (no permissive defaults)."""
     config_dir = minimal_config
 
-    trading_path = config_dir / "trading.yaml"
-    payload = yaml.safe_load(trading_path.read_text())
+    strategy_path = config_dir / "strategies" / "aurora.yaml"
+    payload = yaml.safe_load(strategy_path.read_text())
     assert isinstance(payload, dict)
 
-    # Remove a required key under trading.decision
-    del payload["trading"]["decision"]["retry_ttl_ms"]
-    trading_path.write_text(yaml.safe_dump(payload))
+    # Remove a required key under aurora.decision (SSOT: strategies/aurora.yaml)
+    del payload["aurora"]["decision"]["retry_ttl_ms"]
+    strategy_path.write_text(yaml.safe_dump(payload, sort_keys=False))
 
     os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
     loader = ConfigLoader(config_dir=config_dir)
@@ -137,7 +137,11 @@ def test_fail_fast_missing_required_key_in_trading_yaml(minimal_config, clean_en
         loader.load_config()
 
     msg = str(exc_info.value)
-    assert "trading.decision.retry_ttl_ms" in msg or "retry_ttl_ms" in msg
+    assert (
+        "strategies.aurora.decision.retry_ttl_ms" in msg
+        or "aurora.decision.retry_ttl_ms" in msg
+        or "retry_ttl_ms" in msg
+    )
 
 
 def test_sanity_features_yaml_deprecated_strict(minimal_config, clean_env):

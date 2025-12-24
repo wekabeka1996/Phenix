@@ -33,7 +33,6 @@ ops:
   reports_dir: "reports"
 
 # TASK22 (zero defaults): root-level optional keys must be explicitly present
-decision: null
 execution: null
 brackets: null
 trailing: {}

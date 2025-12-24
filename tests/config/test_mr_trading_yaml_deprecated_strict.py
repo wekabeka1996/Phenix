@@ -149,12 +149,14 @@ class TestMeanReversionTradingYamlDeprecated:
         strategies_yaml = {
             "version": "1.0.0",
             "assignments": {
-                "BTCUSDT": ["mean_reversion"]
+                "BTCUSDT": ["aurora", "mean_reversion"]
             },
             "arbitration": {
                 "mode": "priority",
+                "window_ms": 1000,
                 "priority": {
-                    "mean_reversion": 1
+                    "aurora": 1,
+                    "mean_reversion": 2,
                 },
                 "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
             }
@@ -167,16 +169,15 @@ class TestMeanReversionTradingYamlDeprecated:
         
         # VERIFY: MR config loaded from profile
         assert config is not None
-        assert hasattr(config, "mean_reversion")
-        assert config.mean_reversion is not None
-        assert config.mean_reversion.enabled is True
+        assert config.strategies.mean_reversion is not None
+        assert config.strategies.mean_reversion.enabled is True
         # Canonical profile: BTCUSDT override uses bb_window=40
-        assert config.mean_reversion.assets["BTCUSDT"].strategy.bb_window == 40
+        assert config.strategies.mean_reversion.assets["BTCUSDT"].strategy.bb_window == 40
         
         # VERIFY: strategy registry loaded
         assert hasattr(config, "strategies_registry")
         assert config.strategies_registry is not None
-        assert config.strategies_registry.assignments["BTCUSDT"] == ["mean_reversion"]
+        assert set(config.strategies_registry.assignments["BTCUSDT"]) == {"aurora", "mean_reversion"}
     
     def test_mr_profile_missing_when_assigned_fails(self, tmp_path):
         """
@@ -202,12 +203,14 @@ class TestMeanReversionTradingYamlDeprecated:
         strategies_yaml = {
             "version": "1.0.0",
             "assignments": {
-                "BTCUSDT": ["mean_reversion"]
+                "BTCUSDT": ["aurora", "mean_reversion"]
             },
             "arbitration": {
                 "mode": "priority",
+                "window_ms": 1000,
                 "priority": {
-                    "mean_reversion": 1
+                    "aurora": 1,
+                    "mean_reversion": 2,
                 },
                 "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
             }

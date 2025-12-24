@@ -7,6 +7,7 @@ Prevents infinite defer loops by ensuring maximum one retry per symbol.
 
 import asyncio
 import logging
+import time
 from typing import Dict, Callable
 
 log = logging.getLogger(__name__)
@@ -40,7 +41,16 @@ class DeferredIntentScheduler:
                 "DeferredIntentScheduler: no running event loop, skip scheduling")
             return
 
-        now_ms = int(loop.time() * 1000)
+        # NOTE: `when_ts_ms` is documented as Unix epoch milliseconds.
+        # Do NOT use loop.time() here (monotonic seconds); mixing time bases breaks delay calculation.
+        now_ms = int(time.time() * 1000)
+
+        # Heuristic: epoch-ms in modern years is ~1.6e12+. Much smaller values likely mean a wrong timebase.
+        if when_ts_ms < 1_000_000_000_000:
+            log.warning(
+                "DeferredIntentScheduler: when_ts_ms=%s looks non-epoch-ms; delay may be wrong",
+                when_ts_ms,
+            )
         delay = max(0.0, (when_ts_ms - now_ms) / 1000.0)
 
         # Deduplication: if already scheduled and not cancelled - skip

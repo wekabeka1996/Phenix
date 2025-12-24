@@ -3,9 +3,10 @@
 Direct WebSocket test to see what the API is actually sending
 """
 import asyncio
-import websockets
 import json
 import pytest
+
+websockets = pytest.importorskip("websockets")
 
 
 @pytest.mark.asyncio

@@ -34,6 +34,7 @@ def _write_strategies_yaml(config_dir: Path, *, assignments: dict[str, list[str]
         "assignments": assignments,
         "arbitration": {
             "mode": "priority",
+            "window_ms": 1000,
             "priority": priorities,
             "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
         },
@@ -41,7 +42,7 @@ def _write_strategies_yaml(config_dir: Path, *, assignments: dict[str, list[str]
     (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml), encoding="utf-8")
 
 
-def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profile=True, with_aurora=False):
+def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profile=True, with_aurora=True):
     """Create config based on canonical SSOT, then toggle assignments/profile presence."""
     config_dir.parent.mkdir(parents=True, exist_ok=True)
     _copy_canonical_config_dir(config_dir)
@@ -82,17 +83,16 @@ class TestRegistryDrivenLoading:
         then loads corresponding profiles from strategies/{id}.yaml
         """
         config_dir = tmp_path / "config" / "aurora"
-        create_test_config(config_dir, with_mr_assignment=True, with_mr_profile=True)
+        create_test_config(config_dir, with_mr_assignment=True, with_mr_profile=True, with_aurora=True)
         
         # Load config
         loader = ConfigLoader(config_dir=config_dir)
         config = loader.load_config()
         
         # VERIFY: mean_reversion config loaded from profile (not hardcoded)
-        assert hasattr(config, "mean_reversion")
-        assert config.mean_reversion is not None
-        assert config.mean_reversion.enabled is True
-        assert config.mean_reversion.timeframe_sec == 60
+        assert config.strategies.mean_reversion is not None
+        assert config.strategies.mean_reversion.enabled is True
+        assert config.strategies.mean_reversion.timeframe_sec == 180
     
     def test_assigned_strategy_missing_profile_fails(self, tmp_path):
         """
@@ -102,7 +102,7 @@ class TestRegistryDrivenLoading:
         """
         config_dir = tmp_path / "config" / "aurora"
         # Create config WITHOUT MR profile (but WITH assignment)
-        create_test_config(config_dir, with_mr_assignment=True, with_mr_profile=False)
+        create_test_config(config_dir, with_mr_assignment=True, with_mr_profile=False, with_aurora=True)
         
         # Load config - MUST FAIL
         loader = ConfigLoader(config_dir=config_dir)
@@ -129,7 +129,7 @@ class TestRegistryDrivenLoading:
         config = loader.load_config()
         
         # VERIFY: mean_reversion NOT loaded (not in assignments)
-        assert config.mean_reversion is None
+        assert config.strategies.mean_reversion is None
     
     def test_multiple_strategies_assigned_all_loaded(self, tmp_path):
         """
@@ -145,6 +145,6 @@ class TestRegistryDrivenLoading:
         config = loader.load_config()
         
         # VERIFY: BOTH profiles loaded
-        assert hasattr(config, "mean_reversion")
-        assert config.mean_reversion is not None
-        assert config.mean_reversion.enabled is True
+        assert config.strategies.aurora is not None
+        assert config.strategies.mean_reversion is not None
+        assert config.strategies.mean_reversion.enabled is True

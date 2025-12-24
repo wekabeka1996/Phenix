@@ -174,8 +174,6 @@ def iter_optional_required_paths() -> Iterable[Tuple[str, str, Any]]:
         "domains",
         "strategies_registry",
         "models",
-        "aurora",
-        "mean_reversion",
     }
 
     def walk(model: type[BaseModel], prefix: list[str]) -> Iterable[Tuple[str, str, Any]]:
@@ -222,22 +220,36 @@ def apply_optional_null_autofill(
         # SSOT bundles
         "domains": "domains.yaml",
         "instruments": "instruments.yaml",
-        "aurora_instruments": "aurora_instruments.yaml",
         "strategies_registry": "strategies.yaml",
         "models": "regime.yaml",
         "hmm": "regime.yaml",
         "features": "regime.yaml",
         "hotreload_whitelist": "regime.yaml",
+
+        # Strategy profile SSOT (CFG-STRATEGY-SSOT-FREEZE-03)
+        # Note: strategy profiles live under `strategies/<id>.yaml` and are addressed
+        # in the model as `strategies.<id>.*` (canonical runtime namespace).
     }
 
     for key, dotted_path, inner_type in iter_optional_required_paths():
         top = dotted_path.split(".", 1)[0]
-        file_rel = top_level_to_file.get(top)
-        if not file_rel:
-            continue
+
+        file_rel: str | None = None
+        yaml_path = dotted_path
+
+        if top == "strategies":
+            parts = dotted_path.split(".")
+            if len(parts) < 3:
+                continue
+            strategy_id = parts[1]
+            file_rel = f"strategies/{strategy_id}.yaml"
+            yaml_path = ".".join([strategy_id, *parts[2:]])
+        else:
+            file_rel = top_level_to_file.get(top)
+            if not file_rel:
+                continue
 
         yaml_file = config_dir / file_rel
-        yaml_path = dotted_path
 
         if yaml_file.exists():
             with open(yaml_file, 'r', encoding='utf-8') as f:
@@ -250,10 +262,10 @@ def apply_optional_null_autofill(
         # Respect existing SSOT file shape (wrapped vs flat) to avoid creating "second truth".
         # - domains.yaml is typically flat (decision_making/feature_engineering at root)
         # - strategies.yaml is flat (version/assignments/arbitration at root)
-        # - aurora_instruments.yaml is typically flat (SYMBOL keys at root)
-        if top in {"domains", "aurora_instruments"}:
+        # - domains.yaml is typically flat (decision_making/feature_engineering at root)
+        if top in {"domains"}:
             if isinstance(data, dict) and top not in data and "." in dotted_path:
-                # Write under flat root (strip "domains." / "aurora_instruments.")
+                # Write under flat root (strip "domains.")
                 yaml_path = dotted_path.split(".", 1)[1]
 
         if top == "strategies_registry":

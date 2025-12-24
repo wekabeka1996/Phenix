@@ -22,20 +22,19 @@ class TestSignalWeightsConfig:
     """Test 1: Signal weights configuration."""
 
     def test_config_file_exists(self):
-        """Verify trading.yaml exists and is readable."""
-        trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
-        assert trading_yaml.exists(
-        ), f"trading.yaml not found at {trading_yaml}"
-        print(f"✅ trading.yaml found at {trading_yaml}")
+        """Verify strategies/aurora.yaml exists and is readable."""
+        aurora_yaml = Path(root_path) / "config" / "aurora" / "strategies" / "aurora.yaml"
+        assert aurora_yaml.exists(), f"strategies/aurora.yaml not found at {aurora_yaml}"
+        print(f"✅ strategies/aurora.yaml found at {aurora_yaml}")
 
     def test_signal_weights_in_config(self):
-        """Verify signal_weights are in trading.yaml (Phase 1 with 8 metrics)."""
-        trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
+        """Verify signal_weights are in strategies/aurora.yaml (8 metrics)."""
+        aurora_yaml = Path(root_path) / "config" / "aurora" / "strategies" / "aurora.yaml"
 
-        with open(trading_yaml, "r", encoding="utf-8") as f:
+        with open(aurora_yaml, "r", encoding="utf-8") as f:
             content = f.read()
             assert "signal_weights:" in content, (
-                "signal_weights not found in trading.yaml"
+                "signal_weights not found in strategies/aurora.yaml"
             )
             # Check for new metrics weights (Phase 1)
             assert "obi:" in content, "obi weight not found"
@@ -47,38 +46,38 @@ class TestSignalWeightsConfig:
             assert "depth_imbalance:" in content, "depth_imbalance weight not found (Phase 1 metrics)"
             assert "macro_sync:" in content, "macro_sync weight not found (Phase 1 metrics)"
 
-        print("✅ All signal_weights found in trading.yaml (8 metrics, Phase 1):")
+        print("✅ All signal_weights found in strategies/aurora.yaml (8 metrics):")
         print("   Legacy: obi, tfi, delta_price")
         print("   Phase 1: ema_bias, volume_spike, volatility_state, depth_imbalance, macro_sync")
 
-    def test_signal_weights_under_trading_key(self):
-        """Verify signal_weights are nested under 'trading:' key."""
-        trading_yaml = Path(root_path) / "config" / "aurora" / "trading.yaml"
+    def test_signal_weights_under_aurora_decision_key(self):
+        """Verify signal_weights are nested under 'aurora: decision:'."""
+        aurora_yaml = Path(root_path) / "config" / "aurora" / "strategies" / "aurora.yaml"
 
-        with open(trading_yaml, "r", encoding="utf-8") as f:
+        with open(aurora_yaml, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        trading_key_found = False
+        aurora_key_found = False
         decision_key_found = False
         signal_weights_found = False
 
         for i, line in enumerate(lines):
-            if "^trading:" in line or line.startswith("trading:"):
-                trading_key_found = True
-                print("✅ Found 'trading:' key at root level")
+            if line.startswith("aurora:"):
+                aurora_key_found = True
+                print("✅ Found 'aurora:' key at root level")
 
-            if trading_key_found and ("  decision:" in line):
+            if aurora_key_found and ("  decision:" in line):
                 decision_key_found = True
-                print("✅ Found 'decision:' nested under 'trading:'")
+                print("✅ Found 'decision:' nested under 'aurora:'")
 
             if decision_key_found and ("signal_weights:" in line):
                 signal_weights_found = True
-                print("✅ Found 'signal_weights:' nested under 'trading.decision'")
+                print("✅ Found 'signal_weights:' nested under 'aurora.decision'")
                 break
 
-        assert trading_key_found, "trading: key not found at root"
-        assert decision_key_found, "decision: key not nested under trading:"
-        assert signal_weights_found, "signal_weights: not nested under trading.decision"
+        assert aurora_key_found, "aurora: key not found at root"
+        assert decision_key_found, "decision: key not nested under aurora:"
+        assert signal_weights_found, "signal_weights: not nested under aurora.decision"
 
 
 class TestSignalCalculation:

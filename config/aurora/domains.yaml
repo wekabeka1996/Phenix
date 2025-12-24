@@ -15,11 +15,6 @@ decision_making:
     liquidity_kappa: 1.0
     kappa_mode: dynamic
     liquidity_kappa_mode: dynamic
-    risk_contract_v1: null
-    sizing:
-      # TASK42: 5% equity, no fixed_qty, no fixed_notional
-      mode: percent_equity
-      percent_equity: 0.05
   
   qos:
     exposure_block_cooldown_sec: 10
@@ -54,6 +49,16 @@ decision_making:
     require_regime_warmup: true
     retry_backoff_ms: 250
     max_attempts: 3
+
+  # P1: Degraded DecisionContext gate (fail-closed) — OFF by default.
+  # If enabled, DecisionMaking may DEFER when critical features are missing/invalid.
+  fail_closed_on_degraded_context: false
+
+  # Optional global critical keys; if empty, a safe default set is used in code.
+  degraded_context_critical_keys: []
+
+  # Optional per-strategy overrides (strategy_id -> list of critical keys).
+  degraded_context_critical_keys_by_strategy: {}
 
 feature_engineering:
   enable_new_metrics: true
@@ -173,12 +178,16 @@ execution_position:
     post_fill_ttl_sec: 5
     stale_ttl_sec: 60  # Increased from 15 to allow for slower portfolio updates
     pending_timeout_sec: 5
-    max_equity_utilization_pct: 0.95
-    max_portfolio_fraction: 0.95
-    max_long_utilization_pct: 0.95
-    max_short_utilization_pct: 0.95
+    # FIX: Values should be percentages (0-100), not fractions (0-1)!
+    # 0.95 meant "0.95% of equity" which blocked almost all trades.
+    # Correct values: 95 means "95% of equity".
+    # UPDATED: 150% to allow BTC with leverage=20 and margin_pct=0.06 (120% equity)
+    max_equity_utilization_pct: 150.0
+    max_portfolio_fraction: 150.0
+    max_long_utilization_pct: 150.0
+    max_short_utilization_pct: 150.0
     max_directional_ratio: 20.0
-    max_concentration_pct: 0.10
+    max_concentration_pct: 10.0  # FIX: 10% not 0.10%
   
   fsm_open:
     idempotency_window_sec: 60

@@ -161,7 +161,6 @@ def test_config_validation_no_silent_extra_fields():
         MRRegimeSizingConfig,
         MRRiskConfig,
         MeanReversionConfig,
-        RegimeSizingSymbolConfig,
     )
     
     # All Group A models should have extra='forbid' now
@@ -172,7 +171,6 @@ def test_config_validation_no_silent_extra_fields():
         MRRegimeSizingConfig,
         MRRiskConfig,
         MeanReversionConfig,
-        RegimeSizingSymbolConfig,
     ]
     
     for model_cls in test_models:

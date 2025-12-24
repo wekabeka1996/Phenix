@@ -1,6 +1,7 @@
+import pytest
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from apps.reference.api.main import app
-import pytest
 
 
 @pytest.mark.skip(reason="LEGACY: /statdump endpoint may have been removed or renamed - verify current API")

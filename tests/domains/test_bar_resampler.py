@@ -451,3 +451,82 @@ class TestMultiSymbolBarResampler:
         assert "ETHUSDT" in metrics
         assert metrics["BTCUSDT"]["ticks_processed"] == 2
         assert metrics["ETHUSDT"]["ticks_processed"] == 1
+
+
+# ============================================================
+# P2-1 Regression Tests: Gap Detection
+# ============================================================
+
+class TestBarResamplerGapDetection:
+    """P2-1 REGRESSION: Gap detection in bar resampler."""
+
+    def test_no_gap_normal_ticks(self):
+        """Normal consecutive ticks should not trigger gap detection."""
+        resampler = BarResampler(timeframe_sec=60)  # 1 minute bars
+        
+        # Tick 1: start bar at 0
+        resampler.add_tick("BTCUSDT", Decimal("100"), ts_ms=0)
+        
+        # Tick 2: close bar at 60s, start new bar
+        bar = resampler.add_tick("BTCUSDT", Decimal("101"), ts_ms=60_000)
+        
+        assert bar is not None  # Bar closed
+        
+        # Get current bar (new one)
+        current = resampler.get_current_bar()
+        assert current.is_gap_bar is False
+        assert current.gap_bars_skipped == 0
+        assert resampler.get_metrics()["gaps_detected"] == 0
+
+    def test_gap_one_bar_skipped(self):
+        """Gap of 1 minute (1 bar skipped) should be detected."""
+        resampler = BarResampler(timeframe_sec=60)  # 1 minute bars
+        
+        # Tick 1: start bar at 0
+        resampler.add_tick("BTCUSDT", Decimal("100"), ts_ms=0)
+        
+        # Tick 2: close bar at 60s
+        bar1 = resampler.add_tick("BTCUSDT", Decimal("101"), ts_ms=60_000)
+        assert bar1 is not None
+        
+        # Tick 3: gap! Skip to 180s (3rd minute) - 1 bar skipped
+        bar2 = resampler.add_tick("BTCUSDT", Decimal("102"), ts_ms=180_000)
+        assert bar2 is not None  # 2nd bar closed
+        
+        # Current bar (3rd) should have gap flag
+        current = resampler.get_current_bar()
+        assert current.is_gap_bar is True
+        assert current.gap_bars_skipped == 1
+        assert resampler.get_metrics()["gaps_detected"] == 1
+
+    def test_gap_multiple_bars_skipped(self):
+        """Gap of 5 minutes (5 bars skipped) should be detected."""
+        resampler = BarResampler(timeframe_sec=60)  # 1 minute bars
+        
+        # Tick 1: start bar at minute 0
+        resampler.add_tick("BTCUSDT", Decimal("100"), ts_ms=0)
+        
+        # Tick 2: close bar at minute 1, skip to minute 7 (6 bars skipped: 1,2,3,4,5,6)
+        bar = resampler.add_tick("BTCUSDT", Decimal("101"), ts_ms=7 * 60_000)
+        
+        assert bar is not None  # Bar 0-1 closed
+        
+        # Current bar (minute 7) should have gap flag
+        current = resampler.get_current_bar()
+        assert current.is_gap_bar is True
+        assert current.gap_bars_skipped == 6  # bars 1,2,3,4,5,6 skipped (bar 0 was closed)
+        assert resampler.get_metrics()["gaps_detected"] == 1
+
+    def test_gap_detection_reset(self):
+        """Reset should clear gap counter."""
+        resampler = BarResampler(timeframe_sec=60)
+        
+        # Create a gap
+        resampler.add_tick("BTCUSDT", Decimal("100"), ts_ms=0)
+        resampler.add_tick("BTCUSDT", Decimal("101"), ts_ms=180_000)  # 2 minute gap
+        
+        assert resampler.get_metrics()["gaps_detected"] == 1
+        
+        resampler.reset()
+        
+        assert resampler.get_metrics()["gaps_detected"] == 0

@@ -14,7 +14,7 @@ import logging
 import time
 from decimal import Decimal, ROUND_DOWN
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.contracts import TPSLValidationRules
@@ -50,7 +50,10 @@ class ManageFlowFSM:
     """
     Manage Flow FSM: tracks open positions and manages brackets/trailing stops.
 
-    Per-instrument config with fallback: aurora_instruments.<SYM> → global → default.
+    FAIL-CLOSED POLICY: No fallback to global config!
+    All symbols MUST have explicit config in strategies.aurora.assets.<SYM>.
+    Missing config → ValueError (system crash, not silent fallback).
+    
     Rules execute on EVT:PARTIAL_FILL|FILL|UPD:*.
     """
 
@@ -104,8 +107,9 @@ class ManageFlowFSM:
         
         # Emergency/WaitMode configuration
         self._bar_ms = 15 * 60 * 1000
-        if self.config.trading.decision.bar_gating:
-             self._bar_ms = self.config.trading.decision.bar_gating.bar_ms
+        aurora = getattr(self.config.strategies, "aurora", None)
+        if aurora is not None and aurora.decision.bar_gating:
+            self._bar_ms = aurora.decision.bar_gating.bar_ms
 
         self._wait_mode_bars = 2
         if self._manage_cfg and self._manage_cfg.emergency:
@@ -167,63 +171,42 @@ class ManageFlowFSM:
         if not target_symbol:
             return None
 
-        # CFG-AURORA-INSTRUMENTS-SSOT-01-FIXPACK: Direct Pydantic access
-        if not self.config or not hasattr(self.config, 'aurora_instruments'):
+        if not self.config:
             return None
 
-        aurora_instruments = self.config.aurora_instruments
-        if not isinstance(aurora_instruments, dict):
+        aurora = getattr(self.config.strategies, "aurora", None)
+        if aurora is None:
             return None
 
-        return aurora_instruments.get(target_symbol)  # Already Pydantic-typed
+        return aurora.assets.get(target_symbol)
 
     def _get_exit_param(self, param: str, default: Any, symbol: Optional[str] = None) -> Any:
         """
-        Get exit parameter with per-instrument override support.
+        Get exit parameter from per-instrument config ONLY.
 
-        Fallback chain:
-        1. config.aurora_instruments[SYMBOL].exit.<param> (CANONICAL SSOT)
-        2. trading.execution.manage.brackets.sl/tp.* (global, param name mapped)
-        3. default value
-
-        Param mapping for global fallback:
-        - sl_pct → brackets.sl.fixed_bps (converted: bps/10000)
-        - max_hold_sec → None (no global equivalent)
+        FAIL-CLOSED: No fallback to global config. If not configured, returns None.
+        Caller must handle None appropriately (usually by raising ValueError).
 
         Args:
             param: Parameter name (e.g., 'sl_pct', 'max_hold_sec')
-            default: Default value if not found
+            default: Default value if not found (DEPRECATED - should not be used)
             symbol: Optional symbol override
 
         Returns:
-            Parameter value from per-instrument or global config
+            Parameter value from per-instrument config or None
         """
-        # 1. Try per-instrument config
+        # FAIL-CLOSED: Only per-instrument config, no global fallback
         instr_cfg = self._get_aurora_instr_cfg(symbol)
         if instr_cfg is not None and instr_cfg.exit is not None:
-            # Direct access (no getattr fallback)
-            # If field missing → AttributeError → caller handles (fail-closed)
             try:
                 value = getattr(instr_cfg.exit, param)
                 if value is not None:
                     return value
             except AttributeError:
-                # Exit param not configured → return None (fail-closed: block action)
                 pass
 
-        # 2. Fallback to global via _manage_cfg (with param name mapping)
-        if self._manage_cfg and self._manage_cfg.brackets:
-            brackets = self._manage_cfg.brackets
-            
-            # Map param names to global config structure
-            if param == "sl_pct" and brackets.sl and brackets.sl.fixed_bps:
-                # Convert bps to percentage (50 bps → 0.005)
-                return brackets.sl.fixed_bps / 10000.0
-            
-            # max_hold_sec has no global equivalent - return None (fail-closed)
-        
-        # 3. Return default
-        return default
+        # No fallback - return None and let caller decide (usually: crash)
+        return None
 
     def _get_take_profit_params(
         self, symbol: Optional[str] = None
@@ -269,17 +252,18 @@ class ManageFlowFSM:
         self, symbol: Optional[str] = None
     ) -> tuple[bool, Optional[float], Optional[float], int]:
         """
-        Get trailing stop parameters from per-instrument config.
+        Get trailing stop parameters from per-instrument config ONLY.
 
-        Phase A3: Per-instrument trailing with global fallback.
+        FAIL-CLOSED: No fallback to global config. If not configured, returns disabled.
 
         Args:
             symbol: Trading pair symbol (optional, uses self.symbol if not provided)
 
         Returns:
             Tuple of (enabled, activation_pct, trail_pct, min_update_interval_sec).
+            Returns (False, None, None, 5) if not configured (trailing disabled).
         """
-        # 1. Try per-instrument config
+        # FAIL-CLOSED: Only per-instrument config
         instr_cfg = self._get_aurora_instr_cfg(symbol)
         ts = aget(instr_cfg, "trailing_stop", None) if instr_cfg is not None else None
         if ts is not None:
@@ -290,16 +274,7 @@ class ManageFlowFSM:
                 int(aget(ts, "min_update_interval_sec", 5) or 5),
             )
 
-        # 2. Fallback to global trailing dict
-        trailing = aget(self.config, "trailing", None) or {}
-        if isinstance(trailing, dict):
-            return (
-                bool(dget(trailing, "enable", False)),
-                trailing.get("activation_profit_atr_k"),  # Legacy name
-                trailing.get("step_bps"),  # Legacy: bps not pct
-                int(dget(trailing, "cooldown_sec", 5)),
-            )
-
+        # No config = trailing disabled (fail-safe for optional feature)
         return False, None, None, 5
 
     def _get_max_hold_sec(self, symbol: Optional[str] = None) -> Optional[int]:
@@ -783,14 +758,17 @@ class ManageFlowFSM:
         """
         Calculate SL, TP1, TP2 prices for current position.
         
-        Phase A2: Uses per-instrument config with global fallback.
+        FAIL-CLOSED POLICY: No fallback! All symbols MUST have explicit config.
         Returns (sl_price, tp1_price, tp2_price).
         TP2 may be None if not configured (single TP mode).
         
-        Fallback chain:
-        - Intent Injection: self._intent_sl_price (from Strategy)
-        - Config Lookup: aurora_instruments.<SYMBOL>.exit.sl_pct → brackets.sl.fixed_bps
-        - TP: self._intent_tp_price (from Strategy) -> ...
+        Priority chain:
+        1. Intent Injection: self._intent_sl_price (from Strategy calculation)
+        2. Config Lookup: strategies.aurora.assets.<SYMBOL>.exit.sl_pct (REQUIRED)
+        3. TP: self._intent_tp_price or strategies.aurora.assets.<SYMBOL>.take_profit.tp_low_ratio (REQUIRED)
+        
+        Raises:
+            ValueError: If sl_pct or tp_low_ratio not configured for symbol.
         """
         if self.position_entry_price is None or self.position_side is None:
             return None, None, None
@@ -822,47 +800,60 @@ class ManageFlowFSM:
         partial_exit_pct: Optional[float] = None
 
         instr_cfg = self._get_aurora_instr_cfg(symbol)
+        LOG.info(f"BRACKET_CALC [{symbol}]: instr_cfg={'found' if instr_cfg else 'NONE'}")
         if instr_cfg is not None:
             # Get exit config (SL)
             exit_cfg = aget(instr_cfg, "exit", None)
+            LOG.info(f"BRACKET_CALC [{symbol}]: exit_cfg={'found' if exit_cfg else 'NONE'}")
             if exit_cfg is not None:
                 sl_pct = aget(exit_cfg, "sl_pct", None)
+                LOG.info(f"BRACKET_CALC [{symbol}]: sl_pct={sl_pct}")
             # Get take_profit config (TP1/TP2)
             tp_low_ratio, tp_high_ratio, partial_exit_pct = self._get_take_profit_params(symbol)
+            LOG.info(f"BRACKET_CALC [{symbol}]: tp_low={tp_low_ratio}, tp_high={tp_high_ratio}")
 
         # Store partial_exit_pct for bracket placement
         self.partial_exit_pct = partial_exit_pct
 
         # ========== Calculate SL price ==========
-        if sl_pct is not None:
-            sl_price = self._calculate_sl_from_pct(entry_price, sl_pct)
-        else:
-            sl_price = self._calculate_sl_from_bps(entry_price)
+        # FAIL-CLOSED: No fallback! If sl_pct not configured, crash explicitly
+        if sl_pct is None:
+            raise ValueError(
+                f"FAIL-CLOSED: sl_pct not configured for {symbol}. "
+                f"Add 'exit.sl_pct' to config/aurora/strategies/aurora.yaml for this symbol. "
+                f"No fallback allowed - explicit config required."
+            )
+        sl_price = self._calculate_sl_from_pct(entry_price, sl_pct)
+        LOG.info(f"BRACKET_CALC [{symbol}]: Using per-symbol sl_pct={sl_pct}, SL={sl_price}")
 
         # ========== Calculate TP1/TP2 prices ==========
+        # FAIL-CLOSED: No fallback! If tp_low_ratio not configured, crash explicitly
+        if tp_low_ratio is None:
+            raise ValueError(
+                f"FAIL-CLOSED: tp_low_ratio not configured for {symbol}. "
+                f"Add 'take_profit.tp_low_ratio' to config/aurora/strategies/aurora.yaml for this symbol. "
+                f"No fallback allowed - explicit config required."
+            )
+        
         tp1_price: Optional[Decimal] = None
         tp2_price: Optional[Decimal] = None
 
-        if sl_pct is not None and tp_low_ratio is not None:
-            # Phase A2: Risk-ratio based TP1/TP2
-            risk_pct = Decimal(str(sl_pct))  # SL distance as risk unit
-            tp1_off = risk_pct * Decimal(str(tp_low_ratio))
+        # Phase A2: Risk-ratio based TP1/TP2
+        risk_pct = Decimal(str(sl_pct))  # SL distance as risk unit
+        tp1_off = risk_pct * Decimal(str(tp_low_ratio))
 
-            if self.position_side == "BUY":
-                tp1_price = entry_price * (Decimal("1") + tp1_off)
-            else:
-                tp1_price = entry_price * (Decimal("1") - tp1_off)
-
-            # TP2 is optional (further target)
-            if tp_high_ratio is not None:
-                tp2_off = risk_pct * Decimal(str(tp_high_ratio))
-                if self.position_side == "BUY":
-                    tp2_price = entry_price * (Decimal("1") + tp2_off)
-                else:
-                    tp2_price = entry_price * (Decimal("1") - tp2_off)
+        if self.position_side == "BUY":
+            tp1_price = entry_price * (Decimal("1") + tp1_off)
         else:
-            # Fallback: single TP from bps
-            tp1_price = self._calculate_tp_from_bps(entry_price)
+            tp1_price = entry_price * (Decimal("1") - tp1_off)
+
+        # TP2 is optional (further target)
+        if tp_high_ratio is not None:
+            tp2_off = risk_pct * Decimal(str(tp_high_ratio))
+            if self.position_side == "BUY":
+                tp2_price = entry_price * (Decimal("1") + tp2_off)
+            else:
+                tp2_price = entry_price * (Decimal("1") - tp2_off)
 
         # ========== Quantize prices to tick_size ==========
         sl_price, tp1_price, tp2_price = self._quantize_prices(symbol, sl_price, tp1_price, tp2_price)
@@ -877,39 +868,8 @@ class ManageFlowFSM:
         else:
             return entry_price * (Decimal("1") + sl_pct_dec)
 
-    def _calculate_sl_from_bps(self, entry_price: Decimal) -> Decimal:
-        """
-        Fallback: calculate SL using existing bps config.
-        Reads from: trading.execution.manage.brackets.sl.fixed_bps
-        """
-        sl_bps = 50  # default
-        if self._manage_cfg and self._manage_cfg.brackets:
-            brackets = self._manage_cfg.brackets
-            if brackets.sl and brackets.sl.fixed_bps:
-                sl_bps = brackets.sl.fixed_bps
-            elif brackets.stop_loss_bps:  # Legacy fallback
-                sl_bps = brackets.stop_loss_bps
-
-        if self.position_side == "BUY":
-            return entry_price * (1 - Decimal(str(sl_bps)) / 10000)
-        else:
-            return entry_price * (1 + Decimal(str(sl_bps)) / 10000)
-
-    def _calculate_tp_from_bps(self, entry_price: Decimal) -> Optional[Decimal]:
-        """
-        Fallback: calculate TP using existing bps config.
-        Reads from: trading.execution.manage.brackets.tp.fixed_bps
-        """
-        tp_bps = 100  # default
-        if self._manage_cfg and self._manage_cfg.brackets:
-            brackets = self._manage_cfg.brackets
-            if brackets.tp and brackets.tp.fixed_bps:
-                tp_bps = brackets.tp.fixed_bps
-
-        if self.position_side == "BUY":
-            return entry_price * (1 + Decimal(str(tp_bps)) / 10000)
-        else:
-            return entry_price * (1 - Decimal(str(tp_bps)) / 10000)
+    # NOTE: _calculate_sl_from_bps and _calculate_tp_from_bps REMOVED
+    # FAIL-CLOSED policy: No fallback to bps. Config must be explicit.
 
     def _quantize_prices(
         self,
@@ -1025,7 +985,8 @@ class ManageFlowFSM:
         """
         Check management rules: brackets, trailing stop, max hold time.
 
-        Uses per-instrument config with fallback to global defaults.
+        FAIL-CLOSED: Uses per-instrument config ONLY. No global fallback.
+        Missing config will raise ValueError on bracket calculation.
 
         Returns:
             DEC:PLACE_ORDER, DEC:CANCEL_ORDER, or DEC:ADJUST if rule triggers, None otherwise.
@@ -1221,10 +1182,11 @@ class ManageFlowFSM:
         """
         Check and adjust trailing stop if conditions met.
 
-        Phase A3: Uses per-instrument trailing_stop config with global fallback.
+        Uses per-instrument trailing_stop config ONLY (no global fallback).
+        If not configured for symbol, trailing is disabled (fail-safe).
         Implements high-water mark trailing with CANCEL+NEW flow.
         """
-        # Get trailing params from per-instrument or global config
+        # Get trailing params from per-instrument config (no global fallback)
         enabled, activation_pct, trail_pct, min_update_sec = self._get_trailing_stop_params(self.symbol)
 
         if not enabled or not self.sl_order_id:
@@ -1392,6 +1354,9 @@ class ManageFlowFSM:
             if "qty" not in state_data:
                 self.state = ManageState.ERROR
                 return
+
+            # Restore symbol (critical for fail-closed config lookup)
+            self.symbol = state_data.get("symbol")
 
             # Restore position data
             qty_value = state_data.get("qty")

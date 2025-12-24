@@ -1,0 +1,281 @@
+#                                          Account Balance
+
+#                              : FSMP-P1-T04
+#                          : 2025-01-28
+#           : Aurora System Documentation
+
+# =============================================================================
+#                                              
+# =============================================================================
+
+#                                                        
+trading_modes:
+  live: "live"
+  testnet: "testnet"
+  hybrid_live_data_testnet_exec: "hybrid_live_data_testnet_exec"
+  hybrid_testnet_data_live_exec: "hybrid_testnet_data_live_exec"
+
+#                                          
+margin_types:
+  isolated: "isolated"
+  cross: "cross"
+
+#                              
+position_statuses:
+  open: "open"
+  closed: "closed"
+  liquidating: "liquidating"
+
+# =============================================================================
+#                               API
+# =============================================================================
+
+#                                       Binance Balance API (/fapi/v2/balance)
+balance_response_schema:
+  type: object
+  properties:
+    accountAlias: { type: string, description: "Alias               " }
+    asset: { type: string, description: "                        (USDT, BTC, etc.)" }
+    balance: { type: string, description: "                                            " }
+    crossWalletBalance: { type: string, description: "                cross margin" }
+    crossUnPnl: { type: string, description: "                             P&L    cross margin" }
+    availableBalance: { type: string, description: "                               " }
+    maxWithdrawAmount: { type: string, description: "                                                  " }
+    marginAvailable: { type: boolean, description: "                                        " }
+    updateTime: { type: integer, description: "                          (timestamp)" }
+
+#                                       Binance Position Risk API (/fapi/v2/positionRisk)
+position_response_schema:
+  type: object
+  properties:
+    symbol: { type: string, description: "                        (BTCUSDT)" }
+    positionAmt: { type: string, description: "                           " }
+    entryPrice: { type: string, description: "                   " }
+    markPrice: { type: string, description: "                           " }
+    unRealizedProfit: { type: string, description: "                                             " }
+    liquidationPrice: { type: string, description: "                             " }
+    leverage: { type: integer, description: "          " }
+    maxNotionalValue: { type: string, description: "                                                            " }
+    marginType: { type: string, enum: ["isolated", "cross"] }
+    isolatedMargin: { type: string, description: "                               " }
+    isAutoAddMargin: { type: boolean, description: "                                                    " }
+    positionSide: { type: string, enum: ["LONG", "SHORT", "BOTH"] }
+    notional: { type: string, description: "                                     " }
+    isolatedWallet: { type: string, description: "                                       " }
+    updateTime: { type: integer, description: "                         " }
+
+# =============================================================================
+# FSM           
+# =============================================================================
+
+#                                             
+evt_balance_update_received:
+  event_type: "EVT:BALANCE_UPDATE_RECEIVED"
+  version: "1.0"
+  description: "                                                               "
+  frequency: "30              (                            )"
+  direction: "Decision Making, Risk Management, Position Tracking"
+  payload_schema:
+    type: object
+    properties:
+      assets:
+        type: array
+        items:
+          type: object
+          properties:
+            asset: { type: string }
+            balance: { type: string }
+            crossUnPnl: { type: string }
+            crossWalletBalance: { type: string }
+            updateTime: { type: integer }
+      updateTime: { type: integer }
+    required: ["assets", "updateTime"]
+
+#                                                                            
+evt_account_update_received:
+  event_type: "EVT:ACCOUNT_UPDATE_RECEIVED"
+  version: "1.0"
+  description: "                                                                                              "
+  frequency: "30              (                            )"
+  direction: "Position Tracking, Risk Management, Decision Making"
+  payload_schema:
+    type: object
+    properties:
+      totalWalletBalance: { type: string }
+      totalUnrealizedProfit: { type: string }
+      totalCrossWalletBalance: { type: string }
+      positions:
+        type: array
+        items:
+          type: object
+          properties:
+            symbol: { type: string }
+            positionAmt: { type: string }
+            entryPrice: { type: string }
+            unRealizedProfit: { type: string }
+            leverage: { type: integer }
+            marginType: { type: string, enum: ["isolated", "cross"] }
+            markPrice: { type: string }
+            liquidationPrice: { type: string }
+      updateTime: { type: integer }
+    required: ["totalWalletBalance", "totalUnrealizedProfit", "totalCrossWalletBalance", "positions", "updateTime"]
+
+# =============================================================================
+#                                                
+# =============================================================================
+
+#                                       account_balance
+domain_config_schema:
+  type: object
+  properties:
+    poll_interval:
+      type: integer
+      minimum: 5
+      maximum: 300
+      default: 30
+      description: "                                      API                    "
+    retry_attempts:
+      type: integer
+      minimum: 1
+      maximum: 10
+      default: 3
+      description: "                                                          API"
+    backoff_multiplier:
+      type: number
+      minimum: 1.0
+      maximum: 5.0
+      default: 2.0
+      description: "                                                         backoff"
+    timeout:
+      type: integer
+      minimum: 5
+      maximum: 60
+      default: 10
+      description: "               API                                     "
+    max_concurrent_requests:
+      type: integer
+      minimum: 1
+      maximum: 5
+      default: 2
+      description: "                                                                               "
+    enable_position_filtering:
+      type: boolean
+      default: true
+      description: "                                                                   "
+    enable_balance_filtering:
+      type: boolean
+      default: true
+      description: "                                                                     > 0"
+
+# =============================================================================
+#                                
+# =============================================================================
+
+#                                                              
+supported_assets:
+  - USDT
+  - BUSD
+  - BTC
+  - ETH
+  - BNB
+  - ADA
+  - SOL
+  - DOT
+  - LINK
+  - UNI
+
+#                                        (                         )
+trading_pairs:
+  BTCUSDT: { base: BTC, quote: USDT, min_qty: 0.001, step_size: 0.001 }
+  ETHUSDT: { base: ETH, quote: USDT, min_qty: 0.01, step_size: 0.01 }
+  BNBUSDT: { base: BNB, quote: USDT, min_qty: 1.0, step_size: 0.1 }
+  ADAUSDT: { base: ADA, quote: USDT, min_qty: 1.0, step_size: 0.1 }
+  SOLUSDT: { base: SOL, quote: USDT, min_qty: 0.1, step_size: 0.1 }
+
+# =============================================================================
+#                                
+# =============================================================================
+
+#                         Binance API
+binance_error_codes:
+  -1000: "UNKNOWN"
+  -1001: "DISCONNECTED"
+  -1002: "UNAUTHORIZED"
+  -1003: "TOO_MANY_REQUESTS"
+  -1013: "INVALID_MESSAGE"
+  -1014: "UNKNOWN_ORDER_COMPOSITION"
+  -1015: "TOO_MANY_ORDERS"
+  -1016: "SERVICE_SHUTTING_DOWN"
+  -1020: "UNSUPPORTED_OPERATION"
+  -1021: "INVALID_TIMESTAMP"
+  -1022: "INVALID_SIGNATURE"
+
+#                                     
+domain_error_types:
+  api_connection_error: "                 '                  Binance API"
+  authentication_error: "                                            API             "
+  rate_limit_error: "                                                  "
+  data_parsing_error: "                                                   API"
+  invalid_config_error: "                                                          "
+  timeout_error: "                                                       API"
+
+# =============================================================================
+#                                         
+# =============================================================================
+
+#                                            
+performance_metrics:
+  account_balance_updates_success: "                                                                   "
+  account_balance_updates_failed: "                                                                   "
+  account_balance_api_latency: "                                           API (ms)"
+  account_balance_last_update_age: "                                   (              )"
+  account_balance_position_count: "                                                  "
+  account_balance_asset_count: "                                                     "
+
+#                              
+log_levels:
+  DEBUG: "                                                           "
+  INFO: "                                                                                        "
+  WARN: "                                                                     "
+  ERROR: "                                                                    "
+
+# =============================================================================
+#                        
+# =============================================================================
+
+#                                                 
+test_balance_data:
+  assets:
+    - asset: "USDT"
+      balance: "1000.50"
+      crossUnPnl: "25.30"
+      crossWalletBalance: "975.20"
+      updateTime: 1640995200000
+    - asset: "BTC"
+      balance: "0.025"
+      crossUnPnl: "2.15"
+      crossWalletBalance: "0.023"
+      updateTime: 1640995200000
+  updateTime: 1640995200000
+
+#                                               
+test_position_data:
+  positions:
+    - symbol: "BTCUSDT"
+      positionAmt: "0.001"
+      entryPrice: "50000.00"
+      unRealizedProfit: "5.25"
+      leverage: 10
+      marginType: "cross"
+      markPrice: "50250.00"
+      liquidationPrice: "45000.00"
+    - symbol: "ETHUSDT"
+      positionAmt: "-0.05"
+      entryPrice: "3000.00"
+      unRealizedProfit: "-12.50"
+      leverage: 5
+      marginType: "isolated"
+      markPrice: "2950.00"
+      liquidationPrice: "3200.00"
+  updateTime: 1640995200000</content>
+<parameter name="filePath">c:\Users\job11\Music\Olimp_v1\docs\domains\account_balance\dictionaries.yaml

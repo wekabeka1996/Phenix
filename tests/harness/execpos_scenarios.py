@@ -23,7 +23,9 @@ def feed_opened_position(fsm: ExecPosFSM, symbol: str, side: str, qty: Decimal, 
     
     manage_flow = fsm.manage_flows[symbol]
     # Hydrate ManageFlowFSM with CORRECT keys from fsm_manage.py:1382
+    # CRITICAL: Must pass symbol for fail-closed config lookup
     manage_flow.hydrate({
+        "symbol": symbol,  # Required for per-symbol config lookup
         "qty": str(qty),
         "entry_price": str(entry_price),
         "side": side,

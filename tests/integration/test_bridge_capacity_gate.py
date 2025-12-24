@@ -8,10 +8,21 @@ import pytest
 import time
 from unittest.mock import MagicMock, patch, AsyncMock
 from vfoundation.core.protocol import Message
+from vfoundation.dr import wal as wal_mod
 
 
 class TestBridgeCapacityGate:
     """Tests for capacity gate in AuroraBridge."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_wal_dir(self, tmp_path):
+        """Prevent tests from writing into real ops/wal."""
+        prev = wal_mod.WAL_DIR
+        wal_mod.set_wal_dir(tmp_path)
+        try:
+            yield
+        finally:
+            wal_mod.set_wal_dir(prev)
     
     def _make_bridge_with_mocks(
         self,
@@ -146,6 +157,40 @@ class TestBridgeCapacityGate:
         # Should NOT emit INTENT_DROPPED
         drop_calls = [c for c in fsm.emit.call_args_list if c[0][0] == "EVT:INTENT_DROPPED"]
         assert len(drop_calls) == 0, "Should not drop when within capacity"
+
+        # WAL should contain CMD:OPEN record (bridge persists it best-effort)
+        entries = wal_mod.read_all()
+        cmd_open = [e for e in entries if e.get("op") == "CMD" and e.get("verb") == "OPEN"]
+        assert len(cmd_open) >= 1, "Expected CMD:OPEN persisted to WAL"
+
+    def test_bridge_accepts_equity_free_usdt_as_string(self):
+        """Regression: portfolio equity often arrives as string; must not crash capacity gate."""
+        bridge, fsm, config = self._make_bridge_with_mocks(
+            equity_free_usdt="10000.0",
+            target_leverage=20,
+            max_notional_utilization=0.5,
+        )
+
+        intent = Message(
+            op="EVT",
+            verb="TRADE_INTENT_PROPOSED",
+            src="decision_making",
+            dst="bridge",
+            rid="test-rid-002b",
+            pld={
+                "instrument": "BTCUSDT",
+                "side": "buy",
+                "order": {
+                    "qty": "1.0",
+                    "price_ref": 50000.0,
+                },
+            },
+        )
+
+        bridge.on_trade_intent_proposed_sync(intent)
+
+        drop_calls = [c for c in fsm.emit.call_args_list if c[0][0] == "EVT:INTENT_DROPPED"]
+        assert len(drop_calls) == 0, "Should not drop when equity is a numeric string"
         
     def test_bridge_denies_when_missing_price_ref_for_notional(self):
         """

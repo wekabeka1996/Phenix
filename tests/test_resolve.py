@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import pytest
+pytest.skip("Dev utility script (python-dotenv not installed in minimal env)", allow_module_level=True)
+
 import os
 from dotenv import load_dotenv
 from pathlib import Path

@@ -7,7 +7,7 @@ All models are designed to fail fast (startup validation) rather than silently a
 
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Literal
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, model_serializer, ConfigDict
 
 
 class InstrumentSpec(BaseModel):
@@ -24,20 +24,31 @@ class InstrumentSpec(BaseModel):
 
 
 class InstrumentPrecisionSpec(BaseModel):
-    """Canonical Aurora instrument precision (SSOT from instruments.yaml).
+    """Canonical Aurora instrument spec (SSOT from instruments.yaml).
 
     TASK50: Added min_qty and min_notional for fail-closed qty normalization.
-    Keep this model permissive (extra=allow) to avoid breaking exchange-specific tails.
-    tick_size/step_size are enforced for active symbols via loader fail-fast checks.
+
+    SIZING-MARGIN-FIRST-SSOT-02:
+    - instruments.<SYM> is the SSOT for:
+      - constraints: tick/step/min_qty/min_notional
+      - execution: margin_mode + target_leverage (+policy)
+      - sizing: margin_pct (margin-first, per-symbol)
     """
 
     model_config = ConfigDict(extra='forbid')
 
-    symbol: Optional[str] = Field(default=None)
-    tick_size: Optional[str] = Field(default=None, description='Price precision')
-    step_size: Optional[str] = Field(default=None, description='Quantity precision (LOT_SIZE stepSize)')
-    min_qty: Optional[str] = Field(default=None, description='Minimum quantity (LOT_SIZE minQty)')
-    min_notional: Optional[str] = Field(default=None, description='Minimum notional value (MIN_NOTIONAL)')
+    symbol: str = Field(description="Symbol name (e.g., BTCUSDT)")
+    tick_size: str = Field(description="Price precision")
+    step_size: str = Field(description="Quantity precision (LOT_SIZE stepSize)")
+    min_qty: str = Field(description="Minimum quantity (LOT_SIZE minQty)")
+    min_notional: str = Field(description="Minimum notional value (MIN_NOTIONAL)")
+
+    execution: "InstrumentExecutionConfig" = Field(
+        description="Per-symbol execution SSOT (isolated/cross + target leverage policy)"
+    )
+    sizing: "InstrumentSizingConfig" = Field(
+        description="Per-symbol sizing SSOT (margin-first: margin_pct)"
+    )
 
 
 class InstrumentExecutionConfig(BaseModel):
@@ -65,6 +76,22 @@ class InstrumentExecutionConfig(BaseModel):
         description='Max notional as fraction of available capacity (0.0-1.0). Used for L1 capacity gate.'
     )
 
+
+class InstrumentSizingConfig(BaseModel):
+    """Per-instrument sizing SSOT (SIZING-MARGIN-FIRST-SSOT-02).
+
+    Margin-first model:
+    - margin_usdt = equity * margin_pct
+    - notional_target = margin_usdt * leverage
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    margin_pct: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Fraction of wallet equity allocated as isolated margin for this symbol (0..1].",
+    )
 
 
 class SignalWeights(BaseModel):
@@ -106,96 +133,6 @@ class SignalsConfig(BaseModel):
     enable_new_metrics: bool = Field()
 
 
-class RegimeSizingSymbolConfig(BaseModel):
-    """Per-symbol regime sizing configuration (ETAP3).
-    
-    Controls volatility-based position sizing multipliers for a specific symbol.
-    When enabled, position size = base * multiplier(volatility_state).
-    
-    base_notional = per_symbol_margin_fraction * equity * effective_leverage
-    
-    CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
-    """
-    model_config = ConfigDict(extra='forbid')
-    
-    enabled: bool = Field(description='Enable regime-based sizing for this symbol')
-    low_vol_multiplier: float = Field(description='Multiplier for LOW_VOLATILITY regime (calm)')
-    high_vol_multiplier: float = Field(description='Multiplier for HIGH_VOLATILITY regime (storm)')
-
-
-class RiskContractV1Config(BaseModel):
-    """Risk-Sizing V1 configuration contract.
-    
-    ETAP3: All sizing via % of equity, no fixed USD in runtime.
-    
-    Formulas:
-    - base_notional = per_symbol_margin_fraction[symbol] * equity * effective_leverage
-    - regime_target = base_notional * multiplier(volatility_state)
-    - cap_notional = base_notional (same %)
-    """
-    model_config = ConfigDict(extra='forbid')
-    
-    enabled: bool = Field(description='Enable Risk-Sizing V1')
-    effective_leverage: float = Field(description='Assumed leverage for notional calculation')
-    
-    # Per-symbol margin fractions (% of equity → notional)
-    per_symbol_margin_fraction: Dict[str, float] = Field(description='Target margin fraction per symbol (e.g., BTCUSDT: 0.04)')
-    
-    # Per-symbol regime sizing config (ETAP3)
-    regime_sizing: Dict[str, RegimeSizingSymbolConfig] = Field(description='Per-symbol regime-based sizing config')
-
-
-class SizingV2Config(BaseModel):
-    """Sizing Contract V2: explicit sizing modes (no hidden fallbacks)."""
-    model_config = ConfigDict(extra='forbid')
-
-    mode: Literal["percent_equity", "fixed_notional_usd", "fixed_qty"] = Field(
-        description="Sizing mode: percent_equity | fixed_notional_usd | fixed_qty"
-    )
-    percent_equity: Optional[float] = Field(
-        default=None,
-        description="Fraction of equity to allocate (0..1], required when mode=percent_equity",
-    )
-    fixed_notional_usd: Optional[float] = Field(
-        default=None,
-        description="Fixed USD notional to allocate, required when mode=fixed_notional_usd",
-    )
-    fixed_qty: Dict[str, float] = Field(
-        default_factory=dict,
-        description="Per-symbol fixed quantity (e.g., SOLUSDT: 1.0), required when mode=fixed_qty",
-    )
-
-    @model_validator(mode="after")
-    def validate_mode_requirements(self) -> "SizingV2Config":
-        if self.mode == "percent_equity":
-            if self.percent_equity is None:
-                raise ValueError("position_sizing.sizing.percent_equity is required when mode=percent_equity")
-            if not (0.0 < float(self.percent_equity) <= 1.0):
-                raise ValueError("position_sizing.sizing.percent_equity must be in (0, 1]")
-            return self
-
-        if self.mode == "fixed_notional_usd":
-            if self.fixed_notional_usd is None:
-                raise ValueError("position_sizing.sizing.fixed_notional_usd is required when mode=fixed_notional_usd")
-            if float(self.fixed_notional_usd) <= 0.0:
-                raise ValueError("position_sizing.sizing.fixed_notional_usd must be > 0")
-            return self
-
-        if self.mode == "fixed_qty":
-            if not self.fixed_qty:
-                raise ValueError("position_sizing.sizing.fixed_qty must be non-empty when mode=fixed_qty")
-            for symbol, qty in self.fixed_qty.items():
-                try:
-                    q = float(qty)
-                except Exception as e:
-                    raise ValueError(f"position_sizing.sizing.fixed_qty[{symbol!r}] must be numeric") from e
-                if q <= 0.0:
-                    raise ValueError(f"position_sizing.sizing.fixed_qty[{symbol!r}] must be > 0")
-            return self
-
-        return self
-
-
 class PositionSizingConfig(BaseModel):
     """Position sizing configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -206,15 +143,6 @@ class PositionSizingConfig(BaseModel):
     liquidity_kappa: float = Field()
     kappa_mode: str = Field()
     liquidity_kappa_mode: Optional[str] = Field(description='Alias for kappa_mode (legacy)')
-    
-    # Risk-Sizing V1 contract (ETAP1: config-only, not used in runtime)
-    risk_contract_v1: Optional[RiskContractV1Config] = Field(description='Risk-Sizing V1 contract (ETAP1: disabled by default)')
-
-    # TASK39: Sizing Contract V2 (explicit sizing modes; no legacy 10% fallback).
-    sizing: Optional[SizingV2Config] = Field(
-        default=None,
-        description="Sizing Contract V2: percent_equity | fixed_notional_usd | fixed_qty.",
-    )
 
 
 
@@ -232,7 +160,7 @@ class QosConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     exposure_block_cooldown_sec: int = Field()
-    # Global fallback for per-symbol cooldown (aurora_instruments.<SYMBOL>.cooldown_sec takes priority)
+    # Global fallback for per-symbol cooldown (strategies.aurora.assets.<SYMBOL>.cooldown_sec takes priority)
     symbol_cooldown_sec: int = Field(description='Global fallback cooldown. Per-symbol config takes priority.')
     max_intents_per_minute_per_symbol: int = Field()
     mode: str = Field(description='defer | block')
@@ -333,6 +261,22 @@ class MRAssetRiskConfig(BaseModel):
     position_size_usd: Optional[float] = Field(default=None, description='Position size in USD')
     max_risk_score: Optional[float] = Field(default=None, description='Max risk score threshold')
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_null_inherit_sentinels(cls, data):
+        # MR-RISK-GATE-NONE-FIX-01: "inherit" must be expressed by omitting the key,
+        # never by setting it to null.
+        if isinstance(data, dict) and "max_risk_score" in data and data["max_risk_score"] is None:
+            raise ValueError("max_risk_score must be omitted to inherit; explicit null is forbidden")
+        return data
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):
+        data = handler(self)
+        if isinstance(data, dict) and data.get("max_risk_score") is None:
+            data.pop("max_risk_score", None)
+        return data
+
 
 class MRAssetConfig(BaseModel):
     """Per-asset configuration for Mean Reversion 1m.
@@ -348,11 +292,6 @@ class MRAssetConfig(BaseModel):
     
     # NEW: Typed risk config
     risk: Optional[MRAssetRiskConfig] = Field(default=None, description='Risk configuration for this symbol')
-    
-    # Legacy flat fields (kept for backward compatibility, will be deprecated)
-    bb_window: Optional[int] = Field()
-    min_vol_atr: Optional[float] = Field()
-    sl_pct: Optional[float] = Field(description='SL as percent (e.g., 0.019 = 1.9%)')
     
     allowed_regimes: List[str] = Field(description='Regimes where trading is allowed')
 
@@ -390,7 +329,7 @@ class MeanReversion1mStrategyConfig(BaseModel):
     """
     Full configuration for Mean Reversion 1m Strategy.
     
-    Config is provided via root.mean_reversion (loaded from strategy profile SSOT).
+    Config is provided via config.strategies.mean_reversion (loaded from strategy profile SSOT).
     """
     model_config = ConfigDict(extra='forbid')
     
@@ -517,7 +456,6 @@ class DecisionConfig(BaseModel):
 
     signal_weights: SignalWeights = Field()
     signals: SignalsConfig = Field()
-    position_sizing: PositionSizingConfig = Field()
     kelly: KellyConfig = Field()
     qos: QosConfig = Field()
 
@@ -526,7 +464,6 @@ class DecisionConfig(BaseModel):
     roi_exit: Optional[ROIExitConfig] = Field()
     mean_reversion: Optional[MeanReversionConfig] = Field()
 
-    sizing_modifiers: Dict[str, float] = Field(description='Regime-specific multipliers')
     regime_thresholds: Dict[str, float] = Field(description='Regime-specific signal thresholds')
     regime_threshold_multipliers: Dict[str, float] = Field(description='Regime threshold multipliers')
     symbols_to_track: Optional[List[str]] = Field(default=None, description='DEPRECATED: Use instruments SSOT')
@@ -865,6 +802,28 @@ class DecisionMakingDomainConfig(BaseModel):
     signals: SignalsConfig = Field()
     risk_skew: RiskSkewConfig = Field()
     arming: ArmingConfig = Field()
+
+    # Optional hardening toggles (backward-compatible defaults)
+    fail_closed_on_degraded_context: bool = Field(
+        default=False,
+        description=(
+            "If true, DecisionMaking may DEFER intents when critical DecisionContext "
+            "features are missing/invalid (fail-closed)."
+        ),
+    )
+    degraded_context_critical_keys: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional global list of critical DecisionContext keys. If empty, DecisionMaking uses a safe built-in default set."
+        ),
+    )
+    degraded_context_critical_keys_by_strategy: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Optional per-strategy overrides for degraded_context_critical_keys. "
+            "If a strategy_id is present here, its list is used instead of the global list."
+        ),
+    )
 
 
 # ============================================================================
@@ -1215,6 +1174,18 @@ class ExecutionUtilsConfig(BaseModel):
     basis_points_base: float = Field()
 
 
+class InflightReconcileConfig(BaseModel):
+    """In-flight order reconciliation configuration (ExecutionPosition domain)."""
+    model_config = ConfigDict(extra='forbid')
+
+    inflight_ttl_sec: int = Field(description="TTL before reconciliation check (seconds)")
+    max_ttl_sec: int = Field(description="Force-clear after this TTL (seconds)")
+    reconcile_interval_sec: int = Field(description="Interval between reconcile attempts (seconds)")
+    reconcile_retries: int = Field(description="Number of REST retries")
+    reconcile_backoff_ms: int = Field(description="Backoff between retries (ms)")
+    verbose_logging: bool = Field(description="Log reconciliation details")
+
+
 class ExecutionPositionDomainConfig(BaseModel):
     """Complete execution position domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -1223,6 +1194,7 @@ class ExecutionPositionDomainConfig(BaseModel):
     exposure_guard: ExposureGuardConfig = Field()
     fsm_open: FsmOpenConfig = Field()
     order_index: OrderIndexConfig = Field()
+    inflight_reconcile: InflightReconcileConfig = Field()
     metrics_collector: MetricsCollectorConfig = Field()
     idempotent_cancel: IdempotentCancelConfig = Field()
     utils: ExecutionUtilsConfig = Field()
@@ -1330,14 +1302,22 @@ class MaxRiskScoreConfig(BaseModel):
     enabled: bool = Field(description='Enable per-asset max_risk_score override')
     value: Optional[float] = Field(description='Max risk score threshold for entry filtering')
 
+    @model_validator(mode="after")
+    def _validate_enabled_requires_value(self) -> "MaxRiskScoreConfig":
+        # MR-RISK-GATE-NONE-FIX-01: never allow enabled override with null value.
+        # Inherit is expressed by omitting the override field entirely.
+        if self.enabled and self.value is None:
+            raise ValueError("max_risk_score.enabled=true requires max_risk_score.value (omit override to inherit)")
+        return self
+
 
 class AuroraInstrumentConfig(BaseModel):
     """
     Complete per-instrument configuration for Aurora strategy.
 
     Fallback chain:
-    1. aurora_instruments.<SYMBOL>.<param> (this config)
-    2. trading.decision.<param> (global fallback)
+    1. strategies.aurora.assets.<SYMBOL>.<param> (this config)
+    2. strategies.aurora.decision.<param> (global fallback)
     """
     model_config = ConfigDict(extra='forbid')  # Strict validation (CFG-AURORA-INSTRUMENTS-SSOT-01)
 
@@ -1373,7 +1353,10 @@ class AuroraInstrumentConfig(BaseModel):
     # Phase 3+ per-asset overrides
     ema_clamp: Optional[EmaClampConfig] = Field(description='Per-asset EMA clamp range (Phase 3+)')
     signal_threshold: Optional[SignalThresholdConfig] = Field(description='Per-asset signal threshold (Phase 3+)')
-    max_risk_score: Optional[MaxRiskScoreConfig] = Field(description='Per-asset max risk score (Phase 3+)')
+    max_risk_score: Optional[MaxRiskScoreConfig] = Field(
+        default=None,
+        description='Per-asset max risk score (Phase 3+)',
+    )
 
     cooldown_sec: Optional[int] = Field(description='Per-instrument cooldown in seconds (overrides global qos.symbol_cooldown_sec)')
 
@@ -1384,6 +1367,57 @@ class AuroraInstrumentConfig(BaseModel):
     timeframe_sec: Optional[int] = Field(description='Bar timeframe in seconds for this instrument. SOL=180 (3m), BTC/ETH=300 (5m)')
 
     # NOTE: Position control is expressed via `position_mode` above.
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_null_inherit_sentinels(cls, data):
+        # MR-RISK-GATE-NONE-FIX-01: "inherit" must not be expressed via `max_risk_score: null`.
+        # Omit the key entirely to inherit global behavior.
+        if isinstance(data, dict) and "max_risk_score" in data and data["max_risk_score"] is None:
+            raise ValueError("max_risk_score must be omitted to inherit; explicit null is forbidden")
+        return data
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):
+        data = handler(self)
+        if isinstance(data, dict) and data.get("max_risk_score") is None:
+            data.pop("max_risk_score", None)
+        return data
+
+
+class AuroraStrategyConfig(BaseModel):
+    """Aurora strategy SSOT config (strategy profile: config/aurora/strategies/aurora.yaml).
+
+    Contract:
+    - Global policy lives in `aurora.decision` (validated as DecisionConfig)
+    - Per-asset overrides live in `aurora.assets.<SYMBOL>` (validated as AuroraInstrumentConfig)
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description="Enable Aurora strategy globally")
+    type: str = Field(description="Strategy type identifier (informational)")
+    description: str = Field(description="Human description of the strategy profile")
+
+    # Global defaults / policy for Aurora decision-making.
+    decision: DecisionConfig = Field(description="Aurora decision policy (global defaults)")
+
+    # Per-symbol overrides (formerly aurora_instruments.yaml).
+    assets: Dict[str, AuroraInstrumentConfig] = Field(description="Per-symbol Aurora overrides (symbol -> config)")
+
+
+class StrategiesConfig(BaseModel):
+    """Canonical strategy policy namespace (CFG-STRATEGY-SSOT-FREEZE-03)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    aurora: Optional[AuroraStrategyConfig] = Field(
+        default=None,
+        description="Aurora strategy config (from strategies/aurora.yaml)",
+    )
+    mean_reversion: Optional[MeanReversion1mStrategyConfig] = Field(
+        default=None,
+        description="Mean Reversion 1m strategy config (from strategies/mean_reversion.yaml)",
+    )
 
 
 class OpsConfig(BaseModel):
@@ -1440,20 +1474,19 @@ class TradingConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     mode: str = Field(description='testnet | production | live')
-    decision: DecisionConfig = Field()
     execution: Optional[ExecutionConfig] = Field()
-    symbols_to_track: Optional[List[str]] = Field(
-        default=None,
+    symbols_to_track: List[str] = Field(
+        ...,
         description=(
             "List of symbols to track for multi-TF aggregation. "
-            "If omitted, it is derived deterministically from trading.decision.symbols_to_track."
+            "Derived deterministically from strategies.yaml assignments by ConfigLoader unless explicitly set."
         ),
     )
     market_data: Optional[MarketDataConfig] = Field()
     
     # NOTE (TASK23.FIX.B): Forbidden SSOT mirrors are intentionally NOT part of TradingConfig.
     # - instruments SSOT: root.instruments (config/aurora/instruments.yaml)
-    # - aurora_instruments SSOT: root.aurora_instruments (config/aurora/aurora_instruments.yaml)
+    # - aurora per-symbol SSOT: strategies/aurora.yaml::aurora.assets (canonical: config.strategies.aurora.assets)
     # - domains SSOT: root.domains (config/aurora/domains.yaml)
     # - feature_engineering SSOT: domains.yaml (domain config), not trading.yaml
     
@@ -1474,29 +1507,12 @@ class TradingConfig(BaseModel):
     # Default is all-testnet for safety. Production MUST explicitly set live modes!
     domain_configuration: DomainConfigurationConfig = Field(description='Domain-level trading mode configuration for hybrid mode (live data + testnet execution)')
 
-    @model_validator(mode='after')
-    def _derive_symbols_to_track(self) -> "TradingConfig":
-        """Derive symbols_to_track deterministically (no loader hydration).
-
-        Policy (TASK28):
-        - Preferred source: trading.symbols_to_track (explicit)
-        - Fallback source: trading.decision.symbols_to_track (legacy)
-        - If both missing/empty: fail-closed
-        """
-
-        if self.symbols_to_track is None:
-            decision_symbols = getattr(self.decision, "symbols_to_track", None)
-            if isinstance(decision_symbols, list) and decision_symbols:
-                self.symbols_to_track = [str(s) for s in decision_symbols]
-
-        if not isinstance(self.symbols_to_track, list) or not self.symbols_to_track:
-            raise ValueError(
-                "Missing trading.symbols_to_track (and no fallback trading.decision.symbols_to_track)."
-            )
-
-        # Normalize to strings for stability
-        self.symbols_to_track = [str(s) for s in self.symbols_to_track]
-        return self
+    @field_validator("symbols_to_track")
+    @classmethod
+    def _validate_symbols_to_track(cls, v: Any) -> List[str]:
+        if not isinstance(v, list) or not v:
+            raise ValueError("trading.symbols_to_track must be a non-empty list")
+        return [str(s) for s in v]
 
 
 class BinanceApiEnv(BaseModel):
@@ -1644,21 +1660,17 @@ class AuroraConfig(BaseModel):
 
     # Canonical instruments SSOT (config/aurora/instruments.yaml)
     instruments: Dict[str, InstrumentPrecisionSpec] = Field(description='Canonical instrument precision map (symbol -> tick_size/step_size)')
-    
-    # Canonical aurora_instruments SSOT (config/aurora/aurora_instruments.yaml)
-    aurora_instruments: Dict[str, AuroraInstrumentConfig] = Field(description='Per-symbol Aurora strategy overrides (weights, side_bias, exit, etc.)')
-    
+
     # Strategies registry SSOT (config/aurora/strategies.yaml)
     # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION
     strategies_registry: Optional[StrategiesRegistryConfig] = Field(default=None, description='Strategy assignments + arbitration config (from strategies.yaml)')
-    
-    # Strategy configs (Track B, optional root-level overrides)
-    mean_reversion: Optional[MeanReversion1mStrategyConfig] = Field(default=None, description='Mean Reversion 1m strategy config (loaded from strategy profile SSOT)')
+
+    # Canonical strategy policy namespace (SSOT: strategies/<id>.yaml)
+    strategies: StrategiesConfig = Field(description="Canonical strategies namespace (policy SSOT)")
 
     # App-specific overrides
     # TASK23.FIX.B: Legacy root aliases must NOT be required.
     # If provided explicitly, they act as overrides; otherwise they should not block startup.
-    decision: Optional[DecisionConfig] = Field(default=None, description='Override trading.decision if set')
     execution: Optional[ExecutionConfig] = Field(default=None, description='Override trading.execution if set')
     brackets: Optional[BracketsConfig] = Field(default=None)
     trailing: Dict[str, Any] = Field(default_factory=dict)
@@ -1670,9 +1682,6 @@ class AuroraConfig(BaseModel):
     hmm: Dict[str, Any] = Field(description='HMM regime detector config (from regime.yaml)')
     features: Dict[str, Any] = Field(description='Regime features config (from regime.yaml)')
     hotreload_whitelist: List[str] = Field(description='Hot-reload allowlist (from regime.yaml)')
-
-    # Strategy profile SSOT (loaded registry-driven; may be null if not assigned)
-    aurora: Optional[Dict[str, Any]] = Field(default=None, description='Aurora strategy global config (from strategies/aurora.yaml)')
 
     @field_validator('trading_mode')
     @classmethod

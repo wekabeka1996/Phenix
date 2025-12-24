@@ -2,6 +2,9 @@
 Tests for drift_report integration in /debug/{rid} endpoint.
 """
 
+import pytest
+pytest.importorskip("fastapi")
+
 import pathlib
 import tempfile
 from vfoundation.dr import wal
@@ -16,7 +19,6 @@ from vfoundation.obs.debug_api import (
     _drift_reports,
     _drift_lock,
 )
-import pytest
 import time
 import sys
 from pathlib import Path

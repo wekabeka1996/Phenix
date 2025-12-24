@@ -44,9 +44,10 @@ def test_task47_lowered_mean_reversion_threshold_allows_intent_for_btc() -> None
     ts_ms = 1_700_000_000_000
 
     base_cfg = get_config()
+    assert base_cfg.strategies.aurora is not None
 
     # Control case: MEAN_REVERSION multiplier at 1.0 -> threshold = 0.1, score=0.06 => neutral => no intent.
-    btc_cfg = base_cfg.aurora_instruments[symbol]
+    btc_cfg = base_cfg.strategies.aurora.assets[symbol]
     btc_cfg_control = btc_cfg.model_copy(
         deep=True,
         update={
@@ -54,8 +55,14 @@ def test_task47_lowered_mean_reversion_threshold_allows_intent_for_btc() -> None
             "allowed_regimes": list(set((btc_cfg.allowed_regimes or []) + ["MEAN_REVERSION"])),
         },
     )
+    aurora_cfg_control = base_cfg.strategies.aurora.model_copy(
+        deep=True, update={"assets": {**base_cfg.strategies.aurora.assets, symbol: btc_cfg_control}}
+    )
     control_cfg = base_cfg.model_copy(
-        deep=True, update={"aurora_instruments": {**base_cfg.aurora_instruments, symbol: btc_cfg_control}}
+        deep=True,
+        update={
+            "strategies": base_cfg.strategies.model_copy(deep=True, update={"aurora": aurora_cfg_control})
+        },
     )
 
     bus = _Bus()

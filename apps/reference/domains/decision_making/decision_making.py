@@ -28,6 +28,11 @@ from .dm_log_adapter import (
 )
 # FTR-07: Import DecisionContext for typed feature access
 from .decision_context import DecisionContext, create_decision_context
+from .sizing_margin_first import (
+    compute_notional_target,
+    compute_qty,
+    validate_exchange_constraints,
+)
 
 # CFG-DOMAINS-STEP-02: Import AuroraConfig for type enforcement
 from apps.reference.config_models import AuroraConfig
@@ -204,6 +209,29 @@ class DecisionMaking:
         dm_cfg = resolver.get_decision_making()
         qos_cfg = dm_cfg.qos
 
+        # P1: Degraded DecisionContext gate configuration (canonical domains.decision_making)
+        # Default is disabled to preserve live behavior unless explicitly enabled.
+        self._fail_closed_on_degraded_context = bool(getattr(dm_cfg, "fail_closed_on_degraded_context", False))
+        try:
+            critical_keys_raw = list(getattr(dm_cfg, "degraded_context_critical_keys", []) or [])
+        except Exception:
+            critical_keys_raw = []
+        self._degraded_context_critical_keys = set(str(k) for k in critical_keys_raw if str(k))
+        try:
+            by_strategy_raw = getattr(dm_cfg, "degraded_context_critical_keys_by_strategy", {}) or {}
+        except Exception:
+            by_strategy_raw = {}
+        self._degraded_context_critical_keys_by_strategy: dict[str, set[str]] = {
+            str(strategy_id): set(str(k) for k in (keys or []) if str(k))
+            for strategy_id, keys in (by_strategy_raw.items() if isinstance(by_strategy_raw, dict) else [])
+        }
+        if self._fail_closed_on_degraded_context:
+            self.logger.warning(
+                "Degraded DecisionContext gate ENABLED (fail-closed). "
+                f"global_keys={sorted(self._degraded_context_critical_keys) if self._degraded_context_critical_keys else 'DEFAULT'} "
+                f"strategy_overrides={list(self._degraded_context_critical_keys_by_strategy.keys())}"
+            )
+
         # Position sizing config - SSOT from domains.yaml
         sizing_cfg = dm_cfg.position_sizing
         self.min_pos_size_usd = decimal.Decimal(str(sizing_cfg.min_position_size_usd))
@@ -218,7 +246,7 @@ class DecisionMaking:
         # QoS mode - from canonical domains
         self.qos_mode = str(qos_cfg.mode)
         
-        # Per-symbol cooldown fallback (for symbols not in aurora_instruments)
+        # Per-symbol cooldown fallback (for symbols not in strategies.aurora.assets)
         # This is the ONLY fallback allowed - new symbols must be added to config
         self._default_symbol_cooldown_sec = int(qos_cfg.symbol_cooldown_sec)
 
@@ -388,7 +416,64 @@ class DecisionMaking:
             if latest_risk:
                 risk_params = latest_risk.get("risk_parameters") or {}
                 is_allowed = risk_params["is_trading_allowed"] if "is_trading_allowed" in risk_params else True
-                risk_score = float(risk_params["risk_score"] if "risk_score" in risk_params else 0)
+
+                # MR-RISK-GATE-NONE-FIX-01: never allow float(None) from payload drift.
+                risk_score_raw = risk_params["risk_score"] if "risk_score" in risk_params else None
+                if risk_score_raw is None:
+                    self.logger.warning(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER - missing risk_score (RISK_SCORE_MISSING)"
+                    )
+                    now_ms = int(time.time() * 1000)
+                    retry_key = self._stable_retry_key(
+                        prefix=str(strategy_id),
+                        symbol=symbol,
+                        rid=rid,
+                        side=side,
+                        ts_ms=pld.get("ts_ms"),
+                    )
+                    self._emit_intent_deferred_v1(
+                        symbol=symbol,
+                        reason="RISK_SCORE_MISSING",
+                        retry_key=retry_key,
+                        next_allowed_ts=now_ms + 500,
+                        original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
+                        original_payload_min=dict(pld),
+                        attempt=1,
+                        max_attempts=5,
+                        why_chain=(why_chain or []) + ["missing:risk_score", "fail_closed"],
+                        context="strategy_signal_gateway:risk_score_missing",
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
+                try:
+                    risk_score = float(risk_score_raw)
+                except Exception:
+                    self.logger.warning(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER - invalid risk_score (RISK_SCORE_INVALID)"
+                    )
+                    now_ms = int(time.time() * 1000)
+                    retry_key = self._stable_retry_key(
+                        prefix=str(strategy_id),
+                        symbol=symbol,
+                        rid=rid,
+                        side=side,
+                        ts_ms=pld.get("ts_ms"),
+                    )
+                    self._emit_intent_deferred_v1(
+                        symbol=symbol,
+                        reason="RISK_SCORE_INVALID",
+                        retry_key=retry_key,
+                        next_allowed_ts=now_ms + 500,
+                        original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
+                        original_payload_min=dict(pld),
+                        attempt=1,
+                        max_attempts=5,
+                        why_chain=(why_chain or []) + ["invalid:risk_score", "fail_closed"],
+                        context="strategy_signal_gateway:risk_score_invalid",
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
                 
                 if not is_allowed:
                     self.logger.warning(
@@ -397,47 +482,26 @@ class DecisionMaking:
                     self._record_blocked_intent(symbol)
                     return
                 
-                # Check risk score threshold (use aurora_instruments if available)
-                # Check risk score threshold (use aurora_instruments if available)
-                # Check risk score threshold (use aurora_instruments if available)
-                # P1 FIX: No hardcoded default (was 0.96). Fail closed if config missing.
-                # Must check GLOBAL SSOT if instrument override is missing.
-                # If both missing -> BLOCK.
-                max_risk = -1.0
+                # Risk score threshold (SSOT):
+                # - Global: domains.risk_management.trading_allowed_thresholds.max_risk_score
+                # - Optional per-symbol override: strategies.aurora.assets.<SYM>.max_risk_score (enabled + value)
                 try:
+                    max_risk = float(self.config.domains.risk_management.trading_allowed_thresholds.max_risk_score)
                     instr_cfg = self._get_aurora_instrument_cfg(symbol)
-                    if instr_cfg and hasattr(instr_cfg, 'max_risk_score'):
-                        max_risk = float(instr_cfg.max_risk_score)
-                    else:
-                        # Fallback to Global SSOT (Config Contract)
-                        # We must fetch the global max_risk_score from config
-                        try:
-                             # Access global config via self.config (passed in init)
-                             # self.config is likely AuroraConfig or dict
-                             # But DecisionMaking stores self.config
-                             # Let's inspect self.config structure or assume Pydantic path
-                             # Based on risk_management.py: domains.risk_management.trading_allowed_thresholds.max_risk_score
-                             # We need to access it safely.
-                             g_cfg = self.config
-                             if hasattr(g_cfg, 'domains'):
-                                 max_risk = float(g_cfg.domains.risk_management.trading_allowed_thresholds.max_risk_score)
-                             else:
-                                 # Dict access fallback
-                                 max_risk = float(g_cfg["domains"]["risk_management"]["trading_allowed_thresholds"]["max_risk_score"])
-                        except Exception as e:
-                             raise ConfigContractError(
-                                 path="domains.risk_management.trading_allowed_thresholds.max_risk_score",
-                                 why=f"Global fallback missing: {e}",
-                                 symbol=symbol
-                             )
+                    mrs = instr_cfg.max_risk_score if instr_cfg is not None else None
+                    used_override = False
+                    if mrs is not None and mrs.enabled:
+                        used_override = True
+                        max_risk = float(mrs.value)
                 except Exception as e:
                     self.logger.error(f"Config Contract Violation: {e}")
                     self._record_blocked_intent(symbol)
-                    return # BLOCK TRADE
+                    return  # BLOCK TRADE
                 
                 if risk_score > max_risk:
                     self.logger.warning(
-                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Risk score {risk_score:.3f} > {max_risk}"
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - "
+                        f"risk_score {risk_score:.3f} > max_risk_score {max_risk} (used_override={used_override})"
                     )
                     self._record_blocked_intent(symbol)
                     return
@@ -448,6 +512,21 @@ class DecisionMaking:
                 # Use symbol_states SSOT (not self.latest_features which doesn't exist)
                 features_data = self.symbol_states[symbol].get("features") or {}
                 features_ts = features_data["ts"] if "ts" in features_data else 0
+
+                # P1: Degraded DecisionContext gate (opt-in, per-strategy overrides supported).
+                # Purpose: detect when "neutral" defaults are masking missing/invalid feature inputs.
+                if isinstance(features_data, dict):
+                    feats_payload = features_data.get("features") or {}
+                    if isinstance(feats_payload, dict):
+                        ctx = create_decision_context(symbol, int(time.time() * 1000), feats_payload)
+                        if self._degraded_context_gate_should_defer(
+                            symbol=symbol,
+                            rid=rid,
+                            ctx=ctx,
+                            features_evt=features_data,
+                            strategy_id=str(strategy_id),
+                        ):
+                            return
                 
                 if risk_ts > 0 and features_ts > 0:
                     skew_sec = abs(features_ts - risk_ts) / 1000
@@ -584,9 +663,50 @@ class DecisionMaking:
             # === GATE 3: QOS GATE ===
             qos_allowed, qos_reason = self._qos_allow(symbol)
             if not qos_allowed:
-                self.logger.info(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - QoS blocked: {qos_reason}")
-                self._record_blocked_intent(symbol)
-                return
+                effective_mode = self.qos_mode
+                if self.qos_enforce and effective_mode == "defer":
+                    effective_mode = "enforce"
+
+                if effective_mode == "shadow":
+                    # Shadow mode: only log/metrics, continue with intent.
+                    self.logger.warning(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: QoS shadow - allowing intent (reason: {qos_reason})"
+                    )
+                elif effective_mode == "defer":
+                    # Defer mode: emit INTENT_DEFERRED (v1) and retry after cooldown.
+                    now_ms = int(time.time() * 1000)
+                    next_allowed_ts = int(self._calculate_next_allowed_time(symbol))
+                    retry_key = self._stable_retry_key(
+                        prefix=f"{strategy_id}:qos",
+                        symbol=symbol,
+                        rid=rid,
+                        side=side,
+                        ts_ms=pld.get("ts_ms"),
+                    )
+                    self.logger.warning(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: QoS defer - intent deferred until {next_allowed_ts} (reason: {qos_reason})"
+                    )
+                    self._emit_intent_deferred_v1(
+                        symbol=symbol,
+                        reason=str(qos_reason or "qos_defer"),
+                        retry_key=retry_key,
+                        next_allowed_ts=next_allowed_ts,
+                        original_event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
+                        original_payload_min=dict(pld),
+                        attempt=1,
+                        max_attempts=5,
+                        why_chain=(why_chain or []) + ["qos", "defer"],
+                        context="strategy_gateway_qos",
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+                else:
+                    # Enforce mode: block intent.
+                    self.logger.info(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - QoS blocked: {qos_reason}"
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
             
             # === GATE 4: EXPOSURE GATE (pre-check) ===
             # TASK39: Size is computed by DecisionMaking (Sizing Contract v2), not supplied by strategy.
@@ -612,9 +732,14 @@ class DecisionMaking:
                 "portfolio": self.latest_portfolio,
                 "features": self.symbol_states[symbol].get("features") if symbol in self.symbol_states else {},
             }
-            qty_dec, why_sizing = self._calculate_position_size(symbol, entry_price_dec, side, sizing_ctx)
+            qty_dec, why_sizing, sizing_reject_reason, _sizing_dbg = self._calculate_position_size(
+                symbol, entry_price_dec, side, sizing_ctx
+            )
             if qty_dec is None:
-                self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Sizing not ready: {why_sizing}")
+                self.logger.warning(
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - "
+                    f"Sizing blocked ({sizing_reject_reason or 'UNKNOWN'}): {why_sizing}"
+                )
                 self._record_blocked_intent(symbol)
                 return
 
@@ -932,8 +1057,8 @@ class DecisionMaking:
         Get per-instrument Aurora configuration for a symbol.
 
         Fallback chain:
-        1. config.aurora_instruments[SYMBOL] (CANONICAL SSOT from aurora_instruments.yaml)
-        2. None (caller falls back to global trading.decision.*)
+        1. config.strategies.aurora.assets[SYMBOL] (SSOT: strategies/aurora.yaml::aurora.assets)
+        2. None (caller falls back to global strategies.aurora.decision.*)
 
         Args:
             symbol: Trading pair symbol (e.g., 'BTCUSDT')
@@ -941,15 +1066,14 @@ class DecisionMaking:
         Returns:
             AuroraInstrumentConfig or None if not configured
         """
-        # CFG-AURORA-INSTRUMENTS-SSOT-01-FIXPACK: Direct Pydantic access (no safe_get)
-        if not self.config or not hasattr(self.config, 'aurora_instruments'):
+        if not self.config:
             return None
-        
-        aurora_instruments = self.config.aurora_instruments
-        if not isinstance(aurora_instruments, dict):
+
+        aurora = getattr(self.config.strategies, "aurora", None)
+        if aurora is None:
             return None
-        
-        return aurora_instruments.get(symbol)  # Already Pydantic-typed, no conversion needed
+
+        return aurora.assets.get(symbol)
 
     def _check_strategy_arbitration(
         self,
@@ -982,6 +1106,7 @@ class DecisionMaking:
         
         # If symbol not in registry, block (fail-closed)
         if not assignments:
+            self.logger.warning(f"[{symbol}] ARBITRATION: symbol not in registry. Assignments: {list(self.strategies_registry.assignments.keys())}")
             return {
                 "allowed": False, 
                 "reason": f"ARBITRATION_REJECT:symbol_not_in_registry"
@@ -989,6 +1114,7 @@ class DecisionMaking:
         
         # If strategy not assigned to symbol, block
         if strategy_id not in assignments:
+            self.logger.warning(f"[{symbol}] ARBITRATION: strategy {strategy_id!r} not in assignments {assignments!r}")
             return {
                 "allowed": False,
                 "reason": f"ARBITRATION_REJECT:strategy_not_assigned_to_symbol"
@@ -1047,7 +1173,7 @@ class DecisionMaking:
         Get per-symbol cooldown in seconds.
 
         Fallback chain:
-        1. aurora_instruments.<SYMBOL>.cooldown_sec (per-instrument config)
+        1. strategies.aurora.assets.<SYMBOL>.cooldown_sec (per-instrument config)
         2. self._default_symbol_cooldown_sec (safe default = 3s)
 
         Args:
@@ -1071,8 +1197,8 @@ class DecisionMaking:
         Get configuration parameter with per-instrument override support.
 
         Fallback chain:
-        1. aurora_instruments.<SYMBOL>.<param>
-        2. trading.decision.<param> (global)
+        1. strategies.aurora.assets.<SYMBOL>.<param>
+        2. strategies.aurora.decision.<param> (global)
         3. default value
 
         Args:
@@ -1090,8 +1216,8 @@ class DecisionMaking:
             if value is not None:
                 return value
 
-        # 2. Fallback to global trading.decision.* (Strict)
-        global_value = aget(self.config.trading.decision, param, default)
+        # 2. Fallback to global strategies.aurora.decision.* (Strict)
+        global_value = aget(self.config.strategies.aurora.decision, param, default)
         return global_value if global_value is not None else default
 
     def _get_side_bias_params(self, symbol: str) -> tuple:
@@ -1099,8 +1225,8 @@ class DecisionMaking:
         Get side_bias parameters with per-instrument override.
 
         Fallback chain:
-        1. aurora_instruments.<SYMBOL>.side_bias.* (per-instrument)
-        2. trading.decision.side_bias_* (global)
+        1. strategies.aurora.assets.<SYMBOL>.side_bias.* (per-instrument)
+        2. strategies.aurora.decision.side_bias_* (global)
         3. defaults
 
         Returns:
@@ -1126,7 +1252,7 @@ class DecisionMaking:
 
         # 2. Fallback to global
         # 2. Fallback to global (Strict Object)
-        dm = self.config.trading.decision
+        dm = self.config.strategies.aurora.decision
         penalty = dm.side_bias_penalty_factor if dm.side_bias_penalty_factor is not None else default_penalty
         window = dm.side_bias_window_sec if dm.side_bias_window_sec is not None else default_window
         target = dm.side_bias_target_ratio if dm.side_bias_target_ratio is not None else default_target
@@ -1137,8 +1263,8 @@ class DecisionMaking:
         Get regime threshold multipliers with per-instrument override.
 
         Fallback chain:
-        1. aurora_instruments.<SYMBOL>.regime_thresholds
-        2. trading.decision.regime_threshold_multipliers (global)
+        1. strategies.aurora.assets.<SYMBOL>.regime_thresholds
+        2. strategies.aurora.decision.regime_threshold_multipliers (global)
         3. empty dict
 
         Returns:
@@ -1152,51 +1278,23 @@ class DecisionMaking:
                 return thresholds
 
         # 2. Fallback to global (Strict Object)
-        dm = self.config.trading.decision
+        dm = self.config.strategies.aurora.decision
         global_thresholds = dm.regime_threshold_multipliers if dm.regime_threshold_multipliers is not None else {}
         return global_thresholds
-
-    def _get_regime_sizing(self, symbol: str) -> dict:
-        """
-        Get regime sizing multipliers with per-instrument override.
-
-        Fallback chain:
-        1. aurora_instruments.<SYMBOL>.regime_sizing
-        2. trading.decision.sizing_modifiers (global)
-        3. empty dict
-
-        Returns:
-            Dict mapping regime names to sizing multipliers
-        """
-        # 1. Try per-instrument config
-        instr_cfg = self._get_aurora_instrument_cfg(symbol)
-        if instr_cfg is not None:
-            sizing = aget(instr_cfg, "regime_sizing", None)
-            if sizing is not None:
-                # Convert Pydantic model to dict if needed
-                if hasattr(sizing, 'model_dump'):
-                    return sizing.model_dump(exclude_none=True)
-                elif isinstance(sizing, dict):
-                    return sizing
-
-        # 2. Fallback to global (Strict Object)
-        dm = self.config.trading.decision
-        global_sizing = dm.sizing_modifiers if dm.sizing_modifiers is not None else {}
-        return global_sizing
 
     def _get_signal_threshold(self, symbol: str) -> decimal.Decimal:
         """
         Get signal threshold with per-instrument override (Phase 3+).
 
         Fallback chain:
-        1. aurora_instruments.<SYMBOL>.signal_threshold (if enabled=True)
-        2. trading.decision.signal_threshold (global - REQUIRED field)
+        1. strategies.aurora.assets.<SYMBOL>.signal_threshold (if enabled=True)
+        2. strategies.aurora.decision.signal_threshold (global - REQUIRED field)
 
         Returns:
             Signal threshold as Decimal
         
         Raises:
-            AttributeError: If trading.decision.signal_threshold missing (fail-closed)
+            AttributeError: If strategies.aurora.decision.signal_threshold missing (fail-closed)
         """
         # 1. Try per-instrument config (Phase 3+)
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
@@ -1207,176 +1305,8 @@ class DecisionMaking:
                     return decimal.Decimal(str(st_cfg.value))
 
         # 2. Direct Pydantic access (fail-closed: missing field → AttributeError)
-        decision_config = self.config.trading.decision
+        decision_config = self.config.strategies.aurora.decision
         return decimal.Decimal(str(decision_config.signal_threshold))
-
-    def _compute_risk_contract_cap_notional(
-        self, symbol: str, equity: decimal.Decimal
-    ) -> Optional[decimal.Decimal]:
-        """
-        Compute max notional cap based on risk_contract_v1 config.
-        
-        ETAP3: Cap = per_symbol_margin_fraction * equity * effective_leverage
-        No fixed_notional_usd in runtime.
-        
-        Args:
-            symbol: Trading pair symbol
-            equity: Current account equity
-            
-        Returns:
-            Decimal cap if risk_contract_v1 is enabled and symbol is configured,
-            None otherwise (caller falls back to legacy sizing).
-        """
-        # Strict Config Access
-        try:
-             # trading.decision.position_sizing.risk_contract_v1
-             rc = self.config.trading.decision.position_sizing.risk_contract_v1
-        except AttributeError:
-             rc = None
-        
-        if rc is None:
-            return None
-        
-        # Direct Pydantic access only (fail-closed: missing field → AttributeError)
-        if not rc.enabled:
-            return None
-        
-        if equity <= 0:
-            self.logger.warning(
-                f"[{symbol}] risk_contract_v1 enabled but equity<=0, fallback to legacy sizing"
-            )
-            return None
-        
-        # Cap = per_symbol_margin_fraction * equity * effective_leverage
-        try:
-            margin_fracs = rc.per_symbol_margin_fraction or {}
-            leverage = rc.effective_leverage
-            
-            margin_frac = margin_fracs.get(symbol)
-            if margin_frac is None or margin_frac <= 0:
-                self.logger.debug(
-                    f"[{symbol}] not configured in risk_contract_v1.per_symbol_margin_fraction"
-                )
-                return None
-            
-            cap = (
-                decimal.Decimal(str(margin_frac)) 
-                * equity 
-                * decimal.Decimal(str(leverage))
-            )
-            return cap if cap > 0 else None
-            
-        except Exception as e:
-            self.logger.debug(f"[{symbol}] Error computing margin cap: {e}")
-            return None
-
-    def _compute_regime_scaled_notional(
-        self,
-        symbol: str,
-        equity: decimal.Decimal,
-        volatility_state: Optional[str],
-        cap_notional: Optional[decimal.Decimal],
-    ) -> Optional[decimal.Decimal]:
-        """
-        Compute regime-scaled notional based on volatility state (ETAP3).
-        
-        If regime_sizing is enabled for this symbol, computes:
-        - base = margin_frac * equity * leverage
-        - target = base * multiplier(volatility_state)
-        - capped by cap_notional
-        
-        Args:
-            symbol: Trading pair symbol
-            equity: Current account equity
-            volatility_state: Volatility regime (HIGH_VOLATILITY, LOW_VOLATILITY, etc)
-            cap_notional: Cap from _compute_risk_contract_cap_notional
-            
-        Returns:
-            Decimal target if regime sizing enabled for symbol,
-            None otherwise (caller uses ETAP2 logic: cap-only).
-        """
-        # Strict Config Access
-        try:
-             # trading.decision.position_sizing.risk_contract_v1
-             rc = self.config.trading.decision.position_sizing.risk_contract_v1
-        except AttributeError:
-             rc = None
-        
-        if rc is None:
-            return None
-        
-        # Direct Pydantic access only (fail-closed: missing field → AttributeError)
-        if not rc.enabled or equity <= 0:
-            return None
-        
-        # Get per-symbol regime sizing config
-        try:
-            margin_fracs = rc.per_symbol_margin_fraction or {}
-            leverage = rc.effective_leverage
-            regime_sizing = rc.regime_sizing or {}
-            
-            margin_frac = margin_fracs.get(symbol)
-            if margin_frac is None or margin_frac <= 0:
-                return None
-            
-            # Get symbol's regime config
-            sym_cfg = regime_sizing.get(symbol)
-            if sym_cfg is None:
-                return None
-            
-            # Check if regime sizing is enabled for this symbol
-            # NOTE: sym_cfg can be dict (from YAML) or Pydantic model (if typed later)
-            if isinstance(sym_cfg, dict):
-                sym_enabled = sym_cfg["enabled"] if "enabled" in sym_cfg else False
-                if "low_vol_multiplier" not in sym_cfg:
-                     raise ConfigContractError(path=f"regime.multipliers.{symbol}.low_vol_multiplier", why="Missing low_vol_multiplier", symbol=symbol)
-                low_mult = sym_cfg["low_vol_multiplier"]
-                
-                if "high_vol_multiplier" not in sym_cfg:
-                     raise ConfigContractError(path=f"regime.multipliers.{symbol}.high_vol_multiplier", why="Missing high_vol_multiplier", symbol=symbol)
-                high_mult = sym_cfg["high_vol_multiplier"]
-            else:
-                sym_enabled = sym_cfg.enabled
-                low_mult = sym_cfg.low_vol_multiplier
-                high_mult = sym_cfg.high_vol_multiplier
-            
-            if not sym_enabled:
-                return None
-            
-            # Compute base notional
-            base = (
-                decimal.Decimal(str(margin_frac)) 
-                * equity 
-                * decimal.Decimal(str(leverage))
-            )
-            
-            # Determine multiplier based on volatility state
-            vol = (volatility_state or "").upper()
-            if vol == "HIGH_VOLATILITY" or vol == "HIGH_VOL":
-                mult = decimal.Decimal(str(high_mult))
-            elif vol == "LOW_VOLATILITY" or vol == "LOW_VOL":
-                mult = decimal.Decimal(str(low_mult))
-            else:
-                mult = decimal.Decimal("1.0")
-            
-            target = base * mult
-            
-            # Apply cap
-            if cap_notional is not None and cap_notional > 0 and target > cap_notional:
-                self.logger.info(
-                    f"[{symbol}] RISK_CONTRACT_V1_REGIME_CAP: target {target} -> {cap_notional} "
-                    f"(equity={equity}, vol={vol})"
-                )
-                target = cap_notional
-            
-            self.logger.debug(
-                f"[{symbol}] regime_scaled_notional: base={base}, mult={mult}, target={target}"
-            )
-            return target
-            
-        except Exception as e:
-            self.logger.debug(f"[{symbol}] Error computing regime-scaled notional: {e}")
-            return None
 
     def _has_active_position_same_side(
         self,
@@ -1548,22 +1478,11 @@ class DecisionMaking:
                     # Continue with normal flow - alpha calculation failure shouldn't block trading
                     # UNLESS it was a ConfigContractError (handled above)
 
-            # Fallback trigger: if both features and risk present, ensure a decision attempt
-            try:
-                state = self.symbol_states[symbol]
-                if state.get("features") and state.get("risk"):
-                    decision_context = {
-                        "features": state["features"],
-                        "risk_params": state["risk"],
-                        "portfolio": self.latest_portfolio,
-                        "regime": self.latest_regime,
-                    }
-                    rid = str(uuid.uuid4())
-                    self._make_decision_for_symbol(symbol, decision_context, rid)
-            except ConfigContractError:
-                raise # Propagate
-            except Exception:
-                pass # Ignore generic errors in fallback
+            # Fallback trigger: REMOVED per P0-6 Safety Audit
+            # Dangerous bypass of orchestration checks.
+            # Decision trigger is now handled exclusively via _check_and_trigger_decision_for_symbol
+            pass
+
         
         except ConfigContractError as e:
             # TASK 17: Central Interception Point
@@ -1601,8 +1520,8 @@ class DecisionMaking:
                     "until_refresh": False,
                 }
                 self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on risk refresh")
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.warning(f"Error extracting symbol from feature event: {e}")
 
         # Cache risk data and timestamp for race condition handling
         if symbol not in self.symbol_states:
@@ -1684,6 +1603,11 @@ class DecisionMaking:
                 "positions_count": len(positions),
             },
         )
+        
+        # P0-4 Fix: Retrigger decision for all symbols to prevent Startup Deadlock
+        # If Portfolio arrived late (after Features/Risk), we must wake up the FSM.
+        for sym in list(self.symbol_states.keys()):
+            self._check_and_trigger_decision_for_symbol(sym)
 
     def on_regime(self, event: Message) -> None:
         self.latest_regime = event.pld
@@ -1698,6 +1622,7 @@ class DecisionMaking:
             if symbol:
                 regime_val = event.pld.get("regime") or event.pld.get("overall_regime")
                 self._per_symbol_regimes[symbol] = {
+                    "symbol": symbol,  # P0-3 Fix: Include symbol in payload
                     "regime": regime_val,
                     "warmup": warmup,
                     "confidence": event.pld.get("confidence"),
@@ -1709,12 +1634,15 @@ class DecisionMaking:
                 
                 # Check for regime flip enforcement
                 self._handle_regime_flip(symbol, self._per_symbol_regimes[symbol])
+                
+                # P0-4 Fix: Retrigger decision on Regime Update
+                self._check_and_trigger_decision_for_symbol(symbol)
             
             # Guard: Block trades if not full_ready
             full_ready = (
                 bool(warmup["full_ready"] if "full_ready" in warmup else False)
                 if self.arming_require_regime_warmup
-                else bool(warmup["full_ready"] if "full_ready" in warmup else True)
+                else bool(warmup["full_ready"] if "full_ready" in warmup else False) # P0-2 Fix: Default False
             )
             if symbol and not full_ready:
                 ticks_seen = warmup["ticks_seen"] if "ticks_seen" in warmup else 0
@@ -1869,8 +1797,11 @@ class DecisionMaking:
         warmup = None
         if symbol in self._per_symbol_regimes:
             warmup = self._per_symbol_regimes[symbol].get("warmup")
-        if warmup is None:
-            warmup = aget(self, "_latest_warmup", None)
+        
+        # P0-1 Fix: Removed _latest_warmup fallback.
+        # Strict Isolation: If per-symbol warmup is missing, we fail-closed.
+        # if warmup is None:
+        #    warmup = aget(self, "_latest_warmup", None)
 
         warmup_dict = warmup if isinstance(warmup, dict) else None
         if warmup_dict is None:
@@ -1997,7 +1928,7 @@ class DecisionMaking:
                 if (
                     (not self.arming_require_regime_warmup)
                     and warmup_dict
-                    and (not bool(warmup_dict["full_ready"] if "full_ready" in warmup_dict else True))
+                    and (not bool(warmup_dict["full_ready"] if "full_ready" in warmup_dict else False)) # P0-2 Fix: Default False
                 ):
                     ticks_seen = warmup_dict["ticks_seen"] if "ticks_seen" in warmup_dict else 0
                     self.logger.info(
@@ -2197,6 +2128,17 @@ class DecisionMaking:
         # FTR-07: Create typed DecisionContext for semantic feature access
         ts_ms = int(time.time() * 1000)
         ctx = create_decision_context(symbol, ts_ms, features_data)
+
+        # P1: Degraded DecisionContext gate (opt-in).
+        # Purpose: detect when "neutral" defaults are masking missing/invalid feature inputs.
+        if self._degraded_context_gate_should_defer(
+            symbol=symbol,
+            rid=rid,
+            ctx=ctx,
+            features_evt=features_evt,
+            strategy_id="aurora",
+        ):
+            return
 
         # QoS check (PACK EXP-4) - check rate limits and cooldowns
         qos_allowed, qos_reject_reason = self._qos_allow(
@@ -2794,49 +2736,58 @@ class DecisionMaking:
             return
         price_ref = decimal.Decimal(str(price_ref_str))
 
-        # Prepare sizing meta: regime multiplier and Kelly fraction (optional)
+        # Prepare sizing meta: Kelly fraction (optional)
         sizing_meta: dict[str, Any] = {}
-        # Phase A1: Regime multiplier with per-instrument fallback
+        # Kelly fraction (optional): derive from per-symbol config
         try:
-            sizing_mods = self._get_regime_sizing(symbol)
-            if regime_name not in sizing_mods:
-                raise ConfigContractError(path=f"regime.multipliers.{symbol}.{regime_name}", why="Missing specific regime multiplier", symbol=symbol)
-            sizing_meta["regime_multiplier"] = decimal.Decimal(str(sizing_mods[regime_name]))
-        except Exception:
-            pass
-        # Kelly fraction (optional): derive from config when available
-        try:
-            kelly_cfg = self.config.trading.decision.kelly
+            kelly_cfg = self.config.strategies.aurora.decision.kelly
             if kelly_cfg.base_probability is not None:
                 base_p = decimal.Decimal(str(kelly_cfg.base_probability))
                 cap = decimal.Decimal(str(kelly_cfg.kelly_cap))
                 alpha = decimal.Decimal(str(kelly_cfg.kelly_alpha))
 
-                exec_cfg = self.config.trading.execution
-                manage_cfg = exec_cfg.manage if exec_cfg is not None else None
-                brackets_cfg = manage_cfg.brackets if manage_cfg is not None else None
-                if brackets_cfg is None:
+                # SSOT FIX: Use per-symbol sl_pct and tp_low_ratio from aurora.assets
+                # instead of global brackets.sl.fixed_bps / brackets.tp.fixed_bps
+                aurora_assets = self.config.strategies.aurora.assets
+                instr_cfg = aurora_assets.get(symbol) if aurora_assets else None
+                
+                if instr_cfg is None:
                     raise ConfigContractError(
-                        path="trading.execution.manage.brackets",
-                        why="Missing brackets config",
+                        path=f"strategies.aurora.assets.{symbol}",
+                        why="Per-symbol config missing for Kelly sizing",
                         symbol=symbol,
                     )
-                if not (brackets_cfg.sl and brackets_cfg.sl.fixed_bps):
-                    raise ConfigContractError(path="trading.execution.manage.brackets.sl.fixed_bps", why="Missing fixed_bps", symbol=symbol)
-                sl_bps_val = decimal.Decimal(str(brackets_cfg.sl.fixed_bps))
-
-                if not (brackets_cfg.tp and brackets_cfg.tp.fixed_bps):
-                    raise ConfigContractError(path="trading.execution.manage.brackets.tp.fixed_bps", why="Missing fixed_bps", symbol=symbol)
-                tp_bps_val = decimal.Decimal(str(brackets_cfg.tp.fixed_bps))
-
-                if sl_bps_val <= 0:
-                    self.logger.warning("SL_bps invalid <= 0")
+                
+                # Get sl_pct (REQUIRED for Kelly)
+                exit_cfg = getattr(instr_cfg, 'exit', None)
+                if exit_cfg is None or exit_cfg.sl_pct is None:
+                    raise ConfigContractError(
+                        path=f"strategies.aurora.assets.{symbol}.exit.sl_pct",
+                        why="sl_pct required for Kelly sizing",
+                        symbol=symbol,
+                    )
+                sl_pct = decimal.Decimal(str(exit_cfg.sl_pct))
+                
+                # Get tp_low_ratio (REQUIRED for Kelly)
+                tp_cfg = getattr(instr_cfg, 'take_profit', None)
+                if tp_cfg is None or tp_cfg.tp_low_ratio is None:
+                    raise ConfigContractError(
+                        path=f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio",
+                        why="tp_low_ratio required for Kelly sizing",
+                        symbol=symbol,
+                    )
+                tp_low_ratio = decimal.Decimal(str(tp_cfg.tp_low_ratio))
+                
+                if sl_pct <= 0:
+                    self.logger.warning(f"[{symbol}] sl_pct invalid <= 0: {sl_pct}")
                     return decimal.Decimal("0")
 
-                payoff_r = tp_bps_val / sl_bps_val
+                # payoff_r = TP distance / SL distance = tp_low_ratio (since both relative to sl_pct)
+                payoff_r = tp_low_ratio
                 
-                # Check Kelly override logic (Legacy compat or unused?)
-                # Assuming valid payoff_r allows proceeding to Kelly calc
+                self.logger.debug(
+                    f"[{symbol}] Kelly using per-symbol: sl_pct={sl_pct}, tp_low_ratio={tp_low_ratio}, payoff_r={payoff_r}"
+                )
         except Exception as e:
             self.logger.error(f"Bracket/Kelly config error: {e}")
             return decimal.Decimal("0")
@@ -2889,7 +2840,7 @@ class DecisionMaking:
 
         # Call sizing with optional meta
         context["_sizing_meta"] = sizing_meta
-        qty, why_sizing = self._calculate_position_size(
+        qty, why_sizing, sizing_reject_reason, sizing_dbg = self._calculate_position_size(
             symbol, price_ref, side, context
         )
         why_chain.append(why_sizing)
@@ -2912,7 +2863,11 @@ class DecisionMaking:
                 "nrr_code": None,
                 "why": reject_reason[:80],
                 "source_fsm": "DecisionMaking",
-                "metadata": {"reject_reason": "ZERO_QUANTITY", "why_sizing": why_sizing}
+                "metadata": {
+                    "reject_reason": sizing_reject_reason or "ZERO_QUANTITY",
+                    "why_sizing": why_sizing,
+                    **(sizing_dbg or {}),
+                },
             })
 
             self.clear_internal_state_for_symbol(symbol)
@@ -3017,262 +2972,100 @@ class DecisionMaking:
         if current_features_ts > 0:
             self._last_successful_features_ts[symbol] = current_features_ts
 
+
     def _calculate_position_size(
         self, symbol: str, price: decimal.Decimal, side: str, context: dict
-    ) -> tuple[Optional[decimal.Decimal], str]:
-        why_chain = []
-        portfolio = context["portfolio"]
-        equity = decimal.Decimal(str(portfolio["equity"] if "equity" in portfolio else "0"))
+    ) -> tuple[Optional[decimal.Decimal], str, Optional[str], dict[str, Any]]:
+        """Compute order quantity using margin-first SSOT.
 
+        SSOT inputs:
+        - instruments.<SYM>.sizing.margin_pct
+        - instruments.<SYM>.execution.target_leverage
+        - instruments.<SYM>.{step_size,min_qty,min_notional}
 
+        Margin-first:
+        - margin_usdt = equity * margin_pct
+        - notional_target = margin_usdt * leverage
+        - qty = floor_to_step(notional_target / price, step_size)
+        """
+        portfolio = context.get("portfolio") if isinstance(context, dict) else None
+        if not isinstance(portfolio, dict):
+            return None, "portfolio_missing", "PORTFOLIO_MISSING", {}
 
-        # Strict Config for Dynamic Sizing via Domains
-        pos_config = self.config.domains.decision_making.position_sizing
-        sizing_meta = context["_sizing_meta"] if ("_sizing_meta" in context and context["_sizing_meta"]) else {}
+        equity = decimal.Decimal(str(portfolio.get("equity", "0")))
+        if equity <= 0:
+            return None, f"equity_invalid:{equity}", "ZERO_EQUITY", {"equity": str(equity)}
 
-        q_risk = pos_config.risk_fraction_q
-        kappa_mode = str(pos_config.liquidity_kappa_mode).lower()
-        kappa_liq = float(pos_config.liquidity_kappa)
-        if kappa_mode == "dynamic":
-            try:
-                features_event = context["features"] if ("features" in context and context["features"]) else {}
-                feats = (
-                    features_event["features"]
-                    if (isinstance(features_event, dict) and "features" in features_event and features_event["features"])
-                    else {}
-                )
-                lk = feats.get("liquidity_kappa")
-                if lk is not None:
-                    kappa_liq = decimal.Decimal(str(lk))
-            except Exception:
-                pass
-
-        final_pos_size_usd: decimal.Decimal
-        why_parts: list[str] = []
-
-        # TASK39: Sizing Contract V2 (explicit modes, no legacy fallback).
-        sizing_v2 = getattr(pos_config, "sizing", None)
-        if sizing_v2 is not None:
-            mode = str(getattr(sizing_v2, "mode", "") or "")
-            if not mode:
-                return None, "NRR-SIZING-CONTRACT-MISSING"
-            if price <= 0:
-                return None, "NRR-SIZING-INVALID-PRICE"
-
-            if mode == "fixed_qty":
-                fixed_qty_map = getattr(sizing_v2, "fixed_qty", {}) or {}
-                raw_qty_val = fixed_qty_map.get(symbol)
-                if raw_qty_val is None:
-                    return None, "NRR-SIZING-FIXED-QTY-MISSING"
-                try:
-                    raw_qty = decimal.Decimal(str(raw_qty_val))
-                except Exception:
-                    return None, "NRR-SIZING-FIXED-QTY-INVALID"
-                if raw_qty <= 0:
-                    return None, "NRR-SIZING-FIXED-QTY-INVALID"
-                final_pos_size_usd = raw_qty * price
-            elif mode == "fixed_notional_usd":
-                raw_notional = getattr(sizing_v2, "fixed_notional_usd", None)
-                if raw_notional is None:
-                    return None, "NRR-SIZING-FIXED-NOTIONAL-MISSING"
-                try:
-                    final_pos_size_usd = decimal.Decimal(str(raw_notional))
-                except Exception:
-                    return None, "NRR-SIZING-FIXED-NOTIONAL-INVALID"
-            elif mode == "percent_equity":
-                pct = getattr(sizing_v2, "percent_equity", None)
-                if pct is None:
-                    return None, "NRR-SIZING-PCT-MISSING"
-                try:
-                    pct_dec = decimal.Decimal(str(pct))
-                except Exception:
-                    return None, "NRR-SIZING-PCT-INVALID"
-                if pct_dec <= 0 or pct_dec > 1:
-                    return None, "NRR-SIZING-PCT-INVALID"
-                final_pos_size_usd = equity * pct_dec
-            else:
-                return None, "NRR-SIZING-MODE-INVALID"
-
-            if final_pos_size_usd > self.liq_cap_usd:
-                final_pos_size_usd = self.liq_cap_usd
-            why_parts.append(f"sizing=v2:{mode}")
-
-        elif q_risk is not None:
-            try:
-                q_dec = decimal.Decimal(str(q_risk))
-            except Exception:
-                q_dec = decimal.Decimal("0.01")
-            try:
-                kappa_dec = decimal.Decimal(str(kappa_liq))
-            except Exception:
-                kappa_dec = decimal.Decimal("1")
-
-            # brackets may be absent in some configs; guard accordingly
-            # brackets: trading.execution.manage.brackets.sl.fixed_bps
-            exec_cfg = self.config.trading.execution
-            manage_cfg = exec_cfg.manage if exec_cfg is not None else None
-            brackets_cfg = manage_cfg.brackets if manage_cfg is not None else None
-            sl_bps_val = brackets_cfg.sl.fixed_bps if (brackets_cfg and brackets_cfg.sl) else None
-            try:
-                sl_bps_dec = decimal.Decimal(str(sl_bps_val))
-            except Exception:
-                sl_bps_dec = decimal.Decimal("50")
-            if sl_bps_dec <= 0:
-                sl_bps_dec = decimal.Decimal("50")
-
-            denom = (sl_bps_dec / decimal.Decimal("10000")
-                     ) if sl_bps_dec else decimal.Decimal("0.005")
-            q_notional = (q_dec * equity / denom)
-            # Kelly path (if provided)
-            sizing_meta = context["_sizing_meta"] if ("_sizing_meta" in context and context["_sizing_meta"]) else {}
-            kelly_fraction = sizing_meta.get("kelly_fraction")
-            if isinstance(kelly_fraction, decimal.Decimal) and kelly_fraction > 0:
-                kelly_notional = kelly_fraction * equity
-                base_notional = min(q_notional, kelly_notional)
-            else:
-                base_notional = q_notional
-            # NOTE: regime_multiplier is now applied at the END (Phase 2.1 fix)
-
-            # Apply volatility-based multiplier to SL_bps for adaptive sizing
-            volatility_multiplier = decimal.Decimal(
-                "1.0")  # Default multiplier
-            volatility_state = sizing_meta.get("volatility_state")
-            if volatility_state == "HIGH_VOL":
-                volatility_multiplier = decimal.Decimal("1.4")
-            elif volatility_state == "LOW_VOL":
-                volatility_multiplier = decimal.Decimal("0.8")
-            # else: keep default 1.0 for other states
-
-            # Recalculate with adjusted SL_bps
-            adjusted_sl_bps = sl_bps_dec * volatility_multiplier
-            adjusted_denom = (adjusted_sl_bps / decimal.Decimal("10000")
-                              ) if adjusted_sl_bps else decimal.Decimal("0.005")
-            adjusted_q_notional = (q_dec * equity / adjusted_denom)
-            if isinstance(kelly_fraction, decimal.Decimal) and kelly_fraction > 0:
-                adjusted_kelly_notional = kelly_fraction * equity
-                base_notional = min(adjusted_q_notional,
-                                    adjusted_kelly_notional)
-            else:
-                base_notional = adjusted_q_notional
-
-            self.logger.debug(
-                f"[{symbol}] SL_BPS_ADJUSTED: base={sl_bps_dec}, multiplier={volatility_multiplier}, final={adjusted_sl_bps}")
-
-            # Apply liquidity kappa at the end
-            try:
-                kappa_dec = decimal.Decimal(str(kappa_liq))
-            except Exception:
-                kappa_dec = decimal.Decimal("1")
-            pre_final = base_notional * kappa_dec
-            
-            # ========== REGIME SIZING FIX (Phase 2.1) ==========
-            # Apply regime multiplier AFTER all base calculations
-            # This fixes the SOL 2.0x LOW_VOL sizing bug
-            regime_multiplier = sizing_meta.get("regime_multiplier")
-            if isinstance(regime_multiplier, decimal.Decimal) and regime_multiplier > 0:
-                pre_final = pre_final * regime_multiplier
-                self.logger.info(
-                    f"[{symbol}] REGIME_SIZING_APPLIED: base={base_notional}, "
-                    f"kappa={kappa_dec}, mult={regime_multiplier}, result={pre_final}"
-                )
-            # ===================================================
-            
-            final_pos_size_usd = pre_final
-            # Apply liquidity cap as a hard ceiling
-            if final_pos_size_usd > self.liq_cap_usd:
-                final_pos_size_usd = self.liq_cap_usd
-            regime_multiplier_disp = sizing_meta["regime_multiplier"] if "regime_multiplier" in sizing_meta else "N/A"
-            why_parts.append(
-                f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={regime_multiplier_disp} m_vol={volatility_multiplier} kappa={kappa_dec}")
-        else:
-            # TASK39: Removed legacy equity*0.1 fallback. Missing explicit sizing contract → fail-closed.
-            return None, "NRR-SIZING-CONTRACT-MISSING"
-
-        self.logger.info(
-            f"[{symbol}] POSITION_SIZE_CALC: equity=${equity}, liq_cap=${self.liq_cap_usd}, final=${final_pos_size_usd}"
-        )
-
-        # ETAP3: Apply risk_contract_v1 regime sizing or cap
-        rc_cap_notional = self._compute_risk_contract_cap_notional(symbol, equity)
-        
-        # Get volatility_state from sizing_meta (already computed above in legacy logic)
-        vol_state = sizing_meta.get("volatility_state") if isinstance(sizing_meta, dict) else None
-        
-        # Try regime-scaled notional first (ETAP3: only for symbols with regime_sizing.enabled=true)
-        regime_target = self._compute_regime_scaled_notional(
-            symbol=symbol,
-            equity=equity,
-            volatility_state=vol_state,
-            cap_notional=rc_cap_notional,
-        )
-        
-        if regime_target is not None:
-            # Regime sizing enabled for this symbol: use regime_target instead of legacy
-            self.logger.info(
-                f"[{symbol}] RISK_CONTRACT_V1_REGIME_SIZING: "
-                f"legacy_notional={final_pos_size_usd}, regime_target={regime_target}, "
-                f"equity={equity}, vol_state={vol_state}"
-            )
-            final_pos_size_usd = regime_target
-            why_parts.append(f"rc_v1_regime={regime_target}")
-        elif rc_cap_notional is not None:
-            # No regime sizing, but cap is configured (ETAP2 behavior)
-            if final_pos_size_usd > rc_cap_notional:
-                self.logger.info(
-                    f"[{symbol}] RISK_CONTRACT_V1_CAP: notional {final_pos_size_usd} -> {rc_cap_notional} "
-                    f"(equity={equity})"
-                )
-                final_pos_size_usd = rc_cap_notional
-                why_parts.append(f"rc_v1_cap={rc_cap_notional}")
-
-        if final_pos_size_usd < self.min_pos_size_usd:
-            reject_reason = f"position size {final_pos_size_usd} is below minimum {self.min_pos_size_usd}"
-            normalized_reason = NormalizedRejectReasons.normalize(
-                reject_reason)
-            self.logger.warning(f"[{symbol}] REJECT: {reject_reason}")
-            return None, f"{reject_reason} (NRR: {normalized_reason})"
-
-        why_chain.append(f"pos_size_usd={final_pos_size_usd}")
-        if why_parts:
-            why_chain.append(", ".join(why_parts))
-
-        # CFG-INSTRUMENTS-STEP-02-DM-PRECISION: Use canonical config.instruments SSOT
-        try:
-            tick_size, step_size_float = self._get_precision(symbol)
-            step_size = decimal.Decimal(str(step_size_float))
-        except ValueError as e:
-            reject_reason = f"Precision error: {e}"
-            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
-            self.logger.error(f"[{symbol}] REJECT: {reject_reason}")
-            return None, f"{reject_reason} (NRR: {normalized_reason})"
         if price <= 0:
-            reject_reason = "Invalid price for sizing"
-            normalized_reason = NormalizedRejectReasons.normalize(
-                reject_reason)
-            self.logger.error(f"[{symbol}] REJECT: {reject_reason}")
-            return None, f"{reject_reason} (NRR: {normalized_reason})"
+            return None, "price_invalid", "INVALID_PRICE", {"price": str(price)}
 
-        qty = final_pos_size_usd / price
-        try:
-            rounded_qty = (qty / step_size).to_integral_value(rounding=decimal.ROUND_DOWN) * step_size
-        except Exception:
-            rounded_qty = qty.quantize(step_size, rounding=decimal.ROUND_DOWN)
+        # SSOT: per-symbol instruments config (constraints + execution + sizing)
+        spec = self.config.instruments[symbol]
+        margin_pct = decimal.Decimal(str(spec.sizing.margin_pct))
+        leverage = int(spec.execution.target_leverage)
+        step_size = decimal.Decimal(str(spec.step_size))
+        min_qty = decimal.Decimal(str(spec.min_qty))
+        min_notional = decimal.Decimal(str(spec.min_notional))
 
-        self.logger.info(
-            f"[{symbol}] QTY_CALC: price=${price}, "
-            f"raw_qty={qty}, step_size={step_size}, "
-            f"rounded_qty={rounded_qty}, "
-            f"notional=${rounded_qty * price}"
+        margin_usdt, notional_target = compute_notional_target(
+            equity=equity,
+            margin_pct=margin_pct,
+            leverage=leverage,
+            notional_cap=self.liq_cap_usd,
         )
 
-        if rounded_qty <= 0:
-            reject_reason = f"qty rounded to zero from raw {qty}"
-            normalized_reason = NormalizedRejectReasons.normalize(
-                reject_reason)
-            self.logger.warning(f"[{symbol}] REJECT: {reject_reason}")
-            return None, f"{reject_reason} (NRR: {normalized_reason})"
+        raw_qty, rounded_qty = compute_qty(
+            notional_target=notional_target,
+            price=price,
+            step_size=step_size,
+        )
+        order_notional = rounded_qty * price
 
-        return rounded_qty, ", ".join(why_chain)
+        sizing_dbg: dict[str, Any] = {
+            "equity": str(equity),
+            "margin_pct": str(margin_pct),
+            "margin_usdt": str(margin_usdt),
+            "leverage": int(leverage),
+            "notional_target": str(notional_target),
+            "price": str(price),
+            "raw_qty": str(raw_qty),
+            "rounded_qty": str(rounded_qty),
+            "order_notional": str(order_notional),
+            "step_size": str(step_size),
+            "min_qty": str(min_qty),
+            "min_notional": str(min_notional),
+            "liq_cap_usd": str(self.liq_cap_usd),
+            "min_position_size_usd": str(self.min_pos_size_usd),
+        }
+
+        self.logger.info(
+            f"[{symbol}] MARGIN_FIRST_SIZING: equity=${equity}, margin_pct={margin_pct}, "
+            f"margin_usdt=${margin_usdt}, leverage={leverage}, notional_target=${notional_target}, "
+            f"liq_cap=${self.liq_cap_usd}"
+        )
+        self.logger.info(
+            f"[{symbol}] QTY_CALC: price=${price}, raw_qty={raw_qty}, step_size={step_size}, "
+            f"rounded_qty={rounded_qty}, notional=${order_notional}, "
+            f"min_qty={min_qty}, min_notional={min_notional}"
+        )
+
+        reject_code, constraint_why = validate_exchange_constraints(
+            qty=rounded_qty,
+            price=price,
+            min_qty=min_qty,
+            min_notional=min_notional,
+        )
+        if reject_code is not None:
+            reject_reason = f"exchange_constraints:{reject_code}:{constraint_why}"
+            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            return None, f"{reject_reason} (NRR: {normalized_reason})", reject_code, sizing_dbg
+
+        if order_notional < self.min_pos_size_usd:
+            reject_reason = f"position notional {order_notional} is below minimum {self.min_pos_size_usd}"
+            normalized_reason = NormalizedRejectReasons.normalize(reject_reason)
+            return None, f"{reject_reason} (NRR: {normalized_reason})", "MIN_POSITION_USD", sizing_dbg
+
+        return rounded_qty, "margin_first_ok", None, sizing_dbg
 
     def _propose_trade_intent(
         self,
@@ -3339,9 +3132,21 @@ class DecisionMaking:
                         self._record_blocked_intent(symbol)
                         return
                     # Reservation succeeded - intent will be emitted below
-            except Exception:
-                # Fail-open: if order_index is unavailable, don't block trading.
-                pass
+            except Exception as e:
+                # P0-5 Fix: Fail-Closed on Order Index error
+                self.logger.error(f"[{symbol}] OrderIndex access failed: {e}", exc_info=True)
+                self.fsm.emit(
+                    "EVT:INTENT_DEFERRED",
+                    {
+                        "symbol": symbol,
+                        "rid": rid,
+                        "reason": "NRR-ORDER-INDEX-FAIL",
+                        "next_allowed_ts": None,
+                        "original_context": "decision_making:_propose_trade_intent",
+                    },
+                )
+                self._record_blocked_intent(symbol)
+                return
         
         # Z-01 FIX: Read tca_prefs from config (Strict P1)
         tca = self._tca_prefs
@@ -3374,6 +3179,9 @@ class DecisionMaking:
              return None # Block trade
         
         trade_intent = {
+            # TASK40: Preserve stable business RID end-to-end (intent -> cmd -> execution).
+            # Bridge uses pld["rid"] as authoritative correlation key when present.
+            "rid": str(rid),
             "instrument": symbol,
             "side": side,
             # TASK32: Strategy-agnostic DecisionMaking still tags intents with the originating strategy_id.
@@ -3413,6 +3221,25 @@ class DecisionMaking:
 
         # Record accepted intent for risk gate monitoring
         self._record_accepted_intent(symbol)
+
+        # WAL: write the intent emission as a first-class event (not only OrderLoggerV1)
+        # so WAL contains non-account lifecycle evidence even when no order gets placed.
+        try:
+            intent_evt = Message(
+                op="EVT",
+                verb="TRADE_INTENT_PROPOSED",
+                src="decision_making",
+                dst="bridge",
+                rid=str(rid),
+                pld=trade_intent,
+                why=truncate_why("trade_intent") or "trade_intent",
+                data_ref=[str(x) for x in why_chain] if isinstance(why_chain, list) else [],
+                intent="PROPOSAL",
+            )
+            wal.append(intent_evt.model_dump())
+        except Exception as wal_e:
+            # Best-effort: do not block trading on WAL tap errors here.
+            self.logger.warning(f"Failed to write TRADE_INTENT_PROPOSED to WAL: {wal_e}")
 
         self.fsm.emit(
             "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent", data_ref=why_chain
@@ -3523,6 +3350,92 @@ class DecisionMaking:
             return f"{prefix}:{symbol}:{side}:{ts_ms}"
         return f"{prefix}:{symbol}:{ts_ms}"
 
+    def _degraded_context_gate_should_defer(
+        self,
+        *,
+        symbol: str,
+        rid: str,
+        ctx: DecisionContext,
+        features_evt: dict,
+        strategy_id: str | None = None,
+    ) -> bool:
+        """Optionally defer when critical DecisionContext features are missing/invalid.
+
+        This is intentionally opt-in to avoid changing live behavior unless explicitly enabled.
+        Enable by setting `self._fail_closed_on_degraded_context = True`.
+        Optionally override critical keys via `self._degraded_context_critical_keys = {...}`.
+        """
+
+        if not bool(getattr(self, "_fail_closed_on_degraded_context", False)):
+            return False
+
+        default_critical_keys = {
+            "price",
+            "ema_bias",
+            "obi",
+            "tfi",
+            "volatility_state",
+            "depth_imbalance",
+        }
+
+        # Per-strategy override (if provided and present in config), else global list, else safe defaults.
+        by_strategy = getattr(self, "_degraded_context_critical_keys_by_strategy", {}) or {}
+        selected: set[str] | None = None
+        if strategy_id and isinstance(by_strategy, dict):
+            override = by_strategy.get(str(strategy_id))
+            if override:
+                selected = set(str(k) for k in override if str(k))
+
+        if selected is None:
+            global_keys = getattr(self, "_degraded_context_critical_keys", None)
+            if global_keys:
+                selected = set(str(k) for k in global_keys if str(k))
+            else:
+                selected = set(default_critical_keys)
+
+        critical_keys = selected
+
+        # Force lazy parsing to populate missing_fields.
+        _ = ctx.price
+        _ = ctx.trend
+        _ = ctx.flow
+        _ = ctx.volatility
+        _ = ctx.liquidity
+
+        missing_critical = {k: v for k, v in (ctx.missing_fields or {}).items() if k in critical_keys}
+        if not missing_critical:
+            return False
+
+        now_ms = int(time.time() * 1000)
+        features_ts = int(features_evt["ts"] if "ts" in features_evt else 0)
+        retry_prefix = f"ctx:{strategy_id}" if strategy_id else "ctx"
+        retry_key = self._stable_retry_key(prefix=retry_prefix, symbol=symbol, rid=rid, ts_ms=features_ts)
+
+        self.logger.warning(
+            f"[{symbol}] DEFER degraded DecisionContext: missing_critical={missing_critical}"
+        )
+
+        # Match existing defer semantics: short backoff, bounded attempts.
+        self._emit_intent_deferred_v1(
+            symbol=symbol,
+            reason=NormalizedRejectReasons.DATA_NOT_READY,
+            retry_key=retry_key,
+            next_allowed_ts=now_ms + 500,
+            original_event_name="EVT:FEATURES_CALCULATED",
+            original_payload_min={
+                "symbol": symbol,
+                "rid": rid,
+                "features_ts": features_ts,
+                "missing_critical": missing_critical,
+            },
+            attempt=1,
+            max_attempts=5,
+            why_chain=["fail_closed", "decision_context_degraded"],
+            context="decision_making:_make_decision_for_symbol:degraded_context_gate",
+        )
+        self._record_blocked_intent(symbol)
+        return True
+
     def _emit_intent_deferred_v1(
         self,
         *,
@@ -3539,10 +3452,10 @@ class DecisionMaking:
     ) -> None:
         now_ms = int(time.time() * 1000)
         try:
-            ttl_ms = int(self.config.trading.decision.retry_ttl_ms)
+            ttl_ms = int(self.config.strategies.aurora.decision.retry_ttl_ms)
         except AttributeError as e:
             raise ConfigContractError(
-                path="trading.decision.retry_ttl_ms",
+                path="strategies.aurora.decision.retry_ttl_ms",
                 why=f"Missing required strict config field: {e}",
                 symbol=symbol,
             )

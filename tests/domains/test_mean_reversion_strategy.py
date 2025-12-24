@@ -548,3 +548,127 @@ class TestMRStrategyForceClose:
         assert "BTCUSDT" in result
         assert "ETHUSDT" in result
         # Bars may or may not be returned depending on tick count
+
+
+# =============================================================================
+# P0 REGRESSION: UNCERTAIN regime must block MR trading
+# =============================================================================
+
+class TestP0UncertainRegimeBlocksMRTrading:
+    """
+    P0 REGRESSION: MR strategy must NOT trade when regime is UNCERTAIN.
+    
+    Before fix: UNCERTAIN → FLAT_NORMAL → MR could trade before regime established
+    After fix: UNCERTAIN → None → MR blocks trading
+    
+    This is the INTEGRATION test that verifies:
+    1. MeanReversion1mStrategy.get_regime() returns "UNCERTAIN" for unknown symbols
+    2. map_to_flat_regime("UNCERTAIN") returns None
+    3. MR strategy returns "regime_not_flat:UNCERTAIN" signal
+    """
+
+    def test_unknown_symbol_returns_uncertain(self):
+        """Unknown symbol returns UNCERTAIN regime."""
+        strategy = MeanReversion1mStrategy()
+        
+        # Symbol with no regime set returns UNCERTAIN
+        regime = strategy.get_regime("UNKNOWN_SYMBOL")
+        assert regime == "UNCERTAIN"
+
+    def test_uncertain_regime_blocks_mr_signal(self):
+        """P0: UNCERTAIN regime must block MR signals (return regime_not_flat)."""
+        from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
+        
+        strategy = MeanReversion1mStrategy()
+        
+        # Do NOT set regime (symbol defaults to UNCERTAIN)
+        # Feed enough bars to generate signal
+        feed_bars_to_strategy(strategy, "BTCUSDT", bar_count=30, base_price=Decimal("100"))
+        
+        state = strategy.get_state("BTCUSDT")
+        assert len(state.bars) >= 25, "Should have enough bars"
+        
+        # Verify regime is UNCERTAIN
+        assert strategy.get_regime("BTCUSDT") == "UNCERTAIN"
+        
+        # Verify map_to_flat_regime returns None for UNCERTAIN
+        flat_regime = map_to_flat_regime("UNCERTAIN")
+        assert flat_regime is None, "P0: UNCERTAIN must map to None"
+        
+        # Generate next bar with price below BB (would trigger LONG signal if allowed)
+        signal = strategy.on_tick(
+            "BTCUSDT",
+            Decimal("80"),  # Very low price - below any BB
+            Decimal("1"),
+            1000000 + 31 * 60 * 1000
+        )
+        
+        # Signal must be NEUTRAL with regime_not_flat reason
+        assert signal is not None, "Should return a signal"
+        assert signal.signal_type == MRSignalType.NEUTRAL, (
+            f"P0: UNCERTAIN regime must block signal, got {signal.signal_type}"
+        )
+        assert "regime_not_flat" in signal.why, (
+            f"P0: Signal must have regime_not_flat reason, got: {signal.why}"
+        )
+        assert "UNCERTAIN" in signal.why, (
+            f"P0: Why should mention UNCERTAIN regime, got: {signal.why}"
+        )
+
+    def test_mean_reversion_without_atr_blocks_mr_signal(self):
+        """P0: MEAN_REVERSION without ATR must block MR signals."""
+        from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
+        
+        # Verify at regime_mapping level
+        flat_regime = map_to_flat_regime("MEAN_REVERSION")  # No ATR
+        assert flat_regime is None, "P0: MEAN_REVERSION without ATR must return None"
+        
+        # At strategy level, ATR is computed from bars, so this is handled differently
+        # The strategy computes ATR% internally, so MEAN_REVERSION with bars should work
+        # This test verifies the regime_mapping contract
+
+    def test_mean_reversion_with_atr_allows_signal(self):
+        """MEAN_REVERSION with ATR should allow MR signals."""
+        from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
+        
+        strategy = MeanReversion1mStrategy()
+        strategy.set_regime("BTCUSDT", "MEAN_REVERSION")
+        
+        # Feed enough bars (strategy computes ATR internally from bars)
+        feed_bars_to_strategy(strategy, "BTCUSDT", bar_count=30)
+        
+        # Verify regime allows trading
+        flat_regime = map_to_flat_regime("MEAN_REVERSION", Decimal("0.002"))
+        assert flat_regime is not None, "MEAN_REVERSION with ATR should map to FlatRegime"
+        
+        # Strategy should allow signals (though actual signal depends on BB position)
+        # This just verifies no "regime_not_flat" block
+        state = strategy.get_state("BTCUSDT")
+        assert len(state.bars) >= 25
+
+    def test_low_volatility_always_allows_signal(self):
+        """LOW_VOLATILITY should always allow MR signals (no ATR required)."""
+        from apps.reference.domains.feature_engineering.regime_mapping import map_to_flat_regime
+        
+        strategy = MeanReversion1mStrategy()
+        strategy.set_regime("BTCUSDT", "LOW_VOLATILITY")
+        
+        # LOW_VOLATILITY doesn't need ATR
+        flat_regime = map_to_flat_regime("LOW_VOLATILITY")
+        assert flat_regime is not None, "LOW_VOLATILITY should map to FLAT_LOW"
+        
+        feed_bars_to_strategy(strategy, "BTCUSDT", bar_count=30)
+        
+        # Verify no regime block
+        signal = strategy.on_tick(
+            "BTCUSDT",
+            Decimal("100"),
+            Decimal("1"),
+            1000000 + 31 * 60 * 1000
+        )
+        
+        if signal is not None and signal.signal_type == MRSignalType.NEUTRAL:
+            # If neutral, should NOT be because of regime_not_flat
+            assert "regime_not_flat" not in signal.why, (
+                f"LOW_VOLATILITY should not block: {signal.why}"
+            )

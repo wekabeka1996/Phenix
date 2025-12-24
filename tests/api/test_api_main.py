@@ -8,6 +8,8 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock
 
+pytest.importorskip("fastapi")
+
 
 class TestApiInitialization:
     """Test API app initialization"""

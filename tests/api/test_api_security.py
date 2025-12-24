@@ -4,6 +4,8 @@ Tests for API security and environment-specific behavior.
 
 import os
 import sys
+import pytest
+pytest.importorskip("fastapi")
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 

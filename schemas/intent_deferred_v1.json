@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "$id": "schemas/intent_deferred_v1.json",
+    "$id": "intent_deferred_v1.json",
     "title": "EVT:INTENT_DEFERRED",
     "description": "Intent deferral event. During migration, this schema is additive: it accepts both legacy payloads (v0) and v1 payloads. Reliable retry/idempotency is guaranteed only for v1 payloads that include retry_key + original_event.",
     "oneOf": [

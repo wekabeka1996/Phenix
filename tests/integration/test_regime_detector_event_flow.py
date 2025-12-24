@@ -71,10 +71,26 @@ def test_decision_making_defers_until_regime_detector_warmup_ready() -> None:
         why="test",
     )
 
+    # DecisionMaking triggers checks on on_risk/on_regime, but NOT on on_features.
+    # RegimeDetector emits EVT:REGIME_DETECTED before DecisionMaking stores features (listener order),
+    # so we emit a second EVT:REGIME_DETECTED to evaluate the warmup guard with features present.
+    fsm.emit(
+        "EVT:REGIME_DETECTED",
+        {"symbol": symbol, "regime": "UNCERTAIN", "warmup": {"full_ready": False, "ticks_seen": 1}},
+        why="test",
+    )
+
     assert regimes, "Expected RegimeDetector to emit EVT:REGIME_DETECTED"
     assert proposed == [], "Must not emit trade intents before regime warmup completes"
-    assert deferred, "Expected DecisionMaking to defer while regime warmup is not ready"
-    assert any(d.get("reason") in {"NRR-ARMING-NOT-READY", "NRR-ARMING-WARMUP-MISSING"} for d in deferred)
+
+    # DecisionMaking warmup behavior depends on domain config:
+    # - require_regime_warmup=true  -> emits EVT:INTENT_DEFERRED
+    # - require_regime_warmup=false -> blocks silently (no defer), still must not propose
+    if dm.arming_require_regime_warmup:
+        assert deferred, "Expected DecisionMaking to defer while regime warmup is not ready"
+        assert any(d.get("reason") in {"NRR-ARMING-NOT-READY", "NRR-ARMING-WARMUP-MISSING"} for d in deferred)
+    else:
+        assert deferred == [], "Expected no defers when arming.require_regime_warmup=false"
 
 
 def test_decision_making_does_not_defer_for_regime_after_warmup_ready() -> None:

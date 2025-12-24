@@ -37,6 +37,7 @@ from .regime_mapping import (
     map_to_flat_regime,
     get_mr_parameters,
     MRParameters,
+    FlatRegimeThresholds,
 )
 
 
@@ -220,7 +221,8 @@ class MeanReversion1mStrategy:
         self,
         config: Optional[MRStrategyConfig] = None,
         timeframe_sec: int = 60,
-        regime_sizing: Optional[Dict[str, Any]] = None
+        regime_sizing: Optional[Dict[str, Any]] = None,
+        regime_thresholds: Optional[FlatRegimeThresholds] = None,
     ) -> None:
         """
         Initialize MR strategy.
@@ -234,6 +236,7 @@ class MeanReversion1mStrategy:
         self.config = config or MRStrategyConfig()
         self.timeframe_sec = timeframe_sec
         self._regime_sizing = regime_sizing or {}
+        self._flat_regime_thresholds = regime_thresholds
         
         # Per-symbol state
         self._states: Dict[str, MRSymbolState] = {}
@@ -313,7 +316,7 @@ class MeanReversion1mStrategy:
         # Check regime - only trade in FLAT regimes
         regime = self.get_regime(symbol)
         atr_pct = self._atr_pct.get(symbol)
-        flat_regime = map_to_flat_regime(regime, atr_pct)
+        flat_regime = map_to_flat_regime(regime, atr_pct, self._flat_regime_thresholds)
         
         if flat_regime is None:
             return self._neutral_signal(

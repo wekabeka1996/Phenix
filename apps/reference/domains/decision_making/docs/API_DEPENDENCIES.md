@@ -60,28 +60,15 @@ class DecisionMaking:
 
 ## Configuration System
 
-### Safe Configuration Access
+### Strict Configuration Access
 
-The domain supports **both Pydantic models and dictionaries** with safe fallback:
-
-```python
-def _safe_config_get(self, *keys, default=None):
-    """Safe nested config access with fallbacks."""
-    current = self.config
-    for key in keys:
-        if hasattr(current, key):
-            current = getattr(current, key)
-        elif isinstance(current, dict):
-            current = current.get(key, default)
-        else:
-            return default
-    return current
-```
+DecisionMaking uses strict Pydantic attribute access (fail-closed). No dict fallback and no silent defaults.
 
 ### Configuration Priority
 
-1. **Domains Config** (preferred): `config.domains.decision_making.*`
-2. **Legacy Config** (fallback): `config.trading.decision.*`
+1. **Mechanics (domains SSOT)**: `config.domains.decision_making.*`
+2. **Aurora policy (strategy SSOT)**: `config.strategies.aurora.decision.*`
+3. **Aurora per-symbol overrides (strategy SSOT)**: `config.strategies.aurora.assets.<SYMBOL>.*`
 
 ### Configuration Paths
 

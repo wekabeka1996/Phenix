@@ -47,15 +47,6 @@ def _valid_decision_kwargs():
             "macro_sync": 0.0,
         },
         "signals": {"normalize": False, "enable_new_metrics": True},
-        "position_sizing": {
-            "min_position_size_usd": 10,
-            "liquidity_based_cap_usd": 10000,
-            "risk_fraction_q": 0.05,
-            "liquidity_kappa": 1.0,
-            "kappa_mode": "dynamic",
-            "liquidity_kappa_mode": "dynamic",
-            "risk_contract_v1": None,
-        },
         "kelly": {
             "base_probability": 0.5,
             "kelly_cap": 0.25,
@@ -73,7 +64,6 @@ def _valid_decision_kwargs():
         "behavior_fsm": None,
         "roi_exit": None,
         "mean_reversion": None,
-        "sizing_modifiers": {},
         "regime_thresholds": {},
         "regime_threshold_multipliers": {},
         "symbols_to_track": None,

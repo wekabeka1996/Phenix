@@ -7,7 +7,7 @@ class ConfigContractError(RuntimeError):
     It guarantees a fail-closed behavior upstream by signaling a specific contract violation.
     
     Attributes:
-        path (str): The config path/key that caused the error (e.g. 'aurora_instruments.BTCUSDT.max_risk_score').
+        path (str): The config path/key that caused the error (e.g. 'strategies.aurora.assets.BTCUSDT.max_risk_score').
         symbol (str, optional): The symbol context if applicable.
         why (str): Human readable reason for the violation.
     """

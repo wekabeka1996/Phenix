@@ -42,6 +42,8 @@ class NormalizedRejectReasons:
     LEVERAGE_SET_FAILED = "NRR-022"
     MARGIN_MODE_SET_FAILED = "NRR-023"
     LEVERAGE_VERIFY_FAILED = "NRR-024"
+    # Domain-level gating: upstream data/warmup not ready
+    DATA_NOT_READY = "NRR-025"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex patterns for normalization
@@ -117,6 +119,16 @@ class NormalizedRejectReasons:
         SYMBOL_COOLDOWN_ACTIVE: [r"symbol.*cooldown.*active", r"cooldown.*remaining"],
         EXCHANGE_REJECTED_ORDER: [r"exchange.*reject", r"order.*reject.*exchange", r"-1013", r"-1021", r"-2010"],
         ORDER_TIMEOUT_EXPIRED: [r"order.*timeout.*expired", r"ack.*timeout", r"fill.*timeout"],
+        DATA_NOT_READY: [
+            r"data.*not.*ready",
+            r"not yet received",
+            r"warmup.*missing",
+            r"warmup.*not.*ready",
+            r"regime.*missing",
+            r"features.*missing",
+            r"risk.*missing",
+            r"features.*stale",
+        ],
     }
 
     @classmethod
@@ -133,7 +145,55 @@ class NormalizedRejectReasons:
         if not raw_reason:
             return cls.UNKNOWN_ERROR
 
-        raw_lower = raw_reason.lower().strip()
+        raw_clean = raw_reason.strip()
+
+        # Idempotency: if the input is already a known NRR code (optionally with extra details),
+        # preserve the canonical numeric code.
+        try:
+            all_codes = {
+                v
+                for k, v in vars(cls).items()
+                if isinstance(k, str)
+                and k.isupper()
+                and isinstance(v, str)
+                and v.startswith("NRR-")
+            }
+        except Exception:
+            all_codes = set()
+
+        raw_upper_direct = raw_clean.upper()
+        for code in all_codes:
+            if raw_upper_direct == code or raw_upper_direct.startswith(code + ":") or raw_upper_direct.startswith(code + " "):
+                return code
+
+        # Explicit short-code mapping (used by internal sizing/validation helpers).
+        # Keep this before regex so that stable internal codes map deterministically.
+        raw_upper = raw_upper_direct
+        short_code_map = {
+            "ZERO_QUANTITY": cls.INVALID_ORDER_PARAMS,
+            "MIN_QTY": cls.QUANTITY_TOO_SMALL,
+            "MIN_NOTIONAL": cls.QUANTITY_TOO_SMALL,
+            # DecisionMaking gate strings (look like NRR but aren't numeric SSOT).
+            "NRR-DATA-NOT-READY": cls.DATA_NOT_READY,
+            "NRR-REGIME-MISSING": cls.DATA_NOT_READY,
+            "NRR-ARMING-NOT-READY": cls.DATA_NOT_READY,
+            "NRR-ARMING-WARMUP-MISSING": cls.DATA_NOT_READY,
+            # Risk gate drift strings (DecisionMaking).
+            "RISK_SCORE_MISSING": cls.DATA_NOT_READY,
+            "RISK_SCORE_INVALID": cls.DATA_NOT_READY,
+        }
+        for short_code, nrr_code in short_code_map.items():
+            if raw_upper == short_code or raw_upper.startswith(short_code + ":") or raw_upper.startswith(short_code + " "):
+                return nrr_code
+
+        # Prefix-based mapping for DM reasons we want to group under DATA_NOT_READY.
+        if raw_upper.startswith("NRR-ARMING-"):
+            return cls.DATA_NOT_READY
+
+        if raw_upper.startswith("RISK_SCORE_"):
+            return cls.DATA_NOT_READY
+
+        raw_lower = raw_clean.lower()
 
         for nrr_code, patterns in cls.PATTERNS.items():
             for pattern in patterns:
@@ -179,6 +239,7 @@ class NormalizedRejectReasons:
             cls.LEVERAGE_SET_FAILED: "Failed to set leverage on exchange",
             cls.MARGIN_MODE_SET_FAILED: "Failed to set margin mode on exchange",
             cls.LEVERAGE_VERIFY_FAILED: "Failed to verify leverage settings (API error)",
+            cls.DATA_NOT_READY: "Required upstream data/warmup is missing or not yet ready",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
 

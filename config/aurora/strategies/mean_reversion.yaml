@@ -1,7 +1,7 @@
 # ==================================================================================
-# 1m Mean Reversion Strategy Configuration
+# 3m Mean Reversion Strategy Configuration
 # ==================================================================================
-# Phase B4: Production configuration for Mean Reversion 1m strategy
+# Phase B4: Production configuration for Mean Reversion 3m strategy
 #
 # This config defines parameters for the bar-based MR strategy that uses:
 # - Bollinger Bands for entry signals
@@ -17,10 +17,10 @@ mean_reversion:
   enabled: true
   
   # Timeframe for bar aggregation
-  timeframe_sec: 60  # 1-minute bars
+  timeframe_sec: 180  # 3-minute bars
 
   # Global allowed regimes whitelist (default; can be overridden per-asset)
-  allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+  allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
   # MR emission mode
   emit_trade_intent_directly: false
@@ -76,9 +76,6 @@ mean_reversion:
     DOGEUSDT:
       enabled: true
       position_mode: "STRICT"
-      bb_window: null
-      min_vol_atr: null
-      sl_pct: null
       strategy:
         bb_window: 20
         bb_num_std: 2.1
@@ -89,18 +86,14 @@ mean_reversion:
         tp_to_mid: false     # False for outer band target
         cooldown_sec: 210
       # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for "жирні" угоди
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
       risk:
         position_size_usd: 150
-        max_risk_score: null
 
     # --- BTC (BRONZE 🥉) ---
     BTCUSDT:
       enabled: true
       position_mode: "STRICT"
-      bb_window: null
-      min_vol_atr: null
-      sl_pct: null
       strategy:
         bb_window: 40
         bb_num_std: 2.3
@@ -110,18 +103,14 @@ mean_reversion:
         sl_atr_mult: null
         cooldown_sec: 0      # No cooldown
       # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL"]
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "MEAN_REVERSION"]
       risk:
         position_size_usd: 150
-        max_risk_score: null
     
     # --- XRP (SILVER 🥈) ---
     XRPUSDT:
       enabled: true
       position_mode: "STRICT"
-      bb_window: null
-      min_vol_atr: null
-      sl_pct: null
       strategy:
         bb_window: 40
         bb_num_std: 2.5
@@ -131,10 +120,9 @@ mean_reversion:
         sl_atr_mult: null
         cooldown_sec: 165
       # Regime Gating - XRP stable (+$121) - similar to DOGE
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
       risk:
         position_size_usd: 150
-        max_risk_score: null
     
     # --- Optional assets (disabled) ---
     ETHUSDT:
@@ -150,11 +138,7 @@ mean_reversion:
         cooldown_sec: null
       risk:
         position_size_usd: null
-        max_risk_score: null
-      bb_window: null
-      min_vol_atr: null
-      sl_pct: null
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
     SOLUSDT:
       enabled: false
@@ -169,11 +153,7 @@ mean_reversion:
         cooldown_sec: null
       risk:
         position_size_usd: null
-        max_risk_score: null
-      bb_window: null
-      min_vol_atr: null
-      sl_pct: null
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
   
   # ─────────────────────────────────────────────────────────────────────────────
   # Regime Sizing Multipliers

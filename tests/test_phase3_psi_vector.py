@@ -27,9 +27,8 @@ class TestPhase3PsiVector:
         """Verify signal_weights in config has all 8 metrics."""
         config = ConfigLoader().load_config()
 
-        decision_config = config.trading.decision if hasattr(
-            config.trading, "decision"
-        ) else config.trading.get("decision", {})
+        assert config.strategies.aurora is not None
+        decision_config = config.strategies.aurora.decision
         signal_weights = (
             decision_config.signal_weights
             if hasattr(decision_config, "signal_weights")

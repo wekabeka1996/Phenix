@@ -52,15 +52,11 @@ def validate_trading_config(config_data: Dict[str, Any]) -> Tuple[bool, List[str
             errors.append(
                 f"Invalid trading.mode: {trading['mode']} (should be 'testnet' or 'production')")
 
-        # Check decision settings
-        if 'decision' not in trading:
-            errors.append("Missing trading.decision section")
-        else:
-            decision = trading['decision']
-            if 'testnet' not in decision:
-                errors.append("Missing trading.decision.testnet settings")
-            if 'production' not in decision:
-                errors.append("Missing trading.decision.production settings")
+        # Strategy policy must NOT live in trading.yaml (SSOT: strategies/<id>.yaml).
+        if 'decision' in trading:
+            errors.append(
+                "DEPRECATED: trading.decision must not exist in trading.yaml (SSOT is strategies/aurora.yaml::aurora.decision)"
+            )
 
         # Check risk settings
         if 'risk' not in trading:

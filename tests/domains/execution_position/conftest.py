@@ -56,8 +56,24 @@ def fsm_config():
     instruments_dict = {"BTCUSDT": btc_spec}
     cfg.instruments.get.side_effect = lambda k, default=None: instruments_dict.get(k, default)
     
-    # Mock aurora_instruments (Phase 0)
-    cfg.aurora_instruments = {}
+    # Mock strategies.aurora.assets (per-symbol strategy overrides)
+    # Production-like config required for fail-closed policy
+    btc_asset_config = MagicMock()
+    btc_asset_config.exit = MagicMock()
+    btc_asset_config.exit.sl_pct = 0.02  # 2%
+    btc_asset_config.exit.max_hold_sec = 600
+    btc_asset_config.take_profit = MagicMock()
+    btc_asset_config.take_profit.tp_low_ratio = 0.5
+    btc_asset_config.take_profit.tp_high_ratio = 1.0
+    btc_asset_config.take_profit.partial_exit_pct = 0.5
+    btc_asset_config.trailing_stop = MagicMock()
+    btc_asset_config.trailing_stop.enabled = False
+    btc_asset_config.trailing_stop.activation_pct = 0.02
+    btc_asset_config.trailing_stop.trail_pct = 0.01
+    btc_asset_config.trailing_stop.min_update_interval_sec = 5
+    
+    cfg.strategies.aurora.assets = {"BTCUSDT": btc_asset_config}
+    cfg.strategies.aurora.decision.bar_gating = None
     
     # Mock domains.execution_position.exposure_guard fields
     eg = cfg.domains.execution_position.exposure_guard
@@ -70,6 +86,9 @@ def fsm_config():
     eg.pending_ttl_sec = 5
     eg.post_fill_ttl_sec = 5
     eg.stale_ttl_sec = 10
+
+    # Exposure leverage defaults are required by ExposureGuard.resolve_symbol_leverage()
+    cfg.trading.execution.exposure.leverage_defaults = {"__default__": 20, "BTCUSDT": 20}
     
     # Risk Soft Limits
     cfg.trading.risk = {

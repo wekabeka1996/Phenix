@@ -2,15 +2,15 @@
 Tests for Feature Store
 """
 
+import pytest
+pytest.skip("FeatureStore tests require optional dependency duckdb", allow_module_level=True)
+
 from apps.reference.data import FeatureStore, FeatureRecord
 from unittest.mock import patch
 from datetime import datetime, timedelta
 import os
 import tempfile
 import pandas as pd
-import pytest
-pytest.skip("DuckDB API compatibility issues with INSERT OR REPLACE",
-            allow_module_level=True)
 
 
 @pytest.mark.skip(reason="DuckDB API compatibility issues with INSERT OR REPLACE")

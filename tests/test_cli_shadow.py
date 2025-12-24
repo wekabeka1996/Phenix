@@ -3,13 +3,14 @@ E2E tests for FSMP-P1-T05: Shadow-Replay & Drift CLI
 Tests for `vfound replay` and `vfound drift` commands.
 """
 
+import pytest
+pytest.skip("CLI module not implemented", allow_module_level=True)
+
 import json
 import pathlib
 import tempfile
 import sys
 from typer.testing import CliRunner
-import pytest
-pytest.skip("CLI module not implemented", allow_module_level=True)
 
 
 # Add parent directory to path

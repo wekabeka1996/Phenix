@@ -1,4 +1,5 @@
 import pytest
+pytest.importorskip("httpx")
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch, call
 from apps.reference.adapters.binance_adapter import BinanceAdapter

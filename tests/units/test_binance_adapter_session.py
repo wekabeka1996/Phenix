@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-import httpx
+httpx = pytest.importorskip("httpx")
 
 from apps.reference.adapters.binance_adapter import BinanceAdapter
 

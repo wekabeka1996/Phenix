@@ -1,12 +1,19 @@
 """Final 1% coverage push to cross 90% threshold"""
 
 
-def test_wal_append_simple():
+def test_wal_append_simple(tmp_path):
     """Test WAL append (simple baseline)"""
     from vfoundation.dr import wal
 
-    # Append a simple record
-    wal.append({"rid": "test-final", "op": "ASK", "why": "final test"})
+    # Do not write into real ops/wal during tests.
+    old_dir = wal.WAL_DIR
+    wal.set_wal_dir(tmp_path / "wal_test_final")
+
+    try:
+        # Append a simple record
+        wal.append({"rid": "test-final", "op": "ASK", "why": "final test"})
+    finally:
+        wal.set_wal_dir(old_dir)
 
     # Should succeed without exception
     assert True

@@ -1,0 +1,349 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora-trading/schemas/account_observer.json",
+  "title": "Account Observer Domain Schema",
+  "description": "JSON Schema                                                                                  Account Observer",
+  "type": "object",
+  "properties": {
+
+    "config": {
+      "type": "object",
+      "title": "                                     ",
+      "description": "                                                     Account Observer",
+      "properties": {
+        "trading_mode": {
+          "type": "string",
+          "enum": ["live", "testnet", "hybrid_live", "hybrid_testnet"],
+          "description": "                                    ",
+          "default": "live"
+        },
+        "poll_interval": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "description": "                                      API                    ",
+          "default": 5
+        },
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{3,10}USDT$",
+            "description": "                                          BASEUSDT"
+          },
+          "minItems": 1,
+          "maxItems": 100,
+          "description": "                                                           ",
+          "uniqueItems": true
+        },
+        "trade_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "                                                                                    ",
+          "default": 50
+        },
+        "max_processed_trades": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 100000,
+          "description": "                                                             ID               ",
+          "default": 10000
+        },
+        "enable_metrics": {
+          "type": "boolean",
+          "description": "                                                                   ",
+          "default": true
+        },
+        "log_level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
+          "description": "                               ",
+          "default": "INFO"
+        }
+      },
+      "required": ["trading_mode", "symbols"],
+      "additionalProperties": false
+    },
+
+    "events": {
+      "type": "object",
+      "title": "                      FSM",
+      "description": "                                                                                             ",
+
+      "properties": {
+        "EVT:TRADE_EXECUTED": {
+          "type": "object",
+          "title": "                                          ",
+          "description": "                                                                                                             ",
+          "properties": {
+            "header": {
+              "$ref": "#/$defs/event_header"
+            },
+            "payload": {
+              "$ref": "#/$defs/trade_executed_payload"
+            }
+          },
+          "required": ["header", "payload"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "metrics": {
+      "type": "object",
+      "title": "                                     ",
+      "description": "                                                                                                     ",
+
+      "properties": {
+        "trades_processed_total": {
+          "type": "integer",
+          "description": "                                                                       ",
+          "minimum": 0
+        },
+        "trades_skipped_duplicates_total": {
+          "type": "integer",
+          "description": "                                                                           ",
+          "minimum": 0
+        },
+        "api_calls_total": {
+          "type": "integer",
+          "description": "                                                     API",
+          "minimum": 0
+        },
+        "api_errors_total": {
+          "type": "integer",
+          "description": "                                  API",
+          "minimum": 0
+        },
+        "cached_trade_ids_count": {
+          "type": "integer",
+          "description": "                                                     ID               ",
+          "minimum": 0
+        },
+        "memory_usage_bytes": {
+          "type": "integer",
+          "description": "                               '                      ",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "required": ["config"],
+  "additionalProperties": false,
+
+  "$defs": {
+
+    "event_header": {
+      "type": "object",
+      "title": "                              FSM",
+      "description": "                                                                     FSM",
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "                                                          "
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "                                                                 Unix timestamp",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string",
+          "const": "account_observer",
+          "description": "                         "
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "                                  ",
+          "default": "1.0.0"
+        }
+      },
+      "required": ["event_id", "timestamp", "source"],
+      "additionalProperties": false
+    },
+
+    "trade_executed_payload": {
+      "type": "object",
+      "title": "Payload                                           ",
+      "description": "                                                                ",
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "pattern": "^[A-Z]{3,10}USDT$",
+          "description": "                       "
+        },
+        "side": {
+          "type": "string",
+          "enum": ["buy", "sell"],
+          "description": "                                 "
+        },
+        "price": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d{1,8})?$",
+          "description": "                                                                   "
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^-?\\d+(\\.\\d{1,8})?$",
+          "description": "                   (      '                              )"
+        },
+        "ts": {
+          "type": "integer",
+          "description": "                                                      Unix timestamp",
+          "minimum": 0
+        },
+        "fees": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d{1,8})?$",
+          "description": "                                                      "
+        },
+        "venue": {
+          "type": "string",
+          "const": "binance",
+          "description": "                                   "
+        }
+      },
+      "required": ["symbol", "side", "price", "quantity", "ts", "fees", "venue"],
+      "additionalProperties": false
+    },
+
+    "binance_trade_response": {
+      "type": "object",
+      "title": "                   Binance API                    ",
+      "description": "                                                    Binance API                    ",
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "                       "
+        },
+        "id": {
+          "type": "integer",
+          "description": "                     ID             ",
+          "minimum": 1
+        },
+        "orderId": {
+          "type": "integer",
+          "description": "ID             ",
+          "minimum": 1
+        },
+        "price": {
+          "type": "string",
+          "description": "                           "
+        },
+        "qty": {
+          "type": "string",
+          "description": "                  "
+        },
+        "quoteQty": {
+          "type": "string",
+          "description": "                                     quote currency"
+        },
+        "commission": {
+          "type": "string",
+          "description": "              "
+        },
+        "commissionAsset": {
+          "type": "string",
+          "description": "                         "
+        },
+        "time": {
+          "type": "integer",
+          "description": "                                                     ",
+          "minimum": 0
+        },
+        "isBuyer": {
+          "type": "boolean",
+          "description": "true                      , false                      "
+        },
+        "isMaker": {
+          "type": "boolean",
+          "description": "true        maker             "
+        },
+        "isBestMatch": {
+          "type": "boolean",
+          "description": "true                                                   "
+        }
+      },
+      "required": ["symbol", "id", "orderId", "price", "qty", "quoteQty", "commission", "commissionAsset", "time", "isBuyer", "isMaker", "isBestMatch"],
+      "additionalProperties": false
+    },
+
+    "error_response": {
+      "type": "object",
+      "title": "                                 ",
+      "description": "                                                                   ",
+      "properties": {
+        "error_code": {
+          "type": "string",
+          "pattern": "^AO\\d{3}$",
+          "description": "                      (AO001-AO999)"
+        },
+        "message": {
+          "type": "string",
+          "description": "                       "
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "                                                 ",
+          "minimum": 0
+        },
+        "context": {
+          "type": "object",
+          "description": "                                                    ",
+          "additionalProperties": true
+        }
+      },
+      "required": ["error_code", "message", "timestamp"],
+      "additionalProperties": false
+    },
+
+    "health_status": {
+      "type": "object",
+      "title": "                         '               ",
+      "description": "                                                                  ",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "unhealthy"],
+          "description": "                               "
+        },
+        "uptime_seconds": {
+          "type": "integer",
+          "description": "                                       ",
+          "minimum": 0
+        },
+        "last_api_call": {
+          "type": "integer",
+          "description": "                                                              API",
+          "minimum": 0
+        },
+        "active_symbols": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "                                              "
+        },
+        "cached_trades_count": {
+          "type": "integer",
+          "description": "                                      ID               ",
+          "minimum": 0
+        },
+        "error_rate_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "                                                                  "
+        }
+      },
+      "required": ["status", "uptime_seconds"],
+      "additionalProperties": false
+    }
+  }
+}

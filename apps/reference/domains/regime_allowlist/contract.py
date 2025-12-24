@@ -69,7 +69,7 @@ class RegimeAllowlistError(Exception):
         for v in self.violations:
             lines.append(f"  [{v.severity}] {v.symbol}: {v.message}")
         lines.append("")
-        lines.append("Fix: Update config/aurora/aurora_instruments.yaml or strategies.yaml")
+        lines.append("Fix: Update config/aurora/strategies/aurora.yaml (aurora.assets) or strategies.yaml")
         return "\n".join(lines)
 
 
@@ -137,7 +137,7 @@ class RegimeAllowlistContract:
     def extract_strategy_config(
         symbol: str,
         assignments: Dict[str, List[str]],
-        aurora_instruments: Dict[str, Any],
+        aurora_assets: Dict[str, Any],
     ) -> StrategyRegimeConfig:
         """
         Extract regime configuration for a symbol.
@@ -145,13 +145,13 @@ class RegimeAllowlistContract:
         Args:
             symbol: Trading symbol
             assignments: strategies.yaml assignments
-            aurora_instruments: aurora_instruments.yaml config
+            aurora_assets: strategies/aurora.yaml::aurora.assets config
             
         Returns:
             StrategyRegimeConfig for validation
         """
         symbol_strategies = assignments.get(symbol, [])
-        symbol_config = aurora_instruments.get(symbol, {})
+        symbol_config = aurora_assets.get(symbol, {})
         
         return StrategyRegimeConfig(
             symbol=symbol,
@@ -207,7 +207,7 @@ class RegimeAllowlistContract:
     def validate_all(
         cls,
         assignments: Dict[str, List[str]],
-        aurora_instruments: Dict[str, Any],
+        aurora_assets: Dict[str, Any],
         *,
         fail_on_critical: bool = True,
     ) -> Dict[str, List[AllowlistViolation]]:
@@ -216,7 +216,7 @@ class RegimeAllowlistContract:
         
         Args:
             assignments: strategies.yaml assignments section
-            aurora_instruments: aurora_instruments.yaml config
+            aurora_assets: strategies/aurora.yaml::aurora.assets config
             fail_on_critical: If True, raise exception on critical violations
             
         Returns:
@@ -231,7 +231,7 @@ class RegimeAllowlistContract:
         critical_violations: List[AllowlistViolation] = []
         
         for symbol in assignments:
-            config = cls.extract_strategy_config(symbol, assignments, aurora_instruments)
+            config = cls.extract_strategy_config(symbol, assignments, aurora_assets)
             violations = cls.validate_symbol(config)
             
             if violations:
@@ -281,13 +281,13 @@ class RegimeAllowlistContract:
         return (
             f"[{symbol}] Regime {current_regime} BLOCKED: "
             f"not in allowed_regimes={allowed_regimes} "
-            f"(configured in aurora_instruments.yaml)"
+            f"(configured in strategies/aurora.yaml::aurora.assets)"
         )
 
 
 def validate_strategy_regime_config(
     strategies_yaml: Dict[str, Any],
-    aurora_instruments_yaml: Dict[str, Any],
+    aurora_assets_yaml: Dict[str, Any],
     *,
     mode: str = "live",
     warn_only: bool = False,
@@ -299,7 +299,7 @@ def validate_strategy_regime_config(
     
     Args:
         strategies_yaml: Parsed strategies.yaml
-        aurora_instruments_yaml: Parsed aurora_instruments.yaml
+        aurora_assets_yaml: Parsed strategies/aurora.yaml::aurora.assets
         mode: Operating mode (live/testnet/shadow/dev)
         warn_only: If True, warn instead of crash (DEV/SHADOW only)
         
@@ -314,6 +314,6 @@ def validate_strategy_regime_config(
     
     RegimeAllowlistContract.validate_all(
         assignments,
-        aurora_instruments_yaml,
+        aurora_assets_yaml,
         fail_on_critical=not warn_only,
     )

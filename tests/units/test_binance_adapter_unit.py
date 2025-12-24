@@ -5,6 +5,7 @@ import hashlib
 
 import importlib.util
 import os
+import pytest
 
 # Load BinanceAdapter from source path to avoid import issues in test env
 spec = importlib.util.spec_from_file_location(
@@ -24,6 +25,7 @@ BinanceAdapter = mod.BinanceAdapter
 
 
 def test_norm_params_and_sign_build(monkeypatch):
+    pytest.importorskip("httpx")
     adapter = BinanceAdapter(api_key="k", api_secret="s", base_url="https://test")
 
     d = {"flag": True, "amt": Decimal("0.1000"), "none": None}

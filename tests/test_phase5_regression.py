@@ -46,8 +46,13 @@ class TestSignalScoreIntegration:
             "macro_sync": Decimal("1.0"),
         }
 
-        weights = config.to_dict().get("trading", {}).get(
-            "decision", {}).get("signal_weights", {})
+        weights = (
+            config.to_dict()
+            .get("strategies", {})
+            .get("aurora", {})
+            .get("decision", {})
+            .get("signal_weights", {})
+        )
 
         print(f"\n[OK] Weights: {weights}")
         print(f"[OK] Phi_map: {phi_map}")
@@ -83,8 +88,13 @@ class TestSignalScoreIntegration:
             "macro_sync": Decimal("0.0"),
         }
 
-        weights = config.to_dict().get("trading", {}).get(
-            "decision", {}).get("signal_weights", {})
+        weights = (
+            config.to_dict()
+            .get("strategies", {})
+            .get("aurora", {})
+            .get("decision", {})
+            .get("signal_weights", {})
+        )
 
         score = sum(Decimal(str(phi_map.get(k, 0))) * Decimal(str(weights.get(k, 0)))
                     for k in weights.keys())
@@ -116,8 +126,13 @@ class TestSignalScoreIntegration:
             "macro_sync": Decimal("0.8"),        # New high
         }
 
-        weights = config.to_dict().get("trading", {}).get(
-            "decision", {}).get("signal_weights", {})
+        weights = (
+            config.to_dict()
+            .get("strategies", {})
+            .get("aurora", {})
+            .get("decision", {})
+            .get("signal_weights", {})
+        )
 
         score = sum(Decimal(str(phi_map.get(k, 0))) * Decimal(str(weights.get(k, 0)))
                     for k in weights.keys())
@@ -189,8 +204,13 @@ class TestPsiVectorCompletion:
         Expected: weights dict has keys for all 8 metrics.
         """
         config = ConfigLoader().load_config()
-        weights = config.to_dict().get("trading", {}).get(
-            "decision", {}).get("signal_weights", {})
+        weights = (
+            config.to_dict()
+            .get("strategies", {})
+            .get("aurora", {})
+            .get("decision", {})
+            .get("signal_weights", {})
+        )
 
         expected_weight_keys = {
             "obi", "tfi", "delta_price",  # Legacy (3)
@@ -245,8 +265,13 @@ class TestNormalizedMetricsComposition:
         Expected: Each group maintains its properties in composition.
         """
         config = ConfigLoader().load_config()
-        weights = config.to_dict().get("trading", {}).get(
-            "decision", {}).get("signal_weights", {})
+        weights = (
+            config.to_dict()
+            .get("strategies", {})
+            .get("aurora", {})
+            .get("decision", {})
+            .get("signal_weights", {})
+        )
 
         legacy_metrics = ["obi", "tfi", "delta_price"]
         new_metrics = ["ema_bias", "volume_spike",
@@ -270,8 +295,13 @@ class TestNormalizedMetricsComposition:
         Expected: Correct weighted composition.
         """
         config = ConfigLoader().load_config()
-        weights = config.to_dict().get("trading", {}).get(
-            "decision", {}).get("signal_weights", {})
+        weights = (
+            config.to_dict()
+            .get("strategies", {})
+            .get("aurora", {})
+            .get("decision", {})
+            .get("signal_weights", {})
+        )
 
         # Test case: Medium scenario
         metrics = {

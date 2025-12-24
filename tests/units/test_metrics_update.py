@@ -1,4 +1,5 @@
 # tests/units/test_metrics_update.py
+import pytest
 from apps.reference.telemetry.metrics import (
     update_exposure,
     generate_latest,
@@ -12,6 +13,7 @@ sys.path.insert(0, str(project_root))
 
 
 def test_update_exposure_exports_values():
+    pytest.importorskip("prometheus_client")
     update_exposure(5000, 300, 200, 0.2)
     data = generate_latest().decode("utf-8")
     assert "exposure_equity_usd" in data

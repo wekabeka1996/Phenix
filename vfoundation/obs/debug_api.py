@@ -3,16 +3,29 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+try:
+    from fastapi import FastAPI, Header, HTTPException
+except ImportError:  # pragma: no cover
+    FastAPI = None  # type: ignore
+    Header = None  # type: ignore
+
+    class HTTPException(Exception):  # type: ignore
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
 
 from vfoundation.dr import wal
 
 
-app = FastAPI(
-    title="Aurora Core Debug API",
-    description="Development-only debug endpoints (imported when TRADING_ENV != 'production').",
-    version="0.1.0",
-)
+if FastAPI is not None:
+    app = FastAPI(
+        title="Aurora Core Debug API",
+        description="Development-only debug endpoints (imported when TRADING_ENV != 'production').",
+        version="0.1.0",
+    )
+else:
+    app = None  # type: ignore
 
 
 # =============================================================================
@@ -172,18 +185,15 @@ def debug_rid(rid: str, authorization: str | None = None) -> dict[str, Any]:
 # FastAPI routes
 # =============================================================================
 
+if FastAPI is not None:  # pragma: no cover
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "healthy", "service": "aurora-core"}
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "healthy", "service": "aurora-core"}
+    @app.get("/metrics/json")
+    def metrics_json() -> dict[str, Any]:
+        return metrics()
 
-
-@app.get("/metrics/json")
-def metrics_json() -> dict[str, Any]:
-    return metrics()
-
-
-@app.get("/debug/{rid}")
-def debug_rid_http(rid: str, authorization: str | None = Header(None)) -> dict[str, Any]:
-    return debug_rid(rid, authorization=authorization)
-
+    @app.get("/debug/{rid}")
+    def debug_rid_http(rid: str, authorization: str | None = Header(None)) -> dict[str, Any]:
+        return debug_rid(rid, authorization=authorization)

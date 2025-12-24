@@ -9,6 +9,8 @@ Inherits from vfoundation.core.adapters.base.AbstractExchangeAdapter to ensure
 compatibility with the generic FSM interface.
 """
 
+from __future__ import annotations
+
 import json as _json
 import asyncio
 import hashlib
@@ -19,7 +21,10 @@ from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode, quote_plus
 
-import httpx
+try:
+    import httpx  # type: ignore
+except ImportError:  # pragma: no cover
+    httpx = None  # type: ignore
 
 from vfoundation.core.adapters.base import (
     AbstractExchangeAdapter,
@@ -90,6 +95,12 @@ class BinanceAdapter(AbstractExchangeAdapter):
         timeout: float = 10.0,
         **kwargs,
     ):
+        if httpx is None:
+            raise ImportError(
+                "Optional dependency missing: `httpx` is required for BinanceAdapter. "
+                "Install test/runtime extras or add `httpx` to requirements."
+            )
+
         rest_url = kwargs.pop("rest_url", None)  # legacy alias
         if rest_url:
             base_url = rest_url

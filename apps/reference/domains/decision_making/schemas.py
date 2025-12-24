@@ -19,4 +19,21 @@ class PositionData(BaseModel):
             raise ValueError(f"Invalid decimal value: {v}")
 
 class PortfolioStatePayload(BaseModel):
+    # Backward-compatible: existing producers may only send positions.
+    schema_version: int = Field(default=1)
+    ts_ms: Optional[int] = None
+    equity_usdt: Optional[Decimal] = None
+    available_usdt: Optional[Decimal] = None
+
     positions: List[PositionData] = Field(default_factory=list)
+
+    @field_validator('equity_usdt', 'available_usdt', mode='before')
+    def parse_optional_decimal(cls, v):
+        if v is None:
+            return None
+        try:
+            if isinstance(v, (str, int, float)):
+                return Decimal(str(v))
+            return v
+        except Exception:
+            raise ValueError(f"Invalid decimal value: {v}")

@@ -7,6 +7,8 @@ and stable marginType mapping.
 import pytest
 from unittest.mock import AsyncMock, patch
 
+pytest.importorskip("httpx")
+
 
 class TestAdapterHedgeModeFailClosed:
     """Tests for Hedge mode determinism in binance_adapter."""

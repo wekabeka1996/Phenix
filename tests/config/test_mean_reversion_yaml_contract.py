@@ -1,0 +1,119 @@
+"""MR YAML contract: every key is loaded (no silent defaults).
+
+This test is intentionally strict: it pins the canonical
+config/aurora/strategies/mean_reversion.yaml to the typed Pydantic model.
+
+Goal: if ANY YAML line/key changes, this test forces a conscious update.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+
+from apps.reference.config_loader import ConfigLoader
+
+
+def _copy_canonical_config_dir(dst_config_dir: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    src = repo_root / "config" / "aurora"
+    import shutil
+
+    shutil.copytree(src, dst_config_dir)
+
+
+def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
+    # Arrange: load canonical config via ConfigLoader (SSOT)
+    config_dir = tmp_path / "config" / "aurora"
+    _copy_canonical_config_dir(config_dir)
+
+    loader = ConfigLoader(config_dir=config_dir)
+    cfg = loader.load_config()
+    mr = cfg.strategies.mean_reversion
+    assert mr is not None
+
+    # Arrange: parse the canonical YAML as ground-truth text
+    repo_root = Path(__file__).resolve().parents[2]
+    mr_yaml_path = repo_root / "config" / "aurora" / "strategies" / "mean_reversion.yaml"
+    raw = yaml.safe_load(mr_yaml_path.read_text(encoding="utf-8"))
+    assert isinstance(raw, dict)
+    raw_mr = raw["mean_reversion"]
+
+    # Top-level fields
+    assert mr.enabled == raw_mr["enabled"]
+    assert mr.timeframe_sec == raw_mr["timeframe_sec"]
+    assert mr.allowed_regimes == raw_mr["allowed_regimes"]
+    assert mr.emit_trade_intent_directly == raw_mr["emit_trade_intent_directly"]
+
+    # Strategy fields
+    raw_strategy = raw_mr["strategy"]
+    assert mr.strategy.bb_window == raw_strategy["bb_window"]
+    assert mr.strategy.bb_num_std == raw_strategy["bb_num_std"]
+    assert mr.strategy.atr_window == raw_strategy["atr_window"]
+    assert mr.strategy.rsi_window == raw_strategy["rsi_window"]
+    assert mr.strategy.entry_threshold == raw_strategy["entry_threshold"]
+    assert mr.strategy.rsi_oversold == raw_strategy["rsi_oversold"]
+    assert mr.strategy.rsi_overbought == raw_strategy["rsi_overbought"]
+    assert mr.strategy.min_bars == raw_strategy["min_bars"]
+    assert mr.strategy.min_bb_width == raw_strategy["min_bb_width"]
+    assert mr.strategy.max_bb_width == raw_strategy["max_bb_width"]
+    assert mr.strategy.sl_atr_mult == raw_strategy["sl_atr_mult"]
+    assert mr.strategy.tp_to_mid == raw_strategy["tp_to_mid"]
+    assert mr.strategy.cooldown_sec == raw_strategy["cooldown_sec"]
+
+    # Regime thresholds
+    raw_thr = raw_mr["regime_thresholds"]
+    assert mr.regime_thresholds.high_vol_pct == raw_thr["high_vol_pct"]
+    assert mr.regime_thresholds.low_vol_pct == raw_thr["low_vol_pct"]
+
+    # Regime sizing mapping
+    raw_rs = raw_mr["regime_sizing"]
+    assert set(mr.regime_sizing.keys()) == set(raw_rs.keys())
+    for regime_name, rs_cfg in mr.regime_sizing.items():
+        expected = raw_rs[regime_name]
+        assert rs_cfg.sizing_mult == expected["sizing_mult"]
+        assert rs_cfg.stop_mult == expected["stop_mult"]
+        assert rs_cfg.target_mult == expected["target_mult"]
+
+    # Risk (global)
+    raw_risk = raw_mr["risk"]
+    assert mr.risk.position_size_usd == raw_risk["position_size_usd"]
+    assert mr.risk.max_concurrent_positions == raw_risk["max_concurrent_positions"]
+    assert mr.risk.daily_loss_limit_usd == raw_risk["daily_loss_limit_usd"]
+    assert mr.risk.expected_pnl_multiplier == raw_risk["expected_pnl_multiplier"]
+    assert mr.risk.fees_pct == raw_risk["fees_pct"]
+    assert mr.risk.slippage_pct == raw_risk["slippage_pct"]
+
+    # Assets
+    raw_assets = raw_mr["assets"]
+    assert set(mr.assets.keys()) == set(raw_assets.keys())
+
+    for symbol, raw_asset in raw_assets.items():
+        a = mr.assets[symbol]
+        assert a.enabled == raw_asset["enabled"]
+        assert a.position_mode == raw_asset["position_mode"]
+        assert a.allowed_regimes == raw_asset["allowed_regimes"]
+
+        raw_asset_strategy = raw_asset.get("strategy")
+        if raw_asset_strategy is None:
+            assert a.strategy is None
+        else:
+            assert a.strategy is not None
+            assert a.strategy.bb_window == raw_asset_strategy.get("bb_window")
+            assert a.strategy.bb_num_std == raw_asset_strategy.get("bb_num_std")
+            assert a.strategy.min_bb_width == raw_asset_strategy.get("min_bb_width")
+            assert a.strategy.entry_threshold == raw_asset_strategy.get("entry_threshold")
+            assert a.strategy.tp_to_mid == raw_asset_strategy.get("tp_to_mid")
+            assert a.strategy.sl_atr_mult == raw_asset_strategy.get("sl_atr_mult")
+            assert a.strategy.cooldown_sec == raw_asset_strategy.get("cooldown_sec")
+            assert a.strategy.allowed_regimes == raw_asset_strategy.get("allowed_regimes")
+
+        raw_asset_risk = raw_asset.get("risk")
+        if raw_asset_risk is None:
+            assert a.risk is None
+        else:
+            assert a.risk is not None
+            assert a.risk.position_size_usd == raw_asset_risk.get("position_size_usd")
+            assert a.risk.max_risk_score == raw_asset_risk.get("max_risk_score")

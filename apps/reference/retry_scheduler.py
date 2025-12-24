@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import hashlib
 import json
 import logging
@@ -50,7 +49,7 @@ class RetryScheduler:
         self._pending: dict[str, dict[str, Any]] = {}
         self._attempts: dict[str, int] = {}
         self._attempts_payload_hash: dict[str, str] = {}
-        self._retry_tasks: dict[str, concurrent.futures.Future] = {}
+        self._retry_tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -80,8 +79,17 @@ class RetryScheduler:
         if self._loop is None or not self._loop.is_running():
             from apps.reference.telemetry.metrics import inc_retry_scheduler_no_loop
 
+            # Fail-closed: do not raise; drop intent and increment metric.
             inc_retry_scheduler_no_loop()
-            raise RuntimeError("RetryScheduler.register_deferred requires bind_loop(running_loop) first")
+            return False
+
+        loop_thread_id = getattr(self._loop, "_thread_id", None)
+        if loop_thread_id is not None and loop_thread_id != threading.get_ident():
+            # TASK47-FIX: Support off-loop thread registration via call_soon_threadsafe.
+            # This is critical for strategies running in background threads (e.g. MeanReversion).
+            self.logger.info("RetryScheduler: off-loop thread registration for %s; scheduling via call_soon_threadsafe", deferred_payload.get("retry_key"))
+            self._loop.call_soon_threadsafe(self.register_deferred, deferred_payload)
+            return True
 
         retry_key = deferred_payload.get("retry_key")
         if not retry_key:
@@ -155,7 +163,20 @@ class RetryScheduler:
             from apps.reference.telemetry.metrics import inc_retry_scheduler_no_loop
 
             inc_retry_scheduler_no_loop()
-            raise RuntimeError("RetryScheduler._schedule_retry requires bind_loop(running_loop)")
+            # Fail-closed: do not raise; clear pending to avoid zombies.
+            with self._lock:
+                self._pending.pop(retry_key, None)
+            return
+
+        loop_thread_id = getattr(self._loop, "_thread_id", None)
+        if loop_thread_id is not None and loop_thread_id != threading.get_ident():
+            from apps.reference.telemetry.metrics import inc_retry_scheduler_no_loop
+
+            inc_retry_scheduler_no_loop()
+            self.logger.error("RetryScheduler._schedule_retry called off-loop thread; dropping %s", retry_key)
+            with self._lock:
+                self._pending.pop(retry_key, None)
+            return
 
         with self._lock:
             pending = self._pending.get(retry_key)
@@ -187,14 +208,21 @@ class RetryScheduler:
                 await asyncio.sleep(delay_sec)
             await self._execute_retry(retry_key)
 
-        try:
-            fut = asyncio.run_coroutine_threadsafe(_do_retry(), self._loop)
-            self._retry_tasks[retry_key] = fut
-        except Exception as e:
-            self.logger.error("RetryScheduler: Failed to schedule %s on bound loop: %r", retry_key, e)
-            with self._lock:
-                self._pending.pop(retry_key, None)
-            raise
+        task = self._loop.create_task(_do_retry())
+        self._retry_tasks[retry_key] = task
+
+        def _observe_task_result(done_task: asyncio.Task[None]) -> None:
+            try:
+                done_task.result()
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                self.logger.error("RetryScheduler: Task for %s failed: %r", retry_key, exc)
+                with self._lock:
+                    self._pending.pop(retry_key, None)
+                self._retry_tasks.pop(retry_key, None)
+
+        task.add_done_callback(_observe_task_result)
 
     async def _execute_retry(self, retry_key: str) -> None:
         with self._lock:
@@ -365,9 +393,16 @@ class RetryScheduler:
                 from apps.reference.telemetry.metrics import inc_retry_scheduler_no_loop
 
                 inc_retry_scheduler_no_loop()
-                raise RuntimeError(
-                    "RetryScheduler.clear_all_pending requires bind_loop(running_loop) when emit_dropped=True"
-                )
+                # Fail-closed: cannot emit without loop; just clear state.
+                return len(pending_copy)
+
+            loop_thread_id = getattr(self._loop, "_thread_id", None)
+            if loop_thread_id is not None and loop_thread_id != threading.get_ident():
+                from apps.reference.telemetry.metrics import inc_retry_scheduler_no_loop
+
+                inc_retry_scheduler_no_loop()
+                # Fail-closed: avoid cross-thread scheduling in restricted runtime.
+                return len(pending_copy)
 
             dropped_ts = int(time.time() * 1000)
             for retry_key, pending in pending_copy.items():
@@ -393,10 +428,7 @@ class RetryScheduler:
                     pld=drop_payload,
                     why=f"dropped_{drop_reason}",
                 )
-                asyncio.run_coroutine_threadsafe(
-                    emit_compat(self.fsm, drop_msg, logger=self.logger),
-                    self._loop,
-                )
+                self._loop.create_task(emit_compat(self.fsm, drop_msg, logger=self.logger))
 
         return len(pending_copy)
 
@@ -407,4 +439,3 @@ class RetryScheduler:
     def get_pending_for_symbol(self, symbol: str) -> list[str]:
         with self._lock:
             return [k for k, v in self._pending.items() if v.get("symbol") == symbol]
-

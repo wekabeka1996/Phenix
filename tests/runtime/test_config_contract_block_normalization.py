@@ -95,17 +95,20 @@ class TestConfigContractNormalization:
 
     @patch("apps.reference.domains.decision_making.decision_making.inc_config_contract_violation")
     def test_mr_gateway_catcher(self, mock_inc, decision_making):
-        """Verify catcher in MR signal gateway."""
-        # Force a ConfigContractError inside _check_strategy_arbitration or similar
-        
-        with patch.object(decision_making, '_check_strategy_arbitration', side_effect=ConfigContractError(path="strat.registry", why="Missing")):
-             msg = Message(
-                 name="EVT:MR_SIGNAL_PRODUCED", 
-                 op="EVT", verb="MR_SIGNAL_PRODUCED", src="mr", dst="dm",
-                 pld={"symbol": "BTCUSDT", "side": "BUY", "ts": 123456789}
-             )
-             decision_making._on_mr_signal_gateway(msg)
-             
-             mock_inc.assert_called_once()
-             # Ensure no trade emitted
-             decision_making.fsm.emit.assert_not_called()
+        """Verify catcher in strategy signal gateway (mean_reversion)."""
+        with patch.object(
+            decision_making,
+            "_check_strategy_arbitration",
+            side_effect=ConfigContractError(path="strat.registry", why="Missing"),
+        ):
+            msg = Message(
+                op="EVT",
+                verb="STRATEGY_SIGNAL_PRODUCED",
+                src="strategy",
+                dst="dm",
+                pld={"strategy_id": "mean_reversion", "symbol": "BTCUSDT", "side": "BUY", "ts_ms": 123456789},
+            )
+            decision_making._on_strategy_signal_gateway(msg)
+
+            mock_inc.assert_called_once()
+            decision_making.fsm.emit.assert_not_called()

@@ -3,14 +3,15 @@
 import subprocess
 import sys
 
+import pytest
+
 
 def test_vfound_help():
     """Test vfound --help command"""
+    pytest.importorskip("typer")
     try:
         import vfoundation.cli.vfound
     except ImportError:
-        import pytest
-
         pytest.skip("CLI module not available")
 
     result = subprocess.run(
@@ -27,11 +28,10 @@ def test_vfound_help():
 
 def test_vfound_simulate_help():
     """Test vfound simulate --help command"""
+    pytest.importorskip("typer")
     try:
         import vfoundation.cli.vfound
     except ImportError:
-        import pytest
-
         pytest.skip("CLI module not available")
 
     result = subprocess.run(
@@ -45,11 +45,10 @@ def test_vfound_simulate_help():
 
 def test_vfound_schema_help():
     """Test vfound schema --help command"""
+    pytest.importorskip("typer")
     try:
         import vfoundation.cli.vfound
     except ImportError:
-        import pytest
-
         pytest.skip("CLI module not available")
 
     result = subprocess.run(
@@ -63,11 +62,10 @@ def test_vfound_schema_help():
 
 def test_vfound_trace_help():
     """Test vfound trace --help command"""
+    pytest.importorskip("typer")
     try:
         import vfoundation.cli.vfound
     except ImportError:
-        import pytest
-
         pytest.skip("CLI module not available")
 
     result = subprocess.run(

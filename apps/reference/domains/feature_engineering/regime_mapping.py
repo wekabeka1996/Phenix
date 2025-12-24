@@ -122,17 +122,16 @@ def map_to_flat_regime(
         if atr_pct is not None:
             return thresholds.classify(atr_pct)
         else:
-            # No ATR data → assume normal volatility
-            return FlatRegime.FLAT_NORMAL
+            # P0 FIX: No ATR data → fail-closed (don't assume normal)
+            # Without volatility data, we can't properly classify the flat regime
+            return None
     
-    # UNCERTAIN → could be flat, conservative approach
+    # P0 FIX: UNCERTAIN → None (fail-closed)
+    # MR must NOT trade when regime is uncertain/uninitialized.
+    # This prevents trading before regime_detector has established the regime.
+    # If explicit UNCERTAIN trading is needed, use a separate opt-in config flag.
     if regime_upper == "UNCERTAIN":
-        if atr_pct is not None:
-            # Use ATR to classify
-            return thresholds.classify(atr_pct)
-        else:
-            # Default to normal
-            return FlatRegime.FLAT_NORMAL
+        return None
     
     # Unknown regime → skip
     return None

@@ -1,0 +1,184 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora-trading/schemas/account_balance/events.json",
+  "title": "Account Balance Domain Events Schema",
+  "description": "JSON Schema                           FSM                         account_balance",
+  "type": "object",
+
+  "definitions": {
+
+    "asset_balance": {
+      "type": "object",
+      "description": "                                                         ",
+      "properties": {
+        "asset": {
+          "type": "string",
+          "description": "                        (USDT, BTC, etc.)",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "balance": {
+          "type": "string",
+          "description": "                                                                                    ",
+          "pattern": "^-?\\d+(\\.\\d+)?$"
+        },
+        "crossUnPnl": {
+          "type": "string",
+          "description": "                             P&L    cross margin",
+          "pattern": "^-?\\d+(\\.\\d+)?$"
+        },
+        "crossWalletBalance": {
+          "type": "string",
+          "description": "                cross margin",
+          "pattern": "^-?\\d+(\\.\\d+)?$"
+        },
+        "updateTime": {
+          "type": "integer",
+          "description": "                                                     ",
+          "minimum": 0
+        }
+      },
+      "required": ["asset", "balance", "crossUnPnl", "crossWalletBalance", "updateTime"]
+    },
+
+    "position_data": {
+      "type": "object",
+      "description": "                                                               ",
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "                        (BTCUSDT)",
+          "pattern": "^[A-Z]{3,10}[A-Z]{3,10}$"
+        },
+        "positionAmt": {
+          "type": "string",
+          "description": "                           ",
+          "pattern": "^-?\\d+(\\.\\d+)?$"
+        },
+        "entryPrice": {
+          "type": "string",
+          "description": "                                     ",
+          "pattern": "^\\d+(\\.\\d+)?$"
+        },
+        "unRealizedProfit": {
+          "type": "string",
+          "description": "                                             /            ",
+          "pattern": "^-?\\d+(\\.\\d+)?$"
+        },
+        "leverage": {
+          "type": "integer",
+          "description": "                         ",
+          "minimum": 1,
+          "maximum": 125
+        },
+        "marginType": {
+          "type": "string",
+          "description": "                 ",
+          "enum": ["isolated", "cross"]
+        },
+        "markPrice": {
+          "type": "string",
+          "description": "                           ",
+          "pattern": "^\\d+(\\.\\d+)?$"
+        },
+        "liquidationPrice": {
+          "type": "string",
+          "description": "                             ",
+          "pattern": "^\\d+(\\.\\d+)?$"
+        }
+      },
+      "required": ["symbol", "positionAmt", "entryPrice", "unRealizedProfit", "leverage", "marginType", "markPrice", "liquidationPrice"]
+    }
+
+  },
+
+  "oneOf": [
+
+    {
+      "title": "EVT:BALANCE_UPDATE_RECEIVED",
+      "description": "                                                                          ",
+      "type": "object",
+      "properties": {
+        "event_name": {
+          "const": "EVT:BALANCE_UPDATE_RECEIVED"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "assets": {
+              "type": "array",
+              "description": "                                              > 0",
+              "items": { "$ref": "#/definitions/asset_balance" },
+              "minItems": 0,
+              "maxItems": 1000
+            },
+            "updateTime": {
+              "type": "integer",
+              "description": "                                                                                     ",
+              "minimum": 0
+            }
+          },
+          "required": ["assets", "updateTime"]
+        },
+        "why": {
+          "type": "string",
+          "description": "                                               ",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": ["event_name", "payload", "why"]
+    },
+
+    {
+      "title": "EVT:ACCOUNT_UPDATE_RECEIVED",
+      "description": "                                                                           ",
+      "type": "object",
+      "properties": {
+        "event_name": {
+          "const": "EVT:ACCOUNT_UPDATE_RECEIVED"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "totalWalletBalance": {
+              "type": "string",
+              "description": "                                              ",
+              "pattern": "^-?\\d+(\\.\\d+)?$"
+            },
+            "totalUnrealizedProfit": {
+              "type": "string",
+              "description": "                                                P&L",
+              "pattern": "^-?\\d+(\\.\\d+)?$"
+            },
+            "totalCrossWalletBalance": {
+              "type": "string",
+              "description": "                   cross margin             ",
+              "pattern": "^-?\\d+(\\.\\d+)?$"
+            },
+            "positions": {
+              "type": "array",
+              "description": "                                            ",
+              "items": { "$ref": "#/definitions/position_data" },
+              "minItems": 0,
+              "maxItems": 100
+            },
+            "updateTime": {
+              "type": "integer",
+              "description": "                                                     ",
+              "minimum": 0
+            }
+          },
+          "required": ["totalWalletBalance", "totalUnrealizedProfit", "totalCrossWalletBalance", "positions", "updateTime"]
+        },
+        "why": {
+          "type": "string",
+          "description": "                                               ",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": ["event_name", "payload", "why"]
+    }
+
+  ]}

@@ -124,3 +124,59 @@ def test_guard_reserve_and_release(fsm_config):
     assert "order_1" in guard.state.reservations
     guard.release("order_1")
     assert "order_1" not in guard.state.reservations
+
+
+def test_resolve_symbol_leverage_default_and_override(fsm_config):
+    fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 15, "BTCUSDT": 25}
+    guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
+    assert guard.resolve_symbol_leverage("ETHUSDT") == Decimal("15")
+    assert guard.resolve_symbol_leverage("BTCUSDT") == Decimal("25")
+
+
+def test_resolve_symbol_leverage_clamps_to_one(fsm_config):
+    fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 0.5}
+    guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
+    assert guard.resolve_symbol_leverage("BTCUSDT") == Decimal("1")
+
+
+# ===========================================================================
+# DoD-4: Idempotency tests for reserve()
+# ===========================================================================
+
+def test_reserve_idempotent_no_duplicate(fsm_config):
+    """DoD-4: Duplicate reserve() calls with same key should NOT create duplicate reservations."""
+    fsm_config.trading.execution.exposure.leverage_defaults = {"BTCUSDT": 20}
+    guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
+    setup_guard_with_equity(guard, 10000)
+
+    # First reserve
+    guard.reserve("key_idem_1", Decimal("1000"), symbol="BTCUSDT", side="BUY")
+    assert len(guard.state.reservations) == 1
+    assert len(guard.state.pending_exposure) == 1
+
+    # Duplicate reserve with same key
+    guard.reserve("key_idem_1", Decimal("1000"), symbol="BTCUSDT", side="BUY")
+    
+    # Should still be 1, not 2
+    assert len(guard.state.reservations) == 1
+    assert len(guard.state.pending_exposure) == 1
+
+
+def test_reserve_empty_symbol_raises_valueerror(fsm_config):
+    """DoD-4: reserve() with empty symbol must raise ValueError (fail-closed)."""
+    fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 20}
+    guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
+    setup_guard_with_equity(guard, 10000)
+
+    with pytest.raises(ValueError, match="non-empty symbol"):
+        guard.reserve("key_empty_sym", Decimal("1000"), symbol="", side="BUY")
+
+
+def test_reserve_whitespace_symbol_raises_valueerror(fsm_config):
+    """reserve() with whitespace-only symbol must raise ValueError."""
+    fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 20}
+    guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
+    setup_guard_with_equity(guard, 10000)
+
+    with pytest.raises(ValueError, match="non-empty symbol"):
+        guard.reserve("key_ws_sym", Decimal("1000"), symbol="   ", side="BUY")

@@ -1,0 +1,6319 @@
+[
+  {
+    "key": "trading_mode",
+    "effective_value": "hybrid_live_data_testnet_exec",
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "trading.mode",
+    "effective_value": "hybrid_live_data_testnet_exec",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.brackets.sl.fixed_bps",
+    "effective_value": 40,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.brackets.tp.fixed_bps",
+    "effective_value": 80,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.brackets.oco_emulation",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.brackets.stop_loss_bps",
+    "effective_value": 40,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.brackets.offset_bps",
+    "effective_value": 5,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.emergency",
+    "effective_value": null,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.auto",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.orphan_monitor.enabled",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.manage.failsafe",
+    "effective_value": null,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.max_equity_utilization_pct",
+    "effective_value": 2.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.max_portfolio_fraction",
+    "effective_value": 2.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.max_side_utilization_pct.long",
+    "effective_value": 1.5,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.max_side_utilization_pct.short",
+    "effective_value": 1.5,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.max_directional_ratio",
+    "effective_value": 50.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.per_symbol_cap_pct",
+    "effective_value": 0.08,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.pending_ttl_sec",
+    "effective_value": 90,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.pending_reservation_ttl_sec",
+    "effective_value": 45,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.post_fill_hold_ttl_sec",
+    "effective_value": 5,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.positions_stale_ttl_sec",
+    "effective_value": 15,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.leverage_defaults.BTCUSDT",
+    "effective_value": 20,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.leverage_defaults.ETHUSDT",
+    "effective_value": 20,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.leverage_defaults.SOLUSDT",
+    "effective_value": 20,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.leverage_defaults.XRPUSDT",
+    "effective_value": 20,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.leverage_defaults.DOGEUSDT",
+    "effective_value": 20,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.leverage_defaults.__default__",
+    "effective_value": 20,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.count_pending_orders",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.exposure.exclude_reduce_only",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.watchdog.ack_ttl_ms",
+    "effective_value": 8000,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.watchdog.fill_ttl_ms",
+    "effective_value": 60000,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.watchdog.check_interval_ms",
+    "effective_value": 1000,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.watchdog.rps_limit",
+    "effective_value": 10,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.fallback",
+    "effective_value": null,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.limit_orders",
+    "effective_value": null,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.orders.default_ttl_seconds",
+    "effective_value": 15,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.fsm_periodic_cleanup_enabled",
+    "effective_value": false,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.anti_race_close_ms",
+    "effective_value": 800,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.open_order_type",
+    "effective_value": "MARKET",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_params.LIMIT.timeInForce",
+    "effective_value": "GTC",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_params.STOP_MARKET.workingType",
+    "effective_value": "MARK_PRICE",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_params.TAKE_PROFIT_MARKET.workingType",
+    "effective_value": "MARK_PRICE",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_params.TRAILING_STOP_MARKET.callbackRate",
+    "effective_value": "0.5",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.preflight_backoff_ms",
+    "effective_value": [
+      120,
+      250,
+      400,
+      800,
+      1200,
+      1800
+    ],
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.min_post_interval_per_symbol_ms",
+    "effective_value": 300,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.allow_trade_with_guardian_tidy_only",
+    "effective_value": false,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_guardian.unified",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_guardian.emit_tidy_event",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_guardian.cleanup_ttl_ms",
+    "effective_value": 6000,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_guardian.symbol_cooldown_ms",
+    "effective_value": 4000,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_guardian.poll_interval_ms",
+    "effective_value": 5000,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.execution.order_guardian.ledger_db_path",
+    "effective_value": "data/order_ledger.db",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.symbols_to_track",
+    "effective_value": [
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "XRPUSDT"
+    ],
+    "source_file": "strategies.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.poll_interval_sec",
+    "effective_value": 5.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.use_multiprocessing",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.websocket_streams",
+    "effective_value": [
+      "bookTicker",
+      "trade"
+    ],
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.api_call_limits.get_recent_trades",
+    "effective_value": 50,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.api_call_limits.get_klines.interval",
+    "effective_value": "1m",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.api_call_limits.get_klines.limit",
+    "effective_value": 2,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.enabled",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.anchors",
+    "effective_value": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.window",
+    "effective_value": 60,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.emit_abs",
+    "effective_value": false,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.align_mode",
+    "effective_value": "tail_min_len",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.min_buffer_size",
+    "effective_value": 3,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.time_diff_threshold_ms",
+    "effective_value": 60000,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.market_data.macro_sync.anchor_update_from_ticks",
+    "effective_value": false,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.max_daily_drawdown_limit",
+    "effective_value": 0.05,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.score_weights.delta_price",
+    "effective_value": 0.05,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.score_weights.obi",
+    "effective_value": 0.35,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.score_weights.tfi",
+    "effective_value": 0.35,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.score_weights.absorption_inverse",
+    "effective_value": 0.25,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.testnet.max_risk_score",
+    "effective_value": 0.9,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.production.max_risk_score",
+    "effective_value": 0.8,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.trading_allowed_thresholds.max_risk_score",
+    "effective_value": 0.9,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.daily.max_realized_loss_usd",
+    "effective_value": 250.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.daily.max_drawdown_pct",
+    "effective_value": 8.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.daily.reset_time_utc",
+    "effective_value": "00:00",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.profile",
+    "effective_value": "balanced",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.soft_limits.mode",
+    "effective_value": "clip",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.soft_limits.clip_min_notional_usdt",
+    "effective_value": 10,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.soft_limits.directional_ratio_max",
+    "effective_value": 20.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.soft_limits.side_exposure_usdt",
+    "effective_value": 600,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.soft_limits.margin_exposure_usdt",
+    "effective_value": 1100,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.regime_adaptation.trend_up_delta",
+    "effective_value": 0.3,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.regime_adaptation.trend_down_delta",
+    "effective_value": 0.3,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.regime_adaptation.flat_delta",
+    "effective_value": -0.3,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.regime_adaptation.bounds",
+    "effective_value": [
+      2.0,
+      4.0
+    ],
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.feature_flags.dynamic_ratio",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk.feature_flags.clipping_enabled",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.tca_prefs.max_slippage_pct",
+    "effective_value": 0.5,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.tca_prefs.max_slippage_bps",
+    "effective_value": 10,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.tca_prefs.max_latency_ms",
+    "effective_value": 500,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.tca_prefs.maker_preference",
+    "effective_value": "neutral",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.tca_prefs.preferred_venue",
+    "effective_value": "binance",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.tca_prefs.execution_priority",
+    "effective_value": "speed",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk_budgets.trade_cvar95_max_bps",
+    "effective_value": 100,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk_budgets.session_cvar95_max_bps",
+    "effective_value": 200,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk_budgets.max_portfolio_risk_pct",
+    "effective_value": 5.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk_budgets.max_single_position_risk_pct",
+    "effective_value": 1.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk_budgets.max_daily_loss_pct",
+    "effective_value": 2.0,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk_management.data_sources.market_data",
+    "effective_value": "live",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.risk_management.data_sources.portfolio_state",
+    "effective_value": "testnet",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.ops.panic_killswitch",
+    "effective_value": true,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.ops.panic_ttl_sec",
+    "effective_value": null,
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.ops.quiet_hours_utc",
+    "effective_value": [
+      "22:00-06:00"
+    ],
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.ops.allowlist_symbols",
+    "effective_value": [],
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.ops.metrics_url",
+    "effective_value": "http://localhost:8000/metrics",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.ops.reports_dir",
+    "effective_value": "reports",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.domain_configuration.market_data.trading_mode",
+    "effective_value": "live",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.domain_configuration.feature_engineering.trading_mode",
+    "effective_value": "live",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.domain_configuration.decision_making.trading_mode",
+    "effective_value": "live",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.domain_configuration.risk_management.trading_mode",
+    "effective_value": "testnet",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.domain_configuration.execution_position.trading_mode",
+    "effective_value": "testnet",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "trading.domain_configuration.audit_trail.trading_mode",
+    "effective_value": "live",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.live.api_key",
+    "effective_value": "RyHdZBuL6MH7WrqBbIILUO9FWwdWHwUECfgGaKBgAmOkFOiJSJy5vNDuD3VSKobJ",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.live.api_secret",
+    "effective_value": "wEDCetGdvZqu88evKt5FC2X7PZmVChTLuMSyko55Ki0YFrBXLV3NjzqXz7UcLoTa",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.live.rest_url",
+    "effective_value": "https://fapi.binance.com",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.live.ws_url",
+    "effective_value": "wss://fstream.binance.com",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.testnet.api_key",
+    "effective_value": "02lxMroGpmQAAizgC6UGcnQU6XxhKp8dhvs9HF4bViSsw93Kx7IVGMXVOR6Q63Av",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.testnet.api_secret",
+    "effective_value": "4MwqrOJBkaeZZyA6AZQh1PA8oNpjkShex42zy6Fb7atwXUKj20EbbmYu5UkhA2gt",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.testnet.rest_url",
+    "effective_value": "https://testnet.binancefuture.com",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "binance_api.testnet.ws_url",
+    "effective_value": "wss://stream.testnet.binancefuture.com",
+    "source_file": "trading.yaml",
+    "merge_stage": "trading",
+    "stage": "trading",
+    "notes": ""
+  },
+  {
+    "key": "account_observer.poll_interval",
+    "effective_value": 5,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.logging.level",
+    "effective_value": "DEBUG",
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.logging.file",
+    "effective_value": "logs/aurora_core.log",
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.logging.format",
+    "effective_value": "json",
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.logging.rotation.max_bytes",
+    "effective_value": 10485760,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.logging.rotation.backup_count",
+    "effective_value": 5,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.queue_maxsize",
+    "effective_value": 10000,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.local_queue_maxsize",
+    "effective_value": 10000,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.emit_workers",
+    "effective_value": 4,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.tick_ttl_ms",
+    "effective_value": 2000,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.ws_heartbeat_sec",
+    "effective_value": 20.0,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.ws_receive_timeout_sec",
+    "effective_value": 60.0,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.proxy_batch_size",
+    "effective_value": 100,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.proxy_queue_get_timeout_sec",
+    "effective_value": 0.01,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system.market_data.proxy_idle_sleep_sec",
+    "effective_value": 0.01,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.system_config_version",
+    "effective_value": "1.0.1",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.regime_config_version",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.wald.alpha",
+    "effective_value": 0.05,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.wald.beta",
+    "effective_value": 0.2,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.wald.mu0",
+    "effective_value": 0.0,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.wald.mu1",
+    "effective_value": 0.5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.wald.sigma",
+    "effective_value": 1.0,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.glr.alpha",
+    "effective_value": 0.05,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.glr.beta",
+    "effective_value": 0.2,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.sequential_tests.glr.min_samples",
+    "effective_value": 5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.risk_core.cvar_threshold_bps",
+    "effective_value": 120,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.risk_core.stress_scenarios",
+    "effective_value": [
+      "flash_crash",
+      "volatility_spike"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.risk_core.inventory_limits.max_abs_position",
+    "effective_value": 500,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.risk_core.inventory_limits.max_daily_notional",
+    "effective_value": 10000000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.kelly.fraction_cap",
+    "effective_value": 0.85,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.kelly.decay_half_life_days",
+    "effective_value": 5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.calibrator.state_store.backend",
+    "effective_value": "sqlite",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.calibrator.state_store.path",
+    "effective_value": "data/calibrator/state.db",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.calibrator.state_store.versioning",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.calibrator.state_store.retention_days",
+    "effective_value": 30,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hawkes.enabled",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hawkes.kernel.decay_beta_ms",
+    "effective_value": 250.0,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hawkes.eta_max",
+    "effective_value": 1.0,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hawkes.update_interval_ms",
+    "effective_value": 100,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hawkes.window_ms",
+    "effective_value": 1000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hawkes.bivariate",
+    "effective_value": false,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hotreload_whitelist",
+    "effective_value": [
+      "hmm.sticky_kappa",
+      "hmm.update_interval",
+      "hmm.change_conf_min"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.ttl_config.entry_place_ttl_ms",
+    "effective_value": 5000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.ttl_config.bracket_place_ttl_ms",
+    "effective_value": 3000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.ttl_config.cancel_ttl_ms",
+    "effective_value": 2000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.retry_config.max_tries",
+    "effective_value": 3,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.retry_config.backoff_ms",
+    "effective_value": 1000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.retry_config.jitter",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.circuit_breaker.fail_max",
+    "effective_value": 5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.circuit_breaker.reset_timeout_sec",
+    "effective_value": 30,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.circuit_breaker.exclude",
+    "effective_value": [
+      "binance.error.ClientError:.*-2010",
+      "binance.error.ClientError:.*-1021"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.circuit_breaker.open_threshold_pct",
+    "effective_value": 20,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.circuit_breaker.error_rate_window_sec",
+    "effective_value": 60,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.circuit_breaker.half_open_attempts",
+    "effective_value": 3,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.market_data.max_allowed_lag_ms",
+    "effective_value": 1000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.market_data.sequence_check_enabled",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.wal.integrity_check_enabled",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.hardening.wal.hash_algorithm",
+    "effective_value": "sha256",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.runtime.config_name",
+    "effective_value": "aurora",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "system_meta.runtime.config_dir",
+    "effective_value": "/home/wekabeka/\u041c\u0443\u0437\u044b\u043a\u0430/Phenix/config/aurora",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "ops.panic_killswitch",
+    "effective_value": true,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "ops.panic_ttl_sec",
+    "effective_value": null,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "ops.quiet_hours_utc",
+    "effective_value": [
+      "22:00-06:00"
+    ],
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "ops.allowlist_symbols",
+    "effective_value": [],
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "ops.metrics_url",
+    "effective_value": "http://localhost:8000/metrics",
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "ops.reports_dir",
+    "effective_value": "reports",
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "bridge.retry_scheduler.max_attempts",
+    "effective_value": 5,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "bridge.retry_scheduler.min_retry_delay_ms",
+    "effective_value": 500,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "bridge.retry_scheduler.backoff_factor",
+    "effective_value": 2.0,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "bridge.retry_scheduler.jitter_ms",
+    "effective_value": 50,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "domains.debug.disable_positions_stale_gate",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.debug.disable_daily_loss_limit",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.min_position_size_usd",
+    "effective_value": 10.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.liquidity_based_cap_usd",
+    "effective_value": 10000.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.risk_fraction_q",
+    "effective_value": null,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.liquidity_kappa",
+    "effective_value": 1.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.kappa_mode",
+    "effective_value": "dynamic",
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.liquidity_kappa_mode",
+    "effective_value": "dynamic",
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.risk_contract_v1",
+    "effective_value": null,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.sizing.mode",
+    "effective_value": "percent_equity",
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.sizing.percent_equity",
+    "effective_value": 0.05,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.position_sizing.sizing.fixed_notional_usd",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.qos.exposure_block_cooldown_sec",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.qos.symbol_cooldown_sec",
+    "effective_value": 3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.qos.max_intents_per_minute_per_symbol",
+    "effective_value": 6,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.qos.mode",
+    "effective_value": "shadow",
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.qos.enforce",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.features.ttl_sec",
+    "effective_value": 30,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.bar_gating.enable",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.bar_gating.bar_ms",
+    "effective_value": 900000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.behavior_fsm.enable",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.behavior_fsm.high_vol_multiplier",
+    "effective_value": 2.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.behavior_fsm.low_vol_multiplier",
+    "effective_value": 0.5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.signals.normalize",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.signals.enable_new_metrics",
+    "effective_value": true,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.risk_skew.max_skew_sec",
+    "effective_value": 5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.risk_skew.max_defer_count",
+    "effective_value": 3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.risk_skew.defer_cooldown_sec",
+    "effective_value": 2,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.arming.require_regime_warmup",
+    "effective_value": true,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.arming.retry_backoff_ms",
+    "effective_value": 250,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.decision_making.arming.max_attempts",
+    "effective_value": 3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.enable_new_metrics",
+    "effective_value": true,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volume_input_mode",
+    "effective_value": "integrate",
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.ema.period_short",
+    "effective_value": 3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.ema.period_long",
+    "effective_value": 7,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volume.sma_length",
+    "effective_value": 5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volume.window_sec",
+    "effective_value": 60,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volume.min_window_volume_usd",
+    "effective_value": 1000.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volatility.sma_length",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volatility.window_sec",
+    "effective_value": 60,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.liquidity.depth_half",
+    "effective_value": 1000.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.liquidity.kappa_min",
+    "effective_value": 0.3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.liquidity.kappa_max",
+    "effective_value": 1.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.ema_bias.clamp_min",
+    "effective_value": -0.02,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.ema_bias.clamp_max",
+    "effective_value": 0.02,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volume_spike.cap_max",
+    "effective_value": 3.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volume_spike.sma_len",
+    "effective_value": 5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volume_spike.eps",
+    "effective_value": 1e-09,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.large_trade_imbalance.window_ms",
+    "effective_value": 60000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.large_trade_imbalance.min_trades",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.large_trade_imbalance.eps",
+    "effective_value": 1e-12,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.large_trade_imbalance.use_notional",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.volatility_state.cap_max",
+    "effective_value": 3.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.depth_imbalance.use_laplace_smoothing",
+    "effective_value": true,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.delta_price.spike_filter_ms",
+    "effective_value": 60000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.enabled",
+    "effective_value": true,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.time_diff_threshold_ms",
+    "effective_value": 60000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.ttl_ms",
+    "effective_value": 60000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.min_buffer_size",
+    "effective_value": 3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.window",
+    "effective_value": 12,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.bin_ms",
+    "effective_value": 5000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.max_gap_bins",
+    "effective_value": 2,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.eps",
+    "effective_value": 1e-12,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.anchors",
+    "effective_value": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.align_mode",
+    "effective_value": "tail_min_len",
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.macro_sync.anchor_update_from_ticks",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.defaults.neutral_value",
+    "effective_value": 0.5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.defaults.zero_value",
+    "effective_value": 0.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.defaults.correlation_default",
+    "effective_value": 0.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.feature_engineering.defaults.ms_per_sec",
+    "effective_value": 1000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.risk_score_weights.delta_price_pct",
+    "effective_value": 0.1,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.risk_score_weights.obi",
+    "effective_value": 0.3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.risk_score_weights.tfi",
+    "effective_value": 0.3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.risk_score_weights.absorption_inverse",
+    "effective_value": 0.3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.trading_allowed_thresholds.max_risk_score",
+    "effective_value": 0.96,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.validation.total_weight_min",
+    "effective_value": 0.5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.validation.total_weight_max",
+    "effective_value": 2.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.risk_management.use_absorption_penalty",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.position_tracking.precision.quantity_min_threshold",
+    "effective_value": 1e-09,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.position_tracking.precision.flat_position_threshold",
+    "effective_value": 1e-12,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.position_tracking.precision.decimal_places",
+    "effective_value": 2,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.position_tracking.thread_timeouts.join_timeout_sec",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.position_tracking.positions_stale_ttl_sec",
+    "effective_value": 15,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.position_tracking.enable_market_tick_subscription",
+    "effective_value": false,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.account_observer.poll_interval_sec",
+    "effective_value": 5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.account_observer.trade_limit",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.account_observer.symbols",
+    "effective_value": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "DOGEUSDT",
+      "XRPUSDT"
+    ],
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.account_observer.thread_timeouts.join_timeout_sec",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.watchdog.ack_ttl_ms",
+    "effective_value": 8000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.watchdog.fill_ttl_ms",
+    "effective_value": 30000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.watchdog.check_interval_ms",
+    "effective_value": 1000,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.watchdog.rps_limit",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.pending_ttl_sec",
+    "effective_value": 90,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.post_fill_ttl_sec",
+    "effective_value": 5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.stale_ttl_sec",
+    "effective_value": 60,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.max_equity_utilization_pct",
+    "effective_value": 0.95,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.max_portfolio_fraction",
+    "effective_value": 0.95,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.max_long_utilization_pct",
+    "effective_value": 0.95,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.max_short_utilization_pct",
+    "effective_value": 0.95,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.max_directional_ratio",
+    "effective_value": 20.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.max_concentration_pct",
+    "effective_value": 0.1,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.exposure_guard.pending_timeout_sec",
+    "effective_value": 5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.fsm_open.idempotency_window_sec",
+    "effective_value": 60,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.order_index.ttl_sec",
+    "effective_value": 3600,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.inflight_reconcile.inflight_ttl_sec",
+    "effective_value": 60,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.inflight_reconcile.max_ttl_sec",
+    "effective_value": 120,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.inflight_reconcile.reconcile_interval_sec",
+    "effective_value": 10,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.inflight_reconcile.reconcile_retries",
+    "effective_value": 3,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.inflight_reconcile.reconcile_backoff_ms",
+    "effective_value": 500,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.inflight_reconcile.verbose_logging",
+    "effective_value": true,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.metrics_collector.window_size_minutes",
+    "effective_value": 60,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.metrics_collector.recent_rejections_minutes",
+    "effective_value": 5,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.idempotent_cancel.max_retries",
+    "effective_value": 2,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.utils.client_order_id_max_length",
+    "effective_value": 32,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "domains.execution_position.utils.basis_points_base",
+    "effective_value": 10000.0,
+    "source_file": "domains.yaml",
+    "merge_stage": "domains",
+    "stage": "domains",
+    "notes": ""
+  },
+  {
+    "key": "instruments.SOLUSDT.symbol",
+    "effective_value": "SOLUSDT",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.SOLUSDT.tick_size",
+    "effective_value": "0.01",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.SOLUSDT.step_size",
+    "effective_value": "1",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.SOLUSDT.min_qty",
+    "effective_value": "1",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.SOLUSDT.min_notional",
+    "effective_value": "5",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.ETHUSDT.symbol",
+    "effective_value": "ETHUSDT",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.ETHUSDT.tick_size",
+    "effective_value": "0.01",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.ETHUSDT.step_size",
+    "effective_value": "0.001",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.ETHUSDT.min_qty",
+    "effective_value": "0.001",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.ETHUSDT.min_notional",
+    "effective_value": "5",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.BTCUSDT.symbol",
+    "effective_value": "BTCUSDT",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.BTCUSDT.tick_size",
+    "effective_value": "0.1",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.BTCUSDT.step_size",
+    "effective_value": "0.001",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.BTCUSDT.min_qty",
+    "effective_value": "0.001",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.BTCUSDT.min_notional",
+    "effective_value": "100",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.DOGEUSDT.symbol",
+    "effective_value": "DOGEUSDT",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.DOGEUSDT.tick_size",
+    "effective_value": "0.00001",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.DOGEUSDT.step_size",
+    "effective_value": "1",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.DOGEUSDT.min_qty",
+    "effective_value": "1",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.DOGEUSDT.min_notional",
+    "effective_value": "5",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.XRPUSDT.symbol",
+    "effective_value": "XRPUSDT",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.XRPUSDT.tick_size",
+    "effective_value": "0.0001",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.XRPUSDT.step_size",
+    "effective_value": "0.1",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.XRPUSDT.min_qty",
+    "effective_value": "0.1",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "instruments.XRPUSDT.min_notional",
+    "effective_value": "5",
+    "source_file": "instruments.yaml",
+    "merge_stage": "instruments",
+    "stage": "instruments",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.version",
+    "effective_value": "1.0.0",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.assignments.ETHUSDT",
+    "effective_value": [
+      "aurora"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.assignments.SOLUSDT",
+    "effective_value": [
+      "aurora"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.assignments.DOGEUSDT",
+    "effective_value": [
+      "mean_reversion"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.assignments.XRPUSDT",
+    "effective_value": [
+      "mean_reversion"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.assignments.BTCUSDT",
+    "effective_value": [
+      "aurora",
+      "mean_reversion"
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.arbitration.mode",
+    "effective_value": "priority",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.arbitration.window_ms",
+    "effective_value": 1000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.arbitration.priority.aurora",
+    "effective_value": 1,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.arbitration.priority.mean_reversion",
+    "effective_value": 2,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.arbitration.logging.rejected_why_prefix",
+    "effective_value": "ARBITRATION_REJECT",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies_registry.arbitration.logging.log_level",
+    "effective_value": "INFO",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.type",
+    "effective_value": "tick_based",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.description",
+    "effective_value": "Tick-based multi-signal alpha strategy with regime awareness",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.testnet.signal_threshold",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.production.signal_threshold",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_threshold",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.cooldown_sec",
+    "effective_value": 10,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.side_bias_min_score",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.side_bias_penalty_factor",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.side_bias_target_ratio",
+    "effective_value": 0.6,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.side_bias_window_sec",
+    "effective_value": 60,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.retry_ttl_ms",
+    "effective_value": 5000,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.retry_max_count",
+    "effective_value": 3,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.retry_backoff_factor",
+    "effective_value": 1.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.obi",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.tfi",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.delta_price",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.ema_bias",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.volume_spike",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.volatility_state",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.depth_imbalance",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signal_weights.macro_sync",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signals.normalize",
+    "effective_value": false,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.signals.enable_new_metrics",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.min_position_size_usd",
+    "effective_value": 10.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.liquidity_based_cap_usd",
+    "effective_value": 10000.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.risk_fraction_q",
+    "effective_value": 0.05,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.liquidity_kappa",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.kappa_mode",
+    "effective_value": "dynamic",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.liquidity_kappa_mode",
+    "effective_value": "dynamic",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.risk_contract_v1",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.sizing.mode",
+    "effective_value": "fixed_notional_usd",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.sizing.percent_equity",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.position_sizing.sizing.fixed_notional_usd",
+    "effective_value": 200.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.kelly.base_probability",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.kelly.kelly_cap",
+    "effective_value": 0.25,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.kelly.kelly_alpha",
+    "effective_value": 0.8,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.kelly.payoff_ratio_r",
+    "effective_value": 1.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.qos.exposure_block_cooldown_sec",
+    "effective_value": 30,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.qos.symbol_cooldown_sec",
+    "effective_value": 1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.qos.max_intents_per_minute_per_symbol",
+    "effective_value": 60,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.qos.mode",
+    "effective_value": "defer",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.qos.enforce",
+    "effective_value": false,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.bar_gating",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.behavior_fsm.enable",
+    "effective_value": false,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.behavior_fsm.high_vol_multiplier",
+    "effective_value": 2.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.behavior_fsm.low_vol_multiplier",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.roi_exit",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.mean_reversion",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.sizing_modifiers.HIGH_VOLATILITY",
+    "effective_value": 0.6,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.sizing_modifiers.LOW_VOLATILITY",
+    "effective_value": 1.2,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.sizing_modifiers.MEAN_REVERSION",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.sizing_modifiers.UNCERTAIN",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_thresholds.HIGH_VOLATILITY",
+    "effective_value": 0.12,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_thresholds.LOW_VOLATILITY",
+    "effective_value": 0.09,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_thresholds.MEAN_REVERSION",
+    "effective_value": 0.105,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_thresholds.TREND_UP",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_thresholds.TREND_DOWN",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_thresholds.UNCERTAIN",
+    "effective_value": 0.115,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_thresholds.DEFAULT",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY",
+    "effective_value": 1.2,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY",
+    "effective_value": 0.9,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_threshold_multipliers.MEAN_REVERSION",
+    "effective_value": 1.05,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_threshold_multipliers.TREND_UP",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_threshold_multipliers.TREND_DOWN",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_threshold_multipliers.UNCERTAIN",
+    "effective_value": 1.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.regime_threshold_multipliers.DEFAULT",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.symbols_to_track",
+    "effective_value": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "DOGEUSDT",
+      "XRPUSDT"
+    ],
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.decision.neutral_threshold",
+    "effective_value": 0.18,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.ema",
+    "effective_value": 0.058,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.volume",
+    "effective_value": 0.241,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.macro",
+    "effective_value": 0.131,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.liquidity",
+    "effective_value": 0.341,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.obi",
+    "effective_value": 0.155,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.tfi",
+    "effective_value": 0.093,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.volatility",
+    "effective_value": 0.036,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.depth_imbalance",
+    "effective_value": 0.256,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.weights.delta_price",
+    "effective_value": 0.253,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.side_bias.penalty_factor",
+    "effective_value": 0.9,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.side_bias.window_sec",
+    "effective_value": 600,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.side_bias.target_ratio",
+    "effective_value": 0.6,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.regime_thresholds.HIGH_VOLATILITY",
+    "effective_value": 1.3,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.regime_thresholds.LOW_VOLATILITY",
+    "effective_value": 0.85,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.regime_thresholds.MEAN_REVERSION",
+    "effective_value": 1.05,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.regime_thresholds.DEFAULT",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.regime_sizing.HIGH_VOLATILITY",
+    "effective_value": 0.3,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.regime_sizing.LOW_VOLATILITY",
+    "effective_value": 1.9,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.regime_sizing.MEAN_REVERSION",
+    "effective_value": 0.8,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.exit.sl_pct",
+    "effective_value": 0.019,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.exit.max_hold_sec",
+    "effective_value": 900,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.take_profit.tp_low_ratio",
+    "effective_value": 0.4,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.take_profit.tp_high_ratio",
+    "effective_value": 1.4,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.take_profit.partial_exit_pct",
+    "effective_value": 0.7,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.trailing_stop.enabled",
+    "effective_value": false,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.trailing_stop.activation_pct",
+    "effective_value": 0.003,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.trailing_stop.trail_pct",
+    "effective_value": 0.006,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.trailing_stop.min_update_interval_sec",
+    "effective_value": 5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.execution",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.ema_clamp",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.signal_threshold",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.cooldown_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.allowed_regimes",
+    "effective_value": [
+      "TREND_UP",
+      "TREND_DOWN",
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "LOW_VOLATILITY",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.ETHUSDT.timeframe_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.ema",
+    "effective_value": 0.12,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.volume",
+    "effective_value": 0.18,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.macro",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.liquidity",
+    "effective_value": 0.25,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.obi",
+    "effective_value": 0.14,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.tfi",
+    "effective_value": 0.09,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.volatility",
+    "effective_value": 0.05,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.depth_imbalance",
+    "effective_value": 0.2,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.weights.delta_price",
+    "effective_value": 0.22,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.side_bias.penalty_factor",
+    "effective_value": 0.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.side_bias.window_sec",
+    "effective_value": 300,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.side_bias.target_ratio",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.regime_thresholds",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.regime_sizing.HIGH_VOLATILITY",
+    "effective_value": 5.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.regime_sizing.LOW_VOLATILITY",
+    "effective_value": 6.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.regime_sizing.MEAN_REVERSION",
+    "effective_value": 5.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.exit.sl_pct",
+    "effective_value": 0.027,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.exit.max_hold_sec",
+    "effective_value": 180,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.take_profit.tp_low_ratio",
+    "effective_value": 0.48,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.take_profit.tp_high_ratio",
+    "effective_value": 0.8,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.take_profit.partial_exit_pct",
+    "effective_value": 0.31,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.trailing_stop.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.trailing_stop.activation_pct",
+    "effective_value": 0.046,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.trailing_stop.trail_pct",
+    "effective_value": 0.018,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.trailing_stop.min_update_interval_sec",
+    "effective_value": 5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.execution",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.ema_clamp",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.signal_threshold",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.cooldown_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.allowed_regimes",
+    "effective_value": [
+      "TREND_DOWN",
+      "LOW_VOLATILITY",
+      "FLAT_NORMAL",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.SOLUSDT.timeframe_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.ema",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.volume",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.macro",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.liquidity",
+    "effective_value": 0.2,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.obi",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.tfi",
+    "effective_value": 0.12,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.volatility",
+    "effective_value": 0.08,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.depth_imbalance",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.weights.delta_price",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.side_bias.penalty_factor",
+    "effective_value": 0.3,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.side_bias.window_sec",
+    "effective_value": 300,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.side_bias.target_ratio",
+    "effective_value": 0.6,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.regime_thresholds.HIGH_VOLATILITY",
+    "effective_value": 1.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.regime_thresholds.LOW_VOLATILITY",
+    "effective_value": 0.85,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.regime_thresholds.MEAN_REVERSION",
+    "effective_value": 0.9,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.regime_thresholds.DEFAULT",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.regime_sizing.HIGH_VOLATILITY",
+    "effective_value": 0.4,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.regime_sizing.LOW_VOLATILITY",
+    "effective_value": 1.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.regime_sizing.MEAN_REVERSION",
+    "effective_value": 1.2,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.exit.sl_pct",
+    "effective_value": 0.0197,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.exit.max_hold_sec",
+    "effective_value": 660,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.take_profit.tp_low_ratio",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.take_profit.tp_high_ratio",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.take_profit.partial_exit_pct",
+    "effective_value": 0.6,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.trailing_stop.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.trailing_stop.activation_pct",
+    "effective_value": 0.015,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.trailing_stop.trail_pct",
+    "effective_value": 0.008,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.trailing_stop.min_update_interval_sec",
+    "effective_value": 5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.execution",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.ema_clamp",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.signal_threshold",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.cooldown_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.allowed_regimes",
+    "effective_value": [
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "FLAT_HIGH",
+      "LOW_VOLATILITY",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.DOGEUSDT.timeframe_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.ema",
+    "effective_value": 0.427,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.volume",
+    "effective_value": 0.385,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.macro",
+    "effective_value": 0.469,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.liquidity",
+    "effective_value": 0.199,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.obi",
+    "effective_value": 0.12,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.tfi",
+    "effective_value": 0.402,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.volatility",
+    "effective_value": 0.367,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.depth_imbalance",
+    "effective_value": 0.392,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.weights.delta_price",
+    "effective_value": 0.028,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.side_bias.penalty_factor",
+    "effective_value": 0.4,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.side_bias.window_sec",
+    "effective_value": 600,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.side_bias.target_ratio",
+    "effective_value": 0.6,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.regime_thresholds.HIGH_VOLATILITY",
+    "effective_value": 1.9,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.regime_thresholds.LOW_VOLATILITY",
+    "effective_value": 0.95,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.regime_thresholds.DEFAULT",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.regime_sizing.HIGH_VOLATILITY",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.regime_sizing.LOW_VOLATILITY",
+    "effective_value": 1.7,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.regime_sizing.MEAN_REVERSION",
+    "effective_value": 0.8,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.exit.sl_pct",
+    "effective_value": 0.0144,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.exit.max_hold_sec",
+    "effective_value": 660,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.take_profit.tp_low_ratio",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.take_profit.tp_high_ratio",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.take_profit.partial_exit_pct",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.trailing_stop.enabled",
+    "effective_value": false,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.trailing_stop.activation_pct",
+    "effective_value": 0.02,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.trailing_stop.trail_pct",
+    "effective_value": 0.01,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.trailing_stop.min_update_interval_sec",
+    "effective_value": 5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.execution",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.ema_clamp",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.signal_threshold",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.cooldown_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.allowed_regimes",
+    "effective_value": [
+      "TREND_DOWN",
+      "LOW_VOLATILITY",
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.XRPUSDT.timeframe_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.ema",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.volume",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.macro",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.liquidity",
+    "effective_value": 0.15,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.obi",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.tfi",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.volatility",
+    "effective_value": 0.1,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.depth_imbalance",
+    "effective_value": 0.05,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.weights.delta_price",
+    "effective_value": 0.05,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.side_bias.penalty_factor",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.side_bias.window_sec",
+    "effective_value": 600,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.side_bias.target_ratio",
+    "effective_value": 0.6,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.regime_thresholds.HIGH_VOLATILITY",
+    "effective_value": 1.2,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.regime_thresholds.LOW_VOLATILITY",
+    "effective_value": 0.9,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.regime_thresholds.MEAN_REVERSION",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.regime_thresholds.DEFAULT",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.regime_sizing.HIGH_VOLATILITY",
+    "effective_value": 3.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.regime_sizing.LOW_VOLATILITY",
+    "effective_value": 4.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.regime_sizing.MEAN_REVERSION",
+    "effective_value": 3.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.exit.sl_pct",
+    "effective_value": 0.02,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.exit.max_hold_sec",
+    "effective_value": 600,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.take_profit.tp_low_ratio",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.take_profit.tp_high_ratio",
+    "effective_value": 1.0,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.take_profit.partial_exit_pct",
+    "effective_value": 0.5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.trailing_stop.enabled",
+    "effective_value": false,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.trailing_stop.activation_pct",
+    "effective_value": 0.02,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.trailing_stop.trail_pct",
+    "effective_value": 0.01,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.trailing_stop.min_update_interval_sec",
+    "effective_value": 5,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.execution",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.ema_clamp",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.signal_threshold",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.cooldown_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.allowed_regimes",
+    "effective_value": [
+      "TREND_UP",
+      "TREND_DOWN",
+      "LOW_VOLATILITY",
+      "MEAN_REVERSION",
+      "FLAT_LOW",
+      "FLAT_NORMAL"
+    ],
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.aurora.assets.BTCUSDT.timeframe_sec",
+    "effective_value": null,
+    "source_file": "strategies/aurora.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.enabled",
+    "effective_value": true,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.timeframe_sec",
+    "effective_value": 60,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.bb_window",
+    "effective_value": 20,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.bb_num_std",
+    "effective_value": 2.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.atr_window",
+    "effective_value": 14,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.rsi_window",
+    "effective_value": 14,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.entry_threshold",
+    "effective_value": 0.05,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.rsi_oversold",
+    "effective_value": 30.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.rsi_overbought",
+    "effective_value": 70.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.min_bars",
+    "effective_value": 25,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.min_bb_width",
+    "effective_value": 0.001,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.max_bb_width",
+    "effective_value": 0.05,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.sl_atr_mult",
+    "effective_value": 1.5,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.tp_to_mid",
+    "effective_value": true,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.strategy.cooldown_sec",
+    "effective_value": 60,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_thresholds.high_vol_pct",
+    "effective_value": 0.003,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_thresholds.low_vol_pct",
+    "effective_value": 0.001,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.bb_window",
+    "effective_value": 20,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.bb_num_std",
+    "effective_value": 2.1,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.min_bb_width",
+    "effective_value": 0.005,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.entry_threshold",
+    "effective_value": 0.05,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.tp_to_mid",
+    "effective_value": false,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.sl_atr_mult",
+    "effective_value": 1.5,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.cooldown_sec",
+    "effective_value": 210,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.strategy.allowed_regimes",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.risk.position_size_usd",
+    "effective_value": 150.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.risk.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.allowed_regimes",
+    "effective_value": [
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "FLAT_HIGH",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.DOGEUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.bb_window",
+    "effective_value": 40,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.bb_num_std",
+    "effective_value": 2.3,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.min_bb_width",
+    "effective_value": 0.006,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.entry_threshold",
+    "effective_value": 0.05,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.tp_to_mid",
+    "effective_value": true,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.sl_atr_mult",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.cooldown_sec",
+    "effective_value": 0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.strategy.allowed_regimes",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.risk.position_size_usd",
+    "effective_value": 150.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.risk.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.allowed_regimes",
+    "effective_value": [
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.BTCUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.enabled",
+    "effective_value": true,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.bb_window",
+    "effective_value": 40,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.bb_num_std",
+    "effective_value": 2.5,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.min_bb_width",
+    "effective_value": 0.007,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.entry_threshold",
+    "effective_value": 0.05,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.tp_to_mid",
+    "effective_value": true,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.sl_atr_mult",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.cooldown_sec",
+    "effective_value": 165,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.strategy.allowed_regimes",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.risk.position_size_usd",
+    "effective_value": 150.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.risk.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.allowed_regimes",
+    "effective_value": [
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "FLAT_HIGH",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.XRPUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.enabled",
+    "effective_value": false,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.bb_window",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.bb_num_std",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.min_bb_width",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.entry_threshold",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.tp_to_mid",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.sl_atr_mult",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.cooldown_sec",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.strategy.allowed_regimes",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.risk.position_size_usd",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.risk.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.allowed_regimes",
+    "effective_value": [
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "FLAT_HIGH",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.ETHUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.enabled",
+    "effective_value": false,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.bb_window",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.bb_num_std",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.min_bb_width",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.entry_threshold",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.tp_to_mid",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.sl_atr_mult",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.cooldown_sec",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.strategy.allowed_regimes",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.risk.position_size_usd",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.risk.max_risk_score",
+    "effective_value": null,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.allowed_regimes",
+    "effective_value": [
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "FLAT_HIGH",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.assets.SOLUSDT.position_mode",
+    "effective_value": "STRICT",
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_LOW.sizing_mult",
+    "effective_value": 0.8,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_LOW.stop_mult",
+    "effective_value": 0.6,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_LOW.target_mult",
+    "effective_value": 0.8,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_NORMAL.sizing_mult",
+    "effective_value": 1.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_NORMAL.stop_mult",
+    "effective_value": 1.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_NORMAL.target_mult",
+    "effective_value": 1.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_HIGH.sizing_mult",
+    "effective_value": 0.7,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_HIGH.stop_mult",
+    "effective_value": 1.5,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.regime_sizing.FLAT_HIGH.target_mult",
+    "effective_value": 1.2,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.allowed_regimes",
+    "effective_value": [
+      "FLAT_LOW",
+      "FLAT_NORMAL",
+      "FLAT_HIGH",
+      "MEAN_REVERSION"
+    ],
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.risk.position_size_usd",
+    "effective_value": 100.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.risk.max_concurrent_positions",
+    "effective_value": 3,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.risk.daily_loss_limit_usd",
+    "effective_value": 50.0,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.risk.expected_pnl_multiplier",
+    "effective_value": 1.5,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.risk.fees_pct",
+    "effective_value": 0.0004,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.risk.slippage_pct",
+    "effective_value": 0.0002,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "strategies.mean_reversion.emit_trade_intent_directly",
+    "effective_value": false,
+    "source_file": "strategies/mean_reversion.yaml",
+    "merge_stage": "strategy",
+    "stage": "strategy",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.brackets.sl.fixed_bps",
+    "effective_value": 40,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.brackets.tp.fixed_bps",
+    "effective_value": 80,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.brackets.oco_emulation",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.brackets.stop_loss_bps",
+    "effective_value": 40,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.brackets.offset_bps",
+    "effective_value": 5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.emergency",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.auto",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.orphan_monitor.enabled",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.manage.failsafe",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.max_equity_utilization_pct",
+    "effective_value": 2.0,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.max_portfolio_fraction",
+    "effective_value": 2.0,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.max_side_utilization_pct.long",
+    "effective_value": 1.5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.max_side_utilization_pct.short",
+    "effective_value": 1.5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.max_directional_ratio",
+    "effective_value": 50.0,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.per_symbol_cap_pct",
+    "effective_value": 0.08,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.pending_ttl_sec",
+    "effective_value": 90,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.pending_reservation_ttl_sec",
+    "effective_value": 45,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.post_fill_hold_ttl_sec",
+    "effective_value": 5,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.positions_stale_ttl_sec",
+    "effective_value": 15,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.leverage_defaults.BTCUSDT",
+    "effective_value": 20,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.leverage_defaults.ETHUSDT",
+    "effective_value": 20,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.leverage_defaults.SOLUSDT",
+    "effective_value": 20,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.leverage_defaults.XRPUSDT",
+    "effective_value": 20,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.leverage_defaults.DOGEUSDT",
+    "effective_value": 20,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.leverage_defaults.__default__",
+    "effective_value": 20,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.count_pending_orders",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.exposure.exclude_reduce_only",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.watchdog.ack_ttl_ms",
+    "effective_value": 8000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.watchdog.fill_ttl_ms",
+    "effective_value": 60000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.watchdog.check_interval_ms",
+    "effective_value": 1000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.watchdog.rps_limit",
+    "effective_value": 10,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.fallback",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.limit_orders",
+    "effective_value": null,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.orders.default_ttl_seconds",
+    "effective_value": 15,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.fsm_periodic_cleanup_enabled",
+    "effective_value": false,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.anti_race_close_ms",
+    "effective_value": 800,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.open_order_type",
+    "effective_value": "MARKET",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_params.LIMIT.timeInForce",
+    "effective_value": "GTC",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_params.STOP_MARKET.workingType",
+    "effective_value": "MARK_PRICE",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_params.TAKE_PROFIT_MARKET.workingType",
+    "effective_value": "MARK_PRICE",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_params.TRAILING_STOP_MARKET.callbackRate",
+    "effective_value": "0.5",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.preflight_backoff_ms",
+    "effective_value": [
+      120,
+      250,
+      400,
+      800,
+      1200,
+      1800
+    ],
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.min_post_interval_per_symbol_ms",
+    "effective_value": 300,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.allow_trade_with_guardian_tidy_only",
+    "effective_value": false,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_guardian.unified",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_guardian.emit_tidy_event",
+    "effective_value": true,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_guardian.cleanup_ttl_ms",
+    "effective_value": 6000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_guardian.symbol_cooldown_ms",
+    "effective_value": 4000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_guardian.poll_interval_ms",
+    "effective_value": 5000,
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "execution.order_guardian.ledger_db_path",
+    "effective_value": "data/order_ledger.db",
+    "source_file": "unknown",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "brackets",
+    "effective_value": null,
+    "source_file": "system.yaml",
+    "merge_stage": "system",
+    "stage": "system",
+    "notes": ""
+  },
+  {
+    "key": "models.sma_trend.sma_short_period",
+    "effective_value": 10,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.sma_trend.sma_long_period",
+    "effective_value": 50,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.sma_trend.confidence_multiplier",
+    "effective_value": 20.0,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.sma_trend.confidence_min",
+    "effective_value": 0.5,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.sma_trend.confidence_max",
+    "effective_value": 0.95,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.enabled",
+    "effective_value": true,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.atr_period",
+    "effective_value": 14,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.atr_sma_length",
+    "effective_value": 100,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.allow_close_to_close_atr",
+    "effective_value": true,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.threshold_multiplier",
+    "effective_value": 2.0,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.low_vol_multiplier",
+    "effective_value": 0.5,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.high_vol_confidence_multiplier",
+    "effective_value": 2.0,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.volatility.low_vol_confidence_multiplier",
+    "effective_value": 3.0,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.mean_reversion.threshold",
+    "effective_value": 0.005,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "models.mean_reversion.confidence_multiplier",
+    "effective_value": 100.0,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hmm.enabled",
+    "effective_value": true,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hmm.K",
+    "effective_value": 3,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hmm.emission.cov_kind",
+    "effective_value": "diag",
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hmm.sticky_kappa",
+    "effective_value": 0.15,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hmm.update_interval",
+    "effective_value": 250,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hmm.history_hours",
+    "effective_value": 48,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hmm.confidence_threshold",
+    "effective_value": 0.75,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "features.rv_window",
+    "effective_value": 120,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "features.trend_window",
+    "effective_value": 180,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "features.obi_window",
+    "effective_value": 60,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "features.spread_min_ticks",
+    "effective_value": 1,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "features.micro_return_window",
+    "effective_value": 1,
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  },
+  {
+    "key": "hotreload_whitelist",
+    "effective_value": [
+      "hmm.sticky_kappa",
+      "hmm.update_interval",
+      "hmm.change_conf_min"
+    ],
+    "source_file": "regime.yaml",
+    "merge_stage": "override",
+    "stage": "override",
+    "notes": ""
+  }
+]

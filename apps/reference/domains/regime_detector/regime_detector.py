@@ -87,6 +87,9 @@ class RegimeDetector:
         self.atr_sma_length = int(vol_cfg.atr_sma_length)
         self._allow_close_to_close_atr = bool(vol_cfg.allow_close_to_close_atr)
 
+        # NOTE: mean_reversion config validated by Pydantic at AuroraConfig level.
+        # No explicit checks needed here - missing fields raise ValidationError on config load.
+
         # Per-symbol rolling buffers for computing SMA/ATR if features don't provide them
         self._price_buf: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=max(
@@ -195,9 +198,12 @@ class RegimeDetector:
         data_drops: list[str] = []
         data_notes: list[str] = []
 
+        # P0-1 FIX: Check for stale features BEFORE any buffer updates
+        is_stale = False
         if tick_ttl_ms > 0 and (now_ms - ts_ms) > tick_ttl_ms:
             data_drops.append("stale_features")
             inc_data_quality_drop(domain="regime_detector", reason="stale_features")
+            is_stale = True
 
         if "price" not in features:
             inc_data_quality_drop(domain="regime_detector", reason="missing_price")
@@ -211,7 +217,33 @@ class RegimeDetector:
             inc_data_quality_drop(domain="regime_detector", reason="bad_price")
             return
 
-        # Feed price buffer (even in warmup; price<=0 won't help calculations)
+        # P0-1 FIX: Do NOT update buffers with stale data - emit UNCERTAIN and return early
+        if is_stale:
+            conf_min = Decimal(str(self.model_config.confidence_min))
+            warmup = {
+                "ticks_seen": int(self._ticks_seen.get(symbol, 0)),
+                "full_ready": False,
+                "ready": {},
+                "reasons": ["drop:stale_features"],
+            }
+            payload = {
+                "ts": ts_ms,
+                "symbol": symbol,
+                "regime": "UNCERTAIN",
+                "confidence": str(conf_min),
+                "source_model": "data_quality_gate",
+                "warmup": warmup,
+                "data_quality": {"drops": data_drops, "notes": data_notes},
+            }
+            self.fsm.emit(
+                "EVT:REGIME_DETECTED",
+                payload,
+                why=f"Regime UNCERTAIN (stale data) for {symbol}",
+            )
+            self._last_emitted_regime[symbol] = "UNCERTAIN"
+            return
+
+        # Feed price buffer (only with fresh, valid data)
         self._price_buf[symbol].append(price)
 
         # Compute SMA if not provided (strict: no fallbacks to magic, only buffer-derived)

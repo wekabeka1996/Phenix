@@ -45,6 +45,7 @@ assignments:
 
 arbitration:
   mode: priority
+  window_ms: 1000
   priority:
     aurora: 1
     mean_reversion: 2
@@ -85,12 +86,6 @@ def base_instruments_yaml():
     return _read_canonical_yaml("instruments.yaml")
 
 
-@pytest.fixture
-def base_aurora_instruments_yaml():
-    """Canonical aurora_instruments.yaml (SSOT)."""
-    return _read_canonical_yaml("aurora_instruments.yaml")
-
-
 @pytest.fixture(autouse=True)
 def create_strategy_profiles(temp_config_dir):
     """CFG-STRATEGIES-SSOT-03: Create strategy profile files (aurora.yaml, mean_reversion.yaml)."""
@@ -107,8 +102,7 @@ def create_strategy_profiles(temp_config_dir):
 
 
 def test_strict_mode_fails_on_missing_strategies_yaml(
-    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml,
-    base_instruments_yaml, base_aurora_instruments_yaml
+    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
     """Test A1: Strict mode fails when strategies.yaml is missing."""
     # Setup: NO strategies.yaml
@@ -117,14 +111,14 @@ def test_strict_mode_fails_on_missing_strategies_yaml(
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
-    (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)
 
     # Enable strict mode
     os.environ["STRICT_CONFIG_CONFLICTS"] = "1"
     try:
         loader = ConfigLoader(config_dir=temp_config_dir)
         
-        with pytest.raises(ValueError) as exc_info:
+        from apps.reference.config_contract import ConfigContractError
+        with pytest.raises(ConfigContractError) as exc_info:
             loader.load_config()
 
         error_msg = str(exc_info.value)
@@ -134,37 +128,31 @@ def test_strict_mode_fails_on_missing_strategies_yaml(
         os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
 
 
-def test_non_strict_mode_warns_on_missing_strategies_yaml(
-    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml,
-    base_instruments_yaml, base_aurora_instruments_yaml, caplog
+def test_missing_strategies_yaml_fails_even_non_strict(
+    temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
-    """Test A2: Non-strict mode warns but loads when strategies.yaml is missing."""
+    """Test A2: strategies.yaml is mandatory even in non-strict mode."""
     # Setup: NO strategies.yaml
     (temp_config_dir / "trading.yaml").write_text(base_trading_yaml)
     (temp_config_dir / "system.yaml").write_text(base_system_yaml)
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
-    (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)
 
     # Disable strict mode
     os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
-
-    loader = ConfigLoader(config_dir=temp_config_dir)
-    config = loader.load_config()
-
-    # Should load successfully
-    assert config is not None, "Config должен загрузиться в non-strict mode"
-    assert config.strategies_registry is None, "strategies_registry должен быть None"
-
-    # Check warning was logged
-    assert any("strategies.yaml" in rec.message.lower() for rec in caplog.records), \
-        "Non-strict mode должен логировать WARNING о missing strategies.yaml"
+    try:
+        loader = ConfigLoader(config_dir=temp_config_dir)
+        from apps.reference.config_contract import ConfigContractError
+        with pytest.raises(ConfigContractError):
+            loader.load_config()
+    finally:
+        os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
 
 
 def test_strategies_yaml_extra_keys_fail_validation(
     temp_config_dir, base_trading_yaml, base_system_yaml, base_regime_yaml, base_domains_yaml,
-    base_instruments_yaml, base_aurora_instruments_yaml
+    base_instruments_yaml
 ):
     """Test B: Extra keys in strategies.yaml cause Pydantic ValidationError (extra='forbid')."""
     strategies_with_extra_key = """
@@ -176,6 +164,7 @@ assignments:
 
 arbitration:
   mode: priority
+  window_ms: 1000
   priority:
     aurora: 1
   logging:
@@ -192,7 +181,6 @@ unknown_key: "invalid"
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
-    (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     
@@ -206,7 +194,7 @@ unknown_key: "invalid"
 
 def test_strategies_yaml_loads_successfully(
     temp_config_dir, base_strategies_yaml, base_trading_yaml, base_system_yaml,
-    base_regime_yaml, base_domains_yaml, base_instruments_yaml, base_aurora_instruments_yaml
+    base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
     """Test C: Valid strategies.yaml loads successfully with correct structure."""
     (temp_config_dir / "strategies.yaml").write_text(base_strategies_yaml)
@@ -215,7 +203,6 @@ def test_strategies_yaml_loads_successfully(
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
-    (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     config = loader.load_config()
@@ -242,7 +229,7 @@ def test_strategies_yaml_loads_successfully(
 
 def test_invalid_mode_fails_validation(
     temp_config_dir, base_trading_yaml, base_system_yaml,
-    base_regime_yaml, base_domains_yaml, base_instruments_yaml, base_aurora_instruments_yaml
+    base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
     """Test D: Invalid arbitration mode causes ValidationError."""
     strategies_with_invalid_mode = """
@@ -254,6 +241,7 @@ assignments:
 
 arbitration:
   mode: prioirty  # TYPO: should be 'priority'
+  window_ms: 1000
   priority:
     aurora: 1
   logging:
@@ -267,7 +255,6 @@ arbitration:
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
-    (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     
@@ -281,7 +268,7 @@ arbitration:
 
 def test_missing_priority_for_hybrid_symbol_fails(
     temp_config_dir, base_trading_yaml, base_system_yaml,
-    base_regime_yaml, base_domains_yaml, base_instruments_yaml, base_aurora_instruments_yaml
+    base_regime_yaml, base_domains_yaml, base_instruments_yaml
 ):
     """Test E: Missing priority for hybrid symbol strategy causes ValidationError."""
     strategies_missing_priority = """
@@ -294,6 +281,7 @@ assignments:
 
 arbitration:
   mode: priority
+  window_ms: 1000
   priority:
     aurora: 1
     # MISSING: mean_reversion priority
@@ -308,7 +296,6 @@ arbitration:
     (temp_config_dir / "regime.yaml").write_text(base_regime_yaml)
     (temp_config_dir / "domains.yaml").write_text(base_domains_yaml)
     (temp_config_dir / "instruments.yaml").write_text(base_instruments_yaml)
-    (temp_config_dir / "aurora_instruments.yaml").write_text(base_aurora_instruments_yaml)
 
     loader = ConfigLoader(config_dir=temp_config_dir)
     

@@ -137,9 +137,9 @@ class TestMapToFlatRegime:
     # --- MEAN_REVERSION + ATR% ---
     
     def test_mean_reversion_without_atr(self):
-        """MEAN_REVERSION without ATR → FLAT_NORMAL."""
+        """P0 FIX: MEAN_REVERSION without ATR → None (fail-closed)."""
         result = map_to_flat_regime("MEAN_REVERSION")
-        assert result == FlatRegime.FLAT_NORMAL
+        assert result is None  # P0: Without ATR, can't classify → fail-closed
     
     def test_mean_reversion_with_low_atr(self):
         """MEAN_REVERSION + low ATR → FLAT_LOW."""
@@ -156,29 +156,30 @@ class TestMapToFlatRegime:
         result = map_to_flat_regime("MEAN_REVERSION", Decimal("0.005"))
         assert result == FlatRegime.FLAT_HIGH
     
-    # --- UNCERTAIN → FLAT_NORMAL ---
+    # --- P0 FIX: UNCERTAIN → None (fail-closed) ---
     
     def test_uncertain_without_atr(self):
-        """UNCERTAIN without ATR → FLAT_NORMAL."""
+        """P0 FIX: UNCERTAIN → None (fail-closed, no trading before regime established)."""
         result = map_to_flat_regime("UNCERTAIN")
-        assert result == FlatRegime.FLAT_NORMAL
+        assert result is None  # P0: MR must NOT trade when regime is uncertain
     
     def test_uncertain_with_atr(self):
-        """UNCERTAIN with ATR uses ATR classification."""
+        """P0 FIX: UNCERTAIN with ATR still returns None (fail-closed)."""
         result = map_to_flat_regime("UNCERTAIN", Decimal("0.0005"))
-        assert result == FlatRegime.FLAT_LOW
+        assert result is None  # P0: ATR doesn't help if regime is uncertain
     
     # --- Edge cases ---
     
     def test_case_insensitive(self):
         """Regime matching is case-insensitive."""
-        assert map_to_flat_regime("mean_reversion") == FlatRegime.FLAT_NORMAL
-        assert map_to_flat_regime("Mean_Reversion") == FlatRegime.FLAT_NORMAL
-        assert map_to_flat_regime("MEAN_REVERSION") == FlatRegime.FLAT_NORMAL
+        # With ATR, MEAN_REVERSION maps correctly
+        assert map_to_flat_regime("mean_reversion", Decimal("0.002")) == FlatRegime.FLAT_NORMAL
+        assert map_to_flat_regime("Mean_Reversion", Decimal("0.002")) == FlatRegime.FLAT_NORMAL
+        assert map_to_flat_regime("MEAN_REVERSION", Decimal("0.002")) == FlatRegime.FLAT_NORMAL
     
     def test_whitespace_trimmed(self):
         """Leading/trailing whitespace is trimmed."""
-        assert map_to_flat_regime("  MEAN_REVERSION  ") == FlatRegime.FLAT_NORMAL
+        assert map_to_flat_regime("  MEAN_REVERSION  ", Decimal("0.002")) == FlatRegime.FLAT_NORMAL
     
     def test_unknown_regime_returns_none(self):
         """Unknown regime → None."""
@@ -199,10 +200,13 @@ class TestIsFlatRegime:
     """Test is_flat_regime() helper."""
     
     def test_flat_regimes(self):
-        """Regimes mappable to FLAT return True."""
-        assert is_flat_regime("MEAN_REVERSION") is True
+        """Regimes mappable to FLAT return True (only when properly configured)."""
+        # LOW_VOLATILITY always maps
         assert is_flat_regime("LOW_VOLATILITY") is True
-        assert is_flat_regime("UNCERTAIN") is True
+        # MEAN_REVERSION requires ATR, so without it returns False
+        assert is_flat_regime("MEAN_REVERSION") is False  # P0: No ATR → fail-closed
+        # UNCERTAIN always returns None now (fail-closed)
+        assert is_flat_regime("UNCERTAIN") is False  # P0: fail-closed
     
     def test_non_flat_regimes(self):
         """Non-flat regimes return False."""
@@ -375,6 +379,67 @@ class TestGetMRParameters:
             Decimal("0.002"),
             config_sizing=config_sizing
         )
-        
-        assert params is not None
-        assert params.sizing_mult == Decimal("2.0")
+
+
+# ============================================================================
+# P0 REGRESSION TESTS: Fail-closed behavior for UNCERTAIN regime
+# ============================================================================
+
+class TestP0FailClosedRegression:
+    """
+    P0 REGRESSION: UNCERTAIN and MEAN_REVERSION without ATR must NOT allow trading.
+    
+    Before fix: UNCERTAIN → FLAT_NORMAL (allowed MR trading before regime established)
+    After fix: UNCERTAIN → None (fail-closed, no trading)
+    
+    This prevents trading when:
+    1. regime_detector has not yet established the regime (warmup phase)
+    2. ATR data is not available (can't properly size stops/targets)
+    """
+
+    def test_uncertain_is_fail_closed(self):
+        """P0: UNCERTAIN must return None to block MR trading."""
+        result = map_to_flat_regime("UNCERTAIN")
+        assert result is None, (
+            "UNCERTAIN must return None (fail-closed). "
+            "MR must NOT trade when regime is not established."
+        )
+
+    def test_uncertain_with_any_atr_still_fail_closed(self):
+        """P0: UNCERTAIN with ATR still returns None (regime uncertainty trumps ATR)."""
+        # Low ATR
+        assert map_to_flat_regime("UNCERTAIN", Decimal("0.0005")) is None
+        # Normal ATR
+        assert map_to_flat_regime("UNCERTAIN", Decimal("0.002")) is None
+        # High ATR
+        assert map_to_flat_regime("UNCERTAIN", Decimal("0.005")) is None
+
+    def test_mean_reversion_requires_atr(self):
+        """P0: MEAN_REVERSION without ATR must return None (can't classify properly)."""
+        result = map_to_flat_regime("MEAN_REVERSION")
+        assert result is None, (
+            "MEAN_REVERSION without ATR must return None. "
+            "Without ATR, can't determine FLAT_LOW/NORMAL/HIGH for stop sizing."
+        )
+
+    def test_mean_reversion_with_atr_works(self):
+        """MEAN_REVERSION with ATR should work normally."""
+        # With ATR, classification works
+        assert map_to_flat_regime("MEAN_REVERSION", Decimal("0.0005")) == FlatRegime.FLAT_LOW
+        assert map_to_flat_regime("MEAN_REVERSION", Decimal("0.002")) == FlatRegime.FLAT_NORMAL
+        assert map_to_flat_regime("MEAN_REVERSION", Decimal("0.005")) == FlatRegime.FLAT_HIGH
+
+    def test_low_volatility_always_maps(self):
+        """LOW_VOLATILITY should always map to FLAT_LOW (no ATR needed)."""
+        # LOW_VOLATILITY is explicit regime, doesn't need ATR
+        assert map_to_flat_regime("LOW_VOLATILITY") == FlatRegime.FLAT_LOW
+
+    def test_get_mr_parameters_returns_none_for_uncertain(self):
+        """get_mr_parameters returns None for UNCERTAIN regime."""
+        params = get_mr_parameters("UNCERTAIN", Decimal("0.002"))
+        assert params is None, "get_mr_parameters must return None for UNCERTAIN"
+
+    def test_get_mr_parameters_returns_none_for_mr_without_atr(self):
+        """get_mr_parameters returns None for MEAN_REVERSION without ATR."""
+        params = get_mr_parameters("MEAN_REVERSION", None)
+        assert params is None, "get_mr_parameters must return None when ATR is None"

@@ -61,9 +61,10 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
     )
 
     cfg = SimpleNamespace(
-        trading=SimpleNamespace(tca_prefs={"max_slippage_bps": 1, "max_latency_ms": 100, "maker_preference": "maker"},
-                               risk_budgets={"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 100},
-                               decision=SimpleNamespace(signal_threshold=0.0)),
+        trading=SimpleNamespace(
+            tca_prefs={"max_slippage_bps": 1, "max_latency_ms": 100, "maker_preference": "maker"},
+            risk_budgets={"trade_cvar95_max_bps": 100, "session_cvar95_max_bps": 100},
+        ),
         domains=SimpleNamespace(
             decision_making=SimpleNamespace(
                 position_sizing=SimpleNamespace(
@@ -72,14 +73,38 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
                     risk_fraction_q=None,
                     liquidity_kappa_mode="dynamic",
                     liquidity_kappa=1.0,
-                    sizing=SimpleNamespace(mode="percent_equity", percent_equity=0.02, fixed_notional_usd=None, fixed_qty=None),
                 )
             ),
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
             risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
         ),
-        instruments={symbol: SimpleNamespace(tick_size=0.1, step_size=0.001)},
-        aurora_instruments={},
+        instruments={
+            symbol: SimpleNamespace(
+                tick_size="0.1",
+                step_size="0.001",
+                min_qty="0.001",
+                min_notional="100",
+                execution=SimpleNamespace(
+                    margin_mode="isolated",
+                    target_leverage=20,
+                    leverage_policy="verify_only",
+                    max_notional_utilization=0.8,
+                ),
+                sizing=SimpleNamespace(margin_pct=0.02),
+            )
+        },
+        strategies=SimpleNamespace(
+            aurora=SimpleNamespace(
+                decision=SimpleNamespace(
+                    signal_threshold=0.0,
+                    retry_ttl_ms=1000,
+                    retry_max_count=1,
+                    retry_backoff_factor=1.0,
+                    kelly=None,
+                ),
+                assets={},
+            )
+        ),
         strategies_registry=strategies_registry,
     )
 

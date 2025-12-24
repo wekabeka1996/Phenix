@@ -315,6 +315,10 @@ class DecisionContext:
     symbol: str
     ts: int
     features: Dict[str, str] = field(default_factory=dict)
+
+    # Tracks missing/invalid raw feature keys observed while parsing.
+    # Values are short reasons like: "missing", "invalid", "invalid_optional".
+    missing_fields: Dict[str, str] = field(default_factory=dict)
     
     # Cached views (populated lazily)
     _trend: Optional[TrendView] = field(default=None, repr=False)
@@ -324,15 +328,33 @@ class DecisionContext:
     _crowding: Optional[CrowdingView] = field(default=None, repr=False)
     
     def _get_feature(self, key: str, default: Decimal = Decimal("0")) -> Decimal:
-        """Get feature value as Decimal with default."""
-        return safe_decimal(self.features.get(key), default)
+        """Get feature value as Decimal with default (and track missing/invalid)."""
+        if key not in self.features:
+            self.missing_fields.setdefault(key, "missing")
+            return default
+
+        raw_value = self.features.get(key)
+        if raw_value is None:
+            self.missing_fields.setdefault(key, "missing")
+            return default
+        try:
+            return Decimal(str(raw_value))
+        except (InvalidOperation, ValueError, TypeError):
+            self.missing_fields.setdefault(key, "invalid")
+            return default
     
     def _get_feature_optional(self, key: str) -> Optional[Decimal]:
-        """Get optional feature value as Decimal, None if missing."""
+        """Get optional feature value as Decimal, None if missing (track invalid if present)."""
+        if key not in self.features:
+            return None
         value = self.features.get(key)
         if value is None:
             return None
-        return safe_decimal_optional(value)
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            self.missing_fields.setdefault(key, "invalid_optional")
+            return None
     
     @property
     def trend(self) -> TrendView:

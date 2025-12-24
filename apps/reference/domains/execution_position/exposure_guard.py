@@ -566,9 +566,21 @@ class ExposureGuard:
         """
         now = time.time()
 
+        symbol = str(symbol or "").strip()
+        if not symbol:
+            raise ValueError("ExposureGuard.reserve requires non-empty symbol")
+
+        side = str(side or "").upper()
+        if side not in {"BUY", "SELL", "LONG", "SHORT"}:
+            side = "BUY"
+
+        # Idempotency: do not create duplicate reservations/log entries for same key.
+        if key in self.state.pending_exposure or key in self.state.reservations:
+            self.logger.debug(f"EXPOSURE_RESERVE_IDEMPOTENT: key={key} already reserved")
+            return
+
         # Calculate reserve margin
-        symbol_leverage = self.resolve_symbol_leverage(
-            symbol) if symbol else Decimal("1")
+        symbol_leverage = self.resolve_symbol_leverage(symbol)
         reserve_margin = notional_usd / symbol_leverage
 
         # Store reservation data
@@ -583,6 +595,7 @@ class ExposureGuard:
             "leverage": symbol_leverage,
             "ts": now,
             "reduce_only": reduce_only,
+            "symbol": symbol,
             "side": side,
         }
 
@@ -660,6 +673,12 @@ class ExposureGuard:
             symbol: Trading symbol for leverage calculation
             side: Order side (BUY or SELL)
         """
+        if not symbol:
+            symbol = str(self.state.pending_exposure.get(key, {}).get("symbol", "") or "").strip()
+        side = str(side or self.state.pending_exposure.get(key, {}).get("side", "SELL")).upper()
+        if side not in {"BUY", "SELL", "LONG", "SHORT"}:
+            side = "SELL"
+
         if key in self.state.reservations:
             # Calculate filled margin
             symbol_leverage = self.resolve_symbol_leverage(
@@ -673,6 +692,7 @@ class ExposureGuard:
                 "margin": filled_margin,
                 "leverage": symbol_leverage,
                 "exp_ts": expiration_ts,
+                "symbol": symbol,
                 "side": side,
             }
             self.state.reservations.pop(key, None)

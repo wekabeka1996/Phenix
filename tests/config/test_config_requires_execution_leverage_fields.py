@@ -194,94 +194,64 @@ class TestLiveExecutionFailClosed:
         When is_live_execution=True, loader should fail if any active instrument
         is missing execution config (margin_mode/target_leverage/etc).
         """
-        from apps.reference.config_loader import ConfigLoader
-        from pathlib import Path
         import tempfile
-        import yaml
-        
-        # Create minimal config with LIVE mode but missing execution fields
+        import shutil
+        from pathlib import Path
+        from apps.reference.config_loader import ConfigLoader
+
+        repo_root = Path(__file__).resolve().parents[2]
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_dir = Path(tmpdir)
-            
-            # Create required YAML files
-            system_yaml = {
-                "mode": "LIVE",
-                "api_mode": "mainnet",
-                "trading_mode": "hybrid_live_data_testnet_exec",
-            }
-            trading_yaml = {
-                "binance_api": {
-                    "use_testnet": False,
-                    "live": {"api_key": "test", "api_secret": "secret"},
-                    "testnet": {"api_key": "testnet", "api_secret": "secret"},
-                },
-                "trading": {
-                    "mode": "LIVE",
-                    "decision": {"signal_threshold": 0.0, "symbols_to_track": ["BTCUSDT"]},
-                },
-            }
-            domains_yaml = {
-                "decision_making": {
-                    "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 1000},
-                    "qos": {"symbol_cooldown_sec": 60, "mode": "block", "enforce": True, 
-                            "exposure_block_cooldown_sec": 30, "max_intents_per_minute_per_symbol": 5,
-                            "max_exposure_events_per_minute": 10},
-                    "features": {"ttl_sec": 60},
-                    "bar_gating": {"enable": False, "bar_ms": 1000},
-                    "behavior_fsm": {"enable": False, "high_vol_multiplier": 1.0, "low_vol_multiplier": 1.0},
-                    "signals": {"normalize": True, "enable_new_metrics": False},
-                    "risk_skew": {"max_skew_sec": 5, "max_defer_count": 3, "defer_cooldown_sec": 1},
-                    "arming": {"require_regime_warmup": False, "retry_backoff_ms": 100, "max_attempts": 3},
-                },
-            }
-            regime_yaml = {
-                "regime": {"window_size": 100},
-            }
-            strategies_yaml = {
-                "assignments": {},  # No strategies assigned for this test
-            }
-            aurora_instruments_yaml = {}  # Empty for this test
-            # Instruments WITHOUT execution config (should cause fail in LIVE)
-            instruments_yaml = {
-                "BTCUSDT": {
-                    "tick_size": 0.1,
-                    "step_size": 0.001,
-                    # NO execution config → should fail in LIVE
-                }
-            }
-            
-            # Write files to config directory (ConfigLoader expects direct files, not aurora subdir)
-            with open(config_dir / "system.yaml", "w") as f:
-                yaml.dump(system_yaml, f)
-            with open(config_dir / "trading.yaml", "w") as f:
-                yaml.dump(trading_yaml, f)
-            with open(config_dir / "domains.yaml", "w") as f:
-                yaml.dump(domains_yaml, f)
-            with open(config_dir / "instruments.yaml", "w") as f:
-                yaml.dump(instruments_yaml, f)
-            with open(config_dir / "regime.yaml", "w") as f:
-                yaml.dump(regime_yaml, f)
-            with open(config_dir / "strategies.yaml", "w") as f:
-                yaml.dump(strategies_yaml, f)
-            with open(config_dir / "aurora_instruments.yaml", "w") as f:
-                yaml.dump(aurora_instruments_yaml, f)
-            
-            # Attempt to load - should fail for LIVE mode due to missing execution config
-            # Disable strict mode for non-execution checks (aurora_instruments empty is ok for this test)
-            import os
-            old_strict = os.environ.get("STRICT_CONFIG_CONFLICTS")
-            os.environ["STRICT_CONFIG_CONFLICTS"] = "0"
-            try:
-                loader = ConfigLoader(config_dir=config_dir)
-                with pytest.raises(ValueError) as exc:
-                    loader.load_config(is_live_execution=True)
-            finally:
-                if old_strict is not None:
-                    os.environ["STRICT_CONFIG_CONFLICTS"] = old_strict
-                else:
-                    os.environ.pop("STRICT_CONFIG_CONFLICTS", None)
-            
-            # Verify error mentions missing execution config
+            config_dir = Path(tmpdir) / "aurora"
+            shutil.copytree(repo_root / "config" / "aurora", config_dir)
+
+            # Break one required execution field for an active symbol.
+            import yaml
+            inst_path = config_dir / "instruments.yaml"
+            payload = yaml.safe_load(inst_path.read_text(encoding="utf-8"))
+            instruments = payload.get("instruments") if isinstance(payload, dict) else None
+            assert isinstance(instruments, dict)
+            btc = instruments.get("BTCUSDT")
+            assert isinstance(btc, dict)
+            ex = btc.get("execution")
+            assert isinstance(ex, dict)
+            ex.pop("target_leverage", None)
+            inst_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+            loader = ConfigLoader(config_dir=config_dir)
+            with pytest.raises(ValueError) as exc:
+                loader.load_config(is_live_execution=True)
+
             error_msg = str(exc.value).lower()
             assert "execution" in error_msg or "leverage" in error_msg or "margin" in error_msg
 
+    def test_loader_validates_sizing_margin_pct_for_live_mode(self):
+        import tempfile
+        import shutil
+        from pathlib import Path
+        import yaml
+        from apps.reference.config_loader import ConfigLoader
+
+        repo_root = Path(__file__).resolve().parents[2]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / "aurora"
+            shutil.copytree(repo_root / "config" / "aurora", config_dir)
+
+            # Break sizing SSOT: remove sizing.margin_pct for an active symbol.
+            inst_path = config_dir / "instruments.yaml"
+            payload = yaml.safe_load(inst_path.read_text(encoding="utf-8"))
+            instruments = payload.get("instruments") if isinstance(payload, dict) else None
+            assert isinstance(instruments, dict)
+            sol = instruments.get("SOLUSDT")
+            assert isinstance(sol, dict)
+            sizing = sol.get("sizing")
+            assert isinstance(sizing, dict)
+            sizing.pop("margin_pct", None)
+            inst_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+            loader = ConfigLoader(config_dir=config_dir)
+            with pytest.raises(ValueError) as exc:
+                loader.load_config(is_live_execution=True)
+
+            assert "sizing" in str(exc.value).lower() or "margin_pct" in str(exc.value).lower()

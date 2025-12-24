@@ -211,13 +211,27 @@ class FeatureCalculationEngine:
         Update volatility range window.
         
         FTR-03: O(1) implementation using Welford's Algorithm.
+        
+        P2-3 FIX: Expects ts in milliseconds (ts_ms convention).
         """
         if price is None or price <= 0:
             state.volatility_state_ready = False
             state.volatility_state_not_ready_reason = "bad_price"
             return
 
-        current_ts = current_tick["ts"]
+        # P2-3 FIX: Explicitly handle ts as milliseconds
+        current_ts = current_tick.get("ts", 0)
+        if current_ts <= 0:
+            state.volatility_state_ready = False
+            state.volatility_state_not_ready_reason = "bad_ts"
+            return
+        
+        # Ensure ts is in ms (if looks like seconds, convert)
+        # Heuristic: timestamps before year 2000 in ms would be < 946684800000
+        # Timestamps in seconds would be around 1.7B (2023)
+        if current_ts < 1_000_000_000_000:  # Likely seconds, not ms
+            current_ts = current_ts * 1000
+        
         window_ms = self.cfg.volatility_window_ms
 
         # Initialize window
@@ -345,7 +359,25 @@ class FeatureCalculationEngine:
     # =========================================================================
 
     def compute_depth_imbalance(self, bid_size: decimal.Decimal, ask_size: decimal.Decimal) -> decimal.Decimal:
-        """Compute depth imbalance with Laplace smoothing, normalized to [0,1]."""
+        """
+        Compute depth imbalance with Laplace smoothing, normalized to [0,1].
+        
+        P2-2 SEMANTICS DOCUMENTATION:
+        - Formula: ratio = (ask + half) / (bid + half)
+        - Result: phi > 0.5 means ASK > BID (more sell pressure, BEARISH)
+        - Result: phi < 0.5 means BID > ASK (more buy pressure, BULLISH)
+        - Result: phi = 0.5 means balanced order book
+        
+        This is intentional: high phi = high ask/bid ratio = more sellers.
+        Downstream consumers (decision_making) should interpret accordingly.
+        
+        Args:
+            bid_size: Total bid depth (in USD or base)
+            ask_size: Total ask depth (in USD or base)
+            
+        Returns:
+            phi in [0, 1] where >0.5 = bearish (ask dominance), <0.5 = bullish (bid dominance)
+        """
         depth_half = self.cfg.depth_half
         denominator = bid_size + depth_half
         numerator = ask_size + depth_half

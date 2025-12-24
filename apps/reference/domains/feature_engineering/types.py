@@ -86,6 +86,10 @@ class HotState:
     large_trade_imbalance_trades_used: int = 0
     large_trade_imbalance_dropped_out_of_order: int = 0
 
+    # P1-2 FIX: Spread readiness tracking
+    spread_ready: bool = True
+    spread_missing: bool = False
+
 
 @dataclass
 class ColdState:
