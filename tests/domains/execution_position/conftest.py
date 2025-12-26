@@ -35,14 +35,40 @@ def fsm_config():
     # Mock defaults for accessors
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
-    cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60
+    cfg.trading.execution.anti_race_close_ms = 800  # SSOT: fail-closed
+    cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60  # SSOT: fail-closed
+    
+    # Event deduplication config - SSOT: fail-closed
+    event_dedup = MagicMock()
+    event_dedup.max_size = 100000
+    event_dedup.ttl_ms = 86400000
+    cfg.domains.execution_position.event_dedup = event_dedup
+    
+    # Idempotent cancel config - SSOT: fail-closed
+    idempotent_cancel = MagicMock()
+    idempotent_cancel.max_retries = 2
+    cfg.domains.execution_position.idempotent_cancel = idempotent_cancel
+    
+    # Emergency config - SSOT: fail-closed
+    emergency = MagicMock()
+    emergency.enabled = False
+    emergency.wait_mode_bars = 2
+    emergency.emergency_sl_bps = 100
+    cfg.trading.execution.manage.emergency = emergency
+    
+    # Trailing defaults - SSOT
+    trailing = MagicMock()
+    trailing.activation_pct = 0.003
+    trailing.trail_pct = 0.006
+    trailing.min_update_interval_sec = 5
+    cfg.trailing = trailing
     
     # Brackets config for ManageFlow
     cfg.trading.execution.manage.auto = True
     cfg.trading.execution.manage.brackets.enable = True
     cfg.trading.execution.manage.brackets.oco_emulation = True
-    cfg.trading.execution.manage.brackets.sl.fixed_bps = 50
-    cfg.trading.execution.manage.brackets.tp.fixed_bps = 100
+    cfg.trading.execution.manage.brackets.sl.fixed_bps = 40  # Production SSOT value
+    cfg.trading.execution.manage.brackets.tp.fixed_bps = 80  # Production SSOT value
     cfg.trading.execution.manage.brackets.offset_bps = 5
     
     # Mock instrument specs for BTCUSDT
@@ -52,9 +78,12 @@ def fsm_config():
     btc_spec.min_qty = Decimal("0.001")
     btc_spec.min_notional = Decimal("5.0")
     
-    # Dict-like access for instruments
-    instruments_dict = {"BTCUSDT": btc_spec}
-    cfg.instruments.get.side_effect = lambda k, default=None: instruments_dict.get(k, default)
+    # Dict-like instruments for proper 'in' and get() support (fail-closed SSOT)
+    class InstrumentsDict(dict):
+        pass
+    
+    instruments_dict = InstrumentsDict({"BTCUSDT": btc_spec})
+    cfg.instruments = instruments_dict
     
     # Mock strategies.aurora.assets (per-symbol strategy overrides)
     # Production-like config required for fail-closed policy

@@ -137,18 +137,20 @@ class ExecPosFSM:
         self.log_adapter = AuroraLogAdapter()
         self.metrics_collector = MetricsCollector()
 
-        # Idempotent cancel helper (PHASE 4). Uses strict YAML->Pydantic config.
+        # Idempotent cancel helper - SSOT: domains.execution_position.idempotent_cancel (FAIL-CLOSED)
         self._idempotent_cancel_helper: Optional[IdempotentCancelHelper] = None
         self._idempotent_cancel_max_retries: Optional[int] = None
         try:
-            self._idempotent_cancel_max_retries = int(
-                self.config.domains.execution_position.idempotent_cancel.max_retries
-            )
+            idempotent_cfg = self.config.domains.execution_position.idempotent_cancel
+            if idempotent_cfg is None or idempotent_cfg.max_retries is None:
+                raise ValueError("idempotent_cancel.max_retries is required")
+            self._idempotent_cancel_max_retries = int(idempotent_cfg.max_retries)
             self._idempotent_cancel_helper = IdempotentCancelHelper(logger_inst=LOG)
-        except Exception:
-            # Fail-open: fallback to direct adapter.cancel_order
-            self._idempotent_cancel_helper = None
-            self._idempotent_cancel_max_retries = None
+        except (AttributeError, TypeError) as e:
+            raise ValueError(
+                f"Failed to load idempotent_cancel config from domains.execution_position: {e}. "
+                "Check domains.yaml has execution_position.idempotent_cancel.max_retries"
+            ) from e
 
         # EXP-FIX: Initialize exposure guard
         self.exposure_guard = ExposureGuard(self.fsm, self.config)
@@ -318,14 +320,18 @@ class ExecPosFSM:
         )
 
         # Initialize processed events tracking for idempotent WS/REST handling
-        dedup_max = 100000
-        dedup_ttl = 86400000 # 24h
+        # SSOT: domains.execution_position.event_dedup (fail-closed if missing)
         try:
-            # Attempt to read from config if available (Phase 1 hardening)
-            # self.config.domains.execution_position.fsm.dedup_max_size ...
-            pass
-        except:
-            pass
+            event_dedup_cfg = self.config.domains.execution_position.event_dedup
+            if event_dedup_cfg is None:
+                raise ValueError("event_dedup config is required in domains.execution_position")
+            dedup_max = event_dedup_cfg.max_size
+            dedup_ttl = event_dedup_cfg.ttl_ms
+        except (AttributeError, TypeError) as e:
+            raise ValueError(
+                f"Failed to load event_dedup config from domains.execution_position: {e}. "
+                "Check domains.yaml has execution_position.event_dedup section."
+            ) from e
 
         self._processed_events = BoundedEventDeduper(max_size=dedup_max, ttl_ms=dedup_ttl)
 
@@ -1564,14 +1570,6 @@ class ExecPosFSM:
 
             # Get mark price and filters
             mark = await self.adapter.get_mark_price(symbol)
-            exchange_info = await self.adapter.get_exchange_info(symbol)
-            tick_size = float(
-                next(
-                    f["tickSize"]
-                    for f in exchange_info["symbols"][0]["filters"]
-                    if f["filterType"] == "PRICE_FILTER"
-                )
-            )
 
             # TASK50: Get instrument filters from config (SSOT)
             # and normalize qty with fail-closed semantics
@@ -1579,23 +1577,44 @@ class ExecPosFSM:
             if hasattr(self.config, "instruments") and self.config.instruments:
                 instrument_spec = self.config.instruments.get(symbol)
 
-            if instrument_spec:
-                step_size = instrument_spec.step_size or "1"
-                min_qty = instrument_spec.min_qty or "0"
-                min_notional = instrument_spec.min_notional
-            else:
-                # Fallback: try to get from exchange_info
-                lot_filter = next(
-                    (f for f in exchange_info["symbols"][0]["filters"]
-                     if f["filterType"] == "LOT_SIZE"), {}
+            # FAIL-CLOSED: TP/SL + qty normalization MUST use YAML SSOT (config/aurora/instruments.yaml).
+            # No fallback to exchangeInfo is allowed here.
+            if not instrument_spec:
+                err = f"instruments.{symbol} is missing (required SSOT for tick_size/step_size/min_qty/min_notional)"
+                LOG.error(f"❌ [{symbol}] INSTRUMENT_CONFIG_MISSING: {err}")
+                order_logger.write(
+                    {
+                        "rid": decision.rid,
+                        "event_type": "ORDER_REJECTED",
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": str(raw_qty),
+                        "nrr_code": "NRR-INSTRUMENT-CONFIG-MISSING",
+                        "why": err,
+                    }
                 )
-                step_size = lot_filter.get("stepSize", "1")
-                min_qty = lot_filter.get("minQty", "0")
-                min_notional_filter = next(
-                    (f for f in exchange_info["symbols"][0]["filters"]
-                     if f["filterType"] == "MIN_NOTIONAL"), {}
+                reject_msg = Message(
+                    op="EVT",
+                    verb="ORDER_REJECTED",
+                    src="execution_position",
+                    dst="decision_making",
+                    rid=decision.rid,
+                    pld={
+                        "symbol": symbol,
+                        "side": side,
+                        "raw_qty": str(raw_qty),
+                        "reason": "NRR-INSTRUMENT-CONFIG-MISSING",
+                        "details": err,
+                    },
+                    why="NRR-INSTRUMENT-CONFIG-MISSING",
                 )
-                min_notional = min_notional_filter.get("notional")
+                await emit_compat(self.fsm, reject_msg, logger=LOG)
+                return
+
+            tick_size = float(instrument_spec.tick_size)
+            step_size = instrument_spec.step_size
+            min_qty = instrument_spec.min_qty
+            min_notional = instrument_spec.min_notional
 
             # TASK50: Normalize qty - fail-closed, no silent bump-ups
             norm_result = normalize_qty(
@@ -1651,42 +1670,103 @@ class ExecPosFSM:
                 f"(step={step_size}, min_qty={min_qty})"
             )
 
-            # TP/SL bps extraction
-            sl_bps = 50
-            tp_bps = 100
-
-            # Pydantic config
+            # TP/SL extraction (FAIL-CLOSED: per-symbol sl_pct from aurora.yaml)
+            # SSOT: strategies.aurora.assets.<SYMBOL>.exit.sl_pct (NOT brackets.fixed_bps!)
+            sl_pct: Optional[float] = None
+            tp_low_ratio: Optional[float] = None
+            tp_high_ratio: Optional[float] = None
+            
             try:
-                trading_cfg = self.config.trading
-                if trading_cfg and trading_cfg.execution and trading_cfg.execution.manage and trading_cfg.execution.manage.brackets:
-                    brackets = trading_cfg.execution.manage.brackets
+                aurora = getattr(self.config.strategies, "aurora", None)
+                if aurora is None:
+                    raise ValueError(f"strategies.aurora not configured")
+                
+                instr_cfg = aurora.assets.get(symbol)
+                if instr_cfg is None:
+                    raise ValueError(f"strategies.aurora.assets.{symbol} not configured")
+                
+                # Extract exit config (FAIL-CLOSED: must exist)
+                exit_cfg = getattr(instr_cfg, "exit", None)
+                if exit_cfg is None or exit_cfg.sl_pct is None:
+                    raise ValueError(
+                        f"strategies.aurora.assets.{symbol}.exit.sl_pct is required"
+                    )
+                sl_pct = exit_cfg.sl_pct
+                
+                # Extract take_profit config (FAIL-CLOSED: must exist)
+                tp_cfg = getattr(instr_cfg, "take_profit", None)
+                if tp_cfg is None or tp_cfg.tp_low_ratio is None:
+                    raise ValueError(
+                        f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio is required"
+                    )
+                tp_low_ratio = tp_cfg.tp_low_ratio
+                tp_high_ratio = getattr(tp_cfg, "tp_high_ratio", None)
+                
+                LOG.debug(
+                    f"[{symbol}] PER_SYMBOL_CONFIG_LOADED: sl_pct={sl_pct}, "
+                    f"tp_low_ratio={tp_low_ratio}, tp_high_ratio={tp_high_ratio} "
+                    f"(source=strategies.aurora.assets.{symbol})"
+                )
+            except (ValueError, AttributeError) as cfg_err:
+                # FAIL-CLOSED: Missing per-symbol config = reject order
+                LOG.error(
+                    f"❌ [{symbol}] PER_SYMBOL_CONFIG_MISSING: {cfg_err}. "
+                    "Order rejected - cannot calculate TP/SL without per-symbol config."
+                )
+                order_logger.write({
+                    "rid": decision.rid,
+                    "event_type": "ORDER_REJECTED",
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": str(raw_qty),
+                    "nrr_code": "NRR-BRACKETS-CONFIG-MISSING",
+                    "why": str(cfg_err),
+                })
+                # Emit rejection event
+                reject_msg = Message(
+                    op="EVT",
+                    verb="ORDER_REJECTED",
+                    src="execution_position",
+                    dst="decision_making",
+                    rid=decision.rid,
+                    pld={
+                        "symbol": symbol,
+                        "side": side,
+                        "raw_qty": str(raw_qty),
+                        "reason": "NRR-BRACKETS-CONFIG-MISSING",
+                        "details": str(cfg_err),
+                    },
+                    why="NRR-BRACKETS-CONFIG-MISSING",
+                )
+                await emit_compat(self.fsm, reject_msg, logger=LOG)
+                return
 
-                    # SL
-                    if brackets.sl:
-                        sl_bps = brackets.sl.fixed_bps
-                    elif hasattr(brackets, "stop_loss_bps"):
-                        sl_bps = brackets.stop_loss_bps
-
-                    # TP
-                    if brackets.tp:
-                        tp_bps = brackets.tp.fixed_bps
-                    else:
-                        ratio = aget(brackets, "take_profit_high_ratio", None) or aget(brackets, "take_profit_low_ratio", None)
-                        if ratio:
-                            tp_bps = int(float(ratio) * float(sl_bps))
-            except AttributeError:
-                pass
-
-            tp, sl = calc_tp_sl_from_mark(
-                mark, "LONG" if side == "BUY" else "SHORT", tp_bps, sl_bps
+            # Calculate SL/TP from per-symbol sl_pct (NOT global bps!)
+            # sl_pct is percentage (0.019 = 1.9%), tp_low_ratio is multiplier on SL distance
+            mark_dec = Decimal(str(mark))
+            sl_pct_dec = Decimal(str(sl_pct))
+            tp_low_ratio_dec = Decimal(str(tp_low_ratio))
+            
+            if side == "BUY":
+                # LONG: SL below entry, TP above
+                sl = mark_dec * (Decimal("1") - sl_pct_dec)
+                tp = mark_dec * (Decimal("1") + sl_pct_dec * tp_low_ratio_dec)
+            else:
+                # SHORT: SL above entry, TP below
+                sl = mark_dec * (Decimal("1") + sl_pct_dec)
+                tp = mark_dec * (Decimal("1") - sl_pct_dec * tp_low_ratio_dec)
+            
+            LOG.info(
+                f"[{symbol}] TP/SL_CALCULATED: mark={mark}, sl_pct={sl_pct}, "
+                f"tp_low_ratio={tp_low_ratio} → SL={sl}, TP={tp}"
             )
 
-            # Quantize
+            # Quantize (convert Decimal to float for utility function)
             tp = quantize_stop_price(
-                tp, tick_size, side="BUY" if side == "BUY" else "SELL"
+                float(tp), tick_size, side="BUY" if side == "BUY" else "SELL"
             )
             sl = quantize_stop_price(
-                sl, tick_size, side="SELL" if side == "BUY" else "BUY"
+                float(sl), tick_size, side="SELL" if side == "BUY" else "BUY"
             )
 
             # Validate
@@ -2722,16 +2802,19 @@ class ExecPosFSM:
             True if position exists and valid, False if position is 0 or missing
         """
         # POLLING-FIX: Exponential backoff for REST-only mode
-        # Read from config when available; fallback to safe defaults
-        try:
-            if self.config.execution:
-                backoff_ms = list(aget(self.config.execution, "preflight_backoff_ms", [150, 300, 500]))
-            elif self.config.trading and self.config.trading.execution:
-                backoff_ms = list(aget(self.config.trading.execution, "preflight_backoff_ms", [150, 300, 500]))
-            else:
-                backoff_ms = [150, 300, 500]
-        except Exception:
-            backoff_ms = [150, 300, 500]
+        # FAIL-CLOSED: must be provided by YAML (trading.execution.preflight_backoff_ms)
+        exec_cfg = getattr(self.config, "trading", None)
+        exec_cfg = getattr(exec_cfg, "execution", None) if exec_cfg is not None else None
+        backoff_ms = getattr(exec_cfg, "preflight_backoff_ms", None) if exec_cfg is not None else None
+        if not backoff_ms:
+            raise ValueError(
+                "trading.execution.preflight_backoff_ms is required for TP/SL preflight; no fallback/default is allowed."
+            )
+        backoff_ms = [int(x) for x in backoff_ms]
+        if any(x <= 0 for x in backoff_ms):
+            raise ValueError(
+                f"trading.execution.preflight_backoff_ms must be positive ints, got: {backoff_ms}"
+            )
         tries = 0
         start = time.time()
 

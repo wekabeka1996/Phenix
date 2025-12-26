@@ -27,7 +27,9 @@ def test_manage_fail_closed_when_missing_market_snapshot(fsm_harness):
 def test_manage_fail_closed_when_missing_instrument_specs(fsm_harness):
     """3. test_manage_fail_closed_when_missing_instrument_specs"""
     fsm, bus, cfg = fsm_harness
-    cfg.instruments.get.return_value = None
+    # Remove BTCUSDT from instruments to test fail-closed behavior
+    if "BTCUSDT" in cfg.instruments:
+        del cfg.instruments["BTCUSDT"]
     feed_opened_position(fsm, "BTCUSDT", "BUY", Decimal("1.0"), Decimal("50000"))
     manage = fsm.manage_flows["BTCUSDT"]
     msg = Message(op="UPD", verb="MARKET_DATA", src="ws", dst="exec", pld={"symbol": "BTCUSDT", "last_price": "51000"})

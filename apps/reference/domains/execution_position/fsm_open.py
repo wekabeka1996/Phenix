@@ -90,14 +90,19 @@ class OpenFlowFSM:
                 "Leverage verification will be SKIPPED (shadow/dev mode only)."
             )
         
-        # Idempotency window from config (default 60s)
+        # Idempotency window from config - SSOT: domains.execution_position.fsm_open (FAIL-CLOSED)
         try:
-            if hasattr(self.config, 'domains') and hasattr(self.config.domains, 'execution_position'):
-                self.idempotency_window_sec = self.config.domains.execution_position.fsm_open.idempotency_window_sec
-            else:
-                self.idempotency_window_sec = 60
-        except (AttributeError, TypeError):
-            self.idempotency_window_sec = 60
+            if not hasattr(self.config, 'domains') or not hasattr(self.config.domains, 'execution_position'):
+                raise ValueError("domains.execution_position config is required")
+            fsm_open_cfg = self.config.domains.execution_position.fsm_open
+            if fsm_open_cfg is None or fsm_open_cfg.idempotency_window_sec is None:
+                raise ValueError("fsm_open.idempotency_window_sec is required")
+            self.idempotency_window_sec = fsm_open_cfg.idempotency_window_sec
+        except (AttributeError, TypeError) as e:
+            raise ValueError(
+                f"Failed to load idempotency_window_sec from domains.execution_position.fsm_open: {e}. "
+                "Check domains.yaml has execution_position.fsm_open.idempotency_window_sec"
+            ) from e
 
     def _get_instrument_specs(self, symbol: str) -> Dict[str, Decimal]:
         """Get instrument specifications from config.

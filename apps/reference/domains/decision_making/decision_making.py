@@ -362,7 +362,7 @@ class DecisionMaking:
                     side=side,
                     ts_ms=pld.get("ts_ms"),
                 )
-                retry_sec = self._get_risk_skew_config("until_refresh_retry_sec", 30)
+                retry_sec = self._get_risk_skew_config("until_refresh_retry_sec")
                 self.logger.error(
                     f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: NO_TRADE_UNTIL_REFRESH (risk_skew_guard active)"
                 )
@@ -530,14 +530,14 @@ class DecisionMaking:
                 
                 if risk_ts > 0 and features_ts > 0:
                     skew_sec = abs(features_ts - risk_ts) / 1000
-                    max_skew_sec = self._get_risk_skew_config("max_skew_sec", 5)
+                    max_skew_sec = self._get_risk_skew_config("max_skew_sec")
                     
                     if skew_sec > max_skew_sec:
-                        max_defer = self._get_risk_skew_config("max_defer_count", 3)
+                        max_defer = self._get_risk_skew_config("max_defer_count")
 
                         # Track limiter state per symbol in symbol_states (SSOT)
                         now_ms = int(time.time() * 1000)
-                        window_sec = self._get_risk_skew_config("defer_window_sec", 60)
+                        window_sec = self._get_risk_skew_config("defer_window_sec")
                         state = self.symbol_states[symbol].setdefault(
                             "risk_skew_guard",
                             {"defer_count": 0, "window_start_ms": now_ms, "until_refresh": False},
@@ -581,7 +581,7 @@ class DecisionMaking:
                                 side=side,
                                 ts_ms=pld.get("ts_ms"),
                             )
-                            cooldown_sec = self._get_risk_skew_config("defer_cooldown_sec", 2)
+                            cooldown_sec = self._get_risk_skew_config("defer_cooldown_sec")
                             self._emit_intent_deferred_v1(
                                 symbol=symbol,
                                 reason="NRR-RISK-STALE",
@@ -630,13 +630,10 @@ class DecisionMaking:
                     )
                     if flip_result == "NRR-PORTFOLIO-UNKNOWN":
                         now_ms = int(time.time() * 1000)
-                        # Position Tracking Stale TTL (Strict)
-                        stale_ttl_raw = aget(
-                            self.config.domains.position_tracking,
-                            "positions_stale_ttl_sec",
-                            None,
-                        )
-                        stale_ttl_sec_f = float(stale_ttl_raw) if stale_ttl_raw is not None else 5.0
+                        # Position Tracking Stale TTL (SSOT fail-closed)
+                        stale_ttl_sec_f = self.config.domains.position_tracking.positions_stale_ttl_sec
+                        if stale_ttl_sec_f is None:
+                            raise ValueError("domains.position_tracking.positions_stale_ttl_sec is required (SSOT)")
                         retry_key = self._stable_retry_key(
                             prefix=str(strategy_id),
                             symbol=symbol,
@@ -1226,17 +1223,13 @@ class DecisionMaking:
 
         Fallback chain:
         1. strategies.aurora.assets.<SYMBOL>.side_bias.* (per-instrument)
-        2. strategies.aurora.decision.side_bias_* (global)
-        3. defaults
+        2. strategies.aurora.decision.side_bias_* (global SSOT)
+
+        FAIL-CLOSED: ValueError if global config missing.
 
         Returns:
             (penalty_factor, window_sec, target_ratio)
         """
-        # Defaults
-        default_penalty = 0.50
-        default_window = 60
-        default_target = 0.60
-
         # 1. Try per-instrument config
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         sb = aget(instr_cfg, "side_bias", None)
@@ -1244,19 +1237,23 @@ class DecisionMaking:
             penalty = aget(sb, "penalty_factor", None)
             window = aget(sb, "window_sec", None)
             target = aget(sb, "target_ratio", None)
+            # Per-instrument partial override falls back to global
+            dm = self.config.strategies.aurora.decision
             return (
-                penalty if penalty is not None else default_penalty,
-                window if window is not None else default_window,
-                target if target is not None else default_target
+                penalty if penalty is not None else dm.side_bias_penalty_factor,
+                window if window is not None else dm.side_bias_window_sec,
+                target if target is not None else dm.side_bias_target_ratio
             )
 
-        # 2. Fallback to global
-        # 2. Fallback to global (Strict Object)
+        # 2. SSOT: Global config (fail-closed if missing)
         dm = self.config.strategies.aurora.decision
-        penalty = dm.side_bias_penalty_factor if dm.side_bias_penalty_factor is not None else default_penalty
-        window = dm.side_bias_window_sec if dm.side_bias_window_sec is not None else default_window
-        target = dm.side_bias_target_ratio if dm.side_bias_target_ratio is not None else default_target
-        return (penalty, window, target)
+        if dm.side_bias_penalty_factor is None:
+            raise ValueError("strategies.aurora.decision.side_bias_penalty_factor is required (SSOT)")
+        if dm.side_bias_window_sec is None:
+            raise ValueError("strategies.aurora.decision.side_bias_window_sec is required (SSOT)")
+        if dm.side_bias_target_ratio is None:
+            raise ValueError("strategies.aurora.decision.side_bias_target_ratio is required (SSOT)")
+        return (dm.side_bias_penalty_factor, dm.side_bias_window_sec, dm.side_bias_target_ratio)
 
     def _get_regime_thresholds(self, symbol: str) -> dict:
         """
@@ -3537,25 +3534,31 @@ class DecisionMaking:
 
         self.last_alert_check_time = current_time
 
+        # Get risk_gate config (SSOT from domains.yaml)
+        risk_gate_cfg = self.config.domains.decision_making.risk_gate
+        min_intents = risk_gate_cfg.min_intents_for_check
+
         # Calculate blocked percentage
-        if self.intents_seen_total < 10:
+        if self.intents_seen_total < min_intents:
             # Not enough data yet
             return
 
         blocked_pct = (self.intents_blocked_total /
                        self.intents_seen_total) * 100
-        # Use lower threshold for testnet mode to increase exploration
-        mode = "production"
-        try:
-            trading = aget(self.config, "trading", None)
-            if trading:
-                mode_val = aget(trading, "mode", None)
-                if mode_val is not None:
-                    mode = str(mode_val)
-        except Exception:
-            mode = "production"
-
-        threshold_pct = 20.0 if mode == "testnet" else 50.0  # Lower threshold for testnet
+        
+        # Get trading mode for threshold selection (FAIL-CLOSED: must be configured)
+        mode = getattr(self.config.trading, "mode", None)
+        if mode is None:
+            raise ValueError(
+                "FAIL-CLOSED: trading.mode is required for risk gate alerts. "
+                "Configure trading.mode in trading.yaml (testnet or production)."
+            )
+        
+        # SSOT: thresholds from domains.yaml risk_gate config
+        if mode == "testnet":
+            threshold_pct = risk_gate_cfg.threshold_pct_testnet
+        else:
+            threshold_pct = risk_gate_cfg.threshold_pct_production
 
         if blocked_pct > threshold_pct:
             self.logger.warning(
@@ -3696,14 +3699,10 @@ class DecisionMaking:
         retry_key = self._generate_flip_retry_key(symbol, intent_side, seed=rid)
         now_ms = int(time.time() * 1000)
         
-        # Get stale TTL for retry delay
-        # Get stale TTL for retry delay (Strict)
-        stale_ttl_raw = aget(
-            self.config.domains.position_tracking,
-            "positions_stale_ttl_sec",
-            None,
-        )
-        stale_ttl_sec = float(stale_ttl_raw) if stale_ttl_raw is not None else 5.0
+        # Get stale TTL for retry delay (SSOT fail-closed)
+        stale_ttl_sec = self.config.domains.position_tracking.positions_stale_ttl_sec
+        if stale_ttl_sec is None:
+            raise ValueError("domains.position_tracking.positions_stale_ttl_sec is required (SSOT)")
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
         
         # Prepare minimal original event for deferred retry
@@ -3760,14 +3759,10 @@ class DecisionMaking:
         retry_key = self._generate_flip_retry_key(symbol, intent_side, seed=original_pld.get("rid"))
         now_ms = int(time.time() * 1000)
         
-        # Get stale TTL for retry delay
-        # Get stale TTL for retry delay (Strict)
-        stale_ttl_raw = aget(
-            self.config.domains.position_tracking,
-            "positions_stale_ttl_sec",
-            None,
-        )
-        stale_ttl_sec = float(stale_ttl_raw) if stale_ttl_raw is not None else 5.0
+        # Get stale TTL for retry delay (SSOT fail-closed)
+        stale_ttl_sec = self.config.domains.position_tracking.positions_stale_ttl_sec
+        if stale_ttl_sec is None:
+            raise ValueError("domains.position_tracking.positions_stale_ttl_sec is required (SSOT)")
         next_allowed_ts = now_ms + int(stale_ttl_sec * 1000)
         
         self.logger.info(
@@ -3888,25 +3883,24 @@ class DecisionMaking:
             return False  # NOT FLAT - will trigger DEFER
             return None
 
-    def _get_risk_skew_config(self, key: str, default: Any) -> Any:
+    def _get_risk_skew_config(self, key: str) -> Any:
         """
         Get risk_skew config value from domains config.
         
         Commit 5: Risk Skew Guard configuration.
         Config path: domains.decision_making.risk_skew.<key>
         
-        Fail-closed: If risk_skew not configured or key missing → return default (NOT crash).
-        This is P2 (diagnostics), not P0 (trading critical).
+        FAIL-CLOSED: If risk_skew not configured or key missing → ValueError.
+        SSOT: All values must be in domains.yaml.
         """
-        try:
-            # Direct Pydantic access
-            risk_skew = self.config.domains.decision_making.risk_skew
-            if risk_skew:
-                return aget(risk_skew, key, default)
-            return default
-        except (AttributeError, TypeError):
-            # Risk skew optional feature
-            return default
+        risk_skew = self.config.domains.decision_making.risk_skew
+        value = getattr(risk_skew, key, None)
+        if value is None:
+            raise ValueError(
+                f"domains.decision_making.risk_skew.{key} is required (SSOT fail-closed)"
+            )
+        return value
+
     def _get_precision(self, symbol: str) -> tuple[float, float]:
         """Return (tick_size, step_size) from canonical config.instruments; fail-closed.
         

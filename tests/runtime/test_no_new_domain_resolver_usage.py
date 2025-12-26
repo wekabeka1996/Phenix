@@ -13,6 +13,7 @@ def test_domain_config_resolver_usage_is_frozen() -> None:
         "apps/reference/domains/account_observer/account_observer.py",
         "apps/reference/domains/decision_making/decision_making.py",
         "apps/reference/domains/execution_position/exposure_guard.py",
+        "apps/reference/domains/execution_position/fsm.py",  # SSOT: fail-closed brackets loading
         "apps/reference/domains/feature_engineering/feature_engineering.py",
         "apps/reference/domains/feature_engineering/types.py",
         "apps/reference/domains/position_tracking/position_tracking.py",

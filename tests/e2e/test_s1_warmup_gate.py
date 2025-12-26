@@ -60,8 +60,10 @@ class TestS1WarmupGate:
         now_ms = int(time.time() * 1000)
         dm.symbol_states[symbol] = {
             "features": {"ts": now_ms, "warmup": {"full_ready": True}},
-            "risk": {},
+            "risk": {"symbol": symbol, "ts": now_ms, "risk_parameters": {"is_trading_allowed": True}},
         }
+        # P0-1 Fix: Per-symbol warmup must be in _per_symbol_regimes
+        dm._per_symbol_regimes[symbol] = {"regime": "FLAT", "ts": now_ms, "warmup": {"full_ready": False, "ticks_seen": 5}}
         
         # Record initial state
         scenario_runner.record_event("WARMUP_STATE", {
@@ -94,9 +96,8 @@ class TestS1WarmupGate:
             fail_closed=blocked,
         )
         
-        # Step 2: Update to ready state
-        dm._latest_warmup = {"full_ready": True, "ticks_seen": 100}
-        dm._per_symbol_regimes[symbol] = {"regime": "FLAT", "ts": now_ms}
+        # Step 2: Update to ready state (must update per-symbol warmup)
+        dm._per_symbol_regimes[symbol] = {"regime": "FLAT", "ts": now_ms, "warmup": {"full_ready": True, "ticks_seen": 100}}
         
         scenario_runner.record_event("WARMUP_STATE", {
             "full_ready": True,

@@ -101,7 +101,11 @@ trading:
           fixed_bps: 80
       orphan_monitor:
         enabled: true
-      emergency: null
+      # Emergency mode config (optional - set enabled: false to disable)
+      emergency:
+        enabled: false
+        wait_mode_bars: 2
+        emergency_sl_bps: 100
       failsafe: null
     fsm_periodic_cleanup_enabled: false
     anti_race_close_ms: 800

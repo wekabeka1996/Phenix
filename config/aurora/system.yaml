@@ -35,7 +35,11 @@ ops:
 # TASK22 (zero defaults): root-level optional keys must be explicitly present
 execution: null
 brackets: null
-trailing: {}
+# Trailing stop defaults (used when trailing enabled but values not specified)
+trailing:
+  activation_pct: 0.003  # 0.3% profit to activate
+  trail_pct: 0.006       # 0.6% trailing distance
+  min_update_interval_sec: 5
 
 # AuroraBridge (required)
 bridge:

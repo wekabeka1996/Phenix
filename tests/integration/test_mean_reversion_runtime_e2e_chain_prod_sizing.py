@@ -239,6 +239,23 @@ def test_mean_reversion_e2e_chain_with_real_margin_first_sizing_multi_symbol(cas
         domains=SimpleNamespace(
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
             risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
+            decision_making=SimpleNamespace(
+                risk_skew=SimpleNamespace(
+                    enabled=True,
+                    max_skew=0.2,
+                    max_skew_sec=3600,
+                    penalty_per_percent=0.01,
+                ),
+                risk_gate=SimpleNamespace(
+                    max_position_exposure_pct=0.3,
+                    max_total_exposure_pct=0.5,
+                ),
+                side_bias=SimpleNamespace(
+                    penalty_factor=0.5,
+                    window_sec=900,
+                    target_ratio=0.5,
+                ),
+            ),
         ),
         instruments={
             s: SimpleNamespace(
@@ -264,10 +281,19 @@ def test_mean_reversion_e2e_chain_with_real_margin_first_sizing_multi_symbol(cas
                     retry_max_count=1,
                     retry_backoff_factor=1.0,
                     regime_threshold_multipliers={"DEFAULT": 1.0},
-                    side_bias_penalty_factor=None,
-                    side_bias_window_sec=None,
-                    side_bias_target_ratio=None,
+                    side_bias_penalty_factor=0.5,
+                    side_bias_window_sec=900,
+                    side_bias_target_ratio=0.5,
                     kelly=None,
+                    risk_skew=SimpleNamespace(
+                        enabled=True,
+                        max_skew=0.2,
+                        penalty_per_percent=0.01,
+                    ),
+                    risk_gate=SimpleNamespace(
+                        max_position_exposure_pct=0.3,
+                        max_total_exposure_pct=0.5,
+                    ),
                 ),
                 assets={},
             ),

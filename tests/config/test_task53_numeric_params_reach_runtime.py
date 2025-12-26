@@ -83,6 +83,37 @@ class TestWatchdogAckTtlMsReachesRuntime:
         assert val1 != val2
 
 
+class TestPreflightBackoffMsIsFailClosed:
+    """Prove that trading.execution.preflight_backoff_ms exists (no silent fallback)."""
+
+    def test_preflight_backoff_ms_is_loaded_from_yaml(self, tmp_path: Path) -> None:
+        cfg_dir = _copy_config_to_tmp(tmp_path)
+        loader = ConfigLoader(config_dir=cfg_dir)
+        config = loader.load_config()
+        assert config.trading.execution.preflight_backoff_ms is not None
+        assert list(config.trading.execution.preflight_backoff_ms)
+
+    def test_missing_preflight_backoff_ms_crashes(self, tmp_path: Path) -> None:
+        from pydantic import ValidationError
+
+        cfg_dir = _copy_config_to_tmp(tmp_path)
+
+        trading_path = cfg_dir / "trading.yaml"
+        trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
+        assert isinstance(trading, dict)
+        assert "trading" in trading and isinstance(trading["trading"], dict)
+        assert "execution" in trading["trading"] and isinstance(trading["trading"]["execution"], dict)
+
+        trading["trading"]["execution"].pop("preflight_backoff_ms", None)
+        _write_yaml(trading_path, trading)
+
+        loader = ConfigLoader(config_dir=cfg_dir)
+        with pytest.raises(ValidationError) as exc_info:
+            loader.load_config()
+
+        assert "preflight_backoff_ms" in str(exc_info.value)
+
+
 class TestQosSymbolCooldownSecReachesRuntime:
     """Prove that decision_making.qos.symbol_cooldown_sec affects QoS behavior."""
     
@@ -293,3 +324,74 @@ class TestRiskManagementThresholdsReachRuntime:
         
         # Verify value is accessible
         assert config.domains.risk_management.trading_allowed_thresholds.max_risk_score == pytest.approx(TEST_VALUE)
+
+
+class TestMeanReversionConfigsReachRuntime:
+    """Prove that mean_reversion.yaml configs for XRP/DOGE reach runtime correctly."""
+    
+    def test_xrp_doge_mr_configs_loaded_correctly(self, tmp_path: Path) -> None:
+        """XRP/DOGE/BTC configs from mean_reversion.yaml are loaded and differ as expected."""
+        cfg_dir = _copy_config_to_tmp(tmp_path)
+        loader = ConfigLoader(config_dir=cfg_dir)
+        config = loader.load_config()
+        
+        mr = config.strategies.mean_reversion
+        assert mr.enabled is True
+        assert mr.timeframe_sec == 180
+        
+        # DOGE specific overrides
+        doge = mr.assets.get("DOGEUSDT")
+        assert doge is not None
+        assert doge.enabled is True
+        assert doge.strategy.bb_num_std == 2.1
+        assert doge.strategy.tp_to_mid is False  # DOGE targets outer band
+        assert doge.strategy.cooldown_sec == 210
+        assert doge.risk.position_size_usd == 150.0
+        
+        # XRP specific overrides
+        xrp = mr.assets.get("XRPUSDT")
+        assert xrp is not None
+        assert xrp.enabled is True
+        assert xrp.strategy.bb_num_std == 2.5
+        assert xrp.strategy.tp_to_mid is True  # XRP targets mid band
+        assert xrp.strategy.cooldown_sec == 165
+        assert xrp.risk.position_size_usd == 150.0
+        
+        # XRP has null sl_atr_mult - should fall back to global 1.5
+        assert xrp.strategy.sl_atr_mult is None
+        assert mr.strategy.sl_atr_mult == 1.5
+
+    def test_mr_handler_uses_per_asset_overrides(self, tmp_path: Path) -> None:
+        """MeanReversionHandler correctly applies per-asset config overrides."""
+        from unittest.mock import MagicMock
+        from decimal import Decimal
+        
+        cfg_dir = _copy_config_to_tmp(tmp_path)
+        loader = ConfigLoader(config_dir=cfg_dir)
+        config = loader.load_config()
+        
+        mock_fsm = MagicMock()
+        mock_fsm.listen = MagicMock()
+        
+        from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+        handler = MeanReversionHandler(fsm=mock_fsm, config=config)
+        
+        assert handler._enabled is True
+        
+        # Check DOGE strategy runtime config
+        doge_strat = handler._strategies.get("DOGEUSDT")
+        if doge_strat:  # Only if DOGE is assigned in strategies_registry
+            assert doge_strat.config.tp_to_mid is False
+            assert doge_strat.config.bb_num_std == 2.1
+            assert doge_strat.config.cooldown_sec == 210
+            # sl_atr_mult should be 1.5 (from DOGE config or global fallback)
+            assert doge_strat.config.sl_atr_mult == Decimal("1.5")
+        
+        # Check XRP strategy runtime config
+        xrp_strat = handler._strategies.get("XRPUSDT")
+        if xrp_strat:  # Only if XRP is assigned in strategies_registry
+            assert xrp_strat.config.tp_to_mid is True
+            assert xrp_strat.config.bb_num_std == 2.5
+            assert xrp_strat.config.cooldown_sec == 165
+            # sl_atr_mult should fall back to 1.5 (global, since XRP has null)
+            assert xrp_strat.config.sl_atr_mult == Decimal("1.5")

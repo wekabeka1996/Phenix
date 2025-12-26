@@ -31,6 +31,8 @@ def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
         "features": {"ts": now_ms, "warmup": {"full_ready": True}},
         "risk": {},
     }
+    # Per-symbol warmup is now required (fail-closed). Without it, warmup gate blocks with regime_warmup_missing
+    # This tests that fail-closed policy works as expected
 
     blocked = dm._warmup_gate_before_trade_intent(
         symbol=symbol,
@@ -39,7 +41,8 @@ def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
         context="test",
     )
     assert blocked is True
-    assert any(domain == "decision_making" and reason == "regime_not_ready" for domain, reason in blocks)
+    # Since _per_symbol_regimes[symbol] is missing, reason is regime_warmup_missing (not regime_not_ready)
+    assert any(domain == "decision_making" and reason == "regime_warmup_missing" for domain, reason in blocks)
 
 
 def test_decision_making_reduce_only_bypasses_warmup_gate(monkeypatch):

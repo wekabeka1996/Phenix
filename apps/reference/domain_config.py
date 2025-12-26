@@ -145,6 +145,46 @@ class DomainConfigResolver:
         """Get execution utilities configuration."""
         return self.get_execution_position().utils
     
+    def get_brackets_strict(self) -> BracketsConfig:
+        """
+        Get brackets config (fail-closed, no defaults).
+        
+        SSOT: trading.execution.manage.brackets (will migrate to domains in future).
+        
+        Raises:
+            ValueError: If brackets config is missing or incomplete
+        """
+        try:
+            if (self._config.trading and 
+                self._config.trading.execution and 
+                self._config.trading.execution.manage and
+                self._config.trading.execution.manage.brackets):
+                brackets = self._config.trading.execution.manage.brackets
+                
+                # Validate required fields exist
+                if brackets.sl is None or brackets.sl.fixed_bps is None:
+                    raise ValueError(
+                        "BracketsConfig.sl.fixed_bps is required (got None). "
+                        "Check trading.yaml: trading.execution.manage.brackets.sl.fixed_bps"
+                    )
+                if brackets.tp is None or brackets.tp.fixed_bps is None:
+                    raise ValueError(
+                        "BracketsConfig.tp.fixed_bps is required (got None). "
+                        "Check trading.yaml: trading.execution.manage.brackets.tp.fixed_bps"
+                    )
+                    
+                return brackets
+        except AttributeError as e:
+            raise ValueError(
+                f"Failed to access brackets config path: {e}. "
+                "Ensure trading.yaml has trading.execution.manage.brackets section."
+            ) from e
+        
+        raise ValueError(
+            "BracketsConfig not found in trading.execution.manage.brackets. "
+            "This is required for TP/SL calculation - no defaults allowed."
+        )
+    
     # =========================================================================
     # OTHER DOMAINS
     # =========================================================================

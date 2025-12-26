@@ -44,6 +44,14 @@ decision_making:
     max_skew_sec: 5           # Max age difference between features.ts and risk.ts
     max_defer_count: 3        # Max DEFERs per symbol before NO_TRADE_UNTIL_REFRESH
     defer_cooldown_sec: 2     # Cooldown between deferred retries
+    defer_window_sec: 60      # Window duration (seconds) - resets defer_count after this period
+    until_refresh_retry_sec: 30  # Retry delay when in NO_TRADE_UNTIL_REFRESH state
+
+  # Risk Gate Alert Thresholds (monitoring blocked intents)
+  risk_gate:
+    threshold_pct_testnet: 20.0     # Alert if >20% intents blocked (testnet)
+    threshold_pct_production: 50.0  # Alert if >50% intents blocked (production)
+    min_intents_for_check: 10       # Minimum intents before checking threshold
 
   arming:
     require_regime_warmup: true
@@ -214,3 +222,8 @@ execution_position:
   utils:
     client_order_id_max_length: 32
     basis_points_base: 10000.0
+
+  # FSM event deduplication (bounded memory)
+  event_dedup:
+    max_size: 100000
+    ttl_ms: 86400000  # 24 hours

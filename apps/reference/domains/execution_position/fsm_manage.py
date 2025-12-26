@@ -105,25 +105,35 @@ class ManageFlowFSM:
         # Extract commonly used configs for easier access
         self._manage_cfg = self.config.trading.execution.manage if self.config.trading.execution else None
         
-        # Emergency/WaitMode configuration
+        # Emergency/WaitMode configuration - SSOT: trading.execution.manage.emergency
         self._bar_ms = 15 * 60 * 1000
         aurora = getattr(self.config.strategies, "aurora", None)
         if aurora is not None and aurora.decision.bar_gating:
             self._bar_ms = aurora.decision.bar_gating.bar_ms
 
-        self._wait_mode_bars = 2
+        # FAIL-CLOSED: wait_mode_bars must come from config
         if self._manage_cfg and self._manage_cfg.emergency:
             emergency_cfg = self._manage_cfg.emergency
-            if isinstance(emergency_cfg, dict):
-                self._wait_mode_bars = int(emergency_cfg["wait_mode_bars"] if "wait_mode_bars" in emergency_cfg else 2)
-            else:
-                self._wait_mode_bars = int(aget(emergency_cfg, "wait_mode_bars", 2))
+            self._wait_mode_bars = int(emergency_cfg.wait_mode_bars)
+        else:
+            # Emergency disabled - set default for disabled state
+            self._wait_mode_bars = 2
         
         self._wait_mode_until_ts: int = 0
 
-        # Anti-race window (ms)
-        self._anti_race_close_ms = 800
-        # Note: anti_race_close_ms is not yet in Pydantic model, using default
+        # Anti-race window (ms) — SSOT: trading.execution.anti_race_close_ms (FAIL-CLOSED)
+        if not (self.config.trading and self.config.trading.execution):
+            raise ValueError(
+                "trading.execution config is required for ManageFlowFSM. "
+                "Check trading.yaml has trading.execution section."
+            )
+        cfg_val = getattr(self.config.trading.execution, "anti_race_close_ms", None)
+        if cfg_val is None:
+            raise ValueError(
+                "trading.execution.anti_race_close_ms is required. "
+                "Check trading.yaml has anti_race_close_ms value."
+            )
+        self._anti_race_close_ms = int(cfg_val)
 
         # Auto-manage flag
         self._auto_manage_enabled = False
@@ -613,19 +623,28 @@ class ManageFlowFSM:
                     return None
 
             # === SAFETY OFFSET PHASE: Apply offset to avoid -2021 errors ===
-            # Read offset_bps from config (default 5)
-            offset_bps = 5
-            if self._manage_cfg and self._manage_cfg.brackets:
-                 offset_bps = self._manage_cfg.brackets.offset_bps
+            # Read offset_bps from config (FAIL-CLOSED: no default)
+            if not self._manage_cfg or not self._manage_cfg.brackets:
+                raise ValueError(
+                    "trading.execution.manage.brackets is required for bracket safety offset (offset_bps). "
+                    "No fallback/default is allowed."
+                )
+            offset_bps = self._manage_cfg.brackets.offset_bps
 
             # CFG-INSTRUMENTS-STEP-03-EXECUTION-PRECISION:
             # Get tick_size from canonical config.instruments
-            tick_size = Decimal("0.01")
-            symbol = msg.pld.get("symbol")
-            if symbol and self.config.instruments:
-                 inst = self.config.instruments.get(symbol)
-                 if inst and hasattr(inst, 'tick_size') and inst.tick_size is not None:
-                     tick_size = Decimal(str(inst.tick_size))
+            symbol = msg.pld.get("symbol") or self.symbol
+            if not symbol:
+                raise ValueError(
+                    "symbol is required to compute TP/SL safety offsets (tick_size lookup). "
+                    "No fallback/default is allowed."
+                )
+            if not getattr(self.config, "instruments", None) or symbol not in self.config.instruments:
+                raise ValueError(
+                    f"instruments.{symbol}.tick_size is required for bracket price quantization/offsets. "
+                    "No fallback/default is allowed."
+                )
+            tick_size = Decimal(str(self.config.instruments[symbol].tick_size))
 
             # Apply offset to SL (move it AWAY from entry to be safer)
             sl_offset = TPSLValidationRules.add_safety_offset(
@@ -878,26 +897,22 @@ class ManageFlowFSM:
         tp1_price: Optional[Decimal],
         tp2_price: Optional[Decimal],
     ) -> tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]:
-        """Quantize prices to tick_size from instruments config."""
-        tick_size = None
-        if symbol and self.config and hasattr(self.config, 'trading'):
-            instruments = aget(self.config.trading, "instruments", None)
-            if instruments:
-                inst = instruments.get(symbol)
-                if inst:
-                    tick_size = aget(inst, "tick_size", None)
+        """Quantize prices to tick_size from instruments SSOT (FAIL-CLOSED: no fallback)."""
+        if not symbol:
+            raise ValueError("symbol is required for price quantization (tick_size lookup)")
+        if not getattr(self.config, "instruments", None) or symbol not in self.config.instruments:
+            raise ValueError(f"instruments.{symbol}.tick_size is required for price quantization")
 
-        if tick_size:
-            try:
-                tick_size_dec = Decimal(str(tick_size))
-                if sl_price is not None:
-                    sl_price = (sl_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
-                if tp1_price is not None:
-                    tp1_price = (tp1_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
-                if tp2_price is not None:
-                    tp2_price = (tp2_price / tick_size_dec).quantize(Decimal('1')) * tick_size_dec
-            except (ValueError, TypeError, ArithmeticError):
-                pass
+        tick_size_dec = Decimal(str(self.config.instruments[symbol].tick_size))
+        if tick_size_dec <= 0:
+            raise ValueError(f"instruments.{symbol}.tick_size must be > 0, got {tick_size_dec}")
+
+        if sl_price is not None:
+            sl_price = (sl_price / tick_size_dec).quantize(Decimal("1")) * tick_size_dec
+        if tp1_price is not None:
+            tp1_price = (tp1_price / tick_size_dec).quantize(Decimal("1")) * tick_size_dec
+        if tp2_price is not None:
+            tp2_price = (tp2_price / tick_size_dec).quantize(Decimal("1")) * tick_size_dec
 
         return sl_price, tp1_price, tp2_price
 
@@ -995,20 +1010,16 @@ class ManageFlowFSM:
             return None
 
         try:
-            # Emergency protection (optional)
+            # Emergency protection - SSOT: trading.execution.manage.emergency (FAIL-CLOSED)
             emergency_enabled = False
-            emergency_sl_bps = 100
+            emergency_sl_bps = 100  # Will be overwritten if emergency enabled
             
             if self._manage_cfg and self._manage_cfg.emergency:
-                 # Assuming emergency is a dict in Pydantic model for now based on config_models.py
-                 # emergency: Dict[str, Any] = Field(default_factory=dict)
-                 em_cfg = self._manage_cfg.emergency
-                 if isinstance(em_cfg, dict):
-                     emergency_enabled = bool(dget(em_cfg, "enable", False))
-                     emergency_sl_bps = int(dget(em_cfg, "emergency_sl_bps", 100))
-                 else:
-                     emergency_enabled = bool(aget(em_cfg, "enable", False))
-                     emergency_sl_bps = int(aget(em_cfg, "emergency_sl_bps", 100))
+                em_cfg = self._manage_cfg.emergency
+                emergency_enabled = bool(em_cfg.enabled)
+                # FAIL-CLOSED: if emergency enabled, emergency_sl_bps must be configured
+                if emergency_enabled:
+                    emergency_sl_bps = int(em_cfg.emergency_sl_bps)
 
             if emergency_enabled and msg.op == "UPD" and msg.verb == "MARKET_DATA":
                 pld = msg.pld or {}
@@ -1210,9 +1221,18 @@ class ManageFlowFSM:
                 self.peak_price = current_price_dec
 
             # Check activation condition
+            # SSOT: Per-instrument config OR global trailing defaults from system.yaml
             if not self.trailing_activated and self.position_entry_price:
+                # FAIL-CLOSED: activation_pct must be configured (per-instrument or global)
                 if activation_pct is None:
-                    activation_pct = 0.003  # Default 0.3%
+                    # Try global trailing defaults
+                    if self.config.trailing and self.config.trailing.activation_pct is not None:
+                        activation_pct = self.config.trailing.activation_pct
+                    else:
+                        raise ValueError(
+                            f"activation_pct not configured for {self.symbol} and no global trailing defaults. "
+                            "Configure per-instrument trailing_stop.activation_pct or system.yaml trailing.activation_pct"
+                        )
 
                 if self.position_side == "BUY":
                     activation_threshold = self.position_entry_price * (
@@ -1238,8 +1258,16 @@ class ManageFlowFSM:
                 return None
 
             # Calculate new SL price based on trail_pct from peak
+            # FAIL-CLOSED: trail_pct must be configured (per-instrument or global)
             if trail_pct is None:
-                trail_pct = 0.006  # Default 0.6%
+                # Try global trailing defaults
+                if self.config.trailing and self.config.trailing.trail_pct is not None:
+                    trail_pct = self.config.trailing.trail_pct
+                else:
+                    raise ValueError(
+                        f"trail_pct not configured for {self.symbol} and no global trailing defaults. "
+                        "Configure per-instrument trailing_stop.trail_pct or system.yaml trailing.trail_pct"
+                    )
 
             trail_pct_dec = Decimal(str(trail_pct))
 

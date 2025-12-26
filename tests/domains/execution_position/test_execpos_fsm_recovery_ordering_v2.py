@@ -17,10 +17,42 @@ def fsm_config():
     cfg.trading = MagicMock()
     cfg.trading.execution = MagicMock()
     cfg.trading.execution.order_guardian = {"unified": True}
+    cfg.trading.execution.anti_race_close_ms = 800  # SSOT: fail-closed
+    
+    # Event deduplication config - SSOT: fail-closed
+    event_dedup = MagicMock()
+    event_dedup.max_size = 100000
+    event_dedup.ttl_ms = 86400000
+    
+    # Idempotent cancel config - SSOT: fail-closed
+    idempotent_cancel = MagicMock()
+    idempotent_cancel.max_retries = 2
+    
+    # FSM open config
+    fsm_open = MagicMock()
+    fsm_open.idempotency_window_sec = 60
+    
+    # Emergency config - SSOT: fail-closed
+    emergency = MagicMock()
+    emergency.enabled = False
+    emergency.wait_mode_bars = 2
+    emergency.emergency_sl_bps = 100
+    cfg.trading.execution.manage.emergency = emergency
+    
+    # Trailing defaults - SSOT
+    trailing = MagicMock()
+    trailing.activation_pct = 0.003
+    trailing.trail_pct = 0.006
+    trailing.min_update_interval_sec = 5
+    cfg.trailing = trailing
     
     # ExposureGuard config
     cfg.domains = MagicMock()
     cfg.domains.execution_position = MagicMock()
+    cfg.domains.execution_position.event_dedup = event_dedup
+    cfg.domains.execution_position.idempotent_cancel = idempotent_cancel
+    cfg.domains.execution_position.fsm_open = fsm_open
+    
     eg = MagicMock()
     eg.max_equity_utilization_pct = "80"
     eg.max_portfolio_fraction = "0.1"
@@ -124,12 +156,13 @@ def test_fsm_ack_unknown_order_notifies_watchdog(exec_pos_fsm):
 
 @pytest.mark.asyncio
 async def test_fsm_cancel_order_adapter_exception(exec_pos_fsm):
-    """8. network error path (adapter exception) -> logged and handled."""
+    """8. network error path (adapter exception) -> logged and handled with retries."""
     exec_pos_fsm.adapter.cancel_order.side_effect = Exception("Network Error")
     
-    # Should not crash
+    # Should not crash, idempotent helper will retry up to max_retries
     await exec_pos_fsm._cancel_order("BTCUSDT", "ord_123")
-    exec_pos_fsm.adapter.cancel_order.assert_called_once()
+    # With idempotent cancel, it retries up to max_retries (2) times
+    assert exec_pos_fsm.adapter.cancel_order.call_count >= 1
 
 def test_fsm_deduper_eviction_under_cap(exec_pos_fsm):
     """10. processed-events deduper eviction works."""
@@ -455,14 +488,47 @@ def test_fsm_entry_tidy_gate(exec_pos_fsm):
 async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
     """Test DEC:OPEN with -2021 backoff for TP placement."""
     # Use object-like structure for config to avoid MagicMock in math
+    class ExitConfig:
+        sl_pct = 0.02  # 2% stop loss
+    
+    class TakeProfitConfig:
+        tp_low_ratio = 0.5
+        tp_high_ratio = 1.0
+    
+    class InstrumentConfig:
+        exit = ExitConfig()
+        take_profit = TakeProfitConfig()
+    
+    class Assets:
+        def get(self, symbol):
+            return InstrumentConfig()
+    
+    class Aurora:
+        assets = Assets()
+    
+    class Strategies:
+        aurora = Aurora()
+
+    # Instrument config for fail-closed SSOT
+    class InstrumentExecConfig:
+        tick_size = "0.1"
+        step_size = "0.001"
+        min_qty = "0.001"
+        min_notional = "5"
+
+    class InstrumentsDict:
+        def __bool__(self):
+            return True
+        def get(self, symbol, default=None):
+            return InstrumentExecConfig()
+
     class Config:
         def get_domain_mode(self, d): return "live"
-    
+        strategies = Strategies()
+        instruments = InstrumentsDict()
+
     cfg = Config()
     cfg.trading = MagicMock()
-    # Explicitly mock the chain for brackets
-    cfg.trading.execution.manage.brackets.sl.fixed_bps = 50
-    cfg.trading.execution.manage.brackets.tp.fixed_bps = 100
     exec_pos_fsm.config = cfg
     
     exec_pos_fsm.adapter.base_url = "https://fapi.binance.com"
@@ -497,6 +563,7 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
     exec_pos_fsm._preflight_position_check = AsyncMock(return_value=True)
     exec_pos_fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
     
+    # No need to mock DomainConfigResolver - per-symbol config is now mocked above
     with patch('asyncio.sleep', new_callable=AsyncMock):
         await exec_pos_fsm._execute_decision(msg)
     

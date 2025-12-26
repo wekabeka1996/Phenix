@@ -665,6 +665,10 @@ class AuroraBridge:
             or intent_msg.pld.get("price")
         )
 
+        # BUG FIX: MR Handler puts stop_price/target_price in price_ctx, not top-level
+        # Extract from both locations for compatibility with all upstream sources
+        price_ctx = intent_msg.pld.get("price_ctx") or {}
+        
         command_payload = {
             # Pass through request ID for tracing
             "rid": intent_msg.pld.get("rid"),
@@ -682,9 +686,10 @@ class AuroraBridge:
                 "idempotent_key"
             ),  # Pass through for deduplication
             "price_ref": price_ref,  # Pass current market price for min_notional/exposure checks
-            # TP/SL Intent Data Propagation (PHASE A2 fix)
-            "stop_price": intent_msg.pld.get("stop_price"),
-            "target_price": intent_msg.pld.get("target_price"),
+            # TP/SL Intent Data Propagation (PHASE A2 fix + price_ctx extraction)
+            # Check top-level first, then price_ctx (MR Handler uses price_ctx)
+            "stop_price": intent_msg.pld.get("stop_price") or price_ctx.get("stop_price"),
+            "target_price": intent_msg.pld.get("target_price") or price_ctx.get("target_price"),
             "sl_pct": intent_msg.pld.get("sl_pct"),
         }
 

@@ -124,6 +124,20 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
             ),
         ),
         domains=SimpleNamespace(
+            decision_making=SimpleNamespace(
+                risk_skew=SimpleNamespace(
+                    max_skew_sec=5,
+                    max_defer_count=3,
+                    defer_cooldown_sec=2,
+                    defer_window_sec=60,
+                    until_refresh_retry_sec=30,
+                ),
+                risk_gate=SimpleNamespace(
+                    threshold_pct_testnet=20.0,
+                    threshold_pct_production=50.0,
+                    min_intents_for_check=10,
+                ),
+            ),
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
             risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
         ),
@@ -150,9 +164,9 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
                     retry_max_count=1,
                     retry_backoff_factor=1.0,
                     regime_threshold_multipliers={"DEFAULT": 1.0},
-                    side_bias_penalty_factor=None,
-                    side_bias_window_sec=None,
-                    side_bias_target_ratio=None,
+                    side_bias_penalty_factor=0.5,
+                    side_bias_window_sec=60,
+                    side_bias_target_ratio=0.6,
                     kelly=None,
                 ),
                 assets={},

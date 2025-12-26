@@ -493,6 +493,15 @@ class BracketsConfig(BaseModel):
     offset_bps: int = Field(description='Safety offset in bps')
 
 
+class TrailingDefaultsConfig(BaseModel):
+    """Global trailing stop defaults (used when per-instrument not specified)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    activation_pct: float = Field(default=0.003, description='0.3% profit to activate')
+    trail_pct: float = Field(default=0.006, description='0.6% trailing distance')
+    min_update_interval_sec: int = Field(default=5, description='Min seconds between updates')
+
+
 class EmergencyConfig(BaseModel):
     """Emergency stop-loss configuration (margin-based).
     
@@ -501,7 +510,8 @@ class EmergencyConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     enabled: bool = Field(description='Enable emergency SL')
-    wait_mode_bars: int = Field(description='Wait mode bars before resuming')
+    wait_mode_bars: int = Field(default=2, description='Wait mode bars before resuming')
+    emergency_sl_bps: int = Field(default=100, description='Emergency SL in basis points')
 
 
 class OrphanMonitorConfig(BaseModel):
@@ -769,6 +779,17 @@ class RiskSkewConfig(BaseModel):
     max_skew_sec: int = Field(description='Max age difference between features.ts and risk.ts')
     max_defer_count: int = Field(description='Max DEFERs per symbol before NO_TRADE_UNTIL_REFRESH')
     defer_cooldown_sec: int = Field(description='Cooldown between deferred retries')
+    defer_window_sec: int = Field(description='Window duration (seconds) - resets defer_count after this period')
+    until_refresh_retry_sec: int = Field(description='Retry delay when in NO_TRADE_UNTIL_REFRESH state')
+
+
+class RiskGateConfig(BaseModel):
+    """Risk gate alert thresholds for blocked intents monitoring."""
+    model_config = ConfigDict(extra='forbid')
+    
+    threshold_pct_testnet: float = Field(description='Alert if >X% intents blocked (testnet)')
+    threshold_pct_production: float = Field(description='Alert if >X% intents blocked (production)')
+    min_intents_for_check: int = Field(description='Minimum intents before checking threshold')
 
 
 class FeaturesTtlConfig(BaseModel):
@@ -801,6 +822,7 @@ class DecisionMakingDomainConfig(BaseModel):
     behavior_fsm: BehaviorFsmConfig = Field()
     signals: SignalsConfig = Field()
     risk_skew: RiskSkewConfig = Field()
+    risk_gate: RiskGateConfig = Field()
     arming: ArmingConfig = Field()
 
     # Optional hardening toggles (backward-compatible defaults)
@@ -1186,6 +1208,14 @@ class InflightReconcileConfig(BaseModel):
     verbose_logging: bool = Field(description="Log reconciliation details")
 
 
+class EventDedupConfig(BaseModel):
+    """FSM event deduplication configuration (bounded memory)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    max_size: int = Field(default=100000, description="Max number of events to track")
+    ttl_ms: int = Field(default=86400000, description="Event TTL in milliseconds (24h)")
+
+
 class ExecutionPositionDomainConfig(BaseModel):
     """Complete execution position domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -1198,6 +1228,7 @@ class ExecutionPositionDomainConfig(BaseModel):
     metrics_collector: MetricsCollectorConfig = Field()
     idempotent_cancel: IdempotentCancelConfig = Field()
     utils: ExecutionUtilsConfig = Field()
+    event_dedup: Optional[EventDedupConfig] = Field(default=None, description="Event deduplication config")
 
 class DomainsDebugConfig(BaseModel):
     """Debug / shadow-only switches for domain gates (fail-closed in live/prod)."""
@@ -1673,7 +1704,7 @@ class AuroraConfig(BaseModel):
     # If provided explicitly, they act as overrides; otherwise they should not block startup.
     execution: Optional[ExecutionConfig] = Field(default=None, description='Override trading.execution if set')
     brackets: Optional[BracketsConfig] = Field(default=None)
-    trailing: Dict[str, Any] = Field(default_factory=dict)
+    trailing: Optional[TrailingDefaultsConfig] = Field(default=None, description='Global trailing stop defaults')
     
     # Regime Detector Config (loaded from regime.yaml, Pydantic-validated)
     models: Optional[RegimeModelsConfig] = Field(default=None, description='Regime detection models from regime.yaml')
@@ -1713,6 +1744,96 @@ class AuroraConfig(BaseModel):
         """
         if self.execution is None and getattr(self.trading, "execution", None) is not None:
             self.execution = self.trading.execution
+        return self
+
+    @model_validator(mode="after")
+    def _fail_closed_validate_aurora_tpsl_ssot(self) -> "AuroraConfig":
+        """
+        Fail-closed: TP/SL parameters must come from YAML SSOT (strategies/aurora.yaml per-asset config).
+
+        This prevents silent runtime fallbacks that can quantize DOGE to 0.10000/0.20000 when tick_size is wrong
+        or when per-asset exit/take_profit config is missing.
+        """
+        # TP/SL placement preflight (A3): required in YAML, no defaults.
+        exec_cfg = getattr(self.trading, "execution", None)
+        backoff_ms = getattr(exec_cfg, "preflight_backoff_ms", None) if exec_cfg is not None else None
+        if not backoff_ms:
+            raise ValueError(
+                "trading.execution.preflight_backoff_ms is required (TP/SL preflight backoff); omit is forbidden."
+            )
+        try:
+            backoff_ms_ints = [int(x) for x in backoff_ms]
+        except Exception as e:
+            raise ValueError(f"Invalid trading.execution.preflight_backoff_ms: {backoff_ms!r} ({e})")
+        if any(x <= 0 for x in backoff_ms_ints):
+            raise ValueError(
+                f"trading.execution.preflight_backoff_ms must be positive ints, got: {backoff_ms_ints}"
+            )
+
+        active_symbols: list[str] = []
+        if self.strategies_registry is not None and isinstance(self.strategies_registry.assignments, dict):
+            active_symbols = [str(s) for s in self.strategies_registry.assignments.keys()]
+        if not active_symbols:
+            active_symbols = [str(s) for s in self.instruments.keys()]
+
+        aurora = getattr(self.strategies, "aurora", None)
+        if aurora is None:
+            raise ValueError(
+                "strategies.aurora is required: TP/SL SSOT lives in config/aurora/strategies/aurora.yaml"
+            )
+
+        missing: list[str] = []
+        for symbol in active_symbols:
+            cfg = aurora.assets.get(symbol)
+            if cfg is None:
+                missing.append(f"{symbol} missing strategies.aurora.assets.{symbol}")
+                continue
+
+            exit_cfg = cfg.exit
+            if exit_cfg is None or exit_cfg.sl_pct is None:
+                missing.append(f"{symbol} missing strategies.aurora.assets.{symbol}.exit.sl_pct")
+            else:
+                try:
+                    sl_pct = float(exit_cfg.sl_pct)
+                    if not (0.0 < sl_pct < 1.0):
+                        missing.append(
+                            f"{symbol} invalid strategies.aurora.assets.{symbol}.exit.sl_pct={exit_cfg.sl_pct}"
+                        )
+                except (TypeError, ValueError):
+                    missing.append(
+                        f"{symbol} invalid strategies.aurora.assets.{symbol}.exit.sl_pct={exit_cfg.sl_pct}"
+                    )
+
+            tp_cfg = cfg.take_profit
+            if tp_cfg is None or tp_cfg.tp_low_ratio is None:
+                missing.append(f"{symbol} missing strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio")
+            else:
+                try:
+                    tp_low = float(tp_cfg.tp_low_ratio)
+                    if tp_low <= 0.0:
+                        missing.append(
+                            f"{symbol} invalid strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio={tp_cfg.tp_low_ratio}"
+                        )
+                except (TypeError, ValueError):
+                    missing.append(
+                        f"{symbol} invalid strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio={tp_cfg.tp_low_ratio}"
+                    )
+
+            if tp_cfg is not None and tp_cfg.partial_exit_pct is not None:
+                try:
+                    p = float(tp_cfg.partial_exit_pct)
+                    if not (0.0 < p < 1.0):
+                        missing.append(
+                            f"{symbol} invalid strategies.aurora.assets.{symbol}.take_profit.partial_exit_pct={tp_cfg.partial_exit_pct}"
+                        )
+                except (TypeError, ValueError):
+                    missing.append(
+                        f"{symbol} invalid strategies.aurora.assets.{symbol}.take_profit.partial_exit_pct={tp_cfg.partial_exit_pct}"
+                    )
+
+        if missing:
+            raise ValueError("TP/SL SSOT validation failed: " + "; ".join(sorted(missing)))
+
         return self
 
 
