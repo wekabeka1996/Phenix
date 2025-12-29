@@ -159,13 +159,17 @@ class ExecutionRequest(BaseModel):
     Canonical execution request (ExecPosRuntimeV2 → BinanceExecutionAdapter).
 
     Used to validate and normalize adapter inputs before forwarding.
+
+    Note: quantity is Optional because closePosition=true orders don't need it.
+    Binance will close the entire position when closePosition=true.
     """
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     symbol: str
     side: Literal["BUY", "SELL"]
-    quantity: Decimal = Field(validation_alias=AliasChoices("quantity", "qty"))
+    # quantity is Optional: not required for closePosition=true orders
+    quantity: Optional[Decimal] = Field(default=None, validation_alias=AliasChoices("quantity", "qty"))
     order_type: str
     time_in_force: Optional[str] = Field(
         default=None, serialization_alias="tif", validation_alias=AliasChoices("tif", "time_in_force")

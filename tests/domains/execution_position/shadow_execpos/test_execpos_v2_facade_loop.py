@@ -16,10 +16,15 @@ class DummyRuntime:
 
     def __init__(self):
         self.events: List[Dict[str, Any]] = []
+        self._loop = None
 
     async def handle(self, event: Dict[str, Any]) -> None:
         """Record received events."""
         self.events.append(event)
+
+    def set_async_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Mock method for loop propagation."""
+        self._loop = loop
 
 
 class DummyAdapter:

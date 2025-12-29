@@ -1,6 +1,6 @@
 """
-Bracket Snapshot Gating Enhanced Tests
-======================================
+Bracket Snapshot Gating Enhanced Tests (Phase 10)
+==================================================
 
 Tests for bracket evaluation gating based on ORDERS_SNAPSHOT state.
 This file explicitly tests the contract for EP-CORE-SLIM-RUNTIME-STEP1.
@@ -11,6 +11,8 @@ Contract:
 - "trade_executed" reason allows "UNKNOWN" snapshot state (fail-open for immediate reaction)
 - "guard_loop" and "account_update_sync" reasons require "FRESH" snapshot state (fail-closed)
 
+Phase 10: Tests verify gating via place_order calls instead of bracket_service.evaluate,
+          since runtime now uses core planner directly.
 """
 import time
 from decimal import Decimal
@@ -46,6 +48,7 @@ def make_ep_config() -> ExecutionPositionConfig:
         snapshot=SnapshotConfig(orders_ttl_sec=60.0),
     )
 
+
 def make_runtime() -> ExecPosRuntimeV2:
     runtime = ExecPosRuntimeV2(
         config={},
@@ -54,11 +57,17 @@ def make_runtime() -> ExecPosRuntimeV2:
         ep_config=make_ep_config(),
         guardian=MagicMock(),
     )
-    runtime.execution_service = MagicMock()
-    runtime.execution_service.place_order = AsyncMock(return_value={"success": True, "order_id": "mock-oid"})
-    runtime.execution_service.cancel_order = AsyncMock(return_value={"success": True})
+    # Disable ExecutorPool to use legacy path with mocked execution_service
+    runtime._use_executor_pool = False
 
-    # Mock bracket service to avoid complex logic during gating tests
+    runtime.execution_service = MagicMock()
+    runtime.execution_service.place_order = AsyncMock(
+        return_value={"success": True, "order_id": "mock-oid"})
+    runtime.execution_service.cancel_order = AsyncMock(
+        return_value={"success": True})
+
+    # Phase 10: bracket_service still exists on runtime but is not used for planning
+    # Keep it for backwards compat but tests should verify via place_order
     runtime.bracket_service = MagicMock()
     runtime.bracket_service.build_state = MagicMock(return_value={})
     runtime.bracket_service.evaluate = MagicMock(return_value=BracketPlan(
@@ -70,6 +79,7 @@ def make_runtime() -> ExecPosRuntimeV2:
 # =============================================================================
 # Tests
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_evaluate_brackets_blocked_when_snapshot_unknown_for_guard_loop():
@@ -86,8 +96,8 @@ async def test_evaluate_brackets_blocked_when_snapshot_unknown_for_guard_loop():
     # Act
     await runtime._evaluate_brackets(symbol, position, reason="guard_loop")
 
-    # Assert
-    runtime.bracket_service.evaluate.assert_not_called()
+    # Assert: No bracket orders placed when gated
+    runtime.execution_service.place_order.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -105,8 +115,8 @@ async def test_evaluate_brackets_blocked_when_snapshot_stale_for_guard_loop():
     # Act
     await runtime._evaluate_brackets(symbol, position, reason="guard_loop")
 
-    # Assert
-    runtime.bracket_service.evaluate.assert_not_called()
+    # Assert: No bracket orders placed when gated
+    runtime.execution_service.place_order.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -120,14 +130,16 @@ async def test_evaluate_brackets_blocked_when_snapshot_ttl_expired_for_guard_loo
 
     runtime._positions_by_symbol[symbol] = position
     runtime._orders_snapshot_state[symbol] = "FRESH"
+    # DUPID-FIX-3: guard_loop is blocked until recovery completes
+    runtime._recovery_completed = True
     # Set timestamp older than TTL (60s)
     runtime._last_orders_snapshot_ts[symbol] = time.monotonic() - 120.0
 
     # Act
     await runtime._evaluate_brackets(symbol, position, reason="guard_loop")
 
-    # Assert
-    runtime.bracket_service.evaluate.assert_not_called()
+    # Assert: No bracket orders placed when gated
+    runtime.execution_service.place_order.assert_not_called()
     # Should have transitioned to STALE
     assert runtime._orders_snapshot_state[symbol] == "STALE"
 
@@ -143,18 +155,16 @@ async def test_evaluate_brackets_allowed_when_snapshot_fresh_for_guard_loop():
 
     runtime._positions_by_symbol[symbol] = position
     runtime._orders_snapshot_state[symbol] = "FRESH"
+    # DUPID-FIX-3: guard_loop is blocked until recovery completes
+    runtime._recovery_completed = True
     runtime._last_orders_snapshot_ts[symbol] = time.monotonic()
-
-    # Mock build_state to return something so evaluate is called
-    runtime.bracket_service.build_state.return_value = {
-        (symbol, "LONG"): MagicMock()
-    }
 
     # Act
     await runtime._evaluate_brackets(symbol, position, reason="guard_loop")
 
-    # Assert
-    runtime.bracket_service.evaluate.assert_called_once()
+    # Assert: Bracket orders placed when snapshot is fresh
+    # Core planner generates PLACE_SL + PLACE_TP for LONG position without brackets
+    runtime.execution_service.place_order.assert_called()
 
 
 @pytest.mark.asyncio
@@ -169,16 +179,11 @@ async def test_evaluate_brackets_allowed_when_snapshot_unknown_for_trade_execute
     runtime._positions_by_symbol[symbol] = position
     runtime._orders_snapshot_state[symbol] = "UNKNOWN"
 
-    # Mock build_state
-    runtime.bracket_service.build_state.return_value = {
-        (symbol, "LONG"): MagicMock()
-    }
-
     # Act
     await runtime._evaluate_brackets(symbol, position, reason="trade_executed")
 
-    # Assert
-    runtime.bracket_service.evaluate.assert_called_once()
+    # Assert: Bracket orders placed (trade_executed allows UNKNOWN - fail-open)
+    runtime.execution_service.place_order.assert_called()
 
 
 @pytest.mark.asyncio
@@ -196,5 +201,5 @@ async def test_evaluate_brackets_blocked_when_snapshot_unknown_for_account_updat
     # Act
     await runtime._evaluate_brackets(symbol, position, reason="account_update_sync")
 
-    # Assert
-    runtime.bracket_service.evaluate.assert_not_called()
+    # Assert: No bracket orders placed when gated
+    runtime.execution_service.place_order.assert_not_called()

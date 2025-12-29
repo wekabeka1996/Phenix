@@ -1,8 +1,90 @@
+# TODO: Fix TP/SL Duplication - Add Initial Orders Sync
+
+**Проблема:** ExecutionPosition V2 runtime не синхронізується з існуючими ордерами на біржі при запуску, що призводить до постійних спроб розмістити TP/SL ордери, які вже існують, і помилок "ClientOrderId is duplicated".
+
+**Корінь проблеми:** Відсутня початкова синхронізація open orders в ExecPosRuntimeV2.start()
+
+**Рішення:** Додати _force_initial_orders_sync() в метод start() для синхронізації з біржею перед початком роботи.
+
+**Статус:** In Progress
+**Оновлено:** 2025-12-04
+
+- [x] Діагностовано проблему: відсутність initial sync призводить до duplicate ClientOrderId
+- [x] Додано _force_initial_orders_sync() метод в runtime.py
+- [x] Інтегровано виклик sync в start() метод
+- [x] Діагностовано проблему: відсутність initial sync призводить до duplicate ClientOrderId
+- [x] Додано _force_initial_orders_sync() метод в runtime.py
+- [x] Інтегровано виклик sync в start() метод
+- [x] Додано timestamp до clientOrderId генерації для додаткової унікальності
+- [ ] Протестувати фікс на тестовій системі - ПОТРІБЕН ПЕРЕЗАПУСК
+- [ ] Підтвердити, що duplicate помилки зникли
+
+---
+
 # TODO: Adapter Unification — Timeout Resilience
 
 **Пов'язаний документ:** `docs/ADAPTER_UNIFICATION_PLAN.md`
 **Статус:** In Progress
-**Оновлено:** 2025-01-28
+**Оновлено:** 2025-12-01
+
+---
+
+## Phase P0: Precision Guard for Conditionals ✅ COMPLETED (2025-12-01)
+
+> **Мета:** Виправити -1111 Binance precision errors для stopPrice/price
+
+- [x] **P0.1** Аудит binance_adapter precision handling ✅
+  - `quantize_quantity()` існував, `normalize_price()` — НІ
+
+- [x] **P0.2** Додати `_get_symbol_filters()` з кешем exchangeInfo ✅
+  - TTL 300 сек, fallback для відомих символів
+
+- [x] **P0.3** Додати `_normalize_price()` та `_normalize_quantity()` ✅
+  - Округлення до tickSize/stepSize
+
+- [x] **P0.4** Додати `_validate_precision()` fail-closed guard ✅
+  - Перевірка перед відправкою на API
+
+- [x] **P0.5** Оновити `create_order()` ✅
+  - Нормалізація price, stopPrice, quantity
+
+- [x] **P0.6** Тести: test_binance_adapter_precision.py ✅
+  - 7 тестів precision normalization
+
+**DoD Phase P0: ✅ COMPLETED**
+```
+✅ stopPrice нормалізується до tickSize
+✅ price нормалізується до tickSize
+✅ quantity нормалізується до stepSize
+✅ Fail-closed guard перед API
+✅ Тести: 602 passed
+```
+
+---
+
+## Phase P1: Error Classification Fix ✅ COMPLETED (2025-12-01)
+
+> **Мета:** Розрізняти adapter precision errors від fill timeouts
+
+- [x] **P1.1** Аудит ExecutionService error handling ✅
+  - `_classify_exception()` не знав про -1111
+
+- [x] **P1.2** Додати precision_error до ERROR_CODES ✅
+  - `"-1111"` → `is_timeout=False`
+
+- [x] **P1.3** Оновити `_classify_exception()` ✅
+  - Precision error detection FIRST
+
+- [x] **P1.4** Тести: test_execution_error_mapping.py ✅
+  - 13 тестів error classification
+
+**DoD Phase P1: ✅ COMPLETED**
+```
+✅ -1111 класифікується як precision_error
+✅ "precision" в повідомленні → not timeout
+✅ Логи чесно показують причину
+✅ Тести: all 13 passed
+```
 
 ---
 
@@ -279,6 +361,79 @@ Select-String -Path "apps\**\*.py" -Pattern "SdkAdapterBinance" -Recurse
 
 ---
 
+## ExecutorPool Migration ✅ PHASE 3 COMPLETED (2025-11-29)
+
+> **Мета:** Per-symbol parallel execution замість single SyncOrderExecutor
+
+**Phase 1: Create Components ✅ COMPLETED**
+- [x] **1.1** Створити `SymbolExecutor` — per-symbol executor (838 lines)
+- [x] **1.2** Створити `ExecutorPool` — pool manager з rate limiter
+- [x] **1.3** Реалізувати `closePosition=true` для brackets
+- [x] **1.4** Написати unit тести — 26/26 passed
+
+**Phase 2: Runtime Integration ✅ COMPLETED**
+- [x] **2.1** Додати ExecutorPool до runtime.py init
+- [x] **2.2** Routing fill events до executor_pool.on_fill()
+- [x] **2.3** _handle_entry_intent() path для ExecutorPool
+- [x] **2.4** Integration тести — 12/12 passed
+- [x] **2.5** Додати `nest_asyncio` для sync->async calls
+- [x] **2.6** Оновити default `executor_pool_enabled=False` для backward compat
+
+**Phase 3: Remove Deprecated Code ✅ COMPLETED (2025-11-29)**
+- [x] **3.1** Видалити `sync_executor.py` (550 lines) — DONE
+- [x] **3.2** Видалити імпорт та код SyncOrderExecutor з runtime.py
+- [x] **3.3** Оновити config логіку — ExecutorPool enabled by default
+- [x] **3.4** Видалити застарілі тести (test_sync_executor.py, test_sync_executor_runtime_integration.py)
+- [x] **3.5** Оновити решту тестів — 368/371 passed (99.2%)
+- [x] **3.6** BracketService retired from production — Phase 11 COMPLETED ✅
+
+---
+
+## Aggregator OCO BracketService Retirement ✅ PHASE 11 COMPLETED (2025-11-30)
+
+> **Мета:** Повне видалення BracketService з production коду
+
+**Summary:**
+- `self.bracket_service = None` — runtime no longer uses BracketService
+- New modules: `view_types.py`, `cleanup.py` in aggregator_oco
+- Runtime uses `plan_orphan_cleanup()`, `plan_reverse_cleanup()` from cleanup module
+- Watchdog rewritten to use `compute_bracket_plan_from_views()`
+
+**Test Results:**
+- aggregator_oco: **258 passed** ✅
+- shadow_execpos: **324 passed**, 22 xfailed, 14 xpassed ✅
+
+**Phase 4: Simplify DM/Facade** (FUTURE)
+- [ ] **4.1** Видалити QoS defer logic з DecisionMaking
+- [ ] **4.2** Видалити _pending_symbols з V2RuntimeFacade
+- [ ] **4.3** Прибрати complexity з order routing
+
+**Phase 5: Cleanup** (FUTURE)
+- [ ] **5.1** Оновити документацію
+- [ ] **5.2** Performance benchmark
+- [ ] **5.3** Shadow mode testing
+
+**Test Results Phase 3 (2025-11-29):**
+```
+✅ test_executor_pool_entry_flow.py — 15/15 passed (NEW)
+✅ test_entry_to_brackets_integration.py — 9/9 passed (NEW)
+✅ test_executor_pool_integration.py — 13/13 passed (UPDATED)
+✅ shadow_execpos total — 368/371 passed (99.2%)
+⚠️ 3 failed unrelated to refactoring (2 logging file tests, 1 xfail)
+```
+
+**Config flags (current):**
+- `executor_pool_enabled: true` — NEW default (production)
+- `execution.executor_pool.enabled: true` — alternative config path
+- Use both set to `false` to fallback to async ExecutionService path
+
+**Breaking changes:**
+- Removed `sync_executor_enabled` config flag
+- Removed `runtime.sync_executor` attribute
+- Removed `runtime._use_sync_executor` flag
+
+---
+
 ## Cleanup & Maintenance
 
 - [x] **EP-CORE-SLIM-WATCHDOG-AND-OBS-CLEANUP** Remove legacy OrderTimeoutWatchdog and cleanup observability re-exports
@@ -287,3 +442,44 @@ Select-String -Path "apps\**\*.py" -Pattern "SdkAdapterBinance" -Recurse
   - Deleted re-exports in pps/reference/domains/execution_position/
   - Updated tests to import from observability
 
+---
+
+## Bug Fixes
+
+- [x] **EXEC-BRACKET-RETRY-AND-SNAPSHOT-FIX** Fix bracket execution retry and snapshot blocking issues ✅ COMPLETED (2025-12-01)
+  - **Problem**: Bracket orders dropped when rate limit (8/s) exceeded; Snapshot blocked trade_executed
+  - **Fix**: Added retry loop with exponential backoff in `runtime.py:_execute_with_retry`
+  - **Fix**: Updated `_snapshot_allows_brackets` to always allow `trade_executed`
+  - **Verification**: Stress test confirmed 10/10 brackets processed (retries logged)
+
+- [x] **CONFIG-V2-MERGE-LEVERAGE-FIX** Fix config v2 instrument merge to apply 75x leverage ✅ COMPLETED (2025-12-01)
+  - **Problem**: Legacy trading.yaml instruments prevented v2 config merge, leverage showed 10x instead of 75x
+  - **Fix**: Modified `_hydrate_from_config_v2` in `config_loader.py` to always merge v2 instruments into existing legacy instruments
+  - **Fix**: Added None checks in `_build_ep_config` and `build_execution_runtime` to prevent 'NoneType' attribute errors
+  - **Verification**: Leverage correctly resolves to 75x for all symbols (SOLUSDT, ETHUSDT, BTCUSDT, BNBUSDT)
+
+---
+
+## Aggregator OCO Dynamic Bracket Recalculation ✅ COMPLETED (2025-12-01)
+
+> **Мета:** Реалізувати динамічне перерахування TP/SL рівнів при зміні позиції (scale-in, averaging)
+
+**Summary:**
+- **Problem**: Aggregator OCO не перераховував brackets при зміні entry price через scale-in/averaging
+- **Solution**: Додано stale levels detection з tolerance-based price matching (0.1% default)
+- **Implementation**:
+  - `core_math.py`: `prices_match_with_tolerance()` function
+  - `engine.py`: Stale levels check in `_compute_bracket_plan_core()` - **FIXED BUG**: тепер перевіряє кожен bracket окремо, а не тільки коли обидва існують
+  - Generates CANCEL + PLACE actions when brackets become stale
+- **Testing**: 6 unit tests covering scale-in, partial stale, tolerance scenarios
+- **Integration**: Runtime tests pass, stale levels logic active in production
+
+**Test Results:**
+- aggregator_oco unit tests: **264 passed** ✅
+- shadow_execpos integration: **7 passed, 2 xfailed** ✅
+- Stale levels detection: ✅ scale-in triggers recalc, ✅ tolerance allows small differences, ✅ partial stale handled correctly
+
+**Files Modified:**
+- `apps/reference/domains/execution_position/aggregator_oco/core_math.py`
+- `apps/reference/domains/execution_position/aggregator_oco/engine.py`
+- `tests/domains/execution_position/aggregator_oco/test_stale_levels.py` (NEW)

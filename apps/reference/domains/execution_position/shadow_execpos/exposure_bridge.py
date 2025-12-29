@@ -68,6 +68,11 @@ class ExposureBridge:
                     "realized_pnl": str(position_state.get("realized_pnl", 0)),
                     "unrealized_pnl": str(position_state.get("unrealized_pnl", 0)),
                     "update_time": time.time(),
+                    "roi_sl_pct": position_state.get("sl_pct"),
+                    "roi_tp_rr": position_state.get("tp_rr"),
+                    "target_sl_price": position_state.get("target_sl_price"),
+                    "target_tp_price": position_state.get("target_tp_price"),
+                    "leverage_used": position_state.get("leverage_used"),
                 },
                 "source": "execution_position_v2",
             }

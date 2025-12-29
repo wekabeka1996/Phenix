@@ -1,4 +1,4 @@
-﻿"""
+"""
 Test ExecutionService ConnectTimeout Flow
 
 This test suite verifies ExecutionService correctly categorizes and handles
@@ -82,7 +82,7 @@ class FakeAdapterWithTimeoutError:
             "clientOrderId": kwargs.get("client_order_id", "test_client_id"),
         }
     
-    async def cancel_order(self, symbol, order_id=None, **kwargs):
+    async def cancel_order(self, symbol, order_ref=None, **kwargs):
         """Simulate cancel_order."""
         self.cancel_order_calls.append({"symbol": symbol, "order_id": order_id})
         return {"allowed": True, "reason": "CANCEL_SUCCESS"}

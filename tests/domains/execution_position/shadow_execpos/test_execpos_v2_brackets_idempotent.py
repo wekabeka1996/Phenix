@@ -69,7 +69,7 @@ async def test_apply_bracket_plan_skips_duplicate_sl():
         state=state,
         actions=[
             BracketAction(
-                action_type="PLACE_SL", price=Decimal("1200"), qty=Decimal("0.5")
+                action="PLACE_SL", leg_type="SL", target_price=Decimal("1200"), qty=Decimal("0.5")
             )
         ],
         severity="ALERT",

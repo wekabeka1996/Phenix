@@ -127,8 +127,7 @@ def test_build_state_single_long_position_with_sl_tp(bracket_service):
     )
 
     # SL order
-    sl_order = OrderView(
-        order_id="SL123",
+    sl_order = OrderView(order_id="SL123",
         client_order_id="SL_CLIENT_123",
         symbol="BTCUSDT",
         side="SELL",
@@ -139,8 +138,7 @@ def test_build_state_single_long_position_with_sl_tp(bracket_service):
     )
 
     # TP order
-    tp_order = OrderView(
-        order_id="TP456",
+    tp_order = OrderView(order_id="TP456",
         client_order_id="TP_CLIENT_456",
         symbol="BTCUSDT",
         side="SELL",
@@ -189,8 +187,7 @@ def test_build_state_flat_position_with_orphan_sl(bracket_service):
     # No position (FLAT)
 
     # Orphan SL order
-    sl_order = OrderView(
-        order_id="SL999",
+    sl_order = OrderView(order_id="SL999",
         client_order_id="SL_CLIENT_999",
         symbol="BTCUSDT",
         side="SELL",
@@ -297,8 +294,7 @@ def test_evaluate_missing_sl_allowed(bracket_service):
 def test_evaluate_orphan_sl_warn(bracket_service, default_config):
     """Test evaluate() detects orphan SL with WARN severity."""
     # FLAT position (no position_view), but has SL order
-    sl_order = OrderView(
-        order_id="SL999",
+    sl_order = OrderView(order_id="SL999",
         client_order_id="SL_CLIENT_999",
         symbol="BTCUSDT",
         side="SELL",
@@ -349,8 +345,7 @@ def test_evaluate_orphan_sl_warn(bracket_service, default_config):
 def test_evaluate_orphan_sl_and_tp_warn(bracket_service, default_config):
     """Test evaluate() detects orphan SL + TP with WARN severity."""
     # FLAT position, but has SL + TP orders
-    sl_order = OrderView(
-        order_id="SL999",
+    sl_order = OrderView(order_id="SL999",
         client_order_id="SL_CLIENT_999",
         symbol="BTCUSDT",
         side="SELL",
@@ -360,8 +355,7 @@ def test_evaluate_orphan_sl_and_tp_warn(bracket_service, default_config):
         reduce_only=True,
     )
 
-    tp_order = OrderView(
-        order_id="TP888",
+    tp_order = OrderView(order_id="TP888",
         client_order_id="TP_CLIENT_888",
         symbol="BTCUSDT",
         side="SELL",
@@ -424,8 +418,7 @@ def test_evaluate_too_many_sl_warn(bracket_service, default_config):
     sl_legs = [
         BracketLeg(
             leg_type="SL",
-            order=OrderView(
-                order_id=f"SL{i}",
+            order=OrderView(order_id=f"SL{i}",
                 client_order_id=f"SL_CLIENT_{i}",
                 symbol="BTCUSDT",
                 side="SELL",
@@ -487,8 +480,7 @@ def test_evaluate_stale_sl_level_warn(bracket_service, default_config):
     )
 
     # SL at wrong price (should be 24.5, but is 24.0)
-    sl_order = OrderView(
-        order_id="SL123",
+    sl_order = OrderView(order_id="SL123",
         client_order_id="SL_CLIENT_123",
         symbol="BTCUSDT",
         side="SELL",
@@ -499,8 +491,7 @@ def test_evaluate_stale_sl_level_warn(bracket_service, default_config):
     )
 
     # R2-B-FIX: Also include TP to avoid MISSING_TP taking precedence
-    tp_order = OrderView(
-        order_id="TP123",
+    tp_order = OrderView(order_id="TP123",
         client_order_id="TP_CLIENT_123",
         symbol="BTCUSDT",
         side="SELL",
@@ -564,8 +555,7 @@ def test_evaluate_stale_sl_and_tp_levels_warn(bracket_service, default_config):
     )
 
     # SL at wrong price
-    sl_order = OrderView(
-        order_id="SL123",
+    sl_order = OrderView(order_id="SL123",
         client_order_id="SL_CLIENT_123",
         symbol="BTCUSDT",
         side="SELL",
@@ -576,8 +566,7 @@ def test_evaluate_stale_sl_and_tp_levels_warn(bracket_service, default_config):
     )
 
     # TP at wrong price
-    tp_order = OrderView(
-        order_id="TP456",
+    tp_order = OrderView(order_id="TP456",
         client_order_id="TP_CLIENT_456",
         symbol="BTCUSDT",
         side="SELL",
@@ -674,8 +663,7 @@ def test_evaluate_all_mixed_severities(bracket_service, default_config):
         avg_entry_price=Decimal("25.0"),
     )
 
-    sl1 = OrderView(
-        order_id="SL1",
+    sl1 = OrderView(order_id="SL1",
         client_order_id="SL_CLIENT_1",
         symbol="BTCUSDT",
         side="SELL",
@@ -686,8 +674,7 @@ def test_evaluate_all_mixed_severities(bracket_service, default_config):
     )
 
     # R2-B-FIX: Add TP order to get INFO severity (no missing brackets)
-    tp1 = OrderView(
-        order_id="TP1",
+    tp1 = OrderView(order_id="TP1",
         client_order_id="TP_CLIENT_1",
         symbol="BTCUSDT",
         side="SELL",
@@ -772,8 +759,7 @@ def test_position_view_invariants():
 def test_order_view_invariants():
     """Test OrderView validates invariants."""
     # Valid order
-    order = OrderView(
-        order_id="123",
+    order = OrderView(order_id="123",
         client_order_id="CLIENT_123",
         symbol="BTCUSDT",
         side="BUY",
@@ -785,8 +771,7 @@ def test_order_view_invariants():
 
     # Invalid: empty order_id
     with pytest.raises(ValueError, match="order_id cannot be empty"):
-        OrderView(
-            order_id="",
+        OrderView(order_id="",
             client_order_id="CLIENT_123",
             symbol="BTCUSDT",
             side="BUY",
@@ -796,8 +781,7 @@ def test_order_view_invariants():
 
     # Invalid: qty <= 0
     with pytest.raises(ValueError, match="qty must be > 0"):
-        OrderView(
-            order_id="123",
+        OrderView(order_id="123",
             client_order_id="CLIENT_123",
             symbol="BTCUSDT",
             side="BUY",
@@ -811,8 +795,8 @@ def test_bracket_action_why_truncation():
     long_why = "a" * 100  # 100 chars
 
     action = BracketAction(
-        action_type="CANCEL",
-        order_id="123",
+        action="CANCEL",
+        order_ref="123",
         reason_code="TEST",
         why=long_why,
     )

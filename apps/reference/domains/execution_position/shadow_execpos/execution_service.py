@@ -68,15 +68,19 @@ class ExecutionService:
             "invalid_qty": "-4137",
             "min_notional": "-4164",
             "insufficient_balance": "-2010",
-            "rate_limit": "-429"
+            "rate_limit": "-429",
+            # EXEC-BINANCE-PRECISION-GUARD: Added precision error code
+            "precision_error": "-1111",
         }
 
         try:
             # Locate config file relative to this file
             # Path: apps/reference/domains/execution_position/config/adapter_errors.yaml
             # Current file: apps/reference/domains/execution_position/shadow_execpos/execution_service.py
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            config_path = os.path.join(base_dir, "config", "adapter_errors.yaml")
+            base_dir = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
+            config_path = os.path.join(
+                base_dir, "config", "adapter_errors.yaml")
 
             if os.path.exists(config_path):
                 with open(config_path, "r") as f:
@@ -84,11 +88,13 @@ class ExecutionService:
                     if data and "binance" in data:
                         return data["binance"]
 
-            logger.warning(f"Adapter error config not found at {config_path}, using defaults")
+            logger.warning(
+                f"Adapter error config not found at {config_path}, using defaults")
             return default_codes
 
         except Exception as e:
-            logger.error(f"Failed to load adapter error config: {e}", exc_info=True)
+            logger.error(
+                f"Failed to load adapter error config: {e}", exc_info=True)
             return default_codes
 
     async def _call_adapter(self, fn_or_str: Union[Any, str], *args, **kwargs) -> Any:
@@ -108,17 +114,32 @@ class ExecutionService:
             Exception: Re-raises any exceptions from adapter
         """
         if not self.adapter:
+            logger.warning(f"[ExecService] _call_adapter: NO ADAPTER!")
             return None
 
         try:
             # Resolve attribute
             f = getattr(self.adapter, fn_or_str, None)
+            logger.info(
+                f"[ExecService] _call_adapter: fn={fn_or_str} adapter_type={type(self.adapter).__name__} fn_found={f is not None}")
 
             if f is None or not callable(f):
+                logger.warning(
+                    f"[ExecService] _call_adapter: {fn_or_str} not callable on adapter")
                 return None
 
             if asyncio.iscoroutinefunction(f):
-                return await f(*args, **kwargs)
+                logger.info(
+                    f"[ExecService] _call_adapter: BEFORE await {fn_or_str}")
+                try:
+                    result = await f(*args, **kwargs)
+                    logger.info(
+                        f"[ExecService] _call_adapter: AFTER await {fn_or_str} result_type={type(result)}")
+                    return result
+                except Exception as e:
+                    logger.error(
+                        f"[ExecService] _call_adapter: EXCEPTION in {fn_or_str}: {e}")
+                    raise
             else:
                 result = f(*args, **kwargs)
                 # If it returned a coroutine, await it
@@ -163,9 +184,9 @@ class ExecutionService:
 
         # 2. Check for Network Error
         is_network = exception_type in NETWORK_EXCEPTION_NAMES
-        if httpx and isinstance(exception, httpx.ConnectError):
+        if httpx and isinstance(exception, (httpx.ConnectError, httpx.ReadError, httpx.NetworkError)):
             is_network = True
-        if httpcore and isinstance(exception, httpcore.ConnectError):
+        if httpcore and isinstance(exception, (httpcore.ConnectError, httpcore.ReadError, httpcore.NetworkError)):
             is_network = True
 
         if is_network:
@@ -186,6 +207,18 @@ class ExecutionService:
             }
 
         # 4. Check for Specific API Errors (using loaded config)
+        # EXEC-BINANCE-PRECISION-GUARD: Check precision error FIRST (most specific)
+        if self.ERROR_CODES.get("precision_error", "-1111") in error_str or \
+           "precision" in error_str.lower() or \
+           "over the maximum" in error_str.lower():
+            norm_err = f"ADAPTER_ERROR_PRECISION: {error_str[:100]}"
+            return {
+                "error_kind": "ADAPTER_ERROR",
+                "is_timeout": False,
+                "is_network": False,
+                "normalized_error": norm_err
+            }
+
         if self.ERROR_CODES["unknown_order"] in error_str:
             norm_err = "UNKNOWN_ORDER"
         elif self.ERROR_CODES["would_trigger"] in error_str:
@@ -296,15 +329,30 @@ class ExecutionService:
         client_order_id = cmd.get("client_order_id")
         reduce_only = cmd.get("reduce_only", False)
         extra_params = cmd.get("extra_params", {})
+        close_position = extra_params.get("close_position", False)
 
         # Validation
-        if not symbol or not side or not quantity:
+        # Note: quantity is NOT required when close_position=True
+        # closePosition orders close entire position without specifying qty
+        if not symbol or not side:
             return {
                 "status": ExecutionStatus.FAILED,
                 "success": False,
                 "order_id": None,
                 "client_order_id": client_order_id,
-                "error": "Missing required parameters (symbol, side, quantity)",
+                "error": "Missing required parameters (symbol, side)",
+                "error_kind": "INVALID_REQUEST",
+                "metadata": {}
+            }
+
+        # Quantity required only if NOT using closePosition
+        if not close_position and not quantity:
+            return {
+                "status": ExecutionStatus.FAILED,
+                "success": False,
+                "order_id": None,
+                "client_order_id": client_order_id,
+                "error": "Missing quantity (required when close_position=False)",
                 "error_kind": "INVALID_REQUEST",
                 "metadata": {}
             }
@@ -357,19 +405,28 @@ class ExecutionService:
         try:
             # Construct ExchangeOrderParams
             # Note: We convert values to strings as expected by ExchangeOrderParams
+            # CRITICAL: quantity must be None (not "None" string) for closePosition orders!
+            raw_qty = req_kwargs.get("quantity")
+            qty_str = str(raw_qty) if raw_qty is not None else None
+
             params = ExchangeOrderParams(
                 symbol=str(req_kwargs.get("symbol")),
                 side=str(req_kwargs.get("side")),
                 order_type=str(req_kwargs.get("order_type", "MARKET")),
-                quantity=str(req_kwargs.get("quantity")),
-                price=str(req_kwargs.get("price")) if req_kwargs.get("price") is not None else None,
+                quantity=qty_str,  # None for closePosition, string otherwise
+                price=str(req_kwargs.get("price")) if req_kwargs.get(
+                    "price") is not None else None,
                 time_in_force=str(req_kwargs.get("time_in_force", "GTC")),
                 reduce_only=bool(req_kwargs.get("reduce_only", False)),
                 close_position=bool(req_kwargs.get("close_position", False)),
-                client_order_id=str(req_kwargs.get("client_order_id")) if req_kwargs.get("client_order_id") else None,
-                position_side=str(req_kwargs.get("position_side")) if req_kwargs.get("position_side") else None,
-                stop_price=str(req_kwargs.get("stop_price")) if req_kwargs.get("stop_price") is not None else None,
-                working_type=str(req_kwargs.get("working_type")) if req_kwargs.get("working_type") else None,
+                client_order_id=str(req_kwargs.get("client_order_id")) if req_kwargs.get(
+                    "client_order_id") else None,
+                position_side=str(req_kwargs.get("position_side")) if req_kwargs.get(
+                    "position_side") else None,
+                stop_price=str(req_kwargs.get("stop_price")) if req_kwargs.get(
+                    "stop_price") is not None else None,
+                working_type=str(req_kwargs.get("working_type")) if req_kwargs.get(
+                    "working_type") else None,
             )
 
             # Call adapter create_order method
@@ -380,7 +437,8 @@ class ExecutionService:
             )
 
             # Convert ExchangeOrderResponse to dict if needed
-            response = response_obj.to_dict() if hasattr(response_obj, "to_dict") else response_obj
+            response = response_obj.to_dict() if hasattr(
+                response_obj, "to_dict") else response_obj
 
             # Handle missing adapter method or None response
             if response is None:
@@ -494,7 +552,8 @@ class ExecutionService:
             exception_type = type(e).__name__
 
             # EXEC-R2-K: Classify exception-based errors
-            place_classification = self._classify_place_error(error_normalized, {})
+            place_classification = self._classify_place_error(
+                error_normalized, {})
             reason_code = place_classification["reason_code"]
 
             # Timeouts/Network -> ERROR, benign ORDER_WOULD_TRIGGER -> WARNING, others -> ERROR
@@ -745,7 +804,8 @@ class ExecutionService:
                 params=params
             )
 
-            response = response_obj.to_dict() if hasattr(response_obj, "to_dict") else response_obj
+            response = response_obj.to_dict() if hasattr(
+                response_obj, "to_dict") else response_obj
 
             order_id = None
             if isinstance(response, dict):

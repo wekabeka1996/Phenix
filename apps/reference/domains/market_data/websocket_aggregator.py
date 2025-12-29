@@ -51,6 +51,8 @@ class WebSocketAggregator:
                 # Price history
                 "prices": deque(maxlen=10),
                 "latest_price": decimal.Decimal(0),
+                # EP-TRADE-ID: Last trade ID for TCA correlation
+                "last_trade_id": None,
             }
             for symbol in all_tracked
         }
@@ -112,7 +114,8 @@ class WebSocketAggregator:
         )
 
     def on_trade(
-        self, symbol: str, price: str, quantity: str, is_buyer_maker: bool, ts: int
+        self, symbol: str, price: str, quantity: str, is_buyer_maker: bool, ts: int,
+        trade_id: Optional[int] = None,
     ) -> None:
         """
         Process trade stream update. O(1) amortized non-blocking update.
@@ -123,6 +126,7 @@ class WebSocketAggregator:
             quantity: Trade quantity (string).
             is_buyer_maker: True if buyer is maker (sell), False if seller is maker (buy).
             ts: Timestamp in milliseconds.
+            trade_id: Unique Binance trade ID (optional, for TCA correlation).
         """
         if symbol not in self.state:
             return
@@ -154,9 +158,13 @@ class WebSocketAggregator:
         state["latest_price"] = decimal.Decimal(price)
         state["prices"].append(decimal.Decimal(price))
 
+        # EP-TRADE-ID: Store last trade_id for TCA correlation
+        if trade_id is not None:
+            state["last_trade_id"] = trade_id
+
         LOG.debug(
             f"Trade {symbol}: price={price}, qty={quantity}, "
-            f"is_seller_maker={is_buyer_maker}, "
+            f"is_seller_maker={is_buyer_maker}, trade_id={trade_id}, "
             f"buy_trades={state['buy_trades']}, sell_trades={state['sell_trades']}"
         )
 
@@ -234,6 +242,8 @@ class WebSocketAggregator:
             "data_source": "websocket_live",  # Will be dynamic in Phase 2
             "bid_ask_count": f"{int(bid_size)}/{int(ask_size)}",
             "trade_count": f"BUY:{buy_trades} SELL:{sell_trades}",
+            # EP-TRADE-ID: Last trade ID for TCA correlation
+            "last_trade_id": state.get("last_trade_id"),
         }
 
     async def periodic_emit(self, interval_seconds: float = 1.0) -> None:

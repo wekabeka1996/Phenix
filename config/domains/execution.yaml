@@ -1,6 +1,13 @@
 # v2 config for execution domain
 # See docs/config_v2/specification.md for full contract.
 
+# ExecutorPool: Per-symbol parallel execution (Phase 2 migration)
+# Replaces single SyncOrderExecutor with per-symbol executors
+executor_pool:
+  enabled: true                      # Enable per-symbol parallel execution
+  max_orders_per_second: 8           # Global rate limit (below Binance 10/sec)
+  fill_timeout_sec: 60.0             # Max wait time for fill before timeout
+
 # HTTP adapter configuration for Binance REST API
 # Used by BinanceExecutionAdapter for timeout/retry settings
 adapter:
@@ -52,11 +59,11 @@ adapter:
 
 exposure:
   # from trading.execution.exposure.*
-  max_equity_utilization_pct: 200.0  # matches trading.execution.exposure.max_equity_utilization_pct (percent scale, 200% testnet)
-  max_portfolio_fraction: 2.00       # Notional-based fallback: max 200% for testnet
+  max_equity_utilization_pct: 10.0  # matches trading.execution.exposure.max_equity_utilization_pct (percent scale, 10% limit)
+  max_portfolio_fraction: 0.10       # Notional-based fallback: max 10% for testnet
   max_side_utilization_pct:
-    long: 150.0                      # Testnet: allow 150% for testing
-    short: 150.0                     # Testnet: allow 150% for testing
+    long: 10.0                      # Limit long exposure to 10%
+    short: 10.0                     # Limit short exposure to 10%
   max_directional_ratio: 3.0         # Max ratio between long and short margin (3:1)
   per_symbol_cap_pct: 8.0            # Max 8% of equity per symbol per side
   count_pending_orders: true
@@ -77,6 +84,10 @@ exposure:
     offset_bps: 5                    # Safety offset to apply before placing SL/TP (avoids -2021 errors)
     working_type_default: "MARK_PRICE"  # Default workingType for SL/TP orders
     price_protect: false             # Set priceProtect=true for SL/TP to prevent slippage
+    sl_roi_pct: 35.0                 # ROI-based SL distance (% of margin with leverage)
+    tp_roi_pct: 50.0                 # ROI-based TP distance (% of margin with leverage)
+    roi_basis: "margin"              # Basis for ROI calc (margin or equity)
+    leverage_source: "instrument_max"  # instrument_max | exposure_defaults
     retry:
       max_attempts: 3                # Max retry attempts for -2021/-4116/-4137 errors
       backoff_ms: [120, 250, 400]    # Exponential backoff (ms)
@@ -84,24 +95,28 @@ exposure:
     timeout_sec: 5                   # Timeout for pending order cleanup (seconds)
     atomic_close: true               # Prevent orphaned bracket accumulation
     bracket_tracking: true           # Track SL/TP order IDs per symbol
-    aggregated_oco:
-      enabled: true                  # Enable Aggregated OCO management for TP/SL
-      aggregated_only_mode: true     # Force clean entry/exit orders (no inline TP/SL)
-      recalc_on_scale_in: true       # Rebuild brackets when position grows
-      recalc_on_partial_close: true  # Rebuild brackets when position shrinks
-      ttl_protect_new_bracket_ms: 3000
-      allow_unprotected_position: false
-      recreate_missing_brackets: true  # R2-E: Recreate SL/TP if missing during open position (fail-closed mode)
-      watchdog:
+  aggregated_oco:
+    enabled: true                  # Enable Aggregated OCO management for TP/SL
+    aggregated_only_mode: true     # Force clean entry/exit orders (no inline TP/SL)
+    sl_roi_pct: 35.0
+    tp_roi_pct: 50.0
+    roi_basis: "margin"
+    leverage_source: "instrument_max"
+    recalc_on_scale_in: true       # Rebuild brackets when position grows
+    recalc_on_partial_close: true  # Rebuild brackets when position shrinks
+    ttl_protect_new_bracket_ms: 3000
+    allow_unprotected_position: false
+    recreate_missing_brackets: true  # R2-E: Recreate SL/TP if missing during open position (fail-closed mode)
+    watchdog:
+      enabled: true
+      interval_sec: 5
+      auto_heal_orphans: true
+      grace:
         enabled: true
-        interval_sec: 5
-        auto_heal_orphans: true
-        grace:
-          enabled: true
-          period_sec: 2.0
-          kinds:
-            - NO_SL_FOR_OPEN_POSITION
-            - ORPHAN_SL_FOR_ZERO_POSITION
+        period_sec: 2.0
+        kinds:
+          - NO_SL_FOR_OPEN_POSITION
+          - ORPHAN_SL_FOR_ZERO_POSITION
   quick_profit:
     enabled: false                   # Quick profit (close when profit target reached) - default disabled
     mode: "fixed_usd"
@@ -141,6 +156,32 @@ fallback:
   backoff_ms: [200, 500, 1000]
   max_attempts: 4
   enabled: true
+
+# Execution Position Configuration - ULTRA CONSERVATIVE Profile
+execution:
+  aggregated_oco:
+    enabled: true
+    aggregated_only_mode: false
+    sl_pct: 0.002      # 0.2% stop-loss
+    tp_rr: 2.0        # 2.0x risk-reward ratio
+    recalc_on_scale_in: true
+    recalc_on_partial_close: false
+    ttl_protect_new_bracket_ms: 3000
+    allow_unprotected_position: false
+    max_sl_legs: 2
+    max_tp_legs: 3
+    watchdog:
+      enabled: true
+      interval_sec: 10
+      auto_heal_orphans: true
+      grace:
+        enabled: true
+        period_sec: 3.0
+        kinds:
+          - NO_SL_FOR_OPEN_POSITION
+          - ORPHAN_SL
+          - TOO_MANY_SL
+
 brackets:
   # Canonical brackets block for resolve_brackets_config (mirrors manage.brackets during migration)
   enable: true
@@ -165,6 +206,10 @@ brackets:
   aggregated_oco:
     enabled: true
     aggregated_only_mode: true
+    sl_roi_pct: 35.0
+    tp_roi_pct: 50.0
+    roi_basis: "margin"
+    leverage_source: "instrument_max"
     recalc_on_scale_in: true
     recalc_on_partial_close: true
     ttl_protect_new_bracket_ms: 3000

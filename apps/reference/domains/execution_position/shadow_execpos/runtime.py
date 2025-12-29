@@ -10,8 +10,13 @@ import asyncio
 import logging
 import time
 from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor
 
 from apps.reference.domains.execution_position.config import ExecutionPositionConfig, SnapshotConfig
+from apps.reference.config.execution_position import (
+    compute_sl_tp_from_roi,
+    resolve_effective_leverage,
+)
 from .async_manager import ExecPosAsyncManager
 from .execution_service import ExecutionService
 from .watchdog import AggOcoWatchdogService
@@ -24,15 +29,20 @@ from . import logging_v2
 from .position_model import PositionState, apply_fill, POSITION_ZERO_TOLERANCE
 from dataclasses import replace, dataclass
 from .close_flow import CloseFlowService, CloseContext, CloseConfig
-from .bracket_service import (
-    BracketService,
-    BracketRulesConfig,
-    BracketPlan,
+
+# Phase 11: Import view types and cleanup from contract layer (no BracketService)
+from ..aggregator_oco.view_types import (
     PositionView as BracketPositionView,
     OrderView as BracketOrderView,
+    BracketRulesConfig,
     make_bracket_client_order_id,
 )
+from ..aggregator_oco.contracts import BracketPlan, BracketConfig
+from ..aggregator_oco.cleanup import plan_orphan_cleanup, plan_reverse_cleanup, plan_position_size_cleanup
+
+from ..aggregator_oco.engine import compute_bracket_plan_from_views
 from .converters import normalize_orders
+from .executor_pool import ExecutorPoolV2
 from vfoundation.apps.reference.domains.execution_position import bracket_aggregator
 from apps.reference.domains.execution_position.infra.order_index import OrderIndex
 
@@ -40,6 +50,45 @@ from apps.reference.domains.execution_position.infra.order_index import OrderInd
 from vfoundation.dr import wal
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# LEGACY COMPATIBILITY WRAPPER (for tests using _open_orders_by_symbol)
+# =============================================================================
+class _LegacyOrdersWrapper:
+    """
+    Dict-like interface wrapping OrderIndex for backward compatibility.
+
+    Maps: symbol → List[Dict] of orders (legacy format)
+    Delegates to order_index internally.
+
+    DEPRECATED: New code should use order_index directly.
+    """
+
+    def __init__(self, order_index: OrderIndex):
+        self._oi = order_index
+
+    def _refs_to_dicts(self, refs) -> List[Dict[str, Any]]:
+        """Convert OrderRef list to legacy dict format."""
+        return [{"clientOrderId": r.clientOrderId, "orderId": r.exchangeOrderId,
+                 "symbol": r.symbol, "side": r.side, "type": r.order_type,
+                 "status": r.status, "origQty": str(r.quantity) if r.quantity else None,
+                 "stopPrice": str(r.stop_price) if r.stop_price else None,
+                 "reduceOnly": r.reduce_only} for r in refs]
+
+    def __getitem__(self, symbol: str) -> List[Dict[str, Any]]:
+        refs = self._oi.get_by_symbol(symbol)
+        return self._refs_to_dicts(refs)
+
+    def __setitem__(self, symbol: str, orders: List[Dict[str, Any]]) -> None:
+        # Legacy tests set orders directly - sync to OrderIndex
+        self._oi.reconcile_snapshot(symbol, orders)
+
+    def get(self, symbol: str, default: Any = None) -> Any:
+        refs = self._oi.get_by_symbol(symbol)
+        if not refs:
+            return default if default is not None else []
+        return self._refs_to_dicts(refs)
 
 
 @dataclass
@@ -72,14 +121,18 @@ class ExecPosRuntimeV2:
     - Managing the lifecycle of the domain (start, stop, hydrate).
     """
 
-    # Configuration Constants
+    # Configuration Constants (fallback defaults)
     STALE_RECOVERY_INTERVAL_SEC = 10.0
     WATCHDOG_LOG_THROTTLE_SEC = 30.0
-    BRACKET_THROTTLE_SEC = 3.0
-    BRACKET_SUPPRESSION_SEC = 30.0
+    # RC-1 FIX: Increased throttle to prevent bracket churn
+    # Previous value 2.0 was too aggressive, causing CANCEL→PLACE cycles
+    BRACKET_THROTTLE_SEC = 10.0  # Cooldown between bracket evaluations per symbol
+    BRACKET_SUPPRESSION_SEC = 10.0  # was 30.0 - faster default for scalping
     SNAPSHOT_REQUEST_INTERVAL_SEC = 5.0
     GUARD_LOOP_INTERVAL_SEC = 1.0
     GUARD_RECOVERY_INTERVAL_SEC = 5.0
+    POSITION_POLLING_INTERVAL_SEC = 2.0  # Poll positions every 2 seconds
+    ORDER_INDEX_PERSISTENCE_FILE = "data/order_index_persistence.json"
 
     def __init__(
         self,
@@ -102,12 +155,50 @@ class ExecPosRuntimeV2:
         self.execution_service = ExecutionService(adapter)
         self.gatekeeper = ExecPosGatekeeper(config)
         self.close_flow_service = CloseFlowService()
-        self.bracket_service = BracketService(
-            aggregator=bracket_aggregator,
-            guardian=guardian,
-            watchdog=None,
-        )
+        # Phase 11: BracketService REMOVED — cleanup via aggregator_oco.cleanup module
+        self.bracket_service = None  # DEPRECATED: kept for test compatibility
         self.guardian = guardian
+
+        # ═══════════════════════════════════════════════════════════════════
+        # EXECUTOR POOL V2: Pure execution layer, NO bracket decision logic
+        # Phase 11: Bracket planning via aggregator_oco.engine (core planner)
+        # ═══════════════════════════════════════════════════════════════════
+        fill_timeout = config.get("execution_position", {}).get(
+            "fill_timeout_sec", 60.0)
+
+        # ExecutorPoolV2: Per-symbol parallel execution (production path)
+        # CRITICAL: No sl_pct/tp_rr - brackets handled by core planner only
+        self.executor_pool = ExecutorPoolV2(
+            adapter=adapter,
+            gatekeeper=self.gatekeeper,
+            fill_timeout_sec=fill_timeout,
+            # Allow slightly higher local rate to reduce drops (testnet-safe)
+            max_orders_per_second=12,
+        )
+
+        # ExecutorPool is enabled by default (production path)
+        # Can be disabled for testing via config from either location
+        exec_domain_cfg = config.get("execution", {}).get("executor_pool", {})
+        ep_cfg = config.get("execution_position", {})
+
+        # Both config paths must allow ExecutorPool (use AND for fail-safe disable)
+        # If either explicitly sets enabled=False, ExecutorPool is disabled
+        exec_enabled = exec_domain_cfg.get("enabled", True)
+        ep_enabled = ep_cfg.get("executor_pool_enabled", True)
+        self._use_executor_pool = exec_enabled and ep_enabled
+        # TEMP: ENABLE executor_pool for testing
+        # self._use_executor_pool = False
+
+        logger.info(
+            f"[ExecPosV2] ExecutorPoolV2 {'ENABLED' if self._use_executor_pool else 'DISABLED'}: "
+            f"per-symbol parallel execution, fill_timeout={fill_timeout}s, "
+            f"BracketService=SINGLE_SOURCE_OF_TRUTH"
+        )
+
+        # Dedicated thread pool for ExecutorPool per-symbol execution
+        # max_workers=8 allows parallel execution for up to 8 symbols simultaneously
+        self._executor_thread_pool = ThreadPoolExecutor(
+            max_workers=8, thread_name_prefix="exec_pool")
 
         # State & Logic
         self.fill_idempotency = FillIdempotency()
@@ -128,6 +219,17 @@ class ExecPosRuntimeV2:
         # Order Index (replaces _open_orders_by_symbol)
         self.order_index = OrderIndex()
 
+        # Load persisted order index state
+        persistence_file = self.ORDER_INDEX_PERSISTENCE_FILE
+        loaded_count = self.order_index.load_from_file(persistence_file)
+        if loaded_count > 0:
+            logger.info(
+                f"[ExecPosV2] Loaded {loaded_count} persisted orders from {persistence_file}")
+
+        # DEPRECATED: Legacy compatibility wrapper for tests
+        # Returns OrderIndex-backed dict-like interface for symbol → orders list
+        self._open_orders_by_symbol = _LegacyOrdersWrapper(self.order_index)
+
         # "UNKNOWN" | "STALE" | "FRESH"
         self._orders_snapshot_state: Dict[str, str] = {}
         self._recovery_completed = False
@@ -136,6 +238,8 @@ class ExecPosRuntimeV2:
         self._brackets_suppressed: Dict[str, float] = {}
         self._snapshot_request_hook: Optional[Callable[[
             str], Awaitable[None]]] = None
+        self._position_snapshot_hook: Optional[Callable[[
+        ], Awaitable[None]]] = None
 
         # =================================================================
         # TIMEOUT RESILIENCE STATE
@@ -153,6 +257,10 @@ class ExecPosRuntimeV2:
         # R3-D1: Per-symbol bracket status to prevent double-apply
         self._bracket_status: Dict[str, BracketStatus] = {}
 
+        # LEVERAGE-FIX: Cache leverage from Binance API per symbol for accurate ROI calculation
+        # Key: symbol -> leverage (int). Updated from ACCOUNT_UPDATE/position snapshot.
+        self._leverage_by_symbol: Dict[str, int] = {}
+
         # E-004: Watchdog log throttling to prevent spam
         # Key: (symbol, kind) -> last_log_ts
         self._watchdog_log_throttle: Dict[tuple, float] = {}
@@ -161,9 +269,13 @@ class ExecPosRuntimeV2:
 
         # TASK 3: Throttling state for bracket spam prevention
         self._last_brackets_apply_ts: Dict[str, float] = {}
-        # Minimum seconds between bracket evaluations per symbol
-        self._bracket_throttle_sec = self.BRACKET_THROTTLE_SEC
-        self._bracket_suppression_sec = self.BRACKET_SUPPRESSION_SEC
+        # Minimum seconds between bracket evaluations per symbol (from config or default)
+        if ep_config and hasattr(ep_config, 'aggregated_oco'):
+            self._bracket_throttle_sec = ep_config.aggregated_oco.bracket_throttle_sec
+            self._bracket_suppression_sec = ep_config.aggregated_oco.bracket_suppression_sec
+        else:
+            self._bracket_throttle_sec = self.BRACKET_THROTTLE_SEC
+            self._bracket_suppression_sec = self.BRACKET_SUPPRESSION_SEC
         self._snapshot_request_interval_sec = self.SNAPSHOT_REQUEST_INTERVAL_SEC
 
         # Guard loop state
@@ -174,10 +286,19 @@ class ExecPosRuntimeV2:
         self._last_guard_recovery_ts: Dict[str, float] = {}
         self._last_snapshot_request_ts: Dict[str, float] = {}
 
-        # Concurrency control
-        # NOTE: Lock is created lazily in _get_evaluation_lock() to bind to the correct event loop
-        self._evaluation_lock: Optional[asyncio.Lock] = None
-        self._evaluation_lock_loop: Optional[asyncio.AbstractEventLoop] = None
+        # Position polling state
+        self._position_polling_interval_sec = self.POSITION_POLLING_INTERVAL_SEC
+        self._position_polling_running = False
+        self._position_polling_task: Optional[asyncio.Task] = None
+        self._last_position_poll_ts: float = 0.0
+
+        # Concurrency control - per-symbol locks for parallel execution
+        # NOTE: Locks are created lazily in _get_symbol_lock() to bind to the correct event loop
+        self._symbol_locks: Dict[str, asyncio.Lock] = {}
+        self._symbol_locks_loop: Optional[asyncio.AbstractEventLoop] = None
+        # Keep global lock only for non-symbol operations (snapshot-all, etc)
+        self._global_lock: Optional[asyncio.Lock] = None
+        self._global_lock_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Metrics
         self._metrics = {
@@ -211,6 +332,15 @@ class ExecPosRuntimeV2:
             "stale_recovery_attempts": 0,
             "stale_recovery_success": 0,
         }
+
+    def set_async_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """
+        Set the event loop for async operations.
+
+        Propagates to async_manager for general async operations.
+        """
+        self.async_manager.set_async_loop(loop)
+        logger.debug(f"[ExecPosV2] Event loop set: {id(loop)}")
 
     def hydrate(self, snapshot: Dict[str, Any]) -> None:
         """Restore state from a snapshot (WAL or DB)."""
@@ -246,29 +376,65 @@ class ExecPosRuntimeV2:
         """Get a complete snapshot of V2 runtime metrics."""
         return self.get_metrics()
 
-    def _get_evaluation_lock(self) -> asyncio.Lock:
+    def _get_symbol_lock(self, symbol: str) -> asyncio.Lock:
         """
-        Get or create evaluation lock bound to current event loop.
+        Get or create per-symbol lock bound to current event loop.
 
-        This handles the case where runtime is created before the event loop
-        starts, and events are later scheduled via V2RuntimeFacade._submit_to_loop.
-        If the loop changes, we recreate the lock to avoid RuntimeError.
+        This enables parallel processing of different symbols while
+        serializing operations within the same symbol.
+        If the loop changes, we recreate all locks to avoid RuntimeError.
         """
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
             # No running loop - create lock anyway, will be recreated when loop starts
-            if self._evaluation_lock is None:
-                self._evaluation_lock = asyncio.Lock()
-            return self._evaluation_lock
+            if symbol not in self._symbol_locks:
+                self._symbol_locks[symbol] = asyncio.Lock()
+            return self._symbol_locks[symbol]
 
-        # Check if lock needs to be (re)created for current loop
-        if self._evaluation_lock is None or self._evaluation_lock_loop is not current_loop:
-            self._evaluation_lock = asyncio.Lock()
-            self._evaluation_lock_loop = current_loop
-            logger.debug(f"[ExecPosV2] Created new _evaluation_lock for loop {id(current_loop)}")
+        # Check if locks need to be recreated for current loop
+        if self._symbol_locks_loop is not current_loop:
+            self._symbol_locks = {}
+            self._symbol_locks_loop = current_loop
+            logger.debug(
+                f"[ExecPosV2] Cleared _symbol_locks for new loop {id(current_loop)}")
 
-        return self._evaluation_lock
+        # Create lock for symbol if needed
+        if symbol not in self._symbol_locks:
+            self._symbol_locks[symbol] = asyncio.Lock()
+            logger.debug(
+                f"[ExecPosV2] Created _symbol_lock for {symbol} in loop {id(current_loop)}")
+
+        return self._symbol_locks[symbol]
+
+    def _get_global_lock(self) -> asyncio.Lock:
+        """
+        Get or create global lock for non-symbol operations.
+
+        Use sparingly - only for operations that affect all symbols
+        (e.g., full snapshot processing).
+        """
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            if self._global_lock is None:
+                self._global_lock = asyncio.Lock()
+            return self._global_lock
+
+        if self._global_lock is None or self._global_lock_loop is not current_loop:
+            self._global_lock = asyncio.Lock()
+            self._global_lock_loop = current_loop
+            logger.debug(
+                f"[ExecPosV2] Created new _global_lock for loop {id(current_loop)}")
+
+        return self._global_lock
+
+    def _get_evaluation_lock(self) -> asyncio.Lock:
+        """
+        DEPRECATED: Use _get_symbol_lock(symbol) for per-symbol operations.
+        Kept for backward compatibility, returns global lock.
+        """
+        return self._get_global_lock()
 
     async def start(self) -> None:
         """
@@ -278,6 +444,9 @@ class ExecPosRuntimeV2:
 
         # Ensure evaluation lock is bound to current event loop
         self._get_evaluation_lock()
+
+        # Phase 1: Force initial orders snapshot sync with exchange
+        await self._force_initial_orders_sync()
 
         # Phase 2: Load Algo Orders Snapshot
         if hasattr(self.execution_service.adapter, "load_open_algo_orders_snapshot"):
@@ -290,8 +459,89 @@ class ExecPosRuntimeV2:
     async def shutdown(self) -> None:
         """Gracefully shutdown the runtime."""
         logger.info("Shutting down ExecPosRuntimeV2...")
+        # Shutdown executor thread pool
+        if hasattr(self, '_executor_thread_pool') and self._executor_thread_pool:
+            self._executor_thread_pool.shutdown(wait=False)
+            logger.info("Executor thread pool shutdown requested")
         # Close any resources if needed
         pass
+
+    async def _force_initial_orders_sync(self) -> None:
+        """
+        Force initial synchronization of open orders from exchange.
+        Critical for V2 runtime to know about existing brackets.
+        """
+        try:
+            logger.info(
+                "[ExecPosV2] Starting initial orders sync with exchange...")
+
+            # Check if adapter has required methods
+            if not hasattr(self.execution_service.adapter, "get_open_positions"):
+                logger.warning(
+                    "[ExecPosV2] Adapter does not have get_open_positions method, skipping sync")
+                return
+
+            if not hasattr(self.execution_service.adapter, "get_open_orders"):
+                logger.warning(
+                    "[ExecPosV2] Adapter does not have get_open_orders method, skipping sync")
+                return
+
+            # Get all open positions first
+            positions = []
+            try:
+                positions = await self.execution_service.adapter.get_open_positions()
+                logger.info(
+                    f"[ExecPosV2] Found {len(positions)} open positions on exchange")
+            except Exception as e:
+                logger.error(
+                    f"[ExecPosV2] Failed to get positions: {e}", exc_info=True)
+                return
+
+            # Filter to active positions (non-zero qty)
+            active_symbols = set()
+            for pos in positions:
+                amt = float(getattr(pos, "position_amount", 0)
+                            or getattr(pos, "positionAmt", 0) or 0)
+                if abs(amt) > 1e-9:
+                    symbol = getattr(pos, "symbol", "")
+                    if symbol:
+                        active_symbols.add(symbol)
+                        logger.info(
+                            f"[ExecPosV2] Active position: {symbol} qty={amt}")
+
+            if not active_symbols:
+                logger.info(
+                    "[ExecPosV2] No active positions found, skipping orders sync")
+                return
+
+            # Get open orders for active symbols
+            all_orders = []
+            for symbol in active_symbols:
+                try:
+                    orders = await self.execution_service.adapter.get_open_orders(symbol=symbol)
+                    logger.info(
+                        f"[ExecPosV2] {symbol}: {len(orders)} open orders")
+                    all_orders.extend(orders)
+                except Exception as exc:
+                    logger.warning(
+                        f"[ExecPosV2] Failed to get orders for {symbol}: {exc}")
+                    continue
+
+            # Emit ORDERS_SNAPSHOT to sync order_index
+            if all_orders:
+                orders_event = {
+                    "kind": "ORDERS_SNAPSHOT",
+                    "payload": {"orders": all_orders}
+                }
+                await self.handle(orders_event)
+                logger.info(
+                    f"[ExecPosV2] ✅ Initial orders sync complete: {len(all_orders)} orders synced")
+            else:
+                logger.info("[ExecPosV2] No open orders found on exchange")
+
+        except Exception as exc:
+            logger.error(
+                f"[ExecPosV2] ❌ Initial orders sync failed: {exc}", exc_info=True)
 
     def get_metrics(self) -> Dict[str, Any]:
         """
@@ -353,6 +603,10 @@ class ExecPosRuntimeV2:
         """Register hook to request fresh ORDERS_SNAPSHOT (facade/adapter-backed)."""
         self._snapshot_request_hook = hook
 
+    def set_position_snapshot_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
+        """Register hook to request fresh POSITION_SNAPSHOT (facade/adapter-backed)."""
+        self._position_snapshot_hook = hook
+
     def _get_snapshot_cfg(self) -> SnapshotConfig:
         """
         Resolve snapshot TTL configuration with typed config preferred.
@@ -366,7 +620,7 @@ class ExecPosRuntimeV2:
             cfg_root, dict) else {}
         try:
             return SnapshotConfig(
-                orders_ttl_sec=float(snapshot_cfg.get("orders_ttl_sec", 10.0)),
+                orders_ttl_sec=float(snapshot_cfg.get("orders_ttl_sec", 3.0)),
                 position_ttl_sec=float(
                     snapshot_cfg.get("position_ttl_sec", 10.0)),
             )
@@ -569,7 +823,7 @@ class ExecPosRuntimeV2:
         ref = self.order_index.get(exchangeOrderId=str(order_id))
         if ref:
             self.order_index.mark_terminal(ref)
-            self.order_index.expire() # Clean up immediately
+            self.order_index.expire()  # Clean up immediately
 
         logger.debug(
             f"[ExecPosV2] MIRROR_UPDATE symbol={symbol} "
@@ -692,6 +946,44 @@ class ExecPosRuntimeV2:
         )
 
         # =================================================================
+        # DUPLICATE ENTRY GUARD: Block if already have position or pending entry
+        # =================================================================
+        # Check 1: Already have an open position for this symbol
+        existing_pos = self._positions_by_symbol.get(symbol)
+        if existing_pos and abs(existing_pos.qty) > POSITION_ZERO_TOLERANCE:
+            logger.info(
+                f"[ExecPosV2] ENTRY_BLOCKED_HAS_POSITION: symbol={symbol} "
+                f"existing_qty={existing_pos.qty}. Ignoring duplicate ENTRY_INTENT."
+            )
+            return
+
+        # Check 2: Already have a pending LIMIT entry order with SAME price
+        order_refs = self.order_index.get_by_symbol(symbol)
+        for ref in order_refs:
+            order = ref.to_dict() if hasattr(ref, 'to_dict') else ref
+            order_type = order.get("type") or order.get(
+                "order_type") or order.get("origType", "")
+            order_status = order.get("status", "")
+            reduce_only = order.get("reduceOnly") or order.get(
+                "reduce_only", False)
+            # Pending entry = LIMIT order that is NEW and NOT reduce_only (not TP/SL)
+            if (order_type == "LIMIT" and
+                order_status in ("NEW", "PARTIALLY_FILLED") and
+                    not reduce_only):
+                # Allow multiple LIMIT orders if they have DIFFERENT prices
+                existing_price = order.get("price")
+                new_price = payload.get("price")
+                if existing_price is not None and new_price is not None:
+                    if abs(float(existing_price) - float(new_price)) > 1e-8:  # Different price
+                        continue  # Allow this new order
+                logger.info(
+                    f"[ExecPosV2] ENTRY_BLOCKED_PENDING_ORDER: symbol={symbol} "
+                    f"order_id={order.get('order_id') or order.get('orderId') or order.get('exchangeOrderId')} "
+                    f"existing_price={existing_price} new_price={new_price} status={order_status}. Ignoring duplicate ENTRY_INTENT."
+                )
+                return
+
+        # =================================================================
         # TIMEOUT RESILIENCE: Block new entries when in stale mode
         # =================================================================
         # If we recently had a timeout fetching exchange state, we're "blind"
@@ -757,22 +1049,142 @@ class ExecPosRuntimeV2:
             "quantity", quantity)
         adjusted_price = gate_decision["modified_params"].get("price", price)
 
-        # Execute via ExecutionService
+        # ═══════════════════════════════════════════════════════════════════
+        # EXECUTOR POOL V2: Entry ONLY, no automatic brackets
+        # BracketService will handle SL/TP after TRADE_EXECUTED event
+        # CRITICAL: Run in thread pool to avoid blocking main event loop!
+        # ═══════════════════════════════════════════════════════════════════
+        if self._use_executor_pool:
+            # Generate client_order_id if not provided
+            client_order_id = payload.get(
+                "client_order_id") or f"AUR-{symbol}-{int(time.time()*1000)}"
+
+            # ExecutorPoolV2.execute_entry() - ENTRY ONLY, no brackets
+            # Brackets will be handled by BracketService after TRADE_EXECUTED
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                self._executor_thread_pool,
+                lambda: self.executor_pool.execute_entry(
+                    symbol=symbol,
+                    side=side,
+                    quantity=str(adjusted_qty),
+                    price=str(adjusted_price) if adjusted_price else None,
+                    client_order_id=client_order_id,
+                    order_type=order_type,
+                    rate_limit_timeout=5.0,
+                )
+            )
+
+            if result["success"]:
+                self._metrics["execution_success"] += 1
+                # Add to open orders via OrderIndex
+                self.order_index.upsert_from_open(
+                    rid=payload.get(
+                        "rid") or f"rid_{result.get('order_id')}",
+                    idempotent_key=payload.get("idempotent_key"),
+                    clientOrderId=client_order_id,
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    price=float(adjusted_price) if adjusted_price else None,
+                    quantity=float(adjusted_qty),
+                )
+                # Attach exchange ID
+                if result.get("order_id"):
+                    self.order_index.attach_exchange_id(
+                        clientOrderId=client_order_id,
+                        exchangeOrderId=str(result["order_id"])
+                    )
+
+                # Update position from fill (if immediately filled)
+                fill_price = result.get("fill_price")
+                fill_qty = result.get("fill_qty") or adjusted_qty
+                if fill_price:
+                    position = self._positions_by_symbol.get(
+                        symbol, PositionState(symbol=symbol))
+                    new_position = apply_fill(
+                        position,
+                        side=side,
+                        quantity=float(fill_qty),
+                        price=float(fill_price),
+                    )
+                    self._positions_by_symbol[symbol] = new_position
+
+                    # Check if this is a new position (was flat, now has position)
+                    is_new_position = abs(position.qty) < POSITION_ZERO_TOLERANCE and abs(
+                        new_position.qty) > POSITION_ZERO_TOLERANCE
+                    if is_new_position:
+                        logger.debug(
+                            f"[ExecPosV2] NEW_POSITION_DETECTED: Requesting initial snapshot for {symbol}")
+                        await self._request_orders_snapshot(symbol)
+
+                    # CRITICAL: Trigger brackets after fill (testnet WebSocket fallback)
+                    # On testnet, ACCOUNT_UPDATE/TRADE_EXECUTED may not arrive via WS
+                    logger.info(
+                        f"[ExecPosV2] ENTRY_FILLED_POLLING: {symbol} qty={fill_qty} @ {fill_price} - evaluating brackets"
+                    )
+                    await self._evaluate_brackets(symbol, new_position, reason="polling_fill")
+
+                logging_v2.log_runtime_event(
+                    event_kind="ENTRY_INTENT",
+                    symbol=symbol,
+                    action="executed",
+                    result="success",
+                    why="executor_pool_v2_entry_only",
+                    extra={
+                        "order_id": result.get("order_id"),
+                        "fill_price": str(result.get("fill_price")),
+                        "latency_ms": result.get("latency_ms"),
+                        "brackets": "via_core_planner",  # Phase 11: Brackets via aggregator_oco core
+                    }
+                )
+            else:
+                self._metrics["execution_failed"] += 1
+                error_msg = result.get("error", "executor_pool_failed")
+
+                # Log appropriately based on error type
+                if "busy" in error_msg.lower():
+                    logger.info(
+                        f"[ExecPosV2] EXECUTOR_BUSY: {symbol} - {error_msg}")
+                elif "rate limit" in error_msg.lower():
+                    logger.warning(
+                        f"[ExecPosV2] RATE_LIMITED: {symbol} - {error_msg}")
+                else:
+                    logger.error(
+                        f"[ExecPosV2] EXECUTION_FAILED: {symbol} - {error_msg}")
+
+                logging_v2.log_runtime_event(
+                    event_kind="ENTRY_INTENT",
+                    symbol=symbol,
+                    action="executed",
+                    result="failed",
+                    why=error_msg,
+                    extra={"side": side, "quantity": str(adjusted_qty)}
+                )
+            return
+
+        # ─────────────────────────────────────────────────────────────────────
+        # FALLBACK: Direct async execution via ExecutionService
+        # Used when ExecutorPool is disabled (testing/special cases)
+        # No auto-brackets - BracketService handles brackets via TRADE_EXECUTED
+        # ─────────────────────────────────────────────────────────────────────
+        logger.info(
+            f"[ExecPosV2] ASYNC_EXECUTION_PATH: {symbol} - ExecutorPool disabled"
+        )
         result = await self.execution_service.place_order(
             symbol=symbol,
             side=side,
-            order_type=order_type,
             quantity=adjusted_qty,
+            order_type=order_type,
             price=adjusted_price,
             client_order_id=payload.get("client_order_id"),
-            time_in_force=payload.get("tif") or payload.get("time_in_force"),
         )
 
-        if result["success"]:
+        if result.get("success"):
             self._metrics["execution_success"] += 1
-            # Add to open orders via OrderIndex
+            order_id = result.get("order_id")
             self.order_index.upsert_from_open(
-                rid=payload.get("rid") or f"rid_{result['order_id']}",
+                rid=payload.get("rid") or f"rid_{order_id}",
                 idempotent_key=payload.get("idempotent_key"),
                 clientOrderId=payload.get("client_order_id"),
                 symbol=symbol,
@@ -781,38 +1193,151 @@ class ExecPosRuntimeV2:
                 price=float(adjusted_price) if adjusted_price else None,
                 quantity=float(adjusted_qty),
             )
-            # Also attach exchange ID immediately since we have it
-            self.order_index.attach_exchange_id(
-                clientOrderId=payload.get("client_order_id"),
-                exchangeOrderId=str(result["order_id"])
-            )
+            if order_id:
+                self.order_index.attach_exchange_id(
+                    clientOrderId=payload.get("client_order_id"),
+                    exchangeOrderId=str(order_id)
+                )
 
-            # Structured logging
-            logging_v2.log_runtime_event(
-                event_kind="ENTRY_INTENT",
-                symbol=symbol,
-                action="executed",
-                result="success",
-                why="order_placed",
-                extra={
-                    "order_id": result["order_id"],
-                    "side": side,
-                    "quantity": str(adjusted_qty),
-                    "price": str(adjusted_price) if adjusted_price else None,
-                    "order_type": order_type
-                }
-            )
+            # TESTNET FALLBACK: For LIMIT orders, poll for fill since WebSocket may not work
+            status = result.get("status", "")
+            if order_type == "LIMIT" and status != "FILLED" and order_id:
+                logger.info(
+                    f"[ExecPosV2] ASYNC_PATH_POLLING: Polling for LIMIT fill {symbol} order_id={order_id}"
+                )
+                fill_data = await self._poll_order_until_filled(symbol, order_id, timeout_sec=55.0)
+                if fill_data:
+                    # Update position and evaluate brackets
+                    fill_price = fill_data.get("fill_price")
+                    fill_qty = fill_data.get("fill_qty") or adjusted_qty
+                    if fill_price:
+                        position = self._positions_by_symbol.get(
+                            symbol, PositionState(symbol=symbol))
+                        new_position = apply_fill(
+                            position,
+                            side=side,
+                            quantity=float(fill_qty),
+                            price=float(fill_price),
+                        )
+                        self._positions_by_symbol[symbol] = new_position
+
+                        # Check if this is a new position (was flat, now has position)
+                        is_new_position = abs(position.qty) < POSITION_ZERO_TOLERANCE and abs(
+                            new_position.qty) > POSITION_ZERO_TOLERANCE
+                        if is_new_position:
+                            logger.debug(
+                                f"[ExecPosV2] NEW_POSITION_DETECTED: Requesting initial snapshot for {symbol}")
+                            await self._request_orders_snapshot(symbol)
+
+                        logger.info(
+                            f"[ExecPosV2] ASYNC_FILL_POLLING: {symbol} qty={fill_qty} @ {fill_price} - evaluating brackets"
+                        )
+                        await self._evaluate_brackets(symbol, new_position, reason="async_polling_fill")
+                else:
+                    logger.warning(
+                        f"[ExecPosV2] ASYNC_PATH_POLL_TIMEOUT: {symbol} order_id={order_id} - no fill detected"
+                    )
+            elif status == "FILLED":
+                # Immediate fill (MARKET order) - update position
+                fill_price = result.get("avgPrice") or result.get(
+                    "price") or adjusted_price
+                fill_qty = result.get("executedQty") or adjusted_qty
+                if fill_price:
+                    position = self._positions_by_symbol.get(
+                        symbol, PositionState(symbol=symbol))
+                    new_position = apply_fill(
+                        position,
+                        side=side,
+                        quantity=float(fill_qty),
+                        price=float(fill_price),
+                    )
+                    self._positions_by_symbol[symbol] = new_position
+
+                    # Check if this is a new position (was flat, now has position)
+                    is_new_position = abs(position.qty) < POSITION_ZERO_TOLERANCE and abs(
+                        new_position.qty) > POSITION_ZERO_TOLERANCE
+                    if is_new_position:
+                        logger.debug(
+                            f"[ExecPosV2] NEW_POSITION_DETECTED: Requesting initial snapshot for {symbol}")
+                        await self._request_orders_snapshot(symbol)
+
+                    await self._evaluate_brackets(symbol, new_position, reason="immediate_fill")
         else:
             self._metrics["execution_failed"] += 1
-            # Log failure
-            logging_v2.log_runtime_event(
-                event_kind="ENTRY_INTENT",
-                symbol=symbol,
-                action="executed",
-                result="failed",
-                why=result.get("error", "unknown_error"),
-                extra={"side": side, "quantity": str(adjusted_qty)}
-            )
+        return
+
+    async def _poll_order_until_filled(
+        self,
+        symbol: str,
+        order_id: str,
+        timeout_sec: float = 55.0,
+        poll_interval_sec: float = 1.0,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Poll order status via REST API until filled or timeout.
+
+        Fallback for testnet where WebSocket USER_DATA_STREAM may not work.
+
+        Returns:
+            Dict with fill data if FILLED, None if timeout/error/cancelled
+        """
+        # Get adapter from execution_service
+        adapter = getattr(self.execution_service, 'adapter', None)
+        if not adapter or not hasattr(adapter, 'get_order'):
+            logger.warning(
+                f"[ExecPosV2] No adapter available for polling {symbol}")
+            return None
+
+        start_time = time.monotonic()
+        poll_count = 0
+        logger.info(
+            f"[ExecPosV2] Starting polling for {symbol} order_id={order_id}, timeout={timeout_sec}s")
+
+        while time.monotonic() - start_time < timeout_sec:
+            poll_count += 1
+            try:
+                # Query order status via adapter
+                order_status = await adapter.get_order(
+                    symbol=symbol,
+                    order_id=int(order_id),
+                )
+
+                status = order_status.get("status", "")
+
+                if status == "FILLED":
+                    fill_price = order_status.get(
+                        "avgPrice") or order_status.get("price")
+                    fill_qty = order_status.get(
+                        "executedQty") or order_status.get("origQty")
+                    logger.info(
+                        f"[ExecPosV2] Order {order_id} FILLED qty={fill_qty} @ {fill_price} (poll #{poll_count})"
+                    )
+                    return {
+                        "status": "FILLED",
+                        "fill_price": str(fill_price) if fill_price else None,
+                        "fill_qty": str(fill_qty) if fill_qty else None,
+                    }
+                elif status in ("CANCELED", "EXPIRED", "REJECTED"):
+                    logger.warning(
+                        f"[ExecPosV2] Order {order_id} {status} (poll #{poll_count})"
+                    )
+                    return None
+
+                logger.debug(
+                    f"[ExecPosV2] Order {order_id} status={status} (poll #{poll_count})"
+                )
+
+            except Exception as e:
+                logger.warning(
+                    f"[ExecPosV2] Poll error for {symbol}: {e} (poll #{poll_count})"
+                )
+
+            await asyncio.sleep(poll_interval_sec)
+
+        logger.warning(
+            f"[ExecPosV2] Poll timeout for {symbol} order_id={order_id} after {poll_count} attempts"
+        )
+        return None
 
     async def _handle_cancel_intent(self, symbol: str, payload: Dict[str, Any]):
         """Handle cancel request."""
@@ -893,9 +1418,33 @@ class ExecPosRuntimeV2:
         4. Write WAL (EXEC_TRADE + EXEC_POSITION)
         5. Emit exposure update
         6. Trigger watchdog
+        7. Evaluate brackets via BracketService
         """
-        # Serialize execution to prevent race conditions on partial fills
-        async with self._get_evaluation_lock():
+        # Route fill event to ExecutorPool for blocking executor threads
+        if self._use_executor_pool:
+            order_id = payload.get("order_id") or payload.get("orderId") or ""
+            fill_price = str(payload.get("price")
+                             or payload.get("last_price") or "0")
+            fill_qty = str(payload.get("quantity")
+                           or payload.get("qty") or "0")
+            self.executor_pool.on_fill(
+                symbol=symbol,
+                fill_price=fill_price,
+                fill_qty=fill_qty,
+                order_id=str(order_id),
+            )
+
+        # Serialize execution per-symbol to prevent race conditions on partial fills
+        async with self._get_symbol_lock(symbol):
+            # FIX: Ignore TRADE_EXECUTED for non-fills (e.g. NEW orders mapped incorrectly)
+            status = payload.get("status")
+            if status in ("NEW", "CANCELED", "EXPIRED", "REJECTED", "PENDING_CANCEL"):
+                logger.warning(
+                    f"TRADE_EXECUTED ignored for non-fill status: {symbol} status={status}",
+                    extra={"payload": payload}
+                )
+                return
+
             # 1. Check idempotency
             if not self.fill_idempotency.should_process_fill(payload, symbol=symbol):
                 self._metrics["fills_duplicate"] += 1
@@ -978,6 +1527,15 @@ class ExecPosRuntimeV2:
             self._positions_by_symbol[symbol] = new_state
             self._mark_position_snapshot(symbol)
             self._ensure_guard_loop_running()
+            self._ensure_position_polling_running()
+
+            # FIX-NEW-SYMBOL-SNAPSHOT: Request initial orders snapshot for new positions
+            # This ensures guard_loop can evaluate brackets for symbols that start with positions
+            # but have UNKNOWN snapshot state (new symbols never get snapshot requests otherwise)
+            if is_new_position:
+                logger.debug(
+                    f"[ExecPosV2] NEW_POSITION_DETECTED: Requesting initial snapshot for {symbol}")
+                await self._request_orders_snapshot(symbol)
 
             # 4. Write WAL records (fail-closed)
             # EXEC_TRADE record
@@ -1004,17 +1562,29 @@ class ExecPosRuntimeV2:
             # 7. Detect reverse (LONG→SHORT or SHORT→LONG) and cleanup old side brackets
             await self._handle_reverse_cleanup(symbol, new_state)
 
+            # 7.5. Detect FLAT position and cleanup orphan brackets
+            if abs(new_state.qty) < POSITION_ZERO_TOLERANCE:
+                logger.info(
+                    f"[ExecPosV2] POSITION_FLAT_DETECTED: Cleaning up orphan brackets for {symbol}")
+                await self._cleanup_orphan_brackets_for_flat(symbol)
+
+            # 7.6. Check for position size changes requiring bracket cleanup
+            await self._cleanup_brackets_for_position_size_change(symbol, new_state)
+
             # 8. Evaluate brackets (execute BracketPlan actions)
             await self._evaluate_brackets(symbol, new_state, reason="trade_executed")
             self._maybe_stop_guard_loop()
+            self._maybe_stop_position_polling()
 
     async def _handle_position_sync(self, symbol: str, payload: Dict[str, Any]):
         """
         Handle POSITION_SYNC event from ACCOUNT_UPDATE.
         Triggers bracket evaluation for positions that may have been filled
         but didn't emit proper TRADE_EXECUTED events.
+
+        CRITICAL: Also handles orphan cleanup when position becomes FLAT.
         """
-        async with self._get_evaluation_lock():
+        async with self._get_symbol_lock(symbol):
             positions = payload.get("positions", [])
 
             for pos in positions:
@@ -1025,16 +1595,24 @@ class ExecPosRuntimeV2:
                 # Update position state
                 await self._handle_single_position_update(pos)
 
-                # Get current state and evaluate brackets
+                # Get current state
                 current_state = self._positions_by_symbol.get(pos_symbol)
+
                 if current_state and abs(current_state.qty) > POSITION_ZERO_TOLERANCE:
+                    # Non-zero position -> evaluate brackets (place TP/SL)
                     logger.info(
                         f"📊 POSITION_SYNC: Evaluating brackets for {pos_symbol} qty={current_state.qty}")
                     await self._evaluate_brackets(pos_symbol, current_state, reason="account_update_sync")
+                else:
+                    # FLAT position -> cleanup orphan TP/SL orders
+                    logger.info(
+                        f"📊 POSITION_SYNC: Position {pos_symbol} is FLAT (qty=0), checking for orphan brackets")
+                    await self._cleanup_orphan_brackets_for_flat(pos_symbol)
 
     async def _handle_position_snapshot(self, payload: Dict[str, Any]):
         """Handle position snapshot from exchange."""
-        async with self._get_evaluation_lock():
+        # Global lock for full snapshot (affects multiple symbols)
+        async with self._get_global_lock():
             # Handle list of positions (e.g. from REST snapshot)
             if "positions" in payload:
                 for pos in payload["positions"]:
@@ -1061,6 +1639,19 @@ class ExecPosRuntimeV2:
         qty = float(qty_val or 0)
         entry_price = float(entry_val or 0)
 
+        # LEVERAGE-FIX: Extract and cache leverage from API response
+        # Keys: "leverage" (REST/ExchangePosition), "l" (WS shorthand)
+        lev_val = payload.get("leverage") or payload.get("l")
+        if lev_val is not None:
+            try:
+                lev_int = int(float(lev_val))
+                if lev_int > 0:
+                    self._leverage_by_symbol[symbol] = lev_int
+                    logger.debug(
+                        f"[ExecPosV2] LEVERAGE_CACHED: {symbol} leverage={lev_int}")
+            except (TypeError, ValueError):
+                pass
+
         # E-004: Log if we have qty but no entry price (contract violation from adapter)
         if abs(qty) > POSITION_ZERO_TOLERANCE and entry_price <= 0:
             logger.warning(
@@ -1068,6 +1659,13 @@ class ExecPosRuntimeV2:
                 f"entryPrice={entry_price}. Payload keys: {list(payload.keys())}. "
                 "Watchdog may trigger REST snapshot recovery."
             )
+
+        # Check if this is a new position (was flat, now has position)
+        prev_position = self._positions_by_symbol.get(symbol)
+        is_new_position = (
+            prev_position is None or abs(
+                prev_position.qty) <= POSITION_ZERO_TOLERANCE
+        ) and abs(qty) > POSITION_ZERO_TOLERANCE
 
         self._positions_by_symbol[symbol] = PositionState(
             symbol=symbol,
@@ -1082,14 +1680,30 @@ class ExecPosRuntimeV2:
         )
         self._mark_position_snapshot(symbol)
         self._ensure_guard_loop_running()
+        self._ensure_position_polling_running()
+
+        # Request initial snapshot for new positions to enable bracket evaluation
+        if is_new_position:
+            logger.debug(
+                f"[ExecPosV2] NEW_POSITION_DETECTED: Requesting initial snapshot for {symbol}")
+            await self._request_orders_snapshot(symbol, force=True)
 
         # Trigger watchdog
         await self._run_watchdog_analysis()
         self._maybe_stop_guard_loop()
+        self._maybe_stop_position_polling()
 
     async def _handle_orders_snapshot(self, payload: Dict[str, Any]):
         """Handle orders snapshot from exchange."""
         orders = payload.get("orders", [])
+
+        # EP-ORDERS-SYNC: Log incoming snapshot for debugging
+        logger.info(
+            "[ExecPosV2] ORDERS_SNAPSHOT_RECEIVED count=%d types=%s",
+            len(orders) if orders else 0,
+            [getattr(o, 'order_type', None) or (o.get('type') if isinstance(
+                o, dict) else None) for o in (orders or [])][:5]
+        )
 
         # R2-C fix: Empty snapshot is single source of truth
         # If exchange says "no orders", clear mirror for all symbols
@@ -1111,6 +1725,9 @@ class ExecPosRuntimeV2:
                     f"[ExecPosV2] EMPTY_ORDERS_SNAPSHOT cleared mirror for {sym}",
                     extra={"symbol": sym, "snapshot_state": "FRESH"}
                 )
+
+            # Persist after clearing empty snapshot
+            self.order_index.save_to_file(self.ORDER_INDEX_PERSISTENCE_FILE)
 
             # Stale existing FRESH states for symbols without positions
             for sym, state in list(self._orders_snapshot_state.items()):
@@ -1135,6 +1752,14 @@ class ExecPosRuntimeV2:
             if sym:
                 orders_by_symbol.setdefault(sym, []).append(order_dict)
 
+        # EP-ORDERS-SYNC: Log grouped orders for each symbol
+        for sym, sym_orders in orders_by_symbol.items():
+            logger.info(
+                "[ExecPosV2] ORDERS_SNAPSHOT_BY_SYMBOL symbol=%s count=%d types=%s",
+                sym, len(sym_orders),
+                [o.get('type') or o.get('origType') for o in sym_orders]
+            )
+
         for sym, sym_orders in orders_by_symbol.items():
             self.order_index.reconcile_snapshot(sym, sym_orders)
             self._mark_orders_snapshot(sym, now)
@@ -1149,6 +1774,9 @@ class ExecPosRuntimeV2:
         # Also expire old orders in index
         self.order_index.expire()
 
+        # Persist order index state after snapshot processing
+        self.order_index.save_to_file(self.ORDER_INDEX_PERSISTENCE_FILE)
+
         # Trigger watchdog
         await self._run_watchdog_analysis()
         if not self._recovery_completed:
@@ -1162,7 +1790,8 @@ class ExecPosRuntimeV2:
 
         all_orders = []
         # Iterate all symbols we know about
-        known_symbols = set(self._positions_by_symbol.keys()) | set(self._orders_snapshot_state.keys())
+        known_symbols = set(self._positions_by_symbol.keys()) | set(
+            self._orders_snapshot_state.keys())
         for sym in known_symbols:
             refs = self.order_index.get_by_symbol(sym)
             all_orders.extend([r.to_dict() for r in refs])
@@ -1223,6 +1852,39 @@ class ExecPosRuntimeV2:
                     await self._request_orders_snapshot(symbol)
 
     def _position_to_dict(self, pos: PositionState) -> Dict[str, Any]:
+        leverage_used = None
+        sl_pct = None
+        tp_rr = None
+        try:
+            # LEVERAGE-FIX: Use cached API leverage with fallback to config
+            cached_lev = self._leverage_by_symbol.get(pos.symbol)
+            if cached_lev and cached_lev > 0:
+                leverage_used = float(cached_lev)
+            else:
+                leverage_used = resolve_effective_leverage(
+                    pos.symbol, self.config)
+            if self._ep_cfg:
+                sl_pct_val, tp_rr_val = compute_sl_tp_from_roi(
+                    self._ep_cfg, pos.symbol, leverage_used)
+                sl_pct = sl_pct_val
+                tp_rr = tp_rr_val
+        except Exception:
+            pass
+
+        target_sl_price = None
+        target_tp_price = None
+        try:
+            entry = float(pos.avg_entry_price)
+            if entry > 0 and sl_pct and tp_rr:
+                if pos.side == "LONG":
+                    target_sl_price = entry * (1 - sl_pct)
+                    target_tp_price = entry * (1 + sl_pct * tp_rr)
+                elif pos.side == "SHORT":
+                    target_sl_price = entry * (1 + sl_pct)
+                    target_tp_price = entry * (1 - sl_pct * tp_rr)
+        except Exception:
+            pass
+
         return {
             "symbol": pos.symbol,
             "qty": pos.qty,
@@ -1235,6 +1897,11 @@ class ExecPosRuntimeV2:
             "unrealized_pnl": pos.unrealized_pnl,
             "open_time": pos.open_time,
             "last_update_time": pos.last_update_time,
+            "leverage_used": leverage_used,
+            "sl_pct": sl_pct,
+            "tp_rr": tp_rr,
+            "target_sl_price": target_sl_price,
+            "target_tp_price": target_tp_price,
         }
 
     def _is_brackets_suppressed(self, symbol: str) -> bool:
@@ -1290,26 +1957,108 @@ class ExecPosRuntimeV2:
             self._guard_loop_running = False
             return
 
+        # DUPID-FIX-5: If any symbol is awaiting_snapshot, skip entire guard iteration
+        # This prevents guard loop from evaluating other symbols while waiting for snapshot sync
+        any_awaiting = any(
+            self._bracket_status.get(sym, BracketStatus()).awaiting_snapshot
+            for sym in active_positions.keys()
+        )
+        if any_awaiting:
+            logger.debug(
+                f"[ExecPosV2] GUARD_LOOP_SKIP_AWAITING_SNAPSHOT - waiting for snapshot sync"
+            )
+            return
+
         for symbol, pos in active_positions.items():
-            if not self._is_orders_snapshot_fresh(symbol):
-                logger.debug(
-                    f"[ExecPosV2] GUARD_LOOP_SKIP_NO_FRESH_ORDERS symbol={symbol}")
-                continue
+            try:
+                # 1. Check snapshot freshness
+                if not self._is_orders_snapshot_fresh(symbol):
+                    logger.debug(
+                        f"[ExecPosV2] GUARD_LOOP_SNAPSHOT_STALE symbol={symbol} - requesting refresh")
+                    # Trigger refresh (throttled by _request_orders_snapshot logic)
+                    await self._request_orders_snapshot(symbol)
+                    # Skip evaluation this time, wait for snapshot
+                    continue
 
-            last_ts = self._last_guard_recovery_ts.get(symbol, 0.0)
-            now = time.monotonic()
-            if now - last_ts < self._guard_recovery_interval_sec:
-                continue
+                # 2. Check guard interval
+                last_ts = self._last_guard_recovery_ts.get(symbol, 0.0)
+                now = time.monotonic()
+                if now - last_ts < self._guard_recovery_interval_sec:
+                    continue
 
-            await self._evaluate_brackets(symbol, pos, reason="guard_loop")
-            self._last_guard_recovery_ts[symbol] = time.monotonic()
+                # 3. Evaluate
+                await self._evaluate_brackets(symbol, pos, reason="guard_loop")
+                self._last_guard_recovery_ts[symbol] = time.monotonic()
 
+                # 4. Throttle between symbols to prevent burst load (User request)
+                await asyncio.sleep(0.2)
 
+            except Exception as e:
+                logger.error(
+                    f"[ExecPosV2] Error in guard loop for {symbol}: {e}", exc_info=True)
+                # Continue to next symbol to ensure isolation
+
+    def _ensure_position_polling_running(self) -> None:
+        """Start position polling when we have any positions or orders."""
+        if self._position_polling_running:
+            return
+        self._position_polling_running = True
+        loop = self.async_manager.get_async_loop()
+        coro = self._position_polling_loop()
+        if loop:
+            try:
+                self._position_polling_task = loop.create_task(coro)
+            except Exception:
+                self._position_polling_task = None
+        else:
+            self._position_polling_task = asyncio.create_task(coro)
+
+    def _maybe_stop_position_polling(self) -> None:
+        """Stop position polling when no positions and no orders."""
+        if self._positions_by_symbol or any(self.order_index.get_by_symbol(s) for s in self._orders_snapshot_state.keys()):
+            return
+        self._position_polling_running = False
+        if self._position_polling_task and not self._position_polling_task.done():
+            self._position_polling_task.cancel()
+        self._position_polling_task = None
+
+    async def _position_polling_loop(self) -> None:
+        """Periodic position polling to ensure we have fresh position data."""
+        while self._position_polling_running:
+            try:
+                await self._run_position_poll()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.warning("ExecPosV2 position polling iteration error",
+                               exc_info=True)
+            await asyncio.sleep(self._position_polling_interval_sec)
+
+    async def _run_position_poll(self) -> None:
+        """Poll positions from exchange to ensure freshness."""
+        now = time.monotonic()
+        if now - self._last_position_poll_ts < self._position_polling_interval_sec:
+            return
+
+        self._last_position_poll_ts = now
+
+        # Request position snapshot if we have a hook
+        if self._position_snapshot_hook:
+            try:
+                logger.debug("[ExecPosV2] POSITION_POLL_REQUEST")
+                await self._position_snapshot_hook()
+            except Exception as e:
+                logger.warning(f"[ExecPosV2] POSITION_POLL_ERROR: {e}")
+        else:
+            logger.debug("[ExecPosV2] POSITION_POLL_SKIP - no hook configured")
 
     def _snapshot_allows_brackets(self, symbol: str, reason: str) -> tuple[bool, Optional[str]]:
         """
         Check if snapshot state allows bracket evaluation.
         Returns (allowed, reason_if_not_allowed).
+
+        FIX-SNAPSHOT-BLOCKING: trade_executed should be fail-open to allow immediate
+        bracket placement after fills. Only block periodic checks (guard_loop, account_update_sync).
         """
         if self._is_brackets_suppressed(symbol):
             return False, "watchdog_suppressed"
@@ -1322,42 +2071,45 @@ class ExecPosRuntimeV2:
             snapshot_state = "STALE"
             self._orders_snapshot_state[symbol] = "STALE"
 
-        # Fail-open for trade_executed (allow immediate reaction even if snapshot unknown)
-        if reason == "trade_executed" and snapshot_state == "UNKNOWN" and not has_snapshot_ts:
+        # FIX-SNAPSHOT-BLOCKING: trade_executed and polling fills are ALWAYS fail-open
+        # Rationale: When a fill comes, we MUST place brackets immediately, regardless of snapshot state.
+        # Waiting for snapshot could delay brackets by seconds, leaving position unprotected.
+        # The bracket plan will be evaluated with whatever orders we currently know about.
+        if reason in ("trade_executed", "async_polling_fill"):
+            if snapshot_state == "UNKNOWN":
+                logger.debug(
+                    f"[ExecPosV2] SNAPSHOT_FAIL_OPEN symbol={symbol} reason={reason} "
+                    f"snapshot_state={snapshot_state} has_ts={has_snapshot_ts}"
+                )
             return True, None
 
-        # Fail-closed for periodic checks
-        if reason in ("account_update_sync", "guard_loop") and snapshot_state != "FRESH":
-            return False, f"snapshot_state={snapshot_state}"
-
-        # General block for UNKNOWN state
-        should_block_unknown = snapshot_state == "UNKNOWN" and reason in (
-            "trade_executed",
-            "account_update_sync",
-            "guard_loop",
-        )
-        if should_block_unknown:
+        # Fail-closed for periodic checks (guard_loop, account_update_sync)
+        if snapshot_state != "FRESH":
             return False, f"snapshot_state={snapshot_state}"
 
         return True, None
 
     def _build_bracket_context(self, symbol: str, position: PositionState, reason: str) -> Optional[BracketEvalContext]:
         """Build context for bracket evaluation."""
-        # TASK 3: Throttle repeated bracket evaluations from account_update_sync
-        if reason == "account_update_sync":
-            last_ts = self._last_brackets_apply_ts.get(symbol, 0)
-            now = time.time()
-            elapsed = now - last_ts
+        # R2-CHURN-FIX: Universal throttle for ALL bracket reasons (not just account_update_sync)
+        # This prevents excessive CANCEL/PLACE cycles from guard_loop (1s) and trade_executed events
+        last_ts = self._last_brackets_apply_ts.get(symbol, 0)
+        now = time.time()
+        elapsed = now - last_ts
 
-            if elapsed < self._bracket_throttle_sec:
-                self._metrics["brackets_throttled"] += 1
-                logger.debug(
-                    f"[ExecPosV2] BRACKETS_THROTTLED symbol={symbol} reason={reason} "
-                    f"elapsed={elapsed:.1f}s < throttle={self._bracket_throttle_sec}s"
-                )
-                return None
+        # trade_executed gets very short throttle (0.1s) for responsive bracket placement
+        # guard_loop and account_update_sync use full throttle (5s) to reduce churn
+        effective_throttle = 0.1 if reason == "trade_executed" else self._bracket_throttle_sec
 
-        cfg = self._get_bracket_cfg()
+        if elapsed < effective_throttle:
+            self._metrics["brackets_throttled"] += 1
+            logger.debug(
+                f"[ExecPosV2] BRACKETS_THROTTLED symbol={symbol} reason={reason} "
+                f"elapsed={elapsed:.1f}s < throttle={effective_throttle}s"
+            )
+            return None
+
+        cfg = self._get_bracket_cfg(symbol)
         if not cfg.enabled:
             return None
 
@@ -1429,16 +2181,17 @@ class ExecPosRuntimeV2:
         order_views = self._get_order_views(symbol)
 
         try:
-            state_map = self.bracket_service.build_state(
-                positions=[pos_view],
-                orders=order_views,
+            # Phase 10: Route through contract engine (core planner only)
+            # bracket_service no longer passed — uses core planner directly
+            plan = compute_bracket_plan_from_views(
+                pos_view=pos_view,
+                order_views=order_views,
+                cfg=cfg,
                 symbol=symbol,
                 side=position.side,
             )
-            state = state_map.get((symbol, position.side))
-            if not state:
+            if plan is None:
                 return
-            plan = self.bracket_service.evaluate(state, cfg)
 
             # R3-C2: Log BRACKET_EVAL_SNAPSHOT for replay analysis
             try:
@@ -1469,7 +2222,8 @@ class ExecPosRuntimeV2:
                     side=position.side,
                     position_qty=float(position.qty),
                     position_cycle_id=position.cycle_id or 0,
-                    snapshot_state=self._orders_snapshot_state.get(symbol, "UNKNOWN"),
+                    snapshot_state=self._orders_snapshot_state.get(
+                        symbol, "UNKNOWN"),
                     open_brackets=open_brackets_list,
                     bracket_plan=bracket_plan_list
                 )
@@ -1511,7 +2265,17 @@ class ExecPosRuntimeV2:
         """
         Invoke BracketService in observe-only mode. No adapter/guardian mutations.
         """
-        allowed, rejection_reason = self._snapshot_allows_brackets(symbol, reason)
+        # DUPID-FIX-3: Skip guard_loop bracket evaluation until recovery completes.
+        # This prevents guard_loop from creating duplicate brackets while recovery
+        # is still waiting for FRESH snapshot state.
+        if not self._recovery_completed and reason == "guard_loop":
+            logger.debug(
+                f"[ExecPosV2] BRACKETS_SKIP_RECOVERY_PENDING symbol={symbol} reason={reason}"
+            )
+            return
+
+        allowed, rejection_reason = self._snapshot_allows_brackets(
+            symbol, reason)
         if not allowed:
             if rejection_reason != "watchdog_suppressed":
                 logging_v2.log_runtime_event(
@@ -1523,7 +2287,8 @@ class ExecPosRuntimeV2:
                     extra={"reason": reason},
                 )
             else:
-                logger.warning(f"[ExecPosV2] BRACKETS_SUPPRESSED symbol={symbol} reason=watchdog")
+                logger.warning(
+                    f"[ExecPosV2] BRACKETS_SUPPRESSED symbol={symbol} reason=watchdog")
             return
 
         ctx = self._build_bracket_context(symbol, position, reason)
@@ -1535,49 +2300,78 @@ class ExecPosRuntimeV2:
     async def _cleanup_orphan_brackets_for_flat(self, symbol: str) -> None:
         """
         R2-ORPHAN-FIX: Cancel orphan brackets when position is FLAT.
-        Delegates logic to BracketService.plan_orphan_cleanup.
+        Phase 11: Uses aggregator_oco.cleanup.plan_orphan_cleanup (no BracketService).
         """
+        order_views = self._get_order_views(symbol)
+        logger.info(
+            f"[ExecPosV2] ORPHAN_CLEANUP_CHECK symbol={symbol} order_views_count={len(order_views)}")
+
+        if not order_views:
+            logger.debug(
+                f"[ExecPosV2] ORPHAN_CLEANUP_SKIP symbol={symbol} - no orders")
+            return
+
+        # Phase 11: Use cleanup module instead of BracketService
+        plan = plan_orphan_cleanup(symbol, order_views)
+        logger.info(
+            f"[ExecPosV2] ORPHAN_CLEANUP_PLAN symbol={symbol} actions_count={len(plan.actions)}")
+
+        if not plan.actions:
+            logger.debug(
+                f"[ExecPosV2] ORPHAN_CLEANUP_SKIP symbol={symbol} - no orphan actions")
+            return
+
+        # Use _apply_bracket_plan for consistent retry logic and error handling
+        # Create a virtual FLAT position for the plan
+        from .position_state import PositionState
+        flat_position = PositionState(symbol=symbol, qty=0.0, side="FLAT")
+
+        await self._apply_bracket_plan(symbol, flat_position, plan, reason="orphan_cleanup")
+
+    async def _cleanup_brackets_for_position_size_change(self, symbol: str, new_state: PositionState) -> None:
+        """
+        R2-POSITION-SIZE-FIX: Cancel brackets that become inappropriate due to position size changes.
+        Phase 11: Uses aggregator_oco.cleanup.plan_position_size_cleanup (no BracketService).
+        """
+        # Skip if position is too small or flat
+        if abs(new_state.qty) < POSITION_ZERO_TOLERANCE:
+            return
+
         order_views = self._get_order_views(symbol)
         if not order_views:
             return
 
-        plan = self.bracket_service.plan_orphan_cleanup(symbol, order_views)
-        if not plan.actions:
+        cfg = self._get_bracket_cfg(symbol)
+        if not cfg.enabled:
             return
 
-        cancelled_count = 0
-        for action in plan.actions:
-            if action.action_type == "CANCEL":
-                logger.info(
-                    f"[ExecPosV2] CANCEL_ORPHAN_BRACKET symbol={symbol} "
-                    f"order_id={action.order_id} reason={action.why}"
-                )
-                try:
-                    await self.execution_service.cancel_order(
-                        symbol=symbol,
-                        order_id=action.order_id,
-                        client_order_id=action.client_order_id,
-                    )
-                    cancelled_count += 1
-                    self._remove_order_from_mirror(symbol, action.order_id)
-                except Exception as exc:
-                    logger.warning(
-                        f"[ExecPosV2] Failed to cancel orphan bracket: {exc}",
-                        extra={"symbol": symbol, "order_id": action.order_id}
-                    )
+        # Get entry price for calculations
+        entry_price = new_state.avg_entry_price or 0
+        if entry_price <= 0:
+            logger.debug(
+                f"[ExecPosV2] POSITION_SIZE_CLEANUP_SKIP: No valid entry price for {symbol}")
+            return
 
-        if cancelled_count > 0:
-            logger.info(
-                f"[ExecPosV2] ORPHAN_CLEANUP_COMPLETE symbol={symbol} "
-                f"cancelled={cancelled_count}"
-            )
-            self._metrics.setdefault("orphans_cancelled_total", 0)
-            self._metrics["orphans_cancelled_total"] += cancelled_count
+        plan = plan_position_size_cleanup(
+            symbol, order_views, Decimal(
+                str(new_state.qty)), Decimal(str(entry_price)), cfg
+        )
+
+        logger.info(
+            f"[ExecPosV2] POSITION_SIZE_CLEANUP_PLAN symbol={symbol} actions_count={len(plan.actions)}")
+
+        if not plan.actions:
+            logger.debug(
+                f"[ExecPosV2] POSITION_SIZE_CLEANUP_SKIP symbol={symbol} - no inappropriate brackets")
+            return
+
+        # Use _apply_bracket_plan for consistent retry logic and error handling
+        await self._apply_bracket_plan(symbol, new_state, plan, reason="position_size_cleanup")
 
     async def _handle_reverse_cleanup(self, symbol: str, new_state: PositionState) -> None:
         """
         R2-B: Detect side flip (LONG→SHORT or SHORT→LONG) and cancel old side brackets.
-        Delegates logic to BracketService.plan_reverse_cleanup.
+        Phase 11: Uses aggregator_oco.cleanup.plan_reverse_cleanup (no BracketService).
         """
         prev_state = self._prev_positions_by_symbol.get(symbol)
 
@@ -1600,7 +2394,8 @@ class ExecPosRuntimeV2:
         )
 
         order_views = self._get_order_views(symbol)
-        plan = self.bracket_service.plan_reverse_cleanup(
+        # Phase 11: Use cleanup module instead of BracketService
+        plan = plan_reverse_cleanup(
             symbol, prev_state.side, new_state.side, order_views
         )
 
@@ -1609,23 +2404,26 @@ class ExecPosRuntimeV2:
 
         cancelled_count = 0
         for action in plan.actions:
-            if action.action_type == "CANCEL":
+            if action.action == "CANCEL":
+                order_id = action.order_ref or action.client_order_id
                 logger.info(
                     f"[ExecPosV2] CANCEL_OLD_BRACKET symbol={symbol} "
                     f"reverse={prev_state.side}→{new_state.side} "
-                    f"order_id={action.order_id} reason={action.why}"
+                    f"order_id={order_id} reason={action.why}"
                 )
                 try:
                     await self.execution_service.cancel_order(
                         symbol=symbol,
-                        order_id=action.order_id,
+                        order_id=action.order_ref,
                         client_order_id=action.client_order_id,
                     )
                     cancelled_count += 1
+                    # R2-B: Update local mirror after CANCEL to reflect exchange state
+                    self._remove_order_from_mirror(symbol, action.order_ref)
                 except Exception as exc:
                     logger.warning(
                         f"[ExecPosV2] Failed to cancel old bracket during reverse: {exc}",
-                        extra={"symbol": symbol, "order_id": action.order_id}
+                        extra={"symbol": symbol, "order_id": order_id}
                     )
 
         if cancelled_count > 0:
@@ -1644,7 +2442,8 @@ class ExecPosRuntimeV2:
         reason: str,
     ) -> None:
         """
-        Execute BracketPlan actions via ExecutionService (no auto-heal loops).
+        Execute BracketPlan actions via ExecutionService or ExecutorPoolV2.
+        Includes retry logic for rate limits.
         """
         # R3-D1: Guard-loop anti-double-apply protection
         status = self._bracket_status.get(symbol)
@@ -1653,7 +2452,6 @@ class ExecPosRuntimeV2:
             self._bracket_status[symbol] = status
 
         # R3-D1 FIX: Block guard_loop AND account_update_sync when awaiting_snapshot
-        # Only trade_executed and brackets_recovery can proceed when awaiting confirmation
         low_priority_reasons = ("guard_loop", "account_update_sync")
         if (status.in_flight or status.awaiting_snapshot) and reason in low_priority_reasons:
             elapsed = time.time() - status.last_started_ts
@@ -1679,6 +2477,15 @@ class ExecPosRuntimeV2:
             f"actions={[(a.action_type, getattr(a, 'price', None)) for a in plan.actions]}"
         )
 
+        # RC-1 FIX: Early-exit when plan has no actions
+        # This prevents unnecessary adapter calls and log noise
+        if not plan.actions:
+            logger.debug(
+                f"[ExecPosV2] NO_BRACKET_ACTIONS symbol={symbol} reason={reason} - brackets_ok"
+            )
+            status.in_flight = False
+            return
+
         actions_summary = []
         side = position.side
         exit_side = "SELL" if side == "LONG" else (
@@ -1689,6 +2496,19 @@ class ExecPosRuntimeV2:
         )
 
         placed_orders = []
+        place_actions: List[Any] = []
+
+        # RC-1 FIX: REMOVED _cancel_existing_close_brackets() call
+        # The bracket engine (compute_bracket_plan_from_views) already handles:
+        # - Detecting existing TP/SL via get_active_sl/get_active_tp
+        # - Generating CANCEL actions only for excess/orphan brackets
+        # - Returning empty actions when brackets are already correct
+        # Pre-canceling ALL brackets was causing infinite CANCEL→PLACE churn.
+        #
+        # async def _cancel_existing_close_brackets():
+        #     """Best-effort cancel existing closePosition SL/TP to avoid duplicates."""
+        #     ...
+        # await _cancel_existing_close_brackets()  # REMOVED - causes bracket churn
 
         for action in plan.actions:
             actions_summary.append(action.action_type)
@@ -1699,14 +2519,125 @@ class ExecPosRuntimeV2:
                 f"price={getattr(action, 'price', None)} qty={getattr(action, 'qty', None)}"
             )
 
+            # Helper to execute with retry
+            # FIX-BRACKET-RETRY: Unified retry logic for both ExecutorPool and legacy paths
+            async def _execute_with_retry(act_type, **kwargs):
+                max_retries = 3
+                base_backoff_ms = 100  # Start with 100ms, exponential backoff
+
+                for i in range(max_retries + 1):
+                    res = None
+
+                    if self._use_executor_pool:
+                        loop = asyncio.get_running_loop()
+                        res = await loop.run_in_executor(
+                            self._executor_thread_pool,
+                            lambda: self.executor_pool.execute_bracket(
+                                symbol=symbol,
+                                action_type=act_type,
+                                side=exit_side,
+                                **kwargs
+                            )
+                        )
+                    else:
+                        # Legacy path with retry support
+                        try:
+                            if act_type == "CANCEL":
+                                res = await self.execution_service.cancel_order(
+                                    symbol=symbol,
+                                    order_id=kwargs.get("order_id"),
+                                    client_order_id=kwargs.get(
+                                        "client_order_id")
+                                )
+                            else:
+                                # Map PLACE_SL/TP to place_order
+                                o_type = "STOP_MARKET" if act_type == "PLACE_SL" else "TAKE_PROFIT_MARKET"
+                                res = await self.execution_service.place_order(
+                                    symbol=symbol,
+                                    side=exit_side,
+                                    order_type=o_type,
+                                    quantity=None,
+                                    stop_price=kwargs.get("stop_price"),
+                                    client_order_id=kwargs.get(
+                                        "client_order_id"),
+                                    reduce_only=False,
+                                    close_position=True
+                                )
+                        except Exception as e:
+                            res = {"success": False, "error": str(
+                                e), "error_kind": "EXCEPTION"}
+
+                    # Check if we should retry
+                    if res and not res.get("success"):
+                        error = res.get("error", "")
+                        error_kind = res.get("error_kind", "")
+
+                        # Retryable errors: Rate limit, Network errors, Timeouts (not ADAPTER_ERROR_TIMEOUT which needs snapshot)
+                        is_rate_limited = error == "Rate limited" or "-429" in str(
+                            error)
+                        is_network_error = error_kind in (
+                            "ADAPTER_ERROR_NETWORK", "EXCEPTION") or "network" in str(error).lower()
+                        is_retryable_timeout = "timeout" in str(
+                            error).lower() and error_kind != "ADAPTER_ERROR_TIMEOUT"
+                        is_duplicate_id = "-4116" in str(error) or "duplicated" in str(
+                            error).lower() or str(res.get("error_code", "")).strip() == "-4116"
+
+                        # DUPID-FIX-4: For bracket orders (PLACE_SL/PLACE_TP), -4116 means order already exists
+                        # This is effectively SUCCESS - the bracket is in place, just not in our local index
+                        # Do NOT retry with new clientOrderId as that would create duplicates!
+                        # Instead, trigger snapshot refresh to sync order_index with exchange state.
+                        if is_duplicate_id and act_type in ("PLACE_SL", "PLACE_TP"):
+                            logger.warning(
+                                f"[ExecPosV2] BRACKET_ALREADY_EXISTS symbol={symbol} action={act_type} "
+                                f"clientOrderId={kwargs.get('client_order_id')} - treating as success, requesting snapshot"
+                            )
+                            # Mark snapshot as stale to force refresh
+                            self._orders_snapshot_state[symbol] = "STALE"
+                            self._last_orders_snapshot_ts[symbol] = 0.0
+                            # Set awaiting_snapshot to prevent further bracket evaluations
+                            status.awaiting_snapshot = True
+                            # Request fresh snapshot to sync order_index (fire and forget)
+                            asyncio.create_task(
+                                self._request_orders_snapshot(symbol, force=True))
+                            # Return success since bracket exists on exchange
+                            return {"success": True, "already_exists": True, "client_order_id": kwargs.get("client_order_id")}
+
+                        # For non-bracket orders, retry with new clientOrderId (original behavior)
+                        if is_duplicate_id and i < max_retries:
+                            base_cid = kwargs.get("client_order_id") or "cid"
+                            new_cid = f"{base_cid}_R{i+1}"
+                            # Binance Futures limit 36 chars; truncate defensively
+                            kwargs["client_order_id"] = new_cid[:32]
+                            logger.warning(
+                                f"[ExecPosV2] BRACKET_DUP_CID_RETRY symbol={symbol} action={act_type} "
+                                f"retry={i+1}/{max_retries} error={error[:50]} new_cid={kwargs['client_order_id']}"
+                            )
+                            await asyncio.sleep(base_backoff_ms / 1000.0)
+                            continue
+
+                        if (is_rate_limited or is_network_error or is_retryable_timeout) and i < max_retries:
+                            wait_ms = res.get(
+                                "retry_after_ms", base_backoff_ms * (2 ** i))
+                            logger.warning(
+                                f"[ExecPosV2] BRACKET_RETRY symbol={symbol} action={act_type} "
+                                f"retry={i+1}/{max_retries} wait={wait_ms}ms error={error[:50]}"
+                            )
+                            await asyncio.sleep(wait_ms / 1000.0)
+                            continue
+
+                    return res or {"success": False, "error": "No result"}
+
+                return {"success": False, "error": "Max retries exceeded"}
+
             if action.action_type == "CANCEL":
-                cancel_result = await self.execution_service.cancel_order(
-                    symbol=symbol,
+                result = await _execute_with_retry(
+                    "CANCEL",
                     order_id=action.order_id,
-                    client_order_id=action.client_order_id,
+                    client_order_id=action.client_order_id
                 )
-                # Handle cancel timeout - force snapshot to sync with exchange
-                if isinstance(cancel_result, dict) and cancel_result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
+
+                # Handle timeout
+                if isinstance(result, dict) and result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
                     logger.warning(
                         "[ExecPosV2] Timeout canceling bracket for %s order_id=%s, forcing ORDERS_SNAPSHOT",
                         symbol, action.order_id
@@ -1714,37 +2645,46 @@ class ExecPosRuntimeV2:
                     self._orders_snapshot_state[symbol] = "UNKNOWN"
                     self._last_orders_snapshot_ts[symbol] = 0.0
                     await self._request_orders_snapshot(symbol, force=True)
-                    # Don't update mirror - let snapshot reconcile actual state
                     status.in_flight = False
                     status.awaiting_snapshot = True
-                    return
-                # R2-B: Update local mirror after CANCEL to reflect exchange state
-                self._remove_order_from_mirror(symbol, action.order_id)
+                    continue
+
+                # R2-B: Update local mirror
+                if result.get("success") or (isinstance(result, dict) and result.get("error") == "UNKNOWN_ORDER"):
+                    self._remove_order_from_mirror(symbol, action.order_id)
+
             elif action.action_type in ("PLACE_SL", "PLACE_TP") and exit_side:
-                order_type = "STOP_MARKET" if action.action_type == "PLACE_SL" else "TAKE_PROFIT_MARKET"
+                place_actions.append(action)
+
+            elif action.action_type == "ADJUST" and exit_side:
+                # Cancel first
+                if action.order_id:
+                    await _execute_with_retry(
+                        "CANCEL",
+                        order_id=action.order_id,
+                        client_order_id=None
+                    )
+                    self._remove_order_from_mirror(symbol, action.order_id)
+
+                # Then place
                 qty = float(action.qty) if action.qty is not None else abs(
                     position.qty)
-                # Duplicate check delegated to BracketService plan generation
                 client_order_id = make_bracket_client_order_id(
                     symbol, action.action_type, exit_side, qty, action.price, position=position)
 
-                # DIAGNOSTIC: Log before execution
-                logger.info(
-                    f"[ExecPosV2] EXEC_BRACKET symbol={symbol} action_type={action.action_type} "
-                    f"order_type={order_type} side={exit_side} qty={qty} "
-                    f"stop_price={action.price}"
-                )
-                result = await self.execution_service.place_order(
-                    symbol=symbol,
-                    side=exit_side,
-                    order_type=order_type,
-                    quantity=qty,
+                # Determine type based on reason code
+                sub_type = "PLACE_SL" if action.reason_code in (
+                    "MISSING_SL", "STALE_LEVELS") else "PLACE_TP"
+
+                result = await _execute_with_retry(
+                    sub_type,
                     stop_price=str(
                         action.price) if action.price is not None else None,
-                    client_order_id=client_order_id,
-                    reduce_only=True,
+                    client_order_id=client_order_id
                 )
-                if isinstance(result, dict) and result.get("success") is False and result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
+
+                # Handle timeout
+                if isinstance(result, dict) and result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
                     logger.warning(
                         "[ExecPosV2] Timeout placing bracket for %s, forcing ORDERS_SNAPSHOT", symbol)
                     self._orders_snapshot_state[symbol] = "UNKNOWN"
@@ -1752,67 +2692,73 @@ class ExecPosRuntimeV2:
                     await self._request_orders_snapshot(symbol, force=True)
                     status.in_flight = False
                     status.awaiting_snapshot = True
-                    return
-                if isinstance(result, dict) and result.get("success") is False:
                     continue
 
-                # R2-B FIX: Immediately update local mirror with new bracket order
-                if isinstance(result, dict) and result.get("success"):
-                    # Upsert into OrderIndex
+                if not result.get("success"):
+                    continue
+
+                # Mirror update
+                order_id_placed = result.get(
+                    "order_id") or result.get("orderId")
+                if order_id_placed:
+                    order_type = "STOP_MARKET" if sub_type == "PLACE_SL" else "TAKE_PROFIT_MARKET"
                     self.order_index.upsert_from_open(
-                        rid=f"brk_{result.get('order_id') or result.get('orderId')}_{time.time()}",
+                        rid=f"brk_adj_{order_id_placed}_{time.time()}",
                         idempotent_key=None,
-                        clientOrderId=result.get("client_order_id") or client_order_id,
+                        clientOrderId=result.get(
+                            "client_order_id") or client_order_id,
                         symbol=symbol,
                         side=exit_side,
                         order_type=order_type,
-                        price=float(action.price) if action.price is not None else None,
-                        quantity=float(qty),
-                        stop_price=float(action.price) if action.price is not None else None,
-                        reduce_only=True,
+                        price=float(
+                            action.price) if action.price is not None else None,
+                        quantity=0.0,
+                        stop_price=float(
+                            action.price) if action.price is not None else None,
+                        reduce_only=False,
+                        close_position=True,
                     )
-                    # Attach exchange ID
                     self.order_index.attach_exchange_id(
-                        clientOrderId=result.get("client_order_id") or client_order_id,
-                        exchangeOrderId=str(result.get("order_id") or result.get("orderId"))
+                        clientOrderId=result.get(
+                            "client_order_id") or client_order_id,
+                        exchangeOrderId=str(order_id_placed)
                     )
-
                     logger.info(
-                        f"[ExecPosV2] MIRROR_UPDATE_ADD symbol={symbol} order_id={result.get('order_id')} "
-                        f"client_order_id={result.get('client_order_id') or client_order_id}"
+                        f"[ExecPosV2] MIRROR_UPDATE_ADD (ADJUST) symbol={symbol} order_id={order_id_placed} "
+                        f"client_order_id={result.get('client_order_id') or client_order_id} closePosition=true"
                     )
 
                 placed_orders.append(
                     {
-                        "order_id": result.get("order_id") if isinstance(result, dict) else None,
-                        "client_order_id": result.get("client_order_id") if isinstance(result, dict) else client_order_id,
-                        "order_type": order_type,
+                        "order_id": order_id_placed,
+                        "client_order_id": result.get("client_order_id") or client_order_id,
+                        "order_type": "STOP_MARKET" if sub_type == "PLACE_SL" else "TAKE_PROFIT_MARKET",
                         "side": exit_side,
-                        "qty": qty,
+                        "close_position": True,
                         "price": float(action.price) if action.price is not None else None,
-                        "reduce_only": True,
                     }
                 )
-            elif action.action_type == "ADJUST" and exit_side:
-                if action.order_id:
-                    await self.execution_service.cancel_order(symbol=symbol, order_id=action.order_id)
-                order_type = "STOP_MARKET" if action.reason_code in (
-                    "MISSING_SL", "STALE_LEVELS") else "TAKE_PROFIT_MARKET"
+
+        # Run deferred PLACE_SL/PLACE_TP concurrently to reduce latency
+        if place_actions:
+            async def _process_place(action):
                 qty = float(action.qty) if action.qty is not None else abs(
                     position.qty)
                 client_order_id = make_bracket_client_order_id(
                     symbol, action.action_type, exit_side, qty, action.price, position=position)
-                result = await self.execution_service.place_order(
-                    symbol=symbol,
-                    side=exit_side,
-                    order_type=order_type,
-                    quantity=qty,
+
+                result = await _execute_with_retry(
+                    action.action_type,
                     stop_price=str(
                         action.price) if action.price is not None else None,
-                    client_order_id=client_order_id,
-                    reduce_only=True,
+                    client_order_id=client_order_id
                 )
-                if isinstance(result, dict) and result.get("success") is False and result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
+                return action, client_order_id, result
+
+            results = await asyncio.gather(*[_process_place(a) for a in place_actions])
+
+            for action, client_order_id, result in results:
+                if isinstance(result, dict) and result.get("error_kind") == "ADAPTER_ERROR_TIMEOUT":
                     logger.warning(
                         "[ExecPosV2] Timeout placing bracket for %s, forcing ORDERS_SNAPSHOT", symbol)
                     self._orders_snapshot_state[symbol] = "UNKNOWN"
@@ -1820,45 +2766,49 @@ class ExecPosRuntimeV2:
                     await self._request_orders_snapshot(symbol, force=True)
                     status.in_flight = False
                     status.awaiting_snapshot = True
-                    return
-                if isinstance(result, dict) and result.get("success") is False:
                     continue
 
-                # R2-B FIX: Immediately update local mirror with new bracket order
-                if isinstance(result, dict) and result.get("success"):
-                    # Upsert into OrderIndex
+                if not result.get("success"):
+                    continue
+
+                order_id_placed = result.get(
+                    "order_id") or result.get("orderId")
+                if order_id_placed:
+                    order_type = "STOP_MARKET" if action.action_type == "PLACE_SL" else "TAKE_PROFIT_MARKET"
                     self.order_index.upsert_from_open(
-                        rid=f"brk_adj_{result.get('order_id') or result.get('orderId')}_{time.time()}",
+                        rid=f"brk_{order_id_placed}_{time.time()}",
                         idempotent_key=None,
-                        clientOrderId=result.get("client_order_id") or client_order_id,
+                        clientOrderId=result.get(
+                            "client_order_id") or client_order_id,
                         symbol=symbol,
                         side=exit_side,
                         order_type=order_type,
-                        price=float(action.price) if action.price is not None else None,
-                        quantity=float(qty),
-                        stop_price=float(action.price) if action.price is not None else None,
-                        reduce_only=True,
+                        price=float(
+                            action.price) if action.price is not None else None,
+                        quantity=0.0,
+                        stop_price=float(
+                            action.price) if action.price is not None else None,
+                        reduce_only=False,
+                        close_position=True,
                     )
-                    # Attach exchange ID
                     self.order_index.attach_exchange_id(
-                        clientOrderId=result.get("client_order_id") or client_order_id,
-                        exchangeOrderId=str(result.get("order_id") or result.get("orderId"))
+                        clientOrderId=result.get(
+                            "client_order_id") or client_order_id,
+                        exchangeOrderId=str(order_id_placed)
                     )
-
                     logger.info(
-                        f"[ExecPosV2] MIRROR_UPDATE_ADD (ADJUST) symbol={symbol} order_id={result.get('order_id')} "
-                        f"client_order_id={result.get('client_order_id') or client_order_id}"
+                        f"[ExecPosV2] MIRROR_UPDATE_ADD symbol={symbol} order_id={order_id_placed} "
+                        f"client_order_id={result.get('client_order_id') or client_order_id} closePosition=true"
                     )
 
                 placed_orders.append(
                     {
-                        "order_id": result.get("order_id") if isinstance(result, dict) else None,
-                        "client_order_id": result.get("client_order_id") if isinstance(result, dict) else client_order_id,
-                        "order_type": order_type,
+                        "order_id": order_id_placed,
+                        "client_order_id": result.get("client_order_id") or client_order_id,
+                        "order_type": "STOP_MARKET" if action.action_type == "PLACE_SL" else "TAKE_PROFIT_MARKET",
                         "side": exit_side,
-                        "qty": qty,
+                        "close_position": True,
                         "price": float(action.price) if action.price is not None else None,
-                        "reduce_only": True,
                     }
                 )
 
@@ -1894,17 +2844,63 @@ class ExecPosRuntimeV2:
             status.in_flight = False
             status.awaiting_snapshot = True
 
+        # DUPID-FIX-3: If brackets were successfully placed by account_update_sync or guard_loop,
+        # mark recovery as completed. This prevents recovery from trying to place the same
+        # brackets again with duplicate clientOrderId errors.
+        if placed_orders and not reason.startswith("brackets_recovery"):
+            if not self._recovery_completed:
+                self._recovery_completed = True
+                logger.info(
+                    f"[ExecPosV2] RECOVERY_SKIPPED_BRACKETS_PLACED: symbol={symbol} reason={reason} "
+                    f"placed_count={len(placed_orders)} - marking recovery as completed"
+                )
+
     async def _run_bracket_recovery_pass(self) -> None:
         """
         Single-shot DR/rehydrate recovery using BracketService plans (no loops).
+
+        DUPID-FIX: Wait for all position symbols to have FRESH snapshot state
+        before evaluating brackets. This prevents creating duplicate brackets
+        when mirror hasn't been updated from snapshot yet.
         """
         if self._recovery_completed:
             return
 
-        cfg = self._get_bracket_cfg()
+        # Use the first symbol with position to derive ROI-aware config (best effort)
+        first_symbol = None
+        if self._positions_by_symbol:
+            for pos in self._positions_by_symbol.values():
+                if abs(pos.qty) >= 1e-9 and pos.side in ("LONG", "SHORT"):
+                    first_symbol = pos.symbol
+                    break
+        cfg = self._get_bracket_cfg(first_symbol)
         if not cfg.enabled:
             self._recovery_completed = True
             return
+
+        # DUPID-FIX: Check that all symbols with positions have FRESH snapshot state
+        # before proceeding with recovery. This prevents duplicate clientOrderId errors.
+        symbols_with_positions = [
+            pos.symbol for pos in self._positions_by_symbol.values()
+            if abs(pos.qty) >= 1e-9 and pos.side in ("LONG", "SHORT")
+        ]
+
+        for sym in symbols_with_positions:
+            snapshot_state = self._orders_snapshot_state.get(sym, "UNKNOWN")
+            if snapshot_state != "FRESH":
+                # Not all snapshots are ready yet - wait for next guard_loop cycle
+                logger.debug(
+                    f"[ExecPosV2] RECOVERY_DEFERRED: symbol={sym} snapshot_state={snapshot_state}, "
+                    f"waiting for FRESH state before bracket recovery"
+                )
+                return  # Don't set _recovery_completed, will retry on next cycle
+
+        # DUPID-FIX-2: Set _recovery_completed = True EARLY to prevent guard_loop
+        # from running parallel bracket evaluations while recovery is in progress.
+        # This is critical to avoid duplicate clientOrderId errors.
+        self._recovery_completed = True
+        logger.info(
+            "[ExecPosV2] RECOVERY_STARTED: _recovery_completed set to True early to prevent parallel evaluation")
 
         # Build PositionView list (only non-flat)
         pos_views: List[BracketPositionView] = []
@@ -1933,7 +2929,8 @@ class ExecPosRuntimeV2:
         order_views: List[BracketOrderView] = []
 
         # Iterate all symbols in index
-        known_symbols = set(self._positions_by_symbol.keys()) | set(self._orders_snapshot_state.keys())
+        known_symbols = set(self._positions_by_symbol.keys()) | set(
+            self._orders_snapshot_state.keys())
         for sym in known_symbols:
             refs = self.order_index.get_by_symbol(sym)
             orders = [r.to_dict() for r in refs]
@@ -1943,7 +2940,8 @@ class ExecPosRuntimeV2:
                     client_order_id_str = str(
                         order.get("client_order_id") or order.get("clientOrderId") or "")
                     # R2-D: Parse cycle_id from clientOrderId
-                    from .bracket_service import parse_cycle_id_from_client_order_id
+                    # Phase 11: Import from view_types instead of bracket_service
+                    from ..aggregator_oco.view_types import parse_cycle_id_from_client_order_id
                     cycle_id_parsed = parse_cycle_id_from_client_order_id(
                         client_order_id_str)
 
@@ -1978,16 +2976,40 @@ class ExecPosRuntimeV2:
                     continue
 
         try:
-            bf = getattr(self.bracket_service,
-                         "evaluate_all_for_recovery", None)
-            plans = None
-            if callable(bf):
-                plans = bf(positions=pos_views, orders=order_views, cfg=cfg)
-            else:
-                plans = self.bracket_service.evaluate_all(
-                    positions=pos_views, orders=order_views, cfg=cfg)
-            if hasattr(plans, "__await__"):
-                plans = await plans  # type: ignore
+            # Phase 11: Use core planner instead of BracketService.evaluate_all
+            # Evaluate each position individually using compute_bracket_plan_from_views
+            plans = []
+            bracket_cfg = BracketConfig(
+                sl_pct=Decimal(str(cfg.sl_pct)),
+                tp_rr=Decimal(str(cfg.tp_rr)),
+            )
+            for pos_view in pos_views:
+                symbol_orders = [
+                    o for o in order_views if o.symbol == pos_view.symbol]
+                try:
+                    plan = compute_bracket_plan_from_views(
+                        pos_view=pos_view,
+                        order_views=symbol_orders,
+                        cfg=bracket_cfg,
+                        symbol=pos_view.symbol,
+                        side=pos_view.side,
+                    )
+                    if plan.actions:  # Only include plans with actions
+                        plans.append(plan)
+                except Exception:
+                    continue
+
+            # Also check for orphan brackets (symbols with orders but no position)
+            order_symbols = set(o.symbol for o in order_views)
+            pos_symbols = set(p.symbol for p in pos_views)
+            orphan_symbols = order_symbols - pos_symbols
+            for orphan_sym in orphan_symbols:
+                orphan_orders = [
+                    o for o in order_views if o.symbol == orphan_sym]
+                orphan_plan = plan_orphan_cleanup(orphan_sym, orphan_orders)
+                if orphan_plan.actions:
+                    plans.append(orphan_plan)
+
         except Exception:
             logger.error("Bracket recovery evaluation failed", exc_info=True)
             self._recovery_completed = True
@@ -1995,11 +3017,11 @@ class ExecPosRuntimeV2:
 
         for plan in plans or []:
             reason = "brackets_recovery"
-            if any(a.action_type == "ADJUST" for a in plan.actions):
+            if any(a.action in ("ADJUST", "ADJUST_SL", "ADJUST_TP") for a in plan.actions):
                 reason = "brackets_recovery_adjust_mismatch"
-            elif any(a.action_type in ("PLACE_SL", "PLACE_TP") for a in plan.actions):
+            elif any(a.action in ("PLACE_SL", "PLACE_TP") for a in plan.actions):
                 reason = "brackets_recovery_seed_protection"
-            elif plan.state.is_flat and plan.actions:
+            elif plan.side == "FLAT" and plan.actions:
                 reason = "brackets_recovery_orphan_cleanup"
 
             logging_v2.log_runtime_event(
@@ -2009,7 +3031,7 @@ class ExecPosRuntimeV2:
                 result=plan.severity.lower(),
                 why=reason[:80],
                 extra={"actions": [
-                    a.action_type for a in plan.actions], "rid": plan.rid},
+                    a.action for a in plan.actions], "rid": plan.rid},
             )
 
             try:
@@ -2113,11 +3135,33 @@ class ExecPosRuntimeV2:
                 return None
         return current
 
-    def _get_bracket_cfg(self) -> BracketRulesConfig:
+    def _get_bracket_cfg(self, symbol: Optional[str] = None) -> BracketRulesConfig:
         # Preferred typed config path
         if self._ep_cfg and getattr(self._ep_cfg, "aggregated_oco", None):
             agg = self._ep_cfg.aggregated_oco
             try:
+                # LEVERAGE-FIX: Use cached leverage from Binance API (priority)
+                # Fallback to config max_leverage only if API leverage not available
+                sym = symbol or ""
+                cached_lev = self._leverage_by_symbol.get(sym)
+                if cached_lev and cached_lev > 0:
+                    lev = float(cached_lev)
+                    logger.debug(
+                        f"[ExecPosV2] BRACKET_CFG: Using cached API leverage={lev} for {sym}")
+                else:
+                    lev = resolve_effective_leverage(sym, self.config)
+                    logger.debug(
+                        f"[ExecPosV2] BRACKET_CFG: Using config leverage={lev} for {sym} (API cache miss)")
+
+                sl_pct_price, tp_rr_val = compute_sl_tp_from_roi(
+                    self._ep_cfg, sym, lev)
+                sl_pct_cfg = sl_pct_price if sl_pct_price else agg.sl_pct
+                tp_rr_cfg = tp_rr_val if tp_rr_val else agg.tp_rr
+
+                # LEVERAGE-FIX: Log actual values for debugging ROI calculation
+                logger.debug(
+                    f"[ExecPosV2] BRACKET_CFG: {sym} lev={lev} sl_pct={sl_pct_cfg:.4f} tp_rr={tp_rr_cfg:.4f}")
+
                 return BracketRulesConfig(
                     enabled=agg.enabled,
                     allow_unprotected_position=agg.allow_unprotected_position,
@@ -2126,8 +3170,8 @@ class ExecPosRuntimeV2:
                     ttl_protect_new_bracket_ms=agg.ttl_protect_new_bracket_ms,
                     max_tp_legs=agg.max_tp_legs,
                     max_sl_legs=agg.max_sl_legs,
-                    sl_pct=agg.sl_pct,
-                    tp_rr=agg.tp_rr,
+                    sl_pct=sl_pct_cfg,
+                    tp_rr=tp_rr_cfg,
                     recreate_missing_brackets=agg.recreate_missing_brackets,  # R2-E
                 )
             except Exception:

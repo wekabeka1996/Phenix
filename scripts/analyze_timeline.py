@@ -37,7 +37,7 @@ if len(ticks) > 1:
         gap = (ticks[i][0] - ticks[i-1][0]).total_seconds()
         gaps.append(gap)
         print(f'{ticks[i-1][0].strftime("%H:%M:%S")} -> {ticks[i][0].strftime("%H:%M:%S")}: {gap:.1f}s')
-    
+
     if gaps:
         print(f'\nAvg gap: {sum(gaps)/len(gaps):.1f}s')
         print(f'Max gap: {max(gaps):.1f}s')

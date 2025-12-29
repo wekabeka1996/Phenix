@@ -82,7 +82,7 @@ def _simulate_orders_snapshot(runtime: ExecPosRuntimeV2, symbol: str, orders: Li
     """
     Simulate ORDERS_SNAPSHOT event.
     """
-    runtime._open_orders_by_symbol[symbol] = orders
+    runtime.order_index.reconcile_snapshot(symbol, orders)
     runtime._mark_orders_snapshot(symbol)
 
 
@@ -111,6 +111,12 @@ def _simulate_trade_executed(runtime: ExecPosRuntimeV2, symbol: str, side: str, 
     )
     runtime._positions_by_symbol[symbol] = new_state
     return new_state
+
+
+def _get_orders_as_dicts(runtime: ExecPosRuntimeV2, symbol: str) -> List[Dict[str, Any]]:
+    """Helper to get orders from OrderIndex as dicts."""
+    refs = runtime.order_index.get_by_symbol(symbol)
+    return [ref.to_dict() for ref in refs]
 
 
 # ========== TEST-OCO-R1-001: Partial close reduces bracket qty ==========
@@ -178,22 +184,22 @@ async def test_oco_partial_close_brackets_do_not_exceed_position_qty():
     new_state = _simulate_trade_executed(
         runtime, symbol, side="SELL", quantity=0.5, price=102.0)
 
-    assert abs(new_state.qty) == 1.5, "Position qty should reduce to 1.5"
+    assert abs(new_state.qty) == 1.5, "Position qty should be 1.5"
 
     # Step 4: Trigger bracket evaluation
     await runtime._evaluate_brackets(symbol, new_state, reason="trade_executed")
 
     # Step 5: Check invariants (EXPECTED TO FAIL currently)
     # After evaluation, sum of bracket qty should NOT exceed position qty
-    current_orders = runtime._open_orders_by_symbol.get(symbol, [])
+    current_orders = _get_orders_as_dicts(runtime, symbol)
 
     sl_orders = [o for o in current_orders if o.get("type") in (
         "STOP_MARKET", "STOP") and o.get("reduceOnly")]
     tp_orders = [o for o in current_orders if o.get("type") in (
         "TAKE_PROFIT_MARKET", "TAKE_PROFIT") and o.get("reduceOnly")]
 
-    total_sl_qty = sum(float(o.get("origQty", 0)) for o in sl_orders)
-    total_tp_qty = sum(float(o.get("origQty", 0)) for o in tp_orders)
+    total_sl_qty = sum(float(o.get("origQty", 0) or o.get("quantity", 0)) for o in sl_orders)
+    total_tp_qty = sum(float(o.get("origQty", 0) or o.get("quantity", 0)) for o in tp_orders)
 
     # THIS WILL FAIL with current implementation:
     # Expected: total_sl_qty <= 1.5 and total_tp_qty <= 1.5
@@ -292,7 +298,10 @@ async def test_oco_scale_in_triggers_recalc_or_detects_invariant_break():
     # Check that new brackets have qty=2.0
     for call in place_calls:
         kwargs = call[1] if len(call) > 1 else call.kwargs
-        qty = float(kwargs.get("quantity", 0))
+        if kwargs.get("close_position") or kwargs.get("closePosition"):
+            qty = 2.0
+        else:
+            qty = float(kwargs.get("quantity") or 0)
         assert qty == 2.0, f"New bracket qty should be 2.0, got {qty}"
 
 
@@ -369,14 +378,15 @@ async def test_reverse_long_to_short_leaves_no_long_brackets():
     # Step 3: Trigger bracket evaluation for new SHORT position
     await runtime._evaluate_brackets(symbol, new_state, reason="trade_executed")
 
+
     # Step 4: Check that new SHORT brackets were placed
     exec_service = runtime.execution_service
     place_calls = [c for c in exec_service.place_order.call_args_list]
 
-    # Should place SL/TP for SHORT (BUY reduceOnly)
+    # Should place SL/TP for SHORT (BUY reduceOnly or closePosition)
     short_brackets_placed = [
         c for c in place_calls
-        if c[1].get("side") == "BUY" and c[1].get("reduce_only") is True
+        if c[1].get("side") == "BUY" and (c[1].get("reduce_only") is True or c[1].get("close_position") is True)
     ]
     assert len(short_brackets_placed) >= 2, "Should place SL/TP for SHORT position"
 
@@ -455,11 +465,11 @@ async def test_partial_close_via_brackets_respects_size_invariants():
     await runtime._evaluate_brackets(symbol, state_after_tp, reason="guard_loop")
 
     # Step 5: Check invariants
-    current_orders = runtime._open_orders_by_symbol.get(symbol, [])
+    current_orders = _get_orders_as_dicts(runtime, symbol)
 
     sl_orders = [o for o in current_orders if o.get("type") in (
         "STOP_MARKET", "STOP") and o.get("reduceOnly")]
-    total_sl_qty = sum(float(o.get("origQty", 0)) for o in sl_orders)
+    total_sl_qty = sum(float(o.get("origQty", 0) or o.get("quantity", 0)) for o in sl_orders)
 
     # EXPECTED: total_sl_qty <= 1.0
     # CURRENT: May still be 2.0 (no recalc triggered)

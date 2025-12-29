@@ -38,7 +38,11 @@ class FakeAdapter:
         return {
             "success": True,
             "orderId": "TEST_ORDER",
+            "order_id": "TEST_ORDER",
             "clientOrderId": kwargs.get("client_order_id", "TEST_COID"),
+            "status": "FILLED",  # For sync_executor
+            "price": "130.0",
+            "filled_qty": str(quantity) if quantity else "1.0",
         }
 
 
@@ -46,7 +50,12 @@ class FakeAdapter:
 async def test_trade_intent_proposed_triggers_entry_place():
     adapter = FakeAdapter()
     facade = V2RuntimeFacade(
-        config={},
+        config={
+            "execution_position": {
+                "executor_pool_enabled": False,  # Use legacy non-blocking path
+
+            }
+        },
         adapter=adapter,
         price_service=None,
         fsm=None,

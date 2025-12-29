@@ -120,6 +120,8 @@ async def test_empty_orders_snapshot_with_open_position_stale_mirror():
                              quantity=1.0, price=50000.0)
 
     # Step 2: Populate mirror with stale brackets (simulate previous cycle)
+    # Use "time" field in the past to bypass IN_FLIGHT_GRACE_PERIOD (2s) in order_index
+    old_time_ms = int((time.time() - 10) * 1000)  # 10 seconds ago
     runtime._open_orders_by_symbol[symbol] = [
         {
             "symbol": symbol,
@@ -130,6 +132,7 @@ async def test_empty_orders_snapshot_with_open_position_stale_mirror():
             "stopPrice": "49000.0",
             "reduceOnly": True,
             "status": "NEW",
+            "time": old_time_ms,  # Created in the past
         }
     ]
     runtime._mark_orders_snapshot(symbol)
@@ -183,7 +186,8 @@ async def test_empty_orders_snapshot_then_evaluate_sees_no_brackets():
     position = _simulate_trade_executed(
         runtime, symbol, side="BUY", quantity=2.0, price=3000.0)
 
-    # Step 2: Populate mirror with old brackets
+    # Step 2: Populate mirror with old brackets (use time in past to bypass grace period)
+    old_time_ms = int((time.time() - 10) * 1000)  # 10 seconds ago
     runtime._open_orders_by_symbol[symbol] = [
         {
             "symbol": symbol,
@@ -194,6 +198,7 @@ async def test_empty_orders_snapshot_then_evaluate_sees_no_brackets():
             "stopPrice": "2940.0",
             "reduceOnly": True,
             "status": "NEW",
+            "time": old_time_ms,  # Created in the past
         }
     ]
     runtime._mark_orders_snapshot(symbol)

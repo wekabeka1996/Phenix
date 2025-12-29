@@ -563,6 +563,17 @@ class ConfigLoader:
                     tr = resolved_config.get('trading', {}) or {}
                     if isinstance(tr, dict) and tr.get('execution') is not None:
                         resolved_config['execution'] = tr.get('execution')
+
+                # EP-EXECUTOR-POOL: Merge executor_pool config from domains/execution.yaml
+                if config_v2 and config_v2.domains:
+                    exec_domain = config_v2.domains.get('execution', {})
+                    if exec_domain and isinstance(exec_domain, dict):
+                        if 'execution' not in resolved_config:
+                            resolved_config['execution'] = {}
+                        if isinstance(resolved_config.get('execution'), dict):
+                            # Merge executor_pool if present
+                            if 'executor_pool' in exec_domain:
+                                resolved_config['execution']['executor_pool'] = exec_domain['executor_pool']
             except Exception:
                 pass
             resolved_config['config_v2'] = config_v2
@@ -570,15 +581,23 @@ class ConfigLoader:
             # EP-CONFIG-INJECTION-S2: Build typed ExecutionPositionConfig from config_v2
             if HAS_EXECPOS_TYPED_CONFIG:
                 try:
+                    LOG.debug(f"EP_CONFIG: config_v2 exists: {config_v2 is not None}")
+                    if config_v2:
+                        LOG.debug(f"EP_CONFIG: config_v2.domains exists: {config_v2.domains is not None}")
+                        if config_v2.domains:
+                            LOG.debug(f"EP_CONFIG: domains keys: {list(config_v2.domains.keys())}")
+                            LOG.debug(f"EP_CONFIG: 'execution' in domains: {'execution' in config_v2.domains}")
                     raw_execution_cfg = config_v2.domains.get(
-                        'execution') if config_v2 else None
+                        'execution') if config_v2 and config_v2.domains else None
+                    LOG.debug(f"EP_CONFIG: raw_execution_cfg is None: {raw_execution_cfg is None}")
                     if raw_execution_cfg is not None:  # Allow empty dict {} for defaults
+                        LOG.debug(f"EP_CONFIG: raw_execution_cfg keys: {list(raw_execution_cfg.keys())}")
                         ep_typed_cfg = resolve_execution_position_config(
-                            raw_execution_cfg
-                            # Uses default paths:
-                            # - aggregated_oco_path = ("manage", "brackets", "aggregated_oco")
-                            # - trailing_path = ("manage", "trailing")
-                            # - close_path = ("manage", "close")
+                            raw_execution_cfg,
+                            aggregated_oco_path=(
+                                "execution", "aggregated_oco"),
+                            trailing_path=("execution", "trailing"),
+                            close_path=("execution", "close"),
                         )
                         resolved_config['execution_position_cfg'] = ep_typed_cfg
                         LOG.info(
@@ -623,10 +642,12 @@ class ConfigLoader:
         resolved_config["trading_mode"] = selected_mode
 
         # Instruments → legacy format
-        if not trading_cfg.get("instruments"):
-            instruments = self._build_instruments_from_v2(config_v2)
-            if instruments:
-                trading_cfg["instruments"] = instruments
+        instruments = self._build_instruments_from_v2(config_v2)
+        if instruments:
+            existing_instruments = trading_cfg.get("instruments", {})
+            # Merge v2 instruments into existing (v2 takes precedence)
+            merged_instruments = {**existing_instruments, **instruments}
+            trading_cfg["instruments"] = merged_instruments
 
         # TCA preferences
         if not trading_cfg.get("tca_prefs"):
@@ -679,6 +700,15 @@ class ConfigLoader:
             if domain_cfg:
                 trading_cfg["domain_configuration"] = domain_cfg
 
+        # Execution domain configuration (for legacy compatibility)
+        if config_v2.domains and 'execution' in config_v2.domains:
+            exec_domain = config_v2.domains['execution']
+            if exec_domain and isinstance(exec_domain, dict):
+                # Merge execution.aggregated_oco into execution_position.aggregated_oco for legacy access
+                if 'execution' in exec_domain and 'aggregated_oco' in exec_domain['execution']:
+                    ep_agg_oco = exec_domain['execution']['aggregated_oco']
+                    resolved_config.setdefault('execution_position', {})['aggregated_oco'] = ep_agg_oco
+
     def _default_trading_mode_from_v2(self, config_v2: ConfigV2) -> str:
         modes = getattr(config_v2, "modes", None) or {}
         profiles = modes.get("profiles", {}) if isinstance(modes, dict) else {}
@@ -726,6 +756,7 @@ class ConfigLoader:
                 "min_qty": str(merged_limits.get(
                     "min_qty", limits.get("min_qty", "0.001"))),
                 "precision": precision,
+                "limits": merged_limits,  # Include merged limits for leverage access
             }
         return instruments
 

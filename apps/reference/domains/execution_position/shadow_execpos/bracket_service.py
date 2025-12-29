@@ -2,6 +2,21 @@
 BracketService — Pure Computation Layer for Bracket State Management
 =====================================================================
 
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ⚠️  DEPRECATED / TEST-ONLY — Phase 10 (2025-11-30)                          ║
+║                                                                              ║
+║  This module is RETIRED from production code as of PHASE10.                  ║
+║  Production path now uses:                                                   ║
+║    aggregator_oco/core_math.py → _compute_bracket_plan_core()                ║
+║                                                                              ║
+║  This file is preserved ONLY for:                                            ║
+║    1. Test harness (unit tests that build mock BracketState)                 ║
+║    2. Historical reference and audit trail                                   ║
+║    3. Potential re-use of types: BracketLeg, BracketSet, BracketState        ║
+║                                                                              ║
+║  DO NOT import BracketService in production runtime code.                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
 Contract: EP-PORT-BRACKETS-S1-PH1 (v1.0)
 Implementation: EP-PORT-BRACKETS-S1-PH2
 
@@ -26,6 +41,19 @@ import hashlib
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, NamedTuple
+
+# Phase 2: Import contract types from aggregator_oco
+from apps.reference.domains.execution_position.aggregator_oco.contracts import (
+    BracketAction as _ContractBracketAction,
+    BracketPlan as _ContractBracketPlan,
+    SeverityType,
+)
+
+# Phase 7: Import core math for SL/TP calculation (single source of truth)
+from apps.reference.domains.execution_position.aggregator_oco.core_math import (
+    compute_desired_levels as _core_compute_desired_levels,
+    PriceConstraints as _CorePriceConstraints,
+)
 
 
 # ============================================================================
@@ -72,29 +100,55 @@ def make_bracket_client_order_id(
     R2-D: Includes cycle_id suffix for position lifecycle separation.
     """
     if position is not None:
-        # R2-D: Include cycle_id in clientOrderId
-        cycle_suffix = f"C{position.cycle_id}"
-        position_id = build_position_id(symbol, position)
-        base = f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-{position_id}"
+        # Compact format to avoid truncation collisions
+        # AUR-{symbol}-{S/L}-{TP/SL}-C{cycle}-{hash}
 
-        # Binance limit: 32 chars
+        # 1. Compact Side
+        side_code = "L" if position.side == "LONG" else "S"
+
+        # 2. Compact Action
+        if "TP" in action_type:
+            act_code = "TP"
+        elif "SL" in action_type:
+            act_code = "SL"
+        else:
+            act_code = "XX"
+
+        # 3. Cycle
+        cycle_suffix = f"C{position.cycle_id}"
+
+        # 4. Position Fingerprint (Qty + Price + Timestamp)
+        # We use a hash to ensure changes in qty/price result in different IDs
+        # even if the prefix consumes most of the space.
+        # Add timestamp to ensure uniqueness across restarts
+        import time
+        pos_fingerprint = f"{abs(position.qty):.8f}_{position.avg_entry_price:.8f}_{time.time_ns()}"
+        pos_hash = hashlib.sha256(
+            pos_fingerprint.encode("utf-8")).hexdigest()[:6]
+
+        # Construct ID
+        # AUR-BNBUSDT-S-TP-C0-a1b2c3
+        base = f"AUR-{symbol}-{side_code}-{act_code}-{cycle_suffix}-{pos_hash}"
+
+        # If still too long (very long symbol), truncate symbol, not hash
         if len(base) > 32:
-            # Truncate position_id to fit
-            max_pos_id_len = 32 - \
-                len(f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-")
-            if max_pos_id_len > 0:
-                position_id = position_id[:max_pos_id_len]
-                base = f"AUR-{symbol}-{position.side}-{action_type}-{cycle_suffix}-{position_id}"
+            overage = len(base) - 32
+            # Truncate symbol from the end, keeping at least 4 chars
+            if len(symbol) > overage + 4:
+                short_symbol = symbol[:-overage]
+                base = f"AUR-{short_symbol}-{side_code}-{act_code}-{cycle_suffix}-{pos_hash}"
             else:
-                # Extreme case: truncate symbol if needed
-                base = base[:32]
+                # Fallback: keep hash, truncate middle
+                # AUR-...-a1b2c3 (keep last 7 chars: -hash)
+                prefix_len = 32 - 7
+                prefix = f"AUR-{symbol}-{side_code}-{act_code}-{cycle_suffix}"
+                base = f"{prefix[:prefix_len]}-{pos_hash}"
 
         return base
 
     seed = f"{symbol}|{action_type}|{exit_side}|{qty}|{price}"
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:20]
     return f"AUR-BRK-{digest}"
-
 
 
 # ============================================================================
@@ -258,67 +312,14 @@ class BracketState:
         return len(self.bracket_set.tp_legs) if self.bracket_set else 0
 
 
-@dataclass(frozen=True)
-class BracketAction:
-    """
-    Single recommended action for bracket management.
-    Caller (FSM/adapter) decides whether to execute.
-    """
-    action_type: Literal["CANCEL", "PLACE_SL", "PLACE_TP", "ADJUST"]
+# ============================================================================
+# Phase 2: Re-export BracketAction and BracketPlan from contracts.py
+# ============================================================================
+# These types are now defined in aggregator_oco/contracts.py (single source of truth)
+# We re-export them here for backward compatibility with existing imports.
 
-    # For CANCEL/ADJUST actions
-    # Exchange order ID to cancel/adjust
-    order_id: Optional[str] = None
-    client_order_id: Optional[str] = None   # Client order ID (for tracking)
-
-    # For PLACE_SL/PLACE_TP/ADJUST actions
-    # Limit price (for TP) or stop price (for SL)
-    price: Optional[Decimal] = None
-    qty: Optional[Decimal] = None           # Order quantity
-
-    # XAI metadata
-    # "MISSING_SL" | "ORPHAN_SL" | "TOO_MANY_SL" | etc.
-    reason_code: str = ""
-    # Structured why (≤80 chars): "reason|detail"
-    why: str = ""
-
-    # Tracing
-    rid: Optional[str] = None               # Request ID for tracing
-    # Parent event that triggered this action
-    parent_why: Optional[str] = None
-
-    def __post_init__(self):
-        """Validate why field length."""
-        if len(self.why) > 80:
-            # Truncate instead of raising error (graceful degradation)
-            object.__setattr__(self, 'why', self.why[:80])
-
-
-@dataclass(frozen=True)
-class BracketPlan:
-    """
-    Evaluation result for a single (symbol, side) bracket state.
-    Output of BracketService.evaluate().
-    """
-    symbol: str                         # e.g., "BTCUSDT"
-    side: str                           # "LONG" or "SHORT"
-    state: BracketState                 # Input state that was evaluated
-    actions: List[BracketAction]        # Recommended actions (ordered)
-    severity: Literal["INFO", "WARN", "ALERT"]  # Violation severity
-    why: str                            # High-level reason (≤80 chars)
-    rid: Optional[str] = None           # Request ID for tracing
-    # Timestamp of evaluation
-    evaluated_ts: float = field(default_factory=time.time)
-
-    @property
-    def has_actions(self) -> bool:
-        """Plan contains actionable recommendations."""
-        return len(self.actions) > 0
-
-    @property
-    def is_critical(self) -> bool:
-        """Plan severity is ALERT (critical violation)."""
-        return self.severity == "ALERT"
+BracketAction = _ContractBracketAction
+BracketPlan = _ContractBracketPlan
 
 
 class BracketExecutionPlan(NamedTuple):
@@ -510,7 +511,8 @@ class BracketService:
                     bracket_set=bracket_set,
                     guardian_meta=None,  # Pass through as-is if needed
                     snapshot_ts=time.time(),
-                    tick_size=tick_size if tick_size is not None else Decimal("0.01"),
+                    tick_size=tick_size if tick_size is not None else Decimal(
+                        "0.01"),
                 )
 
                 states[key] = state
@@ -663,8 +665,8 @@ class BracketService:
 
                 for leg in orphan_cycle_legs:
                     actions.append(BracketAction(
-                        action_type="CANCEL",
-                        order_id=leg.order_id,
+                        action="CANCEL",
+                        order_ref=leg.order_id,
                         client_order_id=leg.order.client_order_id,
                         reason_code="ORPHAN_CYCLE",
                         why=f"orphan_cycle|leg_cycle={leg.order.cycle_id}_pos_cycle={current_cycle}",
@@ -687,8 +689,8 @@ class BracketService:
             # CANCEL all SL/TP legs
             for leg in state.bracket_set.sl_legs:  # type: ignore
                 actions.append(BracketAction(
-                    action_type="CANCEL",
-                    order_id=leg.order_id,
+                    action="CANCEL",
+                    order_ref=leg.order_id,
                     client_order_id=leg.order.client_order_id,
                     reason_code="ORPHAN_SL",
                     why="orphan_sl|qty≈0_active_sl",
@@ -697,8 +699,8 @@ class BracketService:
 
             for leg in state.bracket_set.tp_legs:  # type: ignore
                 actions.append(BracketAction(
-                    action_type="CANCEL",
-                    order_id=leg.order_id,
+                    action="CANCEL",
+                    order_ref=leg.order_id,
                     client_order_id=leg.order.client_order_id,
                     reason_code="ORPHAN_TP",
                     why="orphan_tp|qty≈0_active_tp",
@@ -723,8 +725,8 @@ class BracketService:
                             state, cfg)
 
                         actions.append(BracketAction(
-                            action_type="PLACE_SL",
-                            price=desired_levels["sl_price"],
+                            action="PLACE_SL", leg_type="SL",
+                            target_price=desired_levels["sl_price"],
                             qty=state.position_view.qty,
                             reason_code="MISSING_SL_RECREATED",
                             why="missing_sl_recreated|recreate_missing_brackets=true",
@@ -748,15 +750,15 @@ class BracketService:
             if state.position_view.qty != 0 and tp_count == 0:
                 # Only place TP if we have SL (or are placing one)
                 # This ensures we don't place TP without protection
-                if sl_count > 0 or any(a.action_type == "PLACE_SL" for a in actions):
+                if sl_count > 0 or any(a.action == "PLACE_SL" for a in actions):
                     # R2-E: Check if we should recreate missing TP
                     if cfg.recreate_missing_brackets:
                         desired_levels = self._compute_desired_levels(
                             state, cfg)
 
                         actions.append(BracketAction(
-                            action_type="PLACE_TP",
-                            price=desired_levels["tp_price"],
+                            action="PLACE_TP", leg_type="TP",
+                            target_price=desired_levels["tp_price"],
                             qty=state.position_view.qty,
                             reason_code="MISSING_TP_RECREATED",
                             why="missing_tp_recreated|recreate_missing_brackets=true",
@@ -787,8 +789,8 @@ class BracketService:
                 extra_sl_legs = state.bracket_set.sl_legs[cfg.max_sl_legs:]
                 for i, leg in enumerate(extra_sl_legs):
                     actions.append(BracketAction(
-                        action_type="CANCEL",
-                        order_id=leg.order_id,
+                        action="CANCEL",
+                        order_ref=leg.order_id,
                         client_order_id=leg.order.client_order_id,
                         reason_code="TOO_MANY_SL",
                         why=f"too_many_sl|redundant_sl_{i}",
@@ -808,8 +810,8 @@ class BracketService:
 
                     # CANCEL old SL
                     actions.append(BracketAction(
-                        action_type="CANCEL",
-                        order_id=current_sl_leg.order_id,
+                        action="CANCEL",
+                        order_ref=current_sl_leg.order_id,
                         client_order_id=current_sl_leg.order.client_order_id,
                         reason_code="STALE_LEVELS",
                         why="recalc|cancel_old_sl",
@@ -818,8 +820,8 @@ class BracketService:
 
                     # PLACE new SL
                     actions.append(BracketAction(
-                        action_type="PLACE_SL",
-                        price=desired_levels["sl_price"],
+                        action="PLACE_SL", leg_type="SL",
+                        target_price=desired_levels["sl_price"],
                         qty=state.position_view.qty,
                         reason_code="STALE_LEVELS",
                         why=f"recalc|sl_update_{current_sl_price}→{desired_levels['sl_price']}"[
@@ -840,8 +842,8 @@ class BracketService:
 
                         # CANCEL old TP
                         actions.append(BracketAction(
-                            action_type="CANCEL",
-                            order_id=current_tp_leg.order_id,
+                            action="CANCEL",
+                            order_ref=current_tp_leg.order_id,
                             client_order_id=current_tp_leg.order.client_order_id,
                             reason_code="STALE_LEVELS",
                             why="recalc|cancel_old_tp",
@@ -850,8 +852,8 @@ class BracketService:
 
                         # PLACE new TP
                         actions.append(BracketAction(
-                            action_type="PLACE_TP",
-                            price=desired_levels["tp_price"],
+                            action="PLACE_TP", leg_type="TP",
+                            target_price=desired_levels["tp_price"],
                             qty=state.position_view.qty,
                             reason_code="STALE_LEVELS",
                             why=f"recalc|tp_update_{current_tp_price}→{desired_levels['tp_price']}"[
@@ -931,24 +933,30 @@ class BracketService:
                 "tp_price": levels.tp_price,
             }
 
-        # Fallback: simple calculation if aggregator not available
+        # Phase 7: Delegate to core_math.compute_desired_levels (single source of truth)
         sl_pct = Decimal(str(cfg.sl_pct))
         tp_rr = Decimal(str(cfg.tp_rr))
 
-        if state.side == "LONG":
-            sl_price = state.position_view.avg_entry_price * \
-                (Decimal("1") - sl_pct)
-            tp_price = state.position_view.avg_entry_price * \
-                (Decimal("1") + sl_pct * tp_rr)
-        else:  # SHORT
-            sl_price = state.position_view.avg_entry_price * \
-                (Decimal("1") + sl_pct)
-            tp_price = state.position_view.avg_entry_price * \
-                (Decimal("1") - sl_pct * tp_rr)
+        # Build optional constraints for rounding
+        constraints = None
+        if state.tick_size and state.tick_size > 0:
+            constraints = _CorePriceConstraints(
+                tick_size=state.tick_size,
+                min_price=state.tick_size,
+            )
+
+        # Call core_math — the single source of SL/TP formulas
+        desired = _core_compute_desired_levels(
+            side=state.side,
+            entry_price=state.position_view.avg_entry_price,
+            sl_pct=sl_pct,
+            tp_rr=tp_rr,
+            constraints=constraints,
+        )
 
         return {
-            "sl_price": sl_price,
-            "tp_price": tp_price,
+            "sl_price": desired.sl_price,
+            "tp_price": desired.tp_price,
         }
 
     def _enforce_size_invariants(
@@ -1018,8 +1026,8 @@ class BracketService:
                     break
 
                 actions.append(BracketAction(
-                    action_type="CANCEL",
-                    order_id=leg.order_id,
+                    action="CANCEL",
+                    order_ref=leg.order_id,
                     client_order_id=leg.order.client_order_id,
                     reason_code="SIZE_INVARIANT_SL",
                     why=f"size_sync|sl_overshoot_{total_sl_qty}>{position_qty}",
@@ -1051,8 +1059,8 @@ class BracketService:
                     break
 
                 actions.append(BracketAction(
-                    action_type="CANCEL",
-                    order_id=leg.order_id,
+                    action="CANCEL",
+                    order_ref=leg.order_id,
                     client_order_id=leg.order.client_order_id,
                     reason_code="SIZE_INVARIANT_TP",
                     why=f"size_sync|tp_overshoot_{total_tp_qty}>{position_qty}",
@@ -1068,8 +1076,8 @@ class BracketService:
         # R2-B-FIX: Place resized brackets AFTER all CANCEL actions
         if need_place_sl:
             actions.append(BracketAction(
-                action_type="PLACE_SL",
-                price=desired_levels["sl_price"],
+                action="PLACE_SL", leg_type="SL",
+                target_price=desired_levels["sl_price"],
                 qty=position_qty,
                 reason_code="PARTIAL_CLOSE_RESIZE_SL",
                 why=f"size_sync|resize_sl_to_{position_qty}",
@@ -1078,8 +1086,8 @@ class BracketService:
 
         if need_place_tp:
             actions.append(BracketAction(
-                action_type="PLACE_TP",
-                price=desired_levels["tp_price"],
+                action="PLACE_TP", leg_type="TP",
+                target_price=desired_levels["tp_price"],
                 qty=position_qty,
                 reason_code="PARTIAL_CLOSE_RESIZE_TP",
                 why=f"size_sync|resize_tp_to_{position_qty}",
@@ -1219,12 +1227,13 @@ class BracketService:
 
             # Check order type compatibility
             is_sl = "STOP" in order.order_type.upper()
-            is_tp = "TAKE_PROFIT" in order.order_type.upper() or "LIMIT" in order.order_type.upper()
+            is_tp = "TAKE_PROFIT" in order.order_type.upper(
+            ) or "LIMIT" in order.order_type.upper()
 
             if is_sl or is_tp:
                 actions.append(BracketAction(
-                    action_type="CANCEL",
-                    order_id=order.order_id,
+                    action="CANCEL",
+                    order_ref=order.order_id,
                     client_order_id=order.client_order_id,
                     reason_code="ORPHAN_CLEANUP",
                     why="orphan_cleanup|position_flat",
@@ -1287,12 +1296,13 @@ class BracketService:
 
             # Check order type compatibility
             is_sl = "STOP" in order.order_type.upper()
-            is_tp = "TAKE_PROFIT" in order.order_type.upper() or "LIMIT" in order.order_type.upper()
+            is_tp = "TAKE_PROFIT" in order.order_type.upper(
+            ) or "LIMIT" in order.order_type.upper()
 
             if is_sl or is_tp:
                 actions.append(BracketAction(
-                    action_type="CANCEL",
-                    order_id=order.order_id,
+                    action="CANCEL",
+                    order_ref=order.order_id,
                     client_order_id=order.client_order_id,
                     reason_code="REVERSE_CLEANUP",
                     why=f"reverse_cleanup|{prev_side}->{new_side}",

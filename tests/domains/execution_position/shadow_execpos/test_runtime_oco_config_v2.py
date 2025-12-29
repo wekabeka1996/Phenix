@@ -9,11 +9,19 @@ from apps.reference.domains.execution_position.config import (
 
 
 def test_bracket_cfg_uses_typed_execution_position_config():
+    """
+    Test that typed ExecutionPositionConfig is used when available.
+
+    NOTE: sl_roi_pct and tp_roi_pct are set to 0 to disable ROI-based calculation
+    and test the direct sl_pct/tp_rr values.
+    """
     ep_cfg = ExecutionPositionConfig(
         aggregated_oco=AggregatedOcoConfig(
             enabled=True,
             sl_pct=0.05,
             tp_rr=3.0,
+            sl_roi_pct=0.0,  # Disable ROI calculation to test direct sl_pct
+            tp_roi_pct=0.0,  # Disable ROI calculation to test direct tp_rr
             allow_unprotected_position=True,
             ttl_protect_new_bracket_ms=1234,
             max_tp_legs=2,
@@ -25,7 +33,8 @@ def test_bracket_cfg_uses_typed_execution_position_config():
         close=CloseConfig(),
     )
 
-    rt = ExecPosRuntimeV2(config={}, adapter=None, price_service=None, ep_config=ep_cfg)
+    rt = ExecPosRuntimeV2(config={}, adapter=None,
+                          price_service=None, ep_config=ep_cfg)
 
     cfg: BracketRulesConfig = rt._get_bracket_cfg()
     assert cfg.enabled is True
@@ -56,7 +65,8 @@ def test_bracket_cfg_legacy_fallback_matches_dict_values():
         }
     }
 
-    rt = ExecPosRuntimeV2(config=legacy_cfg, adapter=None, price_service=None, ep_config=None)
+    rt = ExecPosRuntimeV2(config=legacy_cfg, adapter=None,
+                          price_service=None, ep_config=None)
     cfg = rt._get_bracket_cfg()
 
     assert cfg.enabled is True

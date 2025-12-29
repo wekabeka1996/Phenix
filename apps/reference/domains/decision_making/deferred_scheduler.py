@@ -7,7 +7,9 @@ Prevents infinite defer loops by ensuring maximum one retry per symbol.
 
 import asyncio
 import logging
-from typing import Dict, Callable
+import threading
+import time
+from typing import Dict, Callable, Union
 
 log = logging.getLogger(__name__)
 
@@ -17,10 +19,15 @@ class DeferredIntentScheduler:
     Schedules one-time deferred retries for QoS cooldown scenarios.
 
     Prevents infinite defer loops by deduplicating retries per symbol.
+
+    Works in both async and sync contexts:
+    - Async: uses asyncio loop.call_later
+    - Sync: uses threading.Timer as fallback
     """
 
     def __init__(self) -> None:
-        self._tasks: Dict[str, asyncio.TimerHandle] = {}
+        self._tasks: Dict[str, Union[asyncio.TimerHandle, threading.Timer]] = {}
+        self._lock = threading.Lock()
 
     def schedule_once(self, symbol: str, when_ts_ms: int, cb: Callable[[str], None]) -> None:
         """
@@ -33,37 +40,92 @@ class DeferredIntentScheduler:
             when_ts_ms: Unix timestamp in milliseconds when to fire
             cb: Callback function that takes symbol as argument
         """
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            log.warning(
-                "DeferredIntentScheduler: no running event loop, skip scheduling")
-            return
+        # Calculate delay
+        now_ms = int(time.time() * 1000)
+        delay_sec = max(0.0, (when_ts_ms - now_ms) / 1000.0)
 
-        now_ms = int(loop.time() * 1000)
-        delay = max(0.0, (when_ts_ms - now_ms) / 1000.0)
+        with self._lock:
+            # Deduplication: if already scheduled - skip
+            existing = self._tasks.get(symbol)
+            if existing is not None:
+                # Check if timer/handle is still active
+                if isinstance(existing, threading.Timer):
+                    if existing.is_alive():
+                        return
+                elif isinstance(existing, asyncio.TimerHandle):
+                    if not existing.cancelled():
+                        return
 
-        # Deduplication: if already scheduled and not cancelled - skip
-        if symbol in self._tasks and not self._tasks[symbol].cancelled():
-            return
+            # Try async first, fallback to threading.Timer
+            try:
+                loop = asyncio.get_running_loop()
+                self._schedule_async(symbol, delay_sec, cb, loop)
+            except RuntimeError:
+                # No running event loop - use threading.Timer
+                self._schedule_sync(symbol, delay_sec, cb)
 
+    def _schedule_async(self, symbol: str, delay_sec: float, cb: Callable[[str], None], loop: asyncio.AbstractEventLoop) -> None:
+        """Schedule using asyncio (preferred when event loop available)."""
         def _fire():
             try:
                 cb(symbol)
             finally:
-                self._tasks.pop(symbol, None)
+                with self._lock:
+                    self._tasks.pop(symbol, None)
 
-        handle = loop.call_later(delay, _fire)
+        handle = loop.call_later(delay_sec, _fire)
         self._tasks[symbol] = handle
-        log.info("Deferred retry scheduled for %s in %.3fs", symbol, delay)
+        log.info("Deferred retry scheduled (async) for %s in %.3fs", symbol, delay_sec)
+
+    def _schedule_sync(self, symbol: str, delay_sec: float, cb: Callable[[str], None]) -> None:
+        """Schedule using threading.Timer (fallback for sync context)."""
+        def _fire():
+            try:
+                cb(symbol)
+            finally:
+                with self._lock:
+                    self._tasks.pop(symbol, None)
+
+        timer = threading.Timer(delay_sec, _fire)
+        timer.daemon = True  # Don't block shutdown
+        timer.start()
+        self._tasks[symbol] = timer
+        log.info("Deferred retry scheduled (sync/timer) for %s in %.3fs", symbol, delay_sec)
 
     def cancel(self, symbol: str) -> None:
         """Cancel any pending retry for the symbol."""
-        h = self._tasks.pop(symbol, None)
-        if h and not h.cancelled():
-            h.cancel()
+        with self._lock:
+            task = self._tasks.pop(symbol, None)
+            if task is None:
+                return
+
+            if isinstance(task, threading.Timer):
+                task.cancel()
+            elif isinstance(task, asyncio.TimerHandle) and not task.cancelled():
+                task.cancel()
+
             log.debug("Cancelled deferred retry for %s", symbol)
 
     def get_pending_count(self) -> int:
         """Get count of currently pending retries."""
-        return len([h for h in self._tasks.values() if not h.cancelled()])
+        with self._lock:
+            count = 0
+            for task in self._tasks.values():
+                if isinstance(task, threading.Timer):
+                    if task.is_alive():
+                        count += 1
+                elif isinstance(task, asyncio.TimerHandle):
+                    if not task.cancelled():
+                        count += 1
+            return count
+
+    def shutdown(self) -> None:
+        """Cancel all pending timers. Call on application shutdown."""
+        with self._lock:
+            for symbol, task in list(self._tasks.items()):
+                if isinstance(task, threading.Timer):
+                    task.cancel()
+                elif isinstance(task, asyncio.TimerHandle) and not task.cancelled():
+                    task.cancel()
+            self._tasks.clear()
+            log.info("DeferredIntentScheduler shutdown complete")

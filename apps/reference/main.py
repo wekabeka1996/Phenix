@@ -250,40 +250,88 @@ class AuroraBridge:
         If portfolio stale → defer intent
         If both OK → convert immediately to CMD:OPEN
         """
-        intent_model = self._build_trade_intent_model(event)
-        if intent_model is None:
-            return
+        try:
+            self.logger.info(f"BRIDGE: on_trade_intent_proposed called for rid={event.rid}")
+            intent_model = self._build_trade_intent_model(event)
+            if intent_model is None:
+                return
 
-        symbol = intent_model.symbol or ""
+            symbol = intent_model.symbol or ""
 
-        # Resolve order type from config (entry_orders.order_type) with fallback to price-based detection
-        entry_orders_cfg = self.config.get("entry_orders", {})
-        config_order_type = entry_orders_cfg.get(
-            "order_type")  # LIMIT or MARKET from config
-        config_tif = entry_orders_cfg.get("time_in_force", "GTC")
+            # Resolve order type from config (entry_orders.order_type) with fallback to price-based detection
+            entry_orders_cfg = self.config.get("entry_orders", {})
+            config_order_type = entry_orders_cfg.get(
+                "order_type")  # LIMIT or MARKET from config
+            config_tif = entry_orders_cfg.get("time_in_force", "GTC")
 
-        # If config specifies order type, use it; otherwise fall back to price-based detection
-        if config_order_type:
-            resolved_order_type = config_order_type.upper()
-            resolved_tif = config_tif if resolved_order_type == "LIMIT" else None
-            self.logger.info(
-                f"BRIDGE: Using order_type from config: {resolved_order_type} (tif={resolved_tif})")
-        else:
-            resolved_order_type, resolved_tif = resolve_order_defaults(
-                intent_model.price, intent_model.order_type, intent_model.time_in_force
-            )
+            # If config specifies order type, use it; otherwise fall back to price-based detection
+            if config_order_type:
+                resolved_order_type = config_order_type.upper()
+                resolved_tif = config_tif if resolved_order_type == "LIMIT" else None
+                self.logger.info(
+                    f"BRIDGE: Using order_type from config: {resolved_order_type} (tif={resolved_tif})")
+            else:
+                resolved_order_type, resolved_tif = resolve_order_defaults(
+                    intent_model.price, intent_model.order_type, intent_model.time_in_force
+                )
 
-        # For LIMIT orders, ensure price is provided
-        if resolved_order_type == "LIMIT" and not intent_model.price:
-            self.logger.error(
-                f"BRIDGE: LIMIT order requested but no price provided for {symbol}. "
-                f"Intent had price={intent_model.price}"
-            )
-            return
+            # For LIMIT orders, ensure price is provided
+            if resolved_order_type == "LIMIT" and not intent_model.price:
+                self.logger.error(
+                    f"BRIDGE: LIMIT order requested but no price provided for {symbol}. "
+                    f"Intent had price={intent_model.price}"
+                )
+                return
 
-        # Check QoS first
-        if not self._is_qos_allowed(symbol):
-            # QoS blocked - defer the intent
+            # Check QoS first
+            if not self._is_qos_allowed(symbol):
+                # QoS blocked - defer the intent
+                key = intent_model.idempotent_key or event.rid or str(time.time())
+                self._deferred[key] = event
+                self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+
+                # Emit deferred event
+                defer_evt = Message(
+                    op="EVT",
+                    verb="INTENT_DEFERRED",
+                    src="bridge",
+                    dst="*",
+                    rid=event.rid,
+                    pld={
+                        "reason": "QOS_COOLDOWN",
+                        "symbol": symbol,
+                        "idempotent_key": intent_model.idempotent_key,
+                    },
+                    why="bridge_qoS_blocked",
+                )
+                await emit_compat(self.fsm, defer_evt, logger=self.logger)
+
+                self.logger.info(
+                    f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
+                    f"(QoS blocked, try #{self._deferred_tries[key]})"
+                )
+
+                # Schedule QoS retry
+                import asyncio
+
+                async def _retry_after_qos():
+                    await asyncio.sleep(1.0)  # Check every second
+                    if self._is_qos_allowed(symbol):
+                        # QoS now allows - try to process
+                        await self._flush_deferred_if_fresh()
+                    else:
+                        # Still blocked - reschedule
+                        asyncio.create_task(_retry_after_qos())
+
+                asyncio.create_task(_retry_after_qos())
+                return
+
+            # QoS OK - check portfolio freshness
+            if self._is_portfolio_fresh():
+                self._dispatch_open(event, intent_model=intent_model)
+                return
+
+            # Portfolio stale - defer the intent
             key = intent_model.idempotent_key or event.rid or str(time.time())
             self._deferred[key] = event
             self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
@@ -296,98 +344,54 @@ class AuroraBridge:
                 dst="*",
                 rid=event.rid,
                 pld={
-                    "reason": "QOS_COOLDOWN",
+                    "reason": "PORTFOLIO_STALE",
                     "symbol": symbol,
                     "idempotent_key": intent_model.idempotent_key,
                 },
-                why="bridge_qoS_blocked",
+                why="bridge_waits_fresh_portfolio",
             )
             await emit_compat(self.fsm, defer_evt, logger=self.logger)
 
             self.logger.info(
                 f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
-                f"(QoS blocked, try #{self._deferred_tries[key]})"
+                f"(portfolio stale, try #{self._deferred_tries[key]})"
             )
 
-            # Schedule QoS retry
+            # Schedule retry after delay
             import asyncio
 
-            async def _retry_after_qos():
-                await asyncio.sleep(1.0)  # Check every second
-                if self._is_qos_allowed(symbol):
-                    # QoS now allows - try to process
-                    await self._flush_deferred_if_fresh()
-                else:
-                    # Still blocked - reschedule
-                    asyncio.create_task(_retry_after_qos())
+            async def _retry_once():
+                await asyncio.sleep(self._retry_delay_sec)
+                # Check if we should drop due to timeout
+                if self._deferred_tries.get(key, 0) >= self._max_retries:
+                    # Drop after max retries
+                    drop_evt = Message(
+                        op="EVT",
+                        verb="INTENT_DROPPED",
+                        src="bridge",
+                        dst="*",
+                        rid=event.rid,
+                        pld={
+                            "reason": "STALE_PORTFOLIO_TIMEOUT",
+                            "symbol": symbol,
+                            "idempotent_key": event.pld.get("idempotent_key"),
+                        },
+                        why="bridge_drop_after_retries",
+                    )
+                    await emit_compat(self.fsm, drop_evt, logger=self.logger)
+                    self._deferred.pop(key, None)
+                    self._deferred_tries.pop(key, None)
+                    self.logger.info(
+                        f"BRIDGE: Dropped deferred intent after {self._max_retries} retries: {key}"
+                    )
+                    return
 
-            asyncio.create_task(_retry_after_qos())
-            return
+                # Otherwise, try to flush if portfolio became fresh
+                await self._flush_deferred_if_fresh()
 
-        # QoS OK - check portfolio freshness
-        if self._is_portfolio_fresh():
-            self._dispatch_open(event, intent_model=intent_model)
-            return
-
-        # Portfolio stale - defer the intent
-        key = intent_model.idempotent_key or event.rid or str(time.time())
-        self._deferred[key] = event
-        self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
-
-        # Emit deferred event
-        defer_evt = Message(
-            op="EVT",
-            verb="INTENT_DEFERRED",
-            src="bridge",
-            dst="*",
-            rid=event.rid,
-            pld={
-                "reason": "PORTFOLIO_STALE",
-                "symbol": symbol,
-                "idempotent_key": intent_model.idempotent_key,
-            },
-            why="bridge_waits_fresh_portfolio",
-        )
-        await emit_compat(self.fsm, defer_evt, logger=self.logger)
-
-        self.logger.info(
-            f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
-            f"(portfolio stale, try #{self._deferred_tries[key]})"
-        )
-
-        # Schedule retry after delay
-        import asyncio
-
-        async def _retry_once():
-            await asyncio.sleep(self._retry_delay_sec)
-            # Check if we should drop due to timeout
-            if self._deferred_tries.get(key, 0) >= self._max_retries:
-                # Drop after max retries
-                drop_evt = Message(
-                    op="EVT",
-                    verb="INTENT_DROPPED",
-                    src="bridge",
-                    dst="*",
-                    rid=event.rid,
-                    pld={
-                        "reason": "STALE_PORTFOLIO_TIMEOUT",
-                        "symbol": symbol,
-                        "idempotent_key": event.pld.get("idempotent_key"),
-                    },
-                    why="bridge_drop_after_retries",
-                )
-                await emit_compat(self.fsm, drop_evt, logger=self.logger)
-                self._deferred.pop(key, None)
-                self._deferred_tries.pop(key, None)
-                self.logger.info(
-                    f"BRIDGE: Dropped deferred intent after {self._max_retries} retries: {key}"
-                )
-                return
-
-            # Otherwise, try to flush if portfolio became fresh
-            await self._flush_deferred_if_fresh()
-
-        asyncio.create_task(_retry_once())
+            asyncio.create_task(_retry_once())
+        except Exception as e:
+            self.logger.error(f"BRIDGE: Exception in on_trade_intent_proposed for rid={event.rid}: {e}", exc_info=True)
 
     async def _flush_deferred_if_fresh(self) -> None:
         """Flush deferred intents if portfolio is now fresh and QoS allows."""
@@ -450,6 +454,7 @@ class AuroraBridge:
 
     def _dispatch_open(self, intent_msg: Message, intent_model: TradeIntentPayload | None = None) -> None:
         """Convert TRADE_INTENT_PROPOSED to CMD:OPEN and dispatch."""
+        self.logger.info(f"BRIDGE: _dispatch_open called for rid={intent_msg.rid}")
         trade_intent = intent_model or self._build_trade_intent_model(
             intent_msg)
         if trade_intent is None:
@@ -557,34 +562,70 @@ _bridge_instance: AuroraBridge | None = None
 
 def on_trade_intent_proposed(event: Message) -> None:
     """Global handler for TRADE_INTENT_PROPOSED events - delegates to bridge."""
-    global _bridge_instance
-    if _bridge_instance is not None:
-        # Run async method in sync context
-        import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_bridge_instance.on_trade_intent_proposed(event))
-        except RuntimeError:
-            # No running loop, create new one
-            asyncio.run(_bridge_instance.on_trade_intent_proposed(event))
-    else:
-        LOG.error(
-            "BRIDGE: No bridge instance available for on_trade_intent_proposed")
+    try:
+        LOG.info(f"GLOBAL: on_trade_intent_proposed called for rid={event.rid}")
+        global _bridge_instance, guardian_loop
+        if _bridge_instance is not None:
+            LOG.info(f"GLOBAL: _bridge_instance exists, guardian_loop={guardian_loop is not None}")
+            if guardian_loop is not None:
+                LOG.info(f"GLOBAL: guardian_loop.is_running()={guardian_loop.is_running()}")
+            # Run async method in sync context
+            import asyncio
+            if guardian_loop is not None and guardian_loop.is_running():
+                LOG.info(f"GLOBAL: Using run_coroutine_threadsafe for rid={event.rid}")
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
+                        _bridge_instance.on_trade_intent_proposed(event),
+                        guardian_loop
+                    )
+                    LOG.info(f"GLOBAL: run_coroutine_threadsafe returned future={future}, done={future.done()} for rid={event.rid}")
+                    # Add callback to handle completion
+                    def on_future_done(fut):
+                        try:
+                            result = fut.result()
+                            LOG.info(f"GLOBAL: Future completed successfully for rid={event.rid}, result={result}")
+                        except Exception as e:
+                            LOG.error(f"GLOBAL: Future failed for rid={event.rid}: {e}", exc_info=True)
+                    future.add_done_callback(on_future_done)
+                except Exception as e:
+                    LOG.error(f"GLOBAL: run_coroutine_threadsafe failed for rid={event.rid}: {e}", exc_info=True)
+            else:
+                LOG.warning(f"GLOBAL: No guardian_loop or not running, trying fallback for rid={event.rid}")
+                # Fallback (should not happen in normal operation)
+                try:
+                    loop = asyncio.get_running_loop()
+                    LOG.info(f"GLOBAL: Using create_task in running loop for rid={event.rid}")
+                    loop.create_task(_bridge_instance.on_trade_intent_proposed(event))
+                except RuntimeError:
+                    LOG.warning(f"GLOBAL: No running loop, using asyncio.run for rid={event.rid}")
+                    # No running loop, create new one
+                    asyncio.run(_bridge_instance.on_trade_intent_proposed(event))
+        else:
+            LOG.error(
+                "BRIDGE: No bridge instance available for on_trade_intent_proposed")
+    except Exception as e:
+        LOG.error(f"GLOBAL: Exception in on_trade_intent_proposed for rid={event.rid}: {e}", exc_info=True)
 
 
 def on_portfolio_state_updated(event: Message) -> None:
     """Global handler for PORTFOLIO_STATE_UPDATED events - delegates to bridge."""
-    global _bridge_instance
+    global _bridge_instance, guardian_loop
     if _bridge_instance is not None:
         # Run async method in sync context
         import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(
-                _bridge_instance.on_portfolio_state_updated(event))
-        except RuntimeError:
-            # No running loop, create new one
-            asyncio.run(_bridge_instance.on_portfolio_state_updated(event))
+        if guardian_loop is not None and guardian_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                _bridge_instance.on_portfolio_state_updated(event),
+                guardian_loop
+            )
+        else:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    _bridge_instance.on_portfolio_state_updated(event))
+            except RuntimeError:
+                # No running loop, create new one
+                asyncio.run(_bridge_instance.on_portfolio_state_updated(event))
     else:
         LOG.error(
             "BRIDGE: No bridge instance available for on_portfolio_state_updated")
@@ -592,16 +633,22 @@ def on_portfolio_state_updated(event: Message) -> None:
 
 def on_intent_deferred(event: Message) -> None:
     """Global handler for INTENT_DEFERRED events - delegates to bridge."""
-    global _bridge_instance
+    global _bridge_instance, guardian_loop
     if _bridge_instance is not None:
         # Run async method in sync context
         import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_bridge_instance.on_intent_deferred(event))
-        except RuntimeError:
-            # No running loop, create new one
-            asyncio.run(_bridge_instance.on_intent_deferred(event))
+        if guardian_loop is not None and guardian_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                _bridge_instance.on_intent_deferred(event),
+                guardian_loop
+            )
+        else:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_bridge_instance.on_intent_deferred(event))
+            except RuntimeError:
+                # No running loop, create new one
+                asyncio.run(_bridge_instance.on_intent_deferred(event))
     else:
         LOG.error("BRIDGE: No bridge instance available for on_intent_deferred")
 
@@ -731,13 +778,14 @@ def _wire_guardian_loop_for_execpos(
     if callable(set_loop):
         set_loop(guardian_loop)
         log.info(
-            "ExecutionPosition runtime %s exposes set_async_loop; Guardian loop wired (legacy path)",
+            "ExecutionPosition runtime %s: Guardian loop wired via set_async_loop",
             runtime_name,
         )
         return True
 
-    log.info(
-        "ExecutionPosition runtime %s has no set_async_loop; skipping Guardian loop wiring (expected for V2)",
+    log.warning(
+        "ExecutionPosition runtime %s has no set_async_loop; "
+        "WS event handlers will fail to schedule coroutines!",
         runtime_name,
     )
     return False
@@ -747,6 +795,8 @@ def _wire_guardian_loop_for_execpos(
 fsm: FSMCore | None = None
 # Created via build_execution_runtime factory
 execution_position: Any | None = None
+# Global async loop for background tasks
+guardian_loop: asyncio.AbstractEventLoop | None = None
 
 # Create logs directory if it doesn't exist
 logs_dir = project_root / "logs"
@@ -1101,51 +1151,29 @@ def main() -> None:
     # Pass full config object to access trading section attributes
     market_data = MarketDataConnector(fsm=fsm, config=config)
 
-    # Feature Store (stores historical features for backtesting)
-    def _init_feature_store(path: Path) -> FeatureStore:
-        return FeatureStore(
-            db_path=str(path),
-            retention_days=90,
-        )
+    # PERFORMANCE FIX: FeatureStore DISABLED
+    # - 20GB bloated database was slowing down the system
+    # - Nobody reads from it (only writes)
+    # - Aggregations blocked event loop for 5-17 seconds
+    # To re-enable: uncomment below and delete data/features.db first
+    #
+    # def _init_feature_store(path: Path) -> FeatureStore:
+    #     return FeatureStore(
+    #         db_path=str(path),
+    #         retention_days=90,
+    #     )
+    # configured_path = os.environ.get("FEATURE_STORE_DB_PATH")
+    # feature_store_path = Path(configured_path) if configured_path else project_root / "data" / "features.db"
+    # feature_store = _init_feature_store(feature_store_path)
+    feature_store = None  # DISABLED
+    LOG.info("⚠️ Feature Store DISABLED for performance (was 20GB bloated)")
 
-    configured_path = os.environ.get("FEATURE_STORE_DB_PATH")
-    feature_store_path = Path(
-        configured_path) if configured_path else project_root / "data" / "features.db"
-
-    try:
-        feature_store = _init_feature_store(feature_store_path)
-        LOG.info("✅ Feature Store initialized")
-    except Exception as exc:
-        if "Cannot open file" not in str(exc):
-            raise
-        fallback_root = Path(os.environ.get(
-            "FEATURE_STORE_TMP_DIR",
-            tempfile.gettempdir(),
-        ))
-        fallback_path = fallback_root / (
-            f"features_fallback_{os.getpid()}_{int(time.time())}.db"
-        )
-        LOG.warning(
-            "Feature Store at %s is locked (%s); falling back to %s",
-            feature_store_path,
-            exc,
-            fallback_path,
-        )
-        feature_store = _init_feature_store(fallback_path)
-        LOG.info("✅ Feature Store initialized via fallback path")
-
-    # Initialize Multi-TF aggregator now that feature_store exists
-    try:
-        symbols_cfg = config.to_dict().get("trading", {}).get("symbols_to_track", [])
-        if not symbols_cfg or not isinstance(symbols_cfg, list):
-            symbols_cfg = ["BTCUSDT", "ETHUSDT"]
-    except Exception:
-        symbols_cfg = ["BTCUSDT", "ETHUSDT"]
-
-    multi_tf_thread = start_multi_tf_rollup(feature_store, symbols_cfg)
-    LOG.info("✅ Multi-TF Feature Aggregation Scheduler initialized")
+    # PERFORMANCE FIX: Multi-TF rollup DISABLED (depends on feature_store)
+    # multi_tf_thread = start_multi_tf_rollup(feature_store, symbols_cfg)
+    multi_tf_thread = None
 
     # Feature Engineering (calculates trading features)
+    # feature_store=None will skip DB writes
     feature_engineering = FeatureEngineering(
         fsm=fsm, config=config.to_dict(), feature_store=feature_store)
 
@@ -1327,7 +1355,7 @@ def main() -> None:
     # ==========================================
     # SYNC OPEN ORDERS AND POSITIONS WITH BINANCE
     # ==========================================
-    guardian_loop: Optional[asyncio.AbstractEventLoop] = None
+    global guardian_loop
     guardian_loop_thread: Optional[threading.Thread] = None
 
     LOG.info("--- Starting Order/Position Synchronization ---")
@@ -1411,8 +1439,9 @@ def main() -> None:
     # Initialize Snapshot Scheduler (DR - Phase L4)
     LOG.info("Initializing snapshot scheduler (DR)...")
     # Snapshot scheduler configuration (overridable via config.wave_0.snapshot)
+    # DISABLED: Snapshot scheduler creates unnecessary load during testing
     # Default values (testing defaults): 30s interval
-    snapshot_enabled_default = True
+    snapshot_enabled_default = False  # DISABLED for performance
     snapshot_interval_default = 30
     snapshot_dir_default = "ops/snapshots"
     snapshot_domains_default = ["position_tracking"]
@@ -1488,11 +1517,21 @@ def main() -> None:
     LOG.info("Starting decision making...")
     decision_making.start()
 
-    LOG.info("Starting execution position adapter (WebSocket)...")
+    LOG.info("Starting execution position adapter (WebSocket USER_DATA_STREAM)...")
     if hasattr(execution_position, 'adapter') and execution_position.adapter:
         if hasattr(execution_position.adapter, 'start'):
-            execution_position.adapter.start()
-            LOG.info("✅ Execution position WebSocket started")
+            # Run async start() in event loop (asyncio imported globally at top)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Schedule in existing loop
+                    asyncio.ensure_future(execution_position.adapter.start())
+                else:
+                    loop.run_until_complete(execution_position.adapter.start())
+            except RuntimeError:
+                # No event loop, create new one
+                asyncio.run(execution_position.adapter.start())
+            LOG.info("✅ Execution position WebSocket USER_DATA_STREAM started")
         else:
             LOG.info("⚠️ Adapter has no start() method (shadow mode?)")
     else:

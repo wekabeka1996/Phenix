@@ -77,14 +77,38 @@ class FakeExecutionAdapter:
             return [o for o in self.placed_orders if o.get("symbol") == symbol]
         return list(self.placed_orders)
 
+    # Alias for create_order (used by ExecutionService)
+    async def create_order(
+        self,
+        symbol: str = None,
+        side: str = None,
+        order_type: str = None,
+        quantity: Any = None,
+        price: Any = None,
+        client_order_id: str = None,
+        reduce_only: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Alias for place_order - ExecutionService uses create_order."""
+        return await self.place_order(
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            price=price,
+            client_order_id=client_order_id,
+            reduce_only=reduce_only,
+            **kwargs,
+        )
+
     # Synchronous helper for tests
     def place_position(self, symbol: str, qty: float, avg_price: float, side: str) -> None:
         self.open_positions.append(
-            {"symbol": symbol, "positionAmt": qty, "entryPrice": avg_price, "side": side}
+            {"symbol": symbol, "positionAmt": qty,
+                "entryPrice": avg_price, "side": side}
         )
 
 
 async def run_runtime_event(runtime, event) -> None:
     """Helper to run runtime.handle inside tests."""
     await runtime.handle(event)
-

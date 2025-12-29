@@ -17,7 +17,7 @@ class TimeoutAdapter:
     def __init__(self) -> None:
         self.place_order_calls = []
         self.fail_on_brackets = True
-        self.create_order = self.place_order # Alias for ExecutionService compatibility
+        self.create_order = self.place_order  # Alias for ExecutionService compatibility
 
     async def place_order(self, symbol=None, side=None, order_type=None, quantity=None, params=None, **kwargs):
         if params:
@@ -66,8 +66,8 @@ def make_plan(symbol: str, qty: Decimal, sl_price: Decimal) -> BracketPlan:
     )
     actions = [
         BracketAction(
-            action_type="PLACE_SL",
-            price=Decimal(sl_price),
+            action="PLACE_SL", leg_type="SL",
+            target_price=Decimal(sl_price),
             qty=Decimal(qty),
         )
     ]

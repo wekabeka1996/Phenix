@@ -81,7 +81,8 @@ async def _simulate_trade_executed(runtime: ExecPosRuntimeV2, symbol: str, side:
 
 def _simulate_orders_snapshot(runtime: ExecPosRuntimeV2, symbol: str, orders: List[Dict[str, Any]]):
     """Simulate ORDERS_SNAPSHOT event."""
-    runtime._open_orders_by_symbol[symbol] = orders
+    # Use order_index.reconcile_snapshot (replaces deprecated _open_orders_by_symbol)
+    runtime.order_index.reconcile_snapshot(symbol, orders)
     runtime._mark_orders_snapshot(symbol)
 
 

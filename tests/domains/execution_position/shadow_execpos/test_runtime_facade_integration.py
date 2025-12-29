@@ -1,4 +1,4 @@
-﻿"""
+"""
 Integration test for V2 Runtime Facade.
 Verifies that the Facade correctly translates legacy messages and invokes the V2 Runtime,
 which in turn produces commands on the adapter.

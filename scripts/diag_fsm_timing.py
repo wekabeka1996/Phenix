@@ -24,11 +24,11 @@ def timing_wrapper(name: str, original_func: Callable) -> Callable:
 def patch_fsm_emit(fsm):
     """Patch FSM.emit to measure each listener's execution time."""
     original_emit = fsm.emit
-    
+
     def timed_emit(event_name: str, payload, why: str, data_ref=None):
         print(f"\n📤 emit({event_name})")
         start_total = time.perf_counter()
-        
+
         if event_name in fsm.listeners:
             for i, callback in enumerate(fsm.listeners[event_name]):
                 cb_name = f"{callback.__module__}.{callback.__qualname__}"
@@ -50,10 +50,10 @@ def patch_fsm_emit(fsm):
                 elapsed_ms = (time.perf_counter() - start) * 1000
                 status = "🔴" if elapsed_ms > 50 else "🟡" if elapsed_ms > 10 else "🟢"
                 print(f"  {status} [{i}] {cb_name}: {elapsed_ms:.1f}ms")
-        
+
         total_ms = (time.perf_counter() - start_total) * 1000
         print(f"  📊 Total: {total_ms:.1f}ms\n")
-    
+
     fsm.emit = timed_emit
     return fsm
 

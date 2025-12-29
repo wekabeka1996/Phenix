@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for ExecutionService error handling (EP-EXEC-SHADOW-PLACE-ERROR-HANDLING-S21).
 
 Verifies that:

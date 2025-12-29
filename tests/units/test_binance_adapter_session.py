@@ -10,11 +10,14 @@ async def test_adapter_exposes_session_and_uses_request(monkeypatch):
     calls = {}
 
     class DummyResponse:
+        """Mock httpx.Response - note: json() must be SYNC (as in httpx)."""
+
         def __init__(self, status_code=200, json_data=None):
             self.status_code = status_code
             self._json_data = json_data or {"ok": True}
 
-        async def json(self):
+        def json(self):
+            """httpx.Response.json() is sync, not async!"""
             return self._json_data
 
         def raise_for_status(self):

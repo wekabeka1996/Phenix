@@ -80,7 +80,8 @@ async def _simulate_trade_executed(runtime: ExecPosRuntimeV2, symbol: str, side:
 
 def _simulate_orders_snapshot(runtime: ExecPosRuntimeV2, symbol: str, orders: List[Dict[str, Any]]):
     """Simulate ORDERS_SNAPSHOT event."""
-    runtime._open_orders_by_symbol[symbol] = orders
+    # Use order_index.reconcile_snapshot (replaces deprecated _open_orders_by_symbol)
+    runtime.order_index.reconcile_snapshot(symbol, orders)
     runtime._mark_orders_snapshot(symbol)
 
 
@@ -150,11 +151,11 @@ async def test_full_close_via_bracket_then_new_entry_cleans_old_brackets():
     assert abs(flat_state.qty) < 0.0001, "Position should be FLAT after full close"
 
     # Step 3: Simulate empty ORDERS_SNAPSHOT (SL/TP executed/cancelled on exchange)
-    # CURRENT BUG (S29 partial fix): empty snapshot does NOT clear _open_orders_by_symbol
+    # CURRENT BUG (S29 partial fix): empty snapshot does NOT clear order_index
     await runtime._handle_orders_snapshot({"orders": []})
 
     # Step 4: Check that old brackets are still in mirror (BUG)
-    current_mirror = runtime._open_orders_by_symbol.get(symbol, [])
+    current_mirror = runtime.order_index.get_by_symbol(symbol)
     # With S29 fix, FLAT position + empty snapshot should mark state FRESH but NOT clear old orders
     # This is the gap documented in R1-C-RISK-1
 

@@ -23,7 +23,15 @@ def fake_price_service():
 
 @pytest.fixture
 def runtime(fake_adapter, fake_price_service):
-    config = {"cooldown_sec": 0.1}  # Short cooldown for tests
+    # Disable executor_pool for legacy integration tests that don't simulate fills
+    # These tests only verify that entry orders reach the adapter
+    config = {
+        "cooldown_sec": 0.1,
+        "execution_position": {
+            "executor_pool_enabled": False,  # Use legacy non-blocking path
+
+        }
+    }
     return ExecPosRuntimeV2(config, fake_adapter, fake_price_service)
 
 # --- SCENARIO 1: VALID ENTRY FLOW ---

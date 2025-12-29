@@ -453,11 +453,13 @@ class FeatureEngineering:
             if self.feature_store:
                 try:
                     self.feature_store.store_features(features_payload)
-                    try:
-                        self.feature_store.aggregate_all_timeframes(symbol)
-                    except Exception as agg_e:
-                        self.logger.warning(
-                            f"Failed to aggregate timeframes for {symbol}: {agg_e}")
+                    # PERFORMANCE FIX: Disabled inline aggregation - blocks event loop 5-17s
+                    # Aggregation should run in background thread, not on every tick
+                    # try:
+                    #     self.feature_store.aggregate_all_timeframes(symbol)
+                    # except Exception as agg_e:
+                    #     self.logger.warning(
+                    #         f"Failed to aggregate timeframes for {symbol}: {agg_e}")
                 except Exception as e:
                     self.logger.error(f"Error storing features: {e}")
 

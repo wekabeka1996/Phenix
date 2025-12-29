@@ -24,6 +24,11 @@ from .portfolio_provider import PortfolioProvider
 from .contracts import PortfolioSnapshot
 from apps.reference.telemetry.metrics import inc_decision_deferred
 from apps.reference.config_decision import resolve_decision_policy
+from apps.reference.config.execution_position import (
+    compute_sl_tp_from_roi,
+    resolve_effective_leverage,
+    resolve_execution_position_config,
+)
 from apps.reference.domains.execution_position.brackets_config import (
     DEFAULT_SL_BPS,
     DEFAULT_TP_BPS,
@@ -78,6 +83,9 @@ class DecisionMaking:
                 "source": self.decision_policy.source,
                 "signal_threshold": self.decision_policy.signal_threshold,
                 "neutral_threshold": self.decision_policy.neutral_threshold,
+                "max_intents_per_minute_per_symbol": self.decision_policy.max_intents_per_minute_per_symbol,
+                "symbol_intent_cooldown_sec": self.decision_policy.symbol_intent_cooldown_sec,
+                "exposure_block_cooldown_sec": self.decision_policy.exposure_block_cooldown_sec,
             },
         )
 
@@ -226,57 +234,17 @@ class DecisionMaking:
         except (AttributeError, TypeError):
             qos_config = {}
 
-        # QoS exposure cooldown
-        try:
-            if hasattr(qos_config, 'exposure_block_cooldown_sec'):
-                exp_cooldown = qos_config.exposure_block_cooldown_sec or 10
-            elif isinstance(qos_config, dict):
-                exp_cooldown = qos_config.get(
-                    "exposure_block_cooldown_sec", 10)
-            else:
-                exp_cooldown = 10
-        except (AttributeError, TypeError):
-            exp_cooldown = 10
-        self.qos_exposure_block_cooldown_sec = int(exp_cooldown)
+        # QoS exposure cooldown - use decision_policy value
+        self.qos_exposure_block_cooldown_sec = int(
+            self.decision_policy.exposure_block_cooldown_sec)
 
-        # QoS symbol cooldown
-        sym_cooldown_val = None
-        try:
-            if hasattr(qos_config, 'symbol_intent_cooldown_sec'):
-                sym_cooldown_val = qos_config.symbol_intent_cooldown_sec
-            elif isinstance(qos_config, dict):
-                sym_cooldown_val = qos_config.get(
-                    "symbol_intent_cooldown_sec")
-        except (AttributeError, TypeError):
-            sym_cooldown_val = None
+        # QoS symbol cooldown - use decision_policy value
+        self.qos_symbol_cooldown_sec = int(
+            self.decision_policy.symbol_intent_cooldown_sec)
 
-        if sym_cooldown_val is None:
-            try:
-                if hasattr(qos_config, 'symbol_cooldown_sec'):
-                    sym_cooldown_val = qos_config.symbol_cooldown_sec
-                elif isinstance(qos_config, dict):
-                    sym_cooldown_val = qos_config.get(
-                        "symbol_cooldown_sec")
-            except (AttributeError, TypeError):
-                sym_cooldown_val = None
-
-        if sym_cooldown_val is None:
-            sym_cooldown_val = 3
-
-        self.qos_symbol_cooldown_sec = int(sym_cooldown_val)
-
-        # QoS max intents
-        try:
-            if hasattr(qos_config, 'max_intents_per_minute_per_symbol'):
-                max_intents = qos_config.max_intents_per_minute_per_symbol or 6
-            elif isinstance(qos_config, dict):
-                max_intents = qos_config.get(
-                    "max_intents_per_minute_per_symbol", 6)
-            else:
-                max_intents = 6
-        except (AttributeError, TypeError):
-            max_intents = 6
-        self.qos_max_intents_per_minute_per_symbol = int(max_intents)
+        # QoS max intents - use decision_policy value instead of separate config parsing
+        self.qos_max_intents_per_minute_per_symbol = int(
+            self.decision_policy.max_intents_per_minute_per_symbol)
 
         # QoS mode: shadow=only metrics, defer=delay intents, enforce=block intents
         try:
@@ -329,7 +297,7 @@ class DecisionMaking:
             f"exposure_cooldown={self.qos_exposure_block_cooldown_sec}s, "
             f"symbol_cooldown={self.qos_symbol_cooldown_sec}s, "
             f"max_intents_per_min={self.qos_max_intents_per_minute_per_symbol}, "
-            f"features_ttl={self.features_ttl_sec}s"
+            f"features_ttl={self.features_ttl_sec}s (source: decision_policy)"
         )
 
         # --- Optional behavior/gating extensions (disabled by default) ---
@@ -847,7 +815,8 @@ class DecisionMaking:
 
         now_ts = time.time() * 1000  # milliseconds
         # ts can be string or int - convert to float for arithmetic
-        features_ts = float(features_data["ts"]) if isinstance(features_data["ts"], str) else features_data["ts"]
+        features_ts = float(features_data["ts"]) if isinstance(
+            features_data["ts"], str) else features_data["ts"]
         lag_ms = now_ts - features_ts
         ttl_ms = self.features_ttl_sec * 1000
 
@@ -879,7 +848,8 @@ class DecisionMaking:
                 now_ts = time.time() * 1000
                 raw_ts = state["features"].get("ts", 0)
                 # ts can be string or int - convert to float for arithmetic
-                features_ts = float(raw_ts) if isinstance(raw_ts, str) else raw_ts
+                features_ts = float(raw_ts) if isinstance(
+                    raw_ts, str) else raw_ts
                 lag_ms = now_ts - features_ts
                 ttl_ms = self.features_ttl_sec * 1000
 
@@ -996,6 +966,35 @@ class DecisionMaking:
             "portfolio_snapshot") or self.portfolio_provider.get_snapshot(prefer_nonzero=True)
         portfolio = context.get("portfolio") or portfolio_snapshot.model_dump()
 
+        # Daily gate from RiskManagement (fail-closed)
+        daily_gate_status = str(
+            risk_params.get("daily_gate_status", "UNKNOWN")).upper()
+        if daily_gate_status and daily_gate_status not in ("OPEN", "UNKNOWN"):
+            gate_detail = risk_params.get("daily_gate_detail", {}) or {}
+            reason = gate_detail.get("detail") or gate_detail.get(
+                "reason") or "DAILY_RISK_LIMIT"
+            self.logger.warning(
+                f"[{symbol}] Daily gate blocked intent: status={daily_gate_status} detail={gate_detail}"
+            )
+            self.dlog.write(
+                "DECISION_SKIP",
+                rid,
+                {"symbol": symbol, "reason": f"DAILY_GATE_{daily_gate_status}",
+                 "detail": gate_detail},
+            )
+            order_logger.write({
+                "rid": rid,
+                "event_type": "ORDER_REJECTED",
+                "symbol": symbol,
+                "side": "NONE",
+                "nrr_code": NormalizedRejectReasons.EXPOSURE_LIMIT_EXCEEDED,
+                "why": f"daily_gate_{daily_gate_status}",
+                "source_fsm": "DecisionMaking",
+                "metadata": {"reject_reason": reason, "gate_detail": gate_detail}
+            })
+            self.clear_internal_state_for_symbol(symbol)
+            return
+
         # QoS check (PACK EXP-4) - check rate limits and cooldowns
         qos_allowed, qos_reject_reason = self._qos_allow(
             symbol, is_exposure_block=False
@@ -1015,13 +1014,14 @@ class DecisionMaking:
             elif effective_mode == "defer":
                 # Defer mode: set busy guard and schedule one-time retry
                 next_allowed_ts = self._calculate_next_allowed_time(symbol)
-                next_allowed_sec = next_allowed_ts / 1000.0  # Convert to seconds
+                next_allowed_sec = next_allowed_ts / 1000.0  # Convert ms to seconds
 
                 self.logger.warning(
                     f"[{symbol}] QoS defer: setting busy guard until {next_allowed_sec} (reason: {qos_reject_reason})")
 
                 # Set busy guard to prevent infinite defer loops
-                self._qos_next_allowed_ts[symbol] = int(next_allowed_ts)
+                # BUGFIX: Store in SECONDS (not ms) to match time.time() comparison
+                self._qos_next_allowed_ts[symbol] = next_allowed_sec
 
                 # XAI instrumentation: qos_defer
                 cooldown_left_ms = (next_allowed_ts - time.time() *
@@ -1214,36 +1214,58 @@ class DecisionMaking:
             tfi_raw = _to_dec(features_data.get("tfi", 0))
             dp_raw = _to_dec(features_data.get("delta_price", 0))
 
-            # Phase 1 new metrics (already normalized to [0,1] by FeatureEngineering)
-            ema_bias_phi = _to_dec(features_data.get("ema_bias", 0))
-            volume_spike_phi = _to_dec(features_data.get("volume_spike", 0))
-            volatility_state_phi = _to_dec(
-                features_data.get("volatility_state", 0))
-            depth_imbalance_phi = _to_dec(
-                features_data.get("depth_imbalance", 0))
-            macro_sync_phi = _to_dec(features_data.get("macro_sync", 0))
+            # Phase 1 new metrics from FeatureEngineering are in [0,1]
+            # Convert back to [-1, 1] for proper BUY/SELL discrimination
+            def _01_to_m11(x: decimal.Decimal) -> decimal.Decimal:
+                """Convert [0,1] → [-1,1]: phi*2 - 1"""
+                return x * decimal.Decimal("2") - decimal.Decimal("1")
 
-            def _norm_m11_to_01(x: decimal.Decimal) -> decimal.Decimal:
+            ema_bias_raw = _to_dec(features_data.get("ema_bias", 0.5))
+            volume_spike_raw = _to_dec(features_data.get("volume_spike", 0.5))
+            volatility_state_raw = _to_dec(
+                features_data.get("volatility_state", 0.5))
+            depth_imbalance_raw = _to_dec(
+                features_data.get("depth_imbalance", 0.5))
+            macro_sync_raw = _to_dec(features_data.get("macro_sync", 0.5))
+
+            # Convert directional metrics to signed [-1, 1]
+            # ema_bias, depth_imbalance, macro_sync are directional (can indicate SELL)
+            ema_bias_phi = _01_to_m11(ema_bias_raw)
+            depth_imbalance_phi = _01_to_m11(depth_imbalance_raw)
+            macro_sync_phi = _01_to_m11(macro_sync_raw)
+
+            # volume_spike and volatility_state are magnitude-only (always [0,1])
+            volume_spike_phi = volume_spike_raw
+            volatility_state_phi = volatility_state_raw
+
+            def _keep_signed(x: decimal.Decimal) -> decimal.Decimal:
+                """Keep signal in [-1, 1] range for proper BUY/SELL discrimination."""
                 try:
-                    # If already in [0,1], keep
-                    if x >= 0 and x <= 1:
-                        return x
-                    return (x + 1) / 2
+                    # Clamp to [-1, 1] but preserve sign
+                    if x > 1:
+                        return decimal.Decimal("1")
+                    if x < -1:
+                        return decimal.Decimal("-1")
+                    return x
                 except Exception:
                     return decimal.Decimal("0")
 
-            obi_phi = _norm_m11_to_01(obi_raw)
-            tfi_phi = _norm_m11_to_01(tfi_raw)
+            # IMPORTANT: Keep signed values for SHORT signal detection!
+            # obi, tfi can be negative (SELL bias) or positive (BUY bias)
+            obi_phi = _keep_signed(obi_raw)
+            tfi_phi = _keep_signed(tfi_raw)
+
+            # delta_price: Keep sign! Negative = price dropping = SELL signal
             if price_dec > 0:
-                dp_pct = abs(dp_raw) / price_dec
+                dp_pct = dp_raw / price_dec  # KEEP SIGN (was: abs(dp_raw))
             else:
                 dp_pct = decimal.Decimal("0")
-            # Clamp to 2% and scale to [0,1]
-            if dp_pct < 0:
-                dp_pct = decimal.Decimal("0")
+            # Clamp to [-2%, +2%] and scale to [-1, 1]
             if dp_pct > decimal.Decimal("0.02"):
                 dp_pct = decimal.Decimal("0.02")
-            dp_phi = dp_pct / decimal.Decimal("0.02")
+            if dp_pct < decimal.Decimal("-0.02"):
+                dp_pct = decimal.Decimal("-0.02")
+            dp_phi = dp_pct / decimal.Decimal("0.02")  # Now in [-1, 1]
 
             # Build phi_map with all 8 metrics
             phi_map = {
@@ -1682,8 +1704,18 @@ class DecisionMaking:
         if sizing_cfg is None:
             sizing_cfg = {}
 
-        q_risk = self._safe_config_get(
-            "trading", "decision", "position_sizing", "risk_fraction_q", default=None)
+        max_risk_pct = self._safe_config_get(
+            "config_v2", "domains", "sizing", "defaults", "max_risk_pct", default=None)
+        q_risk = None
+        if max_risk_pct is not None:
+            try:
+                q_risk = decimal.Decimal(
+                    str(max_risk_pct)) / decimal.Decimal("100")
+            except Exception:
+                q_risk = None
+        if q_risk is None:
+            q_risk = self._safe_config_get(
+                "trading", "decision", "position_sizing", "risk_fraction_q", default=None)
         # Liquidity kappa: dynamic from features or static from config
         kappa_mode = str(self._safe_config_get("trading", "decision",
                          "position_sizing", "liquidity_kappa_mode", default="static")).lower()
@@ -1711,18 +1743,43 @@ class DecisionMaking:
             except Exception:
                 kappa_dec = decimal.Decimal("1")
 
-            # brackets may be absent in some configs; guard accordingly
-            sl_bps_val = self._safe_config_get(
-                "trading", "execution", "brackets", "sl", "fixed_bps", default=50)
+            ep_cfg = None
+            sl_pct_price_dec: Optional[decimal.Decimal] = None
+            tp_rr_dec: Optional[decimal.Decimal] = None
             try:
-                sl_bps_dec = decimal.Decimal(str(sl_bps_val))
-            except Exception:
-                sl_bps_dec = decimal.Decimal("50")
-            if sl_bps_dec <= 0:
-                sl_bps_dec = decimal.Decimal("50")
+                exec_v2_cfg = self._safe_config_get(
+                    "config_v2", "domains", "execution", default=None)
+                if exec_v2_cfg:
+                    ep_cfg = resolve_execution_position_config(exec_v2_cfg)
+            except Exception as exc:
+                self.logger.debug(
+                    f"[{symbol}] Failed to resolve execution_position config for ROI sizing: {exc}"
+                )
 
-            denom = (sl_bps_dec / decimal.Decimal("10000")
-                     ) if sl_bps_dec else decimal.Decimal("0.005")
+            leverage = resolve_effective_leverage(symbol, self.config)
+            if ep_cfg:
+                try:
+                    sl_pct_price, tp_rr_val = compute_sl_tp_from_roi(
+                        ep_cfg, symbol, leverage)
+                    sl_pct_price_dec = decimal.Decimal(str(sl_pct_price))
+                    tp_rr_dec = decimal.Decimal(str(tp_rr_val))
+                except Exception as exc:
+                    self.logger.debug(
+                        f"[{symbol}] Failed ROI SL/TP calculation: {exc}")
+
+            if not sl_pct_price_dec or sl_pct_price_dec <= 0:
+                sl_bps_val = self._safe_config_get(
+                    "trading", "execution", "brackets", "sl", "fixed_bps", default=50)
+                try:
+                    sl_bps_dec = decimal.Decimal(str(sl_bps_val))
+                except Exception:
+                    sl_bps_dec = decimal.Decimal("50")
+                if sl_bps_dec <= 0:
+                    sl_bps_dec = decimal.Decimal("50")
+                sl_pct_price_dec = sl_bps_dec / decimal.Decimal("10000")
+
+            denom = sl_pct_price_dec if sl_pct_price_dec else decimal.Decimal(
+                "0.005")
             q_notional = (q_dec * equity / denom)
             # Kelly path (if provided)
             sizing_meta = context.get("_sizing_meta", {}) or {}
@@ -1750,10 +1807,9 @@ class DecisionMaking:
                 volatility_multiplier = decimal.Decimal("0.8")
             # else: keep default 1.0 for other states
 
-            # Recalculate with adjusted SL_bps
-            adjusted_sl_bps = sl_bps_dec * volatility_multiplier
-            adjusted_denom = (adjusted_sl_bps / decimal.Decimal("10000")
-                              ) if adjusted_sl_bps else decimal.Decimal("0.005")
+            adjusted_sl_pct = sl_pct_price_dec * volatility_multiplier
+            adjusted_denom = adjusted_sl_pct if adjusted_sl_pct else decimal.Decimal(
+                "0.005")
             adjusted_q_notional = (q_dec * equity / adjusted_denom)
             if isinstance(kelly_fraction, decimal.Decimal) and kelly_fraction > 0:
                 adjusted_kelly_notional = kelly_fraction * equity
@@ -1762,8 +1818,8 @@ class DecisionMaking:
             else:
                 base_notional = adjusted_q_notional
 
-            self.logger.debug(
-                f"[{symbol}] SL_BPS_ADJUSTED: base={sl_bps_dec}, multiplier={volatility_multiplier}, final={adjusted_sl_bps}")
+                self.logger.debug(
+                    f"[{symbol}] SL_PCT_ADJUSTED: base={sl_pct_price_dec}, multiplier={volatility_multiplier}, final={adjusted_sl_pct}")
 
             # Apply liquidity kappa at the end
             try:
@@ -1775,7 +1831,7 @@ class DecisionMaking:
             if final_pos_size_usd > self.liq_cap_usd:
                 final_pos_size_usd = self.liq_cap_usd
             why_parts.append(
-                f"sizing=slbps q={q_dec} sl_bps={adjusted_sl_bps} m_regime={sizing_meta.get('regime_multiplier','1.0')} m_vol={volatility_multiplier} kappa={kappa_dec}")
+                f"sizing=roi q={q_dec} sl_pct={adjusted_sl_pct} tp_rr={tp_rr_dec or 'n/a'} lev={leverage} m_regime={sizing_meta.get('regime_multiplier','1.0')} m_vol={volatility_multiplier} kappa={kappa_dec}")
         else:
             final_pos_size_usd = min(
                 self.liq_cap_usd, equity * decimal.Decimal("0.1")
@@ -2053,6 +2109,51 @@ class DecisionMaking:
                 f"[{symbol}] EXPOSURE_CACHE_ALLOW: current={current_exposure:.2f}, "
                 f"projected={projected_exposure:.2f}, max={max_exposure:.2f}"
             )
+
+            # Check total portfolio exposure limit (maintenance margin <= 10% of wallet)
+            total_margin_used = 0.0
+            total_equity = 0.0
+            for sym, exp in self._exposure_cache.items():
+                if sym == "portfolio":
+                    total_equity = exp.get("equity_free_usdt", 0.0)
+                    continue
+                exposure_usd = exp.get("current_exposure_usd", 0.0)
+                # Use resolve_effective_leverage for accurate margin calculation
+                try:
+                    leverage = resolve_effective_leverage(sym, self.config)
+                    if leverage <= 0:
+                        leverage = 1.0
+                except Exception:
+                    leverage = 1.0
+                margin = exposure_usd / leverage
+                total_margin_used += margin
+
+            if total_equity > 0:
+                max_margin_pct = self._safe_config_get(
+                    "config_v2", "domains", "execution", "exposure", "max_equity_utilization_pct", 200.0)
+                if isinstance(max_margin_pct, str):
+                    max_margin_pct = float(max_margin_pct)
+                max_margin_limit = total_equity * (max_margin_pct / 100.0)
+
+                # Calculate margin for new trade using resolve_effective_leverage
+                try:
+                    new_trade_leverage = resolve_effective_leverage(
+                        symbol, self.config)
+                    if new_trade_leverage <= 0:
+                        new_trade_leverage = 1.0
+                except Exception:
+                    new_trade_leverage = 1.0
+                new_trade_margin = notional_usd / new_trade_leverage
+                projected_total_margin = total_margin_used + new_trade_margin
+
+                if projected_total_margin > max_margin_limit:
+                    self.logger.info(
+                        f"[{symbol}] TOTAL_EXPOSURE_BLOCK: projected_total_margin={projected_total_margin:.2f} > limit={max_margin_limit:.2f} "
+                        f"({max_margin_pct:.1f}% of equity={total_equity:.2f}), blocking {side.upper()} trade "
+                        f"(new_trade_margin={new_trade_margin:.2f} with leverage={new_trade_leverage:.2f})"
+                    )
+                    return False
+
             return True
 
         except Exception as e:

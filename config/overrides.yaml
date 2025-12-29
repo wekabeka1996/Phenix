@@ -3,10 +3,10 @@
 symbols:
   SOLUSDT:
     limits:
-      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.SOLUSDT
+      max_leverage: 75   # LEVERAGE-FIX: Use actual trading leverage
   ETHUSDT:
     limits:
-      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.ETHUSDT
+      max_leverage: 75   # LEVERAGE-FIX: Use actual trading leverage
     risk:
       sizing_modifiers:  # from trading.instruments.ETHUSDT.sizing_modifiers
         HIGH_VOLATILITY: 0.60
@@ -15,9 +15,9 @@ symbols:
         UNCERTAIN: 0.50
   BTCUSDT:
     limits:
-      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.__default__
+      max_leverage: 75   # LEVERAGE-FIX: Use actual trading leverage
   BNBUSDT:
     limits:
-      max_leverage: 125  # from trading.execution.exposure.leverage_defaults.__default__
+      max_leverage: 75   # LEVERAGE-FIX: Use actual trading leverage
 
 # regimes: none in legacy yet

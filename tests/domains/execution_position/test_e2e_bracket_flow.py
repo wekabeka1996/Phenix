@@ -12,6 +12,7 @@ If this test passes but production doesn't work, the problem is in:
 """
 import pytest
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock
 from decimal import Decimal
 
@@ -22,11 +23,15 @@ from apps.reference.domains.execution_position.shadow_execpos.position_model imp
 def make_mock_adapter():
     """Create mock adapter with all required methods."""
     adapter = MagicMock()
-    adapter.place_order = AsyncMock(return_value={"success": True, "order_id": "mock_order_123"})
+    # ExecutionService calls create_order, not place_order
+    adapter.create_order = AsyncMock(return_value=MagicMock(
+        to_dict=lambda: {
+            "success": True, "orderId": "mock_order_123", "order_id": "mock_order_123"}
+    ))
     adapter.cancel_order = AsyncMock(return_value={"success": True})
     adapter.get_open_orders = AsyncMock(return_value=[])
     adapter.get_open_positions = AsyncMock(return_value=[])
-    adapter.load_open_algo_orders_snapshot = AsyncMock(return_value=[])  # Added
+    adapter.load_open_algo_orders_snapshot = AsyncMock(return_value=[])
     return adapter
 
 
@@ -117,28 +122,36 @@ async def test_e2e_trade_executed_places_brackets():
     position = runtime._positions_by_symbol.get("BTCUSDT")
     assert position is not None, "Position should be created after TRADE_EXECUTED"
     assert position.side == "LONG", f"Expected LONG position, got {position.side}"
-    assert abs(position.qty - 1.0) < 0.001, f"Expected qty=1.0, got {position.qty}"
+    assert abs(position.qty -
+               1.0) < 0.001, f"Expected qty=1.0, got {position.qty}"
 
-    # CRITICAL CHECK: Verify adapter.place_order was called for brackets
-    place_calls = adapter.place_order.call_args_list
+    # CRITICAL CHECK: Verify adapter.create_order was called for brackets
+    place_calls = adapter.create_order.call_args_list
 
-    print(f"\n[RESULT] adapter.place_order call count: {len(place_calls)}")
+    print(f"\n[RESULT] adapter.create_order call count: {len(place_calls)}")
     for i, call in enumerate(place_calls):
         kwargs = call.kwargs if hasattr(call, 'kwargs') else call[1]
-        print(f"  Call {i+1}: {kwargs.get('order_type')} {kwargs.get('side')} qty={kwargs.get('quantity')}")
+        params = kwargs.get('params')
+        if params:
+            print(f"  Call {i+1}: {params.order_type} {params.side}")
 
     # We expect at least 2 calls: SL + TP
     assert len(place_calls) >= 2, (
-        f"Expected >= 2 place_order calls (SL + TP), got {len(place_calls)}. "
+        f"Expected >= 2 create_order calls (SL + TP), got {len(place_calls)}. "
         f"Check if brackets are enabled in config and BracketService is working."
     )
 
-    # Verify order types
-    order_types = [call.kwargs.get('order_type') or (call[1].get('order_type') if len(call) > 1 else None)
-                   for call in place_calls]
+    # Verify order types from ExchangeOrderParams
+    order_types = []
+    for call in place_calls:
+        kwargs = call.kwargs if hasattr(call, 'kwargs') else call[1]
+        params = kwargs.get('params')
+        if params:
+            order_types.append(params.order_type)
 
     has_sl = any(ot in ("STOP_MARKET", "STOP") for ot in order_types)
-    has_tp = any(ot in ("TAKE_PROFIT_MARKET", "TAKE_PROFIT") for ot in order_types)
+    has_tp = any(ot in ("TAKE_PROFIT_MARKET", "TAKE_PROFIT")
+                 for ot in order_types)
 
     assert has_sl, f"Expected STOP_MARKET order, got types: {order_types}"
     assert has_tp, f"Expected TAKE_PROFIT_MARKET order, got types: {order_types}"
@@ -239,7 +252,8 @@ async def test_e2e_partial_close_resizes_brackets():
 
     # Verify position updated
     position = runtime._positions_by_symbol.get("BTCUSDT")
-    assert abs(position.qty - 1.5) < 0.001, f"Expected qty=1.5 after partial close, got {position.qty}"
+    assert abs(position.qty -
+               1.5) < 0.001, f"Expected qty=1.5 after partial close, got {position.qty}"
 
     # Check for SIZE_INVARIANT enforcement
     cancel_count = adapter.cancel_order.call_count
@@ -260,9 +274,11 @@ async def test_e2e_partial_close_resizes_brackets():
         for call in adapter.place_order.call_args_list:
             kwargs = call.kwargs if hasattr(call, 'kwargs') else call[1]
             qty = float(kwargs.get('quantity', 0))
-            assert abs(qty - 1.5) < 0.001, f"Expected resized bracket qty=1.5, got {qty}"
+            assert abs(
+                qty - 1.5) < 0.001, f"Expected resized bracket qty=1.5, got {qty}"
     else:
-        print(f"⚠️ SIZE_INVARIANT may not be triggering: cancel={cancel_count}, place={place_count}")
+        print(
+            f"⚠️ SIZE_INVARIANT may not be triggering: cancel={cancel_count}, place={place_count}")
 
     await runtime.shutdown()
 
@@ -297,7 +313,8 @@ async def test_e2e_position_close_cancels_orphans():
         cycle_id=5,
     )
 
-    # Setup existing brackets
+    # Setup existing brackets (add time in past to avoid grace period)
+    old_time_ms = int((time.time() - 10) * 1000)  # 10 seconds ago
     existing_orders = [
         {
             "orderId": "SL_ETH",
@@ -309,6 +326,7 @@ async def test_e2e_position_close_cancels_orphans():
             "stopPrice": "2900.0",
             "reduceOnly": True,
             "status": "NEW",
+            "time": old_time_ms,
         },
         {
             "orderId": "TP_ETH",
@@ -320,6 +338,7 @@ async def test_e2e_position_close_cancels_orphans():
             "stopPrice": "3200.0",
             "reduceOnly": True,
             "status": "NEW",
+            "time": old_time_ms,
         }
     ]
 
@@ -347,7 +366,8 @@ async def test_e2e_position_close_cancels_orphans():
 
     # Verify position is FLAT
     position = runtime._positions_by_symbol.get("ETHUSDT")
-    assert abs(position.qty) < 0.001, f"Expected FLAT position, got qty={position.qty}"
+    assert abs(
+        position.qty) < 0.001, f"Expected FLAT position, got qty={position.qty}"
 
     # Check orphan cancellation
     cancel_count = adapter.cancel_order.call_count

@@ -17,6 +17,7 @@
         "ERR"
       ]
     },
+    "apps\\reference\\domains\\execution_position\\config\\adapter_errors.yaml": {},
     "config\\instruments.yaml": {},
     "config\\modes.yaml": {},
     "config\\overrides.yaml": {},

@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 from unittest.mock import AsyncMock
 from decimal import Decimal
 
@@ -12,8 +12,10 @@ from apps.reference.domains.execution_position.infra.order_index import OrderRef
 def make_runtime(cfg: dict) -> ExecPosRuntimeV2:
     rt = ExecPosRuntimeV2(config=cfg, adapter=None, price_service=None)
     rt.execution_service = AsyncMock()
-    rt.execution_service.place_order = AsyncMock(return_value={"order_id": "x", "client_order_id": "epv1-test", "success": True})
-    rt.execution_service.cancel_order = AsyncMock(return_value={"success": True})
+    rt.execution_service.place_order = AsyncMock(
+        return_value={"order_id": "x", "client_order_id": "epv1-test", "success": True})
+    rt.execution_service.cancel_order = AsyncMock(
+        return_value={"success": True})
     return rt
 
 
@@ -30,7 +32,8 @@ async def test_baseline_open_creates_single_sl_tp():
 
     # Bracket placements via ExecutionService (current behavior may place 1 or 2 legs)
     assert rt.execution_service.place_order.await_count in (1, 2)
-    order_types = [call.kwargs["order_type"] for call in rt.execution_service.place_order.await_args_list]
+    order_types = [call.kwargs["order_type"]
+                   for call in rt.execution_service.place_order.await_args_list]
     assert any(t in ("STOP_MARKET", "TAKE_PROFIT_MARKET") for t in order_types)
 
 
@@ -40,7 +43,7 @@ async def test_scale_in_updates_position_and_limits_brackets():
     rt = make_runtime(cfg)
 
     await rt.handle({"kind": "TRADE_EXECUTED", "symbol": "ETHUSDT", "payload": {"quantity": 1.0, "price": 100.0, "side": "BUY"}})
-    
+
     # register existing brackets so next scale-in can reference them
     # Use reconcile_snapshot to inject state into OrderIndex
     rt.order_index.reconcile_snapshot("ETHUSDT", [
@@ -67,7 +70,7 @@ async def test_scale_in_updates_position_and_limits_brackets():
             "reduceOnly": True
         }
     ])
-    
+
     await rt.handle({"kind": "TRADE_EXECUTED", "symbol": "ETHUSDT", "payload": {"quantity": 1.0, "price": 110.0, "side": "BUY"}})
 
     pos = rt._positions_by_symbol["ETHUSDT"]
@@ -86,7 +89,7 @@ async def test_partial_close_does_not_leave_orphans():
     rt = make_runtime(cfg)
 
     await rt.handle({"kind": "TRADE_EXECUTED", "symbol": "XRPUSDT", "payload": {"quantity": 2.0, "price": 1.0, "side": "BUY"}})
-    
+
     # Simulate existing brackets larger than remaining qty
     rt.order_index.reconcile_snapshot("XRPUSDT", [
         {
@@ -113,7 +116,8 @@ async def test_partial_close_does_not_leave_orphans():
         }
     ])
 
-    rt._positions_by_symbol["XRPUSDT"] = PositionState(symbol="XRPUSDT", qty=1.0, avg_entry_price=1.0, open_time=0.0)
+    rt._positions_by_symbol["XRPUSDT"] = PositionState(
+        symbol="XRPUSDT", qty=1.0, avg_entry_price=1.0, open_time=0.0)
     await rt._run_watchdog_analysis()
 
     # Watchdog emits recommendations; runtime metrics track detection
@@ -129,9 +133,14 @@ async def test_dr_recovery_cleans_orphans_and_protects():
     rt.hydrate({
         "positions": [{"symbol": "ADAUSDT", "qty": 1.0, "avg_entry_price": 0.5}],
         "orders": [
-            {"order_id": "old_tp", "clientOrderId": "epv1-tp-old", "symbol": "ADAUSDT", "side": "SELL", "type": "TAKE_PROFIT_MARKET", "quantity": 1.0, "price": 0.6, "reduce_only": True},
+            {"order_id": "old_tp", "clientOrderId": "epv1-tp-old", "symbol": "ADAUSDT", "side": "SELL",
+                "type": "TAKE_PROFIT_MARKET", "quantity": 1.0, "price": 0.6, "reduce_only": True},
         ],
     })
+
+    # DUPID-FIX: Recovery now waits for FRESH snapshot state before executing
+    # Set snapshot state to FRESH so recovery can proceed
+    rt._orders_snapshot_state["ADAUSDT"] = "FRESH"
 
     await rt._run_bracket_recovery_pass()
 

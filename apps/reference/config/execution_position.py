@@ -167,6 +167,10 @@ def _resolve_aggregated_oco(
             agg_node.get("aggregated_only_mode"), False),
         sl_pct=_coerce_float(agg_node.get("sl_pct"), 0.02),
         tp_rr=_coerce_float(agg_node.get("tp_rr"), 2.0),
+        sl_roi_pct=_coerce_float(agg_node.get("sl_roi_pct"), 35.0),
+        tp_roi_pct=_coerce_float(agg_node.get("tp_roi_pct"), 50.0),
+        roi_basis=str(agg_node.get("roi_basis", "margin")),
+        leverage_source=str(agg_node.get("leverage_source", "instrument_max")),
         recalc_on_scale_in=_coerce_bool(
             agg_node.get("recalc_on_scale_in"), True),
         recalc_on_partial_close=_coerce_bool(
@@ -327,4 +331,92 @@ def resolve_execution_position_config(
 
 __all__ = [
     "resolve_execution_position_config",
+    "resolve_effective_leverage",
+    "compute_sl_tp_from_roi",
 ]
+
+
+def resolve_effective_leverage(symbol: str, config: Any, default: float = 10.0) -> float:
+    """
+    Resolve effective leverage for a symbol using config_v2 instruments/execution.
+
+    Priority:
+    1) config.trading.instruments.<symbol>.model_extra.limits.max_leverage (merged from v2)
+    2) config.instruments.<symbol>.limits.max_leverage (system_config.yaml format)
+    3) config_v2.domains.instruments.instruments.<symbol>.limits.max_leverage
+    4) config.domains.instruments.instruments.<symbol>.limits.max_leverage
+    5) config_v2.domains.execution.exposure.leverage_defaults.max_leverage
+    6) fallback default (10.0)
+    """
+    candidates = []
+
+    # Primary: merged trading.instruments from v2 (Pydantic models with extra fields)
+    trading = getattr(config, 'trading', None)
+    if trading:
+        instruments = getattr(trading, 'instruments', None)
+        if instruments and isinstance(instruments, dict) and symbol in instruments:
+            instr_spec = instruments[symbol]
+            if hasattr(instr_spec, 'model_extra') and isinstance(instr_spec.model_extra, dict):
+                limits = instr_spec.model_extra.get('limits', {})
+                if isinstance(limits, dict):
+                    candidates.append(limits.get('max_leverage'))
+
+    # ROIFIX: system_config.yaml format
+    candidates.append(_get_nested(config, "instruments", symbol, "limits", "max_leverage"))
+
+    # Legacy config_v2 paths
+    candidates.append(_get_nested(config, "config_v2", "domains", "instruments",
+                    "instruments", symbol, "limits", "max_leverage"))
+    candidates.append(_get_nested(config, "domains", "instruments",
+                    "instruments", symbol, "limits", "max_leverage"))
+    candidates.append(_get_nested(config, "config_v2", "domains", "execution",
+                    "exposure", "leverage_defaults", "max_leverage"))
+
+    for cand in candidates:
+        try:
+            if cand is None:
+                continue
+            lev = float(cand)
+            if lev > 0:
+                return lev
+        except (TypeError, ValueError):
+            continue
+    return float(default)
+
+
+def compute_sl_tp_from_roi(
+    ep_cfg: ExecutionPositionConfig,
+    symbol: str,
+    leverage: float,
+) -> tuple[float, float]:
+    """
+    Compute (sl_pct_price, tp_rr) using ROI targets and leverage.
+
+    Args:
+        ep_cfg: Typed execution_position config
+        symbol: Trading symbol (unused currently, reserved for per-symbol overrides)
+        leverage: Effective leverage to translate ROI% to price distance
+
+    Returns:
+        tuple of (sl_pct_price, tp_rr)
+    """
+    agg = getattr(ep_cfg, "aggregated_oco", None)
+    if not agg:
+        return (0.0, 0.0)
+
+    try:
+        lev = float(leverage)
+    except (TypeError, ValueError):
+        lev = 1.0
+    if lev <= 0:
+        lev = 1.0
+
+    sl_roi = getattr(agg, "sl_roi_pct", None)
+    tp_roi = getattr(agg, "tp_roi_pct", None)
+    if sl_roi is not None and tp_roi is not None and sl_roi > 0 and tp_roi > 0:
+        sl_pct_price = (sl_roi / 100.0) / lev
+        tp_pct_price = (tp_roi / 100.0) / lev
+        tp_rr = tp_pct_price / sl_pct_price if sl_pct_price else agg.tp_rr
+        return sl_pct_price, tp_rr
+
+    return agg.sl_pct, agg.tp_rr

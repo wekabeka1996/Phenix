@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for ExecutionService Timeout Invariant (EP-EXEC-SHADOW-TIMEOUT-INVARIANT-S22).
 
 Invariant:

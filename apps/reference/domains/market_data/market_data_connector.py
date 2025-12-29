@@ -9,6 +9,7 @@ Emits EVT:MARKET_TICK_RECEIVED with accurate feature data.
 import asyncio
 import json
 import logging
+import threading
 import time
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -61,6 +62,7 @@ class MarketDataConnector:
         # Background tasks
         self._ws_task: Optional[asyncio.Task] = None
         self._emit_task: Optional[asyncio.Task] = None
+        self._emit_thread: Optional[threading.Thread] = None
 
         # WebSocket client session and connection
         self.session: Optional[aiohttp.ClientSession] = None
@@ -241,6 +243,8 @@ class MarketDataConnector:
                 # True if buyer is maker (sell)
                 is_buyer_maker = msg.get("m", False)
                 ts = msg.get("T", int(time.time() * 1000))
+                # EP-TRADE-ID: Extract trade_id from WebSocket message
+                trade_id = msg.get("t")  # Binance trade ID (unique per trade)
 
                 self.aggregator.on_trade(
                     symbol=symbol,
@@ -248,9 +252,10 @@ class MarketDataConnector:
                     quantity=qty,
                     is_buyer_maker=is_buyer_maker,
                     ts=ts,
+                    trade_id=trade_id,
                 )
                 LOG.debug(
-                    f"📈 Trade {symbol}: price={price}, qty={qty}, is_buyer_maker={is_buyer_maker}"
+                    f"📈 Trade {symbol}: price={price}, qty={qty}, is_buyer_maker={is_buyer_maker}, trade_id={trade_id}"
                 )
 
             elif event_type == "ping":
@@ -272,46 +277,118 @@ class MarketDataConnector:
         self._emit_market_tick(symbol, tick)
 
     async def start_async(self) -> None:
-        """Async version of start() - for use with run_coroutine_threadsafe."""
+        """
+        Async version of start() - for use with run_coroutine_threadsafe.
+
+        Uses hybrid architecture: async WebSocket + sync emit thread.
+        """
         if self.running:
             LOG.warning("MarketDataConnector already running.")
             return
 
-        loop = asyncio.get_running_loop()
         self.running = True
-        self.aggregator.set_tick_callback(self._on_tick_event)
-        self.aggregator.set_anchor_update_callback(self._on_anchor_update)
 
-        self._emit_task = loop.create_task(
-            self.aggregator.periodic_emit(self.poll_interval_sec)
-        )
+        # Start WebSocket task
+        loop = asyncio.get_running_loop()
         self._ws_task = loop.create_task(self._ws_loop())
 
-        LOG.info("✅ MarketDataConnector emitter started (async)")
+        # Start sync emit loop in dedicated thread
+        self._emit_thread = threading.Thread(
+            target=self._sync_emit_loop,
+            name="MarketDataEmitter",
+            daemon=True
+        )
+        self._emit_thread.start()
+
+        LOG.info("✅ MarketDataConnector started (async entry, hybrid architecture)")
+
+    def _sync_emit_loop(self) -> None:
+        """
+        Synchronous emit loop running in dedicated thread.
+
+        This decouples market tick emission from the async event loop,
+        preventing FSM listener processing from blocking WebSocket handling.
+        """
+        LOG.info("🚀 Sync emit loop started (interval=%ds)",
+                 self.poll_interval_sec)
+        iteration = 0
+        while self.running:
+            try:
+                iteration += 1
+                emitted_count = 0
+
+                # Emit trading symbol ticks
+                for symbol in self.symbols:
+                    try:
+                        tick = self.aggregator.get_market_tick(symbol)
+                        if tick:
+                            self._emit_market_tick(symbol, tick)
+                            emitted_count += 1
+                        else:
+                            LOG.debug(f"⚠️ No tick data for {symbol}")
+                    except Exception as e:
+                        LOG.error(
+                            f"Error emitting tick for {symbol}: {e}", exc_info=True)
+
+                # Emit anchor price updates
+                for anchor in self.anchors:
+                    try:
+                        if anchor in self.aggregator.state:
+                            price = self.aggregator.state[anchor].get(
+                                "latest_price")
+                            if price and self.feature_engineering:
+                                self.feature_engineering.update_anchor_price(
+                                    anchor, str(price))
+                    except Exception as e:
+                        LOG.error(
+                            f"Error updating anchor {anchor}: {e}", exc_info=True)
+
+                # Log summary every 10 iterations
+                if iteration % 10 == 0:
+                    LOG.debug(
+                        f"📊 Sync emit iteration {iteration}: emitted {emitted_count}/{len(self.symbols)} ticks")
+
+                time.sleep(self.poll_interval_sec)
+            except Exception as e:
+                LOG.error(f"Error in sync emit loop: {e}", exc_info=True)
+                time.sleep(1)  # Backoff on error
+
+        LOG.info("🛑 Sync emit loop stopped")
 
     def start(self) -> None:
-        """Start WebSocket and aggregator emitter tasks using the running event loop."""
+        """
+        Start WebSocket and sync emitter.
+
+        Architecture:
+        - WebSocket runs in async context (receives live data from Binance)
+        - Sync emit loop runs in dedicated thread (emits FSM events)
+
+        This hybrid approach ensures FSM listener processing doesn't block
+        the WebSocket event loop.
+        """
         if self.running:
             LOG.warning("MarketDataConnector already running.")
             return
 
+        self.running = True
+
+        # Start WebSocket in async context (if available)
         try:
             loop = asyncio.get_running_loop()
+            self._ws_task = loop.create_task(self._ws_loop())
+            LOG.info("✅ WebSocket task started in async loop")
         except RuntimeError:
-            LOG.error(
-                "Cannot start MarketDataConnector outside of an async loop.")
-            return
+            LOG.warning("No async loop available, WebSocket will not start")
 
-        self.running = True
-        self.aggregator.set_tick_callback(self._on_tick_event)
-        self.aggregator.set_anchor_update_callback(self._on_anchor_update)
-
-        self._emit_task = loop.create_task(
-            self.aggregator.periodic_emit(self.poll_interval_sec)
+        # Start sync emit loop in dedicated thread
+        self._emit_thread = threading.Thread(
+            target=self._sync_emit_loop,
+            name="MarketDataEmitter",
+            daemon=True
         )
-        self._ws_task = loop.create_task(self._ws_loop())
+        self._emit_thread.start()
 
-        LOG.info("✅ MarketDataConnector emitter started")
+        LOG.info("✅ MarketDataConnector started (hybrid: async WS + sync emit)")
 
     async def _ws_loop(self) -> None:
         """Maintain a WS connection with exponential backoff upon failure."""
@@ -387,15 +464,22 @@ class MarketDataConnector:
 
     def stop(self) -> None:
         """
-        Stop the WebSocket connector.
-
-        Cancels the `_ws_loop` task and closes the session/connection.
+        Stop the WebSocket connector and sync emitter gracefully.
         """
         if not self.running:
             LOG.warning("MarketDataConnector is not running.")
             return
 
+        LOG.info("Stopping MarketDataConnector...")
         self.running = False
+
+        # Stop sync emit thread
+        if self._emit_thread and self._emit_thread.is_alive():
+            LOG.info("Waiting for emit thread to stop...")
+            self._emit_thread.join(timeout=5.0)
+            if self._emit_thread.is_alive():
+                LOG.warning("Emit thread did not stop gracefully within 5s")
+        self._emit_thread = None
 
         # Cancel the WebSocket task
         if self._ws_task and not self._ws_task.done():
@@ -403,10 +487,10 @@ class MarketDataConnector:
             LOG.info("WebSocket task cancelled")
         self._ws_task = None
 
-        # Cancel the aggregator emitter task
+        # Cancel the async emitter task (legacy, may not be used)
         if self._emit_task and not self._emit_task.done():
             self._emit_task.cancel()
-            LOG.info("MarketDataConnector emitter task cancelled")
+            LOG.info("Async emitter task cancelled")
         self._emit_task = None
 
         # Schedule cleanup if we're in an async context
@@ -414,16 +498,8 @@ class MarketDataConnector:
             loop = asyncio.get_running_loop()
             asyncio.create_task(self._cleanup())
         except RuntimeError:
-            # Not in an async context; try to cleanup synchronously
-            LOG.warning(
-                "stop() called outside async context; cleanup may be incomplete")
-            try:
-                # Fallback: close session synchronously if possible
-                if self.session:
-                    # Note: This is not ideal but necessary for sync contexts
-                    pass  # aiohttp session requires async close
-            except Exception as e:
-                LOG.debug(f"Could not cleanup session: {e}")
+            LOG.debug(
+                "stop() called outside async context; async cleanup skipped")
 
         LOG.info("✅ MarketDataConnector stopped")
 

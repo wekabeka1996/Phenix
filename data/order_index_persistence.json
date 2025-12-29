@@ -1,0 +1,42 @@
+{
+  "orders": [
+    {
+      "rid": "brk_1038025534_1764893489.61984",
+      "idempotent_key": null,
+      "clientOrderId": "AUR-BNBUSDT-L-SL-C0-a99ae6",
+      "exchangeOrderId": "1038025534",
+      "symbol": "BNBUSDT",
+      "side": "SELL",
+      "order_type": "STOP_MARKET",
+      "price": 894.8269108585375,
+      "quantity": 0.0,
+      "stop_price": 894.8269108585375,
+      "status": "NEW",
+      "reduce_only": false,
+      "close_position": true,
+      "created_ts": 1764893489.61984,
+      "update_ts": 1764893492.8921492,
+      "terminal": false
+    },
+    {
+      "rid": "brk_1038025535_1764893489.6335657",
+      "idempotent_key": null,
+      "clientOrderId": "AUR-BNBUSDT-L-TP-C0-a99ae6",
+      "exchangeOrderId": "1038025535",
+      "symbol": "BNBUSDT",
+      "side": "SELL",
+      "order_type": "TAKE_PROFIT_MARKET",
+      "price": 905.015830808032,
+      "quantity": 0.0,
+      "stop_price": 905.015830808032,
+      "status": "NEW",
+      "reduce_only": false,
+      "close_position": true,
+      "created_ts": 1764893489.6335657,
+      "update_ts": 1764893492.8921492,
+      "terminal": false
+    }
+  ],
+  "ttl_sec": 3600,
+  "saved_at": 1764893492.8921492
+}

@@ -88,6 +88,8 @@ class AggregatedOcoConfig(BaseModel):
         allow_unprotected_position: Allow positions without SL (strict mode if False)
         max_sl_legs: Max number of SL orders per position (default 1)
         max_tp_legs: Max number of TP orders per position (default 1)
+        bracket_throttle_sec: Min seconds between bracket evals per symbol (default 2.0)
+        bracket_suppression_sec: Extended throttle after bracket actions (default 10.0)
 
     Validation:
         - sl_pct must be > 0
@@ -95,6 +97,8 @@ class AggregatedOcoConfig(BaseModel):
         - max_sl_legs must be >= 1
         - max_tp_legs must be >= 1
         - ttl_protect_new_bracket_ms must be >= 0
+        - bracket_throttle_sec must be >= 0.5
+        - bracket_suppression_sec must be >= 1.0
 
     Defaults:
         Match current behavior in manage_config.py:
@@ -106,6 +110,8 @@ class AggregatedOcoConfig(BaseModel):
         - allow_unprotected_position: False
         - max_sl_legs: 1
         - max_tp_legs: 1
+        - bracket_throttle_sec: 2.0 (fast for scalping)
+        - bracket_suppression_sec: 10.0 (anti-churn)
     """
     enabled: bool = False
     aggregated_only_mode: bool = False
@@ -113,6 +119,14 @@ class AggregatedOcoConfig(BaseModel):
         default=0.02, gt=0.0, description="Stop-loss distance as % of entry (e.g., 0.02 = 2%)")
     tp_rr: float = Field(
         default=2.0, gt=0.0, description="Take-profit reward/risk ratio (e.g., 2.0 = 2:1)")
+    sl_roi_pct: float = Field(
+        default=35.0, ge=0.0, description="ROI-based SL % on margin (e.g., 35 = 35%)")
+    tp_roi_pct: float = Field(
+        default=50.0, ge=0.0, description="ROI-based TP % on margin (e.g., 50 = 50%)")
+    roi_basis: str = Field(
+        default="margin", description="ROI basis for SL/TP calculations (margin or equity)")
+    leverage_source: str = Field(
+        default="instrument_max", description="Source for leverage used in ROI sizing")
     recalc_on_scale_in: bool = True
     recalc_on_partial_close: bool = False
     ttl_protect_new_bracket_ms: int = Field(default=3000, ge=0)
@@ -121,6 +135,11 @@ class AggregatedOcoConfig(BaseModel):
     max_tp_legs: int = Field(default=1, ge=1)
     recreate_missing_brackets: bool = Field(
         default=True, description="Recreate SL/TP if missing during open position (fail-closed)")
+    # Phase 5: Configurable throttling (faster defaults for scalping)
+    bracket_throttle_sec: float = Field(
+        default=2.0, ge=0.5, description="Min seconds between bracket evals per symbol")
+    bracket_suppression_sec: float = Field(
+        default=10.0, ge=1.0, description="Extended throttle after bracket actions (anti-churn)")
     watchdog: AggregatedOcoWatchdogConfig = Field(
         default_factory=AggregatedOcoWatchdogConfig
     )

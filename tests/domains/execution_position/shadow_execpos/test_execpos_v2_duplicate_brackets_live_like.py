@@ -17,7 +17,7 @@ class FlakyAdapter:
     def __init__(self) -> None:
         self.place_order_calls = []
         self.fail_on_brackets = True
-        self.create_order = self.place_order # Alias
+        self.create_order = self.place_order  # Alias
 
     async def place_order(self, symbol=None, side=None, order_type=None, quantity=None, params=None, **kwargs):
         if params:
@@ -65,13 +65,13 @@ def make_plan(symbol: str, qty: Decimal, sl_price: Decimal, tp_price: Decimal) -
     )
     actions = [
         BracketAction(
-            action_type="PLACE_SL",
-            price=Decimal(sl_price),
+            action="PLACE_SL", leg_type="SL",
+            target_price=Decimal(sl_price),
             qty=Decimal(qty),
         ),
         BracketAction(
-            action_type="PLACE_TP",
-            price=Decimal(tp_price),
+            action="PLACE_TP", leg_type="TP",
+            target_price=Decimal(tp_price),
             qty=Decimal(qty),
         ),
     ]
@@ -105,8 +105,12 @@ async def test_no_duplicate_brackets_after_timeout_and_snapshot():
     plan = make_plan(symbol, Decimal("10"), Decimal("637.3"), Decimal("676.5"))
 
     await runtime._apply_bracket_plan(symbol, position, plan, reason="trade_executed")
-    assert len(adapter.place_order_calls) == 1
-    snapshot_hook.assert_awaited_once_with(symbol)
+    # FIX: With parallel execution (asyncio.gather), BOTH PLACE_SL and PLACE_TP are sent
+    # before timeout is detected. So we expect 2 calls, not 1.
+    assert len(adapter.place_order_calls) == 2
+    # RC-1 FIX: With parallel execution, both PLACE_SL and PLACE_TP timeout handlers
+    # call _request_orders_snapshot, so hook is awaited twice (one per action).
+    assert snapshot_hook.await_count == 2
     assert runtime._orders_snapshot_state.get(symbol) == "UNKNOWN"
 
     existing_orders = [
@@ -141,6 +145,6 @@ async def test_no_duplicate_brackets_after_timeout_and_snapshot():
     await runtime._apply_bracket_plan(symbol, position, plan, reason="account_update_sync")
 
     # Old assertion: assert len(adapter.place_order_calls) == 1 (Runtime filtered it)
-    # New assertion: assert len(adapter.place_order_calls) == 3 (1 initial + 2 new attempts)
-    # The Runtime blindly follows the plan.
-    assert len(adapter.place_order_calls) == 3
+    # New assertion: assert len(adapter.place_order_calls) == 4 (2 initial parallel + 2 new attempts)
+    # The Runtime blindly follows the plan with parallel execution.
+    assert len(adapter.place_order_calls) == 4

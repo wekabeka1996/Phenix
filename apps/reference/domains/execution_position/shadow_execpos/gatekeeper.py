@@ -240,6 +240,107 @@ class ExecPosGatekeeper:
                 metadata={"error": str(e)}
             )
 
+    def validate_order(
+        self,
+        symbol: str,
+        qty: Union[str, float, Decimal, None],
+        price: Optional[Union[str, float, Decimal]] = None,
+    ) -> GateDecision:
+        """
+        Validate and round order quantity/price.
+
+        Used by SymbolExecutor for entry order validation.
+        Unlike check_entry, this doesn't check cooldowns - just validates/rounds.
+
+        Args:
+            symbol: Trading symbol
+            qty: Order quantity (can be None for closePosition orders)
+            price: Order price (optional)
+
+        Returns:
+            GateDecision with allowed status and modified_params containing
+            rounded quantity/price if allowed.
+        """
+        try:
+            # If qty is None (closePosition), just validate price
+            if qty is None:
+                if price is not None:
+                    specs = self._get_instrument_specs(symbol)
+                    price_dec = self._to_decimal(price, "price")
+                    if price_dec and price_dec > 0:
+                        rounded_price = self._round_to_step(price_dec, specs["tick_size"])
+                        return GateDecision(
+                            allowed=True,
+                            reason="OK",
+                            modified_params={"price": str(rounded_price)},
+                            metadata={"symbol": symbol}
+                        )
+                return GateDecision(
+                    allowed=True,
+                    reason="OK",
+                    modified_params={},
+                    metadata={"symbol": symbol, "note": "closePosition_no_qty"}
+                )
+
+            # Convert to Decimal
+            qty_dec = self._to_decimal(qty, "quantity")
+            price_dec = self._to_decimal(price, "price") if price else None
+
+            # Get instrument specs
+            specs = self._get_instrument_specs(symbol)
+            step_size = specs["step_size"]
+            tick_size = specs["tick_size"]
+            min_qty = specs["min_qty"]
+
+            # Round quantity
+            rounded_qty = self._round_to_step(qty_dec, step_size)
+
+            # Validate min qty
+            if rounded_qty < min_qty:
+                return GateDecision(
+                    allowed=False,
+                    reason="MIN_QTY_VIOLATION",
+                    modified_params={},
+                    metadata={
+                        "symbol": symbol,
+                        "rounded_qty": str(rounded_qty),
+                        "min_qty": str(min_qty)
+                    }
+                )
+
+            # Round price if provided
+            rounded_price = None
+            if price_dec and price_dec > 0:
+                rounded_price = self._round_to_step(price_dec, tick_size)
+
+            return GateDecision(
+                allowed=True,
+                reason="OK",
+                modified_params={
+                    "quantity": str(rounded_qty),
+                    "price": str(rounded_price) if rounded_price else None
+                },
+                metadata={"symbol": symbol}
+            )
+
+        except Exception as e:
+            logger.warning(f"validate_order failed for {symbol}: {e}")
+            return GateDecision(
+                allowed=True,  # Allow on error, let exchange reject if needed
+                reason="VALIDATION_ERROR",
+                modified_params={},
+                metadata={"error": str(e)}
+            )
+
+    def get_instrument_specs(self, symbol: str) -> InstrumentSpec:
+        """
+        Get instrument specifications from cache or fallback.
+
+        Public API for external callers (e.g., SymbolExecutor) to get
+        step_size/tick_size for quantity/price rounding.
+        """
+        return self._get_instrument_specs(symbol)
+
     def _get_instrument_specs(self, symbol: str) -> InstrumentSpec:
         """
         Get instrument specifications from cache or fallback.

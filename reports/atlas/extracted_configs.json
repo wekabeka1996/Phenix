@@ -1027,6 +1027,22 @@
       }
     }
   },
+  "apps\\reference\\domains\\execution_position\\config\\adapter_errors.yaml": {
+    "keys": [
+      "binance"
+    ],
+    "raw": {
+      "binance": {
+        "unknown_order": "-2011",
+        "would_trigger": "-2021",
+        "duplicate_id": "-4116",
+        "invalid_qty": "-4137",
+        "min_notional": "-4164",
+        "insufficient_balance": "-2010",
+        "rate_limit": "-429"
+      }
+    }
+  },
   "config\\core.yaml": {
     "keys": null,
     "raw": null
@@ -1043,13 +1059,13 @@
           "quote_asset": "USDT",
           "precision": {
             "quantity": 0,
-            "price": 2
+            "price": 4
           },
           "limits": {
             "min_notional": 5.0,
-            "min_qty": 0.01,
+            "min_qty": 1,
             "min_price": 0.01,
-            "step_size": 0.01,
+            "step_size": 1,
             "tick_size": 0.01,
             "max_position_size": 5.0,
             "max_leverage": 20
@@ -1284,12 +1300,18 @@
   },
   "config\\domains\\execution.yaml": {
     "keys": [
+      "executor_pool",
       "adapter",
       "exposure",
       "fallback",
       "brackets"
     ],
     "raw": {
+      "executor_pool": {
+        "enabled": true,
+        "max_orders_per_second": 8,
+        "fill_timeout_sec": 60.0
+      },
       "adapter": {
         "timeouts": {
           "connect": 10.0,
@@ -1367,6 +1389,10 @@
           "offset_bps": 5,
           "working_type_default": "MARK_PRICE",
           "price_protect": false,
+          "sl_roi_pct": 35.0,
+          "tp_roi_pct": 50.0,
+          "roi_basis": "margin",
+          "leverage_source": "instrument_max",
           "retry": {
             "max_attempts": 3,
             "backoff_ms": [
@@ -1378,27 +1404,31 @@
           },
           "timeout_sec": 5,
           "atomic_close": true,
-          "bracket_tracking": true,
-          "aggregated_oco": {
+          "bracket_tracking": true
+        },
+        "aggregated_oco": {
+          "enabled": true,
+          "aggregated_only_mode": true,
+          "sl_roi_pct": 35.0,
+          "tp_roi_pct": 50.0,
+          "roi_basis": "margin",
+          "leverage_source": "instrument_max",
+          "recalc_on_scale_in": true,
+          "recalc_on_partial_close": true,
+          "ttl_protect_new_bracket_ms": 3000,
+          "allow_unprotected_position": false,
+          "recreate_missing_brackets": true,
+          "watchdog": {
             "enabled": true,
-            "aggregated_only_mode": true,
-            "recalc_on_scale_in": true,
-            "recalc_on_partial_close": true,
-            "ttl_protect_new_bracket_ms": 3000,
-            "allow_unprotected_position": false,
-            "recreate_missing_brackets": true,
-            "watchdog": {
+            "interval_sec": 5,
+            "auto_heal_orphans": true,
+            "grace": {
               "enabled": true,
-              "interval_sec": 5,
-              "auto_heal_orphans": true,
-              "grace": {
-                "enabled": true,
-                "period_sec": 2.0,
-                "kinds": [
-                  "NO_SL_FOR_OPEN_POSITION",
-                  "ORPHAN_SL_FOR_ZERO_POSITION"
-                ]
-              }
+              "period_sec": 2.0,
+              "kinds": [
+                "NO_SL_FOR_OPEN_POSITION",
+                "ORPHAN_SL_FOR_ZERO_POSITION"
+              ]
             }
           }
         },
@@ -1482,6 +1512,10 @@
         "aggregated_oco": {
           "enabled": true,
           "aggregated_only_mode": true,
+          "sl_roi_pct": 35.0,
+          "tp_roi_pct": 50.0,
+          "roi_basis": "margin",
+          "leverage_source": "instrument_max",
           "recalc_on_scale_in": true,
           "recalc_on_partial_close": true,
           "ttl_protect_new_bracket_ms": 3000,
@@ -1740,9 +1774,7 @@
         },
         "close": {
           "max_hold_time_sec": 43200,
-          "reason_policy": "permissive",
-          "allow_time_exit": true,
-          "allow_profit_exit": true
+          "allow_time_exit": true
         }
       }
     }
@@ -1793,9 +1825,7 @@
         },
         "close": {
           "max_hold_time_sec": 21600,
-          "reason_policy": "default",
-          "allow_time_exit": true,
-          "allow_profit_exit": true
+          "allow_time_exit": true
         }
       }
     }
@@ -1845,9 +1875,7 @@
         },
         "close": {
           "max_hold_time_sec": 14400,
-          "reason_policy": "strict",
-          "allow_time_exit": true,
-          "allow_profit_exit": true
+          "allow_time_exit": true
         }
       }
     }

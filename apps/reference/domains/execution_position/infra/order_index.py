@@ -10,6 +10,8 @@ from dataclasses import dataclass, field, asdict
 from decimal import Decimal
 from time import time
 from typing import Optional, Dict, List, Set, Any
+import json
+import os
 
 
 @dataclass
@@ -29,6 +31,8 @@ class OrderRef:
     stop_price: Optional[float] = None
     status: str = "NEW"
     reduce_only: bool = False
+    # True = closePosition order (closes entire position)
+    close_position: bool = False
 
     created_ts: float = field(default_factory=time)
     update_ts: float = field(default_factory=time)
@@ -40,19 +44,21 @@ class OrderRef:
             "orderId": self.exchangeOrderId,
             "order_id": self.exchangeOrderId,  # Alias for compatibility
             "clientOrderId": self.clientOrderId,
-            "client_order_id": self.clientOrderId, # Alias for compatibility
+            "client_order_id": self.clientOrderId,  # Alias for compatibility
             "symbol": self.symbol,
             "side": self.side,
             "type": self.order_type,
-            "order_type": self.order_type, # Alias
+            "order_type": self.order_type,  # Alias
             "price": self.price,
             "quantity": self.quantity,
-            "qty": self.quantity, # Alias
+            "qty": self.quantity,  # Alias
             "stopPrice": self.stop_price,
-            "stop_price": self.stop_price, # Alias
+            "stop_price": self.stop_price,  # Alias
             "status": self.status,
             "reduceOnly": self.reduce_only,
-            "reduce_only": self.reduce_only, # Alias
+            "reduce_only": self.reduce_only,  # Alias
+            "closePosition": self.close_position,
+            "close_position": self.close_position,  # Alias
             "time": self.created_ts * 1000,  # ms expected by some converters
             "updateTime": self.update_ts * 1000,
             # Internal fields
@@ -92,11 +98,13 @@ class OrderIndex:
         quantity: Optional[float] = None,
         stop_price: Optional[float] = None,
         reduce_only: bool = False,
+        close_position: bool = False,
     ) -> OrderRef:
         """
         Create or update order reference from OPEN operation.
         """
-        ref = self._by_rid.get(rid) or OrderRef(rid=rid, idempotent_key=idempotent_key)
+        ref = self._by_rid.get(rid) or OrderRef(
+            rid=rid, idempotent_key=idempotent_key)
 
         # Update fields
         ref.clientOrderId = clientOrderId or ref.clientOrderId
@@ -107,6 +115,7 @@ class OrderIndex:
         ref.quantity = quantity
         ref.stop_price = stop_price
         ref.reduce_only = reduce_only
+        ref.close_position = close_position
         ref.update_ts = time()
 
         self._by_rid[rid] = ref
@@ -168,8 +177,10 @@ class OrderIndex:
         matched_rids = set()
 
         for order_data in snapshot_orders:
-            client_oid = order_data.get("clientOrderId") or order_data.get("client_order_id")
-            exchange_oid = str(order_data.get("orderId") or order_data.get("order_id") or "")
+            client_oid = order_data.get(
+                "clientOrderId") or order_data.get("client_order_id")
+            exchange_oid = str(order_data.get("orderId")
+                               or order_data.get("order_id") or "")
 
             # Try to find existing
             ref = None
@@ -208,10 +219,15 @@ class OrderIndex:
                     side=order_data.get("side"),
                     order_type=order_data.get("type"),
                     price=float(order_data.get("price") or 0),
-                    quantity=float(order_data.get("origQty") or order_data.get("quantity") or 0),
-                    stop_price=float(order_data.get("stopPrice") or order_data.get("stop_price") or 0),
+                    quantity=float(order_data.get("origQty")
+                                   or order_data.get("quantity") or 0),
+                    stop_price=float(order_data.get("stopPrice")
+                                     or order_data.get("stop_price") or 0),
                     status=order_data.get("status", "NEW"),
                     reduce_only=order_data.get("reduceOnly", False),
+                    # ORPHAN-FIX: Include close_position for bracket detection
+                    close_position=order_data.get(
+                        "closePosition") or order_data.get("close_position", False),
                     created_ts=created_ts
                 )
 
@@ -229,7 +245,7 @@ class OrderIndex:
         # EXCEPTION: Don't remove orders created very recently (in-flight race condition protection)
         # If we just sent an order, it might not be in the snapshot yet.
         now = time()
-        IN_FLIGHT_GRACE_PERIOD = 2.0 # seconds
+        IN_FLIGHT_GRACE_PERIOD = 2.0  # seconds
 
         for rid in current_rids:
             if rid not in matched_rids:
@@ -243,7 +259,7 @@ class OrderIndex:
         Mark order reference as terminal (completed/canceled/expired).
         """
         ref.terminal = True
-        ref.status = "CANCELED" # Default to canceled if marked terminal explicitly
+        ref.status = "CANCELED"  # Default to canceled if marked terminal explicitly
         ref.update_ts = time()
 
     def expire(self) -> int:
@@ -268,3 +284,63 @@ class OrderIndex:
             self._by_exchange.pop(ref.exchangeOrderId, None)
         if ref.symbol and ref.symbol in self._by_symbol:
             self._by_symbol[ref.symbol].discard(ref.rid)
+
+    def save_to_file(self, filepath: str) -> None:
+        """Save order index state to JSON file for persistence."""
+        try:
+            data = {
+                "orders": [asdict(ref) for ref in self._by_rid.values()],
+                "ttl_sec": self.ttl,
+                "saved_at": time()
+            }
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, default=str)
+        except Exception as e:
+            # Log error but don't crash - persistence is best effort
+            print(f"Warning: Failed to save order index to {filepath}: {e}")
+
+    def load_from_file(self, filepath: str) -> int:
+        """Load order index state from JSON file. Returns number of orders loaded."""
+        if not os.path.exists(filepath):
+            return 0
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            loaded_count = 0
+            orders = data.get("orders", [])
+            saved_ttl = data.get("ttl_sec", self.ttl)
+
+            # Only load if TTL matches (prevent loading stale data from different config)
+            if abs(saved_ttl - self.ttl) < 1.0:
+                for order_data in orders:
+                    try:
+                        # Convert string timestamps back to float
+                        if 'created_ts' in order_data and isinstance(order_data['created_ts'], str):
+                            order_data['created_ts'] = float(order_data['created_ts'])
+                        if 'update_ts' in order_data and isinstance(order_data['update_ts'], str):
+                            order_data['update_ts'] = float(order_data['update_ts'])
+
+                        ref = OrderRef(**order_data)
+                        self._by_rid[ref.rid] = ref
+
+                        if ref.clientOrderId:
+                            self._by_client[ref.clientOrderId] = ref
+                        if ref.exchangeOrderId:
+                            self._by_exchange[ref.exchangeOrderId] = ref
+                        if ref.symbol:
+                            if ref.symbol not in self._by_symbol:
+                                self._by_symbol[ref.symbol] = set()
+                            self._by_symbol[ref.symbol].add(ref.rid)
+
+                        loaded_count += 1
+                    except Exception as e:
+                        print(f"Warning: Failed to load order {order_data.get('rid', 'unknown')}: {e}")
+                        continue
+
+            return loaded_count
+        except Exception as e:
+            print(f"Warning: Failed to load order index from {filepath}: {e}")
+            return 0

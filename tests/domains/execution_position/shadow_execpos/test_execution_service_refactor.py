@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for ExecutionService Refactor (EP-EXEC-SHADOW-REFACTOR-S23).
 
 Verifies that:

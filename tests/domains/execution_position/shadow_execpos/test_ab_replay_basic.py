@@ -16,19 +16,29 @@ from tests.domains.execution_position.shadow_execpos.ab_replay import (
 )
 from tests.domains.execution_position.shadow_execpos.fake_adapter import FakeRecordingAdapter
 
+
 def make_runtime_factory():
     """Create factory for ExecPosRuntimeV2 with FakeRecordingAdapter."""
     def factory():
         adapter = FakeRecordingAdapter()
-        config = {"cooldown_sec": 0.1}
+        # Disable executor_pool for legacy AB replay tests that don't simulate fills
+        config = {
+            "cooldown_sec": 0.1,
+            "execution_position": {
+                "executor_pool_enabled": False,  # Use legacy non-blocking path
+
+            }
+        }
         return ExecPosRuntimeV2(config, adapter, price_service=None)
     return factory
+
 
 @pytest.fixture
 def replay_harness():
     return ExecPosReplay(make_runtime_factory())
 
 # --- SCENARIO 1: HAPPY PATH ---
+
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="A/B replay divergence pending snapshot/TTL/bracket fixes (C-phase)", strict=False)
@@ -90,6 +100,7 @@ async def test_ab_replay_happy_path(replay_harness):
 
 # --- SCENARIO 2: GATEKEEPER REJECTION ---
 
+
 @pytest.mark.asyncio
 async def test_ab_replay_gatekeeper_reject(replay_harness):
     """Test entry with qty too small is rejected."""
@@ -120,6 +131,7 @@ async def test_ab_replay_gatekeeper_reject(replay_harness):
 
 # --- SCENARIO 3: IDEMPOTENT CANCEL ---
 
+
 @pytest.mark.asyncio
 async def test_ab_replay_idempotent_cancel(replay_harness):
     """Test duplicate cancel with -2011 error is handled idempotently."""
@@ -127,7 +139,19 @@ async def test_ab_replay_idempotent_cancel(replay_harness):
     def factory_with_error():
         adapter = FakeRecordingAdapter()
         # Will set error after first cancel
-        config = {"cooldown_sec": 0.1}
+        # Disable executor_pool for this legacy test that doesn't simulate fills
+        config = {
+            "cooldown_sec": 0.1,
+            "execution": {
+                "executor_pool": {
+                    "enabled": False,  # Must set in both places
+                }
+            },
+            "execution_position": {
+                "executor_pool_enabled": False,  # Use legacy non-blocking path
+
+            }
+        }
         runtime = ExecPosRuntimeV2(config, adapter, price_service=None)
         return runtime, adapter
 
@@ -135,7 +159,7 @@ async def test_ab_replay_idempotent_cancel(replay_harness):
 
     # Place order first
     entry_event = {
-        "t":time.time(),
+        "t": time.time(),
         "kind": "ENTRY_INTENT",
         "symbol": "SOLUSDT",
         "side": "BUY",
@@ -198,6 +222,7 @@ async def test_ab_replay_idempotent_cancel(replay_harness):
 
 # --- SCENARIO 4: ORPHAN SL ---
 
+
 @pytest.mark.asyncio
 async def test_ab_replay_orphan_sl(replay_harness):
     """Test orphan SL detection doesn't trigger auto-cleanup."""
@@ -236,9 +261,11 @@ async def test_ab_replay_orphan_sl(replay_harness):
 
     # Verify watchdog detected violation
     assert result.actual_metrics["watchdog_violations"] >= 1
-    assert result.actual_metrics["watchdog_violations_by_kind"].get("WARN", 0) >= 1
+    assert result.actual_metrics["watchdog_violations_by_kind"].get(
+        "WARN", 0) >= 1
 
 # --- COMBINED SCENARIO ---
+
 
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="A/B replay divergence pending snapshot/TTL/bracket fixes (C-phase)", strict=False)
@@ -274,9 +301,12 @@ async def test_ab_replay_full_lifecycle(replay_harness):
 
     # Expected: place (entry) + bracket SL + place (close with reduce_only)
     expected_calls = [
-        AdapterCall(verb="place", symbol="BTCUSDT", side="BUY", order_type="LIMIT"),
-        AdapterCall(verb="place", symbol="BTCUSDT", side="SELL", order_type="STOP_MARKET"),
-        AdapterCall(verb="place", symbol="BTCUSDT", order_type="MARKET")  # Close
+        AdapterCall(verb="place", symbol="BTCUSDT",
+                    side="BUY", order_type="LIMIT"),
+        AdapterCall(verb="place", symbol="BTCUSDT",
+                    side="SELL", order_type="STOP_MARKET"),
+        AdapterCall(verb="place", symbol="BTCUSDT",
+                    order_type="MARKET")  # Close
     ]
 
     result = await replay_harness.run(raw_records, expected_calls)

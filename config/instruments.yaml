@@ -7,16 +7,16 @@ instruments:
     base_asset: SOL
     quote_asset: USDT
     precision:
-      quantity: 0  # Testnet: 0, Mainnet: 2. Using Testnet value.
-      price: 2     # from trading.instruments.SOLUSDT.tick_size "0.01"
+      quantity: 0  # Testnet: 0 (integer qty), Mainnet: 2
+      price: 4     # Testnet tickSize=0.01 → 4 decimals for pricePrecision field
     limits:
       min_notional: 5.0   # UPDATED 2025-11-27: Binance Futures SOLUSDT requires 5 USDT min notional
-      min_qty: 0.01       # CONFIG-R2-H: aligned with test/doc SSOT (was 1.0 testnet)
+      min_qty: 1          # TESTNET: stepSize=1, minQty=1 (integers only!)
       min_price: 0.01     # inferred from Binance PRICE_FILTER
-      step_size: 0.01     # CONFIG-R2-H: aligned with test/doc SSOT (was 1.0 testnet)
-      tick_size: 0.01     # from trading.instruments.SOLUSDT.tick_size "0.01"
+      step_size: 1        # TESTNET: stepSize=1 (integers only! was 0.01 wrong)
+      tick_size: 0.01     # from Binance PRICE_FILTER tickSize=0.0100
       max_position_size: 5.0  # default cap until per-symbol data collected
-      max_leverage: 20        # conservative base leverage, overrides bump to 125 for testnet
+      max_leverage: 75        # LEVERAGE-FIX: Use actual trading leverage
   ETHUSDT:
     exchange: binance
     base_asset: ETH
@@ -31,7 +31,7 @@ instruments:
       step_size: 0.001    # from trading.instruments.ETHUSDT.step_size "0.001"
       tick_size: 0.01     # from trading.instruments.ETHUSDT.tick_size "0.01"
       max_position_size: 5.0
-      max_leverage: 20
+      max_leverage: 75        # LEVERAGE-FIX: Use actual trading leverage
   BTCUSDT:
     exchange: binance
     base_asset: BTC
@@ -47,7 +47,7 @@ instruments:
       step_size: 0.001    # from trading.instruments.BTCUSDT.step_size "0.001"
       tick_size: 0.10     # from trading.instruments.BTCUSDT.tick_size "0.10"
       max_position_size: 3.0  # stricter cap due to volatility
-      max_leverage: 20
+      max_leverage: 75        # LEVERAGE-FIX: Use actual trading leverage
   BNBUSDT:
     exchange: binance
     base_asset: BNB
@@ -62,4 +62,4 @@ instruments:
       step_size: 0.01     # from trading.instruments.BNBUSDT.step_size "0.01"
       tick_size: 0.01     # from trading.instruments.BNBUSDT.tick_size "0.01"
       max_position_size: 5.0
-      max_leverage: 20
+      max_leverage: 75        # LEVERAGE-FIX: Use actual trading leverage

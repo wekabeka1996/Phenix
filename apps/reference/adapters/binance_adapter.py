@@ -142,7 +142,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         config: dict | None = None,
         *,
         session: Optional[httpx.AsyncClient] = None,
-        timeout: float = 10.0,
+        timeout: float = 30.0,
         fsm=None,
         shadow_mode: bool = False,
         **kwargs,
@@ -180,26 +180,36 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         self._timeout = timeout
 
-        # Time sync state (async with lock)
+        # Time sync state (threading.Lock works in any context, no event loop binding)
         self._time_offset_ms = 0
         self._last_time_sync_monotonic = 0.0
-        self._time_sync_lock = asyncio.Lock()
+        self._time_sync_lock = threading.Lock()  # NOT asyncio.Lock!
 
         # recvWindow (ms). Для ф'ючерсів максимум 60000.
-        self._recv_window_ms = self._get_config_value("recv_window_ms", 20000, int)
+        # Встановлено на максимум для уникнення -1021 на testnet
+        self._recv_window_ms = self._get_config_value(
+            "recv_window_ms", 60000, int)
 
-        # httpx session
-        self.session: httpx.AsyncClient = session or httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self._timeout,
-            headers={"X-MBX-APIKEY": self.api_key},
-        )
+        # httpx session - lazy initialization to avoid event loop binding issues
+        # Session will be created on first use in the current event loop
+        # External session for testing
+        self._session: Optional[httpx.AsyncClient] = session
+        # Track which loop created the session
+        self._session_loop_id: Optional[int] = None
 
         # ClientOrderId ledger for -4116 idempotency
         self._clientorderid_ledger: Dict[str, Tuple[int, str, str]] = {}
 
         # Mark price cache
         self._mark_price_cache: Dict[str, Dict[str, Any]] = {}
+
+        # Exchange info cache for precision normalization (PRICE_FILTER, LOT_SIZE)
+        # Key: symbol, Value: {"tick_size": Decimal, "step_size": Decimal, "timestamp": float}
+        self._exchange_info_cache: Dict[str, Dict[str, Any]] = {}
+        self._exchange_info_cache_ttl_sec = 300  # 5 minutes TTL
+
+        # Pre-populate cache from local file (avoids network calls on testnet)
+        self._preload_exchange_info_cache()
 
         # WebSocket state
         self.ws_listen_key: Optional[str] = None
@@ -227,6 +237,61 @@ class BinanceAdapter(AbstractExchangeAdapter):
             f"ws_enabled={fsm is not None}, base_url={self.base_url}"
         )
 
+    @property
+    def session(self) -> httpx.AsyncClient:
+        """
+        Lazy-initialized httpx session that handles event loop changes.
+
+        This prevents "is bound to a different event loop" errors when:
+        - Adapter is created before main event loop starts
+        - WebSocket callbacks run in different context
+        """
+        try:
+            current_loop = asyncio.get_running_loop()
+            current_loop_id = id(current_loop)
+        except RuntimeError:
+            # No running loop - return existing session or create new one
+            current_loop_id = None
+
+        # Check if we need to create/recreate session
+        # If _session_loop_id is None, it's an externally injected session (for testing) - keep it!
+        need_new_session = (
+            self._session is None or
+            (self._session_loop_id is not None and
+             current_loop_id is not None and
+             self._session_loop_id != current_loop_id)
+        )
+
+        if need_new_session:
+            # Close old session if exists and was created by us (not injected for testing)
+            if self._session is not None and self._session_loop_id is not None:
+                self.logger.debug(
+                    f"[BinanceAdapter] Recreating session: loop changed "
+                    f"(old={self._session_loop_id}, new={current_loop_id})"
+                )
+                # Schedule close in background - don't await here
+                try:
+                    asyncio.create_task(self._session.aclose())
+                except Exception:
+                    pass  # Best effort cleanup
+
+            self._session = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=self._timeout,
+                headers={"X-MBX-APIKEY": self.api_key},
+            )
+            self._session_loop_id = current_loop_id
+            self.logger.debug(
+                f"[BinanceAdapter] Created new session for loop {current_loop_id}")
+
+        return self._session
+
+    @session.setter
+    def session(self, value: httpx.AsyncClient) -> None:
+        """Allow setting session for testing purposes."""
+        self._session = value
+        self._session_loop_id = None  # External session - don't track loop
+
     def _resolve_credentials(
         self, api_key: str, api_secret: str, base_url: str
     ) -> Tuple[str, bytes, str]:
@@ -247,7 +312,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
             api_key = os.environ.get(env_key, "")
 
         if not api_secret:
-            api_secret = self._get_config_value("binance_ro_api_secret", "", str)
+            api_secret = self._get_config_value(
+                "binance_ro_api_secret", "", str)
         if not api_secret:
             env_key = "BINANCE_TESTNET_API_SECRET" if use_testnet else "BINANCE_MAINNET_API_SECRET"
             api_secret = os.environ.get(env_key, "")
@@ -260,7 +326,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
             self.shadow_mode = True
 
         # Encode secret
-        api_secret_bytes = api_secret.encode() if isinstance(api_secret, str) else api_secret
+        api_secret_bytes = api_secret.encode() if isinstance(
+            api_secret, str) else api_secret
 
         return api_key, api_secret_bytes, base_url.rstrip("/")
 
@@ -281,9 +348,11 @@ class BinanceAdapter(AbstractExchangeAdapter):
         """Get slippage cap from config."""
         try:
             if isinstance(self.config, dict):
-                val = self.config.get("trading", {}).get("orders", {}).get("market", {}).get("slippage_cap_bps")
+                val = self.config.get("trading", {}).get(
+                    "orders", {}).get("market", {}).get("slippage_cap_bps")
             elif hasattr(self.config, 'trading'):
-                val = getattr(getattr(getattr(self.config.trading, 'orders', None), 'market', None), 'slippage_cap_bps', None)
+                val = getattr(getattr(getattr(
+                    self.config.trading, 'orders', None), 'market', None), 'slippage_cap_bps', None)
             else:
                 val = None
             return int(val) if val is not None else None
@@ -299,19 +368,28 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     async def aclose(self) -> None:
         try:
-            await self.session.aclose()
+            if self._session is not None:
+                await self._session.aclose()
+                self._session = None
+                self._session_loop_id = None
         except Exception:
             pass
 
     async def start(self) -> None:
         """
-        Start the adapter (no-op for REST-only adapter).
+        Start the adapter.
 
-        This method exists for compatibility with FSM initialization
-        that expects polling adapters. Since this adapter is REST-only,
-        no background polling is started.
+        Performs initial time synchronization with Binance server
+        to avoid -1021 errors on first requests.
+        Then starts WebSocket USER_DATA_STREAM for real-time order updates.
         """
-        LOG.info("BinanceAdapter started (REST-only mode, no polling)")
+        await self._sync_time(force=True)
+        LOG.info(
+            f"BinanceAdapter started, time_offset={self._time_offset_ms}ms")
+
+        # Start WebSocket for USER_DATA_STREAM (order fills, position updates)
+        await self.start_websocket()
+        LOG.info("BinanceAdapter WebSocket USER_DATA_STREAM started")
 
     async def stop(self) -> None:
         """
@@ -394,28 +472,36 @@ class BinanceAdapter(AbstractExchangeAdapter):
         return int(data["serverTime"])
 
     async def _sync_time(self, force: bool = False):
-        # TTL 2 хв за замовчуванням
+        # TTL 10 sec - aggressive sync to avoid -1021 errors on testnet
         try:
             if hasattr(self.config, 'time_sync_ttl_sec'):
                 ttl_sec = int(self.config.time_sync_ttl_sec)
             elif isinstance(self.config, dict):
-                ttl_sec = int(self.config.get("time_sync_ttl_sec", 120))
+                ttl_sec = int(self.config.get("time_sync_ttl_sec", 10))
             else:
-                ttl_sec = 120
+                ttl_sec = 10
         except (AttributeError, TypeError, ValueError):
-            ttl_sec = 120
+            ttl_sec = 10
 
         now_mono = time.monotonic()
         if not force and (now_mono - self._last_time_sync_monotonic) < ttl_sec:
             return
-        async with self._time_sync_lock:
+        # Use threading.Lock - works in any context, no event loop binding issues
+        with self._time_sync_lock:
             # Могли вже інші синхронізувати
             if not force and (time.monotonic() - self._last_time_sync_monotonic) < ttl_sec:
                 return
+            # RTT-aware time sync: measure round-trip to account for network latency
+            local_before = int(time.time() * 1000)
             server_ms = await self._server_time()
-            local_ms = int(time.time() * 1000)
-            self._time_offset_ms = server_ms - local_ms
+            local_after = int(time.time() * 1000)
+            rtt_ms = local_after - local_before
+            # Use midpoint for more accurate offset calculation
+            local_mid = (local_before + local_after) // 2
+            self._time_offset_ms = server_ms - local_mid
             self._last_time_sync_monotonic = time.monotonic()
+            LOG.debug(
+                f"Time sync: offset={self._time_offset_ms}ms, rtt={rtt_ms}ms, force={force}")
 
     def _sign_build(self, base_params: dict) -> tuple[str, dict]:
         """
@@ -451,7 +537,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 # ВИКОРИСТОВУЄМО self.session — щоб тести могли мокати її
                 r = await self.session.request(method.upper(), url, params=final_params)
                 if r.status_code >= 400:
-                    err = await _safe_read_err(r)
+                    err = _safe_read_err(r)  # FIX: now sync
                     raise _make_binance_error(r, err)
                 return await _coerce_json(r)
             else:
@@ -463,22 +549,29 @@ class BinanceAdapter(AbstractExchangeAdapter):
         try:
             return await _do(method, base_params)
         except Exception as e:
-            # Якщо ReadTimeout або ConnectTimeout → спробуємо ретрай (1 раз)
+            # Якщо ReadTimeout або ConnectTimeout або NetworkError → спробуємо ретрай (1 раз)
             import httpx
             import httpcore
-            timeout_exceptions = (
+            retry_exceptions = (
                 httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException,
-                httpcore.ReadTimeout, httpcore.ConnectTimeout, httpcore.TimeoutException
+                httpx.ReadError, httpx.NetworkError,
+                httpcore.ReadTimeout, httpcore.ConnectTimeout, httpcore.TimeoutException,
+                httpcore.ReadError, httpcore.NetworkError
             )
-            if isinstance(e, timeout_exceptions):
-                LOG.warning(f"Timeout on {method} {path}, retrying once...")
+            if isinstance(e, retry_exceptions):
+                LOG.warning(
+                    f"Network/Timeout error ({type(e).__name__}) on {method} {path}, retrying once...")
                 import asyncio
                 await asyncio.sleep(0.5)  # Невелика затримка перед ретраєм
                 return await _do(method, base_params)
             # Якщо -1021 → жорстка синхронізація і другий запит з НОВОГО base_params
             msg = str(e)
             if "code': -1021" in msg or "-1021" in msg:
+                LOG.warning(
+                    f"Time sync error -1021 on {method} {path}, forcing resync...")
                 await self._sync_time(True)
+                LOG.info(
+                    f"Time resync done, new offset={self._time_offset_ms}ms, retrying...")
                 return await _do(method, base_params)
             # Якщо -1022 → також спробуємо 1 ретрай з чистої бази (частий кейс "перепідписали")
             if (
@@ -496,32 +589,165 @@ class BinanceAdapter(AbstractExchangeAdapter):
         """
         Create an order on Binance.
         Implements AbstractExchangeAdapter.create_order()
+
+        Note: When close_position=True, quantity must NOT be sent to Binance.
+        Binance closePosition=true automatically closes the entire position.
+
+        PRECISION NORMALIZATION (EXEC-BINANCE-PRECISION-GUARD):
+        - price is normalized to tickSize
+        - stopPrice is normalized to tickSize
+        - quantity is normalized to stepSize
         """
+        LOG.info(
+            f"[create_order] ENTRY symbol={params.symbol} type={params.order_type} stop_price={params.stop_price}")
         path = "/fapi/v1/order"
+        symbol = params.symbol
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # PRECISION NORMALIZATION - EXEC-BINANCE-PRECISION-GUARD-FOR-CONDITIONALS
+        # Normalize ALL price/quantity fields BEFORE building order_params
+        # ═══════════════════════════════════════════════════════════════════════
+
+        # Get symbol filters for normalization
+        filters = await self._get_symbol_filters(symbol)
+
+        # Normalize price (for LIMIT orders)
+        normalized_price = None
+        if params.price:
+            normalized_price = await self._normalize_price(symbol, params.price)
+            LOG.info(
+                f"[create_order] PRECISION_NORM price: {params.price} -> {normalized_price} (tick={filters.get('tick_size')})")
+
+        # Normalize stopPrice (for STOP_MARKET, TAKE_PROFIT_MARKET)
+        normalized_stop_price = None
+        if params.stop_price:
+            normalized_stop_price = await self._normalize_price(symbol, params.stop_price)
+            LOG.info(
+                f"[create_order] PRECISION_NORM stopPrice: {params.stop_price} -> {normalized_stop_price} (tick={filters.get('tick_size')})")
+
+        # Normalize quantity (if not using closePosition)
+        normalized_quantity = None
+        if params.quantity and not params.close_position:
+            normalized_quantity = await self._normalize_quantity(symbol, params.quantity)
+            LOG.debug(
+                f"[create_order] Normalized quantity: {params.quantity} -> {normalized_quantity}")
+
+        # Build order params with normalized values
         order_params = {
-            "symbol": params.symbol,
+            "symbol": symbol,
             "side": params.side.upper(),
             "type": params.order_type.upper(),
-            "quantity": params.quantity,
         }
-        if params.price:
-            order_params["price"] = params.price
-        if params.time_in_force:
-            order_params["timeInForce"] = params.time_in_force
-        if params.reduce_only:
-            order_params["reduceOnly"] = "true"
+
+        # CRITICAL: closePosition and quantity are mutually exclusive!
+        # When closePosition=true, Binance ignores quantity and closes entire position.
+        # Sending both causes API error.
         if params.close_position:
             order_params["closePosition"] = "true"
+            # Do NOT add quantity when using closePosition
+        elif normalized_quantity:
+            order_params["quantity"] = normalized_quantity
+
+        if normalized_price:
+            order_params["price"] = normalized_price
+        if params.time_in_force:
+            order_params["timeInForce"] = params.time_in_force
+        if params.reduce_only and not params.close_position:
+            # reduceOnly and closePosition are also mutually exclusive
+            order_params["reduceOnly"] = "true"
         if params.client_order_id:
             order_params["newClientOrderId"] = params.client_order_id
         if params.position_side:
             order_params["positionSide"] = params.position_side
-        if params.stop_price:
-            order_params["stopPrice"] = params.stop_price
+        if normalized_stop_price:
+            order_params["stopPrice"] = normalized_stop_price
         if params.working_type:
             order_params["workingType"] = params.working_type
 
-        result = await self._request("POST", path, order_params)
+        # ═══════════════════════════════════════════════════════════════════════
+        # PRECISION GUARD - Fail-closed validation BEFORE sending to Binance
+        # ═══════════════════════════════════════════════════════════════════════
+        try:
+            self._validate_precision(symbol, order_params, filters)
+        except BinanceValidationError as e:
+            LOG.error(
+                f"[create_order] PRECISION_GUARD_BLOCKED: {symbol} - {e}")
+            raise
+
+        try:
+            result = await self._request("POST", path, order_params)
+        except BinanceAPIError as e:
+            # DIAG: Log exception details for debugging
+            LOG.warning(
+                f"[create_order] BinanceAPIError caught: code={e.code} (type={type(e.code).__name__}) "
+                f"msg={e.msg} client_order_id={params.client_order_id}"
+            )
+            # Handle -4116 (Duplicate ClientOrderId)
+            if e.code == -4116 and params.client_order_id:
+                LOG.warning(
+                    f"[create_order] Got -4116 Duplicate ClientOrderId {params.client_order_id}. Checking status..."
+                )
+                try:
+                    # 1. Check if the order actually exists and is active
+                    check_params = {
+                        "symbol": params.symbol,
+                        "origClientOrderId": params.client_order_id
+                    }
+                    existing_order = await self._request("GET", "/fapi/v1/order", check_params)
+                    status = existing_order.get("status")
+
+                    if status in ("NEW", "PARTIALLY_FILLED"):
+                        LOG.info(
+                            f"[create_order] Found active duplicate order {params.client_order_id} ({status}). Returning it."
+                        )
+                        result = existing_order  # Treat as success
+                    else:
+                        LOG.info(
+                            f"[create_order] Duplicate order {params.client_order_id} is {status}. Retrying with new ID..."
+                        )
+                        # 2. If not active (e.g. CANCELED/FILLED), we must place a NEW order with a new ID
+                        new_id = params.client_order_id
+                        for i in range(1, 4):  # Try 3 times
+                            if "_R" in new_id:
+                                # Increment existing suffix
+                                try:
+                                    base, suffix = new_id.rsplit("_R", 1)
+                                    ver = int(suffix) + 1
+                                    new_id = f"{base}_R{ver}"
+                                except ValueError:
+                                    new_id = f"{new_id}_R{i}"
+                            else:
+                                # Append first suffix
+                                new_id = f"{new_id}_R{i}"
+
+                            LOG.info(
+                                f"[create_order] Retrying with new ClientOrderId: {new_id}")
+                            order_params["newClientOrderId"] = new_id
+                            try:
+                                result = await self._request("POST", path, order_params)
+                                LOG.info(
+                                    f"[create_order] Recovery successful with {new_id}")
+                                break
+                            except BinanceAPIError as retry_err:
+                                if retry_err.code == -4116:
+                                    LOG.warning(
+                                        f"[create_order] New ID {new_id} also duplicated. Retrying..."
+                                    )
+                                    continue
+                                raise retry_err
+                        else:
+                            # All retries failed
+                            LOG.error(
+                                f"[create_order] All recovery attempts failed for {params.client_order_id}"
+                            )
+                            raise e
+                except Exception as check_err:
+                    LOG.error(
+                        f"[create_order] Failed to check/recover duplicate: {check_err}")
+                    raise e
+            else:
+                raise e
+
         return ExchangeOrderResponse(
             order_id=str(result.get("orderId", "")),
             client_order_id=result.get("clientOrderId"),
@@ -641,6 +867,12 @@ class BinanceAdapter(AbstractExchangeAdapter):
         """
         Get open orders.
         Implements AbstractExchangeAdapter.get_open_orders()
+
+        EP-STAB-ADAPT-ORD-META: Full metadata extraction for bracket detection.
+        Returns all fields needed to identify SL/TP brackets:
+        - order_type: STOP_MARKET, TAKE_PROFIT_MARKET, etc.
+        - reduce_only: True for exit orders
+        - stop_price: Trigger price for conditional orders
         """
         path = "/fapi/v1/openOrders"
         params = {}
@@ -648,8 +880,24 @@ class BinanceAdapter(AbstractExchangeAdapter):
             params["symbol"] = symbol
 
         result = await self._request("GET", path, params)
+
+        LOG.info(
+            "[get_open_orders] RAW_RESPONSE symbol=%s count=%d",
+            symbol or "*", len(result) if isinstance(result, list) else 0
+        )
+
         orders = []
         for order in result:
+            order_type = order.get("type") or order.get("origType")
+            stop_price = order.get("stopPrice")
+            reduce_only = order.get("reduceOnly", False)
+
+            LOG.debug(
+                "[get_open_orders] PARSING orderId=%s symbol=%s type=%s stopPrice=%s reduceOnly=%s",
+                order.get("orderId"), order.get(
+                    "symbol"), order_type, stop_price, reduce_only
+            )
+
             orders.append(ExchangeOrderResponse(
                 order_id=str(order.get("orderId", "")),
                 client_order_id=order.get("clientOrderId"),
@@ -660,7 +908,21 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 price=order.get("price"),
                 status=order.get("status", ""),
                 timestamp_ms=int(order.get("time", 0) or 0),
+                # EP-STAB-ADAPT-ORD-META: Essential fields for bracket detection
+                order_type=order_type,
+                reduce_only=reduce_only,
+                close_position=order.get("closePosition", False),
+                stop_price=stop_price,
+                working_type=order.get("workingType"),
+                position_side=order.get("positionSide"),
             ))
+
+        LOG.info(
+            "[get_open_orders] PARSED symbol=%s orders=%d types=%s",
+            symbol or "*", len(orders),
+            [o.order_type for o in orders]
+        )
+
         return orders
 
     async def get_open_positions(self, symbol: Optional[str] = None) -> List[ExchangePosition]:
@@ -753,9 +1015,9 @@ class BinanceAdapter(AbstractExchangeAdapter):
                         update_time_ms=int(p.get("updateTime", 0) or 0),
                     )
                     positions.append(pos_obj)
-                    # 🔴 DIAGNOSTIC: Log accepted position
+                    # 🔴 DIAGNOSTIC: Log accepted position with leverage
                     self.logger.info(
-                        f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}")
+                        f"  ✅ API Position: {pos_obj.symbol} {side} {amt_str} @ entry={entry_str}, mark={mark_str}, unPnL={upnl_str}, leverage={lev}x")
 
                 # 🔴 DIAGNOSTIC: Final summary
                 self.logger.info(
@@ -851,6 +1113,262 @@ class BinanceAdapter(AbstractExchangeAdapter):
         params = {"symbol": symbol}
         return await self._request("GET", path, params)
 
+    # ========== PRECISION NORMALIZATION (EXEC-BINANCE-PRECISION-GUARD) ==========
+
+    async def _get_symbol_filters(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get cached symbol filters (tick_size, step_size) from exchange info.
+
+        Returns:
+            Dict with tick_size, step_size, min_qty, min_notional as Decimal.
+            Returns default values if symbol not found.
+        """
+        now = time.time()
+        cached = self._exchange_info_cache.get(symbol)
+
+        # Check cache validity
+        if cached and (now - cached.get("timestamp", 0)) < self._exchange_info_cache_ttl_sec:
+            return cached
+
+        # Fetch fresh exchange info
+        try:
+            info = await self.get_exchange_info(symbol)
+            symbols = info.get("symbols") or []
+            sym = None
+            for s in symbols:
+                if s.get("symbol") == symbol:
+                    sym = s
+                    break
+
+            if not sym:
+                LOG.warning(
+                    f"[BinanceAdapter] Exchange info for {symbol} not found, using defaults")
+                return self._get_default_filters(symbol)
+
+            filters = {f.get("filterType"): f for f in sym.get("filters", [])}
+
+            # Extract PRICE_FILTER
+            price_filter = filters.get("PRICE_FILTER", {})
+            tick_size = Decimal(str(price_filter.get("tickSize", "0.01")))
+
+            # Extract LOT_SIZE
+            lot_filter = filters.get("LOT_SIZE", {})
+            step_size = Decimal(str(lot_filter.get("stepSize", "0.001")))
+            min_qty = Decimal(str(lot_filter.get("minQty", "0.001")))
+
+            # Extract MIN_NOTIONAL
+            min_notional = None
+            for f in sym.get("filters", []):
+                if f.get("filterType", "").upper() == "MIN_NOTIONAL":
+                    min_notional = Decimal(
+                        str(f.get("notional") or f.get("minNotional") or "5"))
+                    break
+
+            result = {
+                "tick_size": tick_size,
+                "step_size": step_size,
+                "min_qty": min_qty,
+                "min_notional": min_notional or Decimal("5"),
+                "timestamp": now,
+            }
+
+            self._exchange_info_cache[symbol] = result
+            LOG.debug(
+                f"[BinanceAdapter] Cached filters for {symbol}: tick={tick_size}, step={step_size}")
+            return result
+
+        except Exception as e:
+            LOG.warning(
+                f"[BinanceAdapter] Failed to get exchange info for {symbol}: {e}")
+            # Prefer stale cache over defaults (preloaded data is still valid)
+            if cached:
+                LOG.info(f"[BinanceAdapter] Using stale cache for {symbol}")
+                return cached
+            return self._get_default_filters(symbol)
+
+    def _preload_exchange_info_cache(self) -> None:
+        """
+        Pre-populate exchange info cache from local file.
+
+        This prevents network calls to /fapi/v1/exchangeInfo on testnet,
+        which often timeouts and causes create_order to hang.
+        """
+        # Try multiple paths
+        paths = [
+            "configs/testnet_exchangeinfo.json",
+            "artifacts/testnet_exchangeinfo.json",
+        ]
+
+        data = None
+        for path in paths:
+            try:
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = _json.load(f)
+                    self.logger.info(
+                        f"[BinanceAdapter] Loaded exchange info from {path}")
+                    break
+            except Exception as e:
+                self.logger.debug(
+                    f"[BinanceAdapter] Failed to load {path}: {e}")
+
+        if not data:
+            self.logger.warning(
+                "[BinanceAdapter] No local exchange info found, will fetch from network")
+            return
+
+        symbols = data.get("symbols", [])
+        now = time.time()
+        loaded_count = 0
+
+        for sym in symbols:
+            symbol_name = sym.get("symbol")
+            if not symbol_name:
+                continue
+
+            filters_map = {f.get("filterType")
+                                 : f for f in sym.get("filters", [])}
+
+            # Extract PRICE_FILTER
+            price_filter = filters_map.get("PRICE_FILTER", {})
+            tick_size = Decimal(str(price_filter.get("tickSize", "0.01")))
+
+            # Extract LOT_SIZE
+            lot_filter = filters_map.get("LOT_SIZE", {})
+            step_size = Decimal(str(lot_filter.get("stepSize", "0.001")))
+            min_qty = Decimal(str(lot_filter.get("minQty", "0.001")))
+
+            # Extract MIN_NOTIONAL
+            min_notional = Decimal("5")
+            for f in sym.get("filters", []):
+                ft = f.get("filterType", "").upper()
+                if ft == "MIN_NOTIONAL":
+                    min_notional = Decimal(
+                        str(f.get("notional") or f.get("minNotional") or "5"))
+                    break
+
+            self._exchange_info_cache[symbol_name] = {
+                "tick_size": tick_size,
+                "step_size": step_size,
+                "min_qty": min_qty,
+                "min_notional": min_notional,
+                "timestamp": now,
+            }
+            loaded_count += 1
+
+        self.logger.info(
+            f"[BinanceAdapter] Pre-loaded filters for {loaded_count} symbols")
+
+    def _get_default_filters(self, symbol: str) -> Dict[str, Any]:
+        """Get default filter values when exchange info unavailable."""
+        # Conservative defaults - will work for most symbols
+        defaults = {
+            "tick_size": Decimal("0.01"),
+            "step_size": Decimal("0.001"),
+            "min_qty": Decimal("0.001"),
+            "min_notional": Decimal("5"),
+            "timestamp": time.time(),
+        }
+
+        # Symbol-specific overrides for known high-value assets
+        if symbol.startswith("BTC"):
+            defaults["tick_size"] = Decimal("0.1")
+        elif symbol.startswith("ETH"):
+            defaults["tick_size"] = Decimal("0.01")
+        elif symbol.startswith("SOL"):
+            defaults["tick_size"] = Decimal("0.01")
+            defaults["step_size"] = Decimal("1")
+
+        return defaults
+
+    async def _normalize_price(self, symbol: str, price: Any) -> str:
+        """
+        Normalize price to symbol's PRICE_FILTER tickSize.
+
+        Args:
+            symbol: Trading symbol
+            price: Price value (str, Decimal, float, int)
+
+        Returns:
+            Normalized price as string with correct precision.
+        """
+        if price is None:
+            return None
+
+        filters = await self._get_symbol_filters(symbol)
+        tick_size = filters["tick_size"]
+
+        price_d = self._to_decimal(price)
+        normalized = self._round_step(price_d, tick_size, ROUND_DOWN)
+
+        # Format without scientific notation
+        result = format(normalized.normalize(), "f")
+        return result
+
+    async def _normalize_quantity(self, symbol: str, quantity: Any) -> str:
+        """
+        Normalize quantity to symbol's LOT_SIZE stepSize.
+
+        Args:
+            symbol: Trading symbol
+            quantity: Quantity value
+
+        Returns:
+            Normalized quantity as string with correct precision.
+        """
+        if quantity is None:
+            return None
+
+        filters = await self._get_symbol_filters(symbol)
+        step_size = filters["step_size"]
+
+        qty_d = self._to_decimal(quantity)
+        normalized = self._round_step(qty_d, step_size, ROUND_DOWN)
+
+        # Format without scientific notation
+        result = format(normalized.normalize(), "f")
+        return result
+
+    def _validate_precision(self, symbol: str, params: dict, filters: Dict[str, Any]) -> None:
+        """
+        Fail-closed precision guard: validates that all prices/quantities
+        have correct precision BEFORE sending to Binance.
+
+        Raises:
+            BinanceValidationError: If any parameter exceeds allowed precision.
+        """
+        tick_size = filters.get("tick_size", Decimal("0.01"))
+        step_size = filters.get("step_size", Decimal("0.001"))
+
+        def check_precision(value: str, allowed_step: Decimal, field_name: str):
+            if value is None:
+                return
+            try:
+                val_d = Decimal(str(value))
+                # Check if value is divisible by step
+                remainder = val_d % allowed_step
+                if remainder != 0:
+                    raise BinanceValidationError(
+                        f"PRECISION_GUARD: {field_name}={value} exceeds allowed precision "
+                        f"(step={allowed_step}, remainder={remainder})"
+                    )
+            except Exception as e:
+                if isinstance(e, BinanceValidationError):
+                    raise
+                LOG.warning(
+                    f"[BinanceAdapter] Precision check failed for {field_name}: {e}")
+
+        # Check price fields
+        for field in ("price", "stopPrice", "activationPrice"):
+            if field in params:
+                check_precision(params[field], tick_size, field)
+
+        # Check quantity
+        if "quantity" in params and params["quantity"] is not None:
+            check_precision(params["quantity"], step_size, "quantity")
+
+    # ========== END PRECISION NORMALIZATION ==========
+
     async def quantize_quantity(self, symbol: str, qty: Any) -> str:
         """
         Quantize quantity to symbol's LOT_SIZE stepSize and validate MIN_NOTIONAL.
@@ -936,11 +1454,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     def _to_decimal(self, value: Any) -> Decimal:
         """
-        Convert value to Decimal, handling dict (price/markPrice), str, int, float.
+        Convert value to Decimal, handling dict (price/markPrice), str, int, float, Decimal.
         Raises ValueError if None or invalid.
         """
         if value is None:
             raise ValueError("Value cannot be None")
+        if isinstance(value, Decimal):
+            return value
         if isinstance(value, dict):
             # For mark price dict, use 'markPrice' or 'price'
             price = value.get("markPrice") or value.get("price")
@@ -1387,7 +1907,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
     async def start_websocket(self) -> None:
         """Start WebSocket USER_DATA_STREAM in a background thread."""
         if self.shadow_mode:
-            self.logger.info("[BinanceAdapter] Shadow mode, skipping WebSocket start")
+            self.logger.info(
+                "[BinanceAdapter] Shadow mode, skipping WebSocket start")
             return
 
         if self.ws_running:
@@ -1443,7 +1964,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
                             msg = json.loads(msg_raw)
                             await self._handle_ws_message(msg)
                         except json.JSONDecodeError:
-                            self.logger.warning(f"[BinanceAdapter] Invalid JSON: {msg_raw[:100]}")
+                            self.logger.warning(
+                                f"[BinanceAdapter] Invalid JSON: {msg_raw[:100]}")
 
             except Exception as e:
                 if not self.ws_running:
@@ -1463,7 +1985,9 @@ class BinanceAdapter(AbstractExchangeAdapter):
     def _build_ws_url(self) -> str:
         """Build WebSocket URL based on environment."""
         if "testnet" in self.base_url.lower():
-            return f"wss://stream.binancefuture.com/ws/{self.ws_listen_key}"
+            # TESTNET WebSocket URL (note: stream.testnet.* doesn't exist, use testnet.*)
+            return f"wss://testnet.binancefuture.com/ws/{self.ws_listen_key}"
+        # LIVE WebSocket URL
         return f"wss://fstream.binance.com/ws/{self.ws_listen_key}"
 
     async def _get_listen_key(self) -> Optional[str]:
@@ -1472,7 +1996,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
             resp = await self._request("POST", "/fapi/v1/listenKey", {})
             return resp.get("listenKey")
         except Exception as e:
-            self.logger.error(f"[BinanceAdapter] Failed to get listen key: {e}")
+            self.logger.error(
+                f"[BinanceAdapter] Failed to get listen key: {e}")
             return None
 
     async def _refresh_listen_key(self) -> bool:
@@ -1484,7 +2009,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
             self.listen_key_last_refresh = time.time()
             return True
         except Exception as e:
-            self.logger.warning(f"[BinanceAdapter] Listen key refresh failed: {e}")
+            self.logger.warning(
+                f"[BinanceAdapter] Listen key refresh failed: {e}")
             return False
 
     async def _listen_key_refresh_loop(self) -> None:
@@ -1511,16 +2037,27 @@ class BinanceAdapter(AbstractExchangeAdapter):
         elif event_type == "ACCOUNT_UPDATE":
             await self._handle_account_update(msg)
         elif event_type == "listenKeyExpired":
-            self.logger.warning("[BinanceAdapter] Listen key expired, refreshing...")
+            self.logger.warning(
+                "[BinanceAdapter] Listen key expired, refreshing...")
             self.ws_listen_key = await self._get_listen_key()
         else:
-            self.logger.debug(f"[BinanceAdapter] Unknown WS event: {event_type}")
+            self.logger.debug(
+                f"[BinanceAdapter] Unknown WS event: {event_type}")
 
     async def _handle_order_trade_update(self, msg: Dict[str, Any]) -> None:
-        """Handle ORDER_TRADE_UPDATE event."""
+        """Handle ORDER_TRADE_UPDATE event from WebSocket USER_DATA_STREAM."""
         order_data = msg.get("o", {})
         normalized = self._normalize_order_event(order_data)
+        status = normalized.get("status")
 
+        # Log all order updates
+        self.logger.info(
+            f"[BinanceAdapter] WS ORDER_TRADE_UPDATE: symbol={normalized.get('symbol')} "
+            f"status={status} side={normalized.get('side')} qty={normalized.get('quantity')} "
+            f"clientOrderId={normalized.get('clientOrderId')}"
+        )
+
+        # Emit ORDER_UPDATE for all updates
         if self.fsm_core:
             try:
                 from vfoundation.core.protocol import Message
@@ -1531,19 +2068,52 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 )
                 await self.fsm_core.emit(event_msg)
             except ImportError:
-                self.logger.warning("[BinanceAdapter] vfoundation not available for FSM emit")
+                self.logger.warning(
+                    "[BinanceAdapter] vfoundation not available for FSM emit")
         elif self.fsm:
             # Legacy FSM support
             if hasattr(self.fsm, 'emit'):
                 await self.fsm.emit("ORDER_UPDATE", normalized)
 
-        self.logger.debug(f"[BinanceAdapter] Order update: {normalized.get('clientOrderId')}")
+        # FIX-FILL-TIMEOUT: Emit EVT:TRADE_EXECUTED for filled orders
+        # This is the WebSocket path that runtime_factory listens to
+        if status in ("FILLED", "PARTIALLY_FILLED"):
+            trade_executed_payload = {
+                "symbol": normalized.get("symbol"),
+                "side": normalized.get("side"),
+                "quantity": normalized.get("quantity"),
+                "price": normalized.get("averagePrice") or normalized.get("price"),
+                "orderId": normalized.get("orderId"),
+                "clientOrderId": normalized.get("clientOrderId"),
+                "status": status,
+                "order_type": normalized.get("orderType"),
+                "timestamp": normalized.get("updateTime"),
+                "source": "websocket",
+            }
+
+            self.logger.info(
+                f"[BinanceAdapter] ✅ FILL detected via WebSocket: "
+                f"symbol={trade_executed_payload['symbol']} side={trade_executed_payload['side']} "
+                f"qty={trade_executed_payload['quantity']} price={trade_executed_payload['price']}"
+            )
+
+            if self.fsm:
+                await self.fsm.emit("EVT:TRADE_EXECUTED", trade_executed_payload)
 
     async def _handle_account_update(self, msg: Dict[str, Any]) -> None:
-        """Handle ACCOUNT_UPDATE event (balance/position changes)."""
+        """
+        Handle ACCOUNT_UPDATE event (balance/position changes).
+
+        ORPHAN-FIX: Emit EVT:ACCOUNT_UPDATE_RECEIVED to fsm so ExecPosRuntimeV2
+        can detect position closures (qty=0) and cancel orphan TP/SL.
+        Previously only emitted to fsm_core as POSITION_UPDATE which was not
+        connected to ExecPos, causing 30s delay via REST polling.
+        """
         account_data = msg.get("a", {})
         positions = account_data.get("P", [])
 
+        # Build normalized positions list for ExecPos
+        normalized_positions = []
         for pos in positions:
             normalized = {
                 "symbol": pos.get("s"),
@@ -1553,7 +2123,9 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 "marginType": pos.get("mt"),
                 "positionSide": pos.get("ps"),
             }
+            normalized_positions.append(normalized)
 
+            # Legacy: also emit to fsm_core for other consumers
             if self.fsm_core:
                 try:
                     from vfoundation.core.protocol import Message
@@ -1566,8 +2138,28 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 except ImportError:
                     pass
 
+        # ORPHAN-FIX: Emit EVT:ACCOUNT_UPDATE_RECEIVED to fsm for ExecPos V2
+        # This triggers immediate orphan cleanup when position closes (qty=0)
+        if self.fsm and normalized_positions:
+            LOG.info(
+                f"[BinanceAdapter] WS ACCOUNT_UPDATE: emitting EVT:ACCOUNT_UPDATE_RECEIVED "
+                f"positions_count={len(normalized_positions)} "
+                f"symbols={[p['symbol'] for p in normalized_positions]}"
+            )
+            await self.fsm.emit(
+                "EVT:ACCOUNT_UPDATE_RECEIVED",
+                {"positions": normalized_positions},
+            )
+
     def _normalize_order_event(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize WebSocket order event to standard format."""
+        """
+        Normalize WebSocket ORDER_TRADE_UPDATE event to standard format.
+
+        EP-ORDERS-SYNC: Extended with all fields needed for bracket detection:
+        - stopPrice (sp): Trigger price for SL/TP orders
+        - closePosition (cp): Whether order closes entire position
+        - workingType (wt): MARK_PRICE or CONTRACT_PRICE
+        """
         status_map = {
             "NEW": "NEW",
             "PARTIALLY_FILLED": "PARTIALLY_FILLED",
@@ -1577,6 +2169,11 @@ class BinanceAdapter(AbstractExchangeAdapter):
             "REJECTED": "REJECTED",
         }
         raw_status = order_data.get("X", "UNKNOWN")
+
+        # Parse stopPrice - critical for SL/TP identification
+        sp_raw = order_data.get("sp")
+        stop_price = float(sp_raw) if sp_raw and sp_raw != "0" else None
+
         return {
             "orderId": order_data.get("i"),
             "clientOrderId": order_data.get("c"),
@@ -1595,6 +2192,12 @@ class BinanceAdapter(AbstractExchangeAdapter):
             "realizedProfit": float(order_data.get("rp", 0)),
             "commission": float(order_data.get("n", 0)),
             "commissionAsset": order_data.get("N"),
+            # EP-ORDERS-SYNC: Essential fields for bracket detection
+            "stopPrice": stop_price,
+            "closePosition": order_data.get("cp", False),
+            "workingType": order_data.get("wt"),
+            "origType": order_data.get("ot"),  # Original order type
+            "tradeId": order_data.get("t"),  # Trade ID for fills
         }
 
     # ========== FSM Message-based Order Methods ==========
@@ -1628,7 +2231,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
         qty = str(payload.get("qty") or payload.get("quantity"))
         order_type = payload.get("type", "MARKET")
         price = str(payload.get("price")) if payload.get("price") else None
-        client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
+        client_order_id = payload.get(
+            "clientOrderId") or payload.get("client_order_id")
 
         # Build ExchangeOrderParams
         params = ExchangeOrderParams(
@@ -1641,7 +2245,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
             time_in_force=payload.get("timeInForce", "GTC"),
             reduce_only=bool(payload.get("reduceOnly")),
             position_side=payload.get("positionSide"),
-            stop_price=str(payload.get("stopPrice")) if payload.get("stopPrice") else None
+            stop_price=str(payload.get("stopPrice")) if payload.get(
+                "stopPrice") else None
         )
 
         # Slippage protection for MARKET orders
@@ -1690,7 +2295,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
         # Strategy: retry with adjusted parameters or convert to MARKET
         if error.code == -2021:
             # Order would trigger - convert SL/TP to MARKET
-            self.logger.info("[BinanceAdapter] Converting to MARKET order after -2021")
+            self.logger.info(
+                "[BinanceAdapter] Converting to MARKET order after -2021")
             params.order_type = "MARKET"
             params.price = None
             params.stop_price = None
@@ -1735,7 +2341,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         symbol = payload.get("symbol")
         order_id = payload.get("orderId") or payload.get("order_id")
-        client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
+        client_order_id = payload.get(
+            "clientOrderId") or payload.get("client_order_id")
 
         try:
             result = await self.cancel_order(
@@ -1769,9 +2376,15 @@ class BinanceAdapter(AbstractExchangeAdapter):
 # ---- helpers ----
 
 
-async def _safe_read_err(resp):
+def _safe_read_err(resp):
+    """Extract JSON error body from httpx.Response (sync method).
+
+    FIX DUPID-PARSE-4116: httpx.Response.json() is SYNC, not async.
+    Previously 'await resp.json()' caused TypeError, falling back to
+    {"code": resp.status_code, "msg": resp.text} — losing the API error code.
+    """
     try:
-        return await resp.json()
+        return resp.json()  # httpx: sync method, returns dict
     except Exception:
         try:
             return {"code": resp.status_code, "msg": resp.text}
@@ -1803,9 +2416,9 @@ def _make_binance_error(resp_or_code: Any, msg_or_err: Any = None) -> BinanceAPI
     rejection_codes = {-1013, -1021, -2010}
     nrr = "NRR-018" if code in rejection_codes else None
 
-    # ГАРАНТОВАНО для rejection-кодів: викликаємо через модульну змінну log
+    # ГАРАНТОВАНО для rejection-кодів: викликаємо через модульну змінну LOG
     if nrr == "NRR-018":
-        log.warning(
+        LOG.warning(
             "Exchange rejected order: code=%s, msg=%s, nrr_code=%s", code, msg, nrr)
 
     return BinanceAPIError(code=code, msg=msg, nrr_code=nrr)

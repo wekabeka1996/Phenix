@@ -13,6 +13,7 @@ from apps.reference.domains.execution_position.shadow_execpos.bracket_service im
     PositionView
 )
 
+
 def test_build_position_id_deterministic():
     """Test that position ID is deterministic based on qty and price."""
     pos = PositionView(
@@ -28,10 +29,12 @@ def test_build_position_id_deterministic():
     pid = build_position_id("BTCUSDT", pos)
     assert pid == "1.2346-50000.50"
 
+
 def test_parse_cycle_id_from_client_order_id():
     """Test parsing cycle ID from various client order ID formats."""
     # Standard format
-    assert parse_cycle_id_from_client_order_id("AUR-BTC-LONG-SL-C123-FP") == 123
+    assert parse_cycle_id_from_client_order_id(
+        "AUR-BTC-LONG-SL-C123-FP") == 123
 
     # End of string
     assert parse_cycle_id_from_client_order_id("AUR-BTC-LONG-SL-C456") == 456
@@ -40,6 +43,7 @@ def test_parse_cycle_id_from_client_order_id():
     assert parse_cycle_id_from_client_order_id("AUR-BTC-LONG-SL-FP") == 0
     assert parse_cycle_id_from_client_order_id("") == 0
     assert parse_cycle_id_from_client_order_id(None) == 0
+
 
 def test_make_bracket_client_order_id_format_fits():
     """Test standard bracket client order ID generation where it fits."""
@@ -63,14 +67,15 @@ def test_make_bracket_client_order_id_format_fits():
         position=pos
     )
 
-    # Expected: AUR-BTC-SHORT-PLACE_SL-C5-10.0000-2000.00 (truncated)
-    # Prefix: AUR-BTC-SHORT-PLACE_SL-C5- (26 chars)
-    # PosID: 10.0000-2000.00
-    # Remaining: 6 chars -> "10.000"
-    assert cid.startswith("AUR-BTC-SHORT-PLACE_SL-C5-")
+    # Expected compact format: AUR-{symbol}-{S/L}-{TP/SL}-C{cycle}-{hash}
+    # Example: AUR-BTC-S-SL-C5-a1b2c3
+    assert cid.startswith("AUR-BTC-S-SL-C5-")
     assert len(cid) <= 32
-    # Verify we got at least part of the position ID
-    assert cid.endswith("10.000")
+    # Verify hash suffix exists (6 chars)
+    parts = cid.split("-")
+    assert len(parts) == 6
+    assert len(parts[-1]) == 6  # Hash is 6 chars
+
 
 def test_make_bracket_client_order_id_truncation_behavior():
     """Test that client order ID is truncated correctly when it overflows."""
@@ -94,11 +99,11 @@ def test_make_bracket_client_order_id_truncation_behavior():
     )
 
     assert len(cid) <= 32
-    # In this extreme case, even the cycle ID might be cut if the prefix is too long
-    # AUR-VERYLONGSYMBOL-LONG-PLACE_TP (32 chars exactly)
-    # So we expect it to be exactly that
-    expected_prefix = "AUR-VERYLONGSYMBOL-LONG-PLACE_TP"
-    assert cid.startswith(expected_prefix[:32])
+    # Compact format even with long symbol: AUR-VERYLONGSYMBOL-L-TP-C999-hash
+    # If too long, symbol will be truncated
+    assert cid.startswith("AUR-")
+    assert "-L-TP-C999-" in cid or cid.startswith("AUR-VERYLONGSYM")
+
 
 def test_make_bracket_client_order_id_fallback():
     """Test fallback generation when no position is provided (legacy/recovery)."""

@@ -125,6 +125,23 @@ class RiskManagement:
             self.logger.warning(
                 f"Failed to resolve trading allowed thresholds: {e}")
 
+        # Daily gate state (config_v2 risk)
+        self.daily_state: Optional[Any] = None
+        try:
+            self.daily_state = resolve_daily_risk_state(self.config)
+            self.logger.info(
+                "Resolved daily risk state",
+                extra={
+                    "max_drawdown_pct": getattr(
+                        getattr(self.daily_state, "cfg", None), "max_drawdown_pct", None),
+                    "max_realized_loss_usd": getattr(
+                        getattr(self.daily_state, "cfg", None), "max_realized_loss_usd", None),
+                },
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to resolve daily risk state: {e}")
+            self.daily_state = None
+
         # Portfolio state tracking for holistic risk management
         self.portfolio_state: Optional[Dict[str, Any]] = None
         self.peak_equity: Optional[decimal.Decimal] = None
@@ -223,6 +240,13 @@ class RiskManagement:
         current_equity = decimal.Decimal(
             str(self.portfolio_state.get("equity", "0")))
 
+        # Feed daily gate with portfolio update (uses equity_free_usdt)
+        try:
+            if self.daily_state:
+                self.daily_state.on_portfolio(event.pld)
+        except Exception as exc:
+            self.logger.warning(f"Daily gate on_portfolio failed: {exc}")
+
         # AGENT-PATCH: Daily reset logic
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if self._last_reset_day != today_str or self._equity_open is None:
@@ -255,10 +279,22 @@ class RiskManagement:
         AGENT-PATCH: Daily drawdown check with correct threshold reading.
         """
         # 1. Portfolio-level risk check (Circuit Breaker) resolved via config pipeline
+        daily_gate_status = "UNKNOWN"
+        daily_gate_detail: Dict[str, Any] = {}
         try:
-            daily_state = resolve_daily_risk_state(self.config)
-            max_drawdown_pct = float(getattr(
-                daily_state.cfg, "max_drawdown_pct", 10.0))
+            daily_state = self.daily_state or resolve_daily_risk_state(
+                self.config)
+            max_drawdown_pct = float(
+                getattr(daily_state.cfg, "max_drawdown_pct", 10.0))
+            can_open, gate_detail = daily_state.can_open()
+            daily_gate_status = "OPEN" if can_open else "BLOCKED"
+            daily_gate_detail = gate_detail or {}
+            if not can_open:
+                return {
+                    "is_trading_allowed": False,
+                    "daily_gate_status": daily_gate_status,
+                    "daily_gate_detail": daily_gate_detail,
+                }
         except Exception as exc:
             self.logger.warning(
                 "Failed to resolve daily risk state: %s; using fallback", exc)
@@ -278,7 +314,16 @@ class RiskManagement:
                     f"threshold={max_drawdown_pct:.4f}"
                 )
             )
-            return {"is_trading_allowed": False}
+            return {
+                "is_trading_allowed": False,
+                "daily_gate_status": "BLOCKED",
+                "daily_gate_detail": {
+                    "reason": "DAILY_RISK_LIMIT",
+                    "detail": "MAX_DRAWDOWN",
+                    "drawdown_pct": float(self.current_daily_drawdown),
+                    "limit_pct": max_drawdown_pct,
+                },
+            }
 
         # 2. Instrument-level risk check (if portfolio risk is OK)
         # Extract features with safe parsing
@@ -358,6 +403,8 @@ class RiskManagement:
         return {
             "is_trading_allowed": is_trading_allowed,
             "risk_score": float(risk_score),  # Always numeric, never null
+            "daily_gate_status": daily_gate_status,
+            "daily_gate_detail": daily_gate_detail,
             # Note: kelly_fraction and cvar_limit_usd are calculated in DecisionMaking from SSOT
         }
 

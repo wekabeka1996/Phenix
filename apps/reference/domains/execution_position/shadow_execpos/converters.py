@@ -7,7 +7,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from .bracket_service import PositionView, OrderView, parse_cycle_id_from_client_order_id
+# Phase 11: Import from contract layer (no bracket_service dependency)
+from ..aggregator_oco.view_types import (
+    PositionView,
+    OrderView,
+    parse_cycle_id_from_client_order_id,
+)
 
 
 def normalize_positions(raw_positions: List[Dict[str, Any]]) -> List[PositionView]:
@@ -106,7 +111,7 @@ def normalize_orders(raw_orders: List[Dict[str, Any]]) -> List[OrderView]:
                 "updateTime") or created_ts)
 
             client_order_id = str(raw.get("clientOrderId") or raw.get(
-                        "client_order_id") or order_id)
+                "client_order_id") or order_id)
 
             # Parse cycle_id from clientOrderId
             cycle_id = parse_cycle_id_from_client_order_id(client_order_id)
