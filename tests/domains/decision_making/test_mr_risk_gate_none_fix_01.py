@@ -30,7 +30,24 @@ def _mk_dm(*, max_risk_score=0.96, aurora_override=None):
         domains=SimpleNamespace(
             risk_management=SimpleNamespace(
                 trading_allowed_thresholds=SimpleNamespace(max_risk_score=max_risk_score)
-            )
+            ),
+            decision_making=SimpleNamespace(
+                directional_sanity=SimpleNamespace(
+                    enabled=False,
+                    min_abs_delta_price=0.0,
+                    min_confidence=0.0,
+                    consecutive_bars=2,
+                ),
+                price_motion_sanity=SimpleNamespace(
+                    enabled=False,
+                    k_vol=2.0,
+                    flash_window_sec=10,
+                    bleed_window_sec=300,
+                    flash_threshold_norm=1.0,
+                    bleed_threshold_norm=0.7,
+                    require_bleed_ready=True,
+                ),
+            ),
         ),
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(decision=SimpleNamespace(retry_ttl_ms=10_000)),
@@ -158,4 +175,3 @@ def test_gateway_uses_global_threshold_when_override_missing(caplog):
 
     assert any("used_override=False" in rec.message for rec in caplog.records)
     assert not any(name == "EVT:TRADE_INTENT_PROPOSED" for name, _ in dm.fsm.emitted)
-

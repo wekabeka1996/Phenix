@@ -17,11 +17,16 @@ decision_making:
     liquidity_kappa_mode: dynamic
   
   qos:
-    exposure_block_cooldown_sec: 10
-    symbol_cooldown_sec: 3
+    # LIVE SAFETY: stop intent spam and "shadow pass-through".
+    # NOTE: `defer` requires a running asyncio loop (not available in this runtime),
+    # so we use `enforce` to hard-block intents when QoS rules are violated.
+    exposure_block_cooldown_sec: 60
+    # TUNED FOR LIVE (3m/5m bars): keep anti-spam dedup, avoid starving entries.
+    # Math: 10s cooldown => max ~6 entry intents/min/symbol (aligns with rate cap).
+    symbol_cooldown_sec: 10
     max_intents_per_minute_per_symbol: 6
-    mode: shadow  # defer broken (no event loop), shadow = only log, allow trading
-    enforce: false
+    mode: enforce
+    enforce: true
   
   features:
     ttl_sec: 30  # Increased from 5 to 30 seconds to avoid features_stale blocks
@@ -34,10 +39,6 @@ decision_making:
     enable: false
     high_vol_multiplier: 2.0
     low_vol_multiplier: 0.5
-  
-  signals:
-    normalize: false
-    enable_new_metrics: true
   
   # Commit 5: Risk Skew Guard
   risk_skew:
@@ -57,6 +58,25 @@ decision_making:
     require_regime_warmup: true
     retry_backoff_ms: 250
     max_attempts: 3
+
+  # DM-DIR-SSOT-STRICT-01: Directional sanity gate (SSOT-required).
+  # Note: enabled can be overridden per profile; block must exist for LIVE.
+  directional_sanity:
+    enabled: true
+    min_abs_delta_price: 0.0
+    min_confidence: 0.0
+    consecutive_bars: 2
+
+  # PRICE-MOTION-SSOT-STRICT-01: Multi-window safety layer (SSOT-required).
+  # Blocks opening positions against persistent negative/positive price motion.
+  price_motion_sanity:
+    enabled: true
+    k_vol: 2.0
+    flash_window_sec: 10
+    bleed_window_sec: 300
+    flash_threshold_norm: 1.0
+    bleed_threshold_norm: 0.5
+    require_bleed_ready: true
 
   # P1: Degraded DecisionContext gate (fail-closed) — OFF by default.
   # If enabled, DecisionMaking may DEFER when critical features are missing/invalid.
@@ -105,9 +125,6 @@ feature_engineering:
     eps: 0.000000000001
     use_notional: false
 
-  volatility_state:
-    cap_max: 3.0
-
   depth_imbalance:
     use_laplace_smoothing: true
 
@@ -132,6 +149,139 @@ feature_engineering:
     zero_value: 0.0
     correlation_default: 0.0
     ms_per_sec: 1000
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # P0-0: READINESS CONTRACT REGISTRY (SSOT)
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # All keys that FE can emit in warmup.ready. essential_features MUST be subset.
+  readiness_registry:
+    declared_keys:
+      - obi
+      - tfi
+      - delta_price
+      - depth_imbalance
+      - liquidity_kappa
+      - absorption
+      - ema_bias
+      - volume_spike
+      - volatility_state
+      - macro_sync        # Legacy, kept for telemetry
+      - macro_resid       # R1: Beta-adjusted residual (replaces macro_sync for direction)
+      - spread_bps
+      - large_trade_imbalance
+      - volume_zscore
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # WARMUP ENFORCEMENT: MANDATORY MODE (NOT A SWITCH!)
+  # ═══════════════════════════════════════════════════════════════════════════════
+  warmup:
+    # MANDATORY: fail_fast — system does not trade until all features ready
+    enforcement_mode: fail_fast  # LOCKED: fail_fast (warn_only/disabled forbidden in prod)
+    # Validate essential ⊆ declared_keys at startup
+    validate_essential_subset: true
+    # Invariant: full_ready=True ⇒ all declared_keys present
+    check_full_ready_invariant: true
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # P0-1: VOLATILITY STATE HARD FLOOR + CAP + FIREWALL
+  # ═══════════════════════════════════════════════════════════════════════════════
+  volatility_state:
+    cap_max: 3.0
+    hard_floor_enabled: true
+    # Floor in price units (per-asset, use smallest reasonable value)
+    tick_floor: 0.0001
+    # Historical floor multiplier (k_small * median_avg_range)
+    hist_floor_enabled: false
+    hist_floor_k_small: 0.1
+    # Division safety epsilon
+    division_eps: 0.000000001
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # P0-2: SPREAD BPS HEALTH GATE (Book Truth Validation)
+  # ═══════════════════════════════════════════════════════════════════════════════
+  spread_bps:
+    health_gate:
+      enabled: true
+      max_age_sec: 5.0              # STEP 1: Hard fail if book older than this
+      min_update_events: 1          # STEP 2: Min book update events (any: qty/levels/price)
+      min_trades_count: 1           # STEP 2: Min trades in window (OR with update_events)
+      window_sec: 10.0              # Lookback window for counting
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # P0-3: FEATURE SANITY FIREWALL (Central NaN/Inf/Out-of-Range Protection)
+  # ═══════════════════════════════════════════════════════════════════════════════
+  feature_sanity:
+    enabled: true
+    # Behavior on NaN/Inf: neutral_and_not_ready = return neutral + mark not_ready
+    nan_inf_behavior: neutral_and_not_ready
+    # Feature bounds (per-semantic-type)
+    feature_bounds:
+      # Signed features (directional) [-1, 1]
+      obi: { min: -1.0, max: 1.0 }
+      tfi: { min: -1.0, max: 1.0 }
+      absorption: { min: -1.0, max: 1.0 }  # R2: SIGNED feature
+      # R1: macro_resid is SIGNED with wider range
+      macro_resid: { min: -3.0, max: 3.0 }
+      # Normalized features [0, 1]
+      ema_bias: { min: 0.0, max: 1.0 }
+      volatility_state: { min: 0.0, max: 1.0 }
+      liquidity_kappa: { min: 0.0, max: 1.0 }
+      depth_imbalance: { min: 0.0, max: 1.0 }
+      volume_spike: { min: 0.0, max: 10.0 }
+      volume_zscore: { min: 0.0, max: 1.0 }
+      macro_sync: { min: 0.0, max: 1.0 }  # Legacy, kept for telemetry
+      large_trade_imbalance: { min: 0.0, max: 1.0 }
+      # Raw physical features (non-negative)
+      spread_bps: { min: 0.0, max: 10000.0 }
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # R1 (P1): MACRO RESID — Beta-Adjusted Residual (replaces macro_sync for direction)
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Why: macro_sync (correlation-based) is UNSIGNED [0,1] → can't see SELL.
+  # macro_resid = r_asset - beta * r_btc → SIGNED, neutral=0, sees both directions.
+  # Formula: resid = r_asset - beta * r_btc; macro_resid = clip(resid/scale, -clip, +clip)
+  macro_resid:
+    enabled: true
+    # Rolling beta estimation: beta = cov(r_asset, r_btc) / var(r_btc)
+    beta_window: 60             # Window for beta calculation (samples)
+    # Robust scaling via MAD (Median Absolute Deviation)
+    mad_window: 30              # Window for MAD calculation (samples)
+    # Winsorizing extremes before beta calculation
+    winsor_percentile: 0.05     # Winsorize top/bottom 5%
+    # Floor for var(r_btc) to prevent div-by-near-zero
+    var_floor: 0.0000001        # 1e-7
+    # Floor for MAD scale to prevent explosion
+    scale_floor: 0.0001         # 1e-4
+    # Output clip bounds
+    clip: 3.0                   # |macro_resid| <= 3.0
+    # Semantic definition
+    neutral: 0.0                # SIGNED feature: neutral is 0.0
+    # Bounds for sanity firewall
+    bounds: { min: -3.0, max: 3.0 }
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # R2 (P2): ABSORPTION — Experimental (Default OFF, no live impact)
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # When enabled, uses aggressive_trade_imbalance as proxy.
+  # Has dedup guard: mutes if correlated with TFI (would be redundant signal).
+  absorption:
+    mode: disabled              # disabled | proxy | full
+    # Proxy source: must NOT be 'tfi' (would be absurd)
+    proxy:
+      source: aggressive_trade_imbalance
+      window: 30                # Rolling window for proxy calculation
+      eps: 0.0001               # Epsilon for division safety
+    # Dedup guard: mute absorption if too correlated with TFI
+    dedup:
+      enabled: true
+      window: 60                # Rolling correlation window
+      threshold: 0.8            # If |corr(absorption, TFI)| > threshold → mute
+    # Output clipping
+    clip: 1.0                   # |absorption| <= 1.0
+    # Semantic definition
+    neutral: 0.0                # SIGNED feature: neutral is 0.0
+    # Bounds for sanity firewall
+    bounds: { min: -1.0, max: 1.0 }
 
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
@@ -195,7 +345,7 @@ execution_position:
     max_long_utilization_pct: 150.0
     max_short_utilization_pct: 150.0
     max_directional_ratio: 20.0
-    max_concentration_pct: 10.0  # FIX: 10% not 0.10%
+    max_concentration_pct: 19.0  # FIX: percentage (17% not 0.17)
   
   fsm_open:
     idempotency_window_sec: 60

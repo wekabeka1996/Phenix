@@ -36,6 +36,7 @@ def fsm_config():
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
     cfg.trading.execution.anti_race_close_ms = 800  # SSOT: fail-closed
+    cfg.trading.execution.cooldown_after_close_ms = 10_000  # SSOT: required
     cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60  # SSOT: fail-closed
     
     # Event deduplication config - SSOT: fail-closed
@@ -77,6 +78,8 @@ def fsm_config():
     btc_spec.step_size = Decimal("0.001")
     btc_spec.min_qty = Decimal("0.001")
     btc_spec.min_notional = Decimal("5.0")
+    btc_spec.execution = MagicMock()
+    btc_spec.execution.target_leverage = 20
     
     # Dict-like instruments for proper 'in' and get() support (fail-closed SSOT)
     class InstrumentsDict(dict):
@@ -118,6 +121,8 @@ def fsm_config():
 
     # Exposure leverage defaults are required by ExposureGuard.resolve_symbol_leverage()
     cfg.trading.execution.exposure.leverage_defaults = {"__default__": 20, "BTCUSDT": 20}
+    cfg.trading.execution.exposure.count_pending_orders = True
+    cfg.trading.execution.exposure.exclude_reduce_only = True
     
     # Risk Soft Limits
     cfg.trading.risk = {

@@ -98,6 +98,13 @@ class FeaturesCalculatedPayloadV1(BaseModel):
         default=None,
         description="Optional warmup/readiness state for FeatureEngineering (TASK24 additive)",
     )
+    price_motion: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Additive-only price motion block (multi-window returns/vol proxy + pm_norm). "
+            "When insufficient history, fields are null; downstream consumers may fail-closed."
+        ),
+    )
 
 
 def parse_features_v1(features: Dict[str, str]) -> FeatureSetV1:

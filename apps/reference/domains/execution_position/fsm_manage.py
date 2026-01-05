@@ -317,7 +317,7 @@ class ManageFlowFSM:
             elapsed_sec: Seconds since position open
 
         Returns:
-            DEC:CLOSE_POSITION message if timeout, None otherwise.
+            DEC:CLOSE message if timeout, None otherwise.
         """
         max_hold_sec = self._get_max_hold_sec(self.symbol)
         if max_hold_sec is None:
@@ -327,10 +327,10 @@ class ManageFlowFSM:
             self._metrics["fsm_max_hold_timeouts"] = int(self._metrics["fsm_max_hold_timeouts"]) + 1
             msg_pld = msg.pld or {}
 
-            # Emit close position message
+            # Emit close message (canonical verb used by ExecPosFSM + drift monitor)
             return Message(
                 op="DEC",
-                verb="CLOSE_POSITION",
+                verb="CLOSE",
                 src="execution_position",
                 dst="execution_position",
                 rid=msg.rid,

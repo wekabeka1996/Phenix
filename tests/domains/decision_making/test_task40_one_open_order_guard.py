@@ -23,6 +23,30 @@ def _mk_dm(*, fsm):
     dm.fsm = fsm
     dm.logger = logging.getLogger("tests.task40.dm")
 
+    # DM-DIR-SSOT-STRICT-01: directional_sanity is SSOT-required
+    dm.config = SimpleNamespace(
+        domains=SimpleNamespace(
+            decision_making=SimpleNamespace(
+                directional_sanity=SimpleNamespace(
+                    enabled=False,
+                    min_abs_delta_price=0.0,
+                    min_confidence=0.0,
+                    consecutive_bars=2,
+                )
+                ,
+                price_motion_sanity=SimpleNamespace(
+                    enabled=False,
+                    k_vol=2.0,
+                    flash_window_sec=10,
+                    bleed_window_sec=300,
+                    flash_threshold_norm=1.0,
+                    bleed_threshold_norm=0.7,
+                    require_bleed_ready=True,
+                ),
+            )
+        )
+    )
+
     dm._check_strategy_arbitration = lambda _symbol, _strategy_id, **_k: {"allowed": True, "reason": None}
     dm._warmup_gate_before_trade_intent = lambda **_k: False
     dm._record_blocked_intent = lambda *_a, **_k: None

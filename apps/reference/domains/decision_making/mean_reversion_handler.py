@@ -36,6 +36,7 @@ from apps.reference.config_models import (
     MeanReversion1mStrategyConfig,
     MRStrategyParamsConfig,
     MRAssetConfig,
+    LiquidityGateConfig,
 )
 
 if TYPE_CHECKING:
@@ -124,6 +125,9 @@ class MeanReversionHandler:
         self._signal_counts: Dict[str, int] = {}
         self._last_signal_time: Dict[str, float] = {}
         
+        # Cache for liquidity kappa (from FeatureEngineering)
+        self._liquidity_kappa_map: Dict[str, Decimal] = {}
+        
         self.logger.info(
             f"MeanReversionHandler initialized: enabled={self._enabled}, "
             f"symbols={list(self._enabled_symbols)}, "
@@ -147,11 +151,12 @@ class MeanReversionHandler:
             return
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self._on_market_tick)
         self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
+        self.fsm.listen("EVT:FEATURES_CALCULATED", self._on_features_calculated)
         self.mlog.info(
             "MR_REGISTER %s",
             json.dumps(
                 {
-                    "events": ["EVT:MARKET_TICK_RECEIVED", "EVT:REGIME_DETECTED"],
+                    "events": ["EVT:MARKET_TICK_RECEIVED", "EVT:REGIME_DETECTED", "EVT:FEATURES_CALCULATED"],
                     "enabled_symbols": sorted(self._enabled_symbols),
                 },
                 ensure_ascii=False,
@@ -374,7 +379,10 @@ class MeanReversionHandler:
         signal = strategy.on_tick(symbol, price, volume, timestamp_ms)
         
         if signal and signal.is_signal:
-            self._emit_signal(signal)
+            if self._check_liquidity_gate(symbol):
+                self._emit_signal(signal)
+            else:
+                 self.logger.info(f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
         
         return signal
     
@@ -558,6 +566,48 @@ class MeanReversionHandler:
                 f"MRHandler: failed to process EVT:REGIME_DETECTED: {e}",
                 exc_info=True,
             )
+
+    def _on_features_calculated(self, event: Message) -> None:
+        """Cache liquidity kappa from FE."""
+        if not self._enabled:
+            return
+        try:
+            pld = event.pld or {}
+            if isinstance(pld, dict):
+                symbol = str(pld.get("symbol") or "")
+                features = pld.get("features", {})
+            else:
+                symbol = str(getattr(pld, "symbol", "") or "")
+                features = getattr(pld, "features", {}) or {}
+
+            if not symbol or symbol not in self._enabled_symbols:
+                return
+
+            # Update cache
+            kappa_raw = features.get("liquidity_kappa")
+            if kappa_raw is not None:
+                self._liquidity_kappa_map[symbol] = Decimal(str(kappa_raw))
+
+        except Exception as e:
+            self.logger.debug(f"MRHandler: failed to process features: {e}")
+
+    def _check_liquidity_gate(self, symbol: str) -> bool:
+        """Check if symbol passes liquidity gate."""
+        # Get Config
+        gate_cfg = self._mr_config.liquidity_gate # Global default
+        asset_cfg = self._mr_config.assets.get(symbol)
+        if asset_cfg and isinstance(asset_cfg, MRAssetConfig) and asset_cfg.liquidity_gate:
+            gate_cfg = asset_cfg.liquidity_gate
+        
+        if not gate_cfg or not gate_cfg.enabled:
+            return True # Gate disabled / not configured -> Pass
+            
+        kappa = self._liquidity_kappa_map.get(symbol, Decimal("0"))
+        if kappa < Decimal(str(gate_cfg.kappa_min)):
+             self.logger.info(f"[{symbol}] Liquidity Gate Fail: kappa={kappa} < min={gate_cfg.kappa_min}")
+             return False
+        
+        return True
 
     def _on_market_tick(self, event: Message) -> None:
         if not self._enabled:

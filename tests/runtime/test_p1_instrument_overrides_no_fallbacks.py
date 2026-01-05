@@ -135,7 +135,6 @@ def test_risk_management_contract_missing_weights(mock_fsm):
     bad_config.trading = MagicMock()
     bad_config.trading.risk = {
         "daily": {
-            "max_realized_loss_usd": 100,
             "max_drawdown_pct": 0.05,
             "reset_time_utc": "00:00",
         }
@@ -191,7 +190,6 @@ def test_decision_making_contract_missing_sl(mock_fsm):
         dm_cfg.behavior_fsm.enable = False
         dm_cfg.behavior_fsm.high_vol_multiplier = 2.0
         dm_cfg.behavior_fsm.low_vol_multiplier = 0.5
-        dm_cfg.signals.normalize = True
 
         mock_res_inst.get_decision_making.return_value = dm_cfg
 

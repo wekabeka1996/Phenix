@@ -49,7 +49,6 @@ def _dm_cfg_prod_like():
     features = SimpleNamespace(ttl_sec=60)
     bar_gating = SimpleNamespace(enable=False, bar_ms=180_000)
     behavior_fsm = SimpleNamespace(enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5)
-    signals = SimpleNamespace(normalize=True)
     return SimpleNamespace(
         qos=qos,
         position_sizing=position_sizing,
@@ -58,7 +57,18 @@ def _dm_cfg_prod_like():
         regime_threshold_multipliers={"DEFAULT": 1.0},
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
-        signals=signals,
+        risk_skew=SimpleNamespace(
+            max_skew_sec=5,
+            max_defer_count=3,
+            defer_cooldown_sec=2,
+            defer_window_sec=60,
+            until_refresh_retry_sec=30,
+        ),
+        risk_gate=SimpleNamespace(
+            threshold_pct_testnet=20.0,
+            threshold_pct_production=50.0,
+            min_intents_for_check=10,
+        ),
     )
 
 

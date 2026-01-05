@@ -38,8 +38,19 @@ def _valid_decision_kwargs():
             "volatility_state": 0.0,
             "depth_imbalance": 0.0,
             "macro_sync": 0.0,
+            "macro_resid": 0.0,
         },
-        "signals": {"normalize": False, "enable_new_metrics": True},
+        "signals": {
+            "normalize_signals_mode": "off",
+            "enable_new_metrics": True,
+            "delta_price_cap_pct": 0.02,
+        },
+        "direction_strength_scoring": {
+            "directional_features": ["delta_price"],
+            "strength_features": [],
+            "strength_alpha": 0.5,
+            "strength_cap": 1.0,
+        },
         "kelly": {
             "base_probability": 0.5,
             "kelly_cap": 0.25,
@@ -73,6 +84,7 @@ def _valid_execution_kwargs():
         "limit_orders": None,
         "orders": None,
         "fsm_periodic_cleanup_enabled": False,
+        "cooldown_after_close_ms": 0,
         "anti_race_close_ms": 250,
         "open_order_type": None,
         "order_params": None,

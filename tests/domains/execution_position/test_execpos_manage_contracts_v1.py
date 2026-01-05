@@ -141,7 +141,7 @@ def test_manage_max_hold_time_triggers_close(fsm_harness):
             mock_time.return_value = 1070.0
             res2 = manage.handle(msg)
             assert res2 is not None
-            assert res2.verb == "CLOSE_POSITION"
+            assert res2.verb == "CLOSE"
             assert res2.pld["reason"] == "MAX_HOLD_TIME_EXCEEDED"
 
 def test_manage_emits_modify_only_when_auto_enabled(fsm_harness):

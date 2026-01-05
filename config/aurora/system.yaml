@@ -1,7 +1,7 @@
 config_version: 1.0.1
 # NEW: Defines the operational mode for the trading bot.
 # Options: "live", "testnet", "hybrid_live_data_testnet_exec"
-trading_mode: "hybrid_live_data_testnet_exec"
+trading_mode: "live"
 
 # REQUIRED: typed system config (SystemConfig)
 system:

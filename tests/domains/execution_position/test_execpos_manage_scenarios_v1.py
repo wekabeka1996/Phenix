@@ -103,7 +103,7 @@ def test_manage_respects_reduce_only_on_close_intent(fsm_harness):
             msg = Message(op="UPD", verb="MARKET_DATA", src="ws", dst="exec", pld={"symbol": "BTCUSDT", "last_price": "50000"})
             res = manage.handle(msg)
             if res:
-                # BUG Candidate: reduce_only is often missing in DEC:CLOSE_POSITION from fsm_manage
+                # reduce_only must be present for a close intent.
                 # We assert it SHOULD be there, but it will fail.
                 assert str(res.pld.get("reduceOnly", "")).lower() == "true" or res.pld.get("reduce_only") is True
 
@@ -130,7 +130,7 @@ def test_manage_max_hold_triggers_close_or_signal(fsm_harness):
             msg = Message(op="UPD", verb="MARKET_DATA", src="ws", dst="exec", pld={"symbol": "BTCUSDT", "last_price": "50000"})
             res = manage.handle(msg)
             if res:
-                assert res.verb == "CLOSE_POSITION"
+                assert res.verb == "CLOSE"
 
 def test_manage_no_modify_when_price_did_not_move_enough(fsm_harness):
     """12. test_manage_no_modify_when_price_did_not_move_enough"""

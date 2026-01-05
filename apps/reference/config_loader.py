@@ -458,12 +458,38 @@ class ConfigLoader:
             LOG.info(
                 f"[mode-resolver] Applying '{mode}' mode decision overrides")
             for key, value in mode_overrides.items():
+                # FAIL-CLOSED: never override required fields with null.
+                # If an override key is present but null, treat it as "no override".
+                if value is None:
+                    continue
                 old_val = decision.get(key)
                 decision[key] = value
                 if old_val is not None:
                     LOG.debug(f"  {key}: {old_val} → {value}")
                 else:
                     LOG.debug(f"  {key}: (new) → {value}")
+
+        # TASK28: Hybrid mode SSOT wiring (live data + testnet execution).
+        # Keep this in the loader to avoid relying on repo-default YAML values.
+        if mode == "hybrid_live_data_testnet_exec" and isinstance(trading, dict):
+            dc = trading.get("domain_configuration")
+            if not isinstance(dc, dict):
+                dc = {}
+                trading["domain_configuration"] = dc
+
+            def _ensure_domain(name: str, trading_mode: str) -> None:
+                block = dc.get(name)
+                if not isinstance(block, dict):
+                    block = {}
+                    dc[name] = block
+                block["trading_mode"] = trading_mode
+
+            _ensure_domain("market_data", "live")
+            _ensure_domain("feature_engineering", "live")
+            _ensure_domain("decision_making", "live")
+            _ensure_domain("audit_trail", "live")
+            _ensure_domain("risk_management", "testnet")
+            _ensure_domain("execution_position", "testnet")
 
         # Apply risk overrides
         if isinstance(risk, dict):
@@ -992,9 +1018,14 @@ class ConfigLoader:
         if is_live_execution:
             self._validate_execution_config_for_live(resolved_config)
             self._validate_sizing_config_for_live(resolved_config)
+            self._validate_directional_sanity_for_live(resolved_config)
+            self._validate_price_motion_sanity_for_live(resolved_config)
 
         # CFG-TRADING-YAML-BURN-DOWN-01: Check for SSOT conflicts
         self._validate_ssot_conflicts(resolved_config)
+
+        # P0-0: Validate essential_features ⊆ readiness_registry.declared_keys
+        self._validate_essential_features_readiness_contract(resolved_config)
 
         # TASK23B: Enforce SSOT precedence for timeframe_sec
         self._apply_timeframe_sec_ssot_precedence(resolved_config)
@@ -1033,6 +1064,155 @@ class ConfigLoader:
                 loc = ".".join(str(x) for x in error["loc"])
                 LOG.error(f"  {loc}: {error['msg']}")
             raise
+
+    def _validate_directional_sanity_for_live(self, resolved_config: dict) -> None:
+        """Fail-fast: directional_sanity SSOT must exist for LIVE execution.
+
+        DM-DIR-SSOT-STRICT-01:
+        - No silent defaults for directional_sanity.
+        - In LIVE execution, missing block is a configuration contract violation.
+        """
+        if not isinstance(resolved_config, dict):
+            raise ValueError("LIVE config invalid: resolved_config is not a dict")
+
+        domains = resolved_config.get("domains")
+        if not isinstance(domains, dict):
+            raise ValueError("LIVE config fail-closed: missing domains block")
+
+        dm = domains.get("decision_making")
+        if not isinstance(dm, dict):
+            raise ValueError("LIVE config fail-closed: missing domains.decision_making")
+
+        ds = dm.get("directional_sanity")
+        if not isinstance(ds, dict):
+            raise ValueError(
+                "LIVE config fail-closed: missing required SSOT block "
+                "domains.decision_making.directional_sanity (DM-DIR-SSOT-STRICT-01)"
+            )
+
+        missing = []
+        for k in ("enabled", "min_abs_delta_price", "min_confidence", "consecutive_bars"):
+            if k not in ds or ds.get(k) is None:
+                missing.append(k)
+
+        if missing:
+            raise ValueError(
+                "LIVE config fail-closed: directional_sanity missing required keys: "
+                + ", ".join(missing)
+            )
+
+    def _validate_price_motion_sanity_for_live(self, resolved_config: dict) -> None:
+        """Fail-fast: price_motion_sanity SSOT must exist for LIVE execution.
+
+        PRICE-MOTION-SSOT-STRICT-01:
+        - No silent defaults for price_motion_sanity.
+        - In LIVE execution, missing block is a configuration contract violation.
+        """
+        if not isinstance(resolved_config, dict):
+            raise ValueError("LIVE config invalid: resolved_config is not a dict")
+
+        domains = resolved_config.get("domains")
+        if not isinstance(domains, dict):
+            raise ValueError("LIVE config fail-closed: missing domains block")
+
+        dm = domains.get("decision_making")
+        if not isinstance(dm, dict):
+            raise ValueError("LIVE config fail-closed: missing domains.decision_making")
+
+        pm = dm.get("price_motion_sanity")
+        if not isinstance(pm, dict):
+            raise ValueError(
+                "LIVE config fail-closed: missing required SSOT block "
+                "domains.decision_making.price_motion_sanity (PRICE-MOTION-SSOT-STRICT-01)"
+            )
+
+        missing = []
+        for k in (
+            "enabled",
+            "k_vol",
+            "flash_window_sec",
+            "bleed_window_sec",
+            "flash_threshold_norm",
+            "bleed_threshold_norm",
+            "require_bleed_ready",
+        ):
+            if k not in pm or pm.get(k) is None:
+                missing.append(k)
+
+        if missing:
+            raise ValueError(
+                "LIVE config fail-closed: price_motion_sanity missing required keys: "
+                + ", ".join(missing)
+            )
+
+    def _validate_essential_features_readiness_contract(self, resolved_config: dict) -> None:
+        """P0-0: Fail-fast: essential_features ⊆ declared_ready_keys.
+        
+        This prevents config/code drift where essential features are configured
+        but never emitted by FeatureEngineering.
+        
+        Contract:
+        - essential_features (from aurora.yaml) must be subset of
+          readiness_registry.declared_keys (from domains.yaml)
+        """
+        if not isinstance(resolved_config, dict):
+            return
+        
+        # Get declared_keys from domains.feature_engineering.readiness_registry
+        domains = resolved_config.get("domains")
+        if not isinstance(domains, dict):
+            return
+        
+        fe = domains.get("feature_engineering")
+        if not isinstance(fe, dict):
+            return
+        
+        rr = fe.get("readiness_registry")
+        if not isinstance(rr, dict):
+            # No readiness_registry defined - skip validation (backward compat)
+            LOG.debug("P0-0: readiness_registry not defined, skipping validation")
+            return
+        
+        declared_keys = rr.get("declared_keys")
+        if not isinstance(declared_keys, list) or not declared_keys:
+            LOG.debug("P0-0: declared_keys empty or not a list, skipping validation")
+            return
+        
+        declared_set = set(declared_keys)
+        
+        # Get essential_features from strategies.aurora.decision
+        strategies = resolved_config.get("strategies")
+        if not isinstance(strategies, dict):
+            return
+        
+        aurora = strategies.get("aurora")
+        if not isinstance(aurora, dict):
+            return
+        
+        decision = aurora.get("decision")
+        if not isinstance(decision, dict):
+            return
+        
+        essential = decision.get("essential_features")
+        if not isinstance(essential, list) or not essential:
+            return
+        
+        essential_set = set(essential)
+        
+        # P0-0: Validate essential ⊆ declared
+        missing = essential_set - declared_set
+        if missing:
+            raise ConfigContractError(
+                path="strategies.aurora.decision.essential_features",
+                why=(
+                    f"P0-0 READINESS CONTRACT VIOLATION: Essential features {sorted(missing)} "
+                    f"are NOT in readiness_registry.declared_keys. "
+                    "Either add them to domains.yaml::feature_engineering.readiness_registry.declared_keys "
+                    "or remove from essential_features."
+                ),
+            )
+        
+        LOG.info(f"✅ P0-0: essential_features {sorted(essential_set)} ⊆ declared_keys (contract valid)")
 
     def _apply_timeframe_sec_ssot_precedence(self, resolved_config: dict) -> None:
         """Apply strict SSOT precedence for timeframe_sec.

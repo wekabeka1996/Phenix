@@ -79,6 +79,11 @@ class TestDecisionMakingSafety(unittest.TestCase):
         self.config_mock.get_aurora_instrument_cfg.side_effect = lambda s: self.config_mock.instruments.get(s)
 
         self.dm = DecisionMaking(self.fsm_mock, self.config_mock)
+
+        # Disable safety gates for tests that validate unrelated invariants unless explicitly asserted.
+        # (These tests often call _propose_trade_intent without seeding FEATURES_CALCULATED payload.)
+        self.dm.config.domains.decision_making.directional_sanity.enabled = False
+        self.dm.config.domains.decision_making.price_motion_sanity.enabled = False
         
         # Enable stdout logging for debugging
         self.dm_logger_mock = MagicMock()

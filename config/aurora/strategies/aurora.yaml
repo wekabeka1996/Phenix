@@ -39,9 +39,10 @@ aurora:
       UNCERTAIN: 1.15
       DEFAULT: 1.0
     side_bias_min_score: null
-    side_bias_window_sec: 60
-    side_bias_target_ratio: 0.6
-    side_bias_penalty_factor: 0.5
+    side_bias_window_sec: 420
+    side_bias_target_ratio: 0.72
+    side_bias_penalty_factor: 0.25
+    side_bias_min_intents: 18
     cooldown_sec: 10
     retry_ttl_ms: 5000
     retry_max_count: 3
@@ -59,6 +60,9 @@ aurora:
       kelly_cap: 0.25
       kelly_alpha: 0.8
       payoff_ratio_r: 1.5
+      p_min: 0.45
+      p_max: 0.65
+      uplift_factor: 0.20
     qos:
       mode: defer
       enforce: false
@@ -66,11 +70,55 @@ aurora:
       symbol_cooldown_sec: 1
       max_intents_per_minute_per_symbol: 60
     signals:
-      normalize: false
+      normalize_signals_mode: signed_v2
       enable_new_metrics: true
+      delta_price_cap_pct: 0.02
     bar_gating: null
     roi_exit: null
     mean_reversion: null
+    
+    # Phase 4: Signal Score V2 Global Configuration
+    scoring_version: v2
+
+    # Direction/Strength split scoring (project-wide hardening)
+    direction_strength_scoring:
+      directional_features:
+        - obi
+        - tfi
+        - delta_price
+        - ema_bias
+        - depth_imbalance
+        # R1: macro_resid replaces macro_sync in directional scoring
+        - macro_resid
+        # Legacy: kept for telemetry; not weighted in v2 by default
+        - macro_sync
+      strength_features:
+        - volume_spike
+        - volatility_state
+      strength_alpha: 0.5
+      strength_cap: 1.0
+    
+    liquidity_gate:
+      enabled: true
+      kappa_min: 0.1
+      kappa_max: 1.0
+      failsafe_qty_check: true
+
+    essential_features:
+      - obi
+      - delta_price
+
+    feature_neutrals:
+      obi: 0.0
+      tfi: 0.0
+      delta_price: 0.0
+      ema_bias: 0.5
+      volume_spike: 0.0
+      volatility_state: 0.0
+      depth_imbalance: 0.5
+      macro_sync: 0.5
+      macro_resid: 0.0
+    
     signal_weights:
       obi: 0.15
       tfi: 0.15
@@ -79,7 +127,9 @@ aurora:
       volume_spike: 0.1
       volatility_state: 0.1
       depth_imbalance: 0.15
-      macro_sync: 0.1
+      # R1: macro_resid replaces macro_sync in directional scoring
+      macro_resid: 0.1
+      # macro_sync: 0.0  # DEPRECATED for scoring (kept as telemetry)
 
   # Per-symbol overrides (AuroraInstrumentConfig)
   assets:
@@ -88,16 +138,26 @@ aurora:
     ETHUSDT:
       enabled: true
       position_mode: "STRICT"
+      
+      # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema: 0.058
-        volume: 0.241
-        macro: 0.131
-        liquidity: 0.341
+        ema_bias: 0.058
+        volume_spike: 0.241
+        # R1: macro_resid replaces macro_sync
+        macro_resid: 0.131
+        # macro_sync: 0.0  # DEPRECATED (telemetry only)
+        # liquidity_kappa: 0.341 (Moved to Gate)
         obi: 0.155
         tfi: 0.093
-        volatility: 0.036
+        volatility_state: 0.036
         depth_imbalance: 0.256
         delta_price: 0.253
+
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.2
+        kappa_max: 1.0
+        failsafe_qty_check: true
 
       side_bias:
         penalty_factor: 0.9
@@ -117,7 +177,7 @@ aurora:
 
       exit:
         sl_pct: 0.019
-        max_hold_sec: 900
+        max_hold_sec: 3000
 
       take_profit:
         tp_low_ratio: 0.4
@@ -140,18 +200,27 @@ aurora:
 
     # SOLUSDT - Phase 3 Optuna optimized parameters
     SOLUSDT:
+      # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema: 0.12
-        volume: 0.18
-        macro: 0.10
-        liquidity: 0.25
+        ema_bias: 0.12
+        volume_spike: 0.18
+        # R1: macro_resid replaces macro_sync
+        macro_resid: 0.10
+        # macro_sync: 0.0  # DEPRECATED (telemetry only)
+        # liquidity_kappa: 0.25 (Moved to Gate)
         obi: 0.14
         tfi: 0.09
-        volatility: 0.05
+        volatility_state: 0.05
         depth_imbalance: 0.20
         delta_price: 0.22
       enabled: true
       position_mode: "STRICT"
+
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.15
+        kappa_max: 1.0
+        failsafe_qty_check: true
 
       side_bias:
         penalty_factor: 0.0
@@ -164,8 +233,8 @@ aurora:
         MEAN_REVERSION: 5.0
 
       exit:
-        sl_pct: 0.0216
-        max_hold_sec: 180
+        sl_pct: 0.01512
+        max_hold_sec: 3000
 
       take_profit:
         tp_low_ratio: 0.36
@@ -191,16 +260,25 @@ aurora:
     DOGEUSDT:
       enabled: true
       position_mode: "STRICT"
+      # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema: 0.15
-        volume: 0.15
-        macro: 0.10
-        liquidity: 0.20
+        ema_bias: 0.15
+        volume_spike: 0.15
+        # R1: macro_resid replaces macro_sync
+        macro_resid: 0.10
+        # macro_sync: 0.0  # DEPRECATED (telemetry only)
+        # liquidity_kappa: 0.20
         obi: 0.15
         tfi: 0.12
-        volatility: 0.08
+        volatility_state: 0.08
         depth_imbalance: 0.15
         delta_price: 0.15
+
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.1
+        kappa_max: 1.0
+        failsafe_qty_check: true
 
       side_bias:
         penalty_factor: 0.3
@@ -220,7 +298,7 @@ aurora:
 
       exit:
         sl_pct: 0.0197
-        max_hold_sec: 660
+        max_hold_sec: 1500
 
       take_profit:
         tp_low_ratio: 0.5
@@ -243,18 +321,27 @@ aurora:
 
     # XRPUSDT - Phase 3+ from Optuna optimization
     XRPUSDT:
+      # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema: 0.427
-        volume: 0.385
-        macro: 0.469
-        liquidity: 0.199
+        ema_bias: 0.427
+        volume_spike: 0.385
+        # R1: macro_resid replaces macro_sync
+        macro_resid: 0.469
+        # macro_sync: 0.0  # DEPRECATED (telemetry only)
+        # liquidity_kappa: 0.199
         obi: 0.120
         tfi: 0.402
-        volatility: 0.367
+        volatility_state: 0.367
         depth_imbalance: 0.392
         delta_price: 0.028
       enabled: true
       position_mode: "STRICT"
+      
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.1
+        kappa_max: 1.0
+        failsafe_qty_check: true
 
       side_bias:
         penalty_factor: 0.4
@@ -273,7 +360,7 @@ aurora:
 
       exit:
         sl_pct: 0.0144
-        max_hold_sec: 660
+        max_hold_sec: 1500
 
       take_profit:
         tp_low_ratio: 0.5
@@ -296,18 +383,27 @@ aurora:
 
     # BTCUSDT - baseline params
     BTCUSDT:
+      # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema: 0.15
-        volume: 0.15
-        macro: 0.15
-        liquidity: 0.15
+        ema_bias: 0.15
+        volume_spike: 0.15
+        # R1: macro_resid replaces macro_sync
+        macro_resid: 0.15
+        # macro_sync: 0.0  # DEPRECATED (telemetry only)
+        # liquidity_kappa: 0.15
         obi: 0.10
         tfi: 0.10
-        volatility: 0.10
+        volatility_state: 0.10
         depth_imbalance: 0.05
         delta_price: 0.05
       enabled: true
       position_mode: "STRICT"
+      
+      liquidity_gate:
+        enabled: true
+        kappa_min: 0.1
+        kappa_max: 1.0
+        failsafe_qty_check: true
 
       side_bias:
         penalty_factor: 0.5
@@ -317,7 +413,7 @@ aurora:
       regime_thresholds:
         HIGH_VOLATILITY: 1.2
         LOW_VOLATILITY: 0.9
-        MEAN_REVERSION: 0.5
+        MEAN_REVERSION: 1.05
         DEFAULT: 1.0
 
       regime_sizing:
@@ -327,7 +423,7 @@ aurora:
 
       exit:
         sl_pct: 0.02
-        max_hold_sec: 600
+        max_hold_sec: 3000
 
       take_profit:
         tp_low_ratio: 0.5

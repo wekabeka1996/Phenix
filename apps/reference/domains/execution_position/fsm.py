@@ -65,7 +65,8 @@ try:
     ALERT_MANAGER_AVAILABLE = True
 except ImportError:
     ALERT_MANAGER_AVAILABLE = False
-    AlertManager = None  # type: ignore
+    class AlertManager:  # type: ignore[no-redef]
+        pass
 
 LOG = logging.getLogger(__name__)
 
@@ -156,6 +157,25 @@ class ExecPosFSM:
         self.exposure_guard = ExposureGuard(self.fsm, self.config)
         # EXP-FIX: Store latest portfolio state
         self._latest_portfolio_state: Dict[str, Any] = {}
+        # Post-close cooldown support (global + per-symbol)
+        self._prev_position_amts: Dict[str, float] = {}
+        self._last_position_closed_ts: Dict[str, float] = {}
+        self._last_any_position_closed_ts: float = 0.0
+        try:
+            exec_cfg = self.config.trading.execution
+        except Exception as e:
+            raise ValueError(
+                "Missing required config: trading.execution (needed for cooldown_after_close_ms)."
+            ) from e
+        if exec_cfg is None:
+            raise ValueError(
+                "Missing required config: trading.execution (needed for cooldown_after_close_ms)."
+            )
+        if exec_cfg.cooldown_after_close_ms is None:
+            raise ValueError(
+                "Missing required config: trading.execution.cooldown_after_close_ms."
+            )
+        self._cooldown_after_close_sec = float(exec_cfg.cooldown_after_close_ms) / 1000.0
         # EXP-FIX: Shadow check counter
         self._shadow_check_counter: int = 0
         # ALERT-FIX: Execution error tracking for circuit breaker
@@ -623,6 +643,10 @@ class ExecPosFSM:
         """Treat standard cancel success and -2011 idempotent paths uniformly."""
         if isinstance(result, IdempotentCancelResult):
             return bool(result.success and result.is_idempotent_success)
+        if hasattr(result, "status"):
+            status = str(getattr(result, "status") or "").upper()
+            if status in ("CANCELED", "CANCELLED"):
+                return True
         if isinstance(result, dict):
             status = str(result["status"] if "status" in result else "").upper()
             if status == "CANCELED":
@@ -634,6 +658,16 @@ class ExecPosFSM:
             if "unknown order" in msg:
                 return True
         return False
+
+    @staticmethod
+    def _cancel_status_str(result: Any) -> str:
+        if isinstance(result, IdempotentCancelResult):
+            return str(result.order_status_after or result.order_status_before or "").upper()
+        if hasattr(result, "status"):
+            return str(getattr(result, "status") or "").upper()
+        if isinstance(result, dict):
+            return str(result.get("status") or "").upper()
+        return ""
 
     async def _cancel_order(self, symbol: str, order_id: str) -> Any:
         """Unified cancel path with optional idempotent helper."""
@@ -710,36 +744,44 @@ class ExecPosFSM:
         except Exception as e:
             LOG.debug(f"Failed to emit exposure summary update: {e}")
 
-        # ✅ FIX: Check for position closures and trigger orphan cleanup
-        # When position becomes 0, TP/SL orders become orphaned and need cleanup
+        # ✅ FIX: Detect position closures robustly (including symbols disappearing from snapshot).
+        # When position becomes 0, TP/SL orders become orphaned and need cleanup.
         try:
-            positions = self._latest_portfolio_state["positions"] if "positions" in self._latest_portfolio_state else []
+            positions = self._latest_portfolio_state.get("positions") or []
+            current_amts: Dict[str, float] = {}
             for pos in positions:
-                symbol = pos.get("symbol")
-                position_amt = float(pos["positionAmt"] if "positionAmt" in pos else 0)
+                sym = pos.get("symbol")
+                if not sym:
+                    continue
+                try:
+                    current_amts[sym] = float(pos.get("positionAmt") or 0.0)
+                except Exception:
+                    current_amts[sym] = 0.0
 
-                # Check if this position was previously non-zero but is now zero
-                prev_position_amts = aget(self, "_prev_position_amts", {})
-                prev_amt = prev_position_amts[symbol] if symbol in prev_position_amts else 0.0
-                if abs(prev_amt) >= 1e-10 and abs(position_amt) < 1e-10:
+            epsilon = 1e-10
+            all_syms = set(self._prev_position_amts.keys()) | set(current_amts.keys())
+            for sym in all_syms:
+                prev_amt = float(self._prev_position_amts.get(sym, 0.0))
+                now_amt = float(current_amts.get(sym, 0.0))
+                if abs(prev_amt) >= epsilon and abs(now_amt) < epsilon:
+                    closed_at = time.time()
+                    self._last_position_closed_ts[sym] = closed_at
+                    self._last_any_position_closed_ts = closed_at
+
                     LOG.info(
-                        f"🔄 [POSITION_CLOSED] {symbol}: position closed (was {prev_amt}, now {position_amt}) - triggering orphan cleanup")
+                        f"[POSITION_CLOSED] {sym}: position closed (was {prev_amt}, now {now_amt})"
+                    )
+
                     # Position closed - trigger immediate orphan cleanup for this symbol
-                    if hasattr(self, 'order_guardian') and self.order_guardian:
+                    if hasattr(self, "order_guardian") and self.order_guardian:
                         loop = self._get_async_loop()
                         if loop:
                             self._submit_async(
-                                self.order_guardian.reconcile_symbol(
-                                    symbol, "portfolio_update"
-                                ),
+                                self.order_guardian.reconcile_symbol(sym, "portfolio_update"),
                                 loop,
                             )
 
-                # Update previous amounts for next comparison
-                if not hasattr(self, '_prev_position_amts'):
-                    self._prev_position_amts = {}
-                self._prev_position_amts[symbol] = position_amt
-
+            self._prev_position_amts = current_amts
         except Exception as e:
             LOG.debug(f"Error checking position closures: {e}")
 
@@ -836,6 +878,7 @@ class ExecPosFSM:
         symbol = payload.get("symbol")
         filled_qty = payload.get("quantity")
         rid = payload.get("rid") or event.rid
+        client_order_id = payload.get("clientOrderId") or payload.get("client_order_id")
 
         if not order_id or not symbol or filled_qty is None:
             LOG.warning(
@@ -855,7 +898,12 @@ class ExecPosFSM:
         # TASK40: Mark entry order terminal in OrderIndex (unblocks one-open-order guard).
         try:
             if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                ref = None
                 ref = self.fsm.order_index.get(exchangeOrderId=str(order_id))  # type: ignore[attr-defined]
+                if ref is None and client_order_id:
+                    ref = self.fsm.order_index.get(clientOrderId=str(client_order_id))  # type: ignore[attr-defined]
+                if ref is None and rid:
+                    ref = self.fsm.order_index.get(rid=str(rid))  # type: ignore[attr-defined]
                 if ref is not None:
                     self.fsm.order_index.mark_terminal(ref)  # type: ignore[attr-defined]
         except Exception:
@@ -1094,11 +1142,45 @@ class ExecPosFSM:
 
         # Route to the correct FSM based on the message verb
         if msg.verb == "OPEN":
+            # Post-close cooldown: prevent immediate re-entry after any position closes (global).
+            now = time.time()
+            last_close = float(self._last_any_position_closed_ts or 0.0)
+            if last_close > 0 and self._cooldown_after_close_sec > 0 and (now - last_close) < self._cooldown_after_close_sec:
+                remaining = max(0.0, self._cooldown_after_close_sec - (now - last_close))
+                return Message(
+                    op="ERR",
+                    verb="OPEN",
+                    src=msg.dst,
+                    dst=msg.src,
+                    rid=msg.rid,
+                    why="OPEN_GUARD_FAIL",
+                    pld={
+                        "reason": "cooldown_after_close active",
+                        "cooldown_remaining_sec": round(remaining, 3),
+                    },
+                )
+
             # EXP-FIX: Fail-closed exposure check before processing CMD:OPEN
             exposure_err = self._check_exposure_fail_closed(msg)
             if exposure_err is not None:
+                # TASK49/TASK40: If DecisionMaking reserved ENTRY_INTENT in OrderIndex,
+                # ensure we clear it when OPEN is blocked fail-closed (no order will be placed).
+                try:
+                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                        self.fsm.order_index.cancel_reservation(str(msg.rid))  # type: ignore[attr-defined]
+                except Exception:
+                    pass
                 return exposure_err
             result = open_flow.handle(msg)
+
+            # If guards rejected CMD:OPEN, clear ENTRY_INTENT reservation so DM doesn't get stuck
+            # deferring with NRR-ORDER-IN-FLIGHT.
+            if result is not None and getattr(result, "op", None) == "ERR":
+                try:
+                    if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
+                        self.fsm.order_index.cancel_reservation(str(msg.rid))  # type: ignore[attr-defined]
+                except Exception:
+                    pass
             
             # PHASE A2 FIX: Capture TP/SL intent data if present
             if result and result.op == "DEC" and result.verb == "OPEN":
@@ -1127,6 +1209,11 @@ class ExecPosFSM:
                         LOG.debug(f"SKIP_INTENT_CACHE for {result.rid}: all values are None")
                 except Exception as e:
                     LOG.error(f"Failed to capture intent data: {e}")
+        elif msg.verb == "TRADE_EXECUTED":
+            # 🔧 POLLING FIX: Watchdog emits EVT:TRADE_EXECUTED on REST-detected fills.
+            # Treat it as a fill for OrderIndex terminalization to unblock the one-open-order guard.
+            self._on_order_fill(msg)
+            result = manage_flow.handle(msg)
         elif msg.verb == "ORDER_STATE_CHANGED":
             # Handle cancel/expire from Watchdog REST polling
             self._handle_cancel_event(msg)
@@ -1167,14 +1254,14 @@ class ExecPosFSM:
                         sub_msg = msg_data
                     
                     wal.append(sub_msg.model_dump())
-                    if (not self.shadow_mode and self.adapter) or (sub_msg.verb == "CLOSE" and self.adapter):
+                    if (not self.shadow_mode and self.adapter) or (sub_msg.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
                         loop = self._get_async_loop()
                         if loop:
                             self._submit_async(self._execute_decision(sub_msg), loop)
             else:
                 wal.append(result.model_dump())
                 # ✅ FIX: Execute CLOSE decisions even in shadow mode to cancel brackets
-                if (not self.shadow_mode and self.adapter) or (result.verb == "CLOSE" and self.adapter):
+                if (not self.shadow_mode and self.adapter) or (result.verb in ("CLOSE", "CLOSE_POSITION") and self.adapter):
                     # Asynchronously execute the trade decision
                     loop = self._get_async_loop()
                     LOG.info(f"🔄 ExecPosFSM: DEC:{result.verb} ready to execute, loop={loop is not None}, shadow_mode={self.shadow_mode}, adapter={self.adapter is not None}")
@@ -1257,7 +1344,7 @@ class ExecPosFSM:
                 return
 
             # Execute close intent: cancel brackets then place reduce-only MARKET
-            if decision.verb == "CLOSE":
+            if decision.verb in ("CLOSE", "CLOSE_POSITION"):
                 pld = decision.pld or {}
                 symbol = pld.get("symbol")
                 if not symbol:
@@ -1329,7 +1416,7 @@ class ExecPosFSM:
                                     "timestamp": int(time.time() * 1000)
                                 })
                             else:
-                                cancel_status = str(result["status"] if "status" in result else "").upper()
+                                cancel_status = self._cancel_status_str(result)
                                 LOG.warning(
                                     f"❌ Cancel rejected for {bracket_type} bracket {order_id}: status={cancel_status}")
                                 order_logger.write({
@@ -1423,7 +1510,7 @@ class ExecPosFSM:
                                         f"✅ [DEC:CLOSE RECONCILE] Cancelled {otype} {oid} for {symbol}")
                                     self._orphan_metrics["reconcile_cancelled"] += 1
                                 else:
-                                    status = str(result["status"] if "status" in result else "").upper()
+                                    status = self._cancel_status_str(result)
                                     LOG.warning(
                                         f"❌ [DEC:CLOSE RECONCILE] Cancel response unexpected for {otype} {oid} (status={status})")
                                     self._orphan_metrics["errors"] += 1
@@ -1462,8 +1549,8 @@ class ExecPosFSM:
                         f"🔓 [PHASE A2] Cleared closing flag for {symbol} - CLOSE complete")
 
                 # PHASE C: Emit observability event for DEC:CLOSE completion
-                close_elapsed_ms = int((datetime.utcnow(
-                ) - decision.timestamp_utc).total_seconds() * 1000) if decision.timestamp_utc else 0
+                # Message.ts is in milliseconds since epoch
+                close_elapsed_ms = int(time.time() * 1000 - decision.ts) if decision.ts else 0
                 self._emit_observability_event("DEC_CLOSE_COMPLETED", {
                     "symbol": symbol,
                     "elapsed_ms": close_elapsed_ms,
@@ -1519,16 +1606,17 @@ class ExecPosFSM:
                             and hasattr(self.fsm, "order_index")
                             and self.fsm.order_index  # type: ignore[attr-defined]
                         ):
+                            ex_order_id = str(resp.get("orderId"))
+
+                            rid_for_index = str(getattr(decision, "rid", "") or "") or ex_order_id
                             idem_key = (
                                 (decision.pld or {}).get("idempotent_key")
                                 or getattr(decision, "idempotent_key", None)
-                                or decision.rid
-                                or rid
+                                or rid_for_index
                                 or client_id
                             )
-                            ex_order_id = str(resp.get("orderId"))
                             self.fsm.order_index.upsert_from_open(  # type: ignore[attr-defined]
-                                rid=rid or decision.rid or ex_order_id,
+                                rid=rid_for_index,
                                 idempotent_key=str(idem_key),
                                 clientOrderId=client_id,
                                 symbol=symbol,
@@ -2486,6 +2574,28 @@ class ExecPosFSM:
 
                 return error_msg
 
+            # Soft-limit clipping: if ExposureGuard clipped requested notional, scale qty down.
+            try:
+                clipped_abs = exposure_check.get("clipped_notional_abs") if isinstance(exposure_check, dict) else None
+                if clipped_abs is not None:
+                    clipped_abs_dec = Decimal(str(clipped_abs))
+                    if clipped_abs_dec > Decimal("0") and clipped_abs_dec < abs(notional_signed):
+                        price_dec = Decimal(str(price_ref))
+                        if price_dec > Decimal("0"):
+                            new_qty = clipped_abs_dec / price_dec
+                            # Mutate payload so downstream uses clipped qty (will still be normalized later).
+                            pld["qty"] = str(new_qty)
+                            pld["exposure_clip"] = {
+                                "requested_notional_abs": str(abs(notional_signed)),
+                                "clipped_notional_abs": str(clipped_abs_dec),
+                                "clip_reasons": exposure_check.get("clip_reasons", []),
+                            }
+                            notional_abs = clipped_abs_dec
+                            notional_signed = -clipped_abs_dec if side in {"SELL", "SHORT"} else clipped_abs_dec
+            except Exception:
+                # Clipping is best-effort; do not block execution if clip metadata is malformed.
+                pass
+
             # EXP-FIX: Periodic shadow notional check (every 10 requests approx)
             self._shadow_check_counter += 1
 
@@ -2669,9 +2779,6 @@ class ExecPosFSM:
 
         # Emit exposure summary update after cancellation
         try:
-            from vfoundation import emit_compat
-            from vfoundation.message import Message
-
             exposure_msg = Message(
                 op="EVT",
                 verb="EXPOSURE_SUMMARY_UPDATED",

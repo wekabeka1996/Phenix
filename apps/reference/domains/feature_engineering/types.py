@@ -90,6 +90,38 @@ class HotState:
     spread_ready: bool = True
     spread_missing: bool = False
 
+    # PRICE-MOTION-V1: Rolling price history for multi-window returns/volatility proxy.
+    # Stores (ts_ms, price) in chronological order; pruned by time window in runtime logic.
+    price_history: Deque[Tuple[int, decimal.Decimal]] = field(default_factory=deque)
+    
+    # =========================================================================
+    # R1 (P1): MACRO RESID STATE — Beta-Adjusted Residual
+    # =========================================================================
+    # Rolling returns for beta calculation
+    macro_resid_asset_returns: Deque[float] = field(default_factory=deque)
+    macro_resid_anchor_returns: Deque[float] = field(default_factory=deque)
+    # Residual buffer for MAD calculation
+    macro_resid_buffer: Deque[float] = field(default_factory=deque)
+    # Readiness
+    macro_resid_ready: bool = False
+    macro_resid_not_ready_reason: Optional[str] = None
+    
+    # =========================================================================
+    # R2 (P2): ABSORPTION STATE — Experimental (Default OFF)
+    # =========================================================================
+    # Aggressive trade volumes for proxy calculation
+    absorption_buy_vol_buffer: Deque[float] = field(default_factory=deque)
+    absorption_sell_vol_buffer: Deque[float] = field(default_factory=deque)
+    # TFI buffer for dedup correlation
+    absorption_tfi_buffer: Deque[float] = field(default_factory=deque)
+    absorption_proxy_buffer: Deque[float] = field(default_factory=deque)
+    # Dedup muted status
+    absorption_dedup_muted: bool = False
+    absorption_dedup_corr: Optional[float] = None
+    # Readiness
+    absorption_ready: bool = False
+    absorption_not_ready_reason: Optional[str] = None
+
 
 @dataclass
 class ColdState:
@@ -269,6 +301,369 @@ class FeatureEngineeringConfig:
     @property
     def volatility_state_cap(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.volatility_state.cap_max))
+    
+    # =========================================================================
+    # P0-1: VOLATILITY HARD FLOOR (config-driven)
+    # =========================================================================
+    
+    @property
+    def volatility_tick_floor(self) -> decimal.Decimal:
+        """P0-1: Tick floor to prevent division by zero (price units)."""
+        try:
+            return decimal.Decimal(str(self._cfg.volatility_state.tick_floor))
+        except AttributeError:
+            # Backward compat: default if not in config
+            return decimal.Decimal("0.0001")
+    
+    @property
+    def volatility_division_eps(self) -> decimal.Decimal:
+        """P0-1: Division epsilon for safe division."""
+        try:
+            return decimal.Decimal(str(self._cfg.volatility_state.division_eps))
+        except AttributeError:
+            return decimal.Decimal("0.000000001")
+    
+    # =========================================================================
+    # P0-0: READINESS REGISTRY (SSOT)
+    # =========================================================================
+    
+    @property
+    def readiness_registry_declared_keys(self) -> list:
+        """P0-0: Declared ready keys that FE can emit in warmup.ready."""
+        try:
+            if self._cfg.readiness_registry:
+                return list(self._cfg.readiness_registry.declared_keys)
+        except AttributeError:
+            pass
+        # Default for backward compat
+        return [
+            "obi", "tfi", "delta_price", "depth_imbalance", "liquidity_kappa",
+            "absorption", "ema_bias", "volume_spike", "volatility_state",
+            "macro_sync", "spread_bps", "large_trade_imbalance", "volume_zscore"
+        ]
+    
+    @property 
+    def warmup_enforcement_mode(self) -> str:
+        """P0-0: Warmup enforcement mode (fail_fast|warn_only|disabled)."""
+        try:
+            if self._cfg.warmup:
+                return str(self._cfg.warmup.enforcement_mode)
+        except AttributeError:
+            pass
+        return "fail_fast"  # Default: fail-closed
+    
+    @property
+    def warmup_check_full_ready_invariant(self) -> bool:
+        """P0-0: Check full_ready invariant (all declared keys present)."""
+        try:
+            if self._cfg.warmup:
+                return bool(self._cfg.warmup.check_full_ready_invariant)
+        except AttributeError:
+            pass
+        return True  # Default: enabled
+
+    def compute_warmup_full_ready(self, ready_map: dict) -> bool:
+        """
+        Compute warmup.full_ready in a config-aware way.
+
+        Contract:
+        - Missing keys are treated as NOT ready (fail-closed).
+        - Features that are configured OFF are excluded from the "full_ready" requirement.
+          (e.g. absorption.mode=disabled should not block live readiness.)
+        """
+        if not isinstance(ready_map, dict):
+            return False
+
+        declared_keys = self.readiness_registry_declared_keys
+        if not isinstance(declared_keys, list) or not declared_keys:
+            return False
+
+        required_keys: list[str] = []
+        for key in declared_keys:
+            if key == "absorption" and self.absorption_mode == "disabled":
+                continue
+            if key == "macro_resid" and (not bool(self.macro_resid_enabled)):
+                continue
+            if key == "macro_sync" and (not bool(self.macro_sync_enabled)):
+                continue
+            required_keys.append(str(key))
+
+        for key in required_keys:
+            if key not in ready_map:
+                return False
+            if not bool(ready_map[key]):
+                return False
+
+        return True
+    
+    # =========================================================================
+    # P0-2: SPREAD BPS HEALTH GATE
+    # =========================================================================
+    
+    @property
+    def spread_health_gate_enabled(self) -> bool:
+        """P0-2: Whether spread health gate is enabled."""
+        try:
+            if self._cfg.spread_bps and self._cfg.spread_bps.health_gate:
+                return bool(self._cfg.spread_bps.health_gate.enabled)
+        except AttributeError:
+            pass
+        return False  # Default: off for backward compat
+    
+    @property
+    def spread_health_max_age_sec(self) -> float:
+        """P0-2: Max age before book is considered stale (seconds)."""
+        try:
+            if self._cfg.spread_bps and self._cfg.spread_bps.health_gate:
+                return float(self._cfg.spread_bps.health_gate.max_age_sec)
+        except AttributeError:
+            pass
+        return 5.0
+    
+    @property
+    def spread_health_min_update_events(self) -> int:
+        """P0-2: Min book update events for healthy status."""
+        try:
+            if self._cfg.spread_bps and self._cfg.spread_bps.health_gate:
+                return int(self._cfg.spread_bps.health_gate.min_update_events)
+        except AttributeError:
+            pass
+        return 1
+    
+    @property
+    def spread_health_min_trades_count(self) -> int:
+        """P0-2: Min trades in window for healthy status."""
+        try:
+            if self._cfg.spread_bps and self._cfg.spread_bps.health_gate:
+                return int(self._cfg.spread_bps.health_gate.min_trades_count)
+        except AttributeError:
+            pass
+        return 1
+    
+    @property
+    def spread_health_window_sec(self) -> float:
+        """P0-2: Lookback window for health check (seconds)."""
+        try:
+            if self._cfg.spread_bps and self._cfg.spread_bps.health_gate:
+                return float(self._cfg.spread_bps.health_gate.window_sec)
+        except AttributeError:
+            pass
+        return 10.0
+    
+    # =========================================================================
+    # P0-3: FEATURE SANITY FIREWALL
+    # =========================================================================
+    
+    @property
+    def feature_sanity_enabled(self) -> bool:
+        """P0-3: Whether feature sanity firewall is enabled."""
+        try:
+            if self._cfg.feature_sanity:
+                return bool(self._cfg.feature_sanity.enabled)
+        except AttributeError:
+            pass
+        return False  # Default: off for backward compat
+    
+    @property
+    def feature_sanity_nan_inf_behavior(self) -> str:
+        """P0-3: Behavior on NaN/Inf (neutral_and_not_ready|neutral_only|crash)."""
+        try:
+            if self._cfg.feature_sanity:
+                return str(self._cfg.feature_sanity.nan_inf_behavior)
+        except AttributeError:
+            pass
+        return "neutral_and_not_ready"
+    
+    @property
+    def feature_sanity_bounds(self) -> dict:
+        """P0-3: Feature bounds for validation."""
+        try:
+            if self._cfg.feature_sanity and self._cfg.feature_sanity.feature_bounds:
+                return {
+                    k: {"min": v.min, "max": v.max}
+                    for k, v in self._cfg.feature_sanity.feature_bounds.items()
+                }
+        except AttributeError:
+            pass
+        return {}
+    
+    # =========================================================================
+    # R1 (P1): MACRO RESID — Beta-Adjusted Residual
+    # =========================================================================
+    
+    @property
+    def macro_resid_enabled(self) -> bool:
+        """R1: Whether macro_resid is enabled."""
+        try:
+            if self._cfg.macro_resid:
+                return bool(self._cfg.macro_resid.enabled)
+        except AttributeError:
+            pass
+        return False  # Default: off for backward compat
+    
+    @property
+    def macro_resid_beta_window(self) -> int:
+        """R1: Beta estimation window (samples)."""
+        try:
+            if self._cfg.macro_resid:
+                return int(self._cfg.macro_resid.beta_window)
+        except AttributeError:
+            pass
+        return 60
+    
+    @property
+    def macro_resid_mad_window(self) -> int:
+        """R1: MAD calculation window (samples)."""
+        try:
+            if self._cfg.macro_resid:
+                return int(self._cfg.macro_resid.mad_window)
+        except AttributeError:
+            pass
+        return 30
+    
+    @property
+    def macro_resid_winsor_percentile(self) -> float:
+        """R1: Winsorize percentile (e.g., 0.05 = 5%)."""
+        try:
+            if self._cfg.macro_resid:
+                return float(self._cfg.macro_resid.winsor_percentile)
+        except AttributeError:
+            pass
+        return 0.05
+    
+    @property
+    def macro_resid_var_floor(self) -> float:
+        """R1: Floor for var(r_btc) to prevent div-by-zero."""
+        try:
+            if self._cfg.macro_resid:
+                return float(self._cfg.macro_resid.var_floor)
+        except AttributeError:
+            pass
+        return 1e-7
+    
+    @property
+    def macro_resid_scale_floor(self) -> float:
+        """R1: Floor for MAD scale to prevent explosion."""
+        try:
+            if self._cfg.macro_resid:
+                return float(self._cfg.macro_resid.scale_floor)
+        except AttributeError:
+            pass
+        return 1e-4
+    
+    @property
+    def macro_resid_clip(self) -> float:
+        """R1: Output clip bound."""
+        try:
+            if self._cfg.macro_resid:
+                return float(self._cfg.macro_resid.clip)
+        except AttributeError:
+            pass
+        return 3.0
+    
+    @property
+    def macro_resid_neutral(self) -> float:
+        """R1: Neutral value (SIGNED: 0.0)."""
+        try:
+            if self._cfg.macro_resid:
+                return float(self._cfg.macro_resid.neutral)
+        except AttributeError:
+            pass
+        return 0.0
+    
+    # =========================================================================
+    # R2 (P2): ABSORPTION — Experimental (Default OFF)
+    # =========================================================================
+    
+    @property
+    def absorption_mode(self) -> str:
+        """R2: Absorption mode (disabled|proxy|full)."""
+        try:
+            if self._cfg.absorption:
+                return str(self._cfg.absorption.mode)
+        except AttributeError:
+            pass
+        return "disabled"
+    
+    @property
+    def absorption_proxy_source(self) -> str:
+        """R2: Absorption proxy source."""
+        try:
+            if self._cfg.absorption and self._cfg.absorption.proxy:
+                return str(self._cfg.absorption.proxy.source)
+        except AttributeError:
+            pass
+        return "aggressive_trade_imbalance"
+    
+    @property
+    def absorption_proxy_window(self) -> int:
+        """R2: Absorption proxy window (samples)."""
+        try:
+            if self._cfg.absorption and self._cfg.absorption.proxy:
+                return int(self._cfg.absorption.proxy.window)
+        except AttributeError:
+            pass
+        return 30
+    
+    @property
+    def absorption_proxy_eps(self) -> float:
+        """R2: Absorption proxy epsilon for division."""
+        try:
+            if self._cfg.absorption and self._cfg.absorption.proxy:
+                return float(self._cfg.absorption.proxy.eps)
+        except AttributeError:
+            pass
+        return 0.0001
+    
+    @property
+    def absorption_dedup_enabled(self) -> bool:
+        """R2: Whether dedup guard is enabled."""
+        try:
+            if self._cfg.absorption and self._cfg.absorption.dedup:
+                return bool(self._cfg.absorption.dedup.enabled)
+        except AttributeError:
+            pass
+        return True  # Default: enabled for safety
+    
+    @property
+    def absorption_dedup_window(self) -> int:
+        """R2: Dedup correlation window (samples)."""
+        try:
+            if self._cfg.absorption and self._cfg.absorption.dedup:
+                return int(self._cfg.absorption.dedup.window)
+        except AttributeError:
+            pass
+        return 60
+    
+    @property
+    def absorption_dedup_threshold(self) -> float:
+        """R2: Dedup threshold (|corr| > threshold → mute)."""
+        try:
+            if self._cfg.absorption and self._cfg.absorption.dedup:
+                return float(self._cfg.absorption.dedup.threshold)
+        except AttributeError:
+            pass
+        return 0.8
+    
+    @property
+    def absorption_clip(self) -> float:
+        """R2: Absorption output clip."""
+        try:
+            if self._cfg.absorption:
+                return float(self._cfg.absorption.clip)
+        except AttributeError:
+            pass
+        return 1.0
+    
+    @property
+    def absorption_neutral(self) -> float:
+        """R2: Absorption neutral value (SIGNED: 0.0)."""
+        try:
+            if self._cfg.absorption:
+                return float(self._cfg.absorption.neutral)
+        except AttributeError:
+            pass
+        return 0.0
     
     @property
     def macro_sync_enabled(self) -> bool:

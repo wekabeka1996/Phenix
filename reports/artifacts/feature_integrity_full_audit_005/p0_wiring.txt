@@ -1,0 +1,17 @@
+791-                
+792-                # Update book health tracking (tick has both book and trade data)
+793:                self._engine.update_book_health(
+794-                    symbol=symbol,
+795-                    ts_ms=current_ts_ms,
+---------------------------------------------------
+799-                
+800-                # Check book health
+801:                book_healthy, book_reason = self._engine.check_book_health(symbol, current_ts_ms)
+802-                if not book_healthy:
+803-                    # Mark spread_bps as not ready if book unhealthy
+---------------------------------------------------
+762-            # ================================================================
+763-            # Apply central sanity check to all features
+764:            sanitized_features, sanity_readiness, sanity_reasons = self._engine.sanitize_features_dict(features)
+765-            features = sanitized_features
+766-            

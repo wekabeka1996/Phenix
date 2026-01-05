@@ -55,6 +55,176 @@ class FeatureCalculationEngine:
         """
         self.cfg = cfg
         self._large_trade_imbalance: Optional[LargeTradeImbalanceCalculator] = None
+        # P0-2: Book health tracking per symbol
+        self._book_last_update_ts_ms: Dict[str, int] = {}
+        self._book_update_count: Dict[str, int] = {}
+        self._trade_count_in_window: Dict[str, int] = {}
+        self._book_window_start_ts_ms: Dict[str, int] = {}
+
+    # =========================================================================
+    # P0-3: FEATURE SANITY FIREWALL (Central NaN/Inf/Bounds Protection)
+    # =========================================================================
+    
+    def sanitize_feature(
+        self, 
+        feature_name: str, 
+        raw_value: Any,
+    ) -> tuple[decimal.Decimal, bool, Optional[str]]:
+        """
+        P0-3: Central feature sanity firewall.
+        
+        Checks for NaN/Inf/out-of-range and returns sanitized value.
+        
+        Returns:
+            (value, is_ready, not_ready_reason)
+            - value: Decimal value (neutral if invalid)
+            - is_ready: True if value passed sanity, False if failed
+            - not_ready_reason: None if ready, else reason string
+        """
+        if not self.cfg.feature_sanity_enabled:
+            # Firewall disabled - pass through (backward compat)
+            try:
+                return (decimal.Decimal(str(raw_value)), True, None)
+            except (ValueError, TypeError):
+                return (self.cfg.neutral_value, False, "invalid_value_type")
+        
+        # Convert to float for NaN/Inf check
+        try:
+            val_float = float(raw_value)
+        except (ValueError, TypeError):
+            return (self.cfg.neutral_value, False, "invalid_value_type")
+        
+        # P0-3 STEP 1: NaN/Inf check
+        if not math.isfinite(val_float):
+            behavior = self.cfg.feature_sanity_nan_inf_behavior
+            if behavior == "crash":
+                raise ValueError(f"P0-3 SANITY FAIL: {feature_name}={raw_value} is NaN/Inf (crash mode)")
+            # "neutral_and_not_ready" or "neutral_only"
+            not_ready = behavior == "neutral_and_not_ready"
+            return (
+                self.cfg.neutral_value, 
+                not not_ready,  # is_ready = False if not_ready
+                f"nan_inf:{feature_name}" if not_ready else None
+            )
+        
+        # P0-3 STEP 2: Bounds check (if configured)
+        bounds = self.cfg.feature_sanity_bounds.get(feature_name)
+        if bounds:
+            min_val = float(bounds["min"])
+            max_val = float(bounds["max"])
+            if val_float < min_val or val_float > max_val:
+                # Out of range - clamp and mark not_ready
+                clamped = max(min_val, min(max_val, val_float))
+                return (
+                    decimal.Decimal(str(clamped)),
+                    False,
+                    f"out_of_range:{feature_name}:{val_float:.4f}"
+                )
+        
+        # Value passed all checks
+        return (decimal.Decimal(str(raw_value)), True, None)
+
+    def sanitize_features_dict(
+        self, 
+        features: Dict[str, str],
+    ) -> tuple[Dict[str, str], Dict[str, bool], List[str]]:
+        """
+        P0-3: Batch sanitize all features in dict.
+        
+        Returns:
+            (sanitized_features, readiness_map_updates, reasons)
+        """
+        sanitized = {}
+        readiness_updates = {}
+        reasons = []
+        
+        for fname, fval_str in features.items():
+            val, is_ready, reason = self.sanitize_feature(fname, fval_str)
+            sanitized[fname] = str(val)
+            readiness_updates[fname] = is_ready
+            if reason:
+                reasons.append(reason)
+        
+        return sanitized, readiness_updates, reasons
+
+    # =========================================================================
+    # P0-2: BOOK HEALTH GATE (Spread Truth Validation)
+    # =========================================================================
+    
+    def update_book_health(
+        self, 
+        symbol: str, 
+        ts_ms: int, 
+        is_book_update: bool = False,
+        is_trade: bool = False,
+    ) -> None:
+        """
+        P0-2: Track book updates and trades for health assessment.
+        
+        Call this on every tick with appropriate flags.
+        """
+        if not self.cfg.spread_health_gate_enabled:
+            return
+        
+        window_ms = int(self.cfg.spread_health_window_sec * 1000)
+        
+        # Reset window if expired
+        window_start = self._book_window_start_ts_ms.get(symbol, 0)
+        if ts_ms - window_start > window_ms:
+            self._book_window_start_ts_ms[symbol] = ts_ms
+            self._book_update_count[symbol] = 0
+            self._trade_count_in_window[symbol] = 0
+        
+        # Track last update ts
+        if is_book_update:
+            self._book_last_update_ts_ms[symbol] = ts_ms
+            self._book_update_count[symbol] = self._book_update_count.get(symbol, 0) + 1
+        
+        if is_trade:
+            self._trade_count_in_window[symbol] = self._trade_count_in_window.get(symbol, 0) + 1
+
+    def check_book_health(
+        self, 
+        symbol: str, 
+        current_ts_ms: int,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        P0-2: Check if order book feed is healthy.
+        
+        3-step matrix:
+        1. STEP 1: book_age < max_age_sec (hard fail if older)
+        2. STEP 2: update_events >= min_update_events OR trades >= min_trades_count
+        
+        Returns:
+            (is_healthy, not_healthy_reason)
+        """
+        if not self.cfg.spread_health_gate_enabled:
+            return (True, None)  # Gate disabled
+        
+        # STEP 1: Book age check
+        last_update_ts = self._book_last_update_ts_ms.get(symbol, 0)
+        if last_update_ts == 0:
+            # No book updates received yet
+            return (False, "no_book_updates_received")
+        
+        max_age_ms = int(self.cfg.spread_health_max_age_sec * 1000)
+        age_ms = current_ts_ms - last_update_ts
+        
+        if age_ms > max_age_ms:
+            return (False, f"book_stale:age_ms={age_ms}")
+        
+        # STEP 2: Activity check (update_events OR trades)
+        update_count = self._book_update_count.get(symbol, 0)
+        trade_count = self._trade_count_in_window.get(symbol, 0)
+        
+        min_updates = self.cfg.spread_health_min_update_events
+        min_trades = self.cfg.spread_health_min_trades_count
+        
+        # OR logic: either condition sufficient
+        if update_count >= min_updates or trade_count >= min_trades:
+            return (True, None)
+        
+        return (False, f"insufficient_activity:updates={update_count},trades={trade_count}")
 
     def _get_large_trade_imbalance(self) -> LargeTradeImbalanceCalculator:
         if self._large_trade_imbalance is None:
@@ -97,6 +267,288 @@ class FeatureCalculationEngine:
             phi = (bias_clamped - self.cfg.ema_bias_clamp_min) / clamp_range
             return phi
         return self.cfg.neutral_value
+
+    # =========================================================================
+    # R1 (P1): MACRO RESID — Beta-Adjusted Residual
+    # =========================================================================
+    
+    def update_macro_resid(
+        self,
+        state: HotState,
+        asset_return: float,
+        anchor_return: float,
+    ) -> None:
+        """
+        R1: Update macro_resid buffers.
+        
+        Args:
+            state: HotState for the symbol
+            asset_return: Return of the asset (fraction)
+            anchor_return: Return of the anchor (BTC) (fraction)
+        """
+        if not self.cfg.macro_resid_enabled:
+            return
+        
+        beta_window = self.cfg.macro_resid_beta_window
+        
+        # Append to buffers
+        state.macro_resid_asset_returns.append(asset_return)
+        state.macro_resid_anchor_returns.append(anchor_return)
+        
+        # Trim to window size
+        while len(state.macro_resid_asset_returns) > beta_window:
+            state.macro_resid_asset_returns.popleft()
+        while len(state.macro_resid_anchor_returns) > beta_window:
+            state.macro_resid_anchor_returns.popleft()
+    
+    def compute_macro_resid(self, state: HotState) -> tuple[decimal.Decimal, bool, Optional[str]]:
+        """
+        R1: Compute macro_resid = clip(resid / scale, -clip, +clip).
+        
+        Formula:
+            beta = cov(r_asset, r_btc) / var(r_btc)
+            resid = r_asset[-1] - beta * r_btc[-1]
+            scale = MAD(resid_buffer)
+            macro_resid = clip(resid / max(scale, scale_floor), -clip, +clip)
+        
+        Returns:
+            (value, is_ready, not_ready_reason)
+        """
+        neutral = decimal.Decimal(str(self.cfg.macro_resid_neutral))
+        
+        if not self.cfg.macro_resid_enabled:
+            return (neutral, True, None)  # Feature disabled = always ready with neutral
+        
+        asset_rets = list(state.macro_resid_asset_returns)
+        anchor_rets = list(state.macro_resid_anchor_returns)
+        beta_window = self.cfg.macro_resid_beta_window
+        mad_window = self.cfg.macro_resid_mad_window
+        
+        # Check minimum buffer size
+        if len(asset_rets) < beta_window or len(anchor_rets) < beta_window:
+            state.macro_resid_ready = False
+            state.macro_resid_not_ready_reason = f"insufficient_samples:{len(asset_rets)}<{beta_window}"
+            return (neutral, False, state.macro_resid_not_ready_reason)
+        
+        # Winsorize extremes
+        winsor_p = self.cfg.macro_resid_winsor_percentile
+        if winsor_p > 0:
+            asset_rets = self._winsorize(asset_rets, winsor_p)
+            anchor_rets = self._winsorize(anchor_rets, winsor_p)
+        
+        # Calculate beta = cov(asset, anchor) / var(anchor)
+        var_anchor = self._variance(anchor_rets)
+        var_floor = self.cfg.macro_resid_var_floor
+        
+        if var_anchor < var_floor:
+            state.macro_resid_ready = False
+            state.macro_resid_not_ready_reason = f"var_anchor_too_low:{var_anchor:.2e}<{var_floor:.2e}"
+            return (neutral, False, state.macro_resid_not_ready_reason)
+        
+        cov = self._covariance(asset_rets, anchor_rets)
+        beta = cov / var_anchor
+        
+        # Calculate residual for latest observation
+        latest_asset_ret = asset_rets[-1]
+        latest_anchor_ret = anchor_rets[-1]
+        resid = latest_asset_ret - beta * latest_anchor_ret
+        
+        # Update residual buffer for MAD
+        state.macro_resid_buffer.append(resid)
+        while len(state.macro_resid_buffer) > mad_window:
+            state.macro_resid_buffer.popleft()
+        
+        # Check MAD buffer readiness
+        if len(state.macro_resid_buffer) < mad_window:
+            state.macro_resid_ready = False
+            state.macro_resid_not_ready_reason = f"mad_warmup:{len(state.macro_resid_buffer)}<{mad_window}"
+            return (neutral, False, state.macro_resid_not_ready_reason)
+        
+        # Calculate MAD scale
+        scale = self._mad(list(state.macro_resid_buffer))
+        scale_floor = self.cfg.macro_resid_scale_floor
+        scale = max(scale, scale_floor)
+        
+        # Normalize and clip
+        clip_bound = self.cfg.macro_resid_clip
+        normalized = resid / scale
+        clipped = max(-clip_bound, min(clip_bound, normalized))
+        
+        state.macro_resid_ready = True
+        state.macro_resid_not_ready_reason = None
+        
+        return (decimal.Decimal(str(clipped)), True, None)
+    
+    def _winsorize(self, data: List[float], percentile: float) -> List[float]:
+        """Winsorize data at given percentile."""
+        if not data or percentile <= 0:
+            return data
+        sorted_data = sorted(data)
+        n = len(sorted_data)
+        lo_idx = int(n * percentile)
+        hi_idx = int(n * (1 - percentile))
+        lo_val = sorted_data[lo_idx] if lo_idx < n else sorted_data[0]
+        hi_val = sorted_data[hi_idx] if hi_idx < n else sorted_data[-1]
+        return [max(lo_val, min(hi_val, x)) for x in data]
+    
+    def _variance(self, data: List[float]) -> float:
+        """Calculate variance of data."""
+        if len(data) < 2:
+            return 0.0
+        mean = sum(data) / len(data)
+        return sum((x - mean) ** 2 for x in data) / len(data)
+    
+    def _covariance(self, x: List[float], y: List[float]) -> float:
+        """Calculate covariance of x and y."""
+        n = min(len(x), len(y))
+        if n < 2:
+            return 0.0
+        mean_x = sum(x[:n]) / n
+        mean_y = sum(y[:n]) / n
+        return sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(n)) / n
+    
+    def _mad(self, data: List[float]) -> float:
+        """Calculate Median Absolute Deviation."""
+        if not data:
+            return 0.0
+        median = statistics.median(data)
+        return statistics.median([abs(x - median) for x in data])
+    
+    # =========================================================================
+    # R2 (P2): ABSORPTION — Experimental (Default OFF)
+    # =========================================================================
+    
+    def update_absorption(
+        self,
+        state: HotState,
+        buy_vol: float,
+        sell_vol: float,
+        tfi: float,
+    ) -> None:
+        """
+        R2: Update absorption buffers.
+        
+        Args:
+            state: HotState for the symbol
+            buy_vol: Aggressive buy volume
+            sell_vol: Aggressive sell volume
+            tfi: Trade Flow Imbalance for dedup correlation
+        """
+        if self.cfg.absorption_mode == "disabled":
+            return
+        
+        window = self.cfg.absorption_proxy_window
+        
+        # Update volume buffers
+        state.absorption_buy_vol_buffer.append(buy_vol)
+        state.absorption_sell_vol_buffer.append(sell_vol)
+        
+        # Trim
+        while len(state.absorption_buy_vol_buffer) > window:
+            state.absorption_buy_vol_buffer.popleft()
+        while len(state.absorption_sell_vol_buffer) > window:
+            state.absorption_sell_vol_buffer.popleft()
+        
+        # Dedup: track TFI and proxy for correlation
+        if self.cfg.absorption_dedup_enabled:
+            dedup_window = self.cfg.absorption_dedup_window
+            state.absorption_tfi_buffer.append(tfi)
+            while len(state.absorption_tfi_buffer) > dedup_window:
+                state.absorption_tfi_buffer.popleft()
+    
+    def compute_absorption(self, state: HotState) -> tuple[decimal.Decimal, bool, Optional[str]]:
+        """
+        R2: Compute absorption proxy.
+        
+        Formula (proxy mode):
+            absorption = (sum_buy_vol - sum_sell_vol) / (sum_buy_vol + sum_sell_vol + eps)
+        
+        Dedup guard: mute if |corr(absorption_buffer, TFI_buffer)| > threshold
+        
+        Returns:
+            (value, is_ready, not_ready_reason)
+        """
+        neutral = decimal.Decimal(str(self.cfg.absorption_neutral))
+        
+        if self.cfg.absorption_mode == "disabled":
+            # Feature disabled = not_ready (telemetry only, excluded from scoring)
+            state.absorption_ready = False
+            state.absorption_not_ready_reason = "mode_disabled"
+            return (neutral, False, "mode_disabled")
+        
+        buy_vols = list(state.absorption_buy_vol_buffer)
+        sell_vols = list(state.absorption_sell_vol_buffer)
+        window = self.cfg.absorption_proxy_window
+        eps = self.cfg.absorption_proxy_eps
+        
+        # Check buffer size
+        if len(buy_vols) < window or len(sell_vols) < window:
+            state.absorption_ready = False
+            state.absorption_not_ready_reason = f"insufficient_samples:{len(buy_vols)}<{window}"
+            return (neutral, False, state.absorption_not_ready_reason)
+        
+        # Calculate proxy: (buy - sell) / (buy + sell + eps)
+        sum_buy = sum(buy_vols)
+        sum_sell = sum(sell_vols)
+        denominator = sum_buy + sum_sell + eps
+        
+        if denominator <= eps:
+            state.absorption_ready = False
+            state.absorption_not_ready_reason = "zero_volume"
+            return (neutral, False, "zero_volume")
+        
+        proxy_value = (sum_buy - sum_sell) / denominator
+        
+        # Update proxy buffer for dedup correlation
+        state.absorption_proxy_buffer.append(proxy_value)
+        while len(state.absorption_proxy_buffer) > self.cfg.absorption_dedup_window:
+            state.absorption_proxy_buffer.popleft()
+        
+        # Dedup check
+        if self.cfg.absorption_dedup_enabled:
+            tfi_vals = list(state.absorption_tfi_buffer)
+            proxy_vals = list(state.absorption_proxy_buffer)
+            
+            if len(tfi_vals) >= 10 and len(proxy_vals) >= 10:
+                # Calculate correlation
+                corr = self._pearson_corr(proxy_vals[-10:], tfi_vals[-10:])
+                state.absorption_dedup_corr = corr
+                
+                threshold = self.cfg.absorption_dedup_threshold
+                if abs(corr) > threshold:
+                    # MUTED: absorption too correlated with TFI
+                    state.absorption_dedup_muted = True
+                    state.absorption_ready = False
+                    state.absorption_not_ready_reason = f"dedup_muted:corr={corr:.3f}>{threshold}"
+                    return (neutral, False, state.absorption_not_ready_reason)
+                else:
+                    state.absorption_dedup_muted = False
+        
+        # Clip output
+        clip_bound = self.cfg.absorption_clip
+        clipped = max(-clip_bound, min(clip_bound, proxy_value))
+        
+        state.absorption_ready = True
+        state.absorption_not_ready_reason = None
+        
+        return (decimal.Decimal(str(clipped)), True, None)
+    
+    def _pearson_corr(self, x: List[float], y: List[float]) -> float:
+        """Calculate Pearson correlation coefficient."""
+        n = min(len(x), len(y))
+        if n < 2:
+            return 0.0
+        mean_x = sum(x[:n]) / n
+        mean_y = sum(y[:n]) / n
+        
+        cov = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(n))
+        var_x = sum((x[i] - mean_x) ** 2 for i in range(n))
+        var_y = sum((y[i] - mean_y) ** 2 for i in range(n))
+        
+        denom = math.sqrt(var_x * var_y)
+        if denom < 1e-15:
+            return 0.0
+        return cov / denom
 
     # =========================================================================
     # VOLUME SPIKE CALCULATIONS (FTR-03: O(1) Welford)
@@ -267,6 +719,7 @@ class FeatureCalculationEngine:
         Compute volatility state = range / mean(range), normalized to [0,1].
         
         FTR-03: O(1) implementation - uses Welford mean instead of sum()/len().
+        P0-1: Hard floor to prevent division by zero / overflow (config-driven).
         """
         count, mean, _ = state.range_stats
         
@@ -288,16 +741,37 @@ class FeatureCalculationEngine:
             state.volatility_state_not_ready_reason = "negative_range"
             return self.cfg.neutral_value
 
-        if avg_range > 0:
-            ratio = current_range / avg_range
-            ratio_capped = min(ratio, self.cfg.volatility_state_cap)
-            phi = ratio_capped / self.cfg.volatility_state_cap
-            state.volatility_state_ready = True
-            state.volatility_state_not_ready_reason = None
-            return phi
-        state.volatility_state_ready = False
-        state.volatility_state_not_ready_reason = "avg_range_non_positive"
-        return self.cfg.neutral_value
+        # P0-1: Hard floor to prevent division by zero / overflow
+        # All parameters from config - NO HARDCODED VALUES
+        tick_floor = decimal.Decimal(str(self.cfg.volatility_tick_floor))
+        division_eps = decimal.Decimal(str(self.cfg.volatility_division_eps))
+        
+        # Denominator with hard floor (config-driven)
+        denom = max(avg_range, tick_floor, division_eps)
+        
+        ratio = current_range / denom
+        
+        # P0-1: NaN/Inf firewall (fail-closed)
+        try:
+            ratio_float = float(ratio)
+            if not math.isfinite(ratio_float):
+                state.volatility_state_ready = False
+                state.volatility_state_not_ready_reason = "overflow_nan_inf"
+                return self.cfg.neutral_value
+        except (OverflowError, ValueError):
+            state.volatility_state_ready = False
+            state.volatility_state_not_ready_reason = "overflow_conversion"
+            return self.cfg.neutral_value
+        
+        ratio_capped = min(ratio, self.cfg.volatility_state_cap)
+        phi = ratio_capped / self.cfg.volatility_state_cap
+        
+        # Final sanity check on phi
+        phi_clamped = max(decimal.Decimal("0"), min(decimal.Decimal("1"), phi))
+        
+        state.volatility_state_ready = True
+        state.volatility_state_not_ready_reason = None
+        return phi_clamped
 
     # =========================================================================
     # V2 FEATURES (FTR-03)

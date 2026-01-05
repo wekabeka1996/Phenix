@@ -13,11 +13,11 @@ def test_task47_loader_effective_values_from_ssot() -> None:
     assert cfg.trading.market_data is not None
     assert cfg.trading.market_data.websocket_streams == ["bookTicker", "trade"]
 
-    # MR threshold tuning (Aurora mean-reversion regime threshold lowered for BTC).
+    # BTC per-symbol regime threshold multipliers (strategy SSOT).
     assert cfg.strategies.aurora is not None
     btc = cfg.strategies.aurora.assets["BTCUSDT"]
     assert btc.regime_thresholds is not None
-    assert btc.regime_thresholds["MEAN_REVERSION"] == 0.5
+    assert btc.regime_thresholds["MEAN_REVERSION"] == 1.05
     assert "MEAN_REVERSION" in (btc.allowed_regimes or [])
 
     # BTC must have 2 strategies assigned (aurora + mean_reversion).

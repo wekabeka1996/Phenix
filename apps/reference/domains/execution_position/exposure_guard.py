@@ -16,35 +16,15 @@ from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 
 from apps.reference.telemetry.order_logger import order_logger
-from apps.reference.domains.execution_position.soft_clip import SoftClipEngine as SoftClipEngineImpl
+from apps.reference.domains.execution_position.soft_clip import (
+    SoftClipEngine,
+    SoftLimitConfig,
+    load_soft_limit_config,
+)
 from apps.reference.domains.execution_position.metrics_aggregator import metrics_logger
 from apps.reference.domain_config import DomainConfigResolver
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_models import AuroraConfig
-
-
-@dataclass
-class SoftLimitConfig:
-    """Soft-limit clipping configuration (PHASE 2)."""
-    mode: str = "clip"                      # "clip" or "reject"
-    clip_min_notional_usdt: Decimal = Decimal("10")
-    directional_ratio_max: Decimal = Decimal("3.0")
-    side_exposure_usdt: Decimal = Decimal("600")
-    margin_exposure_usdt: Decimal = Decimal("1100")
-
-
-@dataclass
-class ClipResult:
-    """Result of soft-limit clipping logic (PHASE 2)."""
-    allowed: bool
-    reason: str
-    clipped_notional: Optional[Decimal] = None
-    original_notional: Optional[Decimal] = None
-    clip_reasons: List[str] = None
-
-    def __post_init__(self):
-        if self.clip_reasons is None:
-            self.clip_reasons = []
 
 
 @dataclass
@@ -131,7 +111,7 @@ class ExposureGuard:
 
         # PHASE 2: Soft-limit configuration (read from trading.risk.soft_limits)
         self.soft_limit_config = self._load_soft_limit_config()
-        self.soft_clip_engine = SoftClipEngineImpl(
+        self.soft_clip_engine = SoftClipEngine(
             self.soft_limit_config, logger=self.logger
         )
 
@@ -173,43 +153,19 @@ class ExposureGuard:
         Load soft-limit clipping configuration (PHASE 2).
         Reads from trading.risk.soft_limits (legacy dict block; fail-closed).
         """
-        risk_cfg = self.config.trading.risk
-        if not isinstance(risk_cfg, dict):
-            raise ConfigContractError(path="trading.risk", why=f"Expected dict, got {type(risk_cfg)}")
-        soft_limits_dict = risk_cfg.get("soft_limits")
-        if not isinstance(soft_limits_dict, dict):
-            raise ConfigContractError(path="trading.risk.soft_limits", why="Missing/invalid soft_limits block")
+        try:
+            cfg = load_soft_limit_config(self.config.trading.risk)
+        except Exception as e:
+            raise ConfigContractError(path="trading.risk.soft_limits", why=str(e)) from e
 
-        required_keys = (
-            "mode",
-            "clip_min_notional_usdt",
-            "directional_ratio_max",
-            "side_exposure_usdt",
-            "margin_exposure_usdt",
-        )
-        for k in required_keys:
-            if k not in soft_limits_dict:
-                raise ConfigContractError(path=f"trading.risk.soft_limits.{k}", why="Missing required key")
-
-        mode = str(soft_limits_dict["mode"])
-        clip_min = Decimal(str(soft_limits_dict["clip_min_notional_usdt"]))
-        dir_max = Decimal(str(soft_limits_dict["directional_ratio_max"]))
-        side_exp = Decimal(str(soft_limits_dict["side_exposure_usdt"]))
-        margin_exp = Decimal(str(soft_limits_dict["margin_exposure_usdt"]))
-
-        config = SoftLimitConfig(
-            mode=mode,
-            clip_min_notional_usdt=clip_min,
-            directional_ratio_max=dir_max,
-            side_exposure_usdt=side_exp,
-            margin_exposure_usdt=margin_exp,
-        )
         self.logger.info(
-            f"SOFT_LIMIT_CONFIG loaded: mode={mode}, "
-            f"clip_min={clip_min}, dir_ratio_max={dir_max}, "
-            f"side_exp={side_exp}, margin_exp={margin_exp}"
+            "SOFT_LIMIT_CONFIG loaded: "
+            f"mode={cfg.mode}, clip_min={cfg.clip_min_notional_usdt}, "
+            f"dir_ratio_max={cfg.directional_ratio_max}, side_exp={cfg.side_exposure_usdt}, "
+            f"margin_exp={cfg.margin_exposure_usdt}, "
+            f"regime_adaptation={'yes' if cfg.regime_adaptation else 'no'}"
         )
-        return config
+        return cfg
 
     def _load_fallback_config(self) -> Dict[str, Any]:
         """
@@ -370,7 +326,9 @@ class ExposureGuard:
         """
         Resolve leverage for a symbol.
 
-        EXP-LEVERAGE-001: Get leverage from config with fallbacks.
+        Leverage SSOT priority:
+        1) instruments.<SYM>.execution.target_leverage (instruments.yaml SSOT)
+        2) trading.execution.exposure.leverage_defaults (legacy fallback; do not rely on it for sizing)
 
         Args:
             symbol: Trading symbol
@@ -378,6 +336,23 @@ class ExposureGuard:
         Returns:
             Decimal: Leverage value (>= 1)
         """
+        symbol = str(symbol or "").strip()
+        if not symbol:
+            raise ValueError("symbol is required")
+
+        # 1) SSOT: instruments.yaml
+        try:
+            instruments = getattr(self.config, "instruments", None)
+            spec = instruments.get(symbol) if isinstance(instruments, dict) else None
+            exec_cfg = getattr(spec, "execution", None) if spec is not None else None
+            target = getattr(exec_cfg, "target_leverage", None) if exec_cfg is not None else None
+            if target is not None:
+                return max(Decimal(str(target)), Decimal("1"))
+        except Exception:
+            # Defer to legacy fallback below (fail-closed happens if that is missing too).
+            pass
+
+        # 2) Legacy fallback: trading.execution.exposure.leverage_defaults
         execution_cfg = self.config.trading.execution
         if execution_cfg is None or execution_cfg.exposure is None:
             raise ConfigContractError(
@@ -393,13 +368,8 @@ class ExposureGuard:
             )
 
         default_leverage_raw = leverage_defaults["__default__"] if "__default__" in leverage_defaults else 20
-        default_leverage = Decimal(str(default_leverage_raw))
-
-        symbol_leverage_raw = leverage_defaults[symbol] if symbol in leverage_defaults else default_leverage
-        symbol_leverage = Decimal(str(symbol_leverage_raw))
-
-        # Ensure leverage >= 1
-        return max(symbol_leverage, Decimal("1"))
+        symbol_leverage_raw = leverage_defaults[symbol] if symbol in leverage_defaults else default_leverage_raw
+        return max(Decimal(str(symbol_leverage_raw)), Decimal("1"))
 
     def on_portfolio(self, portfolio_state: Dict[str, Any]) -> None:
         """
@@ -474,79 +444,220 @@ class ExposureGuard:
         if last_ts_ms == 0 or stale_sec > stale_ttl:
             return {"allowed": False, "reason": "PORTFOLIO_STALE", "stale_sec": float(stale_sec)}
 
-        # --- 2. State Accumulation ---
+        # --- 2. State Accumulation (SSOT: portfolio_state_v1) ---
         positions = portfolio_state.get("positions", [])
-        if not isinstance(positions, list): positions = []
-        
-        long_notional = Decimal("0")
-        short_notional = Decimal("0")
+        if not isinstance(positions, list):
+            positions = []
+
+        # Open exposure SSOT (position_tracking emits these on every snapshot).
+        open_positions_usd = _d(portfolio_state.get("open_positions_usd"))
+        open_positions_margin_usd = _d(portfolio_state.get("open_positions_margin_usd"))
+
+        # If producers ever omit aggregates, fall back to conservative reconstruction.
+        if open_positions_usd <= 0 and positions:
+            try:
+                open_positions_usd = sum(
+                    abs(_d(p.get("net_position"))) * _d(p.get("avg_entry_price"))
+                    for p in positions
+                    if isinstance(p, dict)
+                )
+            except Exception:
+                open_positions_usd = Decimal("0")
+
+        # Side margin SSOT (used for directional ratio + side utilization).
         long_margin = Decimal("0")
         short_margin = Decimal("0")
-        
-        ref_leverage = self.resolve_symbol_leverage(symbol)
-        
-        for p in positions:
-            if not isinstance(p, dict): continue
-            p_sym = str(p.get("symbol", ""))
-            p_side = str(p.get("side", "")).upper()
-            p_notion = abs(_d(p.get("notional_usd")))
-            
-            p_lev = self.resolve_symbol_leverage(p_sym) if p_sym else ref_leverage
-            p_marg = p_notion / p_lev if p_lev else Decimal("0")
-            
-            if p_side in {"BUY", "LONG"}:
-                long_notional += p_notion
-                long_margin += p_marg
-            elif p_side in {"SELL", "SHORT"}:
-                short_notional += p_notion
-                short_margin += p_marg
+        pbs = portfolio_state.get("positions_by_side")
+        if isinstance(pbs, dict):
+            long_margin = _d(pbs.get("long_margin"))
+            short_margin = _d(pbs.get("short_margin"))
+        elif positions:
+            # Conservative fallback: derive margin by side from net_position * avg_entry_price, using SSOT leverage.
+            for p in positions:
+                if not isinstance(p, dict):
+                    continue
+                p_sym = str(p.get("symbol", "") or "").strip()
+                qty = _d(p.get("net_position"))
+                px = _d(p.get("avg_entry_price"))
+                if not p_sym or qty == 0 or px <= 0:
+                    continue
+                p_notional = abs(qty) * px
+                p_lev = self.resolve_symbol_leverage(p_sym)
+                p_margin = p_notional / p_lev if p_lev else Decimal("0")
+                if qty > 0:
+                    long_margin += p_margin
+                else:
+                    short_margin += p_margin
 
-        # Include pending/postfill margin reservations
-        pending_long_m = sum(item["margin"] for item in self.state.pending_exposure.values() if item.get("side") in {"BUY", "LONG"} and "margin" in item)
-        pending_short_m = sum(item["margin"] for item in self.state.pending_exposure.values() if item.get("side") in {"SELL", "SHORT"} and "margin" in item)
-        post_long_m = sum(item["margin"] for item in self.state.postfill_reservations.values() if item.get("side") in {"BUY", "LONG"} and time.time() < item.get("exp_ts", 0) and "margin" in item)
-        post_short_m = sum(item["margin"] for item in self.state.postfill_reservations.values() if item.get("side") in {"SELL", "SHORT"} and time.time() < item.get("exp_ts", 0) and "margin" in item)
+        ref_leverage = self.resolve_symbol_leverage(symbol)
+
+        # Pending exposure reservations (include/exclude based on config)
+        def _include_pending(item: Dict[str, Any]) -> bool:
+            if not self.count_pending_orders:
+                return False
+            if self.exclude_reduce_only and bool(item.get("reduce_only", False)):
+                return False
+            return True
+
+        pending_long_m = sum(
+            _d(item.get("margin"))
+            for item in self.state.pending_exposure.values()
+            if isinstance(item, dict) and _include_pending(item) and item.get("side") in {"BUY", "LONG"}
+        )
+        pending_short_m = sum(
+            _d(item.get("margin"))
+            for item in self.state.pending_exposure.values()
+            if isinstance(item, dict) and _include_pending(item) and item.get("side") in {"SELL", "SHORT"}
+        )
+        pending_notional = sum(
+            abs(_d(item.get("notional")))
+            for item in self.state.pending_exposure.values()
+            if isinstance(item, dict) and _include_pending(item)
+        )
+
+        # Post-fill holds always count as exposure until portfolio catches up (race-safe, conservative).
+        now = time.time()
+        post_long_m = sum(
+            _d(item.get("margin"))
+            for item in self.state.postfill_reservations.values()
+            if isinstance(item, dict) and item.get("side") in {"BUY", "LONG"} and now < float(item.get("exp_ts", 0))
+        )
+        post_short_m = sum(
+            _d(item.get("margin"))
+            for item in self.state.postfill_reservations.values()
+            if isinstance(item, dict) and item.get("side") in {"SELL", "SHORT"} and now < float(item.get("exp_ts", 0))
+        )
+        post_notional = sum(
+            abs(_d(item.get("notional")))
+            for item in self.state.postfill_reservations.values()
+            if isinstance(item, dict) and now < float(item.get("exp_ts", 0))
+        )
 
         total_pending_margin = pending_long_m + pending_short_m + post_long_m + post_short_m
-        
-        order_notional_abs = abs(notional_usd)
-        order_margin = order_notional_abs / ref_leverage if ref_leverage else Decimal("0")
+
+        requested_notional_abs = abs(notional_usd)
         order_side = "BUY" if notional_usd >= Decimal("0") else "SELL"
 
-        # --- 3. Limit Enforcement ---
-        
-        # A) Max Portfolio Fraction (NOTIONAL-based)
-        p_frac_limit = equity_free_usdt * self.max_portfolio_fraction
-        if order_notional_abs > p_frac_limit:
-            return {"allowed": False, "reason": "PORTFOLIO_FRACTION_BREACH", "order_notional": float(order_notional_abs), "limit": float(p_frac_limit)}
+        # --- 3. Soft-limit clipping (trading.risk.soft_limits) ---
+        order_notional_abs = requested_notional_abs
+        clip_payload: Dict[str, Any] = {}
+        soft_mode = str(self.soft_limit_config.mode).lower()
+        if soft_mode in {"clip", "reject"}:
+            clip_res = self.soft_clip_engine.calculate_clipped_size(
+                notional_usd=order_notional_abs,
+                symbol=symbol,
+                order_side=order_side,
+                long_margin=long_margin + pending_long_m + post_long_m,
+                short_margin=short_margin + pending_short_m + post_short_m,
+                total_margin_exposure=open_positions_margin_usd + total_pending_margin,
+                symbol_leverage=ref_leverage,
+            )
+            if not clip_res.allowed:
+                return {
+                    "allowed": False,
+                    "reason": f"SOFT_LIMIT_{clip_res.reason}",
+                    "clip_reasons": list(clip_res.clip_reasons),
+                    "requested_notional": str(requested_notional_abs),
+                }
+            if clip_res.clipped_notional is not None and clip_res.clipped_notional < order_notional_abs:
+                if soft_mode == "reject":
+                    return {
+                        "allowed": False,
+                        "reason": "SOFT_LIMIT_REJECT",
+                        "clip_reasons": list(clip_res.clip_reasons),
+                        "requested_notional": str(requested_notional_abs),
+                        "max_allowed_notional": str(clip_res.clipped_notional),
+                    }
+                order_notional_abs = clip_res.clipped_notional
+                clip_payload = {
+                    "clipped": True,
+                    "requested_notional_abs": str(requested_notional_abs),
+                    "clipped_notional_abs": str(order_notional_abs),
+                    "clip_reasons": list(clip_res.clip_reasons),
+                }
 
-        # B) Max Equity Utilization (MARGIN-based)
-        total_margin_used = (long_margin + short_margin + total_pending_margin + order_margin)
+        # --- 4. Hard Limit Enforcement (domains.execution_position.exposure_guard) ---
+        order_margin = order_notional_abs / ref_leverage if ref_leverage else Decimal("0")
+
+        # A) Max Portfolio Fraction (NOTIONAL-based, projected)
+        projected_notional = open_positions_usd + pending_notional + post_notional + order_notional_abs
+        p_frac_limit = equity_free_usdt * self.max_portfolio_fraction
+        if projected_notional > p_frac_limit:
+            return {
+                "allowed": False,
+                "reason": "PORTFOLIO_FRACTION_BREACH",
+                "projected_notional": float(projected_notional),
+                "limit": float(p_frac_limit),
+            }
+
+        # B) Max Equity Utilization (MARGIN-based, projected)
+        total_margin_used = open_positions_margin_usd + total_pending_margin + order_margin
         equity_margin_limit = equity_free_usdt * self.max_equity_utilization_pct
         if total_margin_used > equity_margin_limit:
-            return {"allowed": False, "reason": "EQUITY_UTILIZATION_BREACH", "actual": float(total_margin_used), "limit": float(equity_margin_limit)}
+            return {
+                "allowed": False,
+                "reason": "EQUITY_UTILIZATION_BREACH",
+                "actual": float(total_margin_used),
+                "limit": float(equity_margin_limit),
+            }
 
         # C) Long/Short Utilization (MARGIN-based)
         new_long_m = long_margin + pending_long_m + post_long_m + (order_margin if order_side == "BUY" else Decimal("0"))
         new_short_m = short_margin + pending_short_m + post_short_m + (order_margin if order_side == "SELL" else Decimal("0"))
-        
+
         long_limit = equity_free_usdt * self.max_long_utilization_pct
         short_limit = equity_free_usdt * self.max_short_utilization_pct
-        
+
         if new_long_m > long_limit:
             return {"allowed": False, "reason": "LONG_UTILIZATION_BREACH", "actual": float(new_long_m), "limit": float(long_limit)}
         if new_short_m > short_limit:
             return {"allowed": False, "reason": "SHORT_UTILIZATION_BREACH", "actual": float(new_short_m), "limit": float(short_limit)}
 
-        # D) Directional Ratio (NOTIONAL-based)
-        new_long_notion = long_notional + (order_notional_abs if order_side == "BUY" else Decimal("0"))
-        new_short_notion = short_notional + (order_notional_abs if order_side == "SELL" else Decimal("0"))
-        if new_short_notion > Decimal("0"):
-            ratio = new_long_notion / new_short_notion
+        # D) Directional Ratio (MARGIN-based)
+        min_m = min(new_long_m, new_short_m)
+        if min_m > Decimal("0"):
+            ratio = max(new_long_m, new_short_m) / min_m
             if ratio > self.max_directional_ratio:
-                 return {"allowed": False, "reason": "DIRECTIONAL_RATIO_BREACH", "ratio": float(ratio), "max": float(self.max_directional_ratio)}
+                return {"allowed": False, "reason": "DIRECTIONAL_RATIO_BREACH", "ratio": float(ratio), "max": float(self.max_directional_ratio)}
 
-        return {"allowed": True}
+        # E) Concentration (per-symbol margin cap)
+        symbol_margin_est = Decimal("0")
+        for p in positions:
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("symbol", "")).strip() != symbol:
+                continue
+            qty = _d(p.get("net_position"))
+            px = _d(p.get("avg_entry_price"))
+            if qty == 0 or px <= 0:
+                continue
+            sym_notional = abs(qty) * px
+            symbol_margin_est += sym_notional / ref_leverage if ref_leverage else Decimal("0")
+
+        pending_symbol_m = sum(
+            _d(item.get("margin"))
+            for item in self.state.pending_exposure.values()
+            if isinstance(item, dict) and _include_pending(item) and str(item.get("symbol", "")).strip() == symbol
+        )
+        post_symbol_m = sum(
+            _d(item.get("margin"))
+            for item in self.state.postfill_reservations.values()
+            if isinstance(item, dict) and str(item.get("symbol", "")).strip() == symbol and now < float(item.get("exp_ts", 0))
+        )
+
+        projected_symbol_margin = symbol_margin_est + pending_symbol_m + post_symbol_m + order_margin
+        concentration_limit = equity_free_usdt * self.max_concentration_pct
+        if projected_symbol_margin > concentration_limit:
+            return {
+                "allowed": False,
+                "reason": "CONCENTRATION_BREACH",
+                "projected_symbol_margin": float(projected_symbol_margin),
+                "limit": float(concentration_limit),
+            }
+
+        out: Dict[str, Any] = {"allowed": True}
+        out.update(clip_payload)
+        return out
 
     def reserve(
         self, key: str, notional_usd: Decimal, reduce_only: bool = False, symbol: str = "", side: str = "SELL"
@@ -775,18 +886,12 @@ class ExposureGuard:
 
         regime_type: "TREND_UP", "TREND_DOWN", "FLAT", "UNCERTAIN"
         """
-        if not self.soft_limit_config:
-            return
-
-        if not hasattr(self.soft_limit_config, "regime_adaptation"):
-            return
         regime_adaptation = self.soft_limit_config.regime_adaptation
         if not regime_adaptation:
             return
 
         base_ratio = self.soft_limit_config.directional_ratio_max
-        bounds = regime_adaptation.bounds if regime_adaptation.bounds else [
-            2.0, 4.0]
+        bounds = regime_adaptation.bounds if regime_adaptation.bounds else [2.0, 4.0]
 
         delta = Decimal("0")
         if regime_type == "TREND_UP":
@@ -807,7 +912,8 @@ class ExposureGuard:
             )
         )
 
-        self.max_directional_ratio = new_ratio
+        # Soft-limit directional ratio (used by SoftClipEngine).
+        self.soft_limit_config.directional_ratio_max = new_ratio
         self.logger.info(
             f"REGIME_ADAPTED: {regime_type} → directional_ratio_max={float(new_ratio):.2f} "
             f"(base={float(base_ratio):.2f}, delta={float(delta):.2f})"

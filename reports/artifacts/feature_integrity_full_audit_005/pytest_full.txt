@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.1, pluggy-1.6.0
+rootdir: /home/wekabeka/Музыка/Phenix
+configfile: pytest.ini
+collected 67 items
+
+tests/config/test_config_forensics.py ....                               [  5%]
+tests/config/test_task54_weight_key_validation.py ...........            [ 22%]
+tests/config/test_toplevel_forbid_enforcement.py ...........             [ 38%]
+tests/unit/feature_integrity/test_p0_fixes.py .........................  [ 76%]
+tests/unit/feature_integrity/test_r1r2_features.py ................      [100%]
+
+============================== 67 passed in 0.48s ==============================

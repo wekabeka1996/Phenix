@@ -98,6 +98,7 @@ class SignalWeights(BaseModel):
     """Weights for signal calculation (OBI, TFI, etc).
     
     CFG-LEGACY-SUNSET-11: Converted to extra='forbid' (known schema).
+    R1: macro_resid added, macro_sync deprecated (Optional with default 0).
     """
     model_config = ConfigDict(extra='forbid')
 
@@ -108,7 +109,13 @@ class SignalWeights(BaseModel):
     volume_spike: float = Field()
     volatility_state: float = Field()
     depth_imbalance: float = Field()
-    macro_sync: float = Field()
+    # R1: macro_resid replaces macro_sync for directional scoring
+    macro_resid: float = Field(description='R1: Beta-adjusted residual weight (SIGNED, neutral=0)')
+    # DEPRECATED: macro_sync kept for backward compat, defaults to 0
+    macro_sync: Optional[float] = Field(
+        default=0.0,
+        description='DEPRECATED: Use macro_resid. Kept for backward compat.'
+    )
 
 
 class BarGatingConfig(BaseModel):
@@ -127,10 +134,60 @@ class BehaviorFsmConfig(BaseModel):
 
 
 class SignalsConfig(BaseModel):
-    """Signals configuration."""
-    model_config = ConfigDict(extra='forbid')
-    normalize: bool = Field()
+    """Signals configuration (strategy-level, SSOT)."""
+    model_config = ConfigDict(extra="forbid")
+
+    normalize_signals_mode: Literal["off", "legacy_v1", "signed_v2"] = Field(
+        description="Signal normalization mode. 'legacy_v1' is forbidden in live/production."
+    )
     enable_new_metrics: bool = Field()
+    delta_price_cap_pct: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Delta price cap as pct of price (e.g. 0.02 = 2%). Required (no hardcoded fallback).",
+    )
+
+
+class DirectionStrengthScoringConfig(BaseModel):
+    """Direction/Strength split configuration (strategy-level, SSOT)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    directional_features: List[str] = Field(
+        description="Signed features that define direction (dir component)."
+    )
+    strength_features: List[str] = Field(
+        description="Magnitude/confirmation features (strength component)."
+    )
+    strength_alpha: float = Field(
+        ge=0.0,
+        description="Strength influence: final = dir * (1 + strength_alpha * strength).",
+    )
+    strength_cap: float = Field(
+        ge=0.0,
+        description="Clamp for strength component (>=0).",
+    )
+
+    @model_validator(mode="after")
+    def _validate_directional_nonempty(self) -> "DirectionStrengthScoringConfig":
+        if not self.directional_features:
+            raise ValueError("directional_features must be non-empty (SSOT-required)")
+        return self
+
+
+class LiquidityGateConfig(BaseModel):
+    """
+    Configuration for Liquidity Gate (Score V2).
+    
+    Prevents trading if liquidity is too low (kappa < min) or readiness fails.
+    This replaces the implicit 'liquidity_kappa' in signal weights.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(description="Enable liquidity gate")
+    kappa_min: float = Field(ge=0.0, le=1.0, description="Minimum kappa required to pass gate")
+    kappa_max: float = Field(default=1.0, ge=0.0, le=1.0, description="Max kappa (clamping)")
+    failsafe_qty_check: bool = Field(default=True, description="Double-check min_qty even if gate passes")
 
 
 class PositionSizingConfig(BaseModel):
@@ -153,6 +210,10 @@ class KellyConfig(BaseModel):
     kelly_cap: float = Field()
     kelly_alpha: float = Field()
     payoff_ratio_r: float = Field()
+    # Phase 4: Remove hardcoded bounds
+    p_min: float = Field(default=0.45, description="Minimum probability clamp")
+    p_max: float = Field(default=0.65, description="Maximum probability clamp")
+    uplift_factor: float = Field(default=0.20, description="Score-to-probability uplift multiplier")
 
 
 class QosConfig(BaseModel):
@@ -292,6 +353,9 @@ class MRAssetConfig(BaseModel):
     
     # NEW: Typed risk config
     risk: Optional[MRAssetRiskConfig] = Field(default=None, description='Risk configuration for this symbol')
+
+    # Phase 4: Liquidity Gate override
+    liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Per-asset liquidity gate override")
     
     allowed_regimes: List[str] = Field(description='Regimes where trading is allowed')
 
@@ -354,6 +418,9 @@ class MeanReversion1mStrategyConfig(BaseModel):
     # Global allowed regimes whitelist (can be overridden per-asset in assets.X.allowed_regimes)
     allowed_regimes: List[str] = Field(description='Whitelist of Flat regimes to trade in (global default)')
     
+    # Phase 4: Liquidity Gate (Global)
+    liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Global liquidity gate for MR")
+
     # Risk management
     risk: MRRiskConfig = Field()
     
@@ -448,6 +515,10 @@ class DecisionConfig(BaseModel):
     side_bias_penalty_factor: Optional[float] = Field(description='Side bias penalty factor')
     side_bias_target_ratio: Optional[float] = Field(description='Side bias target ratio')
     side_bias_window_sec: Optional[int] = Field(description='Side bias window (seconds)')
+    side_bias_min_intents: Optional[int] = Field(
+        description="Minimum number of intents required in window to activate side-bias penalty"
+    )
+    side_bias_min_intents: int = Field(default=18, description='Min intents in window to activate side bias penalty')
     
     # Retry configuration (formerly legacy defaults)
     retry_ttl_ms: int = Field(description='Retry TTL in ms')
@@ -456,6 +527,9 @@ class DecisionConfig(BaseModel):
 
     signal_weights: SignalWeights = Field()
     signals: SignalsConfig = Field()
+    direction_strength_scoring: DirectionStrengthScoringConfig = Field(
+        description="Direction/Strength split scoring configuration (SSOT-required)."
+    )
     kelly: KellyConfig = Field()
     qos: QosConfig = Field()
 
@@ -468,6 +542,28 @@ class DecisionConfig(BaseModel):
     regime_threshold_multipliers: Dict[str, float] = Field(description='Regime threshold multipliers')
     symbols_to_track: Optional[List[str]] = Field(default=None, description='DEPRECATED: Use instruments SSOT')
     neutral_threshold: Optional[float] = Field(description='Neutral zone threshold')
+
+    # Phase 4: Score V2 Global Configuration
+    scoring_version: Literal["v1", "v2"] = Field(default="v1", description="Scoring engine version")
+    feature_neutrals: Dict[str, float] = Field(default_factory=dict, description="Neutral offsets for V2 scoring")
+    essential_features: List[str] = Field(default_factory=list, description="Features that must be present/ready")
+    liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Global liquidity gate config")
+
+    @model_validator(mode="after")
+    def _validate_direction_strength_contract(self) -> "DecisionConfig":
+        ds = getattr(self, "direction_strength_scoring", None)
+        if ds is None:
+            raise ValueError("direction_strength_scoring is required (SSOT)")
+
+        essentials = set(getattr(self, "essential_features", []) or [])
+        directional = set(getattr(ds, "directional_features", []) or [])
+        missing = sorted(essentials - directional)
+        if missing:
+            raise ValueError(
+                "direction_strength_scoring.directional_features must include all essential_features; "
+                f"missing: {missing}"
+            )
+        return self
 
 
 class SLConfig(BaseModel):
@@ -691,6 +787,10 @@ class ExecutionConfig(BaseModel):
     
     # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Explicit runtime fields (consumption proven)
     fsm_periodic_cleanup_enabled: bool = Field(description='FSM periodic cleanup')
+    cooldown_after_close_ms: int = Field(
+        ...,
+        description="Global cooldown after any position closes (ms). Blocks new CMD:OPEN during this window.",
+    )
     anti_race_close_ms: int = Field(description='Anti-race window (ms)')
     
     # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Dead fields (no consumption, keep for backward compat)
@@ -811,6 +911,50 @@ class ArmingConfig(BaseModel):
     max_attempts: int = Field()
 
 
+class DirectionalSanityConfig(BaseModel):
+    """Directional sanity gate configuration (DM-DIR-FORENSIC-01).
+
+    Fail-closed semantics live in runtime code: when enabled and trend is
+    not confidently confirmed, DM denies opening trades.
+    """
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description='Enable directional sanity gate (fail-closed)')
+    min_abs_delta_price: float = Field(
+        ge=0.0,
+        description='Minimum absolute delta_price to consider trend (noise threshold)'
+    )
+    min_confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description='Minimum confidence required (max(regime_confidence, trend_confidence))'
+    )
+    consecutive_bars: int = Field(
+        ge=2,
+        le=3,
+        description='Number of consecutive deltas required to confirm trend (2–3)'
+    )
+
+
+class PriceMotionSanityConfig(BaseModel):
+    """Multi-window price-motion sanity gate configuration (SSOT-required).
+
+    Used to block opening positions against persistent price motion, even if
+    microstructure signals (e.g., OBI) are favorable.
+    """
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(description="Enable price-motion sanity gate (fail-closed)")
+    k_vol: float = Field(gt=0.0, description="Normalization factor: pm_norm = ret/(k_vol*vol_pct)")
+    flash_window_sec: int = Field(ge=1, le=300, description="Flash window length (seconds)")
+    bleed_window_sec: int = Field(ge=10, le=3600, description="Bleed window length (seconds)")
+    flash_threshold_norm: float = Field(ge=0.0, description="DENY if pm_norm_flash <= -threshold for LONG")
+    bleed_threshold_norm: float = Field(ge=0.0, description="DENY if pm_norm_bleed <= -threshold for LONG")
+    require_bleed_ready: bool = Field(description="If true: missing bleed window data => DENY (fail-closed)")
+
+
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -820,10 +964,13 @@ class DecisionMakingDomainConfig(BaseModel):
     features: FeaturesTtlConfig = Field()
     bar_gating: BarGatingConfig = Field()
     behavior_fsm: BehaviorFsmConfig = Field()
-    signals: SignalsConfig = Field()
     risk_skew: RiskSkewConfig = Field()
     risk_gate: RiskGateConfig = Field()
     arming: ArmingConfig = Field()
+
+    # DM-DIR-SSOT-STRICT-01: SSOT-required (no silent defaults)
+    directional_sanity: DirectionalSanityConfig = Field()
+    price_motion_sanity: PriceMotionSanityConfig = Field()
 
     # Optional hardening toggles (backward-compatible defaults)
     fail_closed_on_degraded_context: bool = Field(
@@ -976,10 +1123,16 @@ class MacroSyncMetricsConfig(BaseModel):
 
 
 class VolatilityStateConfig(BaseModel):
-    """Volatility state normalization configuration."""
+    """Volatility state normalization configuration (P0-1 hardened)."""
     model_config = ConfigDict(extra='forbid')
     
     cap_max: float = Field(gt=1.0, le=10.0, description='Maximum cap for volatility ratio normalization')
+    # P0-1: Hard floor to prevent division by zero / overflow
+    hard_floor_enabled: bool = Field(default=True, description='Enable hard floor on denominator')
+    tick_floor: float = Field(default=0.0001, gt=0.0, description='Minimum floor in price units')
+    hist_floor_enabled: bool = Field(default=False, description='Enable historical floor (k_small * median)')
+    hist_floor_k_small: float = Field(default=0.1, gt=0.0, le=1.0, description='Multiplier for historical floor')
+    division_eps: float = Field(default=1e-9, gt=0.0, description='Epsilon for safe division')
 
 
 class DepthImbalanceConfig(BaseModel):
@@ -1013,6 +1166,266 @@ class FeatureDefaultsConfig(BaseModel):
     zero_value: float = Field(ge=0.0, le=1.0, description='Value for truly zero/absent features (absorption placeholder)')
     correlation_default: float = Field(ge=-1.0, le=1.0, description='Default correlation value when insufficient data')
     ms_per_sec: int = Field(ge=1000, le=1000, description='Milliseconds per second (constant for clarity)')
+
+
+# ============================================================================
+# P0-0: Readiness Contract Registry (SSOT)
+# ============================================================================
+
+class ReadinessRegistryConfig(BaseModel):
+    """P0-0: Readiness contract registry - SSOT for declared ready keys."""
+    model_config = ConfigDict(extra='forbid')
+    
+    declared_keys: List[str] = Field(
+        min_length=1,
+        description='All keys that FE can emit in warmup.ready. essential_features MUST be subset.'
+    )
+
+
+class WarmupEnforcementConfig(BaseModel):
+    """P0-0: Warmup enforcement configuration. MANDATORY in production."""
+    model_config = ConfigDict(extra='forbid')
+    
+    enforcement_mode: Literal["fail_fast", "warn_only", "disabled"] = Field(
+        description='LOCKED to fail_fast in production. warn_only/disabled forbidden.'
+    )
+    validate_essential_subset: bool = Field(
+        default=True,
+        description='Validate essential ⊆ declared_keys at startup'
+    )
+    check_full_ready_invariant: bool = Field(
+        default=True,
+        description='Invariant: full_ready=True ⇒ all declared_keys present'
+    )
+
+    @model_validator(mode="after")
+    def _warn_if_not_fail_fast(self) -> "WarmupEnforcementConfig":
+        if self.enforcement_mode != "fail_fast":
+            import warnings
+            warnings.warn(
+                f"warmup.enforcement_mode={self.enforcement_mode} is NOT recommended for production. "
+                "Use 'fail_fast' to ensure system does not trade until all features ready.",
+                UserWarning
+            )
+        return self
+
+
+# ============================================================================
+# P0-2: Spread BPS Health Gate (Book Truth Validation)
+# ============================================================================
+
+class SpreadHealthGateConfig(BaseModel):
+    """P0-2: Book health gate configuration for spread validation."""
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(description='Enable book health gate')
+    max_age_sec: float = Field(
+        gt=0.0, le=60.0,
+        description='STEP 1: Hard fail if book older than this (seconds)'
+    )
+    min_update_events: int = Field(
+        ge=0,
+        description='STEP 2: Min book update events (any: qty/levels/price)'
+    )
+    min_trades_count: int = Field(
+        ge=0,
+        description='STEP 2: Min trades in window (OR with update_events)'
+    )
+    window_sec: float = Field(
+        gt=0.0, le=300.0,
+        description='Lookback window for counting events (seconds)'
+    )
+
+
+class SpreadBpsConfig(BaseModel):
+    """P0-2: Spread BPS configuration with health gate."""
+    model_config = ConfigDict(extra='forbid')
+    
+    health_gate: SpreadHealthGateConfig = Field(description='Book health gate settings')
+
+
+# ============================================================================
+# P0-3: Feature Sanity Firewall
+# ============================================================================
+
+class FeatureBoundsConfig(BaseModel):
+    """Bounds for a single feature (min/max)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    min: float = Field(description='Minimum valid value')
+    max: float = Field(description='Maximum valid value')
+
+
+class FeatureSanityConfig(BaseModel):
+    """P0-3: Feature sanity firewall configuration."""
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(description='Enable NaN/Inf/out-of-range firewall')
+    nan_inf_behavior: Literal["neutral_and_not_ready", "neutral_only", "crash"] = Field(
+        description='Behavior on NaN/Inf: neutral_and_not_ready=safe, crash=strict'
+    )
+    feature_bounds: Dict[str, FeatureBoundsConfig] = Field(
+        description='Per-feature bounds (semantic validation)'
+    )
+
+
+# ============================================================================
+# R1 (P1): Macro Resid — Beta-Adjusted Residual
+# ============================================================================
+
+class MacroResidBoundsConfig(BaseModel):
+    """Bounds for macro_resid feature (SIGNED)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    min: float = Field(ge=-10.0, le=0.0, description='Min bound (must be <= 0 for signed)')
+    max: float = Field(ge=0.0, le=10.0, description='Max bound (must be >= 0 for signed)')
+
+
+class MacroResidConfig(BaseModel):
+    """R1: Macro resid (beta-adjusted residual) configuration.
+    
+    Why: macro_sync (correlation-based) is UNSIGNED [0,1] → can't see SELL.
+    macro_resid = r_asset - beta * r_btc → SIGNED, neutral=0, sees both directions.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(
+        default=True,
+        description='Enable macro_resid computation (replaces macro_sync for direction)'
+    )
+    beta_window: int = Field(
+        ge=10, le=500,
+        description='Rolling window for beta calculation (samples)'
+    )
+    mad_window: int = Field(
+        ge=5, le=200,
+        description='Rolling window for MAD calculation (samples)'
+    )
+    winsor_percentile: float = Field(
+        ge=0.0, le=0.25,
+        description='Winsorize top/bottom percentile (e.g., 0.05 = 5%)'
+    )
+    var_floor: float = Field(
+        gt=0.0,
+        description='Floor for var(r_btc) to prevent div-by-zero'
+    )
+    scale_floor: float = Field(
+        gt=0.0,
+        description='Floor for MAD scale to prevent explosion'
+    )
+    clip: float = Field(
+        gt=0.0,
+        description='Output clip: |macro_resid| <= clip'
+    )
+    neutral: float = Field(
+        default=0.0,
+        description='SIGNED feature: neutral is 0.0'
+    )
+    bounds: MacroResidBoundsConfig = Field(
+        description='Bounds for sanity firewall'
+    )
+    
+    @model_validator(mode='after')
+    def validate_windows(self) -> 'MacroResidConfig':
+        """Validate window relationships."""
+        if self.mad_window > self.beta_window:
+            raise ValueError(
+                f"mad_window ({self.mad_window}) cannot exceed beta_window ({self.beta_window})"
+            )
+        return self
+
+
+# ============================================================================
+# R2 (P2): Absorption — Experimental (Default OFF)
+# ============================================================================
+
+class AbsorptionProxyConfig(BaseModel):
+    """R2: Absorption proxy configuration."""
+    model_config = ConfigDict(extra='forbid')
+    
+    source: str = Field(
+        description='Proxy source feature (NOT tfi - dedup required)'
+    )
+    window: int = Field(
+        ge=5, le=500,
+        description='Rolling window for proxy calculation (samples)'
+    )
+    eps: float = Field(
+        gt=0.0,
+        description='Epsilon for division safety'
+    )
+    
+    @field_validator('source')
+    @classmethod
+    def source_not_tfi(cls, v: str) -> str:
+        """Absorption proxy source cannot be 'tfi' (logical absurd)."""
+        if v.lower() == 'tfi':
+            raise ValueError("Absorption proxy source cannot be 'tfi' (would be redundant)")
+        return v
+
+
+class AbsorptionDedupConfig(BaseModel):
+    """R2: Absorption dedup guard against TFI."""
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(
+        default=True,
+        description='Enable dedup guard (mute if correlated with TFI)'
+    )
+    window: int = Field(
+        ge=10, le=500,
+        description='Rolling correlation window (samples)'
+    )
+    threshold: float = Field(
+        ge=0.0, le=1.0,
+        description='If |corr(absorption, TFI)| > threshold → mute absorption'
+    )
+
+
+class AbsorptionBoundsConfig(BaseModel):
+    """Bounds for absorption feature (SIGNED)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    min: float = Field(ge=-2.0, le=0.0, description='Min bound')
+    max: float = Field(ge=0.0, le=2.0, description='Max bound')
+
+
+class AbsorptionConfig(BaseModel):
+    """R2: Absorption feature configuration (experimental, default OFF)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    mode: Literal["disabled", "proxy", "full"] = Field(
+        description='Absorption mode: disabled (default), proxy, or full'
+    )
+    proxy: Optional[AbsorptionProxyConfig] = Field(
+        default=None,
+        description='Proxy config (required if mode=proxy)'
+    )
+    dedup: Optional[AbsorptionDedupConfig] = Field(
+        default=None,
+        description='Dedup guard config'
+    )
+    clip: float = Field(
+        default=1.0, gt=0.0,
+        description='Output clip: |absorption| <= clip'
+    )
+    neutral: float = Field(
+        default=0.0,
+        description='SIGNED feature: neutral is 0.0'
+    )
+    bounds: Optional[AbsorptionBoundsConfig] = Field(
+        default=None,
+        description='Bounds for sanity firewall'
+    )
+    
+    @model_validator(mode='after')
+    def validate_proxy_required(self) -> 'AbsorptionConfig':
+        """Validate proxy config required when mode=proxy."""
+        if self.mode == 'proxy' and self.proxy is None:
+            raise ValueError("proxy config required when mode='proxy'")
+        return self
+
+
 
 
 class FeatureEngineeringDomainConfig(BaseModel):
@@ -1050,6 +1463,50 @@ class FeatureEngineeringDomainConfig(BaseModel):
     
     # Default/neutral values for edge cases
     defaults: FeatureDefaultsConfig = Field()
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # P0-0: Readiness Contract Registry + Warmup Enforcement
+    # ════════════════════════════════════════════════════════════════════════════
+    readiness_registry: Optional[ReadinessRegistryConfig] = Field(
+        default=None,
+        description='P0-0: SSOT for declared ready keys. Required in production.'
+    )
+    warmup: Optional[WarmupEnforcementConfig] = Field(
+        default=None,
+        description='P0-0: Warmup enforcement. Required in production.'
+    )
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # P0-2: Spread BPS Health Gate
+    # ════════════════════════════════════════════════════════════════════════════
+    spread_bps: Optional[SpreadBpsConfig] = Field(
+        default=None,
+        description='P0-2: Spread health gate config. Required when spread_bps used.'
+    )
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # P0-3: Feature Sanity Firewall
+    # ════════════════════════════════════════════════════════════════════════════
+    feature_sanity: Optional[FeatureSanityConfig] = Field(
+        default=None,
+        description='P0-3: NaN/Inf/out-of-range firewall. Recommended for production.'
+    )
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # R1 (P1): Macro Resid — Beta-Adjusted Residual
+    # ════════════════════════════════════════════════════════════════════════════
+    macro_resid: Optional[MacroResidConfig] = Field(
+        default=None,
+        description='R1: Beta-adjusted residual (replaces macro_sync for direction). SIGNED, neutral=0.'
+    )
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # R2 (P2): Absorption — Experimental (Default OFF)
+    # ════════════════════════════════════════════════════════════════════════════
+    absorption: Optional[AbsorptionConfig] = Field(
+        default=None,
+        description='R2: Absorption feature (experimental). Default OFF, no live impact.'
+    )
     
     def get_ema_alpha(self, period: str) -> float:
         """Calculate EMA alpha for given period."""
@@ -1342,6 +1799,18 @@ class MaxRiskScoreConfig(BaseModel):
         return self
 
 
+# Canonical feature keys for per-asset signal weights (TASK54: Weight Key Fix)
+# These MUST match the feature names emitted by FeatureEngineering
+# R1: macro_resid added, macro_sync deprecated but kept for backward compat
+CANONICAL_WEIGHT_KEYS = frozenset({
+    "obi", "tfi", "delta_price", "ema_bias", "volume_spike",
+    "volatility_state", "depth_imbalance",
+    "macro_sync",   # DEPRECATED: kept for backward compat, use macro_resid
+    "macro_resid",  # R1: Beta-adjusted residual (SIGNED, neutral=0)
+    # liquidity_kappa REMOVED: Moved to LiquidityGateConfig
+})
+
+
 class AuroraInstrumentConfig(BaseModel):
     """
     Complete per-instrument configuration for Aurora strategy.
@@ -1357,6 +1826,23 @@ class AuroraInstrumentConfig(BaseModel):
 
     # Signal weights (Phase 3+ Optuna results)
     weights: Optional[Dict[str, float]] = Field(description='Per-feature signal weights from Optuna')
+    
+    @field_validator('weights', mode='before')
+    @classmethod
+    def validate_weight_keys(cls, v):
+        """TASK54: Fail-closed validation of weight keys to prevent silent signal_score bugs."""
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            return v
+        invalid_keys = set(v.keys()) - CANONICAL_WEIGHT_KEYS
+        if invalid_keys:
+            raise ValueError(
+                f"Invalid weight keys: {sorted(invalid_keys)}. "
+                f"Valid canonical keys: {sorted(CANONICAL_WEIGHT_KEYS)}. "
+                f"(TASK54: Weight Key Mismatch Fix)"
+            )
+        return v
 
     # Side bias
     side_bias: Optional[AuroraSideBiasConfig] = Field(description='Side bias configuration')
@@ -1393,6 +1879,12 @@ class AuroraInstrumentConfig(BaseModel):
 
     # Phase 3+ Recovery: Regime gating
     allowed_regimes: Optional[List[str]] = Field(description='If set, only trade when current regime is in this list (Phase 3+ regime gating)')
+
+    # Phase 4: Score V2 Overrides
+    scoring_version: Optional[Literal["v1", "v2"]] = Field(default=None, description="Override scoring version")
+    feature_neutrals: Optional[Dict[str, float]] = Field(default=None, description="Override neutral offsets")
+    essential_features: Optional[List[str]] = Field(default=None, description="Override essential features list")
+    liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Override liquidity gate")
 
     # Phase 1.5 Recovery: Per-instrument timeframe
     timeframe_sec: Optional[int] = Field(description='Bar timeframe in seconds for this instrument. SOL=180 (3m), BTC/ETH=300 (5m)')
@@ -1744,6 +2236,28 @@ class AuroraConfig(BaseModel):
         """
         if self.execution is None and getattr(self.trading, "execution", None) is not None:
             self.execution = self.trading.execution
+        return self
+
+    @model_validator(mode="after")
+    def _forbid_legacy_normalize_signals_in_live(self) -> "AuroraConfig":
+        """Fail-fast: legacy normalize mode must not run in live/production/hybrid."""
+        mode = str(getattr(self, "trading_mode", "")).lower()
+        is_live_like = mode in ("live", "production", "hybrid_live_data_testnet_exec")
+
+        aurora_cfg = getattr(self.strategies, "aurora", None)
+        if aurora_cfg is None:
+            return self
+        decision = getattr(aurora_cfg, "decision", None)
+        if decision is None:
+            return self
+        signals = getattr(decision, "signals", None)
+        if signals is None:
+            return self
+
+        if is_live_like and str(signals.normalize_signals_mode) == "legacy_v1":
+            raise ValueError(
+                "strategies.aurora.decision.signals.normalize_signals_mode='legacy_v1' is forbidden in live/production"
+            )
         return self
 
     @model_validator(mode="after")

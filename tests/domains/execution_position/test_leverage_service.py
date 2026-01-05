@@ -92,11 +92,29 @@ class TestLeverageServiceSetAndVerify:
         """set_and_verify should call set methods, then verify they took effect."""
         from apps.reference.domains.execution_position.leverage_service import LeverageService
         
+        call_order = []
+
+        async def _set_margin_mode(*args, **kwargs):
+            call_order.append("set_margin_mode")
+            return True
+
+        async def _set_leverage(*args, **kwargs):
+            call_order.append("set_leverage")
+            return True
+
+        async def _get_current_leverage(*args, **kwargs):
+            call_order.append("get_current_leverage")
+            return 20
+
+        async def _get_margin_mode(*args, **kwargs):
+            call_order.append("get_margin_mode")
+            return "isolated"
+
         adapter = AsyncMock()
-        adapter.set_margin_mode = AsyncMock(return_value=True)
-        adapter.set_leverage = AsyncMock(return_value=True)
-        adapter.get_current_leverage = AsyncMock(return_value=20)
-        adapter.get_margin_mode = AsyncMock(return_value="isolated")
+        adapter.set_margin_mode = AsyncMock(side_effect=_set_margin_mode)
+        adapter.set_leverage = AsyncMock(side_effect=_set_leverage)
+        adapter.get_current_leverage = AsyncMock(side_effect=_get_current_leverage)
+        adapter.get_margin_mode = AsyncMock(side_effect=_get_margin_mode)
         
         service = LeverageService(adapter=adapter, clock=time.time)
         result = await service.set_and_verify("BTCUSDT", expected_leverage=20, expected_margin_mode="isolated")
@@ -104,6 +122,12 @@ class TestLeverageServiceSetAndVerify:
         # Verify setters were called
         adapter.set_margin_mode.assert_called_once_with("BTCUSDT", "isolated")
         adapter.set_leverage.assert_called_once_with("BTCUSDT", 20)
+
+        # Order must be: margin mode first (Binance requirement), then leverage, then verification.
+        assert call_order[:2] == ["set_margin_mode", "set_leverage"]
+        assert "get_current_leverage" in call_order
+        assert "get_margin_mode" in call_order
+        assert call_order.index("set_leverage") < call_order.index("get_current_leverage")
         
         # Result should be OK
         assert result.ok is True

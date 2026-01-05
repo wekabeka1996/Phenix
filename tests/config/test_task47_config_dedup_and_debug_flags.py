@@ -73,6 +73,11 @@ def test_task47_debug_disables_allowed_in_testnet_mode(tmp_path: Path) -> None:
     cfg_dir = tmp_path / "aurora"
     shutil.copytree(Path("config/aurora"), cfg_dir)
 
+    system_path = cfg_dir / "system.yaml"
+    system = yaml.safe_load(system_path.read_text(encoding="utf-8"))
+    system["trading_mode"] = "testnet"
+    system_path.write_text(yaml.safe_dump(system, sort_keys=False), encoding="utf-8")
+
     # Ensure testnet execution mode + enable flag.
     trading_path = cfg_dir / "trading.yaml"
     trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))

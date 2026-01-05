@@ -1,0 +1,495 @@
+# rg scans (FEATURE_INTEGRITY_FULL_AUDIT_005)
+
+## 1) .get(key, <default>) patterns in critical paths
+apps/reference/main.py:194:        next_allowed_ts = self._qos_next_allowed_ts_per_symbol.get(symbol, 0)
+apps/reference/main.py:217:        order_details = intent_msg.pld.get("order", {})
+apps/reference/main.py:267:        equity_free_usdt_raw = self._last_portfolio.get("equity_free_usdt", 0)
+apps/reference/main.py:299:            self._last_portfolio.get("positions_last_ts_ms", 0)
+apps/reference/main.py:308:        reason = event.pld.get("reason", "unknown")
+apps/reference/main.py:309:        next_allowed_ts = event.pld.get("next_allowed_ts", 0)
+apps/reference/main.py:352:            original_context = event.pld.get("original_context", {})
+apps/reference/main.py:361:                    pld=original_context.get("features", {}),
+apps/reference/main.py:384:        order_details = event.pld.get("order", {})
+apps/reference/main.py:408:            self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+apps/reference/main.py:421:                    "next_allowed_ts": self._qos_next_allowed_ts_per_symbol.get(symbol, 0),
+apps/reference/main.py:476:        self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+apps/reference/main.py:505:            if self._deferred_tries.get(key, 0) >= self._max_retries:
+apps/reference/main.py:544:            order_details = intent_msg.pld.get("order", {})
+apps/reference/main.py:562:            tries = self._deferred_tries.get(key, 0)
+apps/reference/main.py:607:        order_details = intent_msg.pld.get("order", {})
+apps/reference/main.py:654:            f"BRIDGE: Converting TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {intent_msg.pld.get('instrument', 'unknown')} to CMD:OPEN"
+apps/reference/main.py:717:        pld_why = intent_msg.pld.get("why", [])
+apps/reference/main.py:821:        pld_why = intent_msg.pld.get("why", [])
+apps/reference/main.py:879:        rid = event.pld.get("rid", "unknown")
+apps/reference/main.py:881:        order_details = event.pld.get("order", {})
+apps/reference/main.py:920:            self._last_portfolio.get("positions_last_ts_ms", 0)
+apps/reference/main.py:928:                self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+apps/reference/main.py:958:        reason = pld.get("reason", "unknown")
+apps/reference/main.py:959:        next_allowed_ts = pld.get("next_allowed_ts", 0)
+apps/reference/main.py:979:                "attempt": pld.get("attempt", 1),
+apps/reference/main.py:980:                "max_attempts": int(pld.get("max_attempts", self._retry_scheduler.default_max_attempts)),
+apps/reference/main.py:982:                "why_chain": pld.get("why_chain", []),
+apps/reference/main.py:983:                "created_ts": pld.get("created_ts", int(time.time() * 1000)),
+apps/reference/main.py:1009:    LOG.info(f"BRIDGE_HANDLER: on_trade_intent_proposed called for {event.pld.get('instrument', 'unknown')}")
+apps/reference/main.py:1104:log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+apps/reference/main.py:1354:            print(f"   📊 {event.verb} for {event.pld.get('symbol', 'unknown')}")
+apps/reference/main.py:1356:            order_details = event.pld.get("order", {})
+apps/reference/main.py:1357:            quantity = order_details.get("qty", "None")
+apps/reference/main.py:1358:            order_details.get("price", "None")
+apps/reference/main.py:1389:        fsm, config_dict.get("trading", {}))
+apps/reference/main.py:1390:    risk_management = RiskManagement(fsm, config_dict.get("system", {}))
+apps/reference/main.py:1391:    position_tracking = PositionTracking(fsm, config_dict.get("system", {}))
+apps/reference/main.py:1393:    decision_making = DecisionMaking(fsm, config_dict.get("trading", {}))
+apps/reference/main.py:1518:    if os.environ.get("AURORA_DEBUG_EVENTS", "0") == "1":
+apps/reference/main.py:1614:                    f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}"
+apps/reference/main.py:1617:                    f"   Positions restored: {snapshot_data.get('metadata', {}).get('positions_count', 0)}"
+apps/reference/config_loader.py:304:        if 'trading' in merged_config and 'domains' in (merged_config.get('trading', {}) or {}):
+apps/reference/config_loader.py:442:        mode = config.get("trading_mode", "production")
+apps/reference/config_loader.py:443:        trading = config.get("trading", {})
+apps/reference/config_loader.py:444:        risk = trading.get("risk", {})
+apps/reference/config_loader.py:446:        strategies = config.get("strategies", {})
+apps/reference/config_loader.py:447:        aurora = strategies.get("aurora", {}) if isinstance(strategies, dict) else {}
+apps/reference/config_loader.py:448:        decision = aurora.get("decision", {}) if isinstance(aurora, dict) else {}
+apps/reference/config_loader.py:453:        mode_overrides = decision.get(mode, {})
+apps/reference/config_loader.py:496:            risk_mode_overrides = risk.get(mode, {})
+apps/reference/config_loader.py:642:        canonical_domains = resolved_config.get("domains", {})
+apps/reference/config_loader.py:643:        trading_block = resolved_config.get("trading", {})
+apps/reference/config_loader.py:747:            execution = spec.get("execution", spec)
+apps/reference/config_loader.py:782:            sizing = spec.get("sizing", spec)
+apps/reference/config_loader.py:943:            nested_trading = trading_config.get("trading", {})
+apps/reference/config_loader.py:1289:        profile_raw = mr_dict.get("timeframe_sec", None)
+apps/reference/config_models.py:1013:        period_short = info.data.get('period_short', 3)
+apps/reference/config_models.py:1048:        kappa_min = info.data.get('kappa_min', 0.3)
+apps/reference/config_models.py:1065:        clamp_min = info.data.get('clamp_min', -0.02)
+apps/reference/domains/decision_making/decision_making.py:2535:            readiness_map = features_evt.get("warmup", {}).get("ready", {})
+apps/reference/domains/decision_making/decision_making.py:3194:        equity = decimal.Decimal(str(portfolio.get("equity", "0")))
+apps/reference/domains/feature_engineering/feature_engineering.py:485:                    "ts": current_tick.get("ts", 0),
+apps/reference/domains/feature_engineering/feature_engineering.py:567:                    btc_price_hist = self.anchor_prices.get("BTCUSDT", None)
+apps/reference/domains/feature_engineering/feature_engineering.py:593:                    tfi_val = float(features.get("tfi", 0))
+apps/reference/domains/feature_engineering/feature_engineering.py:743:                    ts_ms=int(current_tick.get("ts", 0) or 0),
+apps/reference/domains/feature_engineering/feature_engineering.py:769:                ready_map = warmup.get("ready", {})
+apps/reference/domains/feature_engineering/feature_engineering.py:779:                existing_reasons = list(warmup.get("reasons", []))
+apps/reference/domains/feature_engineering/feature_engineering.py:790:                current_ts_ms = int(current_tick.get("ts", 0) or 0)
+apps/reference/domains/feature_engineering/feature_engineering.py:804:                    ready_map = warmup.get("ready", {})
+apps/reference/domains/feature_engineering/feature_engineering.py:808:                    existing_reasons = list(warmup.get("reasons", []))
+apps/reference/domains/feature_engineering/calculation_engine.py:172:        window_start = self._book_window_start_ts_ms.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:181:            self._book_update_count[symbol] = self._book_update_count.get(symbol, 0) + 1
+apps/reference/domains/feature_engineering/calculation_engine.py:184:            self._trade_count_in_window[symbol] = self._trade_count_in_window.get(symbol, 0) + 1
+apps/reference/domains/feature_engineering/calculation_engine.py:205:        last_update_ts = self._book_last_update_ts_ms.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:217:        update_count = self._book_update_count.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:218:        trade_count = self._trade_count_in_window.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:675:        current_ts = current_tick.get("ts", 0)
+apps/reference/domains/decision_making/mean_reversion_handler.py:578:                features = pld.get("features", {})
+apps/reference/domains/decision_making/mean_reversion_handler.py:605:        kappa = self._liquidity_kappa_map.get(symbol, Decimal("0"))
+apps/reference/domains/decision_making/mean_reversion_handler.py:688:            last_ts = self._last_tick_ts_ms.get(symbol, 0)
+apps/reference/domains/decision_making/mean_reversion_handler.py:734:                        last_counted = self._last_counted_bar_end_ts_ms.get(symbol, 0)
+apps/reference/domains/decision_making/signal_score_v2.py:128:            is_ready = readiness.get(feat, False)
+apps/reference/domains/feature_engineering/docs/API_DEPENDENCIES.md:79:        value = self.config.get("trading", {}).get("feature_engineering", {}).get("ema", {}).get("period_short", 3)
+
+## 2) All .get( patterns in critical paths (for manual review)
+apps/reference/main.py:194:        next_allowed_ts = self._qos_next_allowed_ts_per_symbol.get(symbol, 0)
+apps/reference/main.py:216:        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol") or ""
+apps/reference/main.py:217:        order_details = intent_msg.pld.get("order", {})
+apps/reference/main.py:220:        notional = intent_msg.pld.get("notional") or order_details.get("notional")
+apps/reference/main.py:224:            qty = order_details.get("qty")
+apps/reference/main.py:226:                order_details.get("price_ref")
+apps/reference/main.py:227:                or intent_msg.pld.get("price_ref")
+apps/reference/main.py:228:                or intent_msg.pld.get("entry_price")
+apps/reference/main.py:229:                or order_details.get("price")
+apps/reference/main.py:230:                or intent_msg.pld.get("price")
+apps/reference/main.py:247:        instrument_specs = self.config.instruments.get(symbol) if self.config.instruments else None
+apps/reference/main.py:267:        equity_free_usdt_raw = self._last_portfolio.get("equity_free_usdt", 0)
+apps/reference/main.py:299:            self._last_portfolio.get("positions_last_ts_ms", 0)
+apps/reference/main.py:307:        symbol = event.pld.get("symbol")
+apps/reference/main.py:308:        reason = event.pld.get("reason", "unknown")
+apps/reference/main.py:309:        next_allowed_ts = event.pld.get("next_allowed_ts", 0)
+apps/reference/main.py:352:            original_context = event.pld.get("original_context", {})
+apps/reference/main.py:361:                    pld=original_context.get("features", {}),
+apps/reference/main.py:382:        symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
+apps/reference/main.py:384:        order_details = event.pld.get("order", {})
+apps/reference/main.py:386:            order_details.get("reduce_only")
+apps/reference/main.py:387:            or order_details.get("reduceOnly")
+apps/reference/main.py:388:            or event.pld.get("reduce_only")
+apps/reference/main.py:396:        if order_details.get("order_type") == "LIMIT":
+apps/reference/main.py:405:            key = event.pld.get(
+apps/reference/main.py:408:            self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+apps/reference/main.py:420:                    "idempotent_key": event.pld.get("idempotent_key"),
+apps/reference/main.py:421:                    "next_allowed_ts": self._qos_next_allowed_ts_per_symbol.get(symbol, 0),
+apps/reference/main.py:474:        key = event.pld.get("idempotent_key") or event.rid or str(time.time())
+apps/reference/main.py:476:        self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+apps/reference/main.py:488:                "idempotent_key": event.pld.get("idempotent_key"),
+apps/reference/main.py:505:            if self._deferred_tries.get(key, 0) >= self._max_retries:
+apps/reference/main.py:516:                        "idempotent_key": event.pld.get("idempotent_key"),
+apps/reference/main.py:542:            symbol = intent_msg.pld.get(
+apps/reference/main.py:543:                "instrument") or intent_msg.pld.get("symbol") or ""
+apps/reference/main.py:544:            order_details = intent_msg.pld.get("order", {})
+apps/reference/main.py:546:                order_details.get("reduce_only")
+apps/reference/main.py:547:                or order_details.get("reduceOnly")
+apps/reference/main.py:548:                or intent_msg.pld.get("reduce_only")
+apps/reference/main.py:562:            tries = self._deferred_tries.get(key, 0)
+apps/reference/main.py:574:                        "idempotent_key": intent_msg.pld.get("idempotent_key"),
+apps/reference/main.py:592:                symbol = intent_msg.pld.get(
+apps/reference/main.py:593:                    "instrument") or intent_msg.pld.get("symbol")
+apps/reference/main.py:607:        order_details = intent_msg.pld.get("order", {})
+apps/reference/main.py:609:            order_details.get("reduce_only")
+apps/reference/main.py:610:            or order_details.get("reduceOnly")
+apps/reference/main.py:611:            or intent_msg.pld.get("reduce_only")
+apps/reference/main.py:617:        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol") or ""
+apps/reference/main.py:635:                    "idempotent_key": intent_msg.pld.get("idempotent_key"),
+apps/reference/main.py:654:            f"BRIDGE: Converting TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {intent_msg.pld.get('instrument', 'unknown')} to CMD:OPEN"
+apps/reference/main.py:659:        order_type_raw = order_details.get("order_type") or order_details.get("type")
+apps/reference/main.py:661:            order_details.get("price_ref")
+apps/reference/main.py:662:            or intent_msg.pld.get("price_ref")
+apps/reference/main.py:663:            or intent_msg.pld.get("entry_price")
+apps/reference/main.py:664:            or order_details.get("price")
+apps/reference/main.py:665:            or intent_msg.pld.get("price")
+apps/reference/main.py:670:        price_ctx = intent_msg.pld.get("price_ctx") or {}
+apps/reference/main.py:674:            "rid": intent_msg.pld.get("rid"),
+apps/reference/main.py:676:            "symbol": intent_msg.pld.get("instrument"),
+apps/reference/main.py:677:            "side": intent_msg.pld.get("side"),
+apps/reference/main.py:679:            "qty": order_details.get("qty"),
+apps/reference/main.py:680:            "price": order_details.get(
+apps/reference/main.py:685:            "idempotent_key": intent_msg.pld.get(
+apps/reference/main.py:691:            "stop_price": intent_msg.pld.get("stop_price") or price_ctx.get("stop_price"),
+apps/reference/main.py:692:            "target_price": intent_msg.pld.get("target_price") or price_ctx.get("target_price"),
+apps/reference/main.py:693:            "sl_pct": intent_msg.pld.get("sl_pct"),
+apps/reference/main.py:698:        stable_rid = str(command_payload.get("rid") or intent_msg.rid)
+apps/reference/main.py:707:                f"rid={command_payload.get('rid')} symbol={command_payload.get('symbol')} side={command_payload.get('side')} qty={command_payload.get('qty')} clientOrderId={command_payload.get('idempotent_key')} exposure_reservation_state={exposure_reservation_state} why=exec_open_enter"
+apps/reference/main.py:717:        pld_why = intent_msg.pld.get("why", [])
+apps/reference/main.py:769:                        idempotent_key=str(command_payload.get("idempotent_key") or stable_rid),
+apps/reference/main.py:771:                        symbol=str(command_payload.get("symbol") or ""),
+apps/reference/main.py:772:                        side=str(command_payload.get("side") or ""),
+apps/reference/main.py:797:                            ref = self.fsm.order_index.get(rid=stable_rid)  # type: ignore[attr-defined]
+apps/reference/main.py:807:        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol")
+apps/reference/main.py:821:        pld_why = intent_msg.pld.get("why", [])
+apps/reference/main.py:847:                "reason": intent_msg.pld.get("reason") or "reduce_only_trade_intent",
+apps/reference/main.py:848:                "idempotent_key": intent_msg.pld.get("idempotent_key"),
+apps/reference/main.py:849:                "retry_key": intent_msg.pld.get("retry_key"),
+apps/reference/main.py:878:        symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
+apps/reference/main.py:879:        rid = event.pld.get("rid", "unknown")
+apps/reference/main.py:881:        order_details = event.pld.get("order", {})
+apps/reference/main.py:883:            order_details.get("reduce_only")
+apps/reference/main.py:884:            or order_details.get("reduceOnly")
+apps/reference/main.py:885:            or event.pld.get("reduce_only")
+apps/reference/main.py:892:        if order_details.get("order_type") == "LIMIT":
+apps/reference/main.py:920:            self._last_portfolio.get("positions_last_ts_ms", 0)
+apps/reference/main.py:928:                self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
+apps/reference/main.py:934:                symbol = deferred_event.pld.get("instrument") or deferred_event.pld.get("symbol") or ""
+apps/reference/main.py:957:        symbol = pld.get("symbol")
+apps/reference/main.py:958:        reason = pld.get("reason", "unknown")
+apps/reference/main.py:959:        next_allowed_ts = pld.get("next_allowed_ts", 0)
+apps/reference/main.py:969:        retry_key = pld.get("retry_key")
+apps/reference/main.py:970:        original_event = pld.get("original_event")
+apps/reference/main.py:979:                "attempt": pld.get("attempt", 1),
+apps/reference/main.py:980:                "max_attempts": int(pld.get("max_attempts", self._retry_scheduler.default_max_attempts)),
+apps/reference/main.py:982:                "why_chain": pld.get("why_chain", []),
+apps/reference/main.py:983:                "created_ts": pld.get("created_ts", int(time.time() * 1000)),
+apps/reference/main.py:1009:    LOG.info(f"BRIDGE_HANDLER: on_trade_intent_proposed called for {event.pld.get('instrument', 'unknown')}")
+apps/reference/main.py:1104:log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+apps/reference/main.py:1129:        # Use globals().get() to safely access entropy_monitor
+apps/reference/main.py:1130:        em = globals().get('entropy_monitor')
+apps/reference/main.py:1316:        domains = config.get("domains")
+apps/reference/main.py:1317:        execpos = domains.get("execution_position") if isinstance(domains, dict) else None
+apps/reference/main.py:1318:        oi_cfg = execpos.get("order_index") if isinstance(execpos, dict) else None
+apps/reference/main.py:1347:                f"   📊 {pld.get('symbol')} bid={pld.get('bid')} ask={pld.get('ask')}"
+apps/reference/main.py:1354:            print(f"   📊 {event.verb} for {event.pld.get('symbol', 'unknown')}")
+apps/reference/main.py:1356:            order_details = event.pld.get("order", {})
+apps/reference/main.py:1357:            quantity = order_details.get("qty", "None")
+apps/reference/main.py:1358:            order_details.get("price", "None")
+apps/reference/main.py:1359:            trade_info = f"   🎯 TRADE INTENT: {event.pld.get('side')} {quantity} {event.pld.get('instrument')}"
+apps/reference/main.py:1389:        fsm, config_dict.get("trading", {}))
+apps/reference/main.py:1390:    risk_management = RiskManagement(fsm, config_dict.get("system", {}))
+apps/reference/main.py:1391:    position_tracking = PositionTracking(fsm, config_dict.get("system", {}))
+apps/reference/main.py:1393:    decision_making = DecisionMaking(fsm, config_dict.get("trading", {}))
+apps/reference/main.py:1518:    if os.environ.get("AURORA_DEBUG_EVENTS", "0") == "1":
+apps/reference/main.py:1614:                    f"   Snapshot timestamp: {snapshot_data.get('timestamp_utc', 'unknown')}"
+apps/reference/main.py:1617:                    f"   Positions restored: {snapshot_data.get('metadata', {}).get('positions_count', 0)}"
+apps/reference/main.py:1621:                snapshot_ts = snapshot_data.get("timestamp_utc")
+apps/reference/main.py:1871:                comp = locals().get(name)
+apps/reference/config_models.py:337:        if isinstance(data, dict) and data.get("max_risk_score") is None:
+apps/reference/config_models.py:1013:        period_short = info.data.get('period_short', 3)
+apps/reference/config_models.py:1048:        kappa_min = info.data.get('kappa_min', 0.3)
+apps/reference/config_models.py:1065:        clamp_min = info.data.get('clamp_min', -0.02)
+apps/reference/config_models.py:1906:        if isinstance(data, dict) and data.get("max_risk_score") is None:
+apps/reference/config_models.py:2301:            cfg = aurora.assets.get(symbol)
+apps/reference/config_loader.py:64:                existing = destination.get(key)
+apps/reference/config_loader.py:98:    No .get() fallback interface - missing fields cause AttributeError at startup.
+apps/reference/config_loader.py:222:                lambda m: os.environ.get(m.group(1), m.group(0)), config_part
+apps/reference/config_loader.py:255:                wl_val = regime_config.get("hotreload_whitelist")
+apps/reference/config_loader.py:304:        if 'trading' in merged_config and 'domains' in (merged_config.get('trading', {}) or {}):
+apps/reference/config_loader.py:312:        if not merged_config.get('domains'):
+apps/reference/config_loader.py:321:            instruments_raw.get("instruments"), dict
+apps/reference/config_loader.py:331:        if not merged_config.get("instruments"):
+apps/reference/config_loader.py:337:        trading_block = merged_config.get("trading")
+apps/reference/config_loader.py:344:        trading_instruments = trading_block.get("instruments")
+apps/reference/config_loader.py:384:            assignments = strategies_raw.get("assignments")
+apps/reference/config_loader.py:442:        mode = config.get("trading_mode", "production")
+apps/reference/config_loader.py:443:        trading = config.get("trading", {})
+apps/reference/config_loader.py:444:        risk = trading.get("risk", {})
+apps/reference/config_loader.py:446:        strategies = config.get("strategies", {})
+apps/reference/config_loader.py:447:        aurora = strategies.get("aurora", {}) if isinstance(strategies, dict) else {}
+apps/reference/config_loader.py:448:        decision = aurora.get("decision", {}) if isinstance(aurora, dict) else {}
+apps/reference/config_loader.py:453:        mode_overrides = decision.get(mode, {})
+apps/reference/config_loader.py:465:                old_val = decision.get(key)
+apps/reference/config_loader.py:475:            dc = trading.get("domain_configuration")
+apps/reference/config_loader.py:481:                block = dc.get(name)
+apps/reference/config_loader.py:496:            risk_mode_overrides = risk.get(mode, {})
+apps/reference/config_loader.py:506:                    old_val = thresholds.get(key)
+apps/reference/config_loader.py:523:                api_config["live"].get(k) for k in ["api_key", "api_secret"]
+apps/reference/config_loader.py:538:        sr = resolved_config.get("strategies_registry")
+apps/reference/config_loader.py:540:            assignments = sr.get("assignments")
+apps/reference/config_loader.py:544:        trading = resolved_config.get("trading")
+apps/reference/config_loader.py:546:            symbols_to_track = trading.get("symbols_to_track")
+apps/reference/config_loader.py:550:        instruments = resolved_config.get("instruments")
+apps/reference/config_loader.py:566:        trading = resolved_config.get("trading")
+apps/reference/config_loader.py:570:        sr = resolved_config.get("strategies_registry")
+apps/reference/config_loader.py:573:            a = sr.get("assignments")
+apps/reference/config_loader.py:578:        existing = trading.get("symbols_to_track")
+apps/reference/config_loader.py:642:        canonical_domains = resolved_config.get("domains", {})
+apps/reference/config_loader.py:643:        trading_block = resolved_config.get("trading", {})
+apps/reference/config_loader.py:682:        instruments = resolved_config.get("instruments")
+apps/reference/config_loader.py:690:            spec = instruments.get(symbol)
+apps/reference/config_loader.py:699:                raw = spec.get(field)
+apps/reference/config_loader.py:731:        instruments = resolved_config.get("instruments")
+apps/reference/config_loader.py:741:            spec = instruments.get(symbol)
+apps/reference/config_loader.py:747:            execution = spec.get("execution", spec)
+apps/reference/config_loader.py:750:                if execution.get(field) is None:
+apps/reference/config_loader.py:772:        instruments = resolved_config.get("instruments")
+apps/reference/config_loader.py:778:            spec = instruments.get(symbol)
+apps/reference/config_loader.py:782:            sizing = spec.get("sizing", spec)
+apps/reference/config_loader.py:783:            raw = sizing.get("margin_pct") if isinstance(sizing, dict) else None
+apps/reference/config_loader.py:882:            mr_section = trading_config.get("mean_reversion")
+apps/reference/config_loader.py:898:            t = trading_config.get("trading")
+apps/reference/config_loader.py:937:                fe_section = trading_config.get("feature_engineering")
+apps/reference/config_loader.py:943:            nested_trading = trading_config.get("trading", {})
+apps/reference/config_loader.py:945:                fe_section = nested_trading.get("feature_engineering")
+apps/reference/config_loader.py:981:            root_exec = merged_config.get("execution")
+apps/reference/config_loader.py:986:                trading_block = merged_config.get("trading")
+apps/reference/config_loader.py:988:                    trading_exec = trading_block.get("execution")
+apps/reference/config_loader.py:994:            if "order_guardian" in exec_block and exec_block.get("order_guardian") is not None:
+apps/reference/config_loader.py:1078:        domains = resolved_config.get("domains")
+apps/reference/config_loader.py:1082:        dm = domains.get("decision_making")
+apps/reference/config_loader.py:1086:        ds = dm.get("directional_sanity")
+apps/reference/config_loader.py:1095:            if k not in ds or ds.get(k) is None:
+apps/reference/config_loader.py:1114:        domains = resolved_config.get("domains")
+apps/reference/config_loader.py:1118:        dm = domains.get("decision_making")
+apps/reference/config_loader.py:1122:        pm = dm.get("price_motion_sanity")
+apps/reference/config_loader.py:1139:            if k not in pm or pm.get(k) is None:
+apps/reference/config_loader.py:1162:        domains = resolved_config.get("domains")
+apps/reference/config_loader.py:1166:        fe = domains.get("feature_engineering")
+apps/reference/config_loader.py:1170:        rr = fe.get("readiness_registry")
+apps/reference/config_loader.py:1176:        declared_keys = rr.get("declared_keys")
+apps/reference/config_loader.py:1184:        strategies = resolved_config.get("strategies")
+apps/reference/config_loader.py:1188:        aurora = strategies.get("aurora")
+apps/reference/config_loader.py:1192:        decision = aurora.get("decision")
+apps/reference/config_loader.py:1196:        essential = decision.get("essential_features")
+apps/reference/config_loader.py:1228:        sr = resolved_config.get("strategies_registry")
+apps/reference/config_loader.py:1232:        assignments = sr.get("assignments")
+apps/reference/config_loader.py:1248:        strategies = resolved_config.get("strategies")
+apps/reference/config_loader.py:1252:        aurora_cfg = strategies.get("aurora")
+apps/reference/config_loader.py:1255:            assets = aurora_cfg.get("assets")
+apps/reference/config_loader.py:1261:            inst_cfg = aurora_assets.get(symbol)
+apps/reference/config_loader.py:1266:            raw = inst_cfg.get("timeframe_sec")
+apps/reference/config_loader.py:1278:        mr_block = strategies.get("mean_reversion")
+apps/reference/config_loader.py:1289:        profile_raw = mr_dict.get("timeframe_sec", None)
+apps/reference/domains/feature_engineering/calculation_engine.py:111:        bounds = self.cfg.feature_sanity_bounds.get(feature_name)
+apps/reference/domains/feature_engineering/calculation_engine.py:172:        window_start = self._book_window_start_ts_ms.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:181:            self._book_update_count[symbol] = self._book_update_count.get(symbol, 0) + 1
+apps/reference/domains/feature_engineering/calculation_engine.py:184:            self._trade_count_in_window[symbol] = self._trade_count_in_window.get(symbol, 0) + 1
+apps/reference/domains/feature_engineering/calculation_engine.py:205:        last_update_ts = self._book_last_update_ts_ms.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:217:        update_count = self._book_update_count.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:218:        trade_count = self._trade_count_in_window.get(symbol, 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:675:        current_ts = current_tick.get("ts", 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:924:            prices_deque = anchor_prices.get(anchor)
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:163:                dropped_out_of_order=int(current_tick.get("trades_dropped_out_of_order") or 0),
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:166:        buy_count = current_tick.get("buy_count")
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:167:        sell_count = current_tick.get("sell_count")
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:174:                dropped_out_of_order=int(current_tick.get("trades_dropped_out_of_order") or 0),
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:185:                dropped_out_of_order=int(current_tick.get("trades_dropped_out_of_order") or 0),
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:188:        dropped_out_of_order = int(current_tick.get("trades_dropped_out_of_order") or 0)
+apps/reference/domains/feature_engineering/bar_resampler.py:355:        return self._resamplers.get(symbol)
+apps/reference/domains/feature_engineering/bar_resampler.py:359:        resampler = self._resamplers.get(symbol)
+apps/reference/domains/feature_engineering/bar_resampler.py:366:        resampler = self._resamplers.get(symbol)
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:318:        atr_pct = self._atr_pct.get(symbol)
+apps/reference/domains/feature_engineering/utils.py:83:                current = current.get(segment)
+apps/reference/domains/feature_engineering/macro_sync_resampler.py:91:            prev_price = self._by_bin.get(prev_ts)
+apps/reference/domains/feature_engineering/macro_sync_resampler.py:143:        sym_series = self._series.get(symbol)
+apps/reference/domains/feature_engineering/macro_sync_resampler.py:189:            a_series = self._series.get(anchor)
+apps/reference/domains/feature_engineering/macro_sync_resampler.py:280:        s = self._series.get(key)
+apps/reference/domains/feature_engineering/feature_engineering.py:201:            anchor = event.pld.get("anchor")
+apps/reference/domains/feature_engineering/feature_engineering.py:202:            price = event.pld.get("price")
+apps/reference/domains/feature_engineering/feature_engineering.py:203:            ts_ms = event.pld.get("ts_ms")
+apps/reference/domains/feature_engineering/feature_engineering.py:358:            symbol = event.pld.get("symbol")
+apps/reference/domains/feature_engineering/feature_engineering.py:392:            symbol = event.pld.get("symbol")
+apps/reference/domains/feature_engineering/feature_engineering.py:419:        symbol = event.pld.get("symbol")
+apps/reference/domains/feature_engineering/feature_engineering.py:422:        ts_pld = event.pld.get("ts")
+apps/reference/domains/feature_engineering/feature_engineering.py:438:        last_tick = self.last_tick_data.get(symbol)
+apps/reference/domains/feature_engineering/feature_engineering.py:485:                    "ts": current_tick.get("ts", 0),
+apps/reference/domains/feature_engineering/feature_engineering.py:567:                    btc_price_hist = self.anchor_prices.get("BTCUSDT", None)
+apps/reference/domains/feature_engineering/feature_engineering.py:593:                    tfi_val = float(features.get("tfi", 0))
+apps/reference/domains/feature_engineering/feature_engineering.py:743:                    ts_ms=int(current_tick.get("ts", 0) or 0),
+apps/reference/domains/feature_engineering/feature_engineering.py:769:                ready_map = warmup.get("ready", {})
+apps/reference/domains/feature_engineering/feature_engineering.py:779:                existing_reasons = list(warmup.get("reasons", []))
+apps/reference/domains/feature_engineering/feature_engineering.py:790:                current_ts_ms = int(current_tick.get("ts", 0) or 0)
+apps/reference/domains/feature_engineering/feature_engineering.py:804:                    ready_map = warmup.get("ready", {})
+apps/reference/domains/feature_engineering/feature_engineering.py:808:                    existing_reasons = list(warmup.get("reasons", []))
+apps/reference/domains/decision_making/decision_context.py:336:        raw_value = self.features.get(key)
+apps/reference/domains/decision_making/decision_context.py:350:        value = self.features.get(key)
+apps/reference/domains/decision_making/normalized_reject_reasons.py:357:        return descriptions.get(nrr_code)
+apps/reference/domains/decision_making/mean_reversion_handler.py:239:                strategies = assignments.get(symbol) or []
+apps/reference/domains/decision_making/mean_reversion_handler.py:302:            asset_cfg = self._mr_config.assets.get(symbol)
+apps/reference/domains/decision_making/mean_reversion_handler.py:374:        strategy = self._strategies.get(symbol)
+apps/reference/domains/decision_making/mean_reversion_handler.py:396:        strategy = self._strategies.get(symbol)
+apps/reference/domains/decision_making/mean_reversion_handler.py:433:            asset_cfg = self._mr_config.assets.get(symbol) if self._mr_config.assets else None
+apps/reference/domains/decision_making/mean_reversion_handler.py:536:                    "mr_params": pld.get("mr_params"),
+apps/reference/domains/decision_making/mean_reversion_handler.py:551:                symbol = str(pld.get("symbol") or "")
+apps/reference/domains/decision_making/mean_reversion_handler.py:552:                regime = str(pld.get("regime") or pld.get("overall_regime") or "")
+apps/reference/domains/decision_making/mean_reversion_handler.py:577:                symbol = str(pld.get("symbol") or "")
+apps/reference/domains/decision_making/mean_reversion_handler.py:578:                features = pld.get("features", {})
+apps/reference/domains/decision_making/mean_reversion_handler.py:587:            kappa_raw = features.get("liquidity_kappa")
+apps/reference/domains/decision_making/mean_reversion_handler.py:598:        asset_cfg = self._mr_config.assets.get(symbol)
+apps/reference/domains/decision_making/mean_reversion_handler.py:605:        kappa = self._liquidity_kappa_map.get(symbol, Decimal("0"))
+apps/reference/domains/decision_making/mean_reversion_handler.py:619:                symbol = str(pld.get("symbol") or "")
+apps/reference/domains/decision_making/mean_reversion_handler.py:621:                    raw_price = pld.get("price")
+apps/reference/domains/decision_making/mean_reversion_handler.py:626:                raw_ts = pld.get("timestamp_ms")
+apps/reference/domains/decision_making/mean_reversion_handler.py:628:                    raw_ts = pld.get("ts")
+apps/reference/domains/decision_making/mean_reversion_handler.py:631:                raw_vol = pld.get("volume")
+apps/reference/domains/decision_making/mean_reversion_handler.py:633:                    bv_raw = pld.get("buy_volume") or "0"
+apps/reference/domains/decision_making/mean_reversion_handler.py:634:                    sv_raw = pld.get("sell_volume") or "0"
+apps/reference/domains/decision_making/mean_reversion_handler.py:687:            regime = self._per_symbol_regime.get(symbol)
+apps/reference/domains/decision_making/mean_reversion_handler.py:688:            last_ts = self._last_tick_ts_ms.get(symbol, 0)
+apps/reference/domains/decision_making/mean_reversion_handler.py:728:                strat = self._strategies.get(symbol)
+apps/reference/domains/decision_making/mean_reversion_handler.py:734:                        last_counted = self._last_counted_bar_end_ts_ms.get(symbol, 0)
+apps/reference/domains/decision_making/mean_reversion_handler.py:805:        strategy = self._strategies.get(symbol)
+apps/reference/domains/decision_making/signal_score_v2.py:128:            is_ready = readiness.get(feat, False)
+apps/reference/domains/feature_engineering/docs/API_DEPENDENCIES.md:79:        value = self.config.get("trading", {}).get("feature_engineering", {}).get("ema", {}).get("period_short", 3)
+apps/reference/domains/decision_making/decision_making.py:321:            strategy_id = pld.get("strategy_id")
+apps/reference/domains/decision_making/decision_making.py:322:            symbol = pld.get("symbol")
+apps/reference/domains/decision_making/decision_making.py:323:            side = pld.get("side")
+apps/reference/domains/decision_making/decision_making.py:324:            rid = pld.get("rid") or f"sig-{uuid.uuid4()}"
+apps/reference/domains/decision_making/decision_making.py:343:                ts_ms=int(pld.get("ts_ms")) if pld.get("ts_ms") is not None else None,
+apps/reference/domains/decision_making/decision_making.py:355:            guard_state = self.symbol_states[symbol].get("risk_skew_guard") or {}
+apps/reference/domains/decision_making/decision_making.py:356:            if guard_state.get("until_refresh"):
+apps/reference/domains/decision_making/decision_making.py:363:                    ts_ms=pld.get("ts_ms"),
+apps/reference/domains/decision_making/decision_making.py:386:            latest_risk = self.symbol_states[symbol].get("risk")
+apps/reference/domains/decision_making/decision_making.py:399:                    ts_ms=pld.get("ts_ms"),
+apps/reference/domains/decision_making/decision_making.py:417:                risk_params = latest_risk.get("risk_parameters") or {}
+apps/reference/domains/decision_making/decision_making.py:432:                        ts_ms=pld.get("ts_ms"),
+apps/reference/domains/decision_making/decision_making.py:461:                        ts_ms=pld.get("ts_ms"),
+apps/reference/domains/decision_making/decision_making.py:513:                features_data = self.symbol_states[symbol].get("features") or {}
+apps/reference/domains/decision_making/decision_making.py:519:                    feats_payload = features_data.get("features") or {}
+apps/reference/domains/decision_making/decision_making.py:582:                                ts_ms=pld.get("ts_ms"),
+apps/reference/domains/decision_making/decision_making.py:646:                            ts_ms=pld.get("ts_ms"),
+apps/reference/domains/decision_making/decision_making.py:685:                        ts_ms=pld.get("ts_ms"),
+apps/reference/domains/decision_making/decision_making.py:714:            price_ctx = pld.get("price_ctx") if isinstance(pld.get("price_ctx"), dict) else {}
+apps/reference/domains/decision_making/decision_making.py:715:            entry_price = price_ctx.get("entry_price")
+apps/reference/domains/decision_making/decision_making.py:734:                "features": self.symbol_states[symbol].get("features") if symbol in self.symbol_states else {},
+apps/reference/domains/decision_making/decision_making.py:755:            features_data = self.symbol_states[symbol].get("features") or {}
+apps/reference/domains/decision_making/decision_making.py:780:            ts_ms = pld.get("ts_ms")
+apps/reference/domains/decision_making/decision_making.py:1077:        return aurora.assets.get(symbol)
+apps/reference/domains/decision_making/decision_making.py:1153:            existing = self._arb_window_winner.get(symbol)
+apps/reference/domains/decision_making/decision_making.py:1337:            positions = portfolio.get("positions") or []
+apps/reference/domains/decision_making/decision_making.py:1346:                pos_symbol = pos.get("symbol")
+apps/reference/domains/decision_making/decision_making.py:1351:                qty = pos.get("quantity") or pos.get("positionAmt") or pos.get("qty")
+apps/reference/domains/decision_making/decision_making.py:1407:                guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
+apps/reference/domains/decision_making/decision_making.py:1408:                if guard.get("until_refresh"):
+apps/reference/domains/decision_making/decision_making.py:1425:                    feats = (event.pld or {}).get("features") or {}
+apps/reference/domains/decision_making/decision_making.py:1436:                dp_raw = feats.get("delta_price")
+apps/reference/domains/decision_making/decision_making.py:1445:                hist = self.symbol_states[symbol].get("_delta_price_hist")
+apps/reference/domains/decision_making/decision_making.py:1462:                        symbol, {"current_price": feats.get("price")}, feats
+apps/reference/domains/decision_making/decision_making.py:1541:            guard = self.symbol_states[symbol].get("risk_skew_guard") or {}
+apps/reference/domains/decision_making/decision_making.py:1542:            if guard.get("until_refresh"):
+apps/reference/domains/decision_making/decision_making.py:1562:                rp = (event.pld or {}).get("risk_parameters") or {}
+apps/reference/domains/decision_making/decision_making.py:1590:                equity_free_usdt = portfolio_data.get("equity_free_usdt")
+apps/reference/domains/decision_making/decision_making.py:1605:                equity_cross_usdt = portfolio_data.get("equity_cross_usdt")
+apps/reference/domains/decision_making/decision_making.py:1617:            f"   Equity: {portfolio_data.get('equity') if isinstance(portfolio_data, dict) else None}, Positions: {len(positions)}"
+apps/reference/domains/decision_making/decision_making.py:1644:            symbol = event.pld.get("symbol")
+apps/reference/domains/decision_making/decision_making.py:1648:                regime_val = event.pld.get("regime") or event.pld.get("overall_regime")
+apps/reference/domains/decision_making/decision_making.py:1653:                    "confidence": event.pld.get("confidence"),
+apps/reference/domains/decision_making/decision_making.py:1654:                    "axes": event.pld.get("axes"),
+apps/reference/domains/decision_making/decision_making.py:1657:                    f"[{symbol}] Regime updated: {self._per_symbol_regimes[symbol].get('regime')}"
+apps/reference/domains/decision_making/decision_making.py:1682:                symbol = event.pld.get("symbol")
+apps/reference/domains/decision_making/decision_making.py:1683:                regime = event.pld.get("regime")
+apps/reference/domains/decision_making/decision_making.py:1697:            regime = regime_data.get("regime") if isinstance(regime_data, dict) else str(regime_data)
+apps/reference/domains/decision_making/decision_making.py:1705:            curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
+apps/reference/domains/decision_making/decision_making.py:1805:        state = self.symbol_states.get(symbol) or {}
+apps/reference/domains/decision_making/decision_making.py:1806:        features_evt = state.get("features") if isinstance(state, dict) else None
+apps/reference/domains/decision_making/decision_making.py:1816:        risk_evt = state.get("risk") if isinstance(state, dict) else None
+apps/reference/domains/decision_making/decision_making.py:1824:            warmup = self._per_symbol_regimes[symbol].get("warmup")
+apps/reference/domains/decision_making/decision_making.py:1847:        fe_warmup = features_evt.get("warmup")
+apps/reference/domains/decision_making/decision_making.py:1868:        has_features = bool(state.get("features"))
+apps/reference/domains/decision_making/decision_making.py:1869:        has_risk = bool(state.get("risk"))
+apps/reference/domains/decision_making/decision_making.py:1899:            ts = feats_evt.get("ts")
+apps/reference/domains/decision_making/decision_making.py:1910:                    last_idx = self._last_bar_index.get(symbol)
+apps/reference/domains/decision_making/decision_making.py:1924:                    warmup = self._per_symbol_regimes[symbol].get("warmup")
+apps/reference/domains/decision_making/decision_making.py:1970:                        current_regime = self._per_symbol_regimes[symbol].get("regime")
+apps/reference/domains/decision_making/decision_making.py:2001:            effective_regime = self._per_symbol_regimes.get(symbol)
+apps/reference/domains/decision_making/decision_making.py:2031:                    ts = feats_evt.get("ts")
+apps/reference/domains/decision_making/decision_making.py:2036:                    effective_regime = self._per_symbol_regimes.get(symbol)
+apps/reference/domains/decision_making/decision_making.py:2086:                warmup = self._per_symbol_regimes[symbol].get("warmup")
+apps/reference/domains/decision_making/decision_making.py:2095:                features_evt_ts = features_evt.get("ts")
+apps/reference/domains/decision_making/decision_making.py:2274:            or portfolio.get("equity_free_usdt")
+apps/reference/domains/decision_making/decision_making.py:2310:        regime = context.get("regime")
+apps/reference/domains/decision_making/decision_making.py:2535:            readiness_map = features_evt.get("warmup", {}).get("ready", {})
+apps/reference/domains/decision_making/decision_making.py:2641:        regime_name = (regime or {}).get("regime") if regime else None
+apps/reference/domains/decision_making/decision_making.py:2645:                factor_str = str(regime_thresholds_cfg.get(regime_name))
+apps/reference/domains/decision_making/decision_making.py:2647:                factor_str = str(regime_thresholds_cfg.get("DEFAULT"))
+apps/reference/domains/decision_making/decision_making.py:2865:                    "regime": regime.get("regime") if regime else None,
+apps/reference/domains/decision_making/decision_making.py:2882:        if regime and regime.get("symbol") == symbol:
+apps/reference/domains/decision_making/decision_making.py:2883:            current_regime = regime.get("regime")
+apps/reference/domains/decision_making/decision_making.py:2931:        price_ref_str = features_data.get("price")
+apps/reference/domains/decision_making/decision_making.py:2967:                instr_cfg = aurora_assets.get(symbol) if aurora_assets else None
+apps/reference/domains/decision_making/decision_making.py:3190:        portfolio = context.get("portfolio") if isinstance(context, dict) else None
+apps/reference/domains/decision_making/decision_making.py:3194:        equity = decimal.Decimal(str(portfolio.get("equity", "0")))
+apps/reference/domains/decision_making/decision_making.py:3293:            st = self.symbol_states.get(symbol) if hasattr(self, "symbol_states") else None
+apps/reference/domains/decision_making/decision_making.py:3294:            feats_evt = st.get("features") if isinstance(st, dict) else None
+apps/reference/domains/decision_making/decision_making.py:3295:            pm = feats_evt.get("price_motion") if isinstance(feats_evt, dict) else None
+apps/reference/domains/decision_making/decision_making.py:3297:                pm_norm_10s = float(pm["pm_norm_10s"]) if pm.get("pm_norm_10s") is not None else None
+apps/reference/domains/decision_making/decision_making.py:3298:                pm_norm_60s = float(pm["pm_norm_60s"]) if pm.get("pm_norm_60s") is not None else None
+apps/reference/domains/decision_making/decision_making.py:3299:                pm_norm_300s = float(pm["pm_norm_300s"]) if pm.get("pm_norm_300s") is not None else None
+apps/reference/domains/decision_making/decision_making.py:3300:                vol_pct_10s = float(pm["vol_pct_10s"]) if pm.get("vol_pct_10s") is not None else None
+apps/reference/domains/decision_making/decision_making.py:3301:                vol_pct_60s = float(pm["vol_pct_60s"]) if pm.get("vol_pct_60s") is not None else None
+apps/reference/domains/decision_making/decision_making.py:3302:                vol_pct_300s = float(pm["vol_pct_300s"]) if pm.get("vol_pct_300s") is not None else None
+apps/reference/domains/decision_making/decision_making.py:3328:            r = self._per_symbol_regimes.get(symbol) if hasattr(self, "_per_symbol_regimes") else None
+apps/reference/domains/decision_making/decision_making.py:3330:                regime = r.get("regime")
+apps/reference/domains/decision_making/decision_making.py:3331:                rc = r.get("confidence")
+apps/reference/domains/decision_making/decision_making.py:3348:            state = self.symbol_states.get(symbol) if hasattr(self, "symbol_states") else None
+apps/reference/domains/decision_making/decision_making.py:3349:            hist = state.get("_delta_price_hist") if isinstance(state, dict) else None
+apps/reference/domains/decision_making/decision_making.py:3763:        positions = self.latest_portfolio.get("positions")
+apps/reference/domains/decision_making/decision_making.py:3768:            (p for p in positions if isinstance(p, dict) and p.get("symbol") == symbol), None
+apps/reference/domains/decision_making/decision_making.py:3782:            if key in curr_pos and curr_pos.get(key) not in (None, ""):
+apps/reference/domains/decision_making/decision_making.py:3783:                qty_val = curr_pos.get(key)
+apps/reference/domains/decision_making/decision_making.py:3899:            override = by_strategy.get(str(strategy_id))
+apps/reference/domains/decision_making/decision_making.py:4180:            asset_cfg = assets.get(symbol) if isinstance(assets, dict) else None
+apps/reference/domains/decision_making/decision_making.py:4244:        rid = original_pld.get("rid") or f"flip-{int(time.time())}"
+apps/reference/domains/decision_making/decision_making.py:4259:        qty_hint = original_pld.get("qty_hint")
+apps/reference/domains/decision_making/decision_making.py:4261:            qty_hint = original_pld.get("position_size_usd")
+apps/reference/domains/decision_making/decision_making.py:4269:                "price_ctx": original_pld.get("price_ctx"),
+apps/reference/domains/decision_making/decision_making.py:4270:                "strategy_id": original_pld.get("strategy_id") or source,
+apps/reference/domains/decision_making/decision_making.py:4272:                "rid": original_pld.get("rid") or f"flip_{retry_key}",
+apps/reference/domains/decision_making/decision_making.py:4277:        why_chain_raw = original_pld.get("why_chain")
+apps/reference/domains/decision_making/decision_making.py:4313:        retry_key = self._generate_flip_retry_key(symbol, intent_side, seed=original_pld.get("rid"))
+apps/reference/domains/decision_making/decision_making.py:4348:                "price_ctx": original_pld.get("price_ctx"),
+apps/reference/domains/decision_making/decision_making.py:4356:        why_chain_raw = original_pld.get("why_chain")
+
+## 3) Potential 'or <literal>' fallbacks (heuristic)
+apps/reference/domains/decision_making/mean_reversion_handler.py:636:                volume = Decimal(str(raw_vol or 0))
+apps/reference/domains/decision_making/mean_reversion_handler.py:650:                    raw_vol = (aget(pld, "buy_volume", 0) or 0) + (aget(pld, "sell_volume", 0) or 0)
+apps/reference/domains/decision_making/mean_reversion_handler.py:651:                volume = Decimal(str(raw_vol or 0))
+apps/reference/domains/decision_making/mean_reversion_handler.py:733:                        bar_end = int(getattr(bar, "end_ts_ms", 0) or 0)
+apps/reference/domains/feature_engineering/calculation_engine.py:918:            last_ts = int((anchor_last_ts_ms[anchor] if anchor in anchor_last_ts_ms else 0) or 0)
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:163:                dropped_out_of_order=int(current_tick.get("trades_dropped_out_of_order") or 0),
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:174:                dropped_out_of_order=int(current_tick.get("trades_dropped_out_of_order") or 0),
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:185:                dropped_out_of_order=int(current_tick.get("trades_dropped_out_of_order") or 0),
+apps/reference/domains/feature_engineering/large_trade_imbalance.py:188:        dropped_out_of_order = int(current_tick.get("trades_dropped_out_of_order") or 0)
+apps/reference/domains/feature_engineering/feature_engineering.py:462:            self._last_tick_ts_ms = int((current_tick["ts"] if "ts" in current_tick else 0) or 0)
+apps/reference/domains/feature_engineering/feature_engineering.py:743:                    ts_ms=int(current_tick.get("ts", 0) or 0),
+apps/reference/domains/feature_engineering/feature_engineering.py:790:                current_ts_ms = int(current_tick.get("ts", 0) or 0)
+apps/reference/domains/decision_making/decision_making.py:3380:            effective_conf = max(float(regime_confidence or 0.0), float(trend_confidence or 0.0))
+
+## 4) Focused scan: features_data.get(<key>, <literal>)
+
+## 5) Focused scan: weights.get(<key>, <literal>)
+
+## 6) Focused scan: readiness.get(<key>, <literal>)
+apps/reference/domains/decision_making/signal_score_v2.py:128:            is_ready = readiness.get(feat, False)

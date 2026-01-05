@@ -1,153 +1,0 @@
-  = = = = = = = = = = = = = = = = = = = = = = = = = = = = =   t e s t   s e s s i o n   s t a r t s   = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
- p l a t f o r m   w i n 3 2   - -   P y t h o n   3 . 1 1 . 0 ,   p y t e s t - 8 . 4 . 2 ,   p l u g g y - 1 . 6 . 0  
- r o o t d i r :   C : \ U s e r s \ u s e r \ M u s i c \ P h e n i x  
- c o n f i g f i l e :   p y t e s t . i n i  
- t e s t p a t h s :   t e s t s  
- p l u g i n s :   a n y i o - 4 . 1 1 . 0 ,   a i o h t t p - 1 . 1 . 0 ,   a s y n c i o - 1 . 2 . 0 ,   t i m e o u t - 2 . 4 . 0  
- a s y n c i o :   m o d e = M o d e . S T R I C T ,   d e b u g = F a l s e ,   a s y n c i o _ d e f a u l t _ f i x t u r e _ l o o p _ s c o p e = N o n e ,   a s y n c i o _ d e f a u l t _ t e s t _ l o o p _ s c o p e = f u n c t i o n  
- t i m e o u t :   3 0 . 0 s  
- t i m e o u t   m e t h o d :   t h r e a d  
- t i m e o u t   f u n c _ o n l y :   F a l s e  
- c o l l e c t e d   7 6 8   i t e m s  
-  
- t e s t s \ t e s t _ f s m _ s h a d o w _ r o u n d t r i p . p y   . . .                                                                       [     0 % ]  
- t e s t s \ a d a p t e r s \ t e s t _ b i n a n c e _ a d a p t e r . p y   . . . . . . F F F F F  
-  
- = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =   F A I L U R E S   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
- _ _ _ _ _ _ _ _ _ _ _   T e s t B i n a n c e A d a p t e r R e q u e s t . t e s t _ r e q u e s t _ s u c c e s s [ a s y n c i o ]   _ _ _ _ _ _ _ _ _ _ _  
- t e s t s \ a d a p t e r s \ t e s t _ b i n a n c e _ a d a p t e r . p y : 1 4 2 :   i n   t e s t _ r e q u e s t _ s u c c e s s  
-         r e s u l t   =   a w a i t   a d a p t e r . _ r e q u e s t ( " G E T " ,   " / t e s t " )  
-                           ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 6 9 :   i n   _ r e q u e s t  
-         r e t u r n   a w a i t   _ d o ( m e t h o d ,   b a s e _ p a r a m s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 5 9 :   i n   _ d o  
-         r e t u r n   r . j s o n ( )  
-                       ^ ^ ^ ^ ^ ^ ^ ^  
- . v e n v \ L i b \ s i t e - p a c k a g e s \ h t t p x \ _ m o d e l s . p y : 8 3 2 :   i n   j s o n  
-         r e t u r n   j s o n l i b . l o a d s ( s e l f . c o n t e n t ,   * * k w a r g s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ _ _ i n i t _ _ . p y : 3 4 6 :   i n   l o a d s  
-         r e t u r n   _ d e f a u l t _ d e c o d e r . d e c o d e ( s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 3 7 :   i n   d e c o d e  
-         o b j ,   e n d   =   s e l f . r a w _ d e c o d e ( s ,   i d x = _ w ( s ,   0 ) . e n d ( ) )  
-                               ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 5 5 :   i n   r a w _ d e c o d e  
-         r a i s e   J S O N D e c o d e E r r o r ( " E x p e c t i n g   v a l u e " ,   s ,   e r r . v a l u e )   f r o m   N o n e  
- E       j s o n . d e c o d e r . J S O N D e c o d e E r r o r :   E x p e c t i n g   v a l u e :   l i n e   1   c o l u m n   1   ( c h a r   0 )  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   s t d o u t   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- 2 0 2 5 - 1 0 - 3 0   2 1 : 5 2 : 0 6 , 2 7 6   -   h t t p x   -   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 5 7 2 1 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = c 2 b 9 7 f 9 5 d c 4 b d 0 2 c f 0 1 d 9 f 1 4 d 8 a b 9 a b 6 5 f 5 b 8 7 6 e a 2 d b 2 d 0 b 1 6 6 7 2 a 9 d 4 a 3 5 1 9 6 8   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   l o g   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- I N F O           h t t p x : _ c l i e n t . p y : 1 7 4 0   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 5 7 2 1 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = c 2 b 9 7 f 9 5 d c 4 b d 0 2 c f 0 1 d 9 f 1 4 d 8 a b 9 a b 6 5 f 5 b 8 7 6 e a 2 d b 2 d 0 b 1 6 6 7 2 a 9 d 4 a 3 5 1 9 6 8   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- _ _ _ _ _ _ _   T e s t B i n a n c e A d a p t e r R e q u e s t . t e s t _ r e q u e s t _ j s o n _ e r r o r _ b o d y [ a s y n c i o ]   _ _ _ _ _ _ _  
- t e s t s \ a d a p t e r s \ t e s t _ b i n a n c e _ a d a p t e r . p y : 1 5 7 :   i n   t e s t _ r e q u e s t _ j s o n _ e r r o r _ b o d y  
-         a w a i t   a d a p t e r . _ r e q u e s t ( " P O S T " ,   " / o r d e r " )  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 6 9 :   i n   _ r e q u e s t  
-         r e t u r n   a w a i t   _ d o ( m e t h o d ,   b a s e _ p a r a m s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 5 9 :   i n   _ d o  
-         r e t u r n   r . j s o n ( )  
-                       ^ ^ ^ ^ ^ ^ ^ ^  
- . v e n v \ L i b \ s i t e - p a c k a g e s \ h t t p x \ _ m o d e l s . p y : 8 3 2 :   i n   j s o n  
-         r e t u r n   j s o n l i b . l o a d s ( s e l f . c o n t e n t ,   * * k w a r g s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ _ _ i n i t _ _ . p y : 3 4 6 :   i n   l o a d s  
-         r e t u r n   _ d e f a u l t _ d e c o d e r . d e c o d e ( s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 3 7 :   i n   d e c o d e  
-         o b j ,   e n d   =   s e l f . r a w _ d e c o d e ( s ,   i d x = _ w ( s ,   0 ) . e n d ( ) )  
-                               ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 5 5 :   i n   r a w _ d e c o d e  
-         r a i s e   J S O N D e c o d e E r r o r ( " E x p e c t i n g   v a l u e " ,   s ,   e r r . v a l u e )   f r o m   N o n e  
- E       j s o n . d e c o d e r . J S O N D e c o d e E r r o r :   E x p e c t i n g   v a l u e :   l i n e   1   c o l u m n   1   ( c h a r   0 )  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   s t d o u t   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- 2 0 2 5 - 1 0 - 3 0   2 1 : 5 2 : 0 7 , 6 4 5   -   h t t p x   -   H T T P   R e q u e s t :   P O S T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / o r d e r ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 6 7 2 7 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 6 3 e 0 b c 1 c 7 e f 8 8 e e e b 8 a c 2 a a 2 5 e 8 f 2 e c c 4 c c c c 2 e 3 2 4 b b 0 1 c a f c 0 a 9 c e e a d f b 1 4 f 8   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   l o g   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- I N F O           h t t p x : _ c l i e n t . p y : 1 7 4 0   H T T P   R e q u e s t :   P O S T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / o r d e r ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 6 7 2 7 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 6 3 e 0 b c 1 c 7 e f 8 8 e e e b 8 a c 2 a a 2 5 e 8 f 2 e c c 4 c c c c 2 e 3 2 4 b b 0 1 c a f c 0 a 9 c e e a d f b 1 4 f 8   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- _ _ _ _ _ _ _ _   T e s t B i n a n c e A d a p t e r R e q u e s t . t e s t _ r e q u e s t _ r e t r y _ o n _ 1 0 2 1 [ a s y n c i o ]   _ _ _ _ _ _ _ _  
- t e s t s \ a d a p t e r s \ t e s t _ b i n a n c e _ a d a p t e r . p y : 1 8 1 :   i n   t e s t _ r e q u e s t _ r e t r y _ o n _ 1 0 2 1  
-         r e s u l t   =   a w a i t   a d a p t e r . _ r e q u e s t ( " G E T " ,   " / t e s t " ,   s i g n e d = T r u e )  
-                           ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 6 9 :   i n   _ r e q u e s t  
-         r e t u r n   a w a i t   _ d o ( m e t h o d ,   b a s e _ p a r a m s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 5 9 :   i n   _ d o  
-         r e t u r n   r . j s o n ( )  
-                       ^ ^ ^ ^ ^ ^ ^ ^  
- . v e n v \ L i b \ s i t e - p a c k a g e s \ h t t p x \ _ m o d e l s . p y : 8 3 2 :   i n   j s o n  
-         r e t u r n   j s o n l i b . l o a d s ( s e l f . c o n t e n t ,   * * k w a r g s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ _ _ i n i t _ _ . p y : 3 4 6 :   i n   l o a d s  
-         r e t u r n   _ d e f a u l t _ d e c o d e r . d e c o d e ( s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 3 7 :   i n   d e c o d e  
-         o b j ,   e n d   =   s e l f . r a w _ d e c o d e ( s ,   i d x = _ w ( s ,   0 ) . e n d ( ) )  
-                               ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 5 5 :   i n   r a w _ d e c o d e  
-         r a i s e   J S O N D e c o d e E r r o r ( " E x p e c t i n g   v a l u e " ,   s ,   e r r . v a l u e )   f r o m   N o n e  
- E       j s o n . d e c o d e r . J S O N D e c o d e E r r o r :   E x p e c t i n g   v a l u e :   l i n e   1   c o l u m n   1   ( c h a r   0 )  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   s t d o u t   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- 2 0 2 5 - 1 0 - 3 0   2 1 : 5 2 : 0 8 , 1 5 1   -   h t t p x   -   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 7 7 2 0 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 5 0 0 5 4 2 e d 2 2 8 3 7 2 7 a 8 b d 9 e 3 7 6 e 7 2 c a 4 c f 7 8 a 2 c f b 1 a c 0 d 8 8 5 1 f 3 9 9 8 0 a b 9 b 9 a b 9 e 4   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   l o g   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- I N F O           h t t p x : _ c l i e n t . p y : 1 7 4 0   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 7 7 2 0 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 5 0 0 5 4 2 e d 2 2 8 3 7 2 7 a 8 b d 9 e 3 7 6 e 7 2 c a 4 c f 7 8 a 2 c f b 1 a c 0 d 8 8 5 1 f 3 9 9 8 0 a b 9 b 9 a b 9 e 4   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- _ _ _ _ _ _ _ _   T e s t B i n a n c e A d a p t e r R e q u e s t . t e s t _ r e q u e s t _ r e t r y _ o n _ 1 0 2 2 [ a s y n c i o ]   _ _ _ _ _ _ _ _  
- t e s t s \ a d a p t e r s \ t e s t _ b i n a n c e _ a d a p t e r . p y : 2 0 7 :   i n   t e s t _ r e q u e s t _ r e t r y _ o n _ 1 0 2 2  
-         r e s u l t   =   a w a i t   a d a p t e r . _ r e q u e s t ( " G E T " ,   " / t e s t " ,   s i g n e d = T r u e )  
-                           ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 6 9 :   i n   _ r e q u e s t  
-         r e t u r n   a w a i t   _ d o ( m e t h o d ,   b a s e _ p a r a m s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 5 9 :   i n   _ d o  
-         r e t u r n   r . j s o n ( )  
-                       ^ ^ ^ ^ ^ ^ ^ ^  
- . v e n v \ L i b \ s i t e - p a c k a g e s \ h t t p x \ _ m o d e l s . p y : 8 3 2 :   i n   j s o n  
-         r e t u r n   j s o n l i b . l o a d s ( s e l f . c o n t e n t ,   * * k w a r g s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ _ _ i n i t _ _ . p y : 3 4 6 :   i n   l o a d s  
-         r e t u r n   _ d e f a u l t _ d e c o d e r . d e c o d e ( s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 3 7 :   i n   d e c o d e  
-         o b j ,   e n d   =   s e l f . r a w _ d e c o d e ( s ,   i d x = _ w ( s ,   0 ) . e n d ( ) )  
-                               ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 5 5 :   i n   r a w _ d e c o d e  
-         r a i s e   J S O N D e c o d e E r r o r ( " E x p e c t i n g   v a l u e " ,   s ,   e r r . v a l u e )   f r o m   N o n e  
- E       j s o n . d e c o d e r . J S O N D e c o d e E r r o r :   E x p e c t i n g   v a l u e :   l i n e   1   c o l u m n   1   ( c h a r   0 )  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   s t d o u t   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- 2 0 2 5 - 1 0 - 3 0   2 1 : 5 2 : 0 8 , 6 8 7   -   h t t p x   -   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 8 2 4 7 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 0 f 0 7 9 a 4 e f b c 2 a e 2 2 c 4 7 f f 0 c 6 9 c c c 5 a 7 0 d 5 d 1 1 0 a 6 4 7 8 1 2 4 4 e 5 e 4 f d e e a c e 0 6 6 8 0 f   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   l o g   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- I N F O           h t t p x : _ c l i e n t . p y : 1 7 4 0   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 8 2 4 7 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 0 f 0 7 9 a 4 e f b c 2 a e 2 2 c 4 7 f f 0 c 6 9 c c c 5 a 7 0 d 5 d 1 1 0 a 6 4 7 8 1 2 4 4 e 5 e 4 f d e e a c e 0 6 6 8 0 f   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- _ _   T e s t B i n a n c e A d a p t e r R e q u e s t . t e s t _ r e q u e s t _ n o _ r e t r y _ o n _ o t h e r _ e r r o r s [ a s y n c i o ]   _ _ _  
- t e s t s \ a d a p t e r s \ t e s t _ b i n a n c e _ a d a p t e r . p y : 2 2 5 :   i n   t e s t _ r e q u e s t _ n o _ r e t r y _ o n _ o t h e r _ e r r o r s  
-         a w a i t   a d a p t e r . _ r e q u e s t ( " G E T " ,   " / t e s t " ,   s i g n e d = T r u e )  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 6 9 :   i n   _ r e q u e s t  
-         r e t u r n   a w a i t   _ d o ( m e t h o d ,   b a s e _ p a r a m s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- v f o u n d a t i o n \ a d a p t e r s \ b i n a n c e _ a d a p t e r . p y : 1 5 9 :   i n   _ d o  
-         r e t u r n   r . j s o n ( )  
-                       ^ ^ ^ ^ ^ ^ ^ ^  
- . v e n v \ L i b \ s i t e - p a c k a g e s \ h t t p x \ _ m o d e l s . p y : 8 3 2 :   i n   j s o n  
-         r e t u r n   j s o n l i b . l o a d s ( s e l f . c o n t e n t ,   * * k w a r g s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ _ _ i n i t _ _ . p y : 3 4 6 :   i n   l o a d s  
-         r e t u r n   _ d e f a u l t _ d e c o d e r . d e c o d e ( s )  
-                       ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 3 7 :   i n   d e c o d e  
-         o b j ,   e n d   =   s e l f . r a w _ d e c o d e ( s ,   i d x = _ w ( s ,   0 ) . e n d ( ) )  
-                               ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^  
- . . \ . . \ A p p D a t a \ L o c a l \ P r o g r a m s \ P y t h o n \ P y t h o n 3 1 1 \ L i b \ j s o n \ d e c o d e r . p y : 3 5 5 :   i n   r a w _ d e c o d e  
-         r a i s e   J S O N D e c o d e E r r o r ( " E x p e c t i n g   v a l u e " ,   s ,   e r r . v a l u e )   f r o m   N o n e  
- E       j s o n . d e c o d e r . J S O N D e c o d e E r r o r :   E x p e c t i n g   v a l u e :   l i n e   1   c o l u m n   1   ( c h a r   0 )  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   s t d o u t   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- 2 0 2 5 - 1 0 - 3 0   2 1 : 5 2 : 0 9 , 3 1 3   -   h t t p x   -   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 8 8 4 8 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 9 8 7 3 a 9 7 5 f d 9 2 2 1 6 7 a 0 4 c 7 0 c 4 1 8 3 6 d 3 8 9 e a 3 d 0 7 9 7 8 8 d 6 5 b e 2 1 1 4 4 4 b c f 6 b a a 9 3 a 6   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   C a p t u r e d   l o g   c a l l   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
- I N F O           h t t p x : _ c l i e n t . p y : 1 7 4 0   H T T P   R e q u e s t :   G E T   h t t p s : / / t e s t n e t . b i n a n c e f u t u r e . c o m / t e s t ? t i m e s t a m p = 1 7 6 1 8 5 0 3 2 8 8 4 8 & r e c v W i n d o w = 2 0 0 0 0 & s i g n a t u r e = 9 8 7 3 a 9 7 5 f d 9 2 2 1 6 7 a 0 4 c 7 0 c 4 1 8 3 6 d 3 8 9 e a 3 d 0 7 9 7 8 8 d 6 5 b e 2 1 1 4 4 4 b c f 6 b a a 9 3 a 6   " H T T P / 1 . 1   3 0 1   M o v e d   P e r m a n e n t l y "  
- = = = = = = = = = = = = = = = = = = = = = = = = = = =   s h o r t   t e s t   s u m m a r y   i n f o   = = = = = = = = = = = = = = = = = = = = = = = = = = =  
- F A I L E D   t e s t s / a d a p t e r s / t e s t _ b i n a n c e _ a d a p t e r . p y : : T e s t B i n a n c e A d a p t e r R e q u e s t : : t e s t _ r e q u e s t _ s u c c e s s [ a s y n c i o ]  
- F A I L E D   t e s t s / a d a p t e r s / t e s t _ b i n a n c e _ a d a p t e r . p y : : T e s t B i n a n c e A d a p t e r R e q u e s t : : t e s t _ r e q u e s t _ j s o n _ e r r o r _ b o d y [ a s y n c i o ]  
- F A I L E D   t e s t s / a d a p t e r s / t e s t _ b i n a n c e _ a d a p t e r . p y : : T e s t B i n a n c e A d a p t e r R e q u e s t : : t e s t _ r e q u e s t _ r e t r y _ o n _ 1 0 2 1 [ a s y n c i o ]  
- F A I L E D   t e s t s / a d a p t e r s / t e s t _ b i n a n c e _ a d a p t e r . p y : : T e s t B i n a n c e A d a p t e r R e q u e s t : : t e s t _ r e q u e s t _ r e t r y _ o n _ 1 0 2 2 [ a s y n c i o ]  
- F A I L E D   t e s t s / a d a p t e r s / t e s t _ b i n a n c e _ a d a p t e r . p y : : T e s t B i n a n c e A d a p t e r R e q u e s t : : t e s t _ r e q u e s t _ n o _ r e t r y _ o n _ o t h e r _ e r r o r s [ a s y n c i o ]  
- ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !   s t o p p i n g   a f t e r   5   f a i l u r e s   ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !  
- = = = = = = = = = = = = = = = = = = = = = = = = =   5   f a i l e d ,   9   p a s s e d   i n   7 . 1 7 s   = = = = = = = = = = = = = = = = = = = = = = = = =  
- 

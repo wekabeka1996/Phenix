@@ -42,6 +42,7 @@ from apps.reference.domains.feature_engineering.calculation_engine import (
     FeatureCalculationEngine,
 )
 from apps.reference.domains.feature_engineering.macro_sync_resampler import MacroSyncResampler
+from apps.reference.domains.feature_engineering.price_motion import compute_price_motion_block
 
 # TASK24: Data-quality metrics (explicit; no silent degrade)
 from apps.reference.telemetry.metrics import inc_data_quality_bad_dt, inc_data_quality_drop
@@ -87,6 +88,26 @@ class FeatureEngineering:
         
         # Initialize typed config wrapper (replaces 100+ lines of try/except!)
         self.cfg = FeatureEngineeringConfig(config)
+
+        # PRICE-MOTION-SSOT-STRICT-01: DecisionMaking price_motion_sanity is SSOT-required.
+        # FeatureEngineering computes price_motion block using these parameters.
+        try:
+            from apps.reference.domain_config import DomainConfigResolver
+            from apps.reference.config_models import AuroraConfig
+
+            if isinstance(config, DomainConfigResolver):
+                resolver = config
+            elif isinstance(config, AuroraConfig):
+                resolver = DomainConfigResolver(config)
+            else:
+                raise TypeError(f"Unsupported config type for price_motion_sanity: {type(config)}")
+
+            self._price_motion_sanity_cfg = resolver.get_decision_making().price_motion_sanity
+        except Exception as e:
+            raise ConfigContractError(
+                path="domains.decision_making.price_motion_sanity",
+                why="Missing/invalid SSOT price_motion_sanity config (required for LIVE).",
+            ) from e
         
         # FTR-04: Initialize calculation engine
         self._engine = FeatureCalculationEngine(self.cfg)
@@ -534,8 +555,57 @@ class FeatureEngineering:
                 # Depth Imbalance (Convert to USD for smoothing consistency)
                 features["depth_imbalance"] = str(self._compute_depth_imbalance(bid_size * price, ask_size * price))
 
-                # Macro Sync
+                # Macro Sync (legacy, kept for telemetry)
                 features["macro_sync"] = str(self._compute_macro_sync(symbol))
+                
+                # ================================================================
+                # R1 (P1): MACRO RESID — Beta-Adjusted Residual
+                # ================================================================
+                # Replaces macro_sync for direction scoring (SIGNED, neutral=0)
+                if self.cfg.macro_resid_enabled:
+                    # Get BTC price for anchor return
+                    btc_price_hist = self.anchor_prices.get("BTCUSDT", None)
+                    if btc_price_hist and len(btc_price_hist) >= 2 and prev_price > 0:
+                        # Calculate returns
+                        asset_return = float((price - prev_price) / prev_price) if prev_price > 0 else 0.0
+                        btc_prev = btc_price_hist[-2] if len(btc_price_hist) >= 2 else btc_price_hist[-1]
+                        btc_curr = btc_price_hist[-1]
+                        anchor_return = float((btc_curr - btc_prev) / btc_prev) if btc_prev > 0 else 0.0
+                        
+                        # Update buffers
+                        self._engine.update_macro_resid(hot, asset_return, anchor_return)
+                    
+                    # Compute
+                    macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
+                    features["macro_resid"] = str(macro_resid_val)
+                else:
+                    # Disabled: emit neutral, mark not ready
+                    features["macro_resid"] = str(self.cfg.zero_value)
+                    hot.macro_resid_ready = False
+                    hot.macro_resid_not_ready_reason = "disabled_in_config"
+                
+                # ================================================================
+                # R2 (P2): ABSORPTION — Experimental (Default OFF)
+                # ================================================================
+                absorption_mode = self.cfg.absorption_mode
+                if absorption_mode != "disabled":
+                    # Update absorption buffers
+                    tfi_val = float(features.get("tfi", 0))
+                    self._engine.update_absorption(
+                        hot,
+                        buy_vol=float(buy_volume),
+                        sell_vol=float(sell_volume),
+                        tfi=tfi_val,
+                    )
+                    
+                    # Compute
+                    absorption_val, absorption_ready, absorption_reason = self._engine.compute_absorption(hot)
+                    features["absorption"] = str(absorption_val)
+                else:
+                    # Disabled: emit neutral, mark not ready (excluded from scoring)
+                    features["absorption"] = str(self.cfg.zero_value)
+                    hot.absorption_ready = False
+                    hot.absorption_not_ready_reason = "mode_disabled"
                 
                 # ================================================================
                 # V2 FEATURES (FTR-03: Additive)
@@ -613,11 +683,24 @@ class FeatureEngineering:
             if self.cfg.enable_new_metrics:
                 hot = self._get_symbol_state(symbol).hot
                 ready_map = {
+                    # Basic instant features (always ready from first tick)
+                    "obi": True,
+                    "tfi": True,
+                    "delta_price": True,
+                    "depth_imbalance": True,
+                    "liquidity_kappa": True,
+                    # Warmup-dependent features (require history accumulation)
                     "ema_bias": bool(hot.ema_long is not None and hot.ema_short is not None and hot.ema_long > 0),
                     "volume_spike": bool(hot.volume_spike_ready),
                     "volatility_state": bool(hot.volatility_state_ready),
                     "macro_sync": bool(hot.macro_sync_ready) if self.cfg.macro_sync_enabled else True,
                     "spread_bps": bool(hot.spread_ready),  # P1-2 FIX: Include spread readiness
+                    "large_trade_imbalance": bool(hot.large_trade_imbalance_ready),
+                    "volume_zscore": True,  # Computed each tick
+                    # R1: Macro Resid (SIGNED, neutral=0)
+                    "macro_resid": bool(hot.macro_resid_ready) if self.cfg.macro_resid_enabled else True,
+                    # R2: Absorption (experimental, default OFF = not_ready)
+                    "absorption": bool(hot.absorption_ready) if self.cfg.absorption_mode != "disabled" else False,
                 }
                 reasons: list[str] = []
                 if not hot.volume_spike_ready and hot.volume_spike_not_ready_reason:
@@ -632,17 +715,100 @@ class FeatureEngineering:
                 if (not hot.large_trade_imbalance_ready) and hot.large_trade_imbalance_not_ready_reason:
                     reasons.append(f"large_trade_imbalance:{hot.large_trade_imbalance_not_ready_reason}")
                     inc_data_quality_drop(domain="feature_engineering", reason="large_trade_imbalance_not_ready")
+                # R1: macro_resid not ready
+                if self.cfg.macro_resid_enabled and (not hot.macro_resid_ready) and hot.macro_resid_not_ready_reason:
+                    reasons.append(f"macro_resid:{hot.macro_resid_not_ready_reason}")
+                    inc_data_quality_drop(domain="feature_engineering", reason="macro_resid_not_ready")
+                # R2: absorption not ready (or dedup muted)
+                if self.cfg.absorption_mode != "disabled" and (not hot.absorption_ready) and hot.absorption_not_ready_reason:
+                    reasons.append(f"absorption:{hot.absorption_not_ready_reason}")
+                    inc_data_quality_drop(domain="feature_engineering", reason="absorption_not_ready")
                 # P1-2 FIX: Add spread_missing to reasons
                 if hot.spread_missing:
                     reasons.append("spread_bps:spread_missing")
 
                 warmup["ready"] = ready_map
                 warmup["reasons"] = reasons
-                warmup["full_ready"] = all(ready_map.values())
+                warmup["full_ready"] = self.cfg.compute_warmup_full_ready(ready_map)
                 warmup["large_trade_imbalance_ready"] = bool(hot.large_trade_imbalance_ready)
                 warmup["large_trade_imbalance_not_ready_reason"] = hot.large_trade_imbalance_not_ready_reason
                 warmup["large_trade_imbalance_trades_used"] = int(hot.large_trade_imbalance_trades_used)
                 warmup["large_trade_imbalance_dropped_out_of_order"] = int(hot.large_trade_imbalance_dropped_out_of_order)
+
+            # PRICE-MOTION-V1: Multi-window returns/vol proxy and normalized motion.
+            try:
+                hot = self._get_symbol_state(symbol).hot
+                pm_block = compute_price_motion_block(
+                    hot.price_history,
+                    ts_ms=int(current_tick.get("ts", 0) or 0),
+                    price=price,
+                    k_vol=float(getattr(self._price_motion_sanity_cfg, "k_vol")),
+                )
+            except Exception:
+                pm_block = {
+                    "ret_10s": None,
+                    "ret_60s": None,
+                    "ret_300s": None,
+                    "vol_pct_10s": None,
+                    "vol_pct_60s": None,
+                    "vol_pct_300s": None,
+                    "pm_norm_10s": None,
+                    "pm_norm_60s": None,
+                    "pm_norm_300s": None,
+                }
+
+            # ================================================================
+            # P0-3: FEATURE SANITY FIREWALL (before emit)
+            # ================================================================
+            # Apply central sanity check to all features
+            sanitized_features, sanity_readiness, sanity_reasons = self._engine.sanitize_features_dict(features)
+            features = sanitized_features
+            
+            # Merge sanity readiness into warmup.ready
+            if self.cfg.enable_new_metrics:
+                ready_map = warmup.get("ready", {})
+                for fname, is_ready in sanity_readiness.items():
+                    if fname in ready_map:
+                        # AND with existing readiness - both must be true
+                        ready_map[fname] = ready_map[fname] and is_ready
+                    else:
+                        ready_map[fname] = is_ready
+                warmup["ready"] = ready_map
+                
+                # Add sanity reasons
+                existing_reasons = list(warmup.get("reasons", []))
+                existing_reasons.extend(sanity_reasons)
+                warmup["reasons"] = existing_reasons
+                
+                # Recalculate full_ready after sanity
+                warmup["full_ready"] = self.cfg.compute_warmup_full_ready(ready_map)
+
+            # ================================================================
+            # P0-2: BOOK HEALTH CHECK (spread truth validation)
+            # ================================================================
+            if self.cfg.enable_new_metrics and self.cfg.spread_health_gate_enabled:
+                current_ts_ms = int(current_tick.get("ts", 0) or 0)
+                
+                # Update book health tracking (tick has both book and trade data)
+                self._engine.update_book_health(
+                    symbol=symbol,
+                    ts_ms=current_ts_ms,
+                    is_book_update=not spread_missing,  # Book update if bid/ask present
+                    is_trade=True,  # Tick always includes trade
+                )
+                
+                # Check book health
+                book_healthy, book_reason = self._engine.check_book_health(symbol, current_ts_ms)
+                if not book_healthy:
+                    # Mark spread_bps as not ready if book unhealthy
+                    ready_map = warmup.get("ready", {})
+                    ready_map["spread_bps"] = False
+                    warmup["ready"] = ready_map
+                    warmup["full_ready"] = self.cfg.compute_warmup_full_ready(ready_map)
+                    existing_reasons = list(warmup.get("reasons", []))
+                    existing_reasons.append(f"spread_bps:{book_reason}")
+                    warmup["reasons"] = existing_reasons
+                    inc_data_quality_drop(domain="feature_engineering", reason="book_unhealthy")
 
             # Build payload
             features_payload = {
@@ -650,6 +816,7 @@ class FeatureEngineering:
                 "symbol": symbol,
                 "features": features,
                 "warmup": warmup,
+                "price_motion": pm_block,
             }
 
             # FTR-10: Dynamic logging for all features (no manual f-string updates needed)

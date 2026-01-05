@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-26T21:38:10Z",
+  "generated_at": "2026-01-04T21:19:13Z",
   "scenarios": [
     {
       "scenario": "test_warmup_gate_blocks_trade_intent_until_ready",

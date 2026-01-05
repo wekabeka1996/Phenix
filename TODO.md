@@ -38,6 +38,60 @@
 
 ---
 
+## ✅ DM-DIR-SSOT-STRICT-01 — DIRECTIONAL_SANITY SSOT REQUIRED FOR LIVE — COMPLETE
+
+- [x] `domains.decision_making.directional_sanity` is required in SSOT YAML
+- [x] No defaults in `DirectionalSanityConfig` (contract-first, fail-fast)
+- [x] LIVE validation: `ConfigLoader.load_config(is_live_execution=True)` fails if missing
+
+---
+
+## ✅ PRICE-MOTION-V1 — Multi-window price_motion fail-safe — COMPLETE
+
+- [x] `EVT:FEATURES_CALCULATED` emits additive `price_motion` block (`ret_*`, `vol_pct_*`, `pm_norm_*`)
+- [x] DecisionMaking `price_motion_sanity` gate (flash + bleed), fail-closed on insufficient
+- [x] Added normalized reject reasons: `NRR-028..030`
+- [x] Added unit + integration tests for price_motion gate
+
+---
+
+## ✅ LOG-AUDIT-GATES-01 — Forensic Log Audit Tool — COMPLETE
+
+- [x] Created `tools/log_audit.py` — CLI audit tool with JSON/Markdown output
+- [x] Created `tests/tools/test_log_audit_gates_v1.py` — 14 tests for all invariants
+- [x] Audit checks: trace coverage, DENY-never-OPEN, directional sanity, price_motion, reduce_only, max_hold, all symbols
+- [x] First audit passed: 0 critical, 0 errors, 0 warnings
+- [x] Generated reports: `reports/log_audit_report.json`, `reports/log_audit_report.md`
+
+---
+
+## 🔴 Pre-LIVE Checklist
+
+Before going LIVE, run the following checks:
+
+```bash
+# 1. Run log audit (critical=0 required)
+python3 -m tools.log_audit --out reports/log_audit_report.json --md reports/log_audit_report.md
+
+# 2. Run config validation
+python3 -c "from apps.reference.config_loader import ConfigLoader; ConfigLoader().load_config(is_live_execution=True)"
+
+# 3. Run full test suite
+pytest -q tests/
+
+# 4. Check shadow run performance
+cd apps/research/shadow_run && python3 -c "from shadow_engine import ShadowEngine; e=ShadowEngine(); r=e.run(); print('Total P&L:', sum(float(x.total_pnl) for x in r.values()))"
+```
+
+Invariants that MUST pass:
+- [ ] `log_audit: CRITICAL == 0`
+- [ ] `log_audit: DENY_BYPASSED == 0`
+- [ ] `log_audit: REDUCE_ONLY_BLOCKED == 0`
+- [ ] `config: is_live_execution=True` passes
+- [ ] All symbols have activity in logs
+
+---
+
 ## ✅ TASK 29 — TEST-COVERAGE-PUSH-V1-EXEC_POS — COMPLETE
 
 - [x] Boost total coverage from 31% to 39% (+8% delta)

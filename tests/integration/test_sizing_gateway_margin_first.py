@@ -29,6 +29,23 @@ def test_gateway_sol_margin_first_emits_qty(monkeypatch):
         domains=SimpleNamespace(
             risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
+            decision_making=SimpleNamespace(
+                directional_sanity=SimpleNamespace(
+                    enabled=False,
+                    min_abs_delta_price=0.0,
+                    min_confidence=0.0,
+                    consecutive_bars=2,
+                ),
+                price_motion_sanity=SimpleNamespace(
+                    enabled=False,
+                    k_vol=2.0,
+                    flash_window_sec=10,
+                    bleed_window_sec=300,
+                    flash_threshold_norm=1.0,
+                    bleed_threshold_norm=0.7,
+                    require_bleed_ready=True,
+                ),
+            ),
         ),
         instruments={
             "SOLUSDT": SimpleNamespace(

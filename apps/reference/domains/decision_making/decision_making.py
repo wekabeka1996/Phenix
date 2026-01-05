@@ -11,6 +11,7 @@ CFG-DOMAINS-STEP-02: Enforces AuroraConfig contract (not dict).
 import decimal
 import logging
 import time
+from collections import deque
 import uuid
 from collections import defaultdict
 from decimal import Decimal
@@ -33,6 +34,8 @@ from .sizing_margin_first import (
     compute_qty,
     validate_exchange_constraints,
 )
+from .signal_score_v2 import SignalScoreV2, ScoreResult
+from .scoring_direction_strength_v1 import compute_direction_strength_score
 
 # CFG-DOMAINS-STEP-02: Import AuroraConfig for type enforcement
 from apps.reference.config_models import AuroraConfig
@@ -281,9 +284,6 @@ class DecisionMaking:
             "low_vol_multiplier": float(dm_cfg.behavior_fsm.low_vol_multiplier),
         }
         self._behavior_state: Dict[str, str] = {}
-
-        # Signals Config (Strict Object)
-        self._normalize_signals = bool(dm_cfg.signals.normalize)
 
         # Exposure cache for pre-checking exposure limits
         self._exposure_cache: Optional[Dict[str, Any]] = None
@@ -618,6 +618,10 @@ class DecisionMaking:
                 if flip_result == "FLIP_CLOSE_PENDING":
                     self.logger.info(
                         f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: FLIP initiated - close emitted, OPEN deferred"
+                    )
+                elif flip_result == "NRR-FLIP-CLOSE-QTY-INVALID":
+                    self.logger.warning(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: FLIP fail-closed - CLOSE qty invalid, OPEN deferred"
                     )
                 elif flip_result == "ANTI_PYRAMIDING_BLOCK":
                     self.logger.warning(
@@ -1228,32 +1232,35 @@ class DecisionMaking:
         FAIL-CLOSED: ValueError if global config missing.
 
         Returns:
-            (penalty_factor, window_sec, target_ratio)
+            (penalty_factor, window_sec, target_ratio, min_intents)
         """
-        # 1. Try per-instrument config
+        dm = self.config.strategies.aurora.decision
         instr_cfg = self._get_aurora_instrument_cfg(symbol)
         sb = aget(instr_cfg, "side_bias", None)
-        if sb is not None:
-            penalty = aget(sb, "penalty_factor", None)
-            window = aget(sb, "window_sec", None)
-            target = aget(sb, "target_ratio", None)
-            # Per-instrument partial override falls back to global
-            dm = self.config.strategies.aurora.decision
-            return (
-                penalty if penalty is not None else dm.side_bias_penalty_factor,
-                window if window is not None else dm.side_bias_window_sec,
-                target if target is not None else dm.side_bias_target_ratio
-            )
 
-        # 2. SSOT: Global config (fail-closed if missing)
-        dm = self.config.strategies.aurora.decision
-        if dm.side_bias_penalty_factor is None:
-            raise ValueError("strategies.aurora.decision.side_bias_penalty_factor is required (SSOT)")
-        if dm.side_bias_window_sec is None:
-            raise ValueError("strategies.aurora.decision.side_bias_window_sec is required (SSOT)")
-        if dm.side_bias_target_ratio is None:
-            raise ValueError("strategies.aurora.decision.side_bias_target_ratio is required (SSOT)")
-        return (dm.side_bias_penalty_factor, dm.side_bias_window_sec, dm.side_bias_target_ratio)
+        def get_val(item_key, global_attr, default=None):
+            val = aget(sb, item_key, None) if sb else None
+            if val is not None:
+                return val
+            glob = getattr(dm, global_attr, None)
+            return glob if glob is not None else default
+
+        penalty = get_val("penalty_factor", "side_bias_penalty_factor")
+        window = get_val("window_sec", "side_bias_window_sec")
+        target = get_val("target_ratio", "side_bias_target_ratio")
+        min_intents = get_val("min_intents", "side_bias_min_intents")
+
+        # 2. SSOT Validation (fail-closed)
+        if penalty is None:
+            raise ValueError(f"side_bias_penalty_factor is required for {symbol}")
+        if window is None:
+            raise ValueError(f"side_bias_window_sec is required for {symbol}")
+        if target is None:
+            raise ValueError(f"side_bias_target_ratio is required for {symbol}")
+        if min_intents is None:
+            raise ValueError(f"side_bias_min_intents is required for {symbol}")
+
+        return (penalty, window, target, min_intents)
 
     def _get_regime_thresholds(self, symbol: str) -> dict:
         """
@@ -1389,6 +1396,10 @@ class DecisionMaking:
                 symbol = "unknown"
 
             self.logger.info(f"✅ on_features() called for {symbol}")
+            # Ensure per-symbol state exists (fail-safe for early events)
+            if symbol not in self.symbol_states:
+                self.symbol_states[symbol] = {}
+
             self.symbol_states[symbol]["features"] = event.pld
 
             # Commit 5: Clear risk-skew until-refresh state on data refresh
@@ -1419,6 +1430,24 @@ class DecisionMaking:
                     feats = {}
             except (AttributeError, TypeError):
                 feats = {}
+
+            # DM-DIR-FORENSIC-01: Capture delta_price history for trend inference.
+            try:
+                dp_raw = feats.get("delta_price")
+                if dp_raw not in (None, ""):
+                    dp_val = float(dp_raw)
+                else:
+                    dp_val = None
+            except Exception:
+                dp_val = None
+
+            if dp_val is not None:
+                hist = self.symbol_states[symbol].get("_delta_price_hist")
+                if not isinstance(hist, deque):
+                    hist = deque(maxlen=20)
+                    self.symbol_states[symbol]["_delta_price_hist"] = hist
+                hist.append(dp_val)
+                self.symbol_states[symbol]["_last_delta_price"] = dp_val
 
             self.dlog.write(
                 "FEATURES_RX",
@@ -1529,11 +1558,10 @@ class DecisionMaking:
         self._check_and_trigger_decision_for_symbol(symbol)
 
         try:
-            if hasattr(event, 'pld') and event.pld:
-                rp = event.pld.risk_parameters if hasattr(
-                    event.pld, 'risk_parameters') else {}
-            elif isinstance(event.pld, dict):
+            if isinstance(event.pld, dict):
                 rp = (event.pld or {}).get("risk_parameters") or {}
+            elif hasattr(event, "pld") and event.pld and hasattr(event.pld, "risk_parameters"):
+                rp = event.pld.risk_parameters or {}
             else:
                 rp = {}
         except (AttributeError, TypeError):
@@ -2337,43 +2365,56 @@ class DecisionMaking:
         if not signal_weights:
              signal_weights = trading_config.decision.signal_weights.model_dump()
 
-        # Compute signal score; optionally normalize components into [0,1]
+        # TASK54: Runtime warning for weight key mismatches (debugging aid)
+        if signal_weights:
+            features_keys = set(features_data.keys())
+            weight_keys = set(signal_weights.keys())
+            missing_in_features = weight_keys - features_keys
+            if missing_in_features:
+                self.logger.warning(
+                    f"[{symbol}] WEIGHTS_KEY_MISMATCH: weight keys not in features: {sorted(missing_in_features)}. "
+                    f"These weights contribute ZERO to signal_score. Fix config to use canonical keys."
+                )
+
+        # Compute signal score (dir/strength split) with explicit normalization mode.
         # FTR-07: Use DecisionContext for typed access to features
         psi_vector: Dict[str, Any] = {}
-        if self._normalize_signals:
-            def _to_dec(val: Any) -> decimal.Decimal:
-                try:
-                    return decimal.Decimal(str(val))
-                except Exception:
-                    return decimal.Decimal("0")
 
-            # FTR-07: Use ctx.price property instead of raw dict access
+        signals_cfg = getattr(self.config.strategies.aurora.decision, "signals", None)
+        if signals_cfg is None:
+            raise ConfigContractError(
+                path="strategies.aurora.decision.signals",
+                why="signals config is required (SSOT)",
+                symbol=symbol,
+            )
+        normalize_mode = str(getattr(signals_cfg, "normalize_signals_mode", "")).strip()
+        if normalize_mode not in ("off", "legacy_v1", "signed_v2"):
+            raise ConfigContractError(
+                path="strategies.aurora.decision.signals.normalize_signals_mode",
+                why=f"Invalid normalize_signals_mode={normalize_mode!r}. Expected: off|legacy_v1|signed_v2",
+                symbol=symbol,
+            )
+
+        def _to_dec(val: Any) -> decimal.Decimal:
+            try:
+                return decimal.Decimal(str(val))
+            except Exception:
+                return decimal.Decimal("0")
+
+        if normalize_mode == "legacy_v1":
+            # LEGACY V1: kept only for forensic comparisons (forbidden in live by config guard).
             price_dec = ctx.price
-
-            # FTR-07: Use FlowView for OBI/TFI (already Decimal)
             obi_raw = ctx.flow.obi
             tfi_raw = ctx.flow.tfi
-
-            # FTR-07: Use TrendView for delta_price
             dp_raw = ctx.trend.delta_price
-
-            # FTR-07: Use TrendView for ema_bias (already [0,1])
             ema_bias_phi = ctx.trend.ema_bias
-
-            # FTR-07: Use VolatilityView for volume/volatility metrics
             volume_spike_phi = ctx.volatility.volume_spike
             volatility_state_phi = ctx.volatility.volatility_state
-
-            # FTR-07: Use LiquidityView for depth_imbalance
             depth_imbalance_phi = ctx.liquidity.depth_imbalance
-
-            # macro_sync still from raw dict (not in Views yet)
-            macro_sync_raw = features_data["macro_sync"] if "macro_sync" in features_data else 0
-            macro_sync_phi = _to_dec(macro_sync_raw)
+            macro_sync_phi = _to_dec(features_data["macro_sync"]) if "macro_sync" in features_data else decimal.Decimal("0")
 
             def _norm_m11_to_01(x: decimal.Decimal) -> decimal.Decimal:
                 try:
-                    # If already in [0,1], keep
                     if x >= 0 and x <= 1:
                         return x
                     return (x + 1) / 2
@@ -2382,18 +2423,11 @@ class DecisionMaking:
 
             obi_phi = _norm_m11_to_01(obi_raw)
             tfi_phi = _norm_m11_to_01(tfi_raw)
-            if price_dec > 0:
-                dp_pct = abs(dp_raw) / price_dec
-            else:
-                dp_pct = decimal.Decimal("0")
-            # Clamp to 2% and scale to [0,1]
-            if dp_pct < 0:
-                dp_pct = decimal.Decimal("0")
-            if dp_pct > decimal.Decimal("0.02"):
-                dp_pct = decimal.Decimal("0.02")
-            dp_phi = dp_pct / decimal.Decimal("0.02")
+            dp_pct = (abs(dp_raw) / price_dec) if price_dec > 0 else decimal.Decimal("0")
+            dp_cap_pct_norm = decimal.Decimal(str(signals_cfg.delta_price_cap_pct))
+            dp_pct = max(decimal.Decimal("0"), min(dp_pct, dp_cap_pct_norm))
+            dp_phi = dp_pct / dp_cap_pct_norm if dp_cap_pct_norm > 0 else decimal.Decimal("0")
 
-            # Build phi_map with all 8 metrics
             phi_map = {
                 "obi": obi_phi,
                 "tfi": tfi_phi,
@@ -2405,13 +2439,12 @@ class DecisionMaking:
                 "macro_sync": macro_sync_phi,
             }
             signal_score = sum(
-                decimal.Decimal(str(dget(phi_map, f, 0))) *
-                decimal.Decimal(str(w))
+                decimal.Decimal(str(dget(phi_map, f, 0))) * decimal.Decimal(str(w))
                 for f, w in signal_weights.items()
             )
 
-            # FTR-07: Add DecisionContext summary to psi_vector for XAI
             psi_vector = {
+                "normalize_mode": "legacy_v1",
                 "phi_OBI": float(obi_phi),
                 "phi_TFI": float(tfi_phi),
                 "phi_DeltaP": float(dp_phi),
@@ -2421,24 +2454,187 @@ class DecisionMaking:
                 "phi_Depth_Imbalance": float(depth_imbalance_phi),
                 "phi_Macro_Sync": float(macro_sync_phi),
                 "weights": {k: float(v) for k, v in signal_weights.items()},
-                # FTR-07: Semantic signals from DecisionContext
-                "ctx_trend_bullish": ctx.trend.is_bullish,
-                "ctx_trend_bearish": ctx.trend.is_bearish,
-                "ctx_flow_buy_pressure": ctx.flow.is_buy_pressure,
-                "ctx_flow_sell_pressure": ctx.flow.is_sell_pressure,
-                "ctx_high_volatility": ctx.volatility.is_high_volatility,
-                "ctx_illiquid": ctx.liquidity.is_illiquid,
-                "ctx_crowded_long": ctx.crowding.is_crowded_long,
-                "ctx_crowded_short": ctx.crowding.is_crowded_short,
             }
         else:
-            signal_score = sum(
-                decimal.Decimal(str(features_data[f] if f in features_data else 0.0)) *
-                decimal.Decimal(str(w))
-                for f, w in signal_weights.items()
+            # NOTE: FeatureEngineering emits delta_price as absolute price delta (USD),
+            # which makes the signal scale asset-price dependent (BTC >> alts).
+            # Normalize to signed, clamped pct-of-price in [-1, 1] for stability.
+            price_dec = ctx.price
+            dp_raw = ctx.trend.delta_price
+            dp_cap_pct = decimal.Decimal(str(signals_cfg.delta_price_cap_pct))
+            if price_dec > 0 and dp_cap_pct > 0:
+                dp_pct = dp_raw / price_dec
+                if dp_pct > dp_cap_pct:
+                    dp_pct = dp_cap_pct
+                elif dp_pct < -dp_cap_pct:
+                    dp_pct = -dp_cap_pct
+                dp_norm = dp_pct / dp_cap_pct  # [-1, 1]
+            else:
+                dp_pct = decimal.Decimal("0")
+                dp_norm = decimal.Decimal("0")
+
+            psi_vector = {
+                "normalize_mode": normalize_mode,
+                "delta_price_raw": float(dp_raw),
+                "delta_price_pct": float(dp_pct),
+                "delta_price_norm": float(dp_norm),
+            }
+
+            scoring_ver = getattr(instr_cfg, "scoring_version", None) or getattr(
+                self.config.strategies.aurora.decision, "scoring_version", "v1"
+            )
+            if scoring_ver != "v2":
+                raise ConfigContractError(
+                    path="strategies.aurora.decision.scoring_version",
+                    why=f"scoring_version '{scoring_ver}' is not supported. Only 'v2' is allowed.",
+                    symbol=symbol,
+                )
+
+            feature_neutrals = getattr(instr_cfg, "feature_neutrals", None) or getattr(
+                self.config.strategies.aurora.decision, "feature_neutrals", {}
+            )
+            essential_features = getattr(instr_cfg, "essential_features", None) or getattr(
+                self.config.strategies.aurora.decision, "essential_features", []
             )
 
-        base_threshold = self._get_signal_threshold(symbol)  # Phase 3+: per-asset override
+            # Liquidity Gate Config (ScoreV2 prerequisite)
+            liq_gate_cfg = getattr(instr_cfg, "liquidity_gate", None) or getattr(
+                self.config.strategies.aurora.decision, "liquidity_gate", None
+            )
+            if liq_gate_cfg and liq_gate_cfg.enabled:
+                # NO SILENT FALLBACKS: Missing key → explicit DEFER
+                if "liquidity_kappa" not in features_data:
+                    self.logger.warning(
+                        f"[{symbol}] DEFER: liquidity_kappa MISSING from features (no silent fallback)"
+                    )
+                    self._emit_nrr(
+                        symbol=symbol,
+                        reason=NormalizedRejectReasons.LIQUIDITY_NOT_READY,
+                        why="LIQUIDITY_KAPPA_MISSING:no_silent_fallback",
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+                
+                kappa_val = _to_dec(features_data["liquidity_kappa"])
+                if kappa_val < decimal.Decimal(str(liq_gate_cfg.kappa_min)):
+                    self.logger.info(
+                        f"[{symbol}] BLOCKED by Liquidity Gate: {kappa_val:.4f} < {liq_gate_cfg.kappa_min}"
+                    )
+                    self._emit_nrr(
+                        symbol=symbol,
+                        reason=NormalizedRejectReasons.LIQUIDITY_LOW,
+                        why=f"LIQUIDITY_GATE:kappa={kappa_val:.4f}<min={liq_gate_cfg.kappa_min}",
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+
+            # Build v2 feature map (raw + normalized delta_price)
+            v2_features = dict(features_data)
+            v2_features["delta_price"] = dp_norm
+
+            readiness_map = features_evt.get("warmup", {}).get("ready", {})
+
+            # ═══════════════════════════════════════════════════════════════════
+            # P0-0: MISSING_READY_KEYS Detection (config/code drift guard)
+            # ═══════════════════════════════════════════════════════════════════
+            # If essential features are in config but NOT in readiness_map keys,
+            # we have config/code drift → DEFER with explicit NRR
+            essential_set = set(essential_features)
+            missing_ready_keys = essential_set - set(readiness_map.keys())
+            
+            if missing_ready_keys:
+                self.logger.warning(
+                    f"[{symbol}] P0-0 MISSING_READY_KEYS: essential features {missing_ready_keys} "
+                    f"not in warmup.ready → DEFER. This is likely config/code drift."
+                )
+                # NRR with explicit reason
+                self._emit_nrr(
+                    symbol=symbol,
+                    reason=NormalizedRejectReasons.MISSING_READY_KEYS,
+                    why=f"MISSING_READY_KEYS:{','.join(sorted(missing_ready_keys))}",
+                )
+                self._record_blocked_intent(symbol)
+                return
+
+
+            ds_cfg = getattr(self.config.strategies.aurora.decision, "direction_strength_scoring", None)
+            if ds_cfg is None:
+                raise ConfigContractError(
+                    path="strategies.aurora.decision.direction_strength_scoring",
+                    why="direction_strength_scoring is required (SSOT)",
+                    symbol=symbol,
+                )
+
+            ds_score = compute_direction_strength_score(
+                features=v2_features,
+                weights=signal_weights,
+                neutrals=feature_neutrals,
+                readiness=readiness_map,
+                essential_features=set(essential_features),
+                normalize_mode=normalize_mode,
+                directional_features=list(ds_cfg.directional_features),
+                strength_features=list(ds_cfg.strength_features),
+                strength_alpha=float(ds_cfg.strength_alpha),
+                strength_cap=float(ds_cfg.strength_cap),
+                symbol=symbol,
+            )
+            if ds_score.deferred:
+                deny = str(ds_score.deny_reason or "direction_strength_deferred")
+                if deny == "NRR-NO-DIRECTIONAL-FEATURES-ACTIVE":
+                    reject_reason = "no_directional_features_active"
+                    nrr_code = NormalizedRejectReasons.NO_DIRECTIONAL_FEATURES_ACTIVE
+                elif deny == "NRR-FEATURES-MISSING":
+                    reject_reason = "features_missing_for_direction"
+                    nrr_code = NormalizedRejectReasons.FEATURES_MISSING
+                elif deny == "NRR-FEATURES-NOT-READY":
+                    reject_reason = "features_not_ready_for_direction"
+                    nrr_code = NormalizedRejectReasons.FEATURES_NOT_READY
+                else:
+                    reject_reason = deny
+                    nrr_code = NormalizedRejectReasons.normalize(reject_reason)
+
+                self._record_blocked_intent(symbol)
+                self.logger.info(
+                    f"Trade intent for {symbol} rejected: {reject_reason} (NRR: {nrr_code})"
+                )
+                self.dlog.write(
+                    "DECISION_SKIP", rid, {"symbol": symbol, "reason": "DIR_STRENGTH_DEFERRED", "nrr": nrr_code}
+                )
+                order_logger.write(
+                    {
+                        "rid": rid,
+                        "event_type": "ORDER_REJECTED",
+                        "symbol": symbol,
+                        "side": "NONE",
+                        "nrr_code": nrr_code,
+                        "why": reject_reason[:80],
+                        "source_fsm": "DecisionMaking",
+                        "metadata": {"reject_reason": "DIR_STRENGTH_DEFERRED", "deny_reason": deny},
+                    }
+                )
+                return
+
+            signal_score = ds_score.final_score
+
+            psi_vector.update(
+                {
+                    "dir_score": float(ds_score.dir_score),
+                    "strength_score": float(ds_score.strength_score),
+                    "final_score": float(ds_score.final_score),
+                    "dir_raw": float(ds_score.dir_result.score_raw),
+                    "dir_wabs": float(ds_score.dir_result.wabs),
+                    "dir_contribs": ds_score.dir_result.contribs,
+                    "strength_raw": float(ds_score.strength_result.score_raw),
+                    "strength_wabs": float(ds_score.strength_result.wabs),
+                    "strength_contribs": ds_score.strength_result.contribs,
+                }
+            )
+
+        # Trigger fix: added implicitly by repair loop next line connection
+
+        # Base decision threshold (SSOT: strategies.aurora.decision.signal_threshold, with per-instrument override).
+        base_threshold = self._get_signal_threshold(symbol)
+
         # Regime-based threshold multiplier (Δθ); defaults to 1.0 if not configured or regime missing
         # Phase A1: Per-instrument regime thresholds with global fallback
         regime_thresholds_cfg = self._get_regime_thresholds(symbol)
@@ -2468,7 +2664,7 @@ class DecisionMaking:
         # EXP-DIRECTION: Calculate side-bias penalty (Δθ_bias)
         # Phase A1: Per-instrument side_bias with global fallback
         current_time = time.time()
-        sell_bias_penalty_factor_raw, bias_window_sec, sell_target_ratio = self._get_side_bias_params(symbol)
+        sell_bias_penalty_factor_raw, bias_window_sec, sell_target_ratio, min_intents = self._get_side_bias_params(symbol)
         sell_bias_penalty_factor = decimal.Decimal(str(sell_bias_penalty_factor_raw))
 
         # Track intents per side (you can also extract from order_logger if needed)
@@ -2490,41 +2686,63 @@ class DecisionMaking:
         sell_count = len(window_data["sells"])
         total_count = buy_count + sell_count
 
-        # Calculate current SELL share
-        if total_count > 0:
-            sell_share = decimal.Decimal(
-                str(sell_count)) / decimal.Decimal(str(total_count))
+        # Asymmetric side-bias thresholds with Linear Ramp:
+        # - If overheated, penalty scales linearly with excess beyond target.
+        # - Activates only if total_count >= min_intents (noise filtering).
+        buy_bias_mult = decimal.Decimal("1.0")
+        sell_bias_mult = decimal.Decimal("1.0")
+        sell_share: decimal.Decimal | None = None
+
+        if total_count >= min_intents:
+            sell_share = decimal.Decimal(str(sell_count)) / decimal.Decimal(str(total_count))
+            target = decimal.Decimal(str(sell_target_ratio))
+            
+            if sell_share > target:
+                # Too many SELLs -> Ramp penalty on SELL threshold
+                excess = sell_share - target
+                max_excess = decimal.Decimal("1.0") - target
+                scaling = excess / max_excess if max_excess > 0 else decimal.Decimal("1.0")
+                penalty = sell_bias_penalty_factor * scaling
+                
+                sell_bias_mult += penalty
+                self.logger.info(
+                    f"[{symbol}] SIDE_BIAS_PENALTY (SELL): sell_share={float(sell_share):.2%} > "
+                    f"target={float(target):.2%}, excess={float(excess):.2f}, "
+                    f"ramp_scaling={float(scaling):.2f}, raising SELL threshold by {float(penalty):.1%}"
+                )
+            elif sell_share < (decimal.Decimal("1.0") - target):
+                # Too many BUYs -> Ramp penalty on BUY threshold
+                buy_share = decimal.Decimal("1.0") - sell_share
+                excess = buy_share - target
+                max_excess = decimal.Decimal("1.0") - target
+                scaling = excess / max_excess if max_excess > 0 else decimal.Decimal("1.0")
+                penalty = sell_bias_penalty_factor * scaling
+                
+                buy_bias_mult += penalty
+                self.logger.info(
+                    f"[{symbol}] SIDE_BIAS_PENALTY (BUY): buy_share={float(buy_share):.2%} > "
+                    f"target={float(target):.2%}, excess={float(excess):.2f}, "
+                    f"ramp_scaling={float(scaling):.2f}, raising BUY threshold by {float(penalty):.1%}"
+                )
         else:
-            sell_share = decimal.Decimal("0.5")  # Neutral if no history
-
-        # Apply bias penalty to side that's oversold
-        bias_multiplier = decimal.Decimal("1.0")
-        if sell_share > decimal.Decimal(str(sell_target_ratio)):
-            # Too many SELLs - raise SELL threshold (harder to short)
-            bias_multiplier += sell_bias_penalty_factor
-            self.logger.info(
-                f"[{symbol}] SIDE_BIAS_PENALTY: sell_share={float(sell_share):.2%} > "
-                f"target={float(sell_target_ratio):.2%}, raising SELL threshold by "
-                f"{float(sell_bias_penalty_factor):.0%}"
-            )
-        elif sell_share < decimal.Decimal(str(1.0 - float(sell_target_ratio))):
-            # Too many BUYs - raise BUY threshold (harder to long)
-            bias_multiplier += sell_bias_penalty_factor
-            self.logger.info(
-                f"[{symbol}] SIDE_BIAS_PENALTY: buy_share={float(1.0 - float(sell_share)):.2%} > "
-                f"target={float(sell_target_ratio):.2%}, raising BUY threshold by "
-                f"{float(sell_bias_penalty_factor):.0%}"
+            self.logger.debug(
+                f"[{symbol}] SIDE_BIAS_SKIP: Not enough history ({total_count} < {min_intents}) in window ({bias_window_sec}s)"
             )
 
-        signal_threshold_with_bias = signal_threshold * bias_multiplier
+
+        thr_buy = signal_threshold * buy_bias_mult
+        thr_sell = signal_threshold * sell_bias_mult
 
         side = ""
-        if signal_score >= signal_threshold_with_bias:
+        if signal_score >= thr_buy:
             side = "buy"
-        elif signal_score <= -signal_threshold_with_bias:
+        elif signal_score <= -thr_sell:
             side = "sell"
         else:
-            reject_reason = f"Neutral signal score {signal_score:.4f} (threshold={signal_threshold_with_bias:.4f} with bias)"
+            reject_reason = (
+                f"Neutral signal score {signal_score:.4f} "
+                f"(thr_buy={thr_buy:.4f}, thr_sell={thr_sell:.4f})"
+            )
             normalized_reason = NormalizedRejectReasons.normalize(
                 reject_reason)
             msg = ("Trade intent for {} rejected: {} "
@@ -2548,9 +2766,11 @@ class DecisionMaking:
                     "reject_reason": "NEUTRAL_SIGNAL",
                     "signal_score": float(signal_score),
                     "threshold_base": float(signal_threshold),
-                    "threshold_with_bias": float(signal_threshold_with_bias),
-                    "sell_share": float(sell_share),
-                    "bias_multiplier": float(bias_multiplier)
+                    "thr_buy": float(thr_buy),
+                    "thr_sell": float(thr_sell),
+                    "sell_share": float(sell_share) if sell_share is not None else None,
+                    "buy_bias_mult": float(buy_bias_mult),
+                    "sell_bias_mult": float(sell_bias_mult),
                 }
             })
 
@@ -2735,28 +2955,24 @@ class DecisionMaking:
 
         # Prepare sizing meta: Kelly fraction (optional)
         sizing_meta: dict[str, Any] = {}
-        # Kelly fraction (optional): derive from per-symbol config
-        try:
-            kelly_cfg = self.config.strategies.aurora.decision.kelly
-            if kelly_cfg.base_probability is not None:
+        # Kelly fraction (optional): derive from per-symbol config (must never block intent emission).
+        kelly_cfg = getattr(self.config.strategies.aurora.decision, "kelly", None)
+        if kelly_cfg is not None and getattr(kelly_cfg, "base_probability", None) is not None:
+            try:
                 base_p = decimal.Decimal(str(kelly_cfg.base_probability))
                 cap = decimal.Decimal(str(kelly_cfg.kelly_cap))
                 alpha = decimal.Decimal(str(kelly_cfg.kelly_alpha))
 
-                # SSOT FIX: Use per-symbol sl_pct and tp_low_ratio from aurora.assets
-                # instead of global brackets.sl.fixed_bps / brackets.tp.fixed_bps
                 aurora_assets = self.config.strategies.aurora.assets
                 instr_cfg = aurora_assets.get(symbol) if aurora_assets else None
-                
                 if instr_cfg is None:
                     raise ConfigContractError(
                         path=f"strategies.aurora.assets.{symbol}",
                         why="Per-symbol config missing for Kelly sizing",
                         symbol=symbol,
                     )
-                
-                # Get sl_pct (REQUIRED for Kelly)
-                exit_cfg = getattr(instr_cfg, 'exit', None)
+
+                exit_cfg = getattr(instr_cfg, "exit", None)
                 if exit_cfg is None or exit_cfg.sl_pct is None:
                     raise ConfigContractError(
                         path=f"strategies.aurora.assets.{symbol}.exit.sl_pct",
@@ -2764,68 +2980,47 @@ class DecisionMaking:
                         symbol=symbol,
                     )
                 sl_pct = decimal.Decimal(str(exit_cfg.sl_pct))
-                
-                # Get tp_low_ratio (REQUIRED for Kelly)
-                tp_cfg = getattr(instr_cfg, 'take_profit', None)
+                if sl_pct <= 0:
+                    raise ConfigContractError(
+                        path=f"strategies.aurora.assets.{symbol}.exit.sl_pct",
+                        why="sl_pct invalid <= 0",
+                        symbol=symbol,
+                    )
+
+                tp_cfg = getattr(instr_cfg, "take_profit", None)
                 if tp_cfg is None or tp_cfg.tp_low_ratio is None:
                     raise ConfigContractError(
                         path=f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio",
                         why="tp_low_ratio required for Kelly sizing",
                         symbol=symbol,
                     )
-                tp_low_ratio = decimal.Decimal(str(tp_cfg.tp_low_ratio))
-                
-                if sl_pct <= 0:
-                    self.logger.warning(f"[{symbol}] sl_pct invalid <= 0: {sl_pct}")
-                    return decimal.Decimal("0")
+                payoff_r = decimal.Decimal(str(tp_cfg.tp_low_ratio))
 
-                # payoff_r = TP distance / SL distance = tp_low_ratio (since both relative to sl_pct)
-                payoff_r = tp_low_ratio
-                
-                self.logger.debug(
-                    f"[{symbol}] Kelly using per-symbol: sl_pct={sl_pct}, tp_low_ratio={tp_low_ratio}, payoff_r={payoff_r}"
-                )
-        except Exception as e:
-            self.logger.error(f"Bracket/Kelly config error: {e}")
-            return decimal.Decimal("0")
+                # Get Kelly bounds from config (FAIL-CLOSED: no hardcoded fallback)
+                p_min = decimal.Decimal(str(kelly_cfg.p_min))
+                p_max = decimal.Decimal(str(kelly_cfg.p_max))
+                uplift_factor = decimal.Decimal(str(kelly_cfg.uplift_factor))
 
-        try:
-            score_01 = signal_score
-            if score_01 < 0:
-                score_01 = decimal.Decimal("0")
-            elif score_01 > 1:
-                score_01 = decimal.Decimal("1")
+                score_01 = signal_score
+                if score_01 < 0:
+                    score_01 = decimal.Decimal("0")
+                elif score_01 > 1:
+                    score_01 = decimal.Decimal("1")
 
-            # Simple uplift from base probability (centered), conservative range
-            p = base_p + (decimal.Decimal("0.20") * (score_01 - decimal.Decimal("0.5")))
-            
-            p = max(decimal.Decimal("0"), min(decimal.Decimal("1"), p))
-            
-            # Temporary conservative clipping to [0.45, 0.65]
-            p = max(decimal.Decimal("0.45"), min(decimal.Decimal("0.65"), p))
+                # p = base_p + uplift_factor * (score - 0.5)
+                p = base_p + (uplift_factor * (score_01 - decimal.Decimal("0.5")))
+                p = max(decimal.Decimal("0"), min(decimal.Decimal("1"), p))
+                p = max(p_min, min(p_max, p))
 
-            # Kelly formula: f* = p - (1-p)/r
-            # If r (payoff_r) is very small, this blows up, but checks above prevent r=0 div implies r safe?
-            # payoff_r = tp/sl. if sl=0 handled. if tp=0, r=0.
-            # Div by zero check?
-            if payoff_r == 0:
-                 full_kelly = decimal.Decimal("0")
-            else:
-                 full_kelly = p - (decimal.Decimal("1") - p) / payoff_r
+                full_kelly = decimal.Decimal("0") if payoff_r == 0 else p - (decimal.Decimal("1") - p) / payoff_r
+                if full_kelly < 0:
+                    full_kelly = decimal.Decimal("0")
 
-            # Floor: if no positive edge, set to zero
-            # Edge condition: p * (r+1) - 1 > 0  => p > 1/(r+1)
-            # If not met, f* <= 0.
-            if full_kelly < 0:
-                full_kelly = decimal.Decimal("0")
-
-            kelly_fraction = full_kelly * alpha
-            kelly_fraction = max(decimal.Decimal("0"), min(cap, kelly_fraction))
-            
-            sizing_meta["kelly_fraction"] = kelly_fraction
-        except Exception as e:
-            self.logger.warning(f"Kelly calculation error: {e}")
-            pass
+                kelly_fraction = full_kelly * alpha
+                kelly_fraction = max(decimal.Decimal("0"), min(cap, kelly_fraction))
+                sizing_meta["kelly_fraction"] = kelly_fraction
+            except Exception as e:
+                self.logger.warning(f"Kelly calculation error: {e}")
 
         # FTR-07: Use DecisionContext for volatility state in sizing
         if ctx.volatility.is_high_volatility:
@@ -2925,31 +3120,38 @@ class DecisionMaking:
             original_pld=pld_for_flip,
             source="aurora"
         )
-        
+
         if flip_result:
             if flip_result == "ANTI_PYRAMIDING_BLOCK":
-                 reject_reason = f"anti_pyramiding_active_position_{symbol}_{side.lower()}"
-                 self.logger.info(
-                     f"[{symbol}] DECISION NRR: {reject_reason} (existing position, blocking new entry)"
-                 )
-                 order_logger.write({
-                    "rid": rid,
-                    "event_type": "ORDER_REJECTED",
-                    "symbol": symbol,
-                    "side": side.upper(),
-                    "quantity": float(qty),
-                    "nrr_code": "NRR-020",
-                    "why": reject_reason[:80],
-                    "source_fsm": "DecisionMaking",
-                    "metadata": {"reject_reason": "ANTI_PYRAMIDING_BLOCK"}
-                })
+                reject_reason = f"anti_pyramiding_active_position_{symbol}_{side.lower()}"
+                self.logger.info(
+                    f"[{symbol}] DECISION NRR: {reject_reason} (existing position, blocking new entry)"
+                )
+                order_logger.write(
+                    {
+                        "rid": rid,
+                        "event_type": "ORDER_REJECTED",
+                        "symbol": symbol,
+                        "side": side.upper(),
+                        "quantity": float(qty),
+                        "nrr_code": "NRR-020",
+                        "why": reject_reason[:80],
+                        "source_fsm": "DecisionMaking",
+                        "metadata": {"reject_reason": "ANTI_PYRAMIDING_BLOCK"},
+                    }
+                )
             elif flip_result == "FLIP_CLOSE_PENDING":
                 # Close intent and Deferral event already emitted by helper
                 self.logger.info(f"[{symbol}] DECISION: Flip initiated. Open deferred.")
+            elif flip_result == "NRR-FLIP-CLOSE-QTY-INVALID":
+                # Fail-closed: CLOSE could not be emitted (invalid/missing qty in portfolio)
+                self.logger.warning(
+                    f"[{symbol}] DECISION: Flip fail-closed (invalid CLOSE qty). Open deferred."
+                )
             elif flip_result == "NRR-PORTFOLIO-UNKNOWN":
                 # Fail-closed
                 pass
-                
+
             self.clear_internal_state_for_symbol(symbol)
             return
 
@@ -2961,7 +3163,7 @@ class DecisionMaking:
             why_chain=why_chain,
             rid=rid,
             reduce_only=False,
-            strategy_id="aurora",
+            strategy_id="aurora",  # CFG-STRATEGIES-SSOT-01: _make_decision_for_symbol is AURORA-only
             decision_ts_ms=int(current_features_ts) if current_features_ts else None,
         )
 
@@ -3076,6 +3278,220 @@ class DecisionMaking:
         strategy_id: str = "aurora",  # CFG-STRATEGIES-SSOT-01: Add strategy_id
         decision_ts_ms: int | None = None,
     ) -> None:
+        # DM-DIR-FORENSIC-01: Directional sanity gate (fail-closed when enabled).
+        trace_ts_ms = int(decision_ts_ms) if decision_ts_ms is not None else int(time.time() * 1000)
+        intent_side = "LONG" if str(side).upper() == "BUY" else "SHORT"
+
+        # PRICE-MOTION-V1: Extract latest price_motion block (best-effort, monitoring + gating).
+        pm_norm_10s: float | None = None
+        pm_norm_60s: float | None = None
+        pm_norm_300s: float | None = None
+        vol_pct_10s: float | None = None
+        vol_pct_60s: float | None = None
+        vol_pct_300s: float | None = None
+        try:
+            st = self.symbol_states.get(symbol) if hasattr(self, "symbol_states") else None
+            feats_evt = st.get("features") if isinstance(st, dict) else None
+            pm = feats_evt.get("price_motion") if isinstance(feats_evt, dict) else None
+            if isinstance(pm, dict):
+                pm_norm_10s = float(pm["pm_norm_10s"]) if pm.get("pm_norm_10s") is not None else None
+                pm_norm_60s = float(pm["pm_norm_60s"]) if pm.get("pm_norm_60s") is not None else None
+                pm_norm_300s = float(pm["pm_norm_300s"]) if pm.get("pm_norm_300s") is not None else None
+                vol_pct_10s = float(pm["vol_pct_10s"]) if pm.get("vol_pct_10s") is not None else None
+                vol_pct_60s = float(pm["vol_pct_60s"]) if pm.get("vol_pct_60s") is not None else None
+                vol_pct_300s = float(pm["vol_pct_300s"]) if pm.get("vol_pct_300s") is not None else None
+        except Exception:
+            pm_norm_10s = None
+            pm_norm_60s = None
+            pm_norm_300s = None
+            vol_pct_10s = None
+            vol_pct_60s = None
+            vol_pct_300s = None
+
+        signal_score: float | None = None
+        try:
+            # Best-effort extraction from why_chain strings.
+            for item in (why_chain or []):
+                if not isinstance(item, str):
+                    continue
+                if "signal_score=" in item:
+                    part = item.split("signal_score=", 1)[1]
+                    token = part.split(",", 1)[0].split(" ", 1)[0]
+                    signal_score = float(token)
+                    break
+        except Exception:
+            signal_score = None
+
+        regime: str | None = None
+        regime_confidence: float | None = None
+        try:
+            r = self._per_symbol_regimes.get(symbol) if hasattr(self, "_per_symbol_regimes") else None
+            if isinstance(r, dict):
+                regime = r.get("regime")
+                rc = r.get("confidence")
+                regime_confidence = float(rc) if rc not in (None, "") else None
+        except Exception:
+            regime = None
+            regime_confidence = None
+
+        ds_cfg = self.config.domains.decision_making.directional_sanity
+        ds_enabled = bool(ds_cfg.enabled)
+        min_abs_delta = float(ds_cfg.min_abs_delta_price)
+        min_conf = float(ds_cfg.min_confidence)
+        consecutive = int(ds_cfg.consecutive_bars)
+
+        # Compute trend from recent delta_price values (features SSOT).
+        trend_dir = "UNKNOWN"
+        delta_price: float | None = None
+        trend_confidence: float = 0.0
+        try:
+            state = self.symbol_states.get(symbol) if hasattr(self, "symbol_states") else None
+            hist = state.get("_delta_price_hist") if isinstance(state, dict) else None
+            if isinstance(hist, deque) and len(hist) > 0:
+                delta_price = float(hist[-1])
+                if len(hist) >= consecutive:
+                    window = list(hist)[-consecutive:]
+                    # Apply noise threshold
+                    if all(abs(float(x)) >= float(min_abs_delta) for x in window):
+                        if all(float(x) > 0 for x in window):
+                            trend_dir = "UP"
+                            trend_confidence = 1.0
+                        elif all(float(x) < 0 for x in window):
+                            trend_dir = "DOWN"
+                            trend_confidence = 1.0
+        except Exception:
+            trend_dir = "UNKNOWN"
+            delta_price = None
+            trend_confidence = 0.0
+
+        # Decide directional gate outcome
+        gate_outcome = "ALLOW"
+        deny_reason: str | None = None
+        why_short = "ok"
+
+        if reduce_only:
+            # Never block reduce-only (safety: allow closing)
+            gate_outcome = "ALLOW"
+            why_short = "reduce_only"
+        elif not ds_enabled:
+            gate_outcome = "ALLOW"
+            why_short = "directional_sanity_disabled"
+        else:
+            effective_conf = max(float(regime_confidence or 0.0), float(trend_confidence or 0.0))
+            if trend_dir not in ("UP", "DOWN"):
+                gate_outcome = "DENY"
+                deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
+                why_short = "insufficient trend confirmation"
+            elif effective_conf < float(min_conf):
+                gate_outcome = "DENY"
+                deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
+                why_short = "insufficient confidence"
+            elif trend_dir == "DOWN" and intent_side == "LONG":
+                gate_outcome = "DENY"
+                deny_reason = NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED
+                why_short = "downtrend blocks long"
+            elif trend_dir == "UP" and intent_side == "SHORT":
+                gate_outcome = "DENY"
+                deny_reason = NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED
+                why_short = "uptrend blocks short"
+
+        # PRICE-MOTION-V1: Multi-window sanity gate (fail-closed when enabled).
+        if gate_outcome == "ALLOW":
+            pm_cfg = self.config.domains.decision_making.price_motion_sanity
+            pm_enabled = bool(pm_cfg.enabled)
+
+            def _select_pm(window_sec: int) -> float | None:
+                if window_sec == 10:
+                    return pm_norm_10s
+                if window_sec == 60:
+                    return pm_norm_60s
+                if window_sec == 300:
+                    return pm_norm_300s
+                raise ConfigContractError(
+                    path="domains.decision_making.price_motion_sanity",
+                    why=f"Unsupported price_motion window_sec={window_sec}; expected 10/60/300",
+                    symbol=symbol,
+                )
+
+            if reduce_only or (not pm_enabled):
+                pass
+            else:
+                flash_window = int(pm_cfg.flash_window_sec)
+                bleed_window = int(pm_cfg.bleed_window_sec)
+                t_flash = float(pm_cfg.flash_threshold_norm)
+                t_bleed = float(pm_cfg.bleed_threshold_norm)
+                require_bleed_ready = bool(pm_cfg.require_bleed_ready)
+
+                pm_flash = _select_pm(flash_window)
+                pm_bleed = _select_pm(bleed_window)
+
+                if pm_flash is None:
+                    gate_outcome = "DENY"
+                    deny_reason = NormalizedRejectReasons.PRICE_MOTION_INSUFFICIENT
+                    why_short = "price_motion flash insufficient"
+                elif require_bleed_ready and (pm_bleed is None):
+                    gate_outcome = "DENY"
+                    deny_reason = NormalizedRejectReasons.PRICE_MOTION_INSUFFICIENT
+                    why_short = "price_motion bleed insufficient"
+                else:
+                    # Flash gate
+                    if intent_side == "LONG" and pm_flash <= -t_flash:
+                        gate_outcome = "DENY"
+                        deny_reason = NormalizedRejectReasons.PRICE_MOTION_FLASH_BLOCKED
+                        why_short = "flash down blocks long"
+                    elif intent_side == "SHORT" and pm_flash >= t_flash:
+                        gate_outcome = "DENY"
+                        deny_reason = NormalizedRejectReasons.PRICE_MOTION_FLASH_BLOCKED
+                        why_short = "flash up blocks short"
+                    # Bleed gate (only if ready)
+                    elif pm_bleed is not None:
+                        if intent_side == "LONG" and pm_bleed <= -t_bleed:
+                            gate_outcome = "DENY"
+                            deny_reason = NormalizedRejectReasons.PRICE_MOTION_BLEED_BLOCKED
+                            why_short = "bleed down blocks long"
+                        elif intent_side == "SHORT" and pm_bleed >= t_bleed:
+                            gate_outcome = "DENY"
+                            deny_reason = NormalizedRejectReasons.PRICE_MOTION_BLEED_BLOCKED
+                            why_short = "bleed up blocks short"
+
+        # If DENY: emit forensic trace immediately and stop (NO TRADE).
+        if gate_outcome == "DENY":
+            trace_payload = {
+                "symbol": symbol,
+                "ts": trace_ts_ms,
+                "intent_side": intent_side,
+                "signal_score": signal_score,
+                "regime": regime,
+                "regime_confidence": regime_confidence,
+                "trend_dir": trend_dir,
+                "delta_price": delta_price,
+                "pm_norm_10s": pm_norm_10s,
+                "pm_norm_60s": pm_norm_60s,
+                "pm_norm_300s": pm_norm_300s,
+                "vol_pct_10s": vol_pct_10s,
+                "vol_pct_60s": vol_pct_60s,
+                "vol_pct_300s": vol_pct_300s,
+                "gate_outcome": "DENY",
+                "deny_reason": deny_reason,
+                "why": (str(why_short)[:80] if why_short is not None else "")
+            }
+            try:
+                self.fsm.emit(
+                    "EVT:DECISION_TRACE_EMITTED",
+                    payload=trace_payload,
+                    why="decision_trace",
+                    data_ref=why_chain,
+                )
+            except Exception:
+                # Monitoring-only: never block on trace emission
+                pass
+
+            self.logger.info(
+                f"[{symbol}] SAFETY_GATES: DENY {intent_side} trend={trend_dir} reason={deny_reason}"
+            )
+            self._record_blocked_intent(symbol)
+            return
+
         # CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Check strategy arbitration
         arbitration_result = self._check_strategy_arbitration(
             symbol, strategy_id, ts_ms=decision_ts_ms, commit=False
@@ -3216,6 +3632,37 @@ class DecisionMaking:
             self._record_blocked_intent(symbol)
             return
 
+        # DM-DIR-FORENSIC-01: Emit forensic trace (monitoring-only) right before TRADE_INTENT_PROPOSED.
+        trace_payload = {
+            "symbol": symbol,
+            "ts": trace_ts_ms,
+            "intent_side": intent_side,
+            "signal_score": signal_score,
+            "regime": regime,
+            "regime_confidence": regime_confidence,
+            "trend_dir": trend_dir,
+            "delta_price": delta_price,
+            "pm_norm_10s": pm_norm_10s,
+            "pm_norm_60s": pm_norm_60s,
+            "pm_norm_300s": pm_norm_300s,
+            "vol_pct_10s": vol_pct_10s,
+            "vol_pct_60s": vol_pct_60s,
+            "vol_pct_300s": vol_pct_300s,
+            "gate_outcome": "ALLOW",
+            "deny_reason": None,
+            "why": (str(why_short)[:80] if why_short is not None else ""),
+        }
+        try:
+            self.fsm.emit(
+                "EVT:DECISION_TRACE_EMITTED",
+                payload=trace_payload,
+                why="decision_trace",
+                data_ref=why_chain,
+            )
+        except Exception:
+            # Monitoring-only: never block on trace emission
+            pass
+
         # Record accepted intent for risk gate monitoring
         self._record_accepted_intent(symbol)
 
@@ -3242,6 +3689,32 @@ class DecisionMaking:
             "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent", data_ref=why_chain
         )
 
+        # EXP-DIRECTION: Side-bias penalty relies on an accurate recent history of
+        # accepted (emitted) intents. Maintain that window here so it reflects
+        # the actual downstream proposals (not merely evaluated signals).
+        try:
+            if not reduce_only:
+                side_intent_window = aget(self, "_side_intent_window", None)
+                if side_intent_window is None:
+                    side_intent_window = {}
+                    self._side_intent_window = side_intent_window
+                if symbol not in side_intent_window:
+                    side_intent_window[symbol] = {"buys": [], "sells": []}
+
+                window_data = side_intent_window[symbol]
+                now_sec = time.time()
+                _, bias_window_sec, _, _ = self._get_side_bias_params(symbol)
+                window_data["buys"] = [ts for ts in window_data["buys"] if now_sec - ts < bias_window_sec]
+                window_data["sells"] = [ts for ts in window_data["sells"] if now_sec - ts < bias_window_sec]
+
+                if intent_side == "LONG":
+                    window_data["buys"].append(now_sec)
+                elif intent_side == "SHORT":
+                    window_data["sells"].append(now_sec)
+        except Exception:
+            # Monitoring-only: never block trading on side-bias bookkeeping.
+            pass
+
         # Log to OrderLoggerV1
         order_logger.write({
             "rid": rid,
@@ -3266,26 +3739,57 @@ class DecisionMaking:
         Get current position state from SSOT (latest_portfolio).
         Returns: FLAT, LONG, SHORT, UNKNOWN
         """
-        if not self.latest_portfolio:
+        qty_signed, _ = self._get_portfolio_position_qty_signed(symbol)
+        if qty_signed is None:
             return "UNKNOWN"
-            
-        portfolio = self.latest_portfolio
-        pos_list = portfolio["positions"] if (isinstance(portfolio, dict) and "positions" in portfolio) else []
-        curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
-        
-        if not curr_pos:
-            return "FLAT"
-            
+
         try:
-            qty_val = curr_pos["positionAmt"] if "positionAmt" in curr_pos else 0
-            qty = float(qty_val)
-        except (ValueError, TypeError):
-            return "UNKNOWN"
-            
-        if abs(qty) < 1e-9: # Equality tolerance
+            tol = decimal.Decimal("1e-9")
+        except Exception:
+            tol = decimal.Decimal(str(1e-9))
+
+        if abs(qty_signed) < tol:  # Equality tolerance
             return "FLAT"
-            
-        return "LONG" if qty > 0 else "SHORT"
+
+        return "LONG" if qty_signed > 0 else "SHORT"
+
+    def _get_portfolio_position_qty_signed(
+        self, symbol: str
+    ) -> tuple[Optional[decimal.Decimal], Optional[dict]]:
+        """Return signed position qty for a symbol from latest_portfolio (SSOT), or None if unknown."""
+        if not isinstance(self.latest_portfolio, dict):
+            return None, None
+
+        positions = self.latest_portfolio.get("positions")
+        if not isinstance(positions, list):
+            return None, None
+
+        curr_pos = next(
+            (p for p in positions if isinstance(p, dict) and p.get("symbol") == symbol), None
+        )
+        if not curr_pos:
+            return decimal.Decimal("0"), None
+
+        qty_val: Any = None
+        for key in (
+            "net_position",  # SSOT: position_tracking
+            "positionAmt",  # Binance futures payload
+            "position_amount",
+            "position_amt",
+            "qty",
+            "quantity",
+        ):
+            if key in curr_pos and curr_pos.get(key) not in (None, ""):
+                qty_val = curr_pos.get(key)
+                break
+
+        if qty_val in (None, ""):
+            return None, curr_pos
+
+        try:
+            return decimal.Decimal(str(qty_val)), curr_pos
+        except Exception:
+            return None, curr_pos
 
     def _is_flip(self, symbol: str, intent_side: str, position_state: str = None) -> bool:
         """Check if intent opposes current position."""
@@ -3303,32 +3807,45 @@ class DecisionMaking:
             
         return False
         
-    def _emit_reduce_only_close(self, symbol: str, reason: str, rid: str) -> None:
+    def _emit_reduce_only_close(self, symbol: str, reason: str, rid: str) -> bool:
         """Emit immediate reduce-only close intent for Flip Orchestration."""
-        pos_state = self._get_position_state(symbol)
-        if pos_state not in ("LONG", "SHORT"):
-            return # Nothing to close
-            
-        close_side = "SELL" if pos_state == "LONG" else "BUY"
-        
-        # Get qty from portfolio
-        portfolio = self.latest_portfolio
-        pos_list = portfolio["positions"] if (isinstance(portfolio, dict) and "positions" in portfolio) else []
-        curr_pos = next((p for p in pos_list if p.get("symbol") == symbol), None)
-        qty_val = curr_pos["positionAmt"] if (curr_pos and "positionAmt" in curr_pos) else 0
-        qty = abs(float(qty_val))
-        
-        self.logger.info(f"[{symbol}] FLIP_ORCHESTRATION: Emitting CLOSE {close_side} {qty} (reduce_only)")
+        qty_signed, curr_pos = self._get_portfolio_position_qty_signed(symbol)
+        if qty_signed is None:
+            self.logger.warning(
+                f"[{symbol}] FLIP_ORCHESTRATION: CLOSE qty missing/invalid in portfolio; skip emit (pos={curr_pos})"
+            )
+            return False
+
+        try:
+            tol = decimal.Decimal("1e-9")
+        except Exception:
+            tol = decimal.Decimal(str(1e-9))
+
+        if abs(qty_signed) < tol:
+            return False  # Nothing to close
+
+        close_side = "SELL" if qty_signed > 0 else "BUY"
+        qty_abs = abs(qty_signed)
+        if qty_abs <= 0:
+            self.logger.warning(
+                f"[{symbol}] FLIP_ORCHESTRATION: CLOSE qty invalid/zero; skip emit (qty_signed={qty_signed})"
+            )
+            return False
+
+        self.logger.info(
+            f"[{symbol}] FLIP_ORCHESTRATION: Emitting CLOSE {close_side} {qty_abs} (reduce_only)"
+        )
         
         self._propose_trade_intent(
             symbol=symbol,
             side=close_side,
-            qty=decimal.Decimal(str(qty)),
+            qty=decimal.Decimal(str(qty_abs)),
             price=decimal.Decimal("0"), # Market/Best-effort
             why_chain=["flip_orchestration_close", reason],
             rid=rid,
             reduce_only=True
         )
+        return True
 
     def _stable_retry_key(
         self,
@@ -3649,6 +4166,27 @@ class DecisionMaking:
             return f"flip:{symbol}:{side}:{seed}"
         ts_ms = int(time.time() * 1000)
         return f"flip:{symbol}:{side}:{ts_ms}"
+
+    def _resolve_position_mode(self, *, symbol: str, source: str) -> str | None:
+        """Resolve per-symbol position_mode for the emitting strategy (STRICT|DYNAMIC).
+
+        SSOT:
+        - strategies.<strategy_id>.assets.<SYMBOL>.position_mode
+        """
+        try:
+            strategies = getattr(self.config, "strategies", None)
+            strat_cfg = getattr(strategies, str(source), None) if strategies is not None else None
+            assets = getattr(strat_cfg, "assets", None) if strat_cfg is not None else None
+            asset_cfg = assets.get(symbol) if isinstance(assets, dict) else None
+            mode_raw = getattr(asset_cfg, "position_mode", None) if asset_cfg is not None else None
+            if mode_raw is None:
+                return None
+            mode = str(mode_raw).upper()
+            if mode in {"STRICT", "DYNAMIC"}:
+                return mode
+            return None
+        except Exception:
+            return None
     
     def _handle_flip_orchestration(
         self,
@@ -3683,6 +4221,18 @@ class DecisionMaking:
         
         if not is_flip:
             # Must be same-side (or some weird state), treat as Anti-Pyramiding
+            position_mode = self._resolve_position_mode(symbol=symbol, source=source)
+            if position_mode is None:
+                self.logger.error(
+                    f"[{symbol}] FLIP_ORCHESTRATION: BLOCK - position_mode missing/invalid "
+                    f"(expected strategies.{source}.assets.{symbol}.position_mode)"
+                )
+                return "CONFIG_POSITION_MODE_INVALID"
+            if position_mode == "DYNAMIC":
+                self.logger.info(
+                    f"[{symbol}] FLIP_ORCHESTRATION: Same-side pyramiding allowed (position_mode=DYNAMIC)"
+                )
+                return None
             self.logger.warning(
                 f"[{symbol}] FLIP_ORCHESTRATION: BLOCK - Same-side pyramiding not allowed "
                 f"(state={pos_state}, intent={intent_side})"
@@ -3692,7 +4242,7 @@ class DecisionMaking:
         # 3. Handle Flip
         # Emit Reduce-Only Close
         rid = original_pld.get("rid") or f"flip-{int(time.time())}"
-        self._emit_reduce_only_close(symbol, "flip_orchestration", f"{rid}-close")
+        close_emitted = self._emit_reduce_only_close(symbol, "flip_orchestration", f"{rid}-close")
         
         # Schedule Retry (Defer Open)
         # Use simple cooldown for now (e.g. 5s) or fetch per-symbol config
@@ -3726,11 +4276,15 @@ class DecisionMaking:
         # Build why_chain for debugging
         why_chain_raw = original_pld.get("why_chain")
         why_chain = why_chain_raw.copy() if isinstance(why_chain_raw, list) else []
-        why_chain.extend(["opposite_position_exists", "flip_close_emitted"])
+        why_chain.extend(["opposite_position_exists"])
+        if close_emitted:
+            why_chain.append("flip_close_emitted")
+        else:
+            why_chain.append("flip_close_skipped_invalid_qty")
         
         self._emit_intent_deferred_v1(
             symbol=symbol,
-            reason="FLIP_CLOSE_PENDING",
+            reason="FLIP_CLOSE_PENDING" if close_emitted else "NRR-FLIP-CLOSE-QTY-INVALID",
             retry_key=retry_key,
             next_allowed_ts=next_allowed_ts,
             original_event_name=original_event["event_name"],
@@ -3741,7 +4295,7 @@ class DecisionMaking:
             context=f"flip_orchestration_{source}",
         )
         
-        return "FLIP_CLOSE_PENDING"
+        return "FLIP_CLOSE_PENDING" if close_emitted else "NRR-FLIP-CLOSE-QTY-INVALID"
 
     def _initiate_flip_close(
         self,

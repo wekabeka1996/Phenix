@@ -12,7 +12,6 @@ class MockTradingConfig:
         if key == "risk":
             return {
                 "daily": {
-                    "max_realized_loss_usd": 250,
                     "max_drawdown_pct": 5,  # Low limit for testing
                     "reset_time_utc": "00:00",
                 }
@@ -30,7 +29,6 @@ class MockConfig:
         if key == "risk":
             return {
                 "daily": {
-                    "max_realized_loss_usd": 250,
                     "max_drawdown_pct": 5,  # Low limit for testing
                     "reset_time_utc": "00:00",
                 }

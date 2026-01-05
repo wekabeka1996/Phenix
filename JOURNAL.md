@@ -1,4 +1,47 @@
-## [2025-12-20] TASK 29: Coverage Push v1 (Domain execution_position) ✅ COMPLETE
+## [2026-01-03] LOG-AUDIT-GATES-01: Forensic Log Audit Tool ✅ COMPLETE
+
+**Goal**: Create forensic audit tool proving gates actually block entries and all invariants hold.
+
+**Deliverables**:
+- **Tool**: `tools/log_audit.py` — CLI audit tool with JSON/Markdown output
+- **Tests**: `tests/tools/test_log_audit_gates_v1.py` — 14 tests covering all audit invariants
+- **Reports**: `reports/log_audit_report.json`, `reports/log_audit_report.md`
+
+**Audit Checks Implemented**:
+- **A1**: Trace coverage (every reject has NRR code)
+- **A2**: DENY never becomes OPEN (same RID check)
+- **A3**: Directional sanity (no LONG on DOWN trend)
+- **A4**: Price motion gates (flash/bleed check)
+- **A5**: Warmup behavior (fail-closed sufficient data)
+- **A6**: reduce_only must pass (not blocked by gates)
+- **A7**: Max hold timer enforcement
+- **A8**: All symbols active (no silent coins)
+
+**First Audit Results**:
+```
+✅ AUDIT PASSED — No critical violations
+- Total Events: 3406
+- Total Orders: 1032
+- Intents Proposed: 4
+- Orders Placed: 2
+- Orders Rejected: 1026
+- Critical: 0, Errors: 0, Warnings: 0
+```
+
+**Invariant Checklist**:
+- [x] `CRITICAL == 0`
+- [x] `TRACE_MISSING == 0`
+- [x] `DENY_BYPASSED == 0`
+- [x] `REDUCE_ONLY_BLOCKED == 0`
+- [x] `MAX_HOLD_BREACH == 0`
+
+**Validation**:
+- ✅ `pytest tests/tools/test_log_audit_gates_v1.py -v` — 14/14 passed
+- ✅ First production log audit passed with 0 critical violations
+
+---
+
+
 
 **Goal**: Boost coverage for `execution_position` domain from 31% baseline to 40%+ and identify critical behavioral/contract bugs through high-density integration tests.
 
@@ -1706,3 +1749,22 @@ All core refactoring work complete. Aurora per-instrument config architecture an
 - `pytest -q tests/config/` (green)
 - `pytest -q` (green)
 - `python3 tools/auroractl.py config-validate --config-dir config/aurora` → `CONFIG_OK`
+
+---
+
+## 2026-01-03 | RID: PRICE-MOTION-V1 | Price motion (multi-window) as safety gate
+
+### why: Block entries against sustained motion using scale-correct normalization
+
+### Changes:
+1. **Contract-first payload**:
+   - `EVT:FEATURES_CALCULATED` now includes additive `price_motion` block with `ret_*`, `vol_pct_*`, `pm_norm_*` (null when insufficient).
+2. **Feature engineering**:
+   - `pm_norm = clip(ret / (k_vol * vol_pct), -1, 1)` using a robust realized-vol proxy.
+3. **DecisionMaking fail-safe**:
+   - `price_motion_sanity` gate: flash (10s) + bleed (300s), fail-closed on insufficient.
+   - Normalized reject reasons: `NRR-028..030`.
+   - Emits `EVT:DECISION_TRACE_EMITTED` with `pm_norm_*`/`vol_pct_*` + outcome/reason.
+
+### Validation:
+- `pytest -q tests/domains/feature_engineering/test_price_motion_math_v1.py tests/integration/test_price_motion_sanity_blocks_entry.py` (green)

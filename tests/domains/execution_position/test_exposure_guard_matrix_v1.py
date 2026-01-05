@@ -9,8 +9,10 @@ def setup_guard_with_equity(guard, equity=10000):
     state = {
         "positions_last_ts_ms": int(time.time() * 1000), 
         "equity_free_usdt": str(equity), 
-        "open_positions_margin_usd": "0", 
-        "positions": []
+        "open_positions_usd": "0",
+        "open_positions_margin_usd": "0",
+        "positions_by_side": {"long_margin": "0", "short_margin": "0"},
+        "positions": [],
     }
     guard.on_portfolio(state)
     return state
@@ -76,8 +78,10 @@ def test_guard_deny_max_long_utilization(fsm_config):
     state = {
         "positions_last_ts_ms": int(time.time() * 1000), 
         "equity_free_usdt": "1000", 
+        "open_positions_usd": "6000",
         "open_positions_margin_usd": "300", # 30% util
-        "positions": [{"symbol": "ETHUSDT", "side": "BUY", "notional_usd": "6000"}] # 6000 notional / 20 = 300 margin
+        "positions_by_side": {"long_margin": "300", "short_margin": "0"},
+        "positions": [{"symbol": "ETHUSDT", "net_position": "1", "avg_entry_price": "6000", "venues": ["binance"]}],
     }
     guard.on_portfolio(state)
     # Need 110 more margin to reach 400 (40% of 1000). 110 * 20 = 2200 notional.
@@ -89,6 +93,9 @@ def test_guard_deny_directional_ratio_long_heavy(fsm_config):
     """7. deny if directional ratio breached"""
     eg = fsm_config.domains.execution_position.exposure_guard
     eg.max_directional_ratio = "2.0"
+    eg.max_portfolio_fraction = "1000.0"
+    # Disable soft directional ratio limit for this test to isolate the hard gate.
+    fsm_config.trading.risk["soft_limits"]["directional_ratio_max"] = "100.0"
     fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 20}
     
     guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
@@ -96,9 +103,12 @@ def test_guard_deny_directional_ratio_long_heavy(fsm_config):
     state = {
         "positions_last_ts_ms": int(time.time() * 1000), 
         "equity_free_usdt": "2000",
+        "open_positions_usd": "7000",
+        "open_positions_margin_usd": "350",
+        "positions_by_side": {"long_margin": "300", "short_margin": "50"},
         "positions": [
-            {"symbol": "ETHUSDT", "side": "BUY", "notional_usd": "6000"}, # 6000 long
-            {"symbol": "SOLUSDT", "side": "SELL", "notional_usd": "1000"} # 1000 short
+            {"symbol": "ETHUSDT", "net_position": "1", "avg_entry_price": "6000", "venues": ["binance"]},
+            {"symbol": "SOLUSDT", "net_position": "-1", "avg_entry_price": "1000", "venues": ["binance"]},
         ]
     }
     guard.on_portfolio(state)
@@ -115,6 +125,32 @@ def test_guard_allow_when_within_limits(fsm_config):
     res = guard.can_open("BTCUSDT", Decimal("100"), state)
     assert res["allowed"] is True
 
+
+def test_guard_deny_concentration_breach(fsm_config):
+    """deny if per-symbol concentration cap breached (margin-based)"""
+    eg = fsm_config.domains.execution_position.exposure_guard
+    eg.max_concentration_pct = "10.0"  # 10% of equity as margin cap
+    eg.max_portfolio_fraction = "1000.0"
+    eg.max_equity_utilization_pct = "1000.0"
+    eg.max_long_utilization_pct = "1000.0"
+    eg.max_short_utilization_pct = "1000.0"
+    eg.max_directional_ratio = "100.0"
+
+    guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
+    state = {
+        "positions_last_ts_ms": int(time.time() * 1000),
+        "equity_free_usdt": "1000",
+        "open_positions_usd": "1600",
+        "open_positions_margin_usd": "80",
+        "positions_by_side": {"long_margin": "80", "short_margin": "0"},
+        "positions": [{"symbol": "BTCUSDT", "net_position": "1", "avg_entry_price": "1600", "venues": ["binance"]}],
+    }
+    guard.on_portfolio(state)
+    # Existing symbol margin=80. New order 600 notional / 20 = 30 margin. Projected=110 > 100 (10% of equity).
+    res = guard.can_open("BTCUSDT", Decimal("600"), state)
+    assert res["allowed"] is False
+    assert "CONCENTRATION_BREACH" in res["reason"]
+
 def test_guard_reserve_and_release(fsm_config):
     """12. test_guard_reserve_and_release"""
     fsm_config.trading.execution.exposure.leverage_defaults = {"BTCUSDT": 20}
@@ -130,13 +166,15 @@ def test_resolve_symbol_leverage_default_and_override(fsm_config):
     fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 15, "BTCUSDT": 25}
     guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
     assert guard.resolve_symbol_leverage("ETHUSDT") == Decimal("15")
-    assert guard.resolve_symbol_leverage("BTCUSDT") == Decimal("25")
+    # SSOT: instruments.<SYM>.execution.target_leverage wins over legacy leverage_defaults
+    assert guard.resolve_symbol_leverage("BTCUSDT") == Decimal("20")
 
 
 def test_resolve_symbol_leverage_clamps_to_one(fsm_config):
     fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 0.5}
     guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
-    assert guard.resolve_symbol_leverage("BTCUSDT") == Decimal("1")
+    # Use symbol without instruments SSOT entry to exercise legacy fallback clamping
+    assert guard.resolve_symbol_leverage("ETHUSDT") == Decimal("1")
 
 
 # ===========================================================================

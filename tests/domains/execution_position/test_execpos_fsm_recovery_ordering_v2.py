@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 from vfoundation.core.fsm_emit_compat import Message
 from decimal import Decimal
+from apps.reference.domains.execution_position.order_index import OrderIndex
 
 @pytest.fixture
 def fsm_config():
@@ -220,6 +221,44 @@ def test_fsm_fill_missing_fields_fail_closed(exec_pos_fsm):
     fill_msg = Message(op="EVT", verb="ORDER_FILL", src="src", dst="dst", pld={"orderId": "f1", "symbol": "BTCUSDT"})
     exec_pos_fsm._on_order_fill(fill_msg)
     assert "fill_f1_BTCUSDT" not in exec_pos_fsm._processed_events
+
+
+def test_trade_executed_marks_order_index_terminal(exec_pos_fsm):
+    """Watchdog polling emits TRADE_EXECUTED; it must unblock one-open-order guard via OrderIndex terminalization."""
+    exec_pos_fsm.fsm.order_index = OrderIndex(ttl_sec=3600)
+    ref = exec_pos_fsm.fsm.order_index.upsert_from_open(
+        rid="rid-open-1",
+        idempotent_key="idem-1",
+        clientOrderId="ENTRY-abc",
+        symbol="BTCUSDT",
+        side="BUY",
+        order_type="ENTRY_INTENT",
+    )
+    assert ref.terminal is False
+
+    # Avoid exercising full ManageFlowFSM; this test cares only about the side-effect in ExecPosFSM.
+    open_flow = MagicMock()
+    manage_flow = MagicMock()
+    close_flow = MagicMock()
+    manage_flow.handle.return_value = None
+    exec_pos_fsm._get_or_create_flows = MagicMock(return_value=(open_flow, manage_flow, close_flow))
+
+    msg = Message(
+        op="EVT",
+        verb="TRADE_EXECUTED",
+        src="execution_position",
+        dst="execution_position",
+        pld={
+            "orderId": "11287384466",
+            "symbol": "BTCUSDT",
+            "quantity": "0.01",
+            "client_order_id": "ENTRY-abc",
+            "rid": None,
+        },
+    )
+
+    exec_pos_fsm.handle(msg)
+    assert ref.terminal is True
 
 @pytest.mark.asyncio
 async def test_fsm_timeout_triggers_handler(exec_pos_fsm):

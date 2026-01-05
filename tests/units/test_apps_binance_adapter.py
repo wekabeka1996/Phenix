@@ -96,6 +96,24 @@ async def test_request_error_handling(adapter):
     assert exc.value.msg == "Error"
 
 @pytest.mark.asyncio
+async def test_request_error_handling_sync_json(adapter):
+    # Real httpx.Response.json() is synchronous; ensure we parse Binance "code" correctly.
+    adapter._last_time_sync_monotonic = time.monotonic()  # avoid time sync in unit test
+
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.text = '{"code": -1000, "msg": "Error"}'
+    mock_response.json = MagicMock(return_value={"code": -1000, "msg": "Error"})
+
+    adapter.session.request.return_value = mock_response
+
+    with pytest.raises(BinanceAPIError) as exc:
+        await adapter._request("GET", "/test")
+
+    assert exc.value.code == -1000
+    assert exc.value.msg == "Error"
+
+@pytest.mark.asyncio
 async def test_create_order(adapter):
     adapter._request = AsyncMock(return_value={
         "orderId": 12345,
@@ -204,6 +222,71 @@ async def test_quantize_quantity(adapter):
     # Should bump to 0.01.
     qty_bump = await adapter.quantize_quantity("BTCUSDT", 0.005)
     assert qty_bump == "0.01"
+
+
+@pytest.mark.asyncio
+async def test_conditional_order_algo_fallback_on_4120(adapter):
+    # When Binance migrates conditional orders to Algo service, /fapi/v1/order returns -4120.
+    # Adapter must retry via /fapi/v1/algoOrder and normalize algoId -> orderId.
+    adapter._request = AsyncMock(
+        side_effect=[
+            BinanceAPIError(-4120, "STOP_ORDER_SWITCH_ALGO"),
+            {"algoId": 999, "symbol": "BTCUSDT"},
+        ]
+    )
+
+    resp = await adapter.place_stop_market_close_position(
+        "BTCUSDT",
+        "SELL",
+        "100.0",
+        new_client_order_id="cid_algo",
+    )
+
+    assert resp["orderId"] == 999
+    assert resp["symbol"] == "BTCUSDT"
+
+    assert adapter._request.call_count == 2
+    assert adapter._request.call_args_list[0].args[1] == "/fapi/v1/order"
+    assert adapter._request.call_args_list[1].args[1] == "/fapi/v1/algoOrder"
+
+    # Validate that fallback payload is transformed for Algo Order API.
+    algo_payload = adapter._request.call_args_list[1].args[2]
+    assert algo_payload["algoType"] == "CONDITIONAL"
+    assert algo_payload["triggerPrice"] == "100.0"
+    assert "stopPrice" not in algo_payload
+    assert algo_payload["closePosition"] == "true"
+    assert algo_payload["newClientOrderId"] == "cid_algo"
+
+
+@pytest.mark.asyncio
+async def test_algo_fallback_removes_qty_and_reduce_only_on_close_position(adapter):
+    adapter._request = AsyncMock(
+        side_effect=[
+            BinanceAPIError(-4120, "STOP_ORDER_SWITCH_ALGO"),
+            {"algoId": 123, "symbol": "BTCUSDT"},
+        ]
+    )
+
+    resp = await adapter._post_order_with_algo_fallback(
+        {
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "type": "STOP_MARKET",
+            "stopPrice": "100.0",
+            "closePosition": "true",
+            "quantity": "0.123",
+            "reduceOnly": "true",
+        }
+    )
+
+    assert resp["orderId"] == 123
+
+    algo_payload = adapter._request.call_args_list[1].args[2]
+    assert algo_payload["algoType"] == "CONDITIONAL"
+    assert algo_payload["triggerPrice"] == "100.0"
+    assert "stopPrice" not in algo_payload
+    assert "quantity" not in algo_payload
+    assert "reduceOnly" not in algo_payload
 
 def test_idempotency_ledger(adapter):
     adapter.register_clientorderid("cid_1", "oid_1", "BTCUSDT")

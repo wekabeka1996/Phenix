@@ -223,6 +223,47 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         return None
 
+    async def _find_symbol_by_order_id(
+        self,
+        order_id: Optional[str],
+        client_order_id: Optional[str],
+    ) -> str:
+        """Best-effort resolve symbol for an order.
+
+        Binance cancel/get endpoints typically require `symbol`. In some retry/repair
+        paths we only have `orderId`/`clientOrderId`. We first consult the local
+        ClientOrderId ledger, then fall back to scanning open orders.
+
+        Returns empty string when symbol can't be resolved.
+        """
+        order_id_str = str(order_id).strip() if order_id is not None else ""
+        client_order_id_str = str(client_order_id).strip() if client_order_id is not None else ""
+
+        if client_order_id_str:
+            entry = self._clientorderid_ledger.get(client_order_id_str)
+            if entry:
+                return str(entry[2] or "").strip()
+
+        if order_id_str:
+            for _, (_, ledger_order_id, ledger_symbol) in self._clientorderid_ledger.items():
+                if str(ledger_order_id).strip() == order_id_str:
+                    return str(ledger_symbol or "").strip()
+
+        try:
+            raw = await self._request("GET", "/fapi/v1/openOrders", {}, signed=True)
+            if isinstance(raw, list):
+                for o in raw:
+                    if not isinstance(o, dict):
+                        continue
+                    if order_id_str and str(o.get("orderId", "")).strip() == order_id_str:
+                        return str(o.get("symbol", "")).strip()
+                    if client_order_id_str and str(o.get("clientOrderId", "")).strip() == client_order_id_str:
+                        return str(o.get("symbol", "")).strip()
+        except Exception as e:
+            LOG.warning(f"[_find_symbol_by_order_id] openOrders scan failed: {e}")
+
+        return ""
+
     def _norm_params(self, d: dict) -> dict:
         """Фільтрує None і нормалізує значення до рядків, сумісних з Binance."""
         out = {}
@@ -356,6 +397,52 @@ class BinanceAdapter(AbstractExchangeAdapter):
             ):
                 await self._sync_time(True)
                 return await _do(method, base_params)
+            raise
+
+    def _normalize_algo_order_response(self, resp: dict) -> dict:
+        """Normalize Binance Algo Order responses to look like regular order responses.
+
+        Binance migrated conditional orders (STOP/TAKE_PROFIT/TRAILING_STOP) to Algo Service.
+        The Algo endpoints may return `algoId` instead of `orderId`. Downstream code expects
+        `orderId` in many places, so we provide a compatibility alias.
+        """
+        if isinstance(resp, dict) and "orderId" not in resp and "algoId" in resp:
+            resp = dict(resp)
+            resp["orderId"] = resp["algoId"]
+        return resp
+
+    async def _post_order_with_algo_fallback(self, params: dict) -> dict:
+        """POST an order, retrying conditional types via Algo Order API when required.
+
+        As of Dec 2025, Binance USDM Futures migrates conditional order types
+        (STOP_MARKET/TAKE_PROFIT_MARKET/STOP/TAKE_PROFIT/TRAILING_STOP_MARKET)
+        from `POST /fapi/v1/order` to `POST /fapi/v1/algoOrder`.
+        """
+        try:
+            return await self._request("POST", "/fapi/v1/order", params)
+        except BinanceAPIError as e:
+            # -4120 STOP_ORDER_SWITCH_ALGO: conditional orders must be placed via Algo endpoints
+            if e.code == -4120:
+                algo_params = dict(params)
+                # Binance Algo Order API requires algoType for conditional orders.
+                algo_params.setdefault("algoType", "CONDITIONAL")
+
+                # Algo Order uses triggerPrice instead of stopPrice.
+                if "stopPrice" in algo_params and "triggerPrice" not in algo_params:
+                    algo_params["triggerPrice"] = algo_params.pop("stopPrice")
+
+                # If closePosition=true, Binance forbids quantity/reduceOnly for conditional orders.
+                close_pos = algo_params.get("closePosition")
+                if isinstance(close_pos, str):
+                    close_pos_true = close_pos.strip().lower() == "true"
+                else:
+                    close_pos_true = bool(close_pos)
+                if close_pos_true:
+                    algo_params.pop("quantity", None)
+                    algo_params.pop("reduceOnly", None)
+
+                resp = await self._request("POST", "/fapi/v1/algoOrder", algo_params)
+                return self._normalize_algo_order_response(resp)
             raise
 
     # --- Public API Methods (via AbstractExchangeAdapter interface) ---
@@ -1108,8 +1195,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         Returns:
             Order response.
         """
-        path = "/fapi/v1/order"
-        return await self._request("POST", path, order_params)
+        return await self._post_order_with_algo_fallback(order_params)
 
     async def place_market_entry(
         self, symbol: str, side: str, quantity: str, new_client_order_id: Optional[str] = None
@@ -1177,7 +1263,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
         try:
-            resp = await self._request("POST", "/fapi/v1/order", params)
+            resp = await self._post_order_with_algo_fallback(params)
             if new_client_order_id and "orderId" in resp:
                 self.register_clientorderid(
                     new_client_order_id, str(resp["orderId"]), symbol)
@@ -1244,7 +1330,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         # PHASE B1: Try to detect -4116 (duplicate ClientOrderId) and reuse
         try:
-            resp = await self._request("POST", "/fapi/v1/order", params)
+            resp = await self._post_order_with_algo_fallback(params)
             if new_client_order_id and "orderId" in resp:
                 self.register_clientorderid(
                     new_client_order_id, str(resp["orderId"]), symbol)
@@ -1465,7 +1551,8 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
 async def _safe_read_err(resp):
     try:
-        return await resp.json()
+        # httpx.Response.json() is synchronous, but some tests mock it as async.
+        return await _coerce_json(resp)
     except Exception:
         try:
             return {"code": resp.status_code, "msg": resp.text}

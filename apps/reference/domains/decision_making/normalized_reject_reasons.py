@@ -44,6 +44,33 @@ class NormalizedRejectReasons:
     LEVERAGE_VERIFY_FAILED = "NRR-024"
     # Domain-level gating: upstream data/warmup not ready
     DATA_NOT_READY = "NRR-025"
+    # DM-DIR-FORENSIC-01: Directional sanity gate
+    INSUFFICIENT_TREND_CONFIRMATION = "NRR-026"
+    DIRECTIONAL_SANITY_BLOCKED = "NRR-027"
+    PRICE_MOTION_INSUFFICIENT = "NRR-028"
+    PRICE_MOTION_FLASH_BLOCKED = "NRR-029"
+    PRICE_MOTION_BLEED_BLOCKED = "NRR-030"
+    # Phase 4: Net-Zero Score Readiness & Liquidity Codes
+    FEATURES_NOT_READY = "NRR-031"
+    FEATURES_MISSING = "NRR-032"
+    LIQUIDITY_LOW = "NRR-033"
+    LIQUIDITY_NOT_READY = "NRR-034" # If kappa missing entirely
+    REGIME_UNSUPPORTED = "NRR-035"
+    # Direction/Strength scoring hardening
+    NORMALIZE_LEGACY_FORBIDDEN_LIVE = "NRR-036"
+    NO_DIRECTIONAL_FEATURES_ACTIVE = "NRR-037"
+    NO_STRENGTH_FEATURES_ACTIVE = "NRR-038"
+    # P0-0: Readiness Contract Audit
+    MISSING_READY_KEYS = "NRR-039"
+    FULL_READY_INVARIANT_VIOLATED = "NRR-040"
+    # P0-1: Volatility Overflow
+    VOLATILITY_OVERFLOW = "NRR-041"
+    # P0-2: Book Feed Health
+    BOOK_FEED_UNHEALTHY = "NRR-042"
+    SPREAD_UNHEALTHY = "NRR-043"
+    # P0-3: Feature Sanity Firewall
+    FEATURE_NAN_INF = "NRR-044"
+    FEATURE_OUT_OF_RANGE = "NRR-045"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex patterns for normalization
@@ -129,6 +156,61 @@ class NormalizedRejectReasons:
             r"risk.*missing",
             r"features.*stale",
         ],
+        INSUFFICIENT_TREND_CONFIRMATION: [
+            r"insufficient.*trend",
+            r"trend.*not.*confirmed",
+            r"insufficient.*confirmation",
+        ],
+        DIRECTIONAL_SANITY_BLOCKED: [
+            r"directional.*sanity",
+            r"trend.*contradict",
+            r"contra.*trend",
+        ],
+        PRICE_MOTION_INSUFFICIENT: [
+            r"price_motion.*insufficient",
+            r"price motion.*insufficient",
+            r"price_motion.*not.*ready",
+        ],
+        PRICE_MOTION_FLASH_BLOCKED: [
+            r"price_motion.*flash",
+            r"price motion.*flash",
+        ],
+        PRICE_MOTION_BLEED_BLOCKED: [
+            r"price_motion.*bleed",
+            r"price motion.*bleed",
+        ],
+        FEATURES_NOT_READY: [
+            r"features.*not.*ready",
+            r"essential.*feature.*not.*ready",
+        ],
+        FEATURES_MISSING: [
+            r"feature.*missing",
+            r"essential.*feature.*missing",
+        ],
+        LIQUIDITY_LOW: [
+            r"liquidity.*low",
+            r"liquidity.*gate.*blocked",
+        ],
+        LIQUIDITY_NOT_READY: [
+            r"liquidity.*unknown",
+            r"liquidity.*missing",
+        ],
+        REGIME_UNSUPPORTED: [
+            r"regime.*unsupported",
+            r"regime.*blocked",
+        ],
+        NORMALIZE_LEGACY_FORBIDDEN_LIVE: [
+            r"normalize.*legacy.*forbidden",
+            r"legacy_v1.*forbidden",
+        ],
+        NO_DIRECTIONAL_FEATURES_ACTIVE: [
+            r"no.*directional.*features",
+            r"directional.*features.*active",
+        ],
+        NO_STRENGTH_FEATURES_ACTIVE: [
+            r"no.*strength.*features",
+            r"strength.*features.*active",
+        ],
     }
 
     @classmethod
@@ -181,6 +263,25 @@ class NormalizedRejectReasons:
             # Risk gate drift strings (DecisionMaking).
             "RISK_SCORE_MISSING": cls.DATA_NOT_READY,
             "RISK_SCORE_INVALID": cls.DATA_NOT_READY,
+            # DM-DIR-FORENSIC-01
+            "INSUFFICIENT_TREND_CONFIRMATION": cls.INSUFFICIENT_TREND_CONFIRMATION,
+            "DIRECTIONAL_SANITY_BLOCKED": cls.DIRECTIONAL_SANITY_BLOCKED,
+            "NRR-INSUFFICIENT-TREND-CONFIRMATION": cls.INSUFFICIENT_TREND_CONFIRMATION,
+            "NRR-DIRECTIONAL-SANITY-BLOCKED": cls.DIRECTIONAL_SANITY_BLOCKED,
+            # PRICE-MOTION-V1
+            "PRICE_MOTION_INSUFFICIENT": cls.PRICE_MOTION_INSUFFICIENT,
+            "PRICE_MOTION_FLASH_BLOCKED": cls.PRICE_MOTION_FLASH_BLOCKED,
+            "PRICE_MOTION_BLEED_BLOCKED": cls.PRICE_MOTION_BLEED_BLOCKED,
+            "NRR-PRICE-MOTION-INSUFFICIENT": cls.PRICE_MOTION_INSUFFICIENT,
+            "NRR-PRICE-MOTION-FLASH-BLOCKED": cls.PRICE_MOTION_FLASH_BLOCKED,
+            "NRR-PRICE-MOTION-BLEED-BLOCKED": cls.PRICE_MOTION_BLEED_BLOCKED,
+            # Phase 4
+            "NRR-FEATURES-NOT-READY": cls.FEATURES_NOT_READY,
+            "NRR-FEATURES-MISSING": cls.FEATURES_MISSING,
+            "NRR-LIQUIDITY-LOW": cls.LIQUIDITY_LOW,
+            "NRR-LIQUIDITY-GATE-BLOCKED": cls.LIQUIDITY_LOW,
+            "NRR-LIQUIDITY-NOT-READY": cls.LIQUIDITY_NOT_READY,
+            "NRR-REGIME-UNSUPPORTED": cls.REGIME_UNSUPPORTED,
         }
         for short_code, nrr_code in short_code_map.items():
             if raw_upper == short_code or raw_upper.startswith(short_code + ":") or raw_upper.startswith(short_code + " "):
@@ -240,6 +341,16 @@ class NormalizedRejectReasons:
             cls.MARGIN_MODE_SET_FAILED: "Failed to set margin mode on exchange",
             cls.LEVERAGE_VERIFY_FAILED: "Failed to verify leverage settings (API error)",
             cls.DATA_NOT_READY: "Required upstream data/warmup is missing or not yet ready",
+            cls.INSUFFICIENT_TREND_CONFIRMATION: "Trend is not confidently confirmed (fail-closed)",
+            cls.DIRECTIONAL_SANITY_BLOCKED: "Trade intent contradicts confirmed trend direction",
+            cls.PRICE_MOTION_INSUFFICIENT: "Price motion features are missing/not warmed up (fail-closed)",
+            cls.PRICE_MOTION_FLASH_BLOCKED: "Flash price motion gate blocked opening against fast move",
+            cls.PRICE_MOTION_BLEED_BLOCKED: "Bleed price motion gate blocked opening against sustained move",
+            cls.FEATURES_NOT_READY: "Essential features are not yet ready (warmup)",
+            cls.FEATURES_MISSING: "Essential features are missing from payload",
+            cls.LIQUIDITY_LOW: "Liquidity is too low (kappa gate)",
+            cls.LIQUIDITY_NOT_READY: "Liquidity metrics are missing",
+            cls.REGIME_UNSUPPORTED: "Current regime is not allowed for trading",
             cls.UNKNOWN_ERROR: "Unknown or unmapped error condition",
         }
 

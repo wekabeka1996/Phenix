@@ -93,6 +93,33 @@
       },
       "required": ["obi", "tfi", "delta_price", "absorption"],
       "additionalProperties": true
+    },
+    "price_motion": {
+      "type": "object",
+      "description": "Additive-only block: multi-window returns/volatility proxy and normalized price motion (fractional returns).",
+      "additionalProperties": false,
+      "properties": {
+        "ret_10s": { "type": ["number", "null"] },
+        "ret_60s": { "type": ["number", "null"] },
+        "ret_300s": { "type": ["number", "null"] },
+        "vol_pct_10s": { "type": ["number", "null"], "minimum": 0 },
+        "vol_pct_60s": { "type": ["number", "null"], "minimum": 0 },
+        "vol_pct_300s": { "type": ["number", "null"], "minimum": 0 },
+        "pm_norm_10s": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
+        "pm_norm_60s": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
+        "pm_norm_300s": { "type": ["number", "null"], "minimum": -1, "maximum": 1 }
+      },
+      "required": [
+        "ret_10s",
+        "ret_60s",
+        "ret_300s",
+        "vol_pct_10s",
+        "vol_pct_60s",
+        "vol_pct_300s",
+        "pm_norm_10s",
+        "pm_norm_60s",
+        "pm_norm_300s"
+      ]
     }
   },
   "required": ["ts", "symbol", "features"],

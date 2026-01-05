@@ -4,7 +4,7 @@ Instead of rejecting orders, reduce their size to fit within limits.
 """
 
 from decimal import Decimal
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 import logging
 
@@ -31,6 +31,48 @@ class SoftLimitConfig:
     side_exposure_usdt: Decimal = Decimal("600")
     margin_exposure_usdt: Decimal = Decimal("1100")
     regime_adaptation: Optional[RegimeAdaptationConfig] = None
+
+
+def load_soft_limit_config(trading_risk: Any) -> SoftLimitConfig:
+    """Build SoftLimitConfig from `trading.risk` config dict (fail-fast on missing keys)."""
+    if not isinstance(trading_risk, dict):
+        raise ValueError(f"Expected dict at trading.risk, got {type(trading_risk).__name__}")
+
+    soft_limits = trading_risk.get("soft_limits")
+    if not isinstance(soft_limits, dict):
+        raise ValueError("Missing/invalid trading.risk.soft_limits block")
+
+    required_keys = (
+        "mode",
+        "clip_min_notional_usdt",
+        "directional_ratio_max",
+        "side_exposure_usdt",
+        "margin_exposure_usdt",
+    )
+    for key in required_keys:
+        if key not in soft_limits:
+            raise ValueError(f"Missing required trading.risk.soft_limits.{key}")
+
+    cfg = SoftLimitConfig(
+        mode=str(soft_limits["mode"]),
+        clip_min_notional_usdt=Decimal(str(soft_limits["clip_min_notional_usdt"])),
+        directional_ratio_max=Decimal(str(soft_limits["directional_ratio_max"])),
+        side_exposure_usdt=Decimal(str(soft_limits["side_exposure_usdt"])),
+        margin_exposure_usdt=Decimal(str(soft_limits["margin_exposure_usdt"])),
+    )
+
+    # Optional regime adaptation (configured at trading.risk.regime_adaptation in trading.yaml)
+    regime = trading_risk.get("regime_adaptation")
+    if isinstance(regime, dict):
+        bounds = regime.get("bounds")
+        cfg.regime_adaptation = RegimeAdaptationConfig(
+            trend_up_delta=Decimal(str(regime.get("trend_up_delta"))) if regime.get("trend_up_delta") is not None else None,
+            trend_down_delta=Decimal(str(regime.get("trend_down_delta"))) if regime.get("trend_down_delta") is not None else None,
+            flat_delta=Decimal(str(regime.get("flat_delta"))) if regime.get("flat_delta") is not None else None,
+            bounds=list(bounds) if isinstance(bounds, list) else None,
+        )
+
+    return cfg
 
 
 @dataclass

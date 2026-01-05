@@ -22,6 +22,10 @@ def test_task47_btc_dual_strategy_can_emit_intents_in_different_windows() -> Non
     dm = DecisionMaking(fsm=bus, config=cfg)
     dm.logger = logging.getLogger("tests.task47.dm")
 
+    # Disable entry gates for this arbitration-focused test (no FEATURES_CALCULATED seeded).
+    dm.config.domains.decision_making.directional_sanity.enabled = False
+    dm.config.domains.decision_making.price_motion_sanity.enabled = False
+
     # Bypass warmup for this unit-style test: focus on arbitration/eligibility.
     dm._warmup_gate_before_trade_intent = lambda **_k: False
     dm._record_blocked_intent = lambda *_a, **_k: None

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decision_trace_emitted_v1.json",
+  "title": "Decision Trace Emitted (Monitoring Only)",
+  "description": "Schema for EVT:DECISION_TRACE_EMITTED payload. Emitted by decision_making for forensic traceability (DM-DIR-FORENSIC-01).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol (e.g., SOLUSDT)"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Decision timestamp in ms epoch"
+    },
+    "intent_side": {
+      "type": "string",
+      "enum": ["LONG", "SHORT"],
+      "description": "Intent direction as position side"
+    },
+    "signal_score": {
+      "type": ["number", "null"],
+      "description": "Signal score if available"
+    },
+    "regime": {
+      "type": ["string", "null"],
+      "description": "Detected regime if available"
+    },
+    "regime_confidence": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Regime confidence if available"
+    },
+    "trend_dir": {
+      "type": "string",
+      "enum": ["UP", "DOWN", "UNKNOWN"],
+      "description": "Directional trend inferred by DM"
+    },
+    "delta_price": {
+      "type": ["number", "null"],
+      "description": "Latest delta_price if available"
+    },
+    "pm_norm_10s": {
+      "type": ["number", "null"],
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Normalized price motion (10s) if available"
+    },
+    "pm_norm_60s": {
+      "type": ["number", "null"],
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Normalized price motion (60s) if available"
+    },
+    "pm_norm_300s": {
+      "type": ["number", "null"],
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Normalized price motion (300s) if available"
+    },
+    "vol_pct_10s": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Robust vol proxy (10s, fractional) if available"
+    },
+    "vol_pct_60s": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Robust vol proxy (60s, fractional) if available"
+    },
+    "vol_pct_300s": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Robust vol proxy (300s, fractional) if available"
+    },
+    "gate_outcome": {
+      "type": "string",
+      "enum": ["ALLOW", "DENY"],
+      "description": "Directional sanity gate outcome"
+    },
+    "deny_reason": {
+      "type": ["string", "null"],
+      "description": "Normalized deny reason (NRR-xxx) when DENY"
+    },
+    "why": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "Short human explanation (<=80 chars)"
+    }
+  },
+  "required": [
+    "symbol",
+    "ts",
+    "intent_side",
+    "signal_score",
+    "regime",
+    "regime_confidence",
+    "trend_dir",
+    "delta_price",
+    "pm_norm_10s",
+    "pm_norm_60s",
+    "pm_norm_300s",
+    "vol_pct_10s",
+    "vol_pct_60s",
+    "vol_pct_300s",
+    "gate_outcome",
+    "deny_reason",
+    "why"
+  ]
+}

@@ -78,16 +78,18 @@ class TestFailClosedSideBias:
         cfg.strategies.aurora.decision.side_bias_penalty_factor = 0.5
         cfg.strategies.aurora.decision.side_bias_window_sec = 60
         cfg.strategies.aurora.decision.side_bias_target_ratio = 0.6
+        cfg.strategies.aurora.decision.side_bias_min_intents = 18
         cfg.strategies.aurora.assets = {}
         
         with patch.object(DecisionMaking, '__init__', lambda x, y, z: None):
             dm = DecisionMaking.__new__(DecisionMaking)
             dm.config = cfg
             
-            penalty, window, target = dm._get_side_bias_params("BTCUSDT")
+            penalty, window, target, min_intents = dm._get_side_bias_params("BTCUSDT")
             assert penalty == 0.5
             assert window == 60
             assert target == 0.6
+            assert min_intents == 18
 
 
 class TestFailClosedProductionConfig:
@@ -124,9 +126,10 @@ class TestFailClosedProductionConfig:
         cfg = get_config()
         dm = cfg.strategies.aurora.decision
         
-        assert dm.side_bias_penalty_factor == 0.5
-        assert dm.side_bias_window_sec == 60
-        assert dm.side_bias_target_ratio == 0.6
+        assert dm.side_bias_penalty_factor == 0.25
+        assert dm.side_bias_window_sec == 420
+        assert dm.side_bias_target_ratio == 0.72
+        assert dm.side_bias_min_intents == 18
 
     def test_production_config_has_positions_stale_ttl(self):
         """Production config must have positions_stale_ttl_sec."""

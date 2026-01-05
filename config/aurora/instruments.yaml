@@ -7,17 +7,18 @@
 instruments:
   SOLUSDT:
     symbol: "SOLUSDT"
-    step_size: "1"        # Binance testnet: stepSize=1
+    # LIVE (Binance USDT-M Futures): quantity step/min should match exchange LOT_SIZE
+    step_size: "0.1"
     tick_size: "0.01"
-    min_qty: "1"          # Binance testnet: minQty=1
+    min_qty: "0.1"
     min_notional: "5"     # Binance testnet: notional=5
     execution:
       margin_mode: "isolated"
-      target_leverage: 10
-      leverage_policy: "verify_only"
+      target_leverage: 20
+      leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:
-      margin_pct: 0.06
+      margin_pct: 0.11
     
   ETHUSDT:
     symbol: "ETHUSDT"
@@ -27,11 +28,11 @@ instruments:
     min_notional: "5"
     execution:
       margin_mode: "isolated"
-      target_leverage: 10
-      leverage_policy: "verify_only"
+      target_leverage: 41
+      leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:
-      margin_pct: 0.06
+      margin_pct: 0.11
     
   BTCUSDT:
     symbol: "BTCUSDT"
@@ -41,11 +42,12 @@ instruments:
     min_notional: "100"
     execution:
       margin_mode: "isolated"
-      target_leverage: 20
-      leverage_policy: "verify_only"
+      # With small equity, BTC needs higher leverage to clear step_size + min_notional constraints.
+      target_leverage: 50
+      leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:
-      margin_pct: 0.06
+      margin_pct: 0.09
     
   DOGEUSDT:
     symbol: "DOGEUSDT"
@@ -55,11 +57,11 @@ instruments:
     min_notional: "5"
     execution:
       margin_mode: "isolated"
-      target_leverage: 10
-      leverage_policy: "verify_only"
+      target_leverage: 20
+      leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:
-      margin_pct: 0.06
+      margin_pct: 0.11
     
   XRPUSDT:
     symbol: "XRPUSDT"
@@ -69,8 +71,8 @@ instruments:
     min_notional: "5"
     execution:
       margin_mode: "isolated"
-      target_leverage: 10
-      leverage_policy: "verify_only"
+      target_leverage: 20
+      leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:
-      margin_pct: 0.06
+      margin_pct: 0.11

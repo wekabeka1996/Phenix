@@ -135,7 +135,7 @@ class TestStrategySSOTFreezeProvenance:
 
         assert loader.provenance_map.get("strategies.mean_reversion.strategy.bb_window") == "strategies/mean_reversion.yaml"
         assert loader.provenance_map.get("strategies.aurora.decision.signal_threshold") == "strategies/aurora.yaml"
-        assert loader.provenance_map.get("strategies.aurora.assets.BTCUSDT.weights.ema") == "strategies/aurora.yaml"
+        assert loader.provenance_map.get("strategies.aurora.assets.BTCUSDT.weights.ema_bias") == "strategies/aurora.yaml"
 
     def test_auroractl_provenance_stage_is_strategy(self, tmp_path: Path) -> None:
         out_path = tmp_path / "prov.json"
@@ -144,11 +144,11 @@ class TestStrategySSOTFreezeProvenance:
             cwd=Path(__file__).resolve().parents[2],
         )
         rows = json.loads(out_path.read_text(encoding="utf-8"))
-        sample = {row["key"]: row for row in rows if row.get("key") in {"strategies.aurora.decision.signal_threshold", "strategies.aurora.assets.BTCUSDT.weights.ema"}}
+        sample = {row["key"]: row for row in rows if row.get("key") in {"strategies.aurora.decision.signal_threshold", "strategies.aurora.assets.BTCUSDT.weights.ema_bias"}}
         assert sample["strategies.aurora.decision.signal_threshold"]["source_file"] == "strategies/aurora.yaml"
         assert sample["strategies.aurora.decision.signal_threshold"]["stage"] == "strategy"
-        assert sample["strategies.aurora.assets.BTCUSDT.weights.ema"]["source_file"] == "strategies/aurora.yaml"
-        assert sample["strategies.aurora.assets.BTCUSDT.weights.ema"]["stage"] == "strategy"
+        assert sample["strategies.aurora.assets.BTCUSDT.weights.ema_bias"]["source_file"] == "strategies/aurora.yaml"
+        assert sample["strategies.aurora.assets.BTCUSDT.weights.ema_bias"]["stage"] == "strategy"
 
 
 class TestStrategySSOTFreezeReaderCompatibility:
@@ -164,7 +164,7 @@ class TestStrategySSOTFreezeReaderCompatibility:
         assert cfg.strategies.aurora.decision.signal_threshold == 0.1
         btc = cfg.strategies.aurora.assets["BTCUSDT"]
         assert btc.weights is not None
-        assert btc.weights["ema"] == 0.15
+        assert btc.weights["ema_bias"] == 0.15
 
     def test_legacy_runtime_paths_are_absent(self) -> None:
         cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()

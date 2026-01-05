@@ -38,18 +38,28 @@ class OrderIndex:
     - by_exchange: exchangeOrderId -> OrderRef
     """
 
-    def __init__(self, ttl_sec: int = 3600):
+    def __init__(self, ttl_sec: int = 3600, *, entry_guard_ttl_sec: int = 120):
         """
         Initialize Order Index.
 
         Args:
             ttl_sec: Time-to-live for order references in seconds
+            entry_guard_ttl_sec: Max age for treating ENTRY refs as “in-flight” for one-open-order guard
         """
         self.ttl = ttl_sec
+        self.entry_guard_ttl_sec = int(entry_guard_ttl_sec)
         self._lock = threading.RLock()
         self._by_rid: Dict[str, OrderRef] = {}
         self._by_client: Dict[str, OrderRef] = {}
         self._by_exchange: Dict[str, OrderRef] = {}
+
+    @staticmethod
+    def _is_entry_ref(ref: OrderRef) -> bool:
+        if ref.clientOrderId and str(ref.clientOrderId).startswith("ENTRY-"):
+            return True
+        if str(ref.order_type or "").upper() == "ENTRY_INTENT":
+            return True
+        return False
 
     def upsert_from_open(
         self,
@@ -146,17 +156,21 @@ class OrderIndex:
             return False
         symbol = str(symbol)
         with self._lock:
+            now = time()
             for ref in self._by_rid.values():
                 if ref.terminal:
                     continue
                 if ref.symbol != symbol:
                     continue
-                # Entry orders have clientOrderId like ENTRY-<hash> once placed;
-                # before that, bridge may insert a placeholder with order_type=ENTRY_INTENT.
-                if ref.clientOrderId and str(ref.clientOrderId).startswith("ENTRY-"):
-                    return True
-                if str(ref.order_type or "").upper() == "ENTRY_INTENT":
-                    return True
+                if not self._is_entry_ref(ref):
+                    continue
+
+                age_sec = now - ref.created_ts
+                if age_sec > self.entry_guard_ttl_sec:
+                    # Guard is best-effort; never block indefinitely due to missing terminal updates.
+                    continue
+
+                return True
             return False
 
     def try_reserve_entry(self, symbol: str, rid: str) -> bool:
@@ -183,16 +197,22 @@ class OrderIndex:
         rid = str(rid)
 
         with self._lock:
+            now = time()
             # Check: Is there already an in-flight ENTRY for this symbol?
             for ref in self._by_rid.values():
                 if ref.terminal:
                     continue
                 if ref.symbol != symbol:
                     continue
-                if ref.clientOrderId and str(ref.clientOrderId).startswith("ENTRY-"):
-                    return False  # Deny: another ENTRY in-flight
-                if str(ref.order_type or "").upper() == "ENTRY_INTENT":
-                    return False  # Deny: another ENTRY_INTENT in-flight
+                if not self._is_entry_ref(ref):
+                    continue
+
+                age_sec = now - ref.created_ts
+                if age_sec > self.entry_guard_ttl_sec:
+                    # Guard is best-effort; never block indefinitely due to missing terminal updates.
+                    continue
+
+                return False  # Deny: another ENTRY in-flight
 
             # Reserve: Create ENTRY_INTENT placeholder immediately
             ref = OrderRef(

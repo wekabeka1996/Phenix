@@ -9,6 +9,7 @@ import time
 from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple, Callable, Awaitable
 from dataclasses import dataclass
+from dataclasses import asdict, is_dataclass
 from enum import Enum
 import logging
 
@@ -134,18 +135,54 @@ class IdempotentCancelHelper:
         """
         try:
             order = await get_order_func(symbol, order_id)
-            return order
+            return self._normalize_response(order)
         except Exception as e:
-            self.logger.warning(
-                f"IDEMPOTENT_CANCEL: getOrder pre-check failed: {e}")
+            # Binance returns both -2011 (Unknown order) and -2013 (Order does not exist)
+            # for already-gone orders. Treat this as idempotent success upstream.
+            code = getattr(e, "code", None)
+            msg = (getattr(e, "msg", None) or str(e) or "").strip()
+            if code in (-2011, -2013) or "Unknown order" in msg or "Order does not exist" in msg:
+                self.logger.warning(
+                    f"IDEMPOTENT_CANCEL: getOrder pre-check indicates NOT_FOUND: {e}"
+                )
+                return {"status": "NOT_FOUND", "code": code, "msg": msg}
+
+            self.logger.warning(f"IDEMPOTENT_CANCEL: getOrder pre-check failed: {e}")
             return None
+
+    @staticmethod
+    def _normalize_response(resp: Any) -> Dict[str, Any]:
+        if resp is None:
+            return {}
+        if isinstance(resp, dict):
+            return resp
+        if hasattr(resp, "to_dict") and callable(getattr(resp, "to_dict")):
+            try:
+                maybe = resp.to_dict()
+                if isinstance(maybe, dict):
+                    return maybe
+            except Exception:
+                pass
+        if is_dataclass(resp):
+            try:
+                data = asdict(resp)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+        if hasattr(resp, "__dict__"):
+            try:
+                return dict(vars(resp))
+            except Exception:
+                pass
+        return {"raw": str(resp)}
 
     async def cancel_order_idempotent(
         self,
         symbol: str,
         order_id: str,
-        cancel_func: Callable[[str, str], Awaitable[Dict[str, Any]]],
-        get_order_func: Callable[[str, str], Awaitable[Dict[str, Any]]],
+        cancel_func: Callable[[str, str], Awaitable[Any]],
+        get_order_func: Callable[[str, str], Awaitable[Any]],
         max_retries: int = 2
     ) -> IdempotentCancelResult:
         """
@@ -173,8 +210,8 @@ class IdempotentCancelHelper:
         pre_check_order = await self.get_order_before_cancel(symbol, order_id, get_order_func)
 
         if pre_check_order:
-            status = pre_check_order.get("status")
-            if status in ["CANCELED", "FILLED", "EXPIRED", "REJECTED"]:
+            status = str(pre_check_order.get("status") or "").upper()
+            if status in ["CANCELED", "FILLED", "EXPIRED", "REJECTED", "NOT_FOUND"]:
                 # Already terminal - cancel not needed
                 self.logger.info(
                     f"IDEMPOTENT_CANCEL: Order {order_id} already {status} (pre-check), "
@@ -182,14 +219,18 @@ class IdempotentCancelHelper:
                 )
                 return IdempotentCancelResult(
                     success=True,
-                    reason=f"PRE_CHECK_TERMINAL_{status}",
+                    reason=(
+                        f"PRE_CHECK_TERMINAL_{status}"
+                        if status != "NOT_FOUND"
+                        else "PRE_CHECK_NOT_FOUND"
+                    ),
                     order_status_before=status,
                     order_status_after=status,
-                    already_canceled=(status == "CANCELED"),
+                    already_canceled=(status in {"CANCELED", "NOT_FOUND"}),
                     is_idempotent_success=True
                 )
 
-            if status in ["NEW", "PARTIALLY_FILLED"]:
+            if status in ["NEW", "PARTIALLY_FILLED", "ACCEPTED", "PARTIAL_FILL"]:
                 # Can proceed with cancel
                 self.logger.debug(
                     f"IDEMPOTENT_CANCEL: Pre-check OK, order {order_id} is {status}, proceeding")
@@ -197,10 +238,11 @@ class IdempotentCancelHelper:
         # Step 2: Attempt cancel
         for attempt in range(max_retries):
             try:
-                result = await cancel_func(symbol, order_id)
+                result = self._normalize_response(await cancel_func(symbol, order_id))
 
                 # Check Binance response
-                if result.get("status") == "CANCELED":
+                status = str(result.get("status") or "").upper()
+                if status in ("CANCELED", "CANCELLED"):
                     self.logger.info(
                         f"IDEMPOTENT_CANCEL: Successfully canceled order {order_id} "
                         f"(attempt {attempt + 1})"
@@ -210,7 +252,7 @@ class IdempotentCancelHelper:
                         reason="CANCEL_SUCCESS",
                         order_status_before=pre_check_order.get(
                             "status") if pre_check_order else None,
-                        order_status_after="CANCELED",
+                        order_status_after=status,
                         is_idempotent_success=True
                     )
 
@@ -219,18 +261,19 @@ class IdempotentCancelHelper:
                 error_msg = result["msg"] if "msg" in result else ""
 
                 # -2011: Unknown order (order missing = already gone or never existed)
-                if error_code == -2011 or "Unknown order" in error_msg:
+                if error_code in (-2011, -2013) or "Unknown order" in error_msg or "Order does not exist" in error_msg:
+                    absorbed_code = error_code if error_code in (-2011, -2013) else -2011
                     self.logger.warning(
-                        f"IDEMPOTENT_CANCEL: Got -2011 (Unknown order) for {order_id}, "
+                        f"IDEMPOTENT_CANCEL: Got {absorbed_code} (order missing) for {order_id}, "
                         f"treating as idempotent success"
                     )
                     return IdempotentCancelResult(
                         success=True,
-                        reason="IDEMPOTENT_-2011_ABSORBED",
+                        reason=f"IDEMPOTENT_{absorbed_code}_ABSORBED",
                         order_status_before=pre_check_order.get(
                             "status") if pre_check_order else None,
                         order_status_after="UNKNOWN",
-                        error_code=-2011,
+                        error_code=absorbed_code,
                         is_idempotent_success=True
                     )
 

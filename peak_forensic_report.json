@@ -1,0 +1,89 @@
+[
+  {
+    "ts": 1767526990775,
+    "symbol": "SOLUSDT",
+    "rid": "77a810e2-84e6-455b-a673-c251123fbb5c",
+    "indicators": {},
+    "post_entry": {
+      "entry_price": 134.41,
+      "max_profit_5m": 0.00022319767874414952,
+      "max_drawdown_5m": 0.0006695930362324486,
+      "final_price_5m": 134.32
+    },
+    "features_at_entry": {
+      "obi": "-0.7736001232453397855893574024",
+      "tfi": "0.3671258879057520502641835643",
+      "delta_price": "0.01",
+      "absorption": "0.0",
+      "price": "134.44",
+      "liquidity_kappa": "0.9966409857847888890065588891",
+      "ema_bias": "0.5034458903473522280086230198",
+      "volume_spike": "0.2906610879587102316258406135",
+      "volatility_state": "0E+16",
+      "depth_imbalance": "0.884210227102767126865546625",
+      "macro_sync": "0.7799256390708696",
+      "volume_zscore": "0.07809632",
+      "large_trade_imbalance": "0.683562943952875947007900334",
+      "spread_bps": "0.74",
+      "ts": 1767526989735
+    }
+  },
+  {
+    "ts": 1767527010369,
+    "symbol": "ETHUSDT",
+    "rid": "387b99d9-b50d-4315-9dc1-b8e3c8e5b79f",
+    "indicators": {},
+    "post_entry": {
+      "entry_price": 3137.03,
+      "max_profit_5m": 0.0003729642368736091,
+      "max_drawdown_5m": 0.000156198697494202,
+      "final_price_5m": 3138.2
+    },
+    "features_at_entry": {
+      "obi": "0.5317953480882534771444427511",
+      "tfi": "0.6308230353777478144688601966",
+      "delta_price": "0.01",
+      "absorption": "0.0",
+      "price": "3137.04",
+      "liquidity_kappa": "0.9990842252152669898933233170",
+      "ema_bias": "0.501958072705657836309170398",
+      "volume_spike": "0.383156327447670837271340149",
+      "volatility_state": "0.086078955179578525273782460",
+      "depth_imbalance": "0.2345888851476516871783574936",
+      "macro_sync": "0.8929498368958825",
+      "volume_zscore": "0.90454159",
+      "large_trade_imbalance": "0.8154115176888734085506326365",
+      "spread_bps": "0.03",
+      "ts": 1767527009752
+    }
+  },
+  {
+    "ts": 1767539849424,
+    "symbol": "SOLUSDT",
+    "rid": "a348273b-427c-4257-869f-f2cfa19b14cc",
+    "indicators": {},
+    "post_entry": {
+      "entry_price": 135.16,
+      "max_profit_5m": 0.0005179047055341312,
+      "max_drawdown_5m": 0.0005918910920389471,
+      "final_price_5m": 135.15
+    },
+    "features_at_entry": {
+      "obi": "0.6804924981681971636159445597",
+      "tfi": "-0.3884807017158404808696022955",
+      "delta_price": "0.01",
+      "absorption": "0.0",
+      "price": "135.17",
+      "liquidity_kappa": "0.9949594259673721112499832382",
+      "ema_bias": "0.499277912625636080032703622",
+      "volume_spike": "0.3293694598090087055134149409",
+      "volatility_state": "0.1811594202898553481411468179",
+      "depth_imbalance": "0.1631666209077086753514170290",
+      "macro_sync": "0.6377244372588171",
+      "volume_zscore": "0.42947589",
+      "large_trade_imbalance": "0.3057596491420797832681643848",
+      "spread_bps": "0.74",
+      "ts": 1767539848805
+    }
+  }
+]

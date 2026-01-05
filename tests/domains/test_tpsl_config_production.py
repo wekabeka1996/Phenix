@@ -46,8 +46,8 @@ class TestAuroraConfigLoading:
         assert eth_cfg.exit.sl_pct == pytest.approx(0.019, rel=1e-3), (
             f"ETHUSDT sl_pct={eth_cfg.exit.sl_pct}, expected 0.019 from aurora.yaml"
         )
-        assert eth_cfg.exit.max_hold_sec == 900, (
-            f"ETHUSDT max_hold_sec={eth_cfg.exit.max_hold_sec}, expected 900"
+        assert eth_cfg.exit.max_hold_sec == 3000, (
+            f"ETHUSDT max_hold_sec={eth_cfg.exit.max_hold_sec}, expected 3000"
         )
 
     def test_ethusdt_take_profit_config_loaded(self, production_config: AuroraConfig):
@@ -66,16 +66,16 @@ class TestAuroraConfigLoading:
         )
 
     def test_solusdt_exit_config_loaded(self, production_config: AuroraConfig):
-        """SOLUSDT sl_pct should be 0.0216 (2.16%) after -20% reduction."""
+        """SOLUSDT sl_pct should match SSOT config."""
         sol_cfg = production_config.strategies.aurora.assets.get("SOLUSDT")
         assert sol_cfg is not None, "SOLUSDT config missing"
         assert sol_cfg.exit is not None, "SOLUSDT.exit missing"
         
-        assert sol_cfg.exit.sl_pct == pytest.approx(0.0216, rel=1e-3), (
-            f"SOLUSDT sl_pct={sol_cfg.exit.sl_pct}, expected 0.0216"
+        assert sol_cfg.exit.sl_pct == pytest.approx(0.01512, rel=1e-3), (
+            f"SOLUSDT sl_pct={sol_cfg.exit.sl_pct}, expected 0.01512"
         )
-        assert sol_cfg.exit.max_hold_sec == 180, (
-            f"SOLUSDT max_hold_sec={sol_cfg.exit.max_hold_sec}, expected 180"
+        assert sol_cfg.exit.max_hold_sec == 3000, (
+            f"SOLUSDT max_hold_sec={sol_cfg.exit.max_hold_sec}, expected 3000"
         )
 
     def test_solusdt_trailing_stop_enabled(self, production_config: AuroraConfig):
@@ -97,6 +97,27 @@ class TestAuroraConfigLoading:
         
         assert btc_cfg.exit.sl_pct == pytest.approx(0.02, rel=1e-3), (
             f"BTCUSDT sl_pct={btc_cfg.exit.sl_pct}, expected 0.02"
+        )
+        assert btc_cfg.exit.max_hold_sec == 3000, (
+            f"BTCUSDT max_hold_sec={btc_cfg.exit.max_hold_sec}, expected 3000"
+        )
+
+    def test_dogeusdt_max_hold_sec_loaded(self, production_config: AuroraConfig):
+        """DOGEUSDT max_hold_sec should match SSOT config."""
+        doge_cfg = production_config.strategies.aurora.assets.get("DOGEUSDT")
+        assert doge_cfg is not None, "DOGEUSDT config missing"
+        assert doge_cfg.exit is not None, "DOGEUSDT.exit missing"
+        assert doge_cfg.exit.max_hold_sec == 1500, (
+            f"DOGEUSDT max_hold_sec={doge_cfg.exit.max_hold_sec}, expected 1500"
+        )
+
+    def test_xrpusdt_max_hold_sec_loaded(self, production_config: AuroraConfig):
+        """XRPUSDT max_hold_sec should match SSOT config."""
+        xrp_cfg = production_config.strategies.aurora.assets.get("XRPUSDT")
+        assert xrp_cfg is not None, "XRPUSDT config missing"
+        assert xrp_cfg.exit is not None, "XRPUSDT.exit missing"
+        assert xrp_cfg.exit.max_hold_sec == 1500, (
+            f"XRPUSDT max_hold_sec={xrp_cfg.exit.max_hold_sec}, expected 1500"
         )
 
     def test_btcusdt_trailing_stop_disabled(self, production_config: AuroraConfig):
@@ -215,7 +236,7 @@ class TestBracketPriceCalculation:
         )
 
     def test_solusdt_sl_calculation(self, production_config: AuroraConfig):
-        """SOLUSDT SL should be 2.7% (0.027)."""
+        """SOLUSDT SL should match SSOT sl_pct."""
         fsm = ManageFlowFSM(config=production_config)
         fsm.symbol = "SOLUSDT"
         fsm.position_side = "BUY"
@@ -224,12 +245,12 @@ class TestBracketPriceCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected SL = 200 * (1 - 0.0216) = 195.68
-        expected_sl = Decimal("200") * (Decimal("1") - Decimal("0.0216"))
+        # Expected SL = entry * (1 - sl_pct)
+        expected_sl = Decimal("200") * (Decimal("1") - Decimal("0.01512"))
         
         assert sl_price is not None, "SL price is None"
         assert abs(sl_price - expected_sl) < Decimal("1"), (
-            f"SOLUSDT SL={sl_price}, expected ~{expected_sl} (2.16%)"
+            f"SOLUSDT SL={sl_price}, expected ~{expected_sl}"
         )
 
     def test_btcusdt_sl_calculation(self, production_config: AuroraConfig):
@@ -409,7 +430,7 @@ class TestEndToEndBracketCalculation:
 
     def test_solusdt_full_bracket_path_uses_aurora_config(self, production_config: AuroraConfig):
         """
-        CRITICAL TEST: Verify SOLUSDT uses sl_pct=0.0216 from aurora.yaml (after -20% reduction)
+        CRITICAL TEST: Verify SOLUSDT uses sl_pct from aurora.yaml (no fallback)
         """
         fsm = ManageFlowFSM(config=production_config)
         fsm.symbol = "SOLUSDT"
@@ -419,13 +440,13 @@ class TestEndToEndBracketCalculation:
         
         sl_price, tp1_price, tp2_price = fsm._calculate_bracket_prices()
         
-        # Expected: sl_pct = 0.0216 (2.16%)
-        # SL for BUY: 150 * (1 - 0.0216) = 150 * 0.9784 = 146.76
-        expected_sl = Decimal("150") * Decimal("0.9784")
+        # Expected: sl_pct = 0.01512 (1.512%)
+        # SL for BUY: 150 * (1 - 0.01512) = 147.732
+        expected_sl = Decimal("150") * (Decimal("1") - Decimal("0.01512"))
         fallback_sl = Decimal("150") * Decimal("0.996")  # 40 bps fallback
         
         assert abs(sl_price - expected_sl) < Decimal("0.1"), (
-            f"SOLUSDT SL={sl_price}, expected ~{expected_sl} (2.16% from aurora.yaml). "
+            f"SOLUSDT SL={sl_price}, expected ~{expected_sl} (from aurora.yaml). "
             f"If SL is ~{fallback_sl}, fallback is being used!"
         )
 

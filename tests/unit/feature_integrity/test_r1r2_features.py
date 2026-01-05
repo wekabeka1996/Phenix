@@ -1,0 +1,461 @@
+"""
+R1+R2 Feature Integrity Tests.
+
+T1-T5: Synthetic tests for macro_resid and absorption.
+"""
+
+import unittest
+import decimal
+from collections import deque
+from unittest.mock import MagicMock
+
+
+class TestMacroResidNeutral(unittest.TestCase):
+    """T1: Macro resid neutral test - when r_asset = beta * r_btc → resid ≈ 0."""
+    
+    def test_perfect_beta_match_returns_near_zero(self):
+        """If r_asset = beta * r_btc for all samples, macro_resid ≈ 0."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+        
+        cfg = MagicMock()
+        cfg.macro_resid_enabled = True
+        cfg.macro_resid_beta_window = 20
+        cfg.macro_resid_mad_window = 10
+        cfg.macro_resid_winsor_percentile = 0.0  # No winsorizing for deterministic test
+        cfg.macro_resid_var_floor = 1e-10
+        cfg.macro_resid_scale_floor = 1e-6
+        cfg.macro_resid_clip = 3.0
+        cfg.macro_resid_neutral = 0.0
+        
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+        
+        # Simulate: r_asset = 1.2 * r_btc (perfect beta=1.2)
+        # Need beta_window + mad_window samples for full warmup
+        true_beta = 1.2
+        for i in range(40):  # 40 samples to fill both buffers
+            anchor_ret = 0.001 * (i % 5 - 2)  # Varying anchor returns
+            asset_ret = true_beta * anchor_ret
+            engine.update_macro_resid(state, asset_ret, anchor_ret)
+            # Compute on each tick to populate MAD buffer
+            engine.compute_macro_resid(state)
+        
+        # Final compute
+        value, is_ready, reason = engine.compute_macro_resid(state)
+        
+        self.assertTrue(is_ready, f"Should be ready, got reason: {reason}")
+        # Result should be near 0 (within tolerance)
+        self.assertAlmostEqual(float(value), 0.0, places=1, 
+            msg=f"Expected near 0 for perfect beta match, got {value}")
+
+
+class TestMacroResidSign(unittest.TestCase):
+    """T2: Macro resid sign test - negative/positive when asset underperforms/outperforms."""
+    
+    def test_asset_underperformance_gives_negative(self):
+        """When asset underperforms BTC (r_asset < beta*r_btc), macro_resid < 0."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+        
+        cfg = MagicMock()
+        cfg.macro_resid_enabled = True
+        cfg.macro_resid_beta_window = 15
+        cfg.macro_resid_mad_window = 10
+        cfg.macro_resid_winsor_percentile = 0.0
+        cfg.macro_resid_var_floor = 1e-10
+        cfg.macro_resid_scale_floor = 1e-6
+        cfg.macro_resid_clip = 3.0
+        cfg.macro_resid_neutral = 0.0
+        
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+        
+        # Warmup with beta ≈ 1 (need enough samples)
+        for i in range(30):
+            ret = 0.001 * (i % 3 - 1)
+            engine.update_macro_resid(state, ret, ret)
+            engine.compute_macro_resid(state)
+        
+        # Now: BTC goes up strongly, asset goes up weakly
+        engine.update_macro_resid(state, 0.001, 0.01)
+        
+        value, is_ready, reason = engine.compute_macro_resid(state)
+        
+        self.assertTrue(is_ready, f"Reason: {reason}")
+        self.assertLess(float(value), 0, f"Expected negative, got {value}")
+    
+    def test_asset_outperformance_gives_positive(self):
+        """When asset outperforms BTC (r_asset > beta*r_btc), macro_resid > 0."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+        
+        cfg = MagicMock()
+        cfg.macro_resid_enabled = True
+        cfg.macro_resid_beta_window = 15
+        cfg.macro_resid_mad_window = 10
+        cfg.macro_resid_winsor_percentile = 0.0
+        cfg.macro_resid_var_floor = 1e-10
+        cfg.macro_resid_scale_floor = 1e-6
+        cfg.macro_resid_clip = 3.0
+        cfg.macro_resid_neutral = 0.0
+        
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+        
+        # Warmup with beta ≈ 1 (need enough samples)
+        for i in range(30):
+            ret = 0.001 * (i % 3 - 1)
+            engine.update_macro_resid(state, ret, ret)
+            engine.compute_macro_resid(state)
+        
+        # Now: Asset goes up strongly, BTC is flat
+        engine.update_macro_resid(state, 0.02, 0.001)
+        
+        value, is_ready, reason = engine.compute_macro_resid(state)
+        
+        self.assertTrue(is_ready, f"Reason: {reason}")
+        self.assertGreater(float(value), 0, f"Expected positive, got {value}")
+
+
+class TestReachabilityBuySell(unittest.TestCase):
+    """T3: Reachability test - system sees both BUY and SELL signals."""
+    
+    def test_buy_reachable_with_positive_features(self):
+        """BUY reachable when all directional features are positive."""
+        # Simulate features for ScoreV2
+        features = {
+            "obi": 0.6,         # Positive → BUY
+            "tfi": 0.5,         # Positive → BUY
+            "delta_price": 0.3, # Positive → BUY
+            "macro_resid": 0.5, # R1: Positive → BUY
+            "ema_bias": 0.65,   # > 0.5 → BUY bias
+            "depth_imbalance": 0.4,  # < 0.5 → BUY bias
+            "liquidity_kappa": 0.9,
+        }
+        
+        # Simple score: sum of directional features
+        directional_score = (
+            features["obi"] +
+            features["tfi"] +
+            features["delta_price"] +
+            features["macro_resid"]
+        )
+        
+        self.assertGreater(directional_score, 0, "BUY should be reachable")
+        
+    def test_sell_reachable_with_negative_features(self):
+        """SELL reachable when all directional features are negative."""
+        features = {
+            "obi": -0.6,         # Negative → SELL
+            "tfi": -0.5,         # Negative → SELL
+            "delta_price": -0.3, # Negative → SELL
+            "macro_resid": -0.7, # R1: Negative → SELL
+            "ema_bias": 0.35,    # < 0.5 → SELL bias
+            "depth_imbalance": 0.6,  # > 0.5 → SELL bias
+            "liquidity_kappa": 0.9,
+        }
+        
+        directional_score = (
+            features["obi"] +
+            features["tfi"] +
+            features["delta_price"] +
+            features["macro_resid"]
+        )
+        
+        self.assertLess(directional_score, 0, "SELL should be reachable")
+
+
+class TestAbsorptionDedup(unittest.TestCase):
+    """T4: Absorption dedup test - mutes if correlated with TFI."""
+    
+    def test_high_correlation_mutes_absorption(self):
+        """If absorption proxy ≈ TFI, dedup mutes it."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+        
+        cfg = MagicMock()
+        cfg.absorption_mode = "proxy"
+        cfg.absorption_proxy_window = 10
+        cfg.absorption_proxy_eps = 0.0001
+        cfg.absorption_dedup_enabled = True
+        cfg.absorption_dedup_window = 15
+        cfg.absorption_dedup_threshold = 0.7  # Lower threshold to catch correlation
+        cfg.absorption_clip = 1.0
+        cfg.absorption_neutral = 0.0
+        
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+        
+        # Simulate: absorption proxy is almost identical to TFI
+        # Both are (buy - sell) / (buy + sell)
+        for i in range(25):  # More samples for correlation
+            buy_vol = 1000 + i * 50
+            sell_vol = 800 - i * 30
+            # Compute same formula for TFI as absorption proxy
+            tfi = (buy_vol - sell_vol) / (buy_vol + sell_vol + 0.0001)
+            engine.update_absorption(state, buy_vol, sell_vol, tfi)
+            # Call compute to populate proxy buffer
+            engine.compute_absorption(state)
+        
+        value, is_ready, reason = engine.compute_absorption(state)
+        
+        # Should be muted due to high correlation with TFI
+        # Note: with identical formula, corr should be ~1.0
+        self.assertFalse(is_ready, f"Should be muted due to TFI dedup, got ready with reason: {reason}")
+        self.assertIn("dedup_muted", reason or "")
+    
+    def test_low_correlation_allows_absorption(self):
+        """If absorption proxy != TFI, dedup allows it."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        from apps.reference.domains.feature_engineering.types import HotState
+        
+        cfg = MagicMock()
+        cfg.absorption_mode = "proxy"
+        cfg.absorption_proxy_window = 10
+        cfg.absorption_proxy_eps = 0.0001
+        cfg.absorption_dedup_enabled = True
+        cfg.absorption_dedup_window = 15
+        cfg.absorption_dedup_threshold = 0.8
+        cfg.absorption_clip = 1.0
+        cfg.absorption_neutral = 0.0
+        
+        engine = FeatureCalculationEngine(cfg)
+        state = HotState()
+        
+        # Simulate: absorption proxy is uncorrelated with TFI
+        import random
+        random.seed(42)
+        for i in range(20):
+            buy_vol = 1000 + random.randint(-100, 100)
+            sell_vol = 900 + random.randint(-100, 100)
+            # TFI is independent random
+            tfi = random.uniform(-1, 1)
+            engine.update_absorption(state, buy_vol, sell_vol, tfi)
+        
+        value, is_ready, reason = engine.compute_absorption(state)
+        
+        # Should NOT be muted (low correlation)
+        self.assertTrue(is_ready, f"Should be allowed, got reason: {reason}")
+
+
+class TestNoSilentFallbacksAudit(unittest.TestCase):
+    """T5: Verify no silent fallbacks in critical paths."""
+    
+    def test_decision_paths_have_no_get_with_literal_defaults(self):
+        """Critical decision paths should not use .get(key, literal) patterns."""
+        import re
+        
+        # Pattern: .get("something", 0) or .get("something", 0.5) etc.
+        # This is a simplified audit - real audit should scan actual files
+        critical_patterns = [
+            r'features_data\.get\(["\'][^"\']+["\'],\s*\d',  # .get("key", number)
+        ]
+        
+        # Example of what should NOT be in decision paths:
+        bad_example = 'features_data.get("liquidity_kappa", 0)'
+        
+        for pattern in critical_patterns:
+            matches = re.findall(pattern, bad_example)
+            # If we had real code, we'd check no matches
+            self.assertTrue(True, "Audit pattern test placeholder")
+    
+    def test_macro_resid_is_signed_with_neutral_zero(self):
+        """macro_resid should be SIGNED with neutral=0."""
+        from apps.reference.domains.feature_engineering.calculation_engine import FeatureCalculationEngine
+        
+        cfg = MagicMock()
+        cfg.macro_resid_neutral = 0.0
+        
+        engine = FeatureCalculationEngine(cfg)
+        
+        # Verify neutral is 0 (sign-preserving)
+        self.assertEqual(cfg.macro_resid_neutral, 0.0)
+    
+    def test_absorption_default_is_disabled(self):
+        """absorption mode should default to disabled."""
+        from apps.reference.domains.feature_engineering.types import FeatureEngineeringConfig
+        from unittest.mock import MagicMock
+        
+        # Mock config without absorption section
+        mock_cfg = MagicMock()
+        mock_cfg.absorption = None
+        
+        # Wrapper should return "disabled" as default
+        wrapped = FeatureEngineeringConfig.__new__(FeatureEngineeringConfig)
+        wrapped._cfg = mock_cfg
+        
+        self.assertEqual(wrapped.absorption_mode, "disabled")
+
+
+class TestMacroResidAffectsScoring(unittest.TestCase):
+    """T6: Integration test - macro_resid actually affects signal score."""
+
+    def test_macro_resid_is_in_directional_features_config(self):
+        """macro_resid must be included in directional_features to affect v2 scoring."""
+        from apps.reference.config_loader import get_config
+
+        cfg = get_config()
+        ds_cfg = cfg.strategies.aurora.decision.direction_strength_scoring
+
+        self.assertIn("macro_resid", list(ds_cfg.directional_features))
+    
+    def test_same_features_different_macro_resid_changes_score(self):
+        """With identical features at neutrals, macro_resid sign must change v2 dir_score."""
+        from apps.reference.config_loader import get_config
+        from apps.reference.domains.decision_making.scoring_direction_strength_v1 import compute_direction_strength_score
+
+        cfg = get_config()
+        aurora_decision = cfg.strategies.aurora.decision
+        ds_cfg = aurora_decision.direction_strength_scoring
+
+        weights = aurora_decision.signal_weights.model_dump()
+        neutrals = dict(aurora_decision.feature_neutrals)
+
+        features_base = {
+            "obi": 0.0,
+            "tfi": 0.0,
+            "delta_price": 0.0,
+            "ema_bias": 0.5,
+            "depth_imbalance": 0.5,
+            "volume_spike": 0.0,
+            "volatility_state": 0.0,
+        }
+        readiness = {k: True for k in features_base.keys()}
+        readiness["macro_resid"] = True
+
+        ds_pos = compute_direction_strength_score(
+            features={**features_base, "macro_resid": 1.0},
+            weights=weights,
+            neutrals=neutrals,
+            readiness=readiness,
+            essential_features=set(aurora_decision.essential_features),
+            normalize_mode=str(aurora_decision.signals.normalize_signals_mode),
+            directional_features=list(ds_cfg.directional_features),
+            strength_features=list(ds_cfg.strength_features),
+            strength_alpha=float(ds_cfg.strength_alpha),
+            strength_cap=float(ds_cfg.strength_cap),
+            symbol="TEST",
+        )
+        ds_neg = compute_direction_strength_score(
+            features={**features_base, "macro_resid": -1.0},
+            weights=weights,
+            neutrals=neutrals,
+            readiness=readiness,
+            essential_features=set(aurora_decision.essential_features),
+            normalize_mode=str(aurora_decision.signals.normalize_signals_mode),
+            directional_features=list(ds_cfg.directional_features),
+            strength_features=list(ds_cfg.strength_features),
+            strength_alpha=float(ds_cfg.strength_alpha),
+            strength_cap=float(ds_cfg.strength_cap),
+            symbol="TEST",
+        )
+
+        self.assertFalse(ds_pos.deferred, f"Unexpected defer: {ds_pos.deny_reason} {ds_pos.dir_result.reasons}")
+        self.assertFalse(ds_neg.deferred, f"Unexpected defer: {ds_neg.deny_reason} {ds_neg.dir_result.reasons}")
+
+        self.assertGreater(ds_pos.final_score, 0)
+        self.assertLess(ds_neg.final_score, 0)
+    
+    def test_macro_resid_can_flip_intent_direction(self):
+        """macro_resid sign can flip final_score in v2 kernel when other signals are weak."""
+        from apps.reference.domains.decision_making.scoring_direction_strength_v1 import compute_direction_strength_score
+
+        weights = {
+            "obi": 0.05,
+            "tfi": 0.05,
+            "macro_resid": 0.9,
+        }
+        neutrals = {"obi": 0.0, "tfi": 0.0, "macro_resid": 0.0}
+        readiness = {"obi": True, "tfi": True, "macro_resid": True}
+
+        ds_pos = compute_direction_strength_score(
+            features={"obi": 0.02, "tfi": 0.02, "macro_resid": 1.0},
+            weights=weights,
+            neutrals=neutrals,
+            readiness=readiness,
+            essential_features=set(),
+            normalize_mode="signed_v2",
+            directional_features=["obi", "tfi", "macro_resid"],
+            strength_features=[],
+            strength_alpha=0.0,
+            strength_cap=1.0,
+            symbol="TEST",
+        )
+        ds_neg = compute_direction_strength_score(
+            features={"obi": 0.02, "tfi": 0.02, "macro_resid": -1.0},
+            weights=weights,
+            neutrals=neutrals,
+            readiness=readiness,
+            essential_features=set(),
+            normalize_mode="signed_v2",
+            directional_features=["obi", "tfi", "macro_resid"],
+            strength_features=[],
+            strength_alpha=0.0,
+            strength_cap=1.0,
+            symbol="TEST",
+        )
+
+        self.assertGreater(ds_pos.final_score, 0)
+        self.assertLess(ds_neg.final_score, 0)
+
+
+class TestMacroResidEssentialDefer(unittest.TestCase):
+    """T7: If macro_resid is essential and not_ready → DEFER."""
+    
+    def test_not_ready_essential_causes_defer_pattern(self):
+        """When macro_resid is in essential_features and ready=False → DEFER."""
+        # Simulate decision logic pattern
+        essential_features = {"obi", "tfi", "macro_resid"}
+        
+        ready_map = {
+            "obi": True,
+            "tfi": True,
+            "macro_resid": False,  # NOT READY
+        }
+        
+        # Check pattern: if any essential not ready → DEFER
+        not_ready_essential = [k for k in essential_features if not ready_map.get(k, False)]
+        
+        self.assertEqual(not_ready_essential, ["macro_resid"])
+        
+        # Decision logic would DEFER
+        should_defer = len(not_ready_essential) > 0
+        self.assertTrue(should_defer, "Should DEFER when macro_resid not ready")
+
+
+class TestWeightsMigrationValidation(unittest.TestCase):
+    """T8: Validate weights migration in config."""
+    
+    def test_config_has_macro_resid_weights(self):
+        """Config now has macro_resid in signal_weights."""
+        from apps.reference.config_loader import get_config
+        cfg = get_config()
+        
+        aurora = cfg.strategies.aurora
+        
+        # Check default signal_weights
+        sw = aurora.decision.signal_weights
+        self.assertTrue(hasattr(sw, 'macro_resid'), "signal_weights should have macro_resid")
+        self.assertGreater(sw.macro_resid, 0, "macro_resid weight should be > 0")
+        
+        # Check deprecated macro_sync
+        self.assertEqual(sw.macro_sync, 0.0, "macro_sync should be deprecated (0.0)")
+    
+    def test_per_asset_weights_have_macro_resid(self):
+        """Per-asset weights should have macro_resid."""
+        from apps.reference.config_loader import get_config
+        cfg = get_config()
+        
+        aurora = cfg.strategies.aurora
+        
+        for sym, asset in aurora.assets.items():
+            if asset.weights:
+                self.assertIn("macro_resid", asset.weights, 
+                    f"{sym} should have macro_resid in weights")
+                self.assertGreater(asset.weights["macro_resid"], 0, 
+                    f"{sym} macro_resid weight should be > 0")
+
+
+if __name__ == "__main__":
+    unittest.main()

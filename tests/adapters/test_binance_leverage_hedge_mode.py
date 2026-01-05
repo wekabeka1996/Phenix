@@ -179,3 +179,63 @@ class TestAdapterMarginTypeMapping:
         
         assert "Unknown marginType" in str(exc.value)
         assert exc.value.nrr_code == "NRR-024"
+
+
+class TestAdapterLeverageAndMarginSetEndpoints:
+    """Tests that leverage/margin setters hit correct endpoints and fail-closed."""
+
+    @pytest.mark.asyncio
+    async def test_set_leverage_calls_fapi_v1_leverage(self):
+        from apps.reference.adapters.binance_adapter import BinanceAdapter
+
+        adapter = BinanceAdapter(api_key="test", api_secret="test")
+        adapter._request = AsyncMock(return_value={"leverage": "80"})
+
+        ok = await adapter.set_leverage("BTCUSDT", 80)
+
+        assert ok is True
+        adapter._request.assert_awaited_once_with(
+            "POST",
+            "/fapi/v1/leverage",
+            {"symbol": "BTCUSDT", "leverage": 80},
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_leverage_mismatch_fails_closed(self):
+        from apps.reference.adapters.binance_adapter import BinanceAdapter, BinanceAPIError
+
+        adapter = BinanceAdapter(api_key="test", api_secret="test")
+        # Simulate Binance clamping leverage (or returning different value)
+        adapter._request = AsyncMock(return_value={"leverage": "50"})
+
+        with pytest.raises(BinanceAPIError) as exc:
+            await adapter.set_leverage("BTCUSDT", 80)
+
+        assert "mismatch" in str(exc.value).lower()
+        assert exc.value.nrr_code == "NRR-022"
+
+    @pytest.mark.asyncio
+    async def test_set_margin_mode_calls_fapi_v1_marginType_cross_maps_to_crossed(self):
+        from apps.reference.adapters.binance_adapter import BinanceAdapter
+
+        adapter = BinanceAdapter(api_key="test", api_secret="test")
+        adapter._request = AsyncMock(return_value={"code": 200, "msg": "success"})
+
+        ok = await adapter.set_margin_mode("BTCUSDT", "cross")
+
+        assert ok is True
+        adapter._request.assert_awaited_once_with(
+            "POST",
+            "/fapi/v1/marginType",
+            {"symbol": "BTCUSDT", "marginType": "CROSSED"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_margin_mode_handles_4046_no_need_to_change(self):
+        from apps.reference.adapters.binance_adapter import BinanceAdapter, BinanceAPIError
+
+        adapter = BinanceAdapter(api_key="test", api_secret="test")
+        adapter._request = AsyncMock(side_effect=BinanceAPIError(code=-4046, msg="No need to change margin type"))
+
+        ok = await adapter.set_margin_mode("BTCUSDT", "isolated")
+        assert ok is True

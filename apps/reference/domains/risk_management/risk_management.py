@@ -94,9 +94,6 @@ class RiskManagement:
         self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
                         self.on_portfolio_state_updated)
         
-        # Listen to EVT:ORDER_FILLED to track realized PnL in DailyRiskState
-        self.fsm.listen("EVT:ORDER_FILLED", self.on_order_filled)
-        
         # D5: Cache absorption penalty flag (from strict object config)
         self._use_absorption_penalty = self.domain_config.use_absorption_penalty
         if not self._use_absorption_penalty:
@@ -188,12 +185,6 @@ class RiskManagement:
         
         # Delegate to SSOT
         self.daily_risk_state.on_portfolio(self.portfolio_state)
-        
-    def on_order_filled(self, event: Message) -> None:
-        """
-        Handle order filled events to update realized PnL in DailyRiskState.
-        """
-        self.daily_risk_state.on_order_filled(event.pld)
 
     def _calculate_risk_parameters(self, features: Dict[str, float]) -> Dict[str, Any]:
         """

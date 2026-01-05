@@ -18,6 +18,22 @@ class _DummyFsm:
 def test_task47_daily_loss_limit_blocks_by_default_when_no_equity_data() -> None:
     fsm = _DummyFsm()
     cfg = get_config()
+    cfg = cfg.model_copy(
+        deep=True,
+        update={
+            "trading": cfg.trading.model_copy(
+                update={
+                    "risk": {
+                        **cfg.trading.risk,
+                        "daily": {
+                            **cfg.trading.risk["daily"],
+                            "enabled": True,
+                        },
+                    }
+                }
+            )
+        },
+    )
     rm = RiskManagement(fsm=fsm, config=cfg)
     rm.logger = logging.getLogger("tests.task47.risk")
 
@@ -31,6 +47,17 @@ def test_task47_daily_loss_limit_can_be_disabled_in_debug() -> None:
     cfg = cfg.model_copy(
         deep=True,
         update={
+            "trading": cfg.trading.model_copy(
+                update={
+                    "risk": {
+                        **cfg.trading.risk,
+                        "daily": {
+                            **cfg.trading.risk["daily"],
+                            "enabled": True,
+                        },
+                    }
+                }
+            ),
             "domains": cfg.domains.model_copy(
                 update={
                     "debug": cfg.domains.debug.model_copy(
@@ -47,4 +74,3 @@ def test_task47_daily_loss_limit_can_be_disabled_in_debug() -> None:
     out = rm._calculate_risk_parameters({"price": 100, "obi": 0, "tfi": 0, "delta_price": 0, "absorption": 0})
     assert out.get("is_trading_allowed") is True
     assert any(name == "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE" for name, _ in fsm.emitted)
-
