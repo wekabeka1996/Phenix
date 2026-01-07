@@ -253,6 +253,10 @@ class FeatureEngineeringConfig:
     @property
     def depth_half(self) -> decimal.Decimal:
         return decimal.Decimal(str(self._cfg.liquidity.depth_half))
+
+    @property
+    def depth_imbalance_use_laplace_smoothing(self) -> bool:
+        return bool(self._cfg.depth_imbalance.use_laplace_smoothing)
     
     @property
     def kappa_min(self) -> decimal.Decimal:

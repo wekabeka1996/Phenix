@@ -50,6 +50,12 @@ class InstrumentPrecisionSpec(BaseModel):
         description="Per-symbol sizing SSOT (margin-first: margin_pct)"
     )
 
+    # Per-symbol flip orchestration (overrides domains.decision_making.flip)
+    flip: Optional["FlipOrchestrationConfig"] = Field(
+        default=None,
+        description="Per-symbol flip config (if None, uses global from domains.yaml)"
+    )
+
 
 class InstrumentExecutionConfig(BaseModel):
     """Per-instrument execution settings for leverage and margin control (TASK47c).
@@ -226,6 +232,13 @@ class QosConfig(BaseModel):
     max_intents_per_minute_per_symbol: int = Field()
     mode: str = Field(description='defer | block')
     enforce: bool = Field()
+    apply_to_strategies: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional allowlist of strategy_id values that should have QoS applied in the strategy gateway. "
+            "Empty => apply to all strategies (backward compatible)."
+        ),
+    )
 
 
 class ROIExitConfig(BaseModel):
@@ -497,6 +510,64 @@ class DecisionModeOverrideConfig(BaseModel):
     # Other DecisionConfig fields can be overridden dynamically
 
 
+class AnchorShockVetoConfig(BaseModel):
+    """Anchor Shock Veto configuration.
+    
+    Phase 3 Fix: Block BUY signals when anchor (BTC) is crashing.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=False, description="Enable anchor shock veto")
+    anchor_symbol: str = Field(default="BTCUSDT", description="Symbol used as anchor")
+    threshold: float = Field(default=-2.0, description="Block BUY if macro_resid < threshold")
+
+
+class HoldingPeriodConfig(BaseModel):
+    """Minimum Holding Period configuration (Anti-Churn Gate).
+    
+    RFC: docs/RFC_min_duration_logic.md
+    Prevents HFT-style churn by enforcing minimum time in position before
+    allowing signal-based exits. Does NOT affect safety exits (SL/TP/Risk).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=False, description="Enable minimum holding period gate")
+    min_duration_sec: float = Field(default=30.0, description="Minimum seconds to hold position before allowing signal-based exit")
+    emergency_exit_threshold: float = Field(default=0.7, description="|score| threshold for emergency override (allows exit even within holding period)")
+    apply_to_flips: bool = Field(default=True, description="Also apply holding period to FLIP signals (not just exits)")
+
+
+class VolAdjGatesConfig(BaseModel):
+    """Volume-Adjusted Gates configuration (VOL-ADJ-GATES-01).
+    
+    Anti-Flat: Block entry when normalized motion < threshold (fee churn in dead market).
+    Anti-FOMO: Block entry when normalized motion > threshold (snapback risk).
+    
+    Uses pm_norm_<window>s from price_motion feature domain.
+    Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=False, description="Enable vol-adj gates (Anti-Flat + Anti-FOMO)")
+    anti_flat_sigma: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Block ENTRY if |pm_norm| < anti_flat_sigma (dead market, fee churn)"
+    )
+    anti_fomo_sigma: float = Field(
+        default=4.0,
+        ge=1.0,
+        le=10.0,
+        description="Block ENTRY if |pm_norm| > anti_fomo_sigma (extreme impulse, snapback risk)"
+    )
+    motion_window_sec: int = Field(
+        default=900,
+        ge=10,
+        description="Which pm_norm window to use: 10, 60, 300, or 900 (seconds)"
+    )
+
+
 class DecisionConfig(BaseModel):
     """Decision making configuration (testnet/production overrides).
     
@@ -548,6 +619,16 @@ class DecisionConfig(BaseModel):
     feature_neutrals: Dict[str, float] = Field(default_factory=dict, description="Neutral offsets for V2 scoring")
     essential_features: List[str] = Field(default_factory=list, description="Features that must be present/ready")
     liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Global liquidity gate config")
+    anchor_shock_veto: Optional[AnchorShockVetoConfig] = Field(default=None, description="Phase 3: Block BUY during anchor crash")
+    
+    # Anti-Churn Gate: Minimum Holding Period
+    holding_period: Optional[HoldingPeriodConfig] = Field(default=None, description="RFC: docs/RFC_min_duration_logic.md - Prevents HFT churn")
+    
+    # Re-entry Cooldown (Anti-Ping-Pong Gate)
+    reentry_cooldown_sec: Optional[int] = Field(default=60, description="Global cooldown after position closes before allowing new entry")
+    
+    # VOL-ADJ-GATES-01: Sigma-normalized motion gates (Anti-Flat + Anti-FOMO)
+    gates: Optional[VolAdjGatesConfig] = Field(default=None, description="VOL-ADJ-GATES-01: Block entries in dead/extreme markets")
 
     @model_validator(mode="after")
     def _validate_direction_strength_contract(self) -> "DecisionConfig":
@@ -953,6 +1034,36 @@ class PriceMotionSanityConfig(BaseModel):
     flash_threshold_norm: float = Field(ge=0.0, description="DENY if pm_norm_flash <= -threshold for LONG")
     bleed_threshold_norm: float = Field(ge=0.0, description="DENY if pm_norm_bleed <= -threshold for LONG")
     require_bleed_ready: bool = Field(description="If true: missing bleed window data => DENY (fail-closed)")
+    # VOL-ADJ-GATES-CLIP-CONFIG-01: pm_norm clipping bound for Anti-FOMO detection
+    pm_norm_clip_abs: float = Field(
+        default=10.0,
+        gt=0.0,
+        le=50.0,
+        description="Absolute clipping bound for pm_norm: clip to [-clip_abs, +clip_abs]. Default 10.0 for Anti-FOMO."
+    )
+
+
+class FlipOrchestrationConfig(BaseModel):
+    """Flip-orchestration tuning (close-on-reversal) for DecisionMaking.
+
+    This is a *smoothing* layer for tick-based signals:
+    it prevents immediate flip-closes on marginal opposite signals.
+    """
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable flip hysteresis checks (does not disable flip itself).",
+    )
+    hysteresis_mult: float = Field(
+        default=1.0,
+        ge=1.0,
+        description=(
+            "Require stronger opposite signal before emitting reduce-only CLOSE during flip. "
+            "Example: 1.3 means opposite score must exceed its threshold by 30%."
+        ),
+    )
 
 
 class DecisionMakingDomainConfig(BaseModel):
@@ -971,6 +1082,7 @@ class DecisionMakingDomainConfig(BaseModel):
     # DM-DIR-SSOT-STRICT-01: SSOT-required (no silent defaults)
     directional_sanity: DirectionalSanityConfig = Field()
     price_motion_sanity: PriceMotionSanityConfig = Field()
+    flip: FlipOrchestrationConfig = Field(default_factory=FlipOrchestrationConfig)
 
     # Optional hardening toggles (backward-compatible defaults)
     fail_closed_on_degraded_context: bool = Field(
@@ -1597,6 +1709,12 @@ class AccountObserverDomainConfig(BaseModel):
     trade_limit: int = Field()
     symbols: List[str] = Field()  # Empty = use trading.symbols_to_track
     thread_timeouts: ThreadTimeoutsConfig = Field()
+    
+    # FIX-AUDITED-ISSUES-01 (Part B): Explicit market type to prevent Spot observer in Futures runtime.
+    market_type: Literal["spot", "futures"] = Field(
+        default="spot", 
+        description="Market type to observe. 'futures' will disable Spot client initialization."
+    )
 
 
 # Execution Position Domain
@@ -1885,6 +2003,12 @@ class AuroraInstrumentConfig(BaseModel):
     feature_neutrals: Optional[Dict[str, float]] = Field(default=None, description="Override neutral offsets")
     essential_features: Optional[List[str]] = Field(default=None, description="Override essential features list")
     liquidity_gate: Optional[LiquidityGateConfig] = Field(default=None, description="Override liquidity gate")
+    
+    # Anti-Churn Gate: Per-symbol holding period override
+    holding_period: Optional[HoldingPeriodConfig] = Field(default=None, description="Per-symbol holding period override (RFC: docs/RFC_min_duration_logic.md)")
+    
+    # Re-entry Cooldown: Per-symbol re-entry cooldown override
+    reentry_cooldown_sec: Optional[int] = Field(default=None, description="Per-symbol re-entry cooldown override (seconds)")
 
     # Phase 1.5 Recovery: Per-instrument timeframe
     timeframe_sec: Optional[int] = Field(description='Bar timeframe in seconds for this instrument. SOL=180 (3m), BTC/ETH=300 (5m)')
@@ -1920,6 +2044,20 @@ class AuroraStrategyConfig(BaseModel):
     enabled: bool = Field(description="Enable Aurora strategy globally")
     type: str = Field(description="Strategy type identifier (informational)")
     description: str = Field(description="Human description of the strategy profile")
+
+    # Phase 4: Migration control (DecisionMaking refactor plan).
+    # When True, Aurora remains on the legacy tick-based DecisionMaking path and the AuroraHandler must be silent.
+    legacy_tick_path_enabled: bool = Field(
+        default=False,
+        description="Kill-switch: keep legacy Aurora tick path enabled (AuroraHandler silent)",
+    )
+    
+    # Phase 3: Shadow mode for kernel validation.
+    # When enabled, legacy path also calls the kernel and logs divergences (no side effects).
+    shadow_mode_enabled: bool = Field(
+        default=False,
+        description="Enable shadow mode: compare legacy scoring with kernel and log divergences",
+    )
 
     # Global defaults / policy for Aurora decision-making.
     decision: DecisionConfig = Field(description="Aurora decision policy (global defaults)")

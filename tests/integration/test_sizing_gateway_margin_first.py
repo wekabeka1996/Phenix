@@ -110,6 +110,7 @@ def test_gateway_sol_margin_first_emits_qty(monkeypatch):
             "rid": "sig-1",
             "why_chain": [],
             "ts_ms": now_ms,
+            "readiness": {"warmup_ok": True},
             "price_ctx": {"entry_price": "20"},
         },
         why="test",

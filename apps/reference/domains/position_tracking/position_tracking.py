@@ -803,7 +803,16 @@ class PositionTracking:
         """
         total_margin = decimal.Decimal("0")
 
-        if positions:
+        # FIX-AUDITED-ISSUES-01 (Part A): Differentiate explicit empty list (FLAT) from missing (FALLBACK)
+        if positions is not None:
+            # Explicit API data available (even if empty)
+            
+            # 1. Sync internal state to API snapshot
+            # If positions is empty list, this correctly clears internal positions.
+            # If populated, we should ideally sync them, but for now we prioritize preventing 'ghosts' on empty.
+            if len(positions) == 0:
+                self._positions.clear()
+            
             # Use positionRisk data if available
             self.logger.info(
                 f"💚 _calc_margin_used_usd() USING API: {len(positions)} positions from /fapi/v2/positionRisk")
@@ -863,7 +872,7 @@ class PositionTracking:
 
         # Round to 2 decimal places for consistency
         self.logger.info(
-            f"📊 _calc_margin_used_usd() TOTAL: {total_margin.quantize(decimal.Decimal('0.01'))} USD (API={len(positions) if positions else 'FALLBACK'})")
+            f"📊 _calc_margin_used_usd() TOTAL: {total_margin.quantize(decimal.Decimal('0.01'))} USD (API={len(positions) if positions is not None else 'FALLBACK'})")
         return total_margin.quantize(decimal.Decimal("0.01"))
 
     def _calculate_margin_by_side(self, positions: list[dict]) -> dict:

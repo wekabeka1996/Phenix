@@ -404,7 +404,7 @@ class ExposureGuard:
         )
 
     def can_open(
-        self, symbol: str, notional_usd: Decimal, portfolio_state: Dict[str, Any]
+        self, symbol: str, notional_usd: Decimal, portfolio_state: Dict[str, Any], is_flip: bool = False
     ) -> Dict[str, Any]:
         """
         Check if opening a position is allowed based on exposure limits.
@@ -415,6 +415,12 @@ class ExposureGuard:
         4. Equity Utilization (Margin-based)
         5. Long/Short Utilization (Margin-based)
         6. Directional Ratio (Notional-based)
+        
+        Args:
+            symbol: Symbol to check
+            notional_usd: Requested order size (signed)
+            portfolio_state: Current portfolio snapshot
+            is_flip: Whether this order flips/closes an existing position (netting logic)
         """
         # --- 0. Fallback Mode Logic (Fail-fast) ---
         if self.is_fallback_mode_active():
@@ -452,6 +458,28 @@ class ExposureGuard:
         # Open exposure SSOT (position_tracking emits these on every snapshot).
         open_positions_usd = _d(portfolio_state.get("open_positions_usd"))
         open_positions_margin_usd = _d(portfolio_state.get("open_positions_margin_usd"))
+        
+        # Calculate current symbol contribution for FLIP subtraction
+        current_symbol_margin = Decimal("0")
+        current_symbol_notional = Decimal("0")
+        current_symbol_side = ""
+        
+        ref_leverage = self.resolve_symbol_leverage(symbol)
+        
+        for p in positions:
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("symbol", "")).strip() != symbol:
+                continue
+            qty = _d(p.get("net_position"))
+            px = _d(p.get("avg_entry_price"))
+            if qty == 0 or px <= 0:
+                continue
+            sym_notional = abs(qty) * px
+            current_symbol_notional = sym_notional
+            current_symbol_margin = sym_notional / ref_leverage if ref_leverage else Decimal("0")
+            current_symbol_side = "BUY" if qty > 0 else "SELL"
+            break
 
         # If producers ever omit aggregates, fall back to conservative reconstruction.
         if open_positions_usd <= 0 and positions:
@@ -488,8 +516,6 @@ class ExposureGuard:
                     long_margin += p_margin
                 else:
                     short_margin += p_margin
-
-        ref_leverage = self.resolve_symbol_leverage(symbol)
 
         # Pending exposure reservations (include/exclude based on config)
         def _include_pending(item: Dict[str, Any]) -> bool:
@@ -574,6 +600,7 @@ class ExposureGuard:
                     "requested_notional_abs": str(requested_notional_abs),
                     "clipped_notional_abs": str(order_notional_abs),
                     "clip_reasons": list(clip_res.clip_reasons),
+                    "original_notional": str(requested_notional_abs) # Helpful debug
                 }
 
         # --- 4. Hard Limit Enforcement (domains.execution_position.exposure_guard) ---
@@ -581,6 +608,9 @@ class ExposureGuard:
 
         # A) Max Portfolio Fraction (NOTIONAL-based, projected)
         projected_notional = open_positions_usd + pending_notional + post_notional + order_notional_abs
+        if is_flip:
+            projected_notional -= current_symbol_notional # Subtract current position notional
+            
         p_frac_limit = equity_free_usdt * self.max_portfolio_fraction
         if projected_notional > p_frac_limit:
             return {
@@ -592,6 +622,9 @@ class ExposureGuard:
 
         # B) Max Equity Utilization (MARGIN-based, projected)
         total_margin_used = open_positions_margin_usd + total_pending_margin + order_margin
+        if is_flip:
+            total_margin_used -= current_symbol_margin # Subtract current position margin
+            
         equity_margin_limit = equity_free_usdt * self.max_equity_utilization_pct
         if total_margin_used > equity_margin_limit:
             return {
@@ -604,6 +637,12 @@ class ExposureGuard:
         # C) Long/Short Utilization (MARGIN-based)
         new_long_m = long_margin + pending_long_m + post_long_m + (order_margin if order_side == "BUY" else Decimal("0"))
         new_short_m = short_margin + pending_short_m + post_short_m + (order_margin if order_side == "SELL" else Decimal("0"))
+        
+        if is_flip:
+             if current_symbol_side == "BUY":
+                 new_long_m -= current_symbol_margin
+             elif current_symbol_side == "SELL":
+                 new_short_m -= current_symbol_margin
 
         long_limit = equity_free_usdt * self.max_long_utilization_pct
         short_limit = equity_free_usdt * self.max_short_utilization_pct
@@ -621,19 +660,15 @@ class ExposureGuard:
                 return {"allowed": False, "reason": "DIRECTIONAL_RATIO_BREACH", "ratio": float(ratio), "max": float(self.max_directional_ratio)}
 
         # E) Concentration (per-symbol margin cap)
+        # Use simple aggregation + net logic
         symbol_margin_est = Decimal("0")
-        for p in positions:
-            if not isinstance(p, dict):
-                continue
-            if str(p.get("symbol", "")).strip() != symbol:
-                continue
-            qty = _d(p.get("net_position"))
-            px = _d(p.get("avg_entry_price"))
-            if qty == 0 or px <= 0:
-                continue
-            sym_notional = abs(qty) * px
-            symbol_margin_est += sym_notional / ref_leverage if ref_leverage else Decimal("0")
-
+        if not is_flip and current_symbol_margin > 0:
+             symbol_margin_est = current_symbol_margin
+        # If is_flip is True, we essentially assume 'symbol_margin_est' becomes 0 
+        # (replaced by order_margin) or we enforce the strict subtraction logic.
+        # Since 'current_symbol_margin' was calculated at the top, we just don't add it here if is_flip is True
+        
+        # Pending symbol margin
         pending_symbol_m = sum(
             _d(item.get("margin"))
             for item in self.state.pending_exposure.values()

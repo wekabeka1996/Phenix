@@ -336,17 +336,24 @@ class FeatureCalculationEngine:
             asset_rets = self._winsorize(asset_rets, winsor_p)
             anchor_rets = self._winsorize(anchor_rets, winsor_p)
         
-        # Calculate beta = cov(asset, anchor) / var(anchor)
+        # Calculate beta = cov(asset, anchor) / (var(anchor) + var_floor)
+        #
+        # REGULARIZED BETA: Instead of if/else fallback, we use Tikhonov regularization.
+        # When var(anchor) → 0 (anchor ticks slower than asset), beta → 0 gracefully.
+        # This avoids early-return deadlock and provides mathematically sound degradation:
+        #   - If var_anchor >> var_floor: beta ≈ cov/var_anchor (normal OLS)
+        #   - If var_anchor ≈ 0: beta ≈ 0 (anchor provides no info, use asset return only)
+        #
+        # This is preferable to if/else because:
+        #   1. No discontinuity at var_floor threshold
+        #   2. Always produces a valid beta (no early return)
+        #   3. Warmup completes normally, macro_resid always has a value
         var_anchor = self._variance(anchor_rets)
-        var_floor = self.cfg.macro_resid_var_floor
-        
-        if var_anchor < var_floor:
-            state.macro_resid_ready = False
-            state.macro_resid_not_ready_reason = f"var_anchor_too_low:{var_anchor:.2e}<{var_floor:.2e}"
-            return (neutral, False, state.macro_resid_not_ready_reason)
-        
+        var_floor = float(self.cfg.macro_resid_var_floor)
         cov = self._covariance(asset_rets, anchor_rets)
-        beta = cov / var_anchor
+        
+        # Regularized OLS: beta = cov / (var + λ) where λ = var_floor
+        beta = cov / (var_anchor + var_floor)
         
         # Calculate residual for latest observation
         latest_asset_ret = asset_rets[-1]
@@ -852,16 +859,29 @@ class FeatureCalculationEngine:
         Returns:
             phi in [0, 1] where >0.5 = bearish (ask dominance), <0.5 = bullish (bid dominance)
         """
-        depth_half = self.cfg.depth_half
+        # Config wiring: depth_imbalance.use_laplace_smoothing controls whether we add depth_half.
+        # Contract: must be provided by FeatureEngineeringConfig (no silent runtime fallback).
+        use_smoothing = bool(self.cfg.depth_imbalance_use_laplace_smoothing)
+        depth_half = self.cfg.depth_half if use_smoothing else decimal.Decimal("0")
+
+        # Defensive: sizes are expected non-negative (USD or base). If violated, fail-closed.
+        if bid_size < 0 or ask_size < 0:
+            return self.cfg.neutral_value
+
         denominator = bid_size + depth_half
         numerator = ask_size + depth_half
 
-        if denominator > 0:
-            ratio = numerator / denominator
-            imbalance = (ratio - decimal.Decimal("1")) / (ratio + decimal.Decimal("1"))
-            phi = (imbalance + decimal.Decimal("1")) / decimal.Decimal("2")
-            return phi
-        return self.cfg.neutral_value
+        # If smoothing is disabled, we must handle denominator==0 explicitly.
+        if denominator <= 0:
+            if numerator <= 0:
+                return self.cfg.neutral_value
+            # No bids, some asks -> extreme ask dominance.
+            return decimal.Decimal("1")
+
+        ratio = numerator / denominator
+        imbalance = (ratio - decimal.Decimal("1")) / (ratio + decimal.Decimal("1"))
+        phi = (imbalance + decimal.Decimal("1")) / decimal.Decimal("2")
+        return phi
 
     # =========================================================================
     # MACRO SYNC (Correlation with anchors)

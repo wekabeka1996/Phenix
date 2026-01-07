@@ -39,6 +39,7 @@ def _dm_cfg():
     features = SimpleNamespace(ttl_sec=60)
     bar_gating = SimpleNamespace(enable=False, bar_ms=60_000)
     behavior_fsm = SimpleNamespace(enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5)
+    flip = SimpleNamespace(enabled=True, hysteresis_mult=1.0)
     return SimpleNamespace(
         qos=qos,
         position_sizing=position_sizing,
@@ -46,6 +47,7 @@ def _dm_cfg():
         features=features,
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
+        flip=flip,
         risk_skew=SimpleNamespace(
             max_skew_sec=5,
             max_defer_count=3,

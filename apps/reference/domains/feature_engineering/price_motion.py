@@ -116,20 +116,29 @@ def compute_price_motion_block(
     ts_ms: int,
     price: decimal.Decimal,
     k_vol: float,
-    windows_sec: tuple[int, int, int] = (10, 60, 300),
+    windows_sec: tuple[int, ...] = (10, 60, 300, 900),
+    clip_abs: float = 10.0,
 ) -> Dict[str, Optional[float]]:
+    """Compute multi-window price motion features.
+    
+    Args:
+        clip_abs: Absolute clipping bound for pm_norm. Default 10.0 (VOL-ADJ-GATES-CLIP-CONFIG-01).
+    """
     ts_ms = _to_ts_ms(ts_ms)
     if ts_ms <= 0 or price is None or price <= 0:
         return {
             "ret_10s": None,
             "ret_60s": None,
             "ret_300s": None,
+            "ret_900s": None,
             "vol_pct_10s": None,
             "vol_pct_60s": None,
             "vol_pct_300s": None,
+            "vol_pct_900s": None,
             "pm_norm_10s": None,
             "pm_norm_60s": None,
             "pm_norm_300s": None,
+            "pm_norm_900s": None,
         }
 
     max_window_ms = max(int(w) for w in windows_sec) * 1000
@@ -166,19 +175,23 @@ def compute_price_motion_block(
             continue
 
         pm = float(ret) / denom
-        out[key_pm] = _clip(pm, -1.0, 1.0)
+        # VOL-ADJ-GATES-CLIP-CONFIG-01: clip to [-clip_abs, +clip_abs] (config-driven)
+        out[key_pm] = _clip(pm, -clip_abs, clip_abs)
 
     # Ensure all required keys exist (even if windows_sec changed).
     for k in (
         "ret_10s",
         "ret_60s",
         "ret_300s",
+        "ret_900s",
         "vol_pct_10s",
         "vol_pct_60s",
         "vol_pct_300s",
+        "vol_pct_900s",
         "pm_norm_10s",
         "pm_norm_60s",
         "pm_norm_300s",
+        "pm_norm_900s",
     ):
         out.setdefault(k, None)
 

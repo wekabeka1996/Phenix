@@ -38,12 +38,10 @@ assignments:
   XRPUSDT:
     - mean_reversion
 
-  # BTC: HYBRID (both strategies active)
-  # Aurora: trend-following (swing trader)
-  # MR: range-bound (FLAT regimes)
+  # BTC: Aurora-only (FIXED: removed mean_reversion to prevent churn/conflict)
+  # See: Remediation Plan Phase 1 - 2026-01-07
   BTCUSDT:
     - aurora
-    - mean_reversion
 
 # ==============================================================================
 # ARBITRATION (conflict resolution)

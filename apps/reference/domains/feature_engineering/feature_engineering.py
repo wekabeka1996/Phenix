@@ -135,6 +135,10 @@ class FeatureEngineering:
         # Warmup/readiness tracking
         self._ticks_seen: dict[str, int] = defaultdict(int)
         self._last_tick_ts_ms: int = 0
+        self._last_warmup_full_ready: dict[str, bool] = {}
+        self._last_warmup_reasons_sig: dict[str, str] = {}
+        self._last_macro_resid_ready: dict[str, bool] = {}
+        self._last_macro_resid_reason: dict[str, str | None] = {}
         
         # Register event listener
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
@@ -494,6 +498,15 @@ class FeatureEngineering:
 
             if self._last_tick_ts_ms > 0 and price > 0:
                 self._macro_sync_resampler.update_symbol(symbol, ts_ms=self._last_tick_ts_ms, price=float(price))
+                # R1 (P1): macro_resid depends on anchor_prices["BTCUSDT"] history.
+                # In live mode, anchors are typically part of the trading symbols list, so they
+                # arrive via normal ticks. When anchor_update_from_ticks is disabled, we still
+                # need to maintain anchor_prices for anchor symbols to avoid permanent warmup
+                # deadlock (macro_resid never becomes ready => FE warmup.full_ready stays false).
+                if (not self.cfg.macro_sync_anchor_update_from_ticks) and symbol in self.cfg.macro_sync_anchors:
+                    if symbol in self.anchor_prices:
+                        self.anchor_prices[symbol].append(price)
+                        self._anchor_last_ts_ms[symbol] = int(self._last_tick_ts_ms)
 
             # ================================================================
             # BASE FEATURES (always computed)
@@ -577,7 +590,27 @@ class FeatureEngineering:
                     
                     # Compute
                     macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
-                    features["macro_resid"] = str(macro_resid_val)
+                    
+                    # FIX-AUDITED-ISSUES-01 (Part C): Fail-closed emission.
+                    # If not ready (warmup or missing anchor), emit None instead of 0.0 (neutral).
+                    if macro_resid_ready:
+                        features["macro_resid"] = str(macro_resid_val)
+                    else:
+                        features["macro_resid"] = None
+                    # MacroResid readiness trace (diagnostic): log only on state/reason changes.
+                    try:
+                        prev_ready = self._last_macro_resid_ready.get(symbol)
+                        prev_reason = self._last_macro_resid_reason.get(symbol)
+                        reason_str = str(macro_resid_reason) if macro_resid_reason is not None else None
+                        if (prev_ready is None) or (bool(prev_ready) != bool(macro_resid_ready)) or (prev_reason != reason_str):
+                            self.logger.info(
+                                f"[{symbol}] MACRO_RESID_WARMUP: ready={bool(macro_resid_ready)} "
+                                f"reason={reason_str} value={str(macro_resid_val)}"
+                            )
+                            self._last_macro_resid_ready[symbol] = bool(macro_resid_ready)
+                            self._last_macro_resid_reason[symbol] = reason_str
+                    except Exception:
+                        pass
                 else:
                     # Disabled: emit neutral, mark not ready
                     features["macro_resid"] = str(self.cfg.zero_value)
@@ -735,6 +768,28 @@ class FeatureEngineering:
                 warmup["large_trade_imbalance_trades_used"] = int(hot.large_trade_imbalance_trades_used)
                 warmup["large_trade_imbalance_dropped_out_of_order"] = int(hot.large_trade_imbalance_dropped_out_of_order)
 
+                # Log warmup state transitions (helps diagnose "trading never starts" cases).
+                # NOTE: this is separate from feature value logging and focuses on readiness.
+                try:
+                    full_ready = bool(warmup.get("full_ready"))
+                    reasons_list = list(warmup.get("reasons", [])) if isinstance(warmup.get("reasons"), list) else []
+                    reasons_sig = "|".join(sorted(str(r) for r in reasons_list))
+                    last_full_ready = self._last_warmup_full_ready.get(symbol)
+                    last_sig = self._last_warmup_reasons_sig.get(symbol)
+                    if (last_full_ready is None) or (last_full_ready != full_ready) or (last_sig != reasons_sig):
+                        shown = reasons_list[:8]
+                        extra = max(0, len(reasons_list) - len(shown))
+                        extra_sfx = f" (+{extra} more)" if extra else ""
+                        self.logger.info(
+                            f"[{symbol}] FE_WARMUP: full_ready={full_ready} "
+                            f"reasons={shown}{extra_sfx}"
+                        )
+                        self._last_warmup_full_ready[symbol] = full_ready
+                        self._last_warmup_reasons_sig[symbol] = reasons_sig
+                except Exception:
+                    # Monitoring-only
+                    pass
+
             # PRICE-MOTION-V1: Multi-window returns/vol proxy and normalized motion.
             try:
                 hot = self._get_symbol_state(symbol).hot
@@ -743,6 +798,8 @@ class FeatureEngineering:
                     ts_ms=int(current_tick.get("ts", 0) or 0),
                     price=price,
                     k_vol=float(getattr(self._price_motion_sanity_cfg, "k_vol")),
+                    # VOL-ADJ-GATES-CLIP-CONFIG-01: config-driven pm_norm clipping
+                    clip_abs=float(getattr(self._price_motion_sanity_cfg, "pm_norm_clip_abs", 10.0)),
                 )
             except Exception:
                 pm_block = {

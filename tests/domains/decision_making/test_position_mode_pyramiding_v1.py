@@ -28,6 +28,7 @@ def _dm_cfg():
     features = SimpleNamespace(ttl_sec=60)
     bar_gating = SimpleNamespace(enable=False, bar_ms=60_000)
     behavior_fsm = SimpleNamespace(enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5)
+    flip = SimpleNamespace(enabled=True, hysteresis_mult=1.0)
     return SimpleNamespace(
         qos=qos,
         position_sizing=position_sizing,
@@ -35,6 +36,7 @@ def _dm_cfg():
         features=features,
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
+        flip=flip,
         risk_skew=SimpleNamespace(
             max_skew_sec=5,
             max_defer_count=3,
@@ -48,6 +50,12 @@ def _dm_cfg():
             min_intents_for_check=10,
         ),
     )
+
+
+def _dm_cfg_with_flip(*, enabled: bool):
+    cfg = _dm_cfg()
+    cfg.flip.enabled = enabled
+    return cfg
 
 
 def _mk_cfg(*, symbol: str, position_mode: str):
@@ -138,3 +146,52 @@ def test_position_mode_strict_blocks_same_side_entry():
         source="aurora",
     )
     assert res == "ANTI_PYRAMIDING_BLOCK"
+
+
+def test_position_mode_strict_blocks_same_side_entry_when_flip_disabled():
+    """Regression: anti-pyramiding must not be bypassed when flip.enabled=False."""
+    symbol = "BTCUSDT"
+    now_ms = int(time.time() * 1000)
+    cfg = _mk_cfg(symbol=symbol, position_mode="STRICT")
+
+    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+        MockResolver.return_value.get_decision_making.return_value = _dm_cfg_with_flip(enabled=False)
+        dm = DecisionMaking(fsm=_Bus(), config=cfg)  # type: ignore[arg-type]
+
+    dm.latest_portfolio = {
+        "positions": [{"symbol": symbol, "net_position": "-1", "avg_entry_price": "100", "venues": ["binance"]}],
+        "equity": "1000",
+        "positions_last_ts_ms": now_ms,
+    }
+
+    res = dm._handle_flip_orchestration(
+        symbol=symbol,
+        intent_side="SELL",
+        original_pld={"rid": "r2"},
+        source="aurora",
+    )
+    assert res == "ANTI_PYRAMIDING_BLOCK"
+
+
+def test_position_mode_dynamic_allows_same_side_entry_when_flip_disabled():
+    symbol = "BTCUSDT"
+    now_ms = int(time.time() * 1000)
+    cfg = _mk_cfg(symbol=symbol, position_mode="DYNAMIC")
+
+    with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
+        MockResolver.return_value.get_decision_making.return_value = _dm_cfg_with_flip(enabled=False)
+        dm = DecisionMaking(fsm=_Bus(), config=cfg)  # type: ignore[arg-type]
+
+    dm.latest_portfolio = {
+        "positions": [{"symbol": symbol, "net_position": "-1", "avg_entry_price": "100", "venues": ["binance"]}],
+        "equity": "1000",
+        "positions_last_ts_ms": now_ms,
+    }
+
+    res = dm._handle_flip_orchestration(
+        symbol=symbol,
+        intent_side="SELL",
+        original_pld={"rid": "r3"},
+        source="aurora",
+    )
+    assert res is None

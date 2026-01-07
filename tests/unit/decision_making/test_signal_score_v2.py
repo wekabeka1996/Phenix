@@ -135,5 +135,19 @@ class TestSignalScoreV2(unittest.TestCase):
         with self.assertRaises(ValueError):
             SignalScoreV2.validate_config(weights, neutrals, "TEST")
 
+    def test_depth_imbalance_negative_weight_polarity(self):
+        weights = {"depth_imbalance": -0.15}
+        neutrals = {"depth_imbalance": 0.5}
+        readiness = {"depth_imbalance": True}
+
+        bearish = {"depth_imbalance": 0.9}  # ask heavy -> should push score negative
+        bullish = {"depth_imbalance": 0.1}  # bid heavy -> should push score positive
+
+        res_bear = SignalScoreV2.calculate_score(bearish, weights, neutrals, readiness, set(), "TEST")
+        res_bull = SignalScoreV2.calculate_score(bullish, weights, neutrals, readiness, set(), "TEST")
+
+        self.assertLess(res_bear.score, Decimal("0"))
+        self.assertGreater(res_bull.score, Decimal("0"))
+
 if __name__ == '__main__':
     unittest.main()

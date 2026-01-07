@@ -60,6 +60,12 @@
       "maximum": 1,
       "description": "Normalized price motion (300s) if available"
     },
+    "pm_norm_900s": {
+      "type": ["number", "null"],
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Normalized price motion (900s/15m) if available"
+    },
     "vol_pct_10s": {
       "type": ["number", "null"],
       "minimum": 0,
@@ -74,6 +80,11 @@
       "type": ["number", "null"],
       "minimum": 0,
       "description": "Robust vol proxy (300s, fractional) if available"
+    },
+    "vol_pct_900s": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Robust vol proxy (900s/15m, fractional) if available"
     },
     "gate_outcome": {
       "type": "string",

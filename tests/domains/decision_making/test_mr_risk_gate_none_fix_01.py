@@ -95,6 +95,7 @@ def test_gateway_does_not_crash_on_missing_risk_score_emits_deferred(caplog):
             "why_chain": [],
             "ts_ms": now_ms,
             "price_ctx": {"entry_price": "0.13"},
+            "readiness": {"warmup_ok": True},
         },
         why="test",
     )
@@ -132,6 +133,7 @@ def test_gateway_uses_override_threshold_when_present(caplog):
             "why_chain": [],
             "ts_ms": now_ms,
             "price_ctx": {"entry_price": "0.13"},
+            "readiness": {"warmup_ok": True},
         },
         why="test",
     )
@@ -166,6 +168,7 @@ def test_gateway_uses_global_threshold_when_override_missing(caplog):
             "why_chain": [],
             "ts_ms": now_ms,
             "price_ctx": {"entry_price": "0.13"},
+            "readiness": {"warmup_ok": True},
         },
         why="test",
     )

@@ -9,17 +9,19 @@
 
 aurora:
   enabled: true
+  # Migration control: keep Aurora on legacy DecisionMaking tick-path until AuroraHandler is validated.
+  legacy_tick_path_enabled: false
   type: tick_based
   description: "Tick-based multi-signal alpha strategy with regime awareness"
 
   # Global Aurora policy (DecisionConfig)
   decision:
     testnet:
-      signal_threshold: null
+      signal_threshold: 0.12
     production:
-      signal_threshold: null
-    signal_threshold: 0.1
-    neutral_threshold: 0.18
+      signal_threshold: 0.12
+    signal_threshold: 0.12
+    neutral_threshold: 0.05
     symbols_to_track:
       - BTCUSDT
       - ETHUSDT
@@ -31,9 +33,9 @@ aurora:
       high_vol_multiplier: 2.0
       low_vol_multiplier: 0.5
     regime_threshold_multipliers:
-      HIGH_VOLATILITY: 1.2
+      HIGH_VOLATILITY: 1.0
       LOW_VOLATILITY: 0.9
-      MEAN_REVERSION: 1.05
+      MEAN_REVERSION: 0.75
       TREND_UP: 1.0
       TREND_DOWN: 1.0
       UNCERTAIN: 1.15
@@ -43,14 +45,14 @@ aurora:
     side_bias_target_ratio: 0.72
     side_bias_penalty_factor: 0.25
     side_bias_min_intents: 18
-    cooldown_sec: 10
+    cooldown_sec: 6
     retry_ttl_ms: 5000
     retry_max_count: 3
     retry_backoff_factor: 1.5
     regime_thresholds:
-      HIGH_VOLATILITY: 0.12
+      HIGH_VOLATILITY: 0.10
       LOW_VOLATILITY: 0.09
-      MEAN_REVERSION: 0.105
+      MEAN_REVERSION: 0.075
       TREND_UP: 0.1
       TREND_DOWN: 0.1
       UNCERTAIN: 0.115
@@ -107,6 +109,38 @@ aurora:
     essential_features:
       - obi
       - delta_price
+      - macro_resid  # Phase 4 Fix: Require macro_resid for fail-closed behavior
+
+    # [Phase 3 Fix] Anchor Shock Veto: Block long signals during BTC crash
+    anchor_shock_veto:
+      enabled: true
+      anchor_symbol: "BTCUSDT"
+      threshold: -2.0  # Block BUY if macro_resid < -2.0 (strong crash)
+
+    # === Minimum Holding Period (Anti-Churn Gate) ===
+    # Prevents HFT-style churn by enforcing minimum time in position before
+    # allowing signal-based exits. Does NOT affect safety exits (SL/TP/Risk).
+    # RFC: docs/RFC_min_duration_logic.md
+    holding_period:
+      enabled: true
+      min_duration_sec: 30          # Minimum seconds to hold position
+      emergency_exit_threshold: 0.7  # |score| threshold for emergency override
+      apply_to_flips: true          # Also apply holding period to FLIP signals
+
+    # === VOL-ADJ-GATES-01: Sigma-normalized Motion Gates ===
+    # Anti-Flat: Block entry when normalized motion too small (fee churn in dead market)
+    # Anti-FOMO: Block entry when normalized motion too extreme (snapback risk)
+    # Formula: pm_norm = clip(ret_window / (k_vol * vol_window), -1, 1)
+    gates:
+      enabled: true
+      anti_flat_sigma: 0.5   # Block ENTRY if |pm_norm| < 0.5 (dead market)
+      anti_fomo_sigma: 4.0   # Block ENTRY if |pm_norm| > 4.0 (extreme impulse)
+      motion_window_sec: 900 # Use 15-minute window (pm_norm_900s)
+
+    # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
+    # Prevents immediate re-entry after position closes.
+    # After exiting a position, wait this many seconds before allowing new entry.
+    reentry_cooldown_sec: 60  # Global default: 60 seconds
 
     feature_neutrals:
       obi: 0.0
@@ -126,7 +160,8 @@ aurora:
       ema_bias: 0.15
       volume_spike: 0.1
       volatility_state: 0.1
-      depth_imbalance: 0.15
+      # depth_imbalance: phi in [0,1], higher = ASK dominance (sell pressure) -> negative weight
+      depth_imbalance: -0.15
       # R1: macro_resid replaces macro_sync in directional scoring
       macro_resid: 0.1
       # macro_sync: 0.0  # DEPRECATED for scoring (kept as telemetry)
@@ -139,19 +174,27 @@ aurora:
       enabled: true
       position_mode: "STRICT"
       
+      # Holding period: ETH trend-following, longer holding
+      holding_period:
+        min_duration_sec: 45
+        emergency_exit_threshold: 0.65
+      
+      # Re-entry cooldown: conservative for trend-following
+      reentry_cooldown_sec: 120
+      
       # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema_bias: 0.058
-        volume_spike: 0.241
+        ema_bias: 0.20
+        volume_spike: 0.20
         # R1: macro_resid replaces macro_sync
-        macro_resid: 0.131
+        macro_resid: 0.25
         # macro_sync: 0.0  # DEPRECATED (telemetry only)
         # liquidity_kappa: 0.341 (Moved to Gate)
-        obi: 0.155
+        obi: 0.25
         tfi: 0.093
         volatility_state: 0.036
-        depth_imbalance: 0.256
-        delta_price: 0.253
+        depth_imbalance: -0.256
+        delta_price: 0.10
 
       liquidity_gate:
         enabled: true
@@ -194,25 +237,33 @@ aurora:
 
       execution: null
       ema_clamp: null
-      signal_threshold: null
+      signal_threshold:
+        enabled: true
+        value: 0.09
       cooldown_sec: null
       timeframe_sec: null
 
     # SOLUSDT - Phase 3 Optuna optimized parameters
     SOLUSDT:
+      # Holding period: uses global defaults (30s)
+      # holding_period: null  # Explicit: inherit from decision.holding_period
+      
+      # Re-entry cooldown: conservative for ALT
+      reentry_cooldown_sec: 120
+      
       # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema_bias: 0.12
-        volume_spike: 0.18
+        ema_bias: 0.20
+        volume_spike: 0.20
         # R1: macro_resid replaces macro_sync
-        macro_resid: 0.10
+        macro_resid: 0.25
         # macro_sync: 0.0  # DEPRECATED (telemetry only)
         # liquidity_kappa: 0.25 (Moved to Gate)
-        obi: 0.14
+        obi: 0.25
         tfi: 0.09
         volatility_state: 0.05
-        depth_imbalance: 0.20
-        delta_price: 0.22
+        depth_imbalance: -0.20
+        delta_price: 0.10
       enabled: true
       position_mode: "STRICT"
 
@@ -252,7 +303,9 @@ aurora:
       regime_thresholds: null
       execution: null
       ema_clamp: null
-      signal_threshold: null
+      signal_threshold:
+        enabled: true
+        value: 0.09
       cooldown_sec: null
       timeframe_sec: null
 
@@ -271,7 +324,7 @@ aurora:
         obi: 0.15
         tfi: 0.12
         volatility_state: 0.08
-        depth_imbalance: 0.15
+        depth_imbalance: -0.15
         delta_price: 0.15
 
       liquidity_gate:
@@ -315,7 +368,9 @@ aurora:
 
       execution: null
       ema_clamp: null
-      signal_threshold: null
+      signal_threshold:
+        enabled: true
+        value: 0.09
       cooldown_sec: null
       timeframe_sec: null
 
@@ -332,7 +387,7 @@ aurora:
         obi: 0.120
         tfi: 0.402
         volatility_state: 0.367
-        depth_imbalance: 0.392
+        depth_imbalance: -0.392
         delta_price: 0.028
       enabled: true
       position_mode: "STRICT"
@@ -377,7 +432,9 @@ aurora:
 
       execution: null
       ema_clamp: null
-      signal_threshold: null
+      signal_threshold:
+        enabled: true
+        value: 0.09
       cooldown_sec: null
       timeframe_sec: null
 
@@ -385,19 +442,27 @@ aurora:
     BTCUSDT:
       # Adjusted weights: Liquidity moved to Gate
       weights:
-        ema_bias: 0.15
+        ema_bias: 0.20
         volume_spike: 0.15
         # R1: macro_resid replaces macro_sync
         macro_resid: 0.15
         # macro_sync: 0.0  # DEPRECATED (telemetry only)
         # liquidity_kappa: 0.15
-        obi: 0.10
+        obi: 0.20
         tfi: 0.10
         volatility_state: 0.10
-        depth_imbalance: 0.05
+        depth_imbalance: -0.05
         delta_price: 0.05
       enabled: true
       position_mode: "STRICT"
+      
+      # Holding period: BTC faster reaction due to high liquidity
+      holding_period:
+        min_duration_sec: 20
+        emergency_exit_threshold: 0.7
+      
+      # Re-entry cooldown: faster for BTC due to high liquidity
+      reentry_cooldown_sec: 45
       
       liquidity_gate:
         enabled: true
@@ -440,6 +505,8 @@ aurora:
 
       execution: null
       ema_clamp: null
-      signal_threshold: null
+      signal_threshold:
+        enabled: false
+        value: null
       cooldown_sec: null
       timeframe_sec: null

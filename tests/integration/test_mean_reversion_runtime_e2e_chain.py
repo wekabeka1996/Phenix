@@ -67,6 +67,21 @@ def _dm_cfg():
             threshold_pct_production=50.0,
             min_intents_for_check=10,
         ),
+        directional_sanity=SimpleNamespace(
+            enabled=False,
+            min_abs_delta_price=0.0,
+            min_confidence=0.0,
+            consecutive_bars=2
+        ),
+        price_motion_sanity=SimpleNamespace(
+            enabled=False,
+            k_vol=2.0,
+            flash_window_sec=10,
+            bleed_window_sec=300,
+            flash_threshold_norm=1.0,
+            bleed_threshold_norm=0.5,
+            require_bleed_ready=False
+        ),
     )
 
 
@@ -146,6 +161,21 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
                     threshold_pct_testnet=20.0,
                     threshold_pct_production=50.0,
                     min_intents_for_check=10,
+                ),
+                directional_sanity=SimpleNamespace(
+                    enabled=False,
+                    min_abs_delta_price=0.0,
+                    min_confidence=0.0,
+                    consecutive_bars=2
+                ),
+                price_motion_sanity=SimpleNamespace(
+                    enabled=False,
+                    k_vol=2.0,
+                    flash_window_sec=10,
+                    bleed_window_sec=300,
+                    flash_threshold_norm=1.0,
+                    bleed_threshold_norm=0.5,
+                    require_bleed_ready=False
                 ),
             ),
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),

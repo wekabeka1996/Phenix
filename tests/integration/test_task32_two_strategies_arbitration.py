@@ -96,6 +96,16 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
                     threshold_pct_production=50.0,
                     min_intents_for_check=10,
                 ),
+                directional_sanity=SimpleNamespace(
+                    mode="disabled",
+                    enabled=False,
+                    min_abs_delta_price=0.0,
+                    min_confidence=0.0,
+                    consecutive_bars=1,
+                ),
+                price_motion_sanity=SimpleNamespace(
+                    enabled=False,
+                ),
             ),
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
             risk_management=SimpleNamespace(trading_allowed_thresholds=SimpleNamespace(max_risk_score=1.0)),
@@ -154,6 +164,7 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
             "position_size_usd": 100.0,
             "qty_hint": "1",
             "price_ctx": {"entry_price": "100"},
+            "readiness": {"warmup_ok": True},
         }
     )
     winning = SimpleNamespace(
@@ -169,6 +180,7 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
             "position_size_usd": 100.0,
             "qty_hint": "1",
             "price_ctx": {"entry_price": "100"},
+            "readiness": {"warmup_ok": True},
         }
     )
 

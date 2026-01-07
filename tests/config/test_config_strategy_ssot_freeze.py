@@ -161,10 +161,10 @@ class TestStrategySSOTFreezeReaderCompatibility:
     def test_aurora_reader_paths_exist(self) -> None:
         cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
         assert cfg.strategies.aurora is not None
-        assert cfg.strategies.aurora.decision.signal_threshold == 0.1
+        assert cfg.strategies.aurora.decision.signal_threshold == 0.12
         btc = cfg.strategies.aurora.assets["BTCUSDT"]
         assert btc.weights is not None
-        assert btc.weights["ema_bias"] == 0.15
+        assert btc.weights["ema_bias"] == 0.20
 
     def test_legacy_runtime_paths_are_absent(self) -> None:
         cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()

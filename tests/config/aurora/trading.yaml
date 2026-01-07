@@ -11,7 +11,7 @@ trading:
       ema_bias: 0.15
       volume_spike: 0.10
       volatility_state: 0.10
-      depth_imbalance: 0.15
+      depth_imbalance: -0.15
       macro_sync: 0.10
   execution:
     manage: {}

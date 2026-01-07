@@ -69,6 +69,12 @@ def _dm_cfg_prod_like():
             threshold_pct_production=50.0,
             min_intents_for_check=10,
         ),
+        directional_sanity=SimpleNamespace(
+            enabled=False,
+            min_abs_delta_price=0.0,
+            min_confidence=0.0,
+            consecutive_bars=2
+        )
     )
 
 
@@ -264,6 +270,21 @@ def test_mean_reversion_e2e_chain_with_real_margin_first_sizing_multi_symbol(cas
                     penalty_factor=0.5,
                     window_sec=900,
                     target_ratio=0.5,
+                ),
+                directional_sanity=SimpleNamespace(
+                    enabled=False,
+                    min_abs_delta_price=0.0,
+                    min_confidence=0.0,
+                    consecutive_bars=2
+                ),
+                price_motion_sanity=SimpleNamespace(
+                    enabled=False,
+                    k_vol=2.0,
+                    flash_window_sec=10,
+                    bleed_window_sec=300,
+                    flash_threshold_norm=1.0,
+                    bleed_threshold_norm=0.5,
+                    require_bleed_ready=False
                 ),
             ),
         ),

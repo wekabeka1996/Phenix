@@ -19,6 +19,7 @@ class _MinimalCfg:
     # Depth imbalance
     depth_half = Decimal("1000")
     neutral_value = Decimal("0.5")
+    depth_imbalance_use_laplace_smoothing = False
     
     # Volatility
     volatility_sma_length = 10

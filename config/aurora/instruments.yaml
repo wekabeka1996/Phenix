@@ -7,10 +7,11 @@
 instruments:
   SOLUSDT:
     symbol: "SOLUSDT"
-    # LIVE (Binance USDT-M Futures): quantity step/min should match exchange LOT_SIZE
-    step_size: "0.1"
+    # Binance testnet LOT_SIZE: stepSize=1 (qty must be integer)
+    step_size: "1"
     tick_size: "0.01"
-    min_qty: "0.1"
+    # Binance testnet LOT_SIZE: minQty=1
+    min_qty: "1"
     min_notional: "5"     # Binance testnet: notional=5
     execution:
       margin_mode: "isolated"

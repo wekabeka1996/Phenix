@@ -65,36 +65,44 @@ class AccountObserver:
                 why=f"Invalid environment '{resolved_environment}' (expected 'live' or 'testnet')",
             )
 
+        # FIX-AUDITED-ISSUES-01 (Part B): Resolve config EARLY to check market_type
+        # Canonical domains config (strict object config)
+        domain_cfg = DomainConfigResolver(self.config).get_account_observer()
+        self.poll_interval = int(domain_cfg.poll_interval_sec)
+        self.trade_limit = int(domain_cfg.trade_limit)
+        
+        # New market type check (defaults to 'spot' provided by Pydantic if configured, or fallback)
+        market_type = getattr(domain_cfg, "market_type", "spot")
+
+        # Initialize basic state first
+        self.testnet = resolved_environment != "live"
+        self.processed_trade_ids: Set[int] = set()
+        self.correlation_store = CorrelationStore()
+        self._polling_thread: threading.Thread | None = None
+        self._stop_polling = threading.Event()
+
+        if market_type == "futures":
+            # In Futures mode, Spot AccountObserver is irrelevant/noisy.
+            self.client = None
+            self.symbols = [] 
+            self.logger.info("AccountObserver DISABLED (market_type='futures'). Spot client not initialized.")
+            return
+
+        # SPOT MODE: Proceed with Client initialization
         api_config = self.config.binance_api
         env_config = api_config.live if resolved_environment == "live" else api_config.testnet
         api_key = env_config.api_key
         api_secret = env_config.api_secret
-
+        
         if not api_key or not api_secret:
             raise ValueError(
                 f"CRITICAL: API credentials missing for account observer in '{resolved_environment}' mode. "
                 "Domain DISABLED (fail-closed). Check binance_api config."
             )
 
-        # Determine testnet/mainnet based on resolved_environment
-        self.testnet = resolved_environment != "live"
-
-        # Initialize Binance client for testnet/mainnet
+        # Initialize Binance client for testnet/mainnet with Spot config
         self.client = Client(api_key, api_secret, testnet=self.testnet)
 
-        # Track processed trade IDs to avoid duplicates
-        self.processed_trade_ids: Set[int] = set()
-
-        # Polling thread
-        self._polling_thread: threading.Thread | None = None
-        self._stop_polling = threading.Event()
-
-        self.correlation_store = CorrelationStore()
-
-        # Canonical domains config (strict object config)
-        domain_cfg = DomainConfigResolver(self.config).get_account_observer()
-        self.poll_interval = int(domain_cfg.poll_interval_sec)
-        self.trade_limit = int(domain_cfg.trade_limit)
         if not domain_cfg.symbols:
             raise ConfigContractError(
                 path="domains.account_observer.symbols",
@@ -109,6 +117,11 @@ class AccountObserver:
         if self._polling_thread is not None:
             self.logger.warning("AccountObserver already started")
             return
+
+        # FIX-AUDITED-ISSUES-01 (Part B): Check for disabled client
+        if self.client is None:
+             self.logger.info("AccountObserver start ignored (client is disabled/None)")
+             return
 
         self._stop_polling.clear()
         self._polling_thread = threading.Thread(

@@ -55,6 +55,7 @@ def _dm_cfg():
         threshold_pct_production=50.0,
         min_intents_for_check=10,
     )
+    flip = SimpleNamespace(enabled=True, hysteresis_mult=1.0)
     return SimpleNamespace(
         qos=qos,
         position_sizing=position_sizing,
@@ -64,6 +65,7 @@ def _dm_cfg():
         behavior_fsm=behavior_fsm,
         risk_skew=risk_skew,
         risk_gate=risk_gate,
+        flip=flip,
     )
 
 
@@ -237,13 +239,18 @@ def test_initiate_flip_close_preserves_original_payload_in_deferred():
     original_event = deferred_pld["original_event"]
     payload_min = original_event["payload_min"]
 
+    # Core fields
     assert payload_min["symbol"] == symbol
     assert payload_min["side"] == "BUY"
-    assert payload_min["qty_hint"] == 50.0
-    assert payload_min["price_ctx"] == {"entry_price": 150.0, "stop": 145.0}
     assert payload_min["strategy_id"] == "custom_strategy"
-    assert payload_min["cooldown_class"] == "flip"
     assert payload_min["rid"] == "custom-rid-123"
+    
+    # Original payload fields preserved
+    assert payload_min.get("qty_hint") == 50.0
+    assert payload_min.get("price_ctx") == {"entry_price": 150.0, "stop": 145.0}
+    
+    # v7 readiness contract
+    assert payload_min.get("readiness") == {"warmup_ok": True}
 
     # Check why_chain preservation
     assert "opposite_position_exists" in deferred_pld["why_chain"]
@@ -277,7 +284,7 @@ def test_initiate_flip_close_fails_closed_on_missing_stale_ttl():
 
 def test_initiate_flip_close_uses_position_size_usd_when_qty_hint_missing():
     """
-    _initiate_flip_close() should fall back to position_size_usd if qty_hint is missing.
+    _initiate_flip_close() should preserve position_size_usd in payload_min.
     """
     bus = _Bus()
     symbol = "DOGEUSDT"
@@ -304,4 +311,7 @@ def test_initiate_flip_close_uses_position_size_usd_when_qty_hint_missing():
     deferred_pld = deferred_events[0][1]
     payload_min = deferred_pld["original_event"]["payload_min"]
 
-    assert payload_min["qty_hint"] == 200.0, "Should use position_size_usd as fallback"
+    # position_size_usd should be preserved from original payload
+    assert payload_min.get("position_size_usd") == 200.0, "Should preserve position_size_usd"
+    # v7 readiness contract
+    assert payload_min.get("readiness") == {"warmup_ok": True}

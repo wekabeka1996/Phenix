@@ -38,6 +38,7 @@ from apps.reference.config_models import (
     MRAssetConfig,
     LiquidityGateConfig,
 )
+from apps.reference.domains.decision_making.mean_reversion_logger import MeanReversionBarLogger
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -127,6 +128,10 @@ class MeanReversionHandler:
         
         # Cache for liquidity kappa (from FeatureEngineering)
         self._liquidity_kappa_map: Dict[str, Decimal] = {}
+
+        # Block reason throttling (avoid per-tick spam)
+        self._last_block_reason: Dict[str, str] = {}
+        self._last_block_ts_ms: Dict[str, int] = {}
         
         self.logger.info(
             f"MeanReversionHandler initialized: enabled={self._enabled}, "
@@ -144,6 +149,12 @@ class MeanReversionHandler:
                 ensure_ascii=False,
             ),
         )
+        
+        # Initialize Bar Logger (Lazy init in _init_strategies might be safer if config not yet parsed, 
+        # but _parse_config is called in __init__ before this)
+        self.bar_logger: Optional[MeanReversionBarLogger] = None
+        if self._mr_config and self._mr_config.timeframe_sec > 0:
+            self.bar_logger = MeanReversionBarLogger(self._mr_config.timeframe_sec)
 
     def register(self) -> None:
         """Attach FSM listeners (ticks + regime)."""
@@ -378,13 +389,81 @@ class MeanReversionHandler:
         # Process tick through strategy
         signal = strategy.on_tick(symbol, price, volume, timestamp_ms)
         
+        # Log Bar if completed
+        if signal and signal.bar:
+            self._log_bar(signal)
+        
         if signal and signal.is_signal:
             if self._check_liquidity_gate(symbol):
                 self._emit_signal(signal)
             else:
-                 self.logger.info(f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
+                self.logger.info(f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code="LIQUIDITY_GATE",
+                    reason="LIQUIDITY",
+                    context="mean_reversion_handler:on_tick",
+                    details={"kappa": str(self._liquidity_kappa_map.get(symbol, Decimal('0')))},
+                    why_chain=["LIQUIDITY_GATE"],
+                )
+
+        # Non-silent blocking for neutral signals with explicit deny reasons.
+        if signal and (not signal.is_signal):
+            why = str(getattr(signal, "why", "") or "")
+            why_norm = why[len("neutral:") :] if why.startswith("neutral:") else why
+            reason_code: str | None = None
+            reason: str | None = None
+            if why_norm.startswith("regime_not_flat:"):
+                reason_code = "REGIME_MAPPING_NONE"
+                reason = "REGIME_MAPPING_NONE"
+            elif why_norm.startswith("regime_not_allowed:"):
+                reason_code = "REGIME_NOT_ALLOWED"
+                reason = "REGIME"
+
+            if reason_code:
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code=reason_code,
+                    reason=reason or reason_code,
+                    context="mean_reversion_handler:on_tick",
+                    details={"why": why},
+                    why_chain=["MR_NEUTRAL", why_norm],
+                )
         
         return signal
+
+    def _emit_strategy_blocked(
+        self,
+        *,
+        symbol: str,
+        reason_code: str,
+        reason: str,
+        context: str,
+        details: dict | None = None,
+        why_chain: list[str] | None = None,
+        throttle_ms: int = 10_000,
+    ) -> None:
+        now_ms = int(time.time() * 1000)
+        last_reason = self._last_block_reason.get(symbol)
+        last_ts = self._last_block_ts_ms.get(symbol, 0)
+        if last_reason == reason_code and (now_ms - last_ts) < int(throttle_ms):
+            return
+        self._last_block_reason[symbol] = reason_code
+        self._last_block_ts_ms[symbol] = now_ms
+
+        payload: Dict[str, Any] = {
+            "schema_version": 1,
+            "strategy_id": "mean_reversion",
+            "symbol": symbol,
+            "reason_code": str(reason_code),
+            "reason": str(reason),
+            "context": str(context),
+            "ts_ms": now_ms,
+            "why_chain": list(why_chain or []),
+        }
+        if details:
+            payload["details"] = details
+        self.fsm.emit("EVT:STRATEGY_DECISION_BLOCKED", payload, why=f"mr_blocked:{reason_code}")
     
     def on_regime(self, symbol: str, regime: str) -> None:
         """
@@ -398,6 +477,46 @@ class MeanReversionHandler:
             strategy.set_regime(symbol, regime)
             self.logger.debug(f"[{symbol}] MR regime updated: {regime}")
     
+    def _log_bar(self, signal: MRSignal) -> None:
+        """Log completed bar to dedicated TSV/JSONL logger."""
+        if not self.bar_logger or not signal.bar:
+            return
+            
+        try:
+            # Extract reason from 'why'
+            why = str(getattr(signal, "why", "") or "")
+            why_norm = why[len("neutral:") :] if why.startswith("neutral:") else why
+            
+            # Build context
+            context = {
+                "generated_ts_ms": int(time.time() * 1000),
+                "signal_type": signal.signal_type.name,
+                "reason": why_norm,
+                "regime": signal.flat_regime.name if signal.flat_regime else (self._per_symbol_regime.get(signal.symbol) or "UNKNOWN"), 
+                "bb": {
+                    "upper": str(signal.bb.upper) if signal.bb else None,
+                    "mid": str(signal.bb.mid) if signal.bb else None,
+                    "lower": str(signal.bb.lower) if signal.bb else None,
+                    "width": str(signal.bb.width) if signal.bb else None,
+                    "pct_b": str(signal.bb.pct_b) if signal.bb else None,
+                },
+                "rsi": float(signal.rsi) if signal.rsi is not None else None,
+                "atr": float(signal.atr) if signal.atr is not None else None,
+                "mr_params": {
+                    "sizing_mult": float(signal.mr_params.sizing_mult) if signal.mr_params else 1.0,
+                    "stop_mult": float(signal.mr_params.stop_mult) if signal.mr_params else 1.0, 
+                    "target_mult": float(signal.mr_params.target_mult) if signal.mr_params else 1.0,
+                } if signal.mr_params else None,
+                "config": signal.config_params
+            }
+            
+            self.bar_logger.log_bar(signal.symbol, signal.bar, context)
+            
+        except Exception as e:
+            self._stats["bar_logging_errors"] += 1
+            if self._stats["bar_logging_errors"] <= 5:
+                self.logger.warning(f"Failed to log bar for {signal.symbol}: {e}")
+
     def _emit_signal(self, signal: MRSignal) -> None:
         symbol = signal.symbol
         
@@ -487,6 +606,7 @@ class MeanReversionHandler:
             "strategy_id": "mean_reversion",
             "symbol": symbol,
             "side": side,
+            "readiness": {"warmup_ok": True},
             "score": float(signal.confidence),
             "why": signal.why,
             "ts_ms": int(signal.timestamp_ms),
@@ -614,6 +734,14 @@ class MeanReversionHandler:
             return
 
         pld = event.pld
+        
+        # === [DEBUG PROBE: Phase 2] ===
+        # Verify tick reception for enabled symbols (DOGE/XRP diagnostics)
+        sym_debug = pld.get("symbol") if isinstance(pld, dict) else getattr(pld, "symbol", "unknown")
+        if sym_debug in self._enabled_symbols:
+            self.logger.debug(f"[{sym_debug}] MR Handler received tick payload")
+        # === END DEBUG PROBE ===
+        
         try:
             if isinstance(pld, dict):
                 symbol = str(pld.get("symbol") or "")

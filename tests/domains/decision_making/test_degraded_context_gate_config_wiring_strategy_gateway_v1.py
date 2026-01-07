@@ -49,7 +49,7 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
 
     fsm.emit(
         "EVT:STRATEGY_SIGNAL_PRODUCED",
-        {"strategy_id": "stratX", "symbol": symbol, "side": "BUY", "rid": "rid-1", "ts_ms": now_ms, "why_chain": ["test"]},
+        {"strategy_id": "stratX", "symbol": symbol, "side": "BUY", "rid": "rid-1", "ts_ms": now_ms, "why_chain": ["test"], "readiness": {"warmup_ok": True}},
         why="test",
     )
 

@@ -2532,8 +2532,26 @@ class ExecPosFSM:
             reserve_key = pld.get("idempotent_key") or msg.rid or f"rid_{msg.rid}"
 
             # Check exposure with fail-closed logic
+            # EXP-FIX: Detect FLIP/Reduce (Opposite side order) to prevent double-counting exposure
+            is_flip = False
+            positions = self._latest_portfolio_state.get("positions") or []
+            for p in positions:
+                if isinstance(p, dict) and str(p.get("symbol", "")).strip() == symbol:
+                    curr_qty_str = str(p.get("net_position", "0"))
+                    # simple check: if qty != 0 and sign mismatch with intent side
+                    try:
+                        curr_qty = Decimal(curr_qty_str)
+                        if curr_qty != 0:
+                            curr_side_is_buy = curr_qty > 0
+                            intent_side_is_buy = (side in {"BUY", "LONG"})
+                            if curr_side_is_buy != intent_side_is_buy:
+                                is_flip = True
+                    except Exception:
+                        pass
+                    break
+
             exposure_check = self.exposure_guard.can_open(
-                symbol, notional_signed, self._latest_portfolio_state
+                symbol, notional_signed, self._latest_portfolio_state, is_flip=is_flip
             )
 
             if not exposure_check["allowed"]:
