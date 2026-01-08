@@ -1,40 +1,17 @@
-# Copilot Master Roadmap
+# Copilot Master Roadmap (SSOT)
 
-## Completed Tasks
+Этот файл — SSOT по инкрементальным пакетам работ (и связанным артефактам).
+`TODO.md` остаётся производным и не заменяет SSOT.
 
-- [x] TASK19: Root strict freeze (commit: c8f13f8)
-  - AuroraConfig extra='forbid' on root
-  - Service/migration keys removed from runtime
-  - Explicit schema enforced
-  - Loader rejects _config_* keys
-  - Tests green
-  - Docs updated
-- [x] TASK20: Zero defaults inventory and gate (commit: 3ee7b59)
-  - Inventory tool created (tools/inventory_config_defaults.py)
-  - Reports generated (reports/TASK20_defaults_inventory.md, .json)
-  - Test-gate added (tests/config/test_no_defaults_in_config_models.py)
-  - 489 defaults inventoried (no removal on this task)
-  - CI gate ready for future zero defaults enforcement
+## vFoundation Dictionaries / Verb Registry
 
-- [x] TASK21: YAML SSOT autofill + strict runtime contracts (commit: a2c75f7)
-  - Autofill tool added (tools/autofill_config_defaults_into_yaml.py)
-  - Default-path mapping + generator (tools/config_default_path_map.yaml, tools/generate_config_default_path_map.py)
-  - Plan/applied reports generated (reports/TASK21A_yaml_patch_plan.md, reports/TASK21A_yaml_patch_applied.md)
-  - SSOT cleanup: deprecated configs rejected/removed; bridge required; trading.yaml cleanup
-  - Tests added/updated: config strictness + runtime fail-closed contracts
+### VF-VERB-REG
+- VF-VERB-REG-01: Seed SSOT verb registry из runtime → `apps/reference/dictionaries/verb_registry_v1.yaml`, `reports/VF-VERB-REG-01.md`.
+- VF-VERB-REG-02: Warn-only drift gate (runtime vs registry) → `tests/vfoundation/test_verb_registry_warn_only.py`, `reports/VF-VERB-REG-02_diff.json`, `reports/VF-VERB-REG-02.md`.
+- VF-VERB-REG-03: Owner labeling top-N → `reports/VF-VERB-REG-03.md`.
+- VF-VERB-REG-04: Evidence-based owner inference report → `tests/vfoundation/test_verb_owner_inference_report.py`, `reports/VF-VERB-REG-04_owner_suggestions.json`, `reports/VF-VERB-REG-04.md`.
+- VF-VERB-REG-05: Coverage-threshold fail policy (>=98%) → `tests/vfoundation/test_verb_registry_warn_only.py`.
+- VF-VERB-REG-06: Apply owner suggestions (>=70%) (only owner field) → `reports/VF-VERB-REG-06_applied.json`, `reports/VF-VERB-REG-06.md`.
 
-- [x] TASK23.FIX: Optional-required null autofill + remove legacy SSOT aliases
-  - `tools/autofill_config_defaults_into_yaml.py --autofill-optional-nulls` + reports
-  - `TradingConfig` SSOT mirror fields removed (no second-truth in `trading.*`)
-  - Loader/test fixtures hardened; `pytest -q tests/config tests/runtime` green
-
-- [x] TASK24: Core correctness hardening (Feature/Regime/Retry)
-  - Warmup/readiness gating in DecisionMaking (fail-closed) + `warmup_block_total`
-  - FeatureEngineering fixes: `macro_sync` tail/ttl, dt-normalized `volume_spike`, volatility readiness
-  - RegimeDetector strict typed config + ATR True Range/Wilder + data-quality fail-closed gates
-  - RetryScheduler attempt SSOT, config-driven backoff/jitter, no-loop fail-fast, emit_compat-only + policy tests
-
-- [x] TASK25: Runtime legacy config purge (domains)
-  - Removed dict-thinking patterns in `apps/reference/domains/**` (`.get(..., default)`, `getattr(..., default)`, config `.to_dict()` fallback)
-  - Fail-fast: dict passed as config → `TypeError`
-  - Added AST policy gate + behavioral tests (`tests/runtime/test_task25_*`)
+### VF-DICT
+- VF-DICT-A-01: Parse-all dictionary YAML + minimal invariants (ops/ttl) → `tests/vfoundation/test_dictionaries_parse_all.py`.

@@ -1,0 +1,318 @@
+{
+  "date": "2026-01-08",
+  "source_suggestions": "reports/VF-VERB-REG-04_owner_suggestions.json",
+  "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
+  "rules": {
+    "current_owner_must_be": "unknown",
+    "suggested_owner_must_not_be": "unknown",
+    "confidence_threshold": 0.7,
+    "field_mutations": [
+      "owner"
+    ]
+  },
+  "applied_count": 13,
+  "applied": [
+    {
+      "token": "DEC:CANCEL_ORDER",
+      "op": "DEC",
+      "verb": "CANCEL_ORDER",
+      "old_owner": "unknown",
+      "new_owner": "execution_position",
+      "confidence": 1.0,
+      "total_occurrences": 2,
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 2,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm_manage.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "DEC:PLACE_ORDER",
+      "op": "DEC",
+      "verb": "PLACE_ORDER",
+      "old_owner": "unknown",
+      "new_owner": "execution_position",
+      "confidence": 1.0,
+      "total_occurrences": 2,
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 2,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm_manage.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "ERR:OPEN",
+      "op": "ERR",
+      "verb": "OPEN",
+      "old_owner": "unknown",
+      "new_owner": "execution_position",
+      "confidence": 0.75,
+      "total_occurrences": 4,
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 3,
+          "pct": 75.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm.py",
+          "count": 3
+        },
+        {
+          "path": "apps/reference/telemetry/audit_logger.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "EVT:DECISION_BLOCKED",
+      "op": "EVT",
+      "verb": "DECISION_BLOCKED",
+      "old_owner": "unknown",
+      "new_owner": "decision_making",
+      "confidence": 1.0,
+      "total_occurrences": 2,
+      "candidates": [
+        {
+          "owner": "decision_making",
+          "count": 2,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/decision_making/decision_making.py",
+          "count": 1
+        },
+        {
+          "path": "apps/reference/domains/decision_making/schemas_decision_blocked.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "EVT:DECISION_TRACE_EMITTED",
+      "op": "EVT",
+      "verb": "DECISION_TRACE_EMITTED",
+      "old_owner": "unknown",
+      "new_owner": "decision_making",
+      "confidence": 1.0,
+      "total_occurrences": 2,
+      "candidates": [
+        {
+          "owner": "decision_making",
+          "count": 2,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/decision_making/decision_making.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "EVT:FUNDING_UPDATE",
+      "op": "EVT",
+      "verb": "FUNDING_UPDATE",
+      "old_owner": "unknown",
+      "new_owner": "feature_engineering",
+      "confidence": 1.0,
+      "total_occurrences": 5,
+      "candidates": [
+        {
+          "owner": "feature_engineering",
+          "count": 5,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/feature_engineering/feature_engineering.py",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "token": "EVT:OI_UPDATE",
+      "op": "EVT",
+      "verb": "OI_UPDATE",
+      "old_owner": "unknown",
+      "new_owner": "feature_engineering",
+      "confidence": 1.0,
+      "total_occurrences": 5,
+      "candidates": [
+        {
+          "owner": "feature_engineering",
+          "count": 5,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/feature_engineering/feature_engineering.py",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "token": "EVT:ORDER_ACK",
+      "op": "EVT",
+      "verb": "ORDER_ACK",
+      "old_owner": "unknown",
+      "new_owner": "execution_position",
+      "confidence": 1.0,
+      "total_occurrences": 3,
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 3,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm.py",
+          "count": 2
+        },
+        {
+          "path": "apps/reference/domains/execution_position/utils_event_bus.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "EVT:ORDER_FILL",
+      "op": "EVT",
+      "verb": "ORDER_FILL",
+      "old_owner": "unknown",
+      "new_owner": "execution_position",
+      "confidence": 1.0,
+      "total_occurrences": 2,
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 2,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "EVT:STRATEGY_DECISION_BLOCKED",
+      "op": "EVT",
+      "verb": "STRATEGY_DECISION_BLOCKED",
+      "old_owner": "unknown",
+      "new_owner": "decision_making",
+      "confidence": 1.0,
+      "total_occurrences": 2,
+      "candidates": [
+        {
+          "owner": "decision_making",
+          "count": 2,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/decision_making/aurora_handler.py",
+          "count": 1
+        },
+        {
+          "path": "apps/reference/domains/decision_making/mean_reversion_handler.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "EVT:TICK_RECEIVED",
+      "op": "EVT",
+      "verb": "TICK_RECEIVED",
+      "old_owner": "unknown",
+      "new_owner": "decision_making",
+      "confidence": 1.0,
+      "total_occurrences": 1,
+      "candidates": [
+        {
+          "owner": "decision_making",
+          "count": 1,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/decision_making/__init__.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "EVT:TRADE_INTENT_REJECTED",
+      "op": "EVT",
+      "verb": "TRADE_INTENT_REJECTED",
+      "old_owner": "unknown",
+      "new_owner": "decision_making",
+      "confidence": 1.0,
+      "total_occurrences": 1,
+      "candidates": [
+        {
+          "owner": "decision_making",
+          "count": 1,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/decision_making/decision_making.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "UPD:TICK",
+      "op": "UPD",
+      "verb": "TICK",
+      "old_owner": "unknown",
+      "new_owner": "execution_position",
+      "confidence": 1.0,
+      "total_occurrences": 1,
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 1,
+          "pct": 100.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm_close.py",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,354 @@
+{
+  "date": "2026-01-08",
+  "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
+  "unknown_tokens": 18,
+  "generated": 18,
+  "rules": {
+    "path_owner_prefix": "apps/reference/domains/<X>/",
+    "threshold_pct": 70.0,
+    "top_files": 10,
+    "top_candidates": 3
+  },
+  "suggestions": [
+    {
+      "op": "DEC",
+      "verb": "CANCEL",
+      "token": "DEC:CANCEL",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/adapters/simulated_adapter.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "ALPHA_SCORE_CALCULATED",
+      "token": "EVT:ALPHA_SCORE_CALCULATED",
+      "total_occurrences": 3,
+      "suggested_owner": "unknown",
+      "candidates": [
+        {
+          "owner": "decision_making",
+          "count": 2,
+          "pct": 66.67
+        },
+        {
+          "owner": "alpha_search",
+          "count": 1,
+          "pct": 33.33
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/decision_making/__init__.py",
+          "count": 1
+        },
+        {
+          "path": "apps/reference/domains/decision_making/decision_making.py",
+          "count": 1
+        },
+        {
+          "path": "apps/reference/domains/alpha_search/alpha_model.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "BALANCE_UPDATE_RECEIVED",
+      "token": "EVT:BALANCE_UPDATE_RECEIVED",
+      "total_occurrences": 3,
+      "suggested_owner": "unknown",
+      "candidates": [
+        {
+          "owner": "position_tracking",
+          "count": 2,
+          "pct": 66.67
+        },
+        {
+          "owner": "account_balance",
+          "count": 1,
+          "pct": 33.33
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/position_tracking/position_tracking.py",
+          "count": 2
+        },
+        {
+          "path": "apps/reference/domains/account_balance/account_connector.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "CANCELLED",
+      "token": "EVT:CANCELLED",
+      "total_occurrences": 4,
+      "suggested_owner": "unknown",
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 1,
+          "pct": 25.0
+        }
+      ],
+      "top_files": [
+        {
+          "path": "vfoundation/core/adapters/execution_adapter.py",
+          "count": 3
+        },
+        {
+          "path": "apps/reference/domains/execution_position/drift_monitor.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "CONFIG_DEBUG_OVERRIDE_ACTIVE",
+      "token": "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
+      "total_occurrences": 3,
+      "suggested_owner": "unknown",
+      "candidates": [
+        {
+          "owner": "risk_management",
+          "count": 2,
+          "pct": 66.67
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/risk_management/risk_management.py",
+          "count": 2
+        },
+        {
+          "path": "apps/reference/main.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "EXPIRED",
+      "token": "EVT:EXPIRED",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "vfoundation/core/adapters/execution_adapter.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "FILL",
+      "token": "EVT:FILL",
+      "total_occurrences": 3,
+      "suggested_owner": "unknown",
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 1,
+          "pct": 33.33
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm_close.py",
+          "count": 1
+        },
+        {
+          "path": "vfoundation/obs/correlation.py",
+          "count": 1
+        },
+        {
+          "path": "vfoundation/core/adapters/execution_adapter.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "INTENT_DROPPED",
+      "token": "EVT:INTENT_DROPPED",
+      "total_occurrences": 3,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/main.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "MR_SIGNAL_PRODUCED",
+      "token": "EVT:MR_SIGNAL_PRODUCED",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/config_models.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "ORCHESTRATOR_ERROR",
+      "token": "EVT:ORCHESTRATOR_ERROR",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "ORDER_EXECUTED",
+      "token": "EVT:ORDER_EXECUTED",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "ORDER_REJECTED",
+      "token": "EVT:ORDER_REJECTED",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "ORDER_STATE_CHANGED",
+      "token": "EVT:ORDER_STATE_CHANGED",
+      "total_occurrences": 3,
+      "suggested_owner": "unknown",
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 1,
+          "pct": 33.33
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/adapters/binance_ws_client.py",
+          "count": 2
+        },
+        {
+          "path": "apps/reference/domains/execution_position/watchdog.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "ORDER_TIMEOUT",
+      "token": "EVT:ORDER_TIMEOUT",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "PARTIAL_FILL",
+      "token": "EVT:PARTIAL_FILL",
+      "total_occurrences": 3,
+      "suggested_owner": "unknown",
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 2,
+          "pct": 66.67
+        }
+      ],
+      "top_files": [
+        {
+          "path": "apps/reference/domains/execution_position/fsm_manage.py",
+          "count": 2
+        },
+        {
+          "path": "vfoundation/core/adapters/execution_adapter.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "POSITION_CLOSED",
+      "token": "EVT:POSITION_CLOSED",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "apps/reference/orchestrator/orchestrator_fsm.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "REJECTED",
+      "token": "EVT:REJECTED",
+      "total_occurrences": 4,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "vfoundation/core/adapters/execution_adapter.py",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "op": "EVT",
+      "verb": "VERB",
+      "token": "EVT:VERB",
+      "total_occurrences": 1,
+      "suggested_owner": "unknown",
+      "candidates": [],
+      "top_files": [
+        {
+          "path": "vfoundation/core/fsm_core.py",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}
