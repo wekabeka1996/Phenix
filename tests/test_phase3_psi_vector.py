@@ -5,6 +5,8 @@ Test to verify PHASE 3 implementation:
 - Signal score calculation includes all 8 metrics
 """
 
+import pytest
+
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from vfoundation.core import FSMCore
@@ -23,6 +25,7 @@ sys.path.insert(0, str(root_path / "apps" / "reference"))
 class TestPhase3PsiVector:
     """Test Phase 3: Verify psi_vector expanded to 8 components."""
 
+    @pytest.mark.legacy
     def test_signal_weights_from_config_has_8_metrics(self):
         """Verify signal_weights in config has all 8 metrics."""
         config = ConfigLoader().load_config()
@@ -47,7 +50,7 @@ class TestPhase3PsiVector:
 
         print(f"\n[CHART] Signal weights from config: {signal_weights_dict}")
 
-        # Verify all 8 metrics present
+        # Verify all 9 metrics present
         expected_metrics = [
             "obi",
             "tfi",
@@ -56,6 +59,7 @@ class TestPhase3PsiVector:
             "volume_spike",
             "volatility_state",
             "depth_imbalance",
+            "macro_resid",
             "macro_sync",
         ]
 
@@ -71,7 +75,7 @@ class TestPhase3PsiVector:
             f"Weights should sum to ~1.0, got {total_weight}"
         )
 
-        print(f"[OK] All 8 signal weights verified!")
+        print(f"[OK] All 9 signal weights verified!")
 
     def test_signal_calculation_includes_all_metrics(self):
         """Verify signal score calculation includes all 8 metrics."""

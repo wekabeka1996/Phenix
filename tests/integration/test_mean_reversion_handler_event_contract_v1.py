@@ -12,6 +12,8 @@ from apps.reference.config_models import (
     MeanReversion1mStrategyConfig,
 )
 from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
+from tests.conftest import make_mr_signal
+from apps.reference.domains.feature_engineering.mean_reversion_strategy import MRSignalType
 
 
 class _Bus:
@@ -83,38 +85,17 @@ def test_emits_strategy_signal_with_schema_version(monkeypatch):
     monkeypatch.setattr(MeanReversionHandler, "_init_strategies", lambda self: None)
     handler = MeanReversionHandler(fsm=bus, config=cfg)  # type: ignore[arg-type]
 
-    signal = SimpleNamespace(
+    signal = make_mr_signal(
         symbol=symbol,
-        side="BUY",
-        is_signal=True,
-        signal_type=SimpleNamespace(name="ENTRY"),
-        confidence=0.99,
+        timestamp_ms=now_ms,
         entry_price=Decimal("100"),
         stop_price=Decimal("90"),
         target_price=Decimal("110"),
-        why="test",
-        timestamp_ms=now_ms,
-        flat_regime=SimpleNamespace(name="FLAT_NORMAL"),
-        mr_params=SimpleNamespace(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0),
-        bb=SimpleNamespace(upper=Decimal("1"), mid=Decimal("1"), lower=Decimal("1"), width=Decimal("0.1"), pct_b=Decimal("0.5")),
-        atr=Decimal("1"),
     )
-
-    bar = SimpleNamespace(
-        start_ts_ms=now_ms,
-        end_ts_ms=now_ms + 60_000 - 1,
-        open=Decimal("1"),
-        high=Decimal("1"),
-        low=Decimal("1"),
-        close=Decimal("1"),
-        volume=Decimal("1"),
-        trade_count=1,
-    )
-    state = SimpleNamespace(bars=[bar], bb=None, atr=None, rsi=None)
 
     handler._strategies[symbol] = SimpleNamespace(
         on_tick=lambda *_a, **_k: signal,
-        get_state=lambda _s: state,
+        get_state=lambda _s: SimpleNamespace(bars=[], bb=None, atr=None, rsi=None),
         set_regime=lambda *_a, **_k: None,
     )
 
@@ -148,7 +129,7 @@ def test_invalid_price_does_not_emit_signal(monkeypatch):
     handler = MeanReversionHandler(fsm=bus, config=cfg)  # type: ignore[arg-type]
 
     handler._strategies[symbol] = SimpleNamespace(
-        on_tick=lambda *_a, **_k: SimpleNamespace(is_signal=True),
+        on_tick=lambda *_a, **_k: make_mr_signal(signal_type=MRSignalType.NEUTRAL, bar=None),
         get_state=lambda _s: SimpleNamespace(bars=[]),
         set_regime=lambda *_a, **_k: None,
     )
@@ -211,23 +192,6 @@ def test_out_of_order_tick_does_not_emit_signal(monkeypatch):
     monkeypatch.setattr(MeanReversionHandler, "_init_strategies", lambda self: None)
     handler = MeanReversionHandler(fsm=bus, config=cfg)  # type: ignore[arg-type]
 
-    signal = SimpleNamespace(
-        symbol=symbol,
-        side="BUY",
-        is_signal=True,
-        signal_type=SimpleNamespace(name="ENTRY"),
-        confidence=0.99,
-        entry_price=Decimal("100"),
-        stop_price=Decimal("90"),
-        target_price=Decimal("110"),
-        why="test",
-        timestamp_ms=now_ms,
-        flat_regime=SimpleNamespace(name="FLAT_NORMAL"),
-        mr_params=SimpleNamespace(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0),
-        bb=None,
-        atr=None,
-    )
-
     bar = SimpleNamespace(
         start_ts_ms=now_ms,
         end_ts_ms=now_ms + 60_000 - 1,
@@ -237,6 +201,12 @@ def test_out_of_order_tick_does_not_emit_signal(monkeypatch):
         close=Decimal("1"),
         volume=Decimal("1"),
         trade_count=1,
+    )
+
+    signal = make_mr_signal(
+        symbol=symbol,
+        timestamp_ms=now_ms,
+        bar=bar,
     )
     state = SimpleNamespace(bars=[bar], bb=None, atr=None, rsi=None)
 

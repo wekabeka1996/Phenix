@@ -75,3 +75,56 @@ All configuration-related trading blocks are now observable in the event stream.
 - `reports/VF-VERB-REG-06_applied.json` — applied changes with confidence + evidence
 - `reports/VF-VERB-REG-06.md` — short summary
 - **2026-01-08:** Validated and Frozen 'Alpha Search' domain (Task ALPHA-FREEZE-01/02). Added determinism tests, safe metrics, and offline eval script.
+
+## 2026-01-08: AGENT-NAV-VERB-REG-01 — Agent Navigation Playbook (registry-first)
+
+**Task:** AGENT-NAV-VERB-REG-01
+**Context:** After establishing SSOT for system language (Verb Registry) and governance dictionaries, we need an explicit, contract-first navigation instruction for Copilot/LLM agents.
+
+**Changes:**
+- Added a strict navigation playbook in `docs/AGENT_NAVIGATION_PLAYBOOK.md`.
+- Rules are registry-first (`apps/reference/dictionaries/verb_registry_v1.yaml`), owner-boundary (`apps/reference/domains/<owner>/`), and policy-aware (global/domain governance YAML).
+
+**Outcome:**
+Copilot/agents now have a single official procedure that forbids guessing verbs/owners and forbids repo-wide wandering without a contract.
+
+## 2026-01-08: Exchange Filters Startup Guard Integration
+
+**Task:** TASK-EXF-IMPLEMENTATION (07..12)
+**Context:** Implemented a critical startup guard that validates `config/aurora/instruments.yaml` against real-time exchange constraints (`/fapi/v1/exchangeInfo`). This prevents runtime rejections due to precision mismatches (LOT_SIZE, PRICE_FILTER) or missing filters.
+
+**Changes:**
+1.  **Validator Implementation (`validator.py`):**
+    *   Added logic to fetch and parse exchange filters (`LOT_SIZE`, `PRICE_FILTER`, `MIN_NOTIONAL`).
+    *   Implemented batch fetching (1 request for all symbols) to optimize startup time (~N -> 1 request).
+    *   Removed unsafe defaults (e.g., `min_notional=5`) to ensure fail-closed behavior on missing data.
+2.  **Configuration (`system.yaml`/`config_models.py`):**
+    *   Added `validate_instruments_on_startup` (default: True).
+    *   Added `warn_only_filters` (default: False) for Dev/Shadow environments.
+3.  **Wiring (`main.py`):**
+    *   Integrated validation logic immediately after config loading.
+    *   Implemented blocking behavior on CRITICAL mismatches (SystemExit 1).
+4.  **Testing:**
+    *   Added `tests/contracts/test_exchange_filters_validation.py` (Unit).
+    *   Added `tests/integration/test_startup_filters_wiring.py` (E2E Integration).
+
+**Policies:**
+*   **Fail-Closed:** In LIVE/TESTNET, any critical filter mismatch blocks startup.
+*   **Warn-Only:** Available via config for non-critical environments.
+
+**Artifacts:**
+*   `docs/STARTUP_GUARDS.md`: Official documentation of the new guard.
+
+## 2026-01-08: Execution Management (Zombie) Removal
+
+**Task:** EM-ZOMBIE-01
+**Context:** Domain `execution_management` was identified as a non-functional stub (not wired, no logic, tests only checking logs). It was creating confusion vs `execution_position` (the real execution domain).
+
+**Changes:**
+1.  **Removed:** `apps/reference/domains/execution_management/` and `tests/test_execution_management.py`.
+2.  **Refactored:** `apps/reference/main.py` - Renamed log file `domain_execution_management.log` to `domain_execution_position.log` (as it was actually containing ExecPos logs).
+3.  **Docs:** Added tombstone in `docs/deprecations/`.
+
+**Validation:**
+*   Confirmed 0 functional references in code/config.
+*   Verified `main.py` wiring logic remains intact (integration tests passed).

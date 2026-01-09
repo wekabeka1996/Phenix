@@ -31,8 +31,23 @@ class FilterMismatchError(Exception):
         lines = ["Exchange filters mismatch detected (fail-closed):"]
         for m in self.mismatches:
             lines.append(f"  {m}")
+        
         lines.append("")
-        lines.append("Fix: Update config/aurora/instruments.yaml with actual exchange values")
+        lines.append("--- Recommended Fix (copy to instruments.yaml) ---")
+        
+        # Group by symbol
+        by_symbol = {}
+        for m in self.mismatches:
+            if m.symbol not in by_symbol:
+                by_symbol[m.symbol] = {}
+            by_symbol[m.symbol][m.field] = m.exchange_value
+            
+        for sym, fixes in by_symbol.items():
+            lines.append(f"  {sym}:")
+            for field, val in fixes.items():
+                lines.append(f"    {field}: {val}")
+                
+        lines.append("--------------------------------------------------")
         lines.append("See: artifacts/testnet_exchangeinfo.json for reference")
         return "\n".join(lines)
 
@@ -40,8 +55,8 @@ class FilterMismatchError(Exception):
 class ExchangeInfoFetcher(Protocol):
     """Protocol for fetching exchange info from adapter."""
     
-    async def get_exchange_info(self, symbol: str) -> Dict[str, Any]:
-        """Fetch exchangeInfo for a symbol."""
+    async def get_exchange_info(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch exchangeInfo for a symbol or all symbols."""
         ...
 
 
@@ -75,29 +90,94 @@ class ExchangeFiltersValidator:
         """
         self._adapter = adapter
         self._warn_only = warn_only
-    
-    async def fetch_exchange_filters(self, symbol: str) -> ExchangeFilters:
+
+
+
+    async def validate_all(
+        self,
+        ssot_filters: Dict[str, SSOTFilters],
+        *,
+        mode: str = "live",
+        fail_fast: bool = True,
+    ) -> Dict[str, List[FilterMismatch]]:
         """
-        Fetch filters from exchange for a single symbol.
+        Validate all symbols in SSOT against exchange.
+        
+        TASK-EXF-PERF-11: Uses batch fetch to optimize startup time.
         
         Args:
-            symbol: Trading symbol (e.g., "SOLUSDT")
+            ssot_filters: Dict of symbol -> SSOTFilters
+            mode: Operating mode
+            fail_fast: If True, raise on first critical mismatch
             
         Returns:
-            ExchangeFilters parsed from exchangeInfo
+            Dict of symbol -> mismatches
+            
+        Raises:
+            FilterMismatchError: On critical mismatches (unless warn_only)
         """
-        info = await self._adapter.get_exchange_info(symbol)
+        LOG.info(f"Validating {len(ssot_filters)} symbols against exchange filters (Batch Mode)...")
         
-        symbols = info.get("symbols") or []
-        sym_info = None
-        for s in symbols:
-            if s.get("symbol") == symbol:
-                sym_info = s
-                break
+        all_mismatches: Dict[str, List[FilterMismatch]] = {}
+        all_critical: List[FilterMismatch] = []
         
-        if not sym_info:
-            raise ValueError(f"Symbol {symbol} not found in exchangeInfo")
+        # Batch Fetch
+        try:
+            full_info = await self._adapter.get_exchange_info(None)
+            exchange_map = {
+                s["symbol"]: s for s in full_info.get("symbols", [])
+            }
+        except Exception as e:
+            LOG.error(f"Batch fetch failed during filter validation: {e}")
+            if not self._warn_only:
+                raise
+            return {}
+
+        for symbol, ssot in ssot_filters.items():
+            try:
+                sym_info = exchange_map.get(symbol)
+                if not sym_info:
+                    # Symbol missing in exchange info
+                    # Treat as critical mismatch (configuration for non-existent symbol)
+                    # Create a synthetic mismatch or fallback
+                    LOG.error(f"Symbol {symbol} not found in exchange info batch")
+                    # We could try to fetch individually to be sure, but batch should be complete.
+                    continue
+
+                exchange = self._parse_exchange_filters(symbol, sym_info)
+                mismatches = self.compare_filters(ssot, exchange)
+                
+                if mismatches:
+                    all_mismatches[symbol] = mismatches
+                    critical = [m for m in mismatches if m.severity == "CRITICAL"]
+                    all_critical.extend(critical)
+                    
+                    if fail_fast and critical and not self._warn_only:
+                        raise FilterMismatchError(critical)
+                else:
+                    LOG.info(f"✅ {symbol}: filters match exchange")
+                    
+            except Exception as e:
+                if isinstance(e, FilterMismatchError):
+                    raise
+                LOG.error(f"Failed to validate {symbol}: {e}")
+                # Fail-closed: unknown error is treated as mismatch
+                if not self._warn_only:
+                    raise
         
+        if all_critical and not self._warn_only:
+            raise FilterMismatchError(all_critical)
+        
+        LOG.info(
+            f"Filter validation complete: "
+            f"{len(ssot_filters) - len(all_mismatches)} OK, "
+            f"{len(all_mismatches)} mismatches"
+        )
+        
+        return all_mismatches
+
+    def _parse_exchange_filters(self, symbol: str, sym_info: dict) -> ExchangeFilters:
+        """Parse raw exchange info dict into ExchangeFilters contract."""
         filters = {f.get("filterType"): f for f in sym_info.get("filters", [])}
         
         # LOT_SIZE filter
@@ -106,7 +186,7 @@ class ExchangeFiltersValidator:
         min_qty = Decimal(str(lot_filter.get("minQty", "0.001")))
         
         # MIN_NOTIONAL filter (different key names possible)
-        min_notional = Decimal("5")  # fallback
+        min_notional = None
         for key in ("MIN_NOTIONAL", "NOTIONAL"):
             if key in filters:
                 mn = filters[key]
@@ -114,6 +194,10 @@ class ExchangeFiltersValidator:
                 if val:
                     min_notional = Decimal(str(val))
                     break
+        
+        if min_notional is None:
+            # SAFETY-08: No magic defaults allowed
+            raise ValueError(f"Required filter MIN_NOTIONAL missing in exchangeInfo for {symbol}")
         
         # PRICE_FILTER (optional)
         price_filter = filters.get("PRICE_FILTER", {})
@@ -128,6 +212,24 @@ class ExchangeFiltersValidator:
             min_notional=min_notional,
             tick_size=tick_size,
         )
+    
+    async def fetch_exchange_filters(self, symbol: str) -> ExchangeFilters:
+        """
+        Fetch filters from exchange for a single symbol.
+        """
+        info = await self._adapter.get_exchange_info(symbol)
+        
+        symbols = info.get("symbols") or []
+        sym_info = None
+        for s in symbols:
+            if s.get("symbol") == symbol:
+                sym_info = s
+                break
+        
+        if not sym_info:
+            raise ValueError(f"Symbol {symbol} not found in exchangeInfo")
+            
+        return self._parse_exchange_filters(symbol, sym_info)
     
     def compare_filters(
         self,

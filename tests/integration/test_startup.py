@@ -51,11 +51,10 @@ def test_main_startup_no_config_error():
             mock_fsm_inst.emit = MagicMock()
             # Mock domain components on the imported module to avoid side effects during init
             with patch.object(main_app, "MarketDataConnector", MagicMock()):
-                with patch.object(main_app, "AccountObserver", MagicMock()):
-                    with patch.object(main_app, "AccountConnector", MagicMock()):
-                        with patch.object(main_app, "ExecPosFSM", MagicMock()):
-                            # Call main (it will be interrupted by the mocked time.sleep)
-                            main_app.main()
+                with patch.object(main_app, "AccountConnector", MagicMock()):
+                    with patch.object(main_app, "ExecPosFSM", MagicMock()):
+                        # Call main (it will be interrupted by the mocked time.sleep)
+                        main_app.main()
     except TypeError as e:
         pytest.fail(
             f"Startup failed with TypeError, likely due to config loader issue: {e}"

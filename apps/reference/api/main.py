@@ -50,8 +50,15 @@ else:
                 try:
                     # Get current metrics
                     from prometheus_client import generate_latest
-                    from apps.reference.api.metrics import update_hybrid_coherence_metrics
-                    update_hybrid_coherence_metrics()
+                    from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
+                    from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
+                    try:
+                        state = get_hybrid_coherence_state()
+                        update_hybrid_coherence_metrics(state)
+                    except Exception as e:
+                        # Fail-open for observability
+                        import logging
+                        logging.getLogger(__name__).warning(f"Failed to update hybrid coherence metrics: {e}")
 
                     txt = generate_latest().decode("utf-8", "replace")
 
@@ -127,8 +134,15 @@ else:
     @app.get("/metrics")
     def metrics():
         from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-        from apps.reference.api.metrics import update_hybrid_coherence_metrics
-        update_hybrid_coherence_metrics()
+        from apps.reference.telemetry.metrics import update_hybrid_coherence_metrics
+        from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
+        try:
+            state = get_hybrid_coherence_state()
+            update_hybrid_coherence_metrics(state)
+        except Exception as e:
+            # Fail-open for observability: log but don't crash
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to update hybrid coherence metrics: {e}")
         data = generate_latest()  # default REGISTRY
         from fastapi import Response
 

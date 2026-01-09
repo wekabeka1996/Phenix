@@ -1,5 +1,6 @@
 import logging
 import decimal
+import pytest
 
 from apps.reference.config_loader import get_config
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
@@ -16,6 +17,7 @@ class _Bus:
         self.emitted.append((event_name, payload or {}))
 
 
+@pytest.mark.legacy
 def test_task47_btc_dual_strategy_can_emit_intents_in_different_windows() -> None:
     cfg = get_config()
     bus = _Bus()

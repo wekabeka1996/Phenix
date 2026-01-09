@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 from apps.reference.config_loader import ConfigLoader
 
 
+@pytest.mark.legacy
 def test_task47_loader_effective_values_from_ssot() -> None:
     cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
 

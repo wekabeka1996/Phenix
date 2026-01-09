@@ -1,0 +1,13 @@
+# Neocortex System Configuration
+
+# Paths (absolute or relative to domain root)
+data_dir: "./data"
+checkpoint_dir: "./data/checkpoints"
+
+# Multiprocessing
+brain_workers: 1  # Start with single worker, scale up later
+queue_maxsize: 1000
+
+# Logging
+log_level: "INFO"
+log_to_file: true

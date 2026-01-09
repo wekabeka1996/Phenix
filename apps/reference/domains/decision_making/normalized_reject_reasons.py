@@ -61,6 +61,8 @@ class NormalizedRejectReasons:
     NO_DIRECTIONAL_FEATURES_ACTIVE = "NRR-037"
     NO_STRENGTH_FEATURES_ACTIVE = "NRR-038"
     # P0-0: Readiness Contract Audit
+    CONFIG_CONTRACT_MISSING = "NRR-CFG-001"
+    CONFIG_CONTRACT_INVALID = "NRR-CFG-002"
     MISSING_READY_KEYS = "NRR-039"
     FULL_READY_INVARIANT_VIOLATED = "NRR-040"
     # P0-1: Volatility Overflow
@@ -340,6 +342,8 @@ class NormalizedRejectReasons:
             cls.LEVERAGE_SET_FAILED: "Failed to set leverage on exchange",
             cls.MARGIN_MODE_SET_FAILED: "Failed to set margin mode on exchange",
             cls.LEVERAGE_VERIFY_FAILED: "Failed to verify leverage settings (API error)",
+            cls.CONFIG_CONTRACT_MISSING: "Configuration contract violation: Required key missing",
+            cls.CONFIG_CONTRACT_INVALID: "Configuration contract violation: Invalid value type or range",
             cls.DATA_NOT_READY: "Required upstream data/warmup is missing or not yet ready",
             cls.INSUFFICIENT_TREND_CONFIRMATION: "Trend is not confidently confirmed (fail-closed)",
             cls.DIRECTIONAL_SANITY_BLOCKED: "Trade intent contradicts confirmed trend direction",

@@ -251,3 +251,24 @@ c_config_contract_violation_total = Counter(
 def inc_config_contract_violation(path: str, symbol: str = "unknown") -> None:
     """Increment the config contract violation counter."""
     c_config_contract_violation_total.labels(path=path, symbol=symbol).inc()
+
+# Task CFG-REJECT-INTEGRATE-01: Decision Blocked Metric
+c_decision_blocked_total = Counter(
+    "decision_blocked_total",
+    "Decision blocked triggers (pipeline halted)",
+    ["stage", "reason_code"]
+)
+
+def inc_decision_blocked(stage: str, reason_code: str) -> None:
+    c_decision_blocked_total.labels(stage=stage, reason_code=reason_code).inc()
+
+
+# Validated Alpha Search Metrics (TASK-ALPHA-FREEZE-02)
+c_alpha_model_errors_total = Counter(
+    "alpha_model_errors_total",
+    "Total exceptions raised during alpha model calculation",
+    ["model"]
+)
+
+def inc_alpha_model_error(model: str) -> None:
+    c_alpha_model_errors_total.labels(model=model).inc()

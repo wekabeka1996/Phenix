@@ -13,6 +13,12 @@
       "type": "string",
       "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
     },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 3600,
+      "description": "Timeframe in seconds for bar aggregation (e.g., 180 for 3m bars)"
+    },
     "warmup": {
       "type": "object",
       "description": "Warmup/readiness state for feature engineering (TASK24, fail-closed upstream)",

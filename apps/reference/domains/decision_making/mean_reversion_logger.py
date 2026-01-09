@@ -72,7 +72,7 @@ class MeanReversionBarLogger:
         - mr_params (dict)
         """
         try:
-            ts_str = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(bar.timestamp_ms / 1000.0))
+            ts_str = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(bar.end_ts_ms / 1000.0))
             
             # Extract basic data
             o = f"{bar.open:.4f}"  # Assume Decimal
@@ -83,8 +83,10 @@ class MeanReversionBarLogger:
             
             # Extract context
             bb = context.get("bb") or {}
-            bb_u = f"{Decimal(str(bb.get('upper', 0))):.4f}" if bb else ""
-            bb_l = f"{Decimal(str(bb.get('lower', 0))):.4f}" if bb else ""
+            bb_u_val = bb.get('upper')
+            bb_u = f"{Decimal(str(bb_u_val)):.4f}" if bb_u_val is not None else ""
+            bb_l_val = bb.get('lower')
+            bb_l = f"{Decimal(str(bb_l_val)):.4f}" if bb_l_val is not None else ""
             
             rsi_val = context.get("rsi")
             rsi = f"{float(rsi_val):.1f}" if rsi_val is not None else ""
@@ -103,7 +105,7 @@ class MeanReversionBarLogger:
                 
             # 2. Write JSONL
             json_record = {
-                "ts_ms": bar.timestamp_ms,
+                "ts_ms": bar.end_ts_ms,
                 "ts_human": ts_str,
                 "symbol": symbol,
                 "ohlcv": {

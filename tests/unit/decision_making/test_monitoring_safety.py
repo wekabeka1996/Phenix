@@ -2,6 +2,7 @@
 import unittest
 from unittest.mock import MagicMock
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from tests.conftest import make_app_cfg_stub
 
 class TestMonitoringSafety(unittest.TestCase):
     """
@@ -15,19 +16,14 @@ class TestMonitoringSafety(unittest.TestCase):
         self.mock_fsm = MagicMock()
         
         # Mock AuroraConfig (strict object)
-        self.mock_config = MagicMock()
-        self.mock_config.trading.risk_management.data_sources.portfolio_state = "testnet"
-        self.mock_config.trading.market_data.use_multiprocessing = False
-        self.mock_config.trading.tca_prefs = {}
-        self.mock_config.trading.risk_budgets = {}
-        
-        # Domain Config Mocks
-        dm_cfg = self.mock_config.domains.decision_making
-        dm_cfg.qos.exposure_block_cooldown_sec = 60
-        dm_cfg.qos.max_intents_per_minute_per_symbol = 5
-        dm_cfg.qos.mode = "monitor"
-        dm_cfg.position_sizing.min_position_size_usd = 10
-        dm_cfg.position_sizing.liquidity_based_cap_usd = 10000
+        self.mock_config = make_app_cfg_stub(
+            domains__decision_making__qos_exposure_block_cooldown_sec=60,
+            domains__decision_making__qos_max_intents_per_minute_per_symbol=5,
+            domains__decision_making__qos_mode="monitor",
+            domains__decision_making__position_sizing_min_position_size_usd=10,
+            domains__decision_making__position_sizing_liquidity_based_cap_usd=10000,
+            domains__decision_making__flip_hysteresis_mult=1.0,
+        )
 
     def test_dm_initialization_counters(self):
         """Test that monitoring counters are initialized in __init__."""

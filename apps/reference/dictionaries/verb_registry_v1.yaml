@@ -79,6 +79,12 @@ registry:
   schema: null
   since: '2026-01-08'
 - op: EVT
+  verb: BAR_CLOSED
+  owner: market_data
+  status: active
+  schema: schemas/bar_closed_v1.json
+  since: '2026-01-08'
+- op: EVT
   verb: CANCELLED
   owner: unknown
   status: experimental

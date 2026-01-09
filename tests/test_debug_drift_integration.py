@@ -3,6 +3,7 @@ Tests for drift_report integration in /debug/{rid} endpoint.
 """
 
 import pytest
+pytest.skip("LEGACY: drift_monitor module removed; replaced by monitoring in runtime domains.", allow_module_level=True)
 pytest.importorskip("fastapi")
 
 import pathlib

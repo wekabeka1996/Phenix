@@ -15,6 +15,10 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from pydantic import BaseModel, Field
 from datetime import datetime
+import logging
+from apps.reference.telemetry.metrics import inc_alpha_model_error
+
+LOG = logging.getLogger(__name__)
 
 
 class AlphaScore(BaseModel):
@@ -164,7 +168,8 @@ class AlphaModelRegistry:
                     scores.append(score)
                 except Exception as e:
                     # Log error but continue with other models
-                    print(f"Error calculating alpha for {model.name}: {e}")
+                    LOG.exception(f"Error calculating alpha for {model.name}: {e}")
+                    inc_alpha_model_error(model.name)
                     continue
         return scores
 

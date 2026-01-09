@@ -1,0 +1,26 @@
+# Neocortex Ingestion Configuration
+
+# Feature selection (must match EVT:FEATURES_CALCULATED schema)
+feature_list:
+  - rsi
+  - bb_percent
+  - bb_width
+  - obi
+  - liquidity_kappa
+  - liquidity_depth_imbalance
+  - delta_price
+  - delta_volume
+  - regime_numeric  # Encoded as integer: FLAT=0, TREND=1, MEAN_REVERSION=2, UNCERTAIN=3
+
+# Normalization
+normalization_method: "zscore"  # Options: zscore, minmax, robust
+normalization_window: 500  # Rolling window for statistics
+
+# Buffering
+buffer_size: 10000  # Max observations in memory
+
+# Warmup
+min_samples_before_ready: 100  # Minimum samples before starting ML inference
+
+# Robustness
+nan_strategy: "zero"  # handling NaN/None values: zero, ignore, ffill

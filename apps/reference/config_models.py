@@ -414,7 +414,7 @@ class MeanReversion1mStrategyConfig(BaseModel):
     enabled: bool = Field(description='Enable MR 1m strategy')
     
     # Timeframe
-    timeframe_sec: int = Field(description='Bar timeframe in seconds')
+    timeframe_sec: int = Field(ge=60, le=3600, description='Bar timeframe in seconds')
     
     # Strategy parameters
     strategy: MRStrategyParamsConfig = Field()
@@ -920,6 +920,18 @@ class ApiCallLimits(BaseModel):
     get_klines: KlinesConfig = Field()
 
 
+class BarAggregatorConfig(BaseModel):
+    """Bar aggregator SSOT configuration.
+    
+    BAR-SSOT-002: Configuration for BarAggregator wiring.
+    If enabled=True, timeframes_sec is mandatory.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(description='Enable bar aggregator (EVT:BAR_CLOSED emission)')
+    timeframes_sec: List[int] = Field(description='Bar timeframes in seconds (e.g., [180, 300] for 3m and 5m)')
+
+
 class MarketDataConfig(BaseModel):
     """Market data configuration.
     
@@ -932,6 +944,7 @@ class MarketDataConfig(BaseModel):
     websocket_streams: List[str] = Field()
     api_call_limits: ApiCallLimits = Field()
     macro_sync: Optional[MacroSyncConfig] = Field()
+    bar_aggregator: Optional[BarAggregatorConfig] = Field(default=None, description='Bar aggregator config (optional, disabled if missing)')
 
 
 class FeatureEngineeringConfig(BaseModel):
@@ -1550,6 +1563,18 @@ class FeatureEngineeringDomainConfig(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
+    # TF-BAR-SSOT-002: enabled timeframes for feature calculation (mandatory, no defaults)
+    enabled_timeframes_sec: List[int] = Field(min_length=1, description="Enabled timeframes in seconds for bar aggregation context")
+    
+    @field_validator('enabled_timeframes_sec')
+    @classmethod
+    def validate_timeframes(cls, v: List[int]) -> List[int]:
+        if not all(60 <= tf <= 3600 for tf in v):
+            raise ValueError("All timeframes must be between 60 and 3600 seconds")
+        if len(v) != len(set(v)):
+            raise ValueError("Timeframes must be unique")
+        return v
+    
     # Master switch for Phase 1 metrics
     enable_new_metrics: bool = Field(description='Enable Phase 1 metrics (ema_bias, volume_spike, etc.)')
     
@@ -2044,6 +2069,7 @@ class AuroraStrategyConfig(BaseModel):
     enabled: bool = Field(description="Enable Aurora strategy globally")
     type: str = Field(description="Strategy type identifier (informational)")
     description: str = Field(description="Human description of the strategy profile")
+    timeframe_sec: int = Field(ge=60, le=3600, description='Bar timeframe in seconds')
 
     # Phase 4: Migration control (DecisionMaking refactor plan).
     # When True, Aurora remains on the legacy tick-based DecisionMaking path and the AuroraHandler must be silent.
@@ -2262,6 +2288,16 @@ class SystemConfig(BaseModel):
 
     logging: LoggingConfig = Field()
     market_data: Optional[SystemMarketDataConfig] = Field(default=None, description='Market data system settings')
+
+    # Startup Guard Configuration (TASK-EXF-WIRE-STARTUP-09)
+    validate_instruments_on_startup: bool = Field(
+        default=True,
+        description="Enable startup validation of instruments.yaml against exchange (fail-closed)"
+    )
+    warn_only_filters: bool = Field(
+        default=False,
+        description="If True, log warnings instead of crashing on filter mismatch (Dev/Shadow only)"
+    )
 
 
 class SystemRuntimeMeta(BaseModel):

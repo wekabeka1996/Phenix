@@ -110,6 +110,22 @@ class AuroraHandler:
         """Extract configuration parameters."""
         aurora_cfg = getattr(self.config, "strategies", None)
         aurora = getattr(aurora_cfg, "aurora", None) if aurora_cfg else None
+        
+        # TF-SSOT-PACK-003: Get timeframe_sec from config (MANDATORY)
+        # CLOSEOUT-BASELINE-001: Strict contract - no fallbacks
+        if aurora is None:
+            # Aurora strategy not enabled - use sentinel that will be rejected by guards
+            self.timeframe_sec = 0
+            self.logger.debug("AuroraHandler: aurora strategy not configured, timeframe_sec=0 (sentinel)")
+        elif not hasattr(aurora, "timeframe_sec") or aurora.timeframe_sec is None:
+            from apps.reference.config_contract import ConfigContractError
+            raise ConfigContractError(
+                path="strategies.aurora.timeframe_sec",
+                why="timeframe_sec is mandatory in strategy config. Check config/aurora/strategies/aurora.yaml"
+            )
+        else:
+            self.timeframe_sec = aurora.timeframe_sec
+        
         decision = getattr(aurora, "decision", None) if aurora else None
         
         if decision:
@@ -254,6 +270,12 @@ class AuroraHandler:
         """
         symbol = event.get("symbol")
         if not symbol:
+            return
+        
+        # TF guard
+        tf_sec = event.get("tf_sec")
+        if tf_sec and tf_sec != self.timeframe_sec:
+            self.logger.warning(f"Aurora rejecting features for {symbol}: tf_sec {tf_sec} != {self.timeframe_sec}")
             return
         
         # Check if symbol is enabled for Aurora

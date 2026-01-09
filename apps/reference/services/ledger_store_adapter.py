@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from apps.clean_TP_SL.order_ledger import (
+from apps.reference.domains.execution_position.infra.order_ledger import (
     OrderLedger,
     OrderRecord,
     OrderRole,

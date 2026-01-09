@@ -229,6 +229,26 @@ class TestExchangeFiltersValidator:
         assert mismatches[0].field == "step_size"
         assert mismatches[0].severity == "CRITICAL"
 
+    @pytest.mark.asyncio
+    async def test_fetch_exchange_filters_missing_min_notional_raises(self):
+        """TASK-EXF-SAFETY-08: Should raise ValueError if MIN_NOTIONAL missing."""
+        base_info = make_exchange_info("BTCUSDT")
+        # Remove MIN_NOTIONAL filter
+        filters = base_info["symbols"][0]["filters"]
+        base_info["symbols"][0]["filters"] = [
+            f for f in filters if f["filterType"] != "MIN_NOTIONAL"
+        ]
+        
+        adapter = AsyncMock()
+        adapter.get_exchange_info.return_value = base_info
+        
+        validator = ExchangeFiltersValidator(adapter)
+        
+        # Should raise now (previously defaulted to 5)
+        with pytest.raises(ValueError, match="Required filter MIN_NOTIONAL missing"):
+            await validator.fetch_exchange_filters("BTCUSDT")
+
+
 
 # ==============================================================================
 # TASK51-A Required Tests

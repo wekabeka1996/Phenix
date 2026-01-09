@@ -25,7 +25,7 @@ from apps.reference.retry_scheduler import RetryScheduler
 # from apps.reference.domains.snapshot_scheduler.snapshot_scheduler import (
 #     SnapshotScheduler,
 # )
-from apps.reference.domains.account_observer.account_observer import AccountObserver
+
 from apps.reference.domains.account_balance.account_connector import AccountConnector
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
@@ -38,12 +38,11 @@ from apps.reference.domains.feature_engineering.feature_engineering import (
 # The actual class used is determined by feature flag at runtime
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
 from apps.reference.domains.market_data.proxy import MarketDataProxy
+from apps.reference.domains.market_data.bar_aggregator import BarAggregator  # BAR-SSOT-002
 # TASK32: Strategy plugin allowlist (no dynamic imports)
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
-# NOTE: FeatureStore DISABLED — synchronous DB writes block tick processing
-# from apps.reference.data.feature_store import FeatureStore
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from vfoundation.dr import wal
@@ -60,6 +59,11 @@ import time
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+import asyncio
+
+# TASK-EXF-WIRE-STARTUP-09: Startup Guard Imports
+from apps.reference.domains.exchange_filters.validator import validate_instruments_on_startup, FilterMismatchError
+from apps.reference.adapters.binance_adapter import BinanceAdapter
 from typing import Any, Optional
 from logging.handlers import RotatingFileHandler
 import asyncio
@@ -1239,19 +1243,19 @@ if not _aurora_logging_already_configured:
     domain_handlers["decision_making"] = dm_handler
     root_logger.addHandler(_tag(dm_handler))
 
-    # Execution Management domain logs
-    em_log_file = logs_dir / "domain_execution_management.log"
-    em_handler = RotatingFileHandler(
-        em_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    # Execution Position domain logs
+    ep_log_file = logs_dir / "domain_execution_position.log"
+    ep_handler = RotatingFileHandler(
+        ep_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
     )
-    em_handler.setLevel(logging.DEBUG)
-    em_handler.setFormatter(file_formatter)
-    em_handler.addFilter(
+    ep_handler.setLevel(logging.DEBUG)
+    ep_handler.setFormatter(file_formatter)
+    ep_handler.addFilter(
         lambda record: record.name.startswith(
             "apps.reference.domains.execution_position")
     )
-    domain_handlers["execution_management"] = em_handler
-    root_logger.addHandler(_tag(em_handler))
+    domain_handlers["execution_position"] = ep_handler
+    root_logger.addHandler(_tag(ep_handler))
 
     # Regime Detector domain logs
     rd_log_file = logs_dir / "domain_regime_detector.log"
@@ -1392,7 +1396,7 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     # NOTE: Legacy unused initialization (line 1718 is the actual one used)
     decision_making = DecisionMaking(fsm, config_dict.get("trading", {}))
     account_balance = AccountConnector(fsm, config_dict)
-    account_observer = AccountObserver(fsm, config_dict)
+    # account_observer = AccountObserver(fsm, config_dict) (Deleted: TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
     # RegimeDetector: Analyzes market features to detect trading regimes
     # Emits EVT:REGIME_DETECTED for decision_making to use
     regime_detector = RegimeDetector(config_dict, fsm)
@@ -1405,7 +1409,7 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     fsm.register_domain("position_tracking", position_tracking)
     fsm.register_domain("decision_making", decision_making)
     fsm.register_domain("account_balance", account_balance)
-    fsm.register_domain("account_observer", account_observer)
+    # fsm.register_domain("account_observer", account_observer) (Deleted: TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
     fsm.register_domain("regime_detector", regime_detector)
     # fsm.register_domain("snapshot_scheduler", snapshot_scheduler)  # Moved to main()
     fsm.register_domain("execution_position", execution_position)
@@ -1425,6 +1429,66 @@ def main() -> None:
     config = config_loader.load_config()
     LOG.info("Configuration loaded successfully")
 
+    # TASK-EXF-WIRE-STARTUP-09: Validate Instruments vs Exchange
+    if config.system.validate_instruments_on_startup:
+        async def _startup_validation():
+            LOG.info("🛡️ STARTUP GUARD: Validating exchange filters...")
+            
+            # Use testnet if executing in testnet (Hybrid or Pure Testnet)
+            is_testnet = (
+                config.trading_mode == "testnet" or 
+                config.trading_mode == "hybrid_live_data_testnet_exec"
+            )
+            
+            # Force-disable warn_only in LIVE/PRODUCTION to ensure safety
+            # If we are in live/production, we MUST crash on filter mismatch.
+            warn_only = config.system.warn_only_filters
+            if config.trading_mode in ("live", "production") and warn_only:
+                LOG.warning("⚠️ SECURITY: warn_only_filters=True ignored in LIVE/PROD mode. Enforcing FAIL-CLOSED.")
+                warn_only = False
+
+            api_cfg = config.binance_api.testnet if is_testnet else config.binance_api.live
+            
+            # Create temporary adapter for validation
+            adapter = BinanceAdapter(
+                api_key=api_cfg.api_key or "",
+                api_secret=api_cfg.api_secret or "",
+                testnet=is_testnet,
+                logger=LOG
+            )
+            
+            # Convert Pydantic models back to raw dicts for validator consumption
+            instruments_raw = {
+                k: v.model_dump() for k, v in config.instruments.items()
+            }
+            
+            try:
+                await validate_instruments_on_startup(
+                    adapter=adapter,
+                    instruments_config={"instruments": instruments_raw},
+                    mode="testnet" if is_testnet else "live",
+                    warn_only=warn_only
+                )
+            except FilterMismatchError as e:
+                LOG.critical(f"🛑 STARTUP BLOCKED: Exchange Filter Mismatch!\n{e}")
+                sys.exit(1)
+            except Exception as e:
+                LOG.critical(f"🛑 STARTUP BLOCKED: Validation error: {e}")
+                sys.exit(1)
+            finally:
+                # Cleanup adapter resources if possible
+                if hasattr(adapter, "close"):
+                    await adapter.close()
+
+        # Run validation in temporary loop
+        try:
+            asyncio.run(_startup_validation())
+        except SystemExit:
+            raise
+        except Exception as e:
+            LOG.critical(f"Async loop error during filter validation: {e}")
+            sys.exit(1)
+
     # Initialize WAL Garbage Collector
     wal_dir = project_root / "ops" / "wal"
     wal_gc = WALGarbageCollector(
@@ -1440,10 +1504,6 @@ def main() -> None:
     # Initialize Multi-TF Feature Aggregation Scheduler
     from threading import Thread
     import time as time_module
-
-    # NOTE: Multi-TF rollup DISABLED — FeatureStore removed for max tick throughput
-    # def _multi_tf_rollup_worker(...) — REMOVED
-    # def start_multi_tf_rollup(...) — REMOVED
 
     # Initialize Alert Manager
     alert_manager = AlertManager(config=config, logger=LOG)
@@ -1536,18 +1596,11 @@ def main() -> None:
     account_balance = AccountConnector(fsm=fsm, config=config)
 
     # Account Observer (observes trades and sends portfolio updates)
-    # FSMP-P3-T01: Use resolved risk_portfolio_source for AccountObserver environment
-    try:
-        risk_portfolio_source = config.trading.risk_management.data_sources.portfolio_state
-    except AttributeError as e:
-        raise ConfigContractError(
-            path="trading.risk_management.data_sources.portfolio_state",
-            why=f"Missing required config for AccountObserver environment: {e}",
-        )
-    if risk_portfolio_source == "follow_execution":
-        risk_portfolio_source = "testnet"
-    account_observer = AccountObserver(
-        fsm=fsm, config=config, environment=risk_portfolio_source)
+    # FSMP-P3-T01: AccountObserver removed (Legacy Spot code).
+    # risk_portfolio_source logic preserved if needed for other components but observer init removed.
+    
+    # account_observer = AccountObserver(
+    #     fsm=fsm, config=config, environment=risk_portfolio_source)
 
     # FSMP-ARCH-01: Market Data Connector with Multiprocessing Feature Flag
     if config.trading.market_data is None:
@@ -1564,14 +1617,43 @@ def main() -> None:
         LOG.info("📊 Using MarketDataConnector (legacy single-process mode)")
         market_data = MarketDataConnector(fsm=fsm, config=config)
 
-    # Feature Store (stores historical features for backtesting)
-    # NOTE: FeatureStore DISABLED — synchronous DB writes block tick processing!
-    # All feature_store code removed for maximum tick throughput.
-    LOG.info("⚡ Feature Store DISABLED — no DB writes, maximum tick throughput")
-
-    # Feature Engineering (calculates trading features) — NO feature_store
+    # Feature Engineering (calculates trading features)
     feature_engineering = FeatureEngineering(
-        fsm=fsm, config=config, feature_store=None)
+        fsm=fsm, config=config)
+
+    # ==========================================
+    # BAR-SSOT-002: BarAggregator as passive observer
+    # ==========================================
+    bar_aggregator = None
+    bar_config = getattr(config.trading.market_data, 'bar_aggregator', None)
+    
+    if bar_config is None:
+        # CLOSEOUT-BASELINE-001: Explicit why for missing config
+        LOG.info(
+            "ℹ️ BarAggregator disabled",
+            extra={"why": "bar_agg_disabled_missing_config", "reason": "config.trading.market_data.bar_aggregator not defined"}
+        )
+    elif not bar_config.enabled:
+        # CLOSEOUT-BASELINE-001: Explicit why for disabled flag
+        LOG.info(
+            "ℹ️ BarAggregator disabled",
+            extra={"why": "bar_agg_disabled_config", "reason": "bar_aggregator.enabled=false"}
+        )
+    else:
+        # Enabled: validate timeframes and wire
+        timeframes = bar_config.timeframes_sec
+        if not timeframes:
+            LOG.warning(
+                "⚠️ BarAggregator enabled but timeframes_sec empty, using defaults [60, 300]",
+                extra={"why": "bar_agg_timeframes_default"}
+            )
+            timeframes = [60, 300]
+        bar_aggregator = BarAggregator(timeframes_sec=timeframes, emit_fn=fsm.emit)
+        fsm.listen("EVT:MARKET_TICK_RECEIVED", bar_aggregator.on_market_tick)
+        LOG.info(
+            f"✅ BarAggregator enabled",
+            extra={"why": "bar_agg_enabled", "timeframes_sec": timeframes}
+        )
 
     # Risk Management (assesses position risk)
     # Task 18: Pass AuroraConfig object directly (Resolves domain_configuration internally via DomainConfigResolver)
@@ -1764,8 +1846,8 @@ def main() -> None:
     LOG.info("Starting account connector...")
     account_balance.start()
 
-    LOG.info("Starting account observer...")
-    account_observer.start()
+    LOG.info("Starting account observer - SKIPPED (Deleted)")
+    # account_observer.start()
 
     LOG.info("Starting market data connector...")
     # MarketDataConnector requires async loop - use guardian_loop
@@ -1858,7 +1940,7 @@ def main() -> None:
         # Helper to stop components safely if they exist
         for name in [
             "account_balance",
-            "account_observer",
+            # "account_observer", (Deleted)
             "market_data",
             "feature_engineering",
             "risk_management",
@@ -1882,8 +1964,6 @@ def main() -> None:
             LOG.info("WAL GC stopped.")
         except Exception as e:
             LOG.error(f"Error stopping WAL GC: {e}")
-
-        # NOTE: FeatureStore DISABLED — no cleanup needed
 
         LOG.info("All components stopped or shutdown attempted. Exiting.")
         print("Aurora Core shutdown complete.")

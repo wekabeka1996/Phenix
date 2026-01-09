@@ -444,7 +444,7 @@ def load_config(path: Path) -> Config:
         from pydantic import BaseModel as _BM  # type: ignore
         config = Config.parse_obj(final_cfg_dict)  # type: ignore
     log.info("Configuration loaded successfully.")
-    log.info(f"Final config: {config.to_dict()}")
+    log.debug(f"Final config keys: {list(final_cfg_dict.keys())}")
     return config
 
 # Example usage (can be placed in a script)

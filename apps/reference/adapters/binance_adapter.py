@@ -785,14 +785,18 @@ class BinanceAdapter(AbstractExchangeAdapter):
         params = {"symbol": symbol, "orderId": order_id}
         return await self._request("GET", path, params)
 
-    async def get_exchange_info(self, symbol: str) -> Dict[str, Any]:
+    async def get_exchange_info(self, symbol: Optional[str] = None) -> Dict[str, Any]:
         """
-        Get exchange information for a symbol.
+        Get exchange information for a symbol or all symbols if None.
         Implements AbstractExchangeAdapter.get_exchange_info()
         """
         path = "/fapi/v1/exchangeInfo"
-        params = {"symbol": symbol}
-        return await self._request("GET", path, params)
+        params = {}
+        if symbol:
+            params["symbol"] = symbol
+        # exchangeInfo is public/market_data, no auth required usually, but adapter handles key injection?
+        # Typically exchangeInfo is NONE security type.
+        return await self._request("GET", path, params, signed=False)
 
     async def quantize_quantity(self, symbol: str, qty: Any) -> str:
         """

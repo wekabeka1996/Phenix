@@ -10,6 +10,8 @@ Comprehensive tests to verify:
 Per METRICS_INTEGRATION_PLAN.md Phase 5 specification.
 """
 
+import pytest
+
 from apps.reference.config_loader import ConfigLoader
 from vfoundation.core import FSMCore
 import pytest
@@ -24,17 +26,18 @@ sys.path.insert(0, str(root_path / "apps" / "reference"))
 
 
 class TestSignalScoreIntegration:
-    """Test signal score calculation with all 8 metrics"""
+    """Test signal score calculation with all 9 metrics"""
 
+    @pytest.mark.legacy
     def test_signal_score_all_metrics_high(self):
         """
-        Test: All 8 metrics at maximum (1.0).
+        Test: All 9 metrics at maximum (1.0).
         Expected: signal_score = sum(all weights) = 1.0.
         """
         fsm = FSMCore()
         config = ConfigLoader().load_config()
 
-        # Build phi_map with all 8 metrics at max
+        # Build phi_map with all 9 metrics at max
         phi_map = {
             "obi": Decimal("1.0"),
             "tfi": Decimal("1.0"),
@@ -43,6 +46,7 @@ class TestSignalScoreIntegration:
             "volume_spike": Decimal("1.0"),
             "volatility_state": Decimal("1.0"),
             "depth_imbalance": Decimal("1.0"),
+            "macro_resid": Decimal("1.0"),
             "macro_sync": Decimal("1.0"),
         }
 
@@ -198,10 +202,11 @@ class TestPsiVectorCompletion:
         assert psi_phi_fields == expected_phi_fields, \
             f"Missing phi fields. Expected {expected_phi_fields}, got {psi_phi_fields}"
 
+    @pytest.mark.legacy
     def test_psi_vector_weights_completeness(self):
         """
-        Test: psi_vector.weights contains all 8 metric weights.
-        Expected: weights dict has keys for all 8 metrics.
+        Test: psi_vector.weights contains all 9 metric weights.
+        Expected: weights dict has keys for all 9 metrics.
         """
         config = ConfigLoader().load_config()
         weights = (
@@ -214,11 +219,11 @@ class TestPsiVectorCompletion:
 
         expected_weight_keys = {
             "obi", "tfi", "delta_price",  # Legacy (3)
-            # New (5)
-            "ema_bias", "volume_spike", "volatility_state", "depth_imbalance", "macro_sync"
+            # New (6)
+            "ema_bias", "volume_spike", "volatility_state", "depth_imbalance", "macro_resid", "macro_sync"
         }
 
-        print(f"\n[OK] Expected weight keys (8 total): {expected_weight_keys}")
+        print(f"\n[OK] Expected weight keys (9 total): {expected_weight_keys}")
         print(f"[OK] Actual weights: {weights}")
 
         weight_keys = set(weights.keys())
@@ -259,9 +264,10 @@ class TestNormalizedMetricsComposition:
             print(f"  {metric}: {value}")
             assert 0 <= value <= 1, f"{metric}={value} must be in [0,1]"
 
+    @pytest.mark.legacy
     def test_legacy_vs_new_metrics_composition(self):
         """
-        Test: Legacy metrics (3) + New metrics (5) composed correctly.
+        Test: Legacy metrics (3) + New metrics (6) composed correctly.
         Expected: Each group maintains its properties in composition.
         """
         config = ConfigLoader().load_config()
@@ -275,7 +281,7 @@ class TestNormalizedMetricsComposition:
 
         legacy_metrics = ["obi", "tfi", "delta_price"]
         new_metrics = ["ema_bias", "volume_spike",
-                       "volatility_state", "depth_imbalance", "macro_sync"]
+                       "volatility_state", "depth_imbalance", "macro_resid", "macro_sync"]
 
         legacy_weight_sum = sum(
             Decimal(str(weights[k])) for k in legacy_metrics)
@@ -289,6 +295,7 @@ class TestNormalizedMetricsComposition:
         assert abs(total - Decimal("1.0")) < Decimal("0.1"), \
             f"Legacy + new weights should sum to ~1.0, got {total}"
 
+    @pytest.mark.legacy
     def test_signal_score_composition_formula(self):
         """
         Test: Signal score = Σ(phi_i * weight_i) for all 8 metrics.
@@ -311,8 +318,7 @@ class TestNormalizedMetricsComposition:
             "ema_bias": Decimal("0.7"),
             "volume_spike": Decimal("0.8"),
             "volatility_state": Decimal("0.6"),
-            "depth_imbalance": Decimal("0.5"),
-            "macro_sync": Decimal("0.9"),
+            "depth_imbalance": Decimal("0.5"),            "macro_resid": Decimal("0.9"),            "macro_sync": Decimal("0.9"),
         }
 
         # Manual calculation

@@ -1,0 +1,362 @@
+"""
+Configuration Contract Tests
+
+Verify strict fail-closed behavior:
+- Valid config loads successfully
+- Missing required fields -> ValidationError
+- Extra unknown fields -> ValidationError
+- Type mismatches -> ValidationError
+- Cross-field validation works
+"""
+
+import pytest
+from pathlib import Path
+import tempfile
+import yaml
+from pydantic import ValidationError
+
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from config_models import (
+    load_config,
+    NeocortexConfig,
+    SystemConfig,
+    IngestConfig,
+    NeuroConfig,
+    VAEConfig,
+    PPOConfig,
+    WorldModelConfig
+)
+
+
+# =============================================================================
+# FIXTURES
+# =============================================================================
+
+@pytest.fixture
+def valid_system_config():
+    """Valid system configuration."""
+    return {
+        "data_dir": "/tmp/neocortex/data",
+        "checkpoint_dir": "/tmp/neocortex/checkpoints",
+        "brain_workers": 2,
+        "queue_maxsize": 500,
+        "log_level": "INFO",
+        "log_to_file": True
+    }
+
+
+@pytest.fixture
+def valid_ingest_config():
+    """Valid ingestion configuration."""
+    return {
+        "feature_list": ["rsi", "bb_percent", "obi"],
+        "normalization_method": "zscore",
+        "normalization_window": 200,
+        "buffer_size": 5000,
+        "min_samples_before_ready": 50,
+        "nan_strategy": "zero"
+    }
+
+
+@pytest.fixture
+def valid_vae_config():
+    """Valid VAE configuration."""
+    return {
+        "input_dim": 3,  # Matches 3 features
+        "hidden_dims": [64, 32],
+        "latent_dim": 8,
+        "learning_rate": 0.001,
+        "beta": 1.0,
+        "batch_size": 32,
+        "use_mean": True
+    }
+
+
+@pytest.fixture
+def valid_ppo_config():
+    """Valid PPO configuration."""
+    return {
+        "state_dim": 10,  # >= latent_dim
+        "action_dim": 3,
+        "hidden_dims": [128, 64],
+        "learning_rate": 0.0003,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_epsilon": 0.2,
+        "rollout_length": 1024,
+        "num_epochs": 5,
+        "minibatch_size": 32
+    }
+
+
+@pytest.fixture
+def valid_world_model_config():
+    """Valid World Model configuration."""
+    return {
+        "hidden_dim": 64,
+        "num_layers": 1,
+        "dropout": 0.1,
+        "learning_rate": 0.001,
+        "sequence_length": 32
+    }
+
+
+@pytest.fixture
+def valid_neuro_config(valid_vae_config, valid_ppo_config, valid_world_model_config):
+    """Valid neuro configuration."""
+    return {
+        "vae": valid_vae_config,
+        "ppo": valid_ppo_config,
+        "world_model": valid_world_model_config,
+        "checkpoint_every_n_steps": 500,
+        "keep_last_n_checkpoints": 3
+    }
+
+
+# =============================================================================
+# TEST 1: Valid Configuration Loads Successfully
+# =============================================================================
+
+def test_valid_config_loads(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that a fully valid configuration loads without errors."""
+    
+    # Create temporary config directory
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    # Write YAML files
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(valid_neuro_config, f)
+    
+    # Load and validate
+    config = load_config(config_dir)
+    
+    # Assertions
+    assert isinstance(config, NeocortexConfig)
+    assert config.system.brain_workers == 2
+    assert len(config.ingest.feature_list) == 3
+    assert config.neuro.vae.latent_dim == 8
+    assert config.neuro.ppo.state_dim == 10
+
+
+# =============================================================================
+# TEST 2: Missing Required Field -> ValidationError
+# =============================================================================
+
+def test_missing_required_field_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that missing required field raises ValidationError."""
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    # Create config with missing field (remove 'latent_dim' from VAE)
+    invalid_neuro = valid_neuro_config.copy()
+    invalid_vae = invalid_neuro["vae"].copy()
+    del invalid_vae["latent_dim"]  # Required field
+    invalid_neuro["vae"] = invalid_vae
+    
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(invalid_neuro, f)
+    
+    # Should raise ValidationError
+    with pytest.raises(ValidationError) as exc_info:
+        load_config(config_dir)
+    
+    # Verify error mentions missing field
+    assert "latent_dim" in str(exc_info.value).lower()
+
+
+# =============================================================================
+# TEST 3: Extra Unknown Field -> ValidationError
+# =============================================================================
+
+def test_extra_field_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that extra unknown field raises ValidationError (extra='forbid')."""
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    # Add unknown field to system config
+    invalid_system = valid_system_config.copy()
+    invalid_system["unknown_magic_parameter"] = 42  # Not in schema
+    
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(invalid_system, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(valid_neuro_config, f)
+    
+    # Should raise ValidationError due to extra='forbid'
+    with pytest.raises(ValidationError) as exc_info:
+        load_config(config_dir)
+    
+    # Verify error mentions extra field
+    error_str = str(exc_info.value).lower()
+    assert "extra" in error_str or "unknown_magic_parameter" in error_str
+
+
+# =============================================================================
+# TEST 4: Type Mismatch -> ValidationError
+# =============================================================================
+
+def test_type_mismatch_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that wrong types raise ValidationError."""
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    # Wrong type: brain_workers should be int, not string
+    invalid_system = valid_system_config.copy()
+    invalid_system["brain_workers"] = "two"  # String instead of int
+    
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(invalid_system, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(valid_neuro_config, f)
+    
+    with pytest.raises(ValidationError) as exc_info:
+        load_config(config_dir)
+    
+    assert "brain_workers" in str(exc_info.value).lower()
+
+
+# =============================================================================
+# TEST 5: Cross-Field Validation (VAE input_dim vs feature_list)
+# =============================================================================
+
+def test_cross_field_validation_vae_input_dim(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that VAE input_dim must match len(feature_list)."""
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    # Mismatch: feature_list has 3 items, but VAE input_dim=5
+    invalid_neuro = valid_neuro_config.copy()
+    invalid_neuro["vae"]["input_dim"] = 5  # Mismatch!
+    
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(invalid_neuro, f)
+    
+    with pytest.raises(ValidationError) as exc_info:
+        load_config(config_dir)
+    
+    error_str = str(exc_info.value).lower()
+    assert "input_dim" in error_str and "feature_list" in error_str
+
+
+# =============================================================================
+# TEST 6: Cross-Field Validation (PPO state_dim vs VAE latent_dim)
+# =============================================================================
+
+def test_cross_field_validation_ppo_state_dim(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that PPO state_dim must be >= VAE latent_dim."""
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    # Invalid: PPO state_dim (5) < VAE latent_dim (8)
+    invalid_neuro = valid_neuro_config.copy()
+    invalid_neuro["ppo"]["state_dim"] = 5  # Less than latent_dim=8
+    
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(invalid_neuro, f)
+    
+    with pytest.raises(ValidationError) as exc_info:
+        load_config(config_dir)
+    
+    error_str = str(exc_info.value).lower()
+    assert "state_dim" in error_str and "latent_dim" in error_str
+
+
+# =============================================================================
+# TEST 7: Missing Config File -> FileNotFoundError
+# =============================================================================
+
+def test_missing_config_file_fails(tmp_path):
+    """Test that missing config file raises FileNotFoundError."""
+    
+    config_dir = tmp_path / "empty_config"
+    config_dir.mkdir()
+    
+    # Don't create any YAML files
+    
+    with pytest.raises(FileNotFoundError) as exc_info:
+        load_config(config_dir)
+    
+    assert "system.yaml" in str(exc_info.value) or "system config" in str(exc_info.value).lower()
+
+
+# =============================================================================
+# TEST 8: Duplicate Features in feature_list
+# =============================================================================
+
+def test_duplicate_features_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that duplicate feature names are rejected."""
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    # Add duplicate feature
+    invalid_ingest = valid_ingest_config.copy()
+    invalid_ingest["feature_list"] = ["rsi", "obi", "rsi"]  # Duplicate 'rsi'
+    
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(invalid_ingest, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(valid_neuro_config, f)
+    
+    with pytest.raises(ValidationError) as exc_info:
+        load_config(config_dir)
+    
+    assert "duplicate" in str(exc_info.value).lower()
+
+
+# =============================================================================
+# TEST 9: Frozen Config (Immutability)
+# =============================================================================
+
+def test_config_is_frozen(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+    """Test that config models are immutable (frozen=True)."""
+    
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(valid_system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(valid_ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(valid_neuro_config, f)
+    
+    config = load_config(config_dir)
+    
+    # Attempt to modify should raise ValidationError (frozen models)
+    with pytest.raises(ValidationError):
+        config.system.brain_workers = 99
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

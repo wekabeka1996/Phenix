@@ -1,0 +1,34 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.1, pluggy-1.6.0
+rootdir: /home/wekabeka/Музыка/Phenix
+configfile: pytest.ini
+testpaths: tests, apps/reference/domains/feature_engineering/tests, apps/reference/domains/decision_making/tests
+plugins: asyncio-1.3.0, anyio-4.11.0, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1990 items / 17 deselected / 13 skipped / 1973 selected
+
+tests/adapters/test_binance_adapter.py .......s..s.......s..s            [  1%]
+tests/adapters/test_binance_leverage_hedge_mode.py ..............        [  1%]
+tests/api/test_api_health.py .                                           [  1%]
+tests/api/test_api_main.py ....                                          [  2%]
+tests/api/test_api_no_deprecated_imports.py .                            [  2%]
+tests/api/test_api_prod_metrics_smoke.py .....                           [  2%]
+tests/api/test_api_security.py ...                                       [  2%]
+tests/audit/test_critical_fixes.py ...........                           [  3%]
+tests/audit/test_execution_position_dead_modules_event_emission.py ...   [  3%]
+tests/bugfixes/test_p1_002_adapter_precision.py .                        [  3%]
+tests/config/test_brackets_fail_closed.py ......                         [  3%]
+tests/config/test_config_forensics.py ....                               [  3%]
+tests/config/test_config_mr_risk_gate_none_fix_01.py ...                 [  3%]
+tests/config/test_config_requires_execution_leverage_fields.py ......... [  4%]
+.....                                                                    [  4%]
+tests/config/test_config_strategy_ssot_freeze.py ...........             [  5%]
+tests/config/test_config_symbols_one_truth.py ......                     [  5%]
+tests/config/test_decision_making_fail_closed.py ..........              [  6%]
+tests/config/test_directional_sanity_ssot_strict_live.py .               [  6%]
+tests/config/test_execution_cooldown_after_close_from_yaml_v1.py .       [  6%]
+tests/config/test_exposure_guard_config.py .......                       [  6%]
+tests/config/test_fail_closed_config_loading.py .........                [  6%]
+tests/config/test_feature_engineering_strict_extra_forbid.py .           [  6%]
+tests/config/test_features_yaml_deprecated_strict.py ...                 [  7%]
+tests/config/test_loader_rejects_config_meta_keys.py 

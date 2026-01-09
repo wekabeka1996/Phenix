@@ -7,7 +7,6 @@
     ".github/workflows/gemini-triage.yml": {},
     ".github/workflows/gemini-dispatch.yml": {},
     "tools/config_default_path_map.yaml": {},
-    "deepseek_workspace/offline_analysis/aurora_market_llm-20251129T235042Z-1-001/aurora_market_llm/wandb/run-20251129_190756-0kngxlrh/files/config.yaml": {},
     "config/aurora/regime.yaml": {},
     "config/aurora/system.yaml": {
       "execution": null,
@@ -48,6 +47,16 @@
         "ERR"
       ]
     },
+    "vfoundation/dictionaries/global_v2_2_framework.yaml": {
+      "ops": [
+        "ASK",
+        "DEC",
+        "CMD",
+        "EVT",
+        "UPD",
+        "ERR"
+      ]
+    },
     "vfoundation/dictionaries/domains/domain_feature_engineering.yaml": {},
     "vfoundation/dictionaries/domains/domain_execution_position.yaml": {},
     "vfoundation/dictionaries/domains/domain_risk_management.yaml": {},
@@ -65,7 +74,12 @@
         "UPD",
         "ERR"
       ]
-    }
+    },
+    "apps/reference/dictionaries/verb_registry_v1.yaml": {},
+    "apps/reference/domains/neocortex/domain.yaml": {},
+    "apps/reference/domains/neocortex/config/system.yaml": {},
+    "apps/reference/domains/neocortex/config/neuro.yaml": {},
+    "apps/reference/domains/neocortex/config/ingest.yaml": {}
   },
   "merged_master": {}
 }

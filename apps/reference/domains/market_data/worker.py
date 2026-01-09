@@ -466,7 +466,12 @@ class MarketDataWorker:
                 self._logger.info("WebSocket loop cancelled")
                 break
             except Exception as e:
-                self._logger.error(f"WebSocket error: {e}, retrying in {retry_delay}s")
+                import traceback
+                tb_str = traceback.format_exc()
+                self._logger.error(
+                    f"WebSocket error: {type(e).__name__}: {e}, retrying in {retry_delay}s\n"
+                    f"Traceback:\n{tb_str}"
+                )
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, 30.0)
             finally:

@@ -81,9 +81,7 @@ class MRSignal:
     target_price: Optional[Decimal] = None
     confidence: Decimal = Decimal("0")
     timestamp_ms: int = 0
-    target_price: Optional[Decimal] = None
-    confidence: Decimal = Decimal("0")
-    timestamp_ms: int = 0
+    rsi: Optional[Decimal] = None
     why: str = ""
     # Enriched Context for Logging
     bar: Optional['Bar'] = None  # Full OHLCV
@@ -318,7 +316,10 @@ class MeanReversion1mStrategy:
         
         # Check cooldown
         if self._in_cooldown(state, timestamp_ms):
-            return self._neutral_signal(symbol, price, timestamp_ms, "cooldown", bar=completed_bar)
+            return self._neutral_signal(
+                symbol, price, timestamp_ms, "cooldown", 
+                bar=completed_bar, rsi=state.rsi
+            )
         
         # Check regime - only trade in FLAT regimes
         regime = self.get_regime(symbol)
@@ -329,7 +330,7 @@ class MeanReversion1mStrategy:
             return self._neutral_signal(
                 symbol, price, timestamp_ms, 
                 f"regime_not_flat:{regime}",
-                bar=completed_bar
+                bar=completed_bar, rsi=state.rsi
             )
             
         # Check whitelist if configured
@@ -337,7 +338,7 @@ class MeanReversion1mStrategy:
             return self._neutral_signal(
                 symbol, price, timestamp_ms,
                 f"regime_not_allowed:{flat_regime.name}",
-                bar=completed_bar
+                bar=completed_bar, rsi=state.rsi
             )
         
         # Get MR parameters for this regime (with config override support)
@@ -411,7 +412,7 @@ class MeanReversion1mStrategy:
         
         # Check BB is valid
         if bb is None:
-            return self._neutral_signal(symbol, current_price, timestamp_ms, "no_bb", bar=bar)
+            return self._neutral_signal(symbol, current_price, timestamp_ms, "no_bb", bar=bar, rsi=rsi)
         
         # Check BB width is within range
         bb_width = Decimal(str(bb.width))
@@ -419,13 +420,13 @@ class MeanReversion1mStrategy:
             return self._neutral_signal(
                 symbol, current_price, timestamp_ms, 
                 f"bb_width_too_narrow:{bb_width}",
-                bar=bar
+                bar=bar, rsi=rsi
             )
         if bb_width > self.config.max_bb_width:
             return self._neutral_signal(
                 symbol, current_price, timestamp_ms,
                 f"bb_width_too_wide:{bb_width}",
-                bar=bar
+                bar=bar, rsi=rsi
             )
         
         # Evaluate signal based on %B
@@ -462,7 +463,7 @@ class MeanReversion1mStrategy:
             return self._neutral_signal(
                 symbol, current_price, timestamp_ms,
                 f"no_signal:pct_b={pct_b:.3f}",
-                bar=bar
+                bar=bar, rsi=rsi
             )
         
         # Clamp confidence
@@ -507,6 +508,7 @@ class MeanReversion1mStrategy:
             target_price=target_price,
             confidence=confidence,
             timestamp_ms=timestamp_ms,
+            rsi=rsi,
             why=why,
             bar=bar,
             config_params=self.config.__dict__.copy() if self.config else None
@@ -518,7 +520,8 @@ class MeanReversion1mStrategy:
         price: Decimal,
         timestamp_ms: int,
         reason: str,
-        bar: Optional[Bar] = None
+        bar: Optional[Bar] = None,
+        rsi: Optional[Decimal] = None
     ) -> MRSignal:
         """Create neutral (no action) signal."""
         return MRSignal(
@@ -526,6 +529,7 @@ class MeanReversion1mStrategy:
             symbol=symbol,
             price=price,
             timestamp_ms=timestamp_ms,
+            rsi=rsi,
             why=f"neutral:{reason}",
             bar=bar,
             config_params=self.config.__dict__.copy() if self.config else None

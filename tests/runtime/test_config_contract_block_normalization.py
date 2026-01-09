@@ -8,6 +8,7 @@ from apps.reference.domains.decision_making.decision_making import DecisionMakin
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.contracts.reject_reasons import RejectReason
 from vfoundation.core.protocol import Message
+from tests.conftest import make_app_cfg_stub
 
 class TestConfigContractNormalization:
     """
@@ -21,15 +22,13 @@ class TestConfigContractNormalization:
 
     @pytest.fixture
     def decision_making(self):
-        config_mock = MagicMock()
-        # Minimal mock setup to bypass __init__ checks
-        config_mock.instruments = {} 
-        config_mock.decision = {}
-        config_mock.tca_prefs = {}
-        config_mock.risk_budgets = {}
-        
-        # Mocking DomainConfigResolver inside __init__ is hard without patching.
-        # We'll use patch context in tests or just mock the dependencies.
+        config_mock = make_app_cfg_stub(
+            instruments={},
+            decision={},
+            tca_prefs={},
+            risk_budgets={},
+            domains__decision_making__flip_hysteresis_mult=1.0
+        )
         
         fsm_mock = MagicMock()
         with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver, \
@@ -38,14 +37,7 @@ class TestConfigContractNormalization:
              
             # Setup valid resolver defaults to avoid init crash
             mock_res_inst = MockResolver.return_value
-            mock_res_inst.get_decision_making.return_value.qos.symbol_cooldown_sec = 1
-            mock_res_inst.get_decision_making.return_value.qos.exposure_block_cooldown_sec = 0
-            mock_res_inst.get_decision_making.return_value.qos.max_intents_per_minute_per_symbol = 100
-            mock_res_inst.get_decision_making.return_value.qos.mode = "monitor"
-            
-            # Position sizing Mock
-            mock_res_inst.get_decision_making.return_value.position_sizing.min_position_size_usd = 10
-            mock_res_inst.get_decision_making.return_value.position_sizing.liquidity_based_cap_usd = 1000
+            mock_res_inst.get_decision_making.return_value = config_mock.domains.decision_making
 
             dm = DecisionMaking(fsm_mock, config_mock)
             
@@ -86,12 +78,18 @@ class TestConfigContractNormalization:
         # Assert 2: Metric incremented
         mock_inc.assert_called_once_with(path="alpha.model.conf", symbol="BTCUSDT")
         
-        # Assert 3: FSM did NOT emit intent
+        # Assert 3: FSM did NOT emit intent but DID emit DECISION_BLOCKED
         # (check fsm.emit calls, ensuring none are TRADE_INTENT_PROPOSED)
-        for call in decision_making.fsm.emit.call_args_list:
-            args, kwargs = call
-            event_name = args[0] if args else kwargs.get("name")
-            assert event_name != "EVT:TRADE_INTENT_PROPOSED", "Trade intent was incorrectly emitted for blocked config!"
+        emitted_events = [args[0] if args else kwargs.get("name") for args, kwargs in decision_making.fsm.emit.call_args_list]
+        
+        assert "EVT:TRADE_INTENT_PROPOSED" not in emitted_events, "Trade intent was incorrectly emitted for blocked config!"
+        assert "EVT:DECISION_BLOCKED" in emitted_events, "DECISION_BLOCKED was not emitted!"
+        
+        # Verify payload details for DECISION_BLOCKED
+        call_args = decision_making.fsm.emit.call_args_list[-1]
+        args, _ = call_args
+        assert args[0] == "EVT:DECISION_BLOCKED"
+        assert args[1]["reason_code"] == "NRR-CFG-001" # CFG_MISSING mapped code
 
     @patch("apps.reference.domains.decision_making.decision_making.inc_config_contract_violation")
     def test_mr_gateway_catcher(self, mock_inc, decision_making):
@@ -106,9 +104,21 @@ class TestConfigContractNormalization:
                 verb="STRATEGY_SIGNAL_PRODUCED",
                 src="strategy",
                 dst="dm",
-                pld={"strategy_id": "mean_reversion", "symbol": "BTCUSDT", "side": "BUY", "ts_ms": 123456789},
+                pld={"strategy_id": "mean_reversion", "symbol": "BTCUSDT", "side": "BUY", "ts_ms": 123456789, "readiness": {"warmup_ok": True}},
             )
             decision_making._on_strategy_signal_gateway(msg)
 
             mock_inc.assert_called_once()
-            decision_making.fsm.emit.assert_not_called()
+            
+            # TASK-CFG-REJECT-INTEGRATE-01: Verify TRADE_INTENT_REJECTED emission
+            decision_making.fsm.emit.assert_called()
+            call_args = decision_making.fsm.emit.call_args_list[0]
+            args, kwargs = call_args
+            event_name = args[0] if args else kwargs.get("name")
+            payload = args[1]
+            
+            assert event_name == "EVT:TRADE_INTENT_REJECTED"
+            assert payload["reason_code"] == "NRR-CFG-001" # Defaults to MISSING
+            assert payload["symbol"] == "BTCUSDT"
+            # assert payload["stage"] == "strategy_signal_gateway" # removed, it is in details
+            assert payload["details"]["stage"] == "strategy_signal_gateway"

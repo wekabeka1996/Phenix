@@ -1,12 +1,12 @@
 """
 Mean Reversion Decision Handler.
 
-Track B: Integrates Mean Reversion 1m Strategy into DecisionMaking workflow.
+Track B: Integrates Mean Reversion 3m Strategy into DecisionMaking workflow.
 
 This handler:
-1. Receives tick data via EVT:MARKET_TICK_RECEIVED
-2. Aggregates ticks into 1m bars via BarResampler
-3. Computes MR signals via MeanReversion1mStrategy
+1. Receives tick data via EVT:MARKET_TICK_FORWARDED (forwarded after feature calc)
+2. Aggregates ticks into 3m bars via BarResampler
+3. Computes MR signals via MeanReversion3mStrategy
 4. Emits EVT:STRATEGY_SIGNAL_PRODUCED when signal is actionable
 
 Activation SSOT: strategies_registry.assignments (per symbol).
@@ -70,16 +70,15 @@ def normalize_ts_ms(raw: Any) -> int:
 
 
 class MeanReversionHandler:
-    """
-    Handler for Mean Reversion 1m strategy integration with DecisionMaking.
+    """Handler for Mean Reversion 3m strategy integration with DecisionMaking.
     
     Workflow:
-    1. on_tick() - receives tick from FeatureEngineering
-    2. Strategy processes tick → bar resampling → MR signal
-    3. If signal is actionable → emit EVT:STRATEGY_SIGNAL_PRODUCED
+        1. on_tick() - receives tick from FeatureEngineering via EVT:MARKET_TICK_FORWARDED
+        2. Strategy processes tick, bar resampling (3 min), MR signal
+        3. If signal is actionable, emit EVT:STRATEGY_SIGNAL_PRODUCED
     
     Activation SSOT: strategies_registry.assignments.
-    The config flag mean_reversion.enabled is a global kill-switch (can disable, does not activate without assignment).
+    The config flag mean_reversion.enabled is a global kill-switch.
     """
     
     def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
@@ -160,14 +159,14 @@ class MeanReversionHandler:
         """Attach FSM listeners (ticks + regime)."""
         if not self._enabled:
             return
-        self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self._on_market_tick)
+        self.fsm.listen("EVT:MARKET_TICK_FORWARDED", self._on_market_tick)
         self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
         self.fsm.listen("EVT:FEATURES_CALCULATED", self._on_features_calculated)
         self.mlog.info(
             "MR_REGISTER %s",
             json.dumps(
                 {
-                    "events": ["EVT:MARKET_TICK_RECEIVED", "EVT:REGIME_DETECTED", "EVT:FEATURES_CALCULATED"],
+                    "events": ["EVT:MARKET_TICK_FORWARDED", "EVT:REGIME_DETECTED", "EVT:FEATURES_CALCULATED"],
                     "enabled_symbols": sorted(self._enabled_symbols),
                 },
                 ensure_ascii=False,
@@ -277,6 +276,9 @@ class MeanReversionHandler:
         # Final activation is assignment ∩ enabled assets.
         self._enabled_symbols = set(mr_assigned_symbols) & set(self._enabled_symbols)
         self._enabled = bool(self._enabled_symbols)
+        
+        # TF-SSOT-PACK-001: SSOT timeframe from config (removes hardcode)
+        self.timeframe_sec = self._mr_config.timeframe_sec
         
         if not self._enabled_symbols:
             self.logger.info("Mean Reversion 1m: no assigned+enabled symbols; handler disabled")
@@ -392,6 +394,8 @@ class MeanReversionHandler:
         # Log Bar if completed
         if signal and signal.bar:
             self._log_bar(signal)
+            # TF-BAR-SSOT-001: Emit bar closed event for FE to use tf_sec
+            self.fsm.emit("EVT:BAR_CLOSED", payload={"symbol": symbol, "bar": signal.bar}, why="bar_closed")
         
         if signal and signal.is_signal:
             if self._check_liquidity_gate(symbol):
@@ -605,6 +609,7 @@ class MeanReversionHandler:
             "schema_version": 1,
             "strategy_id": "mean_reversion",
             "symbol": symbol,
+            "tf_sec": self.timeframe_sec,
             "side": side,
             "readiness": {"warmup_ok": True},
             "score": float(signal.confidence),
@@ -664,6 +669,19 @@ class MeanReversionHandler:
             f"[{symbol}] EVT:STRATEGY_SIGNAL_PRODUCED emitted: {side} @ {signal.entry_price}"
         )
 
+        # TAP LOG: MR signal emitted
+        log_entry = {
+            "symbol": symbol,
+            "tf_sec": self.timeframe_sec,
+            "bar_end_ts_ms": signal.bar.end_ts_ms if signal.bar else 0,
+            "bar_id": f"{symbol}:{self.timeframe_sec}:{signal.bar.bar_id if signal.bar else 0}",
+            "seq": getattr(self, 'seq_counter', 0),
+            "source": "mr_signal_emitted",
+            "why": signal.why
+        }
+        print(json.dumps(log_entry), flush=True)
+        self.seq_counter = getattr(self, 'seq_counter', 0) + 1
+
     def _on_regime_detected(self, event: Message) -> None:
         try:
             pld = event.pld or {}
@@ -702,6 +720,53 @@ class MeanReversionHandler:
 
             if not symbol or symbol not in self._enabled_symbols:
                 return
+
+            # TF guard
+            tf_sec = pld.get("tf_sec")
+            if tf_sec is None:
+                self.logger.warning(f"MR rejecting features for {symbol}: missing tf_sec")
+                # TAP LOG: MR features rejected
+                log_entry = {
+                    "symbol": symbol,
+                    "tf_sec": None,
+                    "bar_end_ts_ms": pld.get("ts", 0),
+                    "bar_id": f"{symbol}:None:{pld.get('ts', 0)}",
+                    "seq": getattr(self, 'seq_counter', 0),
+                    "source": "mr_features_rejected",
+                    "why": "missing_tf"
+                }
+                print(json.dumps(log_entry), flush=True)
+                return
+            if tf_sec != self.timeframe_sec:
+                self.logger.warning(f"MR rejecting features for {symbol}: tf_sec {tf_sec} != {self.timeframe_sec}")
+                # TAP LOG: MR features rejected
+                log_entry = {
+                    "symbol": symbol,
+                    "tf_sec": tf_sec,
+                    "bar_end_ts_ms": pld.get("ts", 0),
+                    "bar_id": f"{symbol}:{tf_sec}:{pld.get('ts', 0)}",
+                    "seq": getattr(self, 'seq_counter', 0),
+                    "source": "mr_features_rejected",
+                    "why": "tf_mismatch"
+                }
+                print(json.dumps(log_entry), flush=True)
+                return
+
+            # Update features cache
+            self.features[symbol] = features
+
+            # TAP LOG: MR accepted features
+            log_entry = {
+                "symbol": symbol,
+                "tf_sec": self.timeframe_sec,
+                "bar_end_ts_ms": pld.get("ts", 0),
+                "bar_id": f"{symbol}:{self.timeframe_sec}:{pld.get('ts', 0)}",
+                "seq": getattr(self, 'seq_counter', 0),
+                "source": "mr_features_accepted",
+                "why": "features_stored"
+            }
+            print(json.dumps(log_entry), flush=True)
+            self.seq_counter = getattr(self, 'seq_counter', 0) + 1
 
             # Update cache
             kappa_raw = features.get("liquidity_kappa")
@@ -868,7 +933,20 @@ class MeanReversionHandler:
                                 self._stats["neutral_bars"] += 1
                             self._last_counted_bar_end_ts_ms[symbol] = bar_end
 
-                            self.mlog.debug(
+                            # TAP LOG: Bar closed and ready
+                            log_entry = {
+                                "symbol": symbol,
+                                "tf_sec": self.timeframe_sec,
+                                "bar_end_ts_ms": bar.end_ts_ms,
+                                "bar_id": f"{symbol}:{self.timeframe_sec}:{bar.end_ts_ms}",
+                                "seq": getattr(self, 'seq_counter', 0),
+                                "source": "bar_closed",
+                                "why": "bar_ready"
+                            }
+                            print(json.dumps(log_entry), flush=True)
+                            self.seq_counter = getattr(self, 'seq_counter', 0) + 1
+
+                            self.mlog.info(
                                 "MR_BAR %s",
                                 json.dumps(
                                     {
@@ -893,6 +971,7 @@ class MeanReversionHandler:
                                         "atr": str(st.atr) if st.atr is not None else None,
                                         "rsi": float(st.rsi) if st.rsi is not None else None,
                                         "regime": regime,
+                                        "kappa": float(self._liquidity_kappa_map.get(symbol, 0)),
                                         "signal_type": signal.signal_type.name,
                                         "signal_why": signal.why,
                                         "counters": dict(self._stats),
@@ -909,7 +988,7 @@ class MeanReversionHandler:
         except Exception as e:
             self._stats["tick_processing_errors"] += 1
             self.logger.warning(
-                f"MRHandler: failed to process EVT:MARKET_TICK_RECEIVED: {e}",
+                f"MRHandler: failed to process EVT:MARKET_TICK_FORWARDED: {e}",
                 exc_info=True,
             )
     

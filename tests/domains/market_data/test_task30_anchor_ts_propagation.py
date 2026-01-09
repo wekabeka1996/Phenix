@@ -70,7 +70,7 @@ def test_feature_engineering_rejects_missing_anchor_ts_ms(monkeypatch):
 
     fsm = _DummyFsm()
     config = get_config()
-    fe = FeatureEngineering(fsm=fsm, config=config, feature_store=None)
+    fe = FeatureEngineering(fsm=fsm, config=config)
     monkeypatch.setattr(fe, "_log_features_to_file", lambda *_a, **_kw: None)
 
     with pytest.raises(ConfigContractError):

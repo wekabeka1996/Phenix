@@ -7,6 +7,7 @@ from apps.reference.domains.decision_making.decision_making import DecisionMakin
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.risk_management.daily_gate import DailyRiskState
 from apps.reference.config_contract import ConfigContractError
+from tests.conftest import make_app_cfg_stub
 
 # =============================================================================
 # PART D1: STATIC ANALYSIS (AST AST Proof)
@@ -140,16 +141,12 @@ def test_risk_management_contract_missing_weights(mock_fsm):
         }
     }
     
-    rm = RiskManagement(mock_fsm, bad_config)
-    # Mock daily gate to PASS
-    rm.daily_risk_state.can_open = MagicMock(return_value=(True, {}))
-    
-    # Should raise ConfigContractError
+    # Should raise ConfigContractError on init
     with pytest.raises(ConfigContractError) as exc:
-        rm._calculate_risk_parameters({"price": 100, "delta_price": 1})
+        rm = RiskManagement(mock_fsm, bad_config)
     
-    assert "risk_score_weights" in exc.value.path
-    assert "empty or missing" in exc.value.why
+    assert "risk.daily.enabled" in exc.value.path
+    assert "enabled required" in exc.value.why
 
 def test_daily_gate_fails_closed_missing_config():
     """DailyGate must fail closed (raise ConfigContractError) if daily config missing."""
@@ -173,23 +170,25 @@ def test_decision_making_contract_missing_sl(mock_fsm):
     
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         mock_res_inst = MockResolver.return_value
-        dm_cfg = MagicMock()
-        dm_cfg.qos.exposure_block_cooldown_sec = 0
-        dm_cfg.qos.max_intents_per_minute_per_symbol = 100
-        dm_cfg.qos.mode = "monitor"
-        dm_cfg.qos.symbol_cooldown_sec = 1
-        dm_cfg.qos.enforce = False
-        dm_cfg.position_sizing.min_position_size_usd = 10
-        dm_cfg.position_sizing.liquidity_based_cap_usd = 1000
-        dm_cfg.arming.require_regime_warmup = False
-        dm_cfg.arming.retry_backoff_ms = 0
-        dm_cfg.arming.max_attempts = 1
-        dm_cfg.features.ttl_sec = 60
-        dm_cfg.bar_gating.enable = False
-        dm_cfg.bar_gating.bar_ms = 60_000
-        dm_cfg.behavior_fsm.enable = False
-        dm_cfg.behavior_fsm.high_vol_multiplier = 2.0
-        dm_cfg.behavior_fsm.low_vol_multiplier = 0.5
+        dm_cfg = make_app_cfg_stub(
+            domains__decision_making__qos__exposure_block_cooldown_sec=0,
+            domains__decision_making__qos__max_intents_per_minute_per_symbol=100,
+            domains__decision_making__qos__mode="monitor",
+            domains__decision_making__qos__symbol_cooldown_sec=1,
+            domains__decision_making__qos__enforce=False,
+            domains__decision_making__position_sizing__min_position_size_usd=10,
+            domains__decision_making__position_sizing__liquidity_based_cap_usd=1000,
+            domains__decision_making__arming__require_regime_warmup=False,
+            domains__decision_making__arming__retry_backoff_ms=0,
+            domains__decision_making__arming__max_attempts=1,
+            domains__decision_making__features__ttl_sec=60,
+            domains__decision_making__bar_gating__enable=False,
+            domains__decision_making__bar_gating__bar_ms=60000,
+            domains__decision_making__behavior_fsm__enable=False,
+            domains__decision_making__behavior_fsm__high_vol_multiplier=2.0,
+            domains__decision_making__behavior_fsm__low_vol_multiplier=0.5,
+            domains__decision_making__flip_hysteresis_mult=1.0
+        ).domains.decision_making
 
         mock_res_inst.get_decision_making.return_value = dm_cfg
 

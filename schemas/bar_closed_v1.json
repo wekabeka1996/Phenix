@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/bar_closed_v1.json",
+  "title": "EVT:BAR_CLOSED payload schema",
+  "description": "Emitted when a bar period closes. SSOT for bar-based calculations.",
+  "type": "object",
+  "required": ["symbol", "bar", "ts_ms"],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol (e.g., BTCUSDT)"
+    },
+    "ts_ms": {
+      "type": "integer",
+      "description": "Event timestamp in milliseconds"
+    },
+    "bar": {
+      "type": "object",
+      "description": "Completed OHLCV bar",
+      "required": [
+        "symbol",
+        "timeframe_sec",
+        "start_ts_ms",
+        "end_ts_ms",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string"
+        },
+        "timeframe_sec": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Bar duration in seconds (e.g., 180 for 3m, 300 for 5m)"
+        },
+        "start_ts_ms": {
+          "type": "integer",
+          "description": "Bar start timestamp (milliseconds)"
+        },
+        "end_ts_ms": {
+          "type": "integer",
+          "description": "Bar end timestamp (milliseconds)"
+        },
+        "open": {
+          "type": "string",
+          "description": "Opening price (Decimal serialized)"
+        },
+        "high": {
+          "type": "string",
+          "description": "Highest price during bar"
+        },
+        "low": {
+          "type": "string",
+          "description": "Lowest price during bar"
+        },
+        "close": {
+          "type": "string",
+          "description": "Closing price"
+        },
+        "volume": {
+          "type": "string",
+          "description": "Total volume during bar"
+        },
+        "trade_count": {
+          "type": "integer",
+          "description": "Number of trades in bar"
+        },
+        "gap_bars_skipped": {
+          "type": "integer",
+          "default": 0,
+          "description": "Number of bars skipped due to gap"
+        },
+        "is_gap_bar": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if this bar was preceded by a gap"
+        }
+      }
+    },
+    "why": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "Human-readable reason for event"
+    }
+  }
+}

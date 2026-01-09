@@ -3,6 +3,8 @@ Tests for drift metrics integration in /metrics endpoint.
 """
 
 import pytest
+pytest.skip("LEGACY: drift_monitor module removed; replaced by monitoring in runtime domains.", allow_module_level=True)
+
 import sys
 from pathlib import Path
 

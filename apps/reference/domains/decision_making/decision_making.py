@@ -9,6 +9,7 @@ CFG-DOMAINS-STEP-02: Enforces AuroraConfig contract (not dict).
 """
 
 import decimal
+import json
 import logging
 import time
 from collections import deque
@@ -29,6 +30,7 @@ from .dm_log_adapter import (
 )
 # FTR-07: Import DecisionContext for typed feature access
 from .decision_context import DecisionContext, create_decision_context
+from .schemas_decision_blocked import DecisionBlockedPayload
 from .sizing_margin_first import (
     compute_notional_target,
     compute_qty,
@@ -42,6 +44,7 @@ from apps.reference.config_models import AuroraConfig
 from apps.reference.telemetry.metrics import (
     inc_decision_deferred,
     inc_config_contract_violation,
+    inc_decision_blocked,
     inc_warmup_block,
 )
 from vfoundation.core.why_codes import WhyCode, format_why_with_details
@@ -112,6 +115,8 @@ class DecisionMaking:
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
+
+        self.seq_counter = 0
 
         self.symbol_states: Dict[str, Dict[str, Any]] = defaultdict(
             lambda: {"features": None, "risk": None}
@@ -280,14 +285,9 @@ class DecisionMaking:
         self.features_ttl_sec = dm_cfg.features.ttl_sec
 
         # Flip orchestration smoothing (domain config)
-        try:
-            self.flip_hysteresis_enabled = bool(getattr(flip_cfg, "enabled", True))
-        except Exception:
-            self.flip_hysteresis_enabled = True
-        try:
-            self.flip_hysteresis_mult = float(getattr(flip_cfg, "hysteresis_mult", 1.0))
-        except Exception:
-            self.flip_hysteresis_mult = 1.0
+        flip_cfg = getattr(dm_cfg, "flip", None)
+        self.flip_hysteresis_enabled = flip_cfg.enabled if flip_cfg else True
+        self.flip_hysteresis_mult = flip_cfg.hysteresis_mult if flip_cfg else 1.0
         if self.flip_hysteresis_mult < 1.0:
             self.flip_hysteresis_mult = 1.0
         
@@ -910,16 +910,33 @@ class DecisionMaking:
             # 1. Normalize Reason
             reason = normalize_config_error(e)
             
-            # 2. Block Trade (Implicitly by not emitting INTENT_PROPOSED and returning)
-            
+            # 2. Map to NRR
+            nrr_code = NormalizedRejectReasons.CONFIG_CONTRACT_MISSING
+            if "CFG_INVALID" in reason:
+                nrr_code = NormalizedRejectReasons.CONFIG_CONTRACT_INVALID
+
             # 3. Metric & Log
             caught_symbol = e.symbol or symbol
             inc_config_contract_violation(path=e.path or "unknown", symbol=caught_symbol or "unknown")
             self.logger.critical(f"[{caught_symbol or 'unknown'}] CONFIG BLOCK: {reason} - {e.why}")
             
-            # 4. Record blocked intent (optional but good for visibility)
+            # 4. Record blocked intent
             if caught_symbol:
                 self._record_blocked_intent(caught_symbol)
+            
+            # 5. Emit Rejection Event (No Ghosts)
+            # TASK-CFG-REJECT-INTEGRATE-01
+            self._emit_trade_intent_rejected(
+                symbol=caught_symbol or "unknown",
+                strategy_id=str(strategy_id),
+                side=side,
+                rid=str(rid),
+                reason_code=nrr_code,
+                reason=reason,
+                context="strategy_signal_gateway:config_contract_violation",
+                details={"path": e.path, "why": e.why, "stage": "strategy_signal_gateway"},
+                why_chain=why_chain or ["config_contract_violation"],
+            )
             return
 
         except Exception as e:
@@ -1151,25 +1168,25 @@ class DecisionMaking:
             side_bias_state = SideBiasState(
                 buy_count=buy_count,
                 sell_count=sell_count,
-                window_sec=float(getattr(aurora_cfg.decision, "side_bias_window_sec", 420)),
-                target_ratio=float(getattr(aurora_cfg.decision, "side_bias_target_ratio", 0.72)),
-                penalty_factor=float(getattr(aurora_cfg.decision, "side_bias_penalty_factor", 0.25)),
-                min_intents=int(getattr(aurora_cfg.decision, "side_bias_min_intents", 18)),
+                window_sec=aurora_cfg.decision.side_bias_window_sec or 420,
+                target_ratio=aurora_cfg.decision.side_bias_target_ratio or 0.72,
+                penalty_factor=aurora_cfg.decision.side_bias_penalty_factor or 0.25,
+                min_intents=aurora_cfg.decision.side_bias_min_intents or 18,
             )
             
             # Get direction strength config
             ds_cfg = getattr(aurora_cfg.decision, "direction_strength_scoring", None)
             direction_strength_cfg = {
-                "directional_features": list(getattr(ds_cfg, "directional_features", [])) if ds_cfg else [],
-                "strength_features": list(getattr(ds_cfg, "strength_features", [])) if ds_cfg else [],
-                "strength_alpha": float(getattr(ds_cfg, "strength_alpha", 0.5)) if ds_cfg else 0.5,
-                "strength_cap": float(getattr(ds_cfg, "strength_cap", 1.5)) if ds_cfg else 1.5,
+                "directional_features": list(ds_cfg.directional_features) if ds_cfg else [],
+                "strength_features": list(ds_cfg.strength_features) if ds_cfg else [],
+                "strength_alpha": ds_cfg.strength_alpha if ds_cfg else 0.5,
+                "strength_cap": ds_cfg.strength_cap if ds_cfg else 1.5,
             }
             
             signals_cfg = getattr(aurora_cfg.decision, "signals", None)
             delta_price_cap_pct = decimal.Decimal(
-                str(getattr(signals_cfg, "delta_price_cap_pct", "0.005"))
-            ) if signals_cfg else decimal.Decimal("0.005")
+                str(signals_cfg.delta_price_cap_pct)
+            ) if signals_cfg and signals_cfg.delta_price_cap_pct else decimal.Decimal("0.005")
             
             # Call kernel
             kernel_result = AuroraScoringKernel.compute(
@@ -1702,7 +1719,7 @@ class DecisionMaking:
                         self.fsm.emit(
                             "EVT:ALPHA_SCORE_CALCULATED",
                             payload=alpha_payload,
-                            why="alpha_calculation",
+                            why="alpha_scores_calculated",
                             data_ref=[
                                 f"model_{score.model_name}" for score in alpha_scores]
                         )
@@ -1745,10 +1762,36 @@ class DecisionMaking:
             # TASK 17: Central Interception Point
             reason = normalize_config_error(e)
             caught_symbol = e.symbol or symbol
+            
+            # Map to NRR
+            nrr_code = NormalizedRejectReasons.CONFIG_CONTRACT_MISSING
+            if "CFG_INVALID" in reason:
+                nrr_code = NormalizedRejectReasons.CONFIG_CONTRACT_INVALID
+
             inc_config_contract_violation(path=e.path or "unknown", symbol=caught_symbol or "unknown")
             self.logger.critical(f"[{caught_symbol or 'unknown'}] CONFIG BLOCK: {reason} - {e.why}")
             if caught_symbol:
                 self._record_blocked_intent(caught_symbol)
+            
+            # Emit DECISION_BLOCKED (Option 4B: Additive Health Event)
+            # Semantically distinct from TRADE_INTENT_REJECTED because no intent was formed yet.
+            try:
+                # Use Schema to ensure contract compliance
+                payload_obj = DecisionBlockedPayload(
+                    symbol=caught_symbol or "unknown",
+                    reason=reason,
+                    reason_code=nrr_code,
+                    path=str(e.path),
+                    why=str(e.why),
+                    stage="on_features",
+                    ts_ms=int(time.time() * 1000),
+                )
+                self.fsm.emit("EVT:DECISION_BLOCKED", payload_obj.model_dump(), why=f"decision_blocked:{nrr_code}")
+                # Metric
+                inc_decision_blocked(stage="on_features", reason_code=nrr_code)
+            except Exception as ex:
+                 self.logger.error(f"Failed to emit DECISION_BLOCKED: {ex}")
+            
             return
 
     def on_risk(self, event: Message) -> None:
@@ -2660,6 +2703,23 @@ class DecisionMaking:
         self.fsm.emit(
             "EVT:TRADE_INTENT_PROPOSED", payload=trade_intent, why="trade_intent", data_ref=why_chain
         )
+
+        # TAP LOG: DM intent emitted
+        # Note: tf_sec not available in this context; use trace_ts_ms instead
+        # Ensure seq_counter exists (defensive for mocked instances)
+        if not hasattr(self, 'seq_counter'):
+            self.seq_counter = 0
+        log_entry = {
+            "symbol": symbol,
+            "tf_sec": None,  # Not available in _propose_trade_intent scope
+            "bar_end_ts_ms": trace_ts_ms,
+            "bar_id": f"{symbol}:intent:{trace_ts_ms}",
+            "seq": self.seq_counter,
+            "source": "dm_intent_emitted",
+            "why": "intent_proposed"
+        }
+        print(json.dumps(log_entry), flush=True)
+        self.seq_counter += 1
 
         # EXP-DIRECTION: Side-bias penalty relies on an accurate recent history of
         # accepted (emitted) intents. Maintain that window here so it reflects

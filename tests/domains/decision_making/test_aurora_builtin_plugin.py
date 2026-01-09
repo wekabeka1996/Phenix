@@ -49,6 +49,7 @@ class TestAuroraBuiltinKillSwitch:
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
                     legacy_tick_path_enabled=False,
+                    timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
@@ -90,6 +91,7 @@ class TestAuroraBuiltinKillSwitch:
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
                     legacy_tick_path_enabled=False,
+                    timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.1,
                         side_bias_window_sec=420,

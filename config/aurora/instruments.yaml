@@ -26,7 +26,7 @@ instruments:
     step_size: "0.001"
     tick_size: "0.01"
     min_qty: "0.001"
-    min_notional: "5"
+    min_notional: "20"
     execution:
       margin_mode: "isolated"
       target_leverage: 41

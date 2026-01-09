@@ -1,0 +1,60 @@
+# Neocortex Domain Contract
+# vFoundation Domain Definition
+
+domain:
+  name: neocortex
+  type: shadow  # Observer mode - no trading signals (yet)
+  description: |
+    Autonomous learning domain using VAE + PPO for market representation learning.
+    Consumes market features and trade events to build latent embeddings and learn
+    optimal decision patterns. Shadow mode: observes without influencing trading.
+
+  # Event Bus Contract
+  imports:
+    # From feature_engineering domain
+    - event: EVT:FEATURES_CALCULATED
+      description: Market features (RSI, BB, OBI, liquidity, regime, etc.)
+      required: true
+      
+    # From decision_making domain
+    - event: EVT:TRADE_INTENT_PROPOSED
+      description: Trade decisions made by Aurora strategy logic
+      required: true
+      
+    # From execution_position domain
+    - event: EVT:POSITION_CLOSED
+      description: Position lifecycle completion (for reward calculation)
+      required: false  # Optional for initial learning phase
+
+  exports:
+    # Internal state monitoring
+    - event: EVT:NEOCORTEX_STATE_UPDATED
+      description: Latent state updates, model checkpoints, learning progress
+      frequency: periodic  # Every N observations or on significant change
+      
+    # Anomaly detection / insights
+    - event: EVT:NEOCORTEX_ALERT
+      description: Detected anomalies, distribution shifts, learning milestones
+      frequency: triggered  # On detection
+
+  # Process Architecture
+  processes:
+    main:
+      type: asyncio
+      description: Event ingestion, normalization, coordination
+      
+    brain:
+      type: multiprocessing
+      description: VAE encoding, PPO forward passes (CPU/GPU isolated)
+      isolation: true  # Separate process for crash isolation
+      
+  # Dependencies
+  requires:
+    - feature_engineering  # Must start before neocortex
+    - decision_making      # Must start before neocortex
+
+  # Resource Constraints (Example - adjust based on hardware)
+  resources:
+    memory_mb: 2048
+    cpu_cores: 2  # Main + Brain worker
+    gpu: optional  # Can use CPU-only mode

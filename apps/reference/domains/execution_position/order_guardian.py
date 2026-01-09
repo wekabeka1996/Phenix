@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from apps.reference.services.order_guardian import OrderGuardian as ServicesGuardian
 from apps.reference.services.ledger_store_adapter import LedgerStoreAdapter
-from apps.clean_TP_SL.order_ledger import OrderLedger
+from apps.reference.domains.execution_position.infra.order_ledger import OrderLedger
 from apps.reference.utils.accessors import aget
 
 

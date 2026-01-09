@@ -13,6 +13,7 @@ aurora:
   legacy_tick_path_enabled: false
   type: tick_based
   description: "Tick-based multi-signal alpha strategy with regime awareness"
+  timeframe_sec: 300
 
   # Global Aurora policy (DecisionConfig)
   decision:

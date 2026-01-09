@@ -14,7 +14,7 @@ NO FSM imports, NO business logic, only dataclasses and config wrapper.
 
 import decimal
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Union, Deque, Tuple
+from typing import TYPE_CHECKING, Optional, Union, Deque, Tuple, List
 from collections import deque
 
 if TYPE_CHECKING:
@@ -209,6 +209,10 @@ class FeatureEngineeringConfig:
     @property
     def enable_new_metrics(self) -> bool:
         return self._cfg.enable_new_metrics
+    
+    @property
+    def enabled_timeframes_sec(self) -> List[int]:
+        return self._cfg.enabled_timeframes_sec
     
     @property
     def ema_period_short(self) -> int:

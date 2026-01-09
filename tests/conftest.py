@@ -90,3 +90,182 @@ def root_mock_config(domains_config):
     """Mock configuration object with domains loaded."""
     print("DEBUG: mock_config fixture in tests/conftest.py CALLED")
     return MockAuroraConfig(domains_config)
+
+
+# MR Signal Factory for Tests
+from decimal import Decimal
+from apps.reference.domains.feature_engineering.mean_reversion_strategy import MRSignal, MRSignalType
+from apps.reference.domains.feature_engineering.bar_resampler import Bar
+
+
+def make_mr_signal(
+    symbol="BTCUSDT",
+    side="BUY",
+    is_signal=True,
+    signal_type=MRSignalType.LONG,
+    confidence=Decimal("0.99"),
+    entry_price=Decimal("100"),
+    stop_price=Decimal("90"),
+    target_price=Decimal("110"),
+    timestamp_ms=1700000000000,
+    bar=None,
+    **kwargs
+):
+    """Factory for MRSignal with defaults for testing."""
+    if bar is None:
+        bar = Bar(
+            symbol=symbol,
+            timeframe_sec=60,
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100"),
+            volume=Decimal("10"),
+            trade_count=5,
+            start_ts_ms=timestamp_ms - 60000,
+            end_ts_ms=timestamp_ms,
+        )
+    
+    return MRSignal(
+        signal_type=signal_type,
+        symbol=symbol,
+        price=Decimal("100"),
+        confidence=confidence,
+        entry_price=entry_price,
+        stop_price=stop_price,
+        target_price=target_price,
+        timestamp_ms=timestamp_ms,
+        bar=bar,
+        **kwargs
+    )
+
+
+# Config Stubs for Tests (no MagicMock in numeric fields)
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class QosCfgStub:
+    """Stub for QoS config."""
+    exposure_block_cooldown_sec: int = 60
+    max_intents_per_minute_per_symbol: int = 20
+    mode: str = "enforce"
+    symbol_cooldown_sec: int = 3
+    enforce: bool = True
+
+
+@dataclass
+class PositionSizingCfgStub:
+    """Stub for position sizing config."""
+    min_position_size_usd: float = 10.0
+    liquidity_based_cap_usd: float = 10000.0
+
+
+@dataclass
+class ArmingCfgStub:
+    """Stub for arming config."""
+    require_regime_warmup: bool = False
+    retry_backoff_ms: int = 0
+    max_attempts: int = 1
+
+
+@dataclass
+class FeaturesCfgStub:
+    """Stub for features config."""
+    ttl_sec: int = 30
+
+
+@dataclass
+class BarGatingCfgStub:
+    """Stub for bar gating config."""
+    enable: bool = False
+    bar_ms: int = 60000
+
+
+@dataclass
+class BehaviorFsmCfgStub:
+    """Stub for behavior FSM config."""
+    enable: bool = False
+    high_vol_multiplier: float = 2.0
+    low_vol_multiplier: float = 0.5
+
+
+@dataclass
+class DecisionMakingCfgStub:
+    """Stub for DecisionMaking config with real values."""
+    flip_hysteresis_mult: float = 1.0
+    qos: QosCfgStub = field(default_factory=QosCfgStub)
+    position_sizing: PositionSizingCfgStub = field(default_factory=PositionSizingCfgStub)
+    arming: ArmingCfgStub = field(default_factory=ArmingCfgStub)
+    features: FeaturesCfgStub = field(default_factory=FeaturesCfgStub)
+    bar_gating: BarGatingCfgStub = field(default_factory=BarGatingCfgStub)
+    behavior_fsm: BehaviorFsmCfgStub = field(default_factory=BehaviorFsmCfgStub)
+
+
+@dataclass
+class DomainsCfgStub:
+    """Stub for domains config."""
+    decision_making: DecisionMakingCfgStub = field(default_factory=DecisionMakingCfgStub)
+
+
+@dataclass
+class TradingCfgStub:
+    """Stub for trading config."""
+    tca_prefs: dict = field(default_factory=dict)
+    risk_budgets: dict = field(default_factory=dict)
+
+
+@dataclass
+class AppCfgStub:
+    """Stub for app config."""
+    domains: DomainsCfgStub = field(default_factory=DomainsCfgStub)
+    instruments: dict = field(default_factory=dict)
+    decision: dict = field(default_factory=dict)
+    trading: TradingCfgStub = field(default_factory=TradingCfgStub)
+    trading_market_data_use_multiprocessing: bool = False
+    trading_risk_trading_allowed_thresholds: dict = field(default_factory=dict)
+    decision_position_sizing_min_position_size_usd: float = 10.0
+    decision_position_sizing_liquidity_based_cap_usd: float = 10000.0
+    tca_prefs: Optional[dict] = None
+    risk_budgets: Optional[dict] = None
+    execution_max_equity_utilization_pct: float = 0.95
+    execution_max_portfolio_fraction: float = 0.95
+    execution_max_long_utilization_pct: float = 0.95
+    execution_max_short_utilization_pct: float = 0.95
+    execution_max_directional_ratio: float = 2.0
+    execution_max_concentration_pct: float = 0.1
+    execution_watchdog_ack_ttl_ms: int = 8000
+    execution_watchdog_fill_ttl_ms: int = 30000
+    execution_watchdog_rps_limit: int = 10
+    feature_engineering_ema_period_short: int = 3
+    feature_engineering_ema_period_long: int = 7
+    feature_engineering_volume_sma_length: int = 5
+    feature_engineering_volume_window_sec: int = 60
+    feature_engineering_volatility_sma_length: int = 10
+    feature_engineering_volatility_window_sec: int = 60
+    feature_engineering_liquidity_depth_half: int = 1000
+    feature_engineering_macro_sync_window: int = 60
+    feature_engineering_macro_sync_anchors: list = field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    risk_score_weights: dict = field(default_factory=dict)
+
+
+def make_app_cfg_stub(**overrides):
+    """Factory for AppCfgStub with overrides."""
+    stub = AppCfgStub()
+    for key, value in overrides.items():
+        if hasattr(stub, key):
+            setattr(stub, key, value)
+        elif key.startswith('domains__decision_making__'):
+            subkey = key[len('domains__decision_making__'):]
+            obj = stub.domains.decision_making
+            parts = subkey.split('__')
+            for part in parts[:-1]:
+                if hasattr(obj, part):
+                    obj = getattr(obj, part)
+                else:
+                    break
+            else:
+                setattr(obj, parts[-1], value)
+        # Add more if needed
+    return stub

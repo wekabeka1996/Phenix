@@ -34,6 +34,7 @@ from .deferred_scheduler import DeferredIntentScheduler
 from .why_codes import WhyCode, get_why_description, format_why_with_details
 from .dm_log_adapter import DecisionLog
 from .schemas import PortfolioStatePayload, PositionData
+from .schemas_decision_blocked import DecisionBlockedPayload
 
 # Track B: Mean Reversion handler (optional import)
 try:
@@ -51,6 +52,7 @@ __all__ = [
     "DecisionLog",
     "PortfolioStatePayload",
     "PositionData",
+    "DecisionBlockedPayload",
     "MeanReversionHandler",
 ]
 

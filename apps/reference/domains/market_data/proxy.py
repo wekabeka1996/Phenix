@@ -282,6 +282,10 @@ class MarketDataProxy:
                     msg = self._ipc_queue.get(timeout=self._queue_get_timeout_sec)
                     msg_type = msg.get("type")
                     
+                    # DIAG: Log first 10 messages for debugging
+                    if self._ticks_emitted < 10:
+                        LOG.info(f"📬 Queue received: type={msg_type}, symbol={msg.get('symbol')}")
+                    
                     if msg_type == MarketDataWorker.MSG_TYPE_TICK:
                         self._emit_tick(msg)
                         items_processed += 1

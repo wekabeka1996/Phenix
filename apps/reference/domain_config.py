@@ -205,9 +205,9 @@ class DomainConfigResolver:
         """Get position_tracking domain configuration."""
         return self._domains.position_tracking
     
-    def get_account_observer(self) -> AccountObserverDomainConfig:
-        """Get account_observer domain configuration."""
-        return self._domains.account_observer
+    # def get_account_observer(self) -> AccountObserverDomainConfig: (Deleted)
+    #    """Get account_observer domain configuration."""
+    #    return self._domains.account_observer
     
     # =========================================================================
     # LEGACY ACCESSORS (DEPRECATED)

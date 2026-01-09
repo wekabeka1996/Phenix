@@ -1,3 +1,6 @@
+import pytest
+pytest.skip("LEGACY: drift_monitor module removed; replaced by monitoring in runtime domains.", allow_module_level=True)
+
 import time
 from apps.monitoring.drift_monitor import (
     compute_drift,

@@ -1,0 +1,5 @@
+     41 EVT
+      6 DEC
+      2 UPD
+      2 CMD
+      1 ERR

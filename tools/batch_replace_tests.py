@@ -62,8 +62,6 @@ test_files = [
     "tests/test_execpos_contracts_pydantic_v2.py",
     "tests/test_execution_position_basic.py",
     "tests/test_feature_collection.py",
-    "tests/test_feature_store.py",
-    "tests/test_feature_store_multitimeframe.py",
     "tests/test_features_and_signals_live.py",
     "tests/test_features_signals_core.py",
     "tests/test_fsm_open.py",

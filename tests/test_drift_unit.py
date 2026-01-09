@@ -4,6 +4,9 @@ Unit tests for drift_monitor (FSMP-P1-T03).
 Coverage: perfect match, only decisions, only events, partial overlap.
 """
 
+import pytest
+pytest.skip("LEGACY: drift_monitor module removed; replaced by monitoring in runtime domains.", allow_module_level=True)
+
 import sys
 from pathlib import Path
 

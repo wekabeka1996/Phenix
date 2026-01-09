@@ -23,7 +23,7 @@ import decimal
 import json
 import logging
 import time
-from typing import Dict, Any, TYPE_CHECKING, Optional
+from typing import Dict, Any, TYPE_CHECKING, Optional, Tuple
 from collections import deque, defaultdict
 import os
 
@@ -111,6 +111,9 @@ class FeatureEngineering:
         
         # FTR-04: Initialize calculation engine
         self._engine = FeatureCalculationEngine(self.cfg)
+
+        # TF-BAR-SSOT-003: per-(symbol, tf_sec) last bar for multi-TF safety
+        self.last_bar: Dict[Tuple[str, int], Any] = {}
         
         # State tracking
         self.last_tick_data: Dict[str, dict] = {}
@@ -142,6 +145,9 @@ class FeatureEngineering:
         
         # Register event listener
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
+        
+        # BAR-FEATURES-001: Listen for bar events to emit bar-based features
+        self.fsm.listen("EVT:BAR_CLOSED", self.on_bar_closed)
         
         # FTR-05: Register Futures event listeners (config-gated)
         if self.cfg.futures_enabled:
@@ -448,8 +454,86 @@ class FeatureEngineering:
 
         self._calculate_and_emit_features(symbol, current_tick, last_tick)
 
+    def on_bar_closed(self, event: Message) -> None:
+        """Handle bar closed event - emit bar-features for MR strategy.
+        
+        BAR-FEATURES-001: When a bar closes, emit FEATURES_CALCULATED with
+        the bar's tf_sec so MR strategy can receive them.
+        """
+        pld = event.pld if hasattr(event, 'pld') else event
+        bar_data = pld.get("bar") if isinstance(pld, dict) else None
+        
+        if not bar_data:
+            self.logger.debug("on_bar_closed: no bar in payload")
+            return
+        
+        # Bar can be dict or object
+        if isinstance(bar_data, dict):
+            symbol = bar_data.get("symbol")
+            tf_sec = bar_data.get("timeframe_sec")
+        else:
+            symbol = getattr(bar_data, "symbol", None)
+            tf_sec = getattr(bar_data, "timeframe_sec", None)
+        
+        if not symbol or not tf_sec:
+            self.logger.debug(f"on_bar_closed: missing symbol={symbol} or tf_sec={tf_sec}")
+            return
+        
+        # Store bar for reference
+        self.last_bar[(symbol, tf_sec)] = bar_data
+        
+        # Get last tick for this symbol to calculate bar-features
+        last_tick = self.last_tick_data.get(symbol)
+        if not last_tick:
+            self.logger.debug(f"on_bar_closed: no last_tick for {symbol}, can't emit bar-features yet")
+            return
+        
+        # Create synthetic "current tick" from bar close for feature calculation
+        if isinstance(bar_data, dict):
+            close_price = bar_data.get("close")
+            bar_ts = bar_data.get("end_ts_ms")
+        else:
+            close_price = getattr(bar_data, "close", None)
+            bar_ts = getattr(bar_data, "end_ts_ms", None)
+        
+        if close_price is None or bar_ts is None:
+            self.logger.debug(f"on_bar_closed: missing close={close_price} or ts={bar_ts}")
+            return
+        
+        # Emit bar-features with bar's tf_sec
+        # For bar-features, create a synthetic "previous tick" that matches bar timing
+        # to avoid time_diff <= 0 rejection in _calculate_and_emit_features_for_tf
+        bar_tick = {
+            "symbol": symbol,
+            "ts": bar_ts,
+            "price": str(close_price),
+            "bid_size": last_tick.get("bid_size", "0"),
+            "ask_size": last_tick.get("ask_size", "0"),
+            "buy_volume": last_tick.get("buy_volume", "0"),
+            "sell_volume": last_tick.get("sell_volume", "0"),
+            "bid": last_tick.get("bid"),
+            "ask": last_tick.get("ask"),
+        }
+        
+        # Create synthetic last_tick with ts slightly before bar_ts
+        # to ensure time_diff > 0 in feature calculation
+        bar_last_tick = dict(last_tick)
+        bar_last_tick["ts"] = bar_ts - 1  # 1ms before bar close
+        
+        self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
+        self._calculate_and_emit_features_for_tf(symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick)
+
     def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> None:
-        """Calculate all features and emit EVT:FEATURES_CALCULATED."""
+        """Calculate tick-features and emit EVT:FEATURES_CALCULATED.
+        
+        FIX-TICK-FE-GATE-001: Tick-features do NOT depend on bars.
+        Bar-features (OHLC-based) will be a separate pipeline (BAR-FEATURES-001).
+        """
+        # Tick-features: emit immediately, tf_sec=0 indicates tick-level data
+        self._calculate_and_emit_features_for_tf(symbol, tf_sec=0, current_tick=current_tick, last_tick=last_tick)
+
+    def _calculate_and_emit_features_for_tf(self, symbol: str, tf_sec: int, current_tick: dict, last_tick: dict) -> None:
+        """Calculate all features for a specific tf_sec and emit EVT:FEATURES_CALCULATED."""
         try:
             # Initialize symbol state if needed
             if symbol not in self.symbol_states:
@@ -488,6 +572,7 @@ class FeatureEngineering:
                 payload_bad_dt = {
                     "ts": current_tick.get("ts", 0),
                     "symbol": symbol,
+                    "tf_sec": tf_sec,
                     "features": features_bad_dt,
                     "warmup": warmup_bad_dt,
                     "data_quality": {"drops": ["bad_dt"], "notes": []},
@@ -871,6 +956,7 @@ class FeatureEngineering:
             features_payload = {
                 "ts": current_tick["ts"],
                 "symbol": symbol,
+                "tf_sec": tf_sec,
                 "features": features,
                 "warmup": warmup,
                 "price_motion": pm_block,

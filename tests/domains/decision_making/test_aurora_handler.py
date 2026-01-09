@@ -27,6 +27,7 @@ class TestAuroraHandlerInit:
         config = SimpleNamespace(
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
+                    timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.15,
                         side_bias_window_sec=300,
@@ -54,6 +55,7 @@ class TestAuroraHandlerInit:
         assert handler.side_bias_window_sec == 300.0
         assert handler.side_bias_target_ratio == 0.7
         assert handler.regime_thresholds["HIGH_VOL"] == 1.5
+        assert handler.timeframe_sec == 300  # Verify mandatory field
 
 
 class TestRegimeCaching:
@@ -64,6 +66,7 @@ class TestRegimeCaching:
         config = SimpleNamespace(
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
+                    timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.1,
                         side_bias_window_sec=420,
@@ -109,6 +112,7 @@ class TestSideBiasHistory:
         config = SimpleNamespace(
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
+                    timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.1,
                         side_bias_window_sec=60,  # 60s window for easy testing
@@ -173,6 +177,7 @@ class TestSignalEmission:
         config = SimpleNamespace(
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
+                    timeframe_sec=300,  # MANDATORY per CLOSEOUT-BASELINE-001
                     decision=SimpleNamespace(
                         signal_threshold=0.1,
                         side_bias_window_sec=420,

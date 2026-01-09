@@ -13,5 +13,8 @@
 - VF-VERB-REG-05: Coverage-threshold fail policy (>=98%) → `tests/vfoundation/test_verb_registry_warn_only.py`.
 - VF-VERB-REG-06: Apply owner suggestions (>=70%) (only owner field) → `reports/VF-VERB-REG-06_applied.json`, `reports/VF-VERB-REG-06.md`.
 
+### AGENT-NAV-VERB-REG
+- AGENT-NAV-VERB-REG-01: Copilot/LLM навигация по контрактам (registry-first, owner-boundary) → `docs/AGENT_NAVIGATION_PLAYBOOK.md`.
+
 ### VF-DICT
 - VF-DICT-A-01: Parse-all dictionary YAML + minimal invariants (ops/ttl) → `tests/vfoundation/test_dictionaries_parse_all.py`.

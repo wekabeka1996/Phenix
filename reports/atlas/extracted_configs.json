@@ -3322,1117 +3322,6 @@
       }
     }
   },
-  "deepseek_workspace/offline_analysis/aurora_market_llm-20251129T235042Z-1-001/aurora_market_llm/wandb/run-20251129_190756-0kngxlrh/files/config.yaml": {
-    "keys": [
-      "_name_or_path",
-      "_wandb",
-      "accelerator_config",
-      "activation_offloading",
-      "adafactor",
-      "adam_beta1",
-      "adam_beta2",
-      "adam_epsilon",
-      "add_cross_attention",
-      "architectures",
-      "assistant_only_loss",
-      "attention_bias",
-      "attention_dropout",
-      "auto_find_batch_size",
-      "average_tokens_across_devices",
-      "bad_words_ids",
-      "batch_eval_metrics",
-      "begin_suppress_tokens",
-      "bf16",
-      "bf16_full_eval",
-      "bos_token_id",
-      "chat_template_path",
-      "chunk_size_feed_forward",
-      "completion_only_loss",
-      "cross_attention_hidden_size",
-      "data_seed",
-      "dataloader_drop_last",
-      "dataloader_num_workers",
-      "dataloader_persistent_workers",
-      "dataloader_pin_memory",
-      "dataloader_prefetch_factor",
-      "dataset_kwargs",
-      "dataset_num_proc",
-      "dataset_text_field",
-      "ddp_backend",
-      "ddp_broadcast_buffers",
-      "ddp_bucket_cap_mb",
-      "ddp_find_unused_parameters",
-      "ddp_timeout",
-      "debug",
-      "decoder_start_token_id",
-      "deepspeed",
-      "disable_tqdm",
-      "diversity_penalty",
-      "do_eval",
-      "do_predict",
-      "do_sample",
-      "do_train",
-      "dtype",
-      "early_stopping",
-      "encoder_no_repeat_ngram_size",
-      "eos_token",
-      "eos_token_id",
-      "eval_accumulation_steps",
-      "eval_delay",
-      "eval_do_concat_batches",
-      "eval_on_start",
-      "eval_packing",
-      "eval_steps",
-      "eval_strategy",
-      "eval_use_gather_object",
-      "exponential_decay_length_penalty",
-      "finetuning_task",
-      "forced_bos_token_id",
-      "forced_eos_token_id",
-      "fp16",
-      "fp16_backend",
-      "fp16_full_eval",
-      "fp16_opt_level",
-      "fsdp",
-      "fsdp_config",
-      "fsdp_min_num_params",
-      "fsdp_transformer_layer_cls_to_wrap",
-      "full_determinism",
-      "gradient_accumulation_steps",
-      "gradient_checkpointing",
-      "gradient_checkpointing_kwargs",
-      "greater_is_better",
-      "group_by_length",
-      "half_precision_backend",
-      "head_dim",
-      "hidden_act",
-      "hidden_size",
-      "hub_always_push",
-      "hub_model_id",
-      "hub_private_repo",
-      "hub_revision",
-      "hub_strategy",
-      "hub_token",
-      "id2label",
-      "ignore_data_skip",
-      "include_for_metrics",
-      "include_inputs_for_metrics",
-      "include_num_input_tokens_seen",
-      "include_tokens_per_second",
-      "initializer_range",
-      "intermediate_size",
-      "is_decoder",
-      "is_encoder_decoder",
-      "jit_mode_eval",
-      "label_names",
-      "label_smoothing_factor",
-      "label2id",
-      "learning_rate",
-      "length_column_name",
-      "length_penalty",
-      "liger_kernel_config",
-      "load_best_model_at_end",
-      "local_rank",
-      "log_level",
-      "log_level_replica",
-      "log_on_each_node",
-      "logging_dir",
-      "logging_first_step",
-      "logging_nan_inf_filter",
-      "logging_steps",
-      "logging_strategy",
-      "loss_type",
-      "lr_scheduler_type",
-      "max_grad_norm",
-      "max_length",
-      "max_position_embeddings",
-      "max_steps",
-      "metric_for_best_model",
-      "min_length",
-      "mlp_bias",
-      "model/num_parameters",
-      "model_init_kwargs",
-      "model_type",
-      "moe_intermediate_size",
-      "mp_parameters",
-      "neftune_noise_alpha",
-      "no_cuda",
-      "no_repeat_ngram_size",
-      "num_attention_heads",
-      "num_beam_groups",
-      "num_beams",
-      "num_hidden_layers",
-      "num_key_value_heads",
-      "num_return_sequences",
-      "num_train_epochs",
-      "optim",
-      "optim_args",
-      "optim_target_modules",
-      "output_attentions",
-      "output_dir",
-      "output_hidden_states",
-      "output_scores",
-      "overwrite_output_dir",
-      "packing",
-      "packing_strategy",
-      "pad_to_multiple_of",
-      "pad_token",
-      "pad_token_id",
-      "padding_free",
-      "parallelism_config",
-      "past_index",
-      "peft_config",
-      "per_device_eval_batch_size",
-      "per_device_train_batch_size",
-      "per_gpu_eval_batch_size",
-      "per_gpu_train_batch_size",
-      "prediction_loss_only",
-      "prefix",
-      "pretraining_tp",
-      "problem_type",
-      "project",
-      "push_to_hub",
-      "push_to_hub_model_id",
-      "push_to_hub_organization",
-      "push_to_hub_token",
-      "quantization_config",
-      "ray_scope",
-      "remove_invalid_values",
-      "remove_unused_columns",
-      "repetition_penalty",
-      "report_to",
-      "restore_callback_states_from_checkpoint",
-      "resume_from_checkpoint",
-      "return_dict",
-      "return_dict_in_generate",
-      "rms_norm_eps",
-      "rope_scaling",
-      "rope_theta",
-      "run_name",
-      "save_on_each_node",
-      "save_only_model",
-      "save_safetensors",
-      "save_steps",
-      "save_strategy",
-      "save_total_limit",
-      "seed",
-      "sep_token_id",
-      "skip_memory_metrics",
-      "suppress_tokens",
-      "task_specific_params",
-      "temperature",
-      "tf_legacy_loss",
-      "tf32",
-      "tie_encoder_decoder",
-      "tie_word_embeddings",
-      "tokenizer_class",
-      "top_k",
-      "top_p",
-      "torch_compile",
-      "torch_compile_backend",
-      "torch_compile_mode",
-      "torch_empty_cache_steps",
-      "torchdynamo",
-      "torchscript",
-      "tpu_metrics_debug",
-      "tpu_num_cores",
-      "trackio_space_id",
-      "transformers_version",
-      "typical_p",
-      "unsloth_version",
-      "use_bfloat16",
-      "use_cache",
-      "use_cpu",
-      "use_legacy_prediction_loop",
-      "use_liger_kernel",
-      "use_mps_device",
-      "vocab_size",
-      "warmup_ratio",
-      "warmup_steps",
-      "weight_decay"
-    ],
-    "raw": {
-      "_name_or_path": {
-        "value": "deepseek-ai/deepseek-math-7b-rl"
-      },
-      "_wandb": {
-        "value": {
-          "cli_version": "0.23.0",
-          "e": {
-            "ikkm4fxwyrfzbu6b5t2lquvile7mxa3f": {
-              "codePath": "colab_train_market_llm.ipynb",
-              "codePathLocal": "colab_train_market_llm.ipynb",
-              "colab": "https://colab.research.google.com/notebook#fileId=1RYhvdU0AsXr9xCqsOG0ZOLmZ5yAjyjtU",
-              "cpu_count": 1,
-              "cpu_count_logical": 2,
-              "cudaVersion": "12.4",
-              "disk": {
-                "/": {
-                  "total": "120942624768",
-                  "used": "55591747584"
-                }
-              },
-              "email": "wekabeka2015@gmail.com",
-              "executable": "/usr/bin/python3",
-              "gpu": "Tesla T4",
-              "gpu_count": 1,
-              "gpu_nvidia": [
-                {
-                  "architecture": "Turing",
-                  "cudaCores": 2560,
-                  "memoryTotal": "16106127360",
-                  "name": "Tesla T4",
-                  "uuid": "GPU-619207dc-bab9-d9a2-3d85-620edce19588"
-                }
-              ],
-              "host": "0d9087928771",
-              "memory": {
-                "total": "13605851136"
-              },
-              "os": "Linux-6.6.105+-x86_64-with-glibc2.35",
-              "program": "colab_train_market_llm.ipynb",
-              "python": "CPython 3.12.12",
-              "root": "/content/drive/MyDrive/aurora_market_llm",
-              "startedAt": "2025-11-29T19:07:56.685250Z",
-              "writerId": "ikkm4fxwyrfzbu6b5t2lquvile7mxa3f"
-            }
-          },
-          "m": [
-            {
-              "1": "train/global_step",
-              "6": [
-                3
-              ],
-              "7": []
-            },
-            {
-              "2": "*",
-              "5": 1,
-              "6": [
-                1
-              ],
-              "7": []
-            }
-          ],
-          "python_version": "3.12.12",
-          "t": {
-            "1": [
-              1,
-              2,
-              3,
-              5,
-              11,
-              12,
-              41,
-              49,
-              51,
-              53,
-              63,
-              71,
-              84,
-              95,
-              98,
-              105
-            ],
-            "2": [
-              1,
-              2,
-              3,
-              5,
-              11,
-              12,
-              41,
-              49,
-              51,
-              53,
-              63,
-              71,
-              84,
-              95,
-              98,
-              105
-            ],
-            "3": [
-              2,
-              7,
-              19,
-              62,
-              66
-            ],
-            "4": "3.12.12",
-            "5": "0.23.0",
-            "6": "4.57.3",
-            "8": [
-              1,
-              12
-            ],
-            "9": {
-              "1": "transformers_trainer"
-            },
-            "12": "0.23.0",
-            "13": "linux-x86_64"
-          }
-        }
-      },
-      "accelerator_config": {
-        "value": {
-          "dispatch_batches": null,
-          "even_batches": true,
-          "gradient_accumulation_kwargs": null,
-          "non_blocking": false,
-          "split_batches": false,
-          "use_seedable_sampler": true
-        }
-      },
-      "activation_offloading": {
-        "value": false
-      },
-      "adafactor": {
-        "value": false
-      },
-      "adam_beta1": {
-        "value": 0.9
-      },
-      "adam_beta2": {
-        "value": 0.999
-      },
-      "adam_epsilon": {
-        "value": "1e-08"
-      },
-      "add_cross_attention": {
-        "value": false
-      },
-      "architectures": {
-        "value": [
-          "LlamaForCausalLM"
-        ]
-      },
-      "assistant_only_loss": {
-        "value": false
-      },
-      "attention_bias": {
-        "value": false
-      },
-      "attention_dropout": {
-        "value": 0
-      },
-      "auto_find_batch_size": {
-        "value": false
-      },
-      "average_tokens_across_devices": {
-        "value": true
-      },
-      "bad_words_ids": {
-        "value": null
-      },
-      "batch_eval_metrics": {
-        "value": false
-      },
-      "begin_suppress_tokens": {
-        "value": null
-      },
-      "bf16": {
-        "value": false
-      },
-      "bf16_full_eval": {
-        "value": false
-      },
-      "bos_token_id": {
-        "value": 100000
-      },
-      "chat_template_path": {
-        "value": null
-      },
-      "chunk_size_feed_forward": {
-        "value": 0
-      },
-      "completion_only_loss": {
-        "value": null
-      },
-      "cross_attention_hidden_size": {
-        "value": null
-      },
-      "data_seed": {
-        "value": null
-      },
-      "dataloader_drop_last": {
-        "value": false
-      },
-      "dataloader_num_workers": {
-        "value": 0
-      },
-      "dataloader_persistent_workers": {
-        "value": false
-      },
-      "dataloader_pin_memory": {
-        "value": true
-      },
-      "dataloader_prefetch_factor": {
-        "value": null
-      },
-      "dataset_kwargs": {
-        "value": null
-      },
-      "dataset_num_proc": {
-        "value": null
-      },
-      "dataset_text_field": {
-        "value": "text"
-      },
-      "ddp_backend": {
-        "value": null
-      },
-      "ddp_broadcast_buffers": {
-        "value": null
-      },
-      "ddp_bucket_cap_mb": {
-        "value": null
-      },
-      "ddp_find_unused_parameters": {
-        "value": null
-      },
-      "ddp_timeout": {
-        "value": 1800
-      },
-      "debug": {
-        "value": []
-      },
-      "decoder_start_token_id": {
-        "value": null
-      },
-      "deepspeed": {
-        "value": null
-      },
-      "disable_tqdm": {
-        "value": false
-      },
-      "diversity_penalty": {
-        "value": 0
-      },
-      "do_eval": {
-        "value": true
-      },
-      "do_predict": {
-        "value": false
-      },
-      "do_sample": {
-        "value": false
-      },
-      "do_train": {
-        "value": false
-      },
-      "dtype": {
-        "value": "float16"
-      },
-      "early_stopping": {
-        "value": false
-      },
-      "encoder_no_repeat_ngram_size": {
-        "value": 0
-      },
-      "eos_token": {
-        "value": "<EOS_TOKEN>"
-      },
-      "eos_token_id": {
-        "value": 100001
-      },
-      "eval_accumulation_steps": {
-        "value": 4
-      },
-      "eval_delay": {
-        "value": 0
-      },
-      "eval_do_concat_batches": {
-        "value": true
-      },
-      "eval_on_start": {
-        "value": false
-      },
-      "eval_packing": {
-        "value": null
-      },
-      "eval_steps": {
-        "value": 100
-      },
-      "eval_strategy": {
-        "value": "steps"
-      },
-      "eval_use_gather_object": {
-        "value": false
-      },
-      "exponential_decay_length_penalty": {
-        "value": null
-      },
-      "finetuning_task": {
-        "value": null
-      },
-      "forced_bos_token_id": {
-        "value": null
-      },
-      "forced_eos_token_id": {
-        "value": null
-      },
-      "fp16": {
-        "value": true
-      },
-      "fp16_backend": {
-        "value": "auto"
-      },
-      "fp16_full_eval": {
-        "value": true
-      },
-      "fp16_opt_level": {
-        "value": "O1"
-      },
-      "fsdp": {
-        "value": []
-      },
-      "fsdp_config": {
-        "value": {
-          "min_num_params": 0,
-          "xla": false,
-          "xla_fsdp_grad_ckpt": false,
-          "xla_fsdp_v2": false
-        }
-      },
-      "fsdp_min_num_params": {
-        "value": 0
-      },
-      "fsdp_transformer_layer_cls_to_wrap": {
-        "value": null
-      },
-      "full_determinism": {
-        "value": false
-      },
-      "gradient_accumulation_steps": {
-        "value": 4
-      },
-      "gradient_checkpointing": {
-        "value": false
-      },
-      "gradient_checkpointing_kwargs": {
-        "value": null
-      },
-      "greater_is_better": {
-        "value": false
-      },
-      "group_by_length": {
-        "value": false
-      },
-      "half_precision_backend": {
-        "value": "auto"
-      },
-      "head_dim": {
-        "value": 128
-      },
-      "hidden_act": {
-        "value": "silu"
-      },
-      "hidden_size": {
-        "value": 4096
-      },
-      "hub_always_push": {
-        "value": false
-      },
-      "hub_model_id": {
-        "value": null
-      },
-      "hub_private_repo": {
-        "value": null
-      },
-      "hub_revision": {
-        "value": null
-      },
-      "hub_strategy": {
-        "value": "every_save"
-      },
-      "hub_token": {
-        "value": "<HUB_TOKEN>"
-      },
-      "id2label": {
-        "value": {
-          "0": "LABEL_0",
-          "1": "LABEL_1"
-        }
-      },
-      "ignore_data_skip": {
-        "value": false
-      },
-      "include_for_metrics": {
-        "value": []
-      },
-      "include_inputs_for_metrics": {
-        "value": false
-      },
-      "include_num_input_tokens_seen": {
-        "value": "no"
-      },
-      "include_tokens_per_second": {
-        "value": false
-      },
-      "initializer_range": {
-        "value": 0.02
-      },
-      "intermediate_size": {
-        "value": 11008
-      },
-      "is_decoder": {
-        "value": false
-      },
-      "is_encoder_decoder": {
-        "value": false
-      },
-      "jit_mode_eval": {
-        "value": false
-      },
-      "label_names": {
-        "value": null
-      },
-      "label_smoothing_factor": {
-        "value": 0
-      },
-      "label2id": {
-        "value": {
-          "LABEL_0": 0,
-          "LABEL_1": 1
-        }
-      },
-      "learning_rate": {
-        "value": 0.0002
-      },
-      "length_column_name": {
-        "value": "length"
-      },
-      "length_penalty": {
-        "value": 1
-      },
-      "liger_kernel_config": {
-        "value": null
-      },
-      "load_best_model_at_end": {
-        "value": true
-      },
-      "local_rank": {
-        "value": 0
-      },
-      "log_level": {
-        "value": "passive"
-      },
-      "log_level_replica": {
-        "value": "warning"
-      },
-      "log_on_each_node": {
-        "value": true
-      },
-      "logging_dir": {
-        "value": "/content/drive/MyDrive/aurora_market_llm/checkpoints/market_llm_v1/runs/Nov29_19-04-18_0d9087928771"
-      },
-      "logging_first_step": {
-        "value": false
-      },
-      "logging_nan_inf_filter": {
-        "value": true
-      },
-      "logging_steps": {
-        "value": 10
-      },
-      "logging_strategy": {
-        "value": "steps"
-      },
-      "loss_type": {
-        "value": "nll"
-      },
-      "lr_scheduler_type": {
-        "value": "linear"
-      },
-      "max_grad_norm": {
-        "value": 1
-      },
-      "max_length": {
-        "value": 1024
-      },
-      "max_position_embeddings": {
-        "value": 4096
-      },
-      "max_steps": {
-        "value": -1
-      },
-      "metric_for_best_model": {
-        "value": "loss"
-      },
-      "min_length": {
-        "value": 0
-      },
-      "mlp_bias": {
-        "value": false
-      },
-      "model/num_parameters": {
-        "value": 6947844096
-      },
-      "model_init_kwargs": {
-        "value": null
-      },
-      "model_type": {
-        "value": "llama"
-      },
-      "moe_intermediate_size": {
-        "value": 11008
-      },
-      "mp_parameters": {
-        "value": ""
-      },
-      "neftune_noise_alpha": {
-        "value": null
-      },
-      "no_cuda": {
-        "value": false
-      },
-      "no_repeat_ngram_size": {
-        "value": 0
-      },
-      "num_attention_heads": {
-        "value": 32
-      },
-      "num_beam_groups": {
-        "value": 1
-      },
-      "num_beams": {
-        "value": 1
-      },
-      "num_hidden_layers": {
-        "value": 30
-      },
-      "num_key_value_heads": {
-        "value": 32
-      },
-      "num_return_sequences": {
-        "value": 1
-      },
-      "num_train_epochs": {
-        "value": 1
-      },
-      "optim": {
-        "value": "adamw_8bit"
-      },
-      "optim_args": {
-        "value": null
-      },
-      "optim_target_modules": {
-        "value": null
-      },
-      "output_attentions": {
-        "value": false
-      },
-      "output_dir": {
-        "value": "/content/drive/MyDrive/aurora_market_llm/checkpoints/market_llm_v1"
-      },
-      "output_hidden_states": {
-        "value": false
-      },
-      "output_scores": {
-        "value": false
-      },
-      "overwrite_output_dir": {
-        "value": false
-      },
-      "packing": {
-        "value": false
-      },
-      "packing_strategy": {
-        "value": "bfd"
-      },
-      "pad_to_multiple_of": {
-        "value": null
-      },
-      "pad_token": {
-        "value": "<PAD_TOKEN>"
-      },
-      "pad_token_id": {
-        "value": 100002
-      },
-      "padding_free": {
-        "value": false
-      },
-      "parallelism_config": {
-        "value": null
-      },
-      "past_index": {
-        "value": -1
-      },
-      "peft_config": {
-        "value": {
-          "default": {
-            "alora_invocation_tokens": null,
-            "arrow_config": null,
-            "auto_mapping": {
-              "base_model_class": "LlamaForCausalLM",
-              "parent_library": "transformers.models.llama.modeling_llama",
-              "unsloth_fixed": true
-            },
-            "base_model_name_or_path": "deepseek-ai/deepseek-math-7b-rl",
-            "bias": "none",
-            "corda_config": null,
-            "ensure_weight_tying": false,
-            "eva_config": null,
-            "exclude_modules": null,
-            "fan_in_fan_out": false,
-            "inference_mode": false,
-            "init_lora_weights": true,
-            "layer_replication": null,
-            "layers_pattern": null,
-            "layers_to_transform": null,
-            "lora_alpha": 16,
-            "lora_bias": false,
-            "lora_dropout": 0,
-            "megatron_config": null,
-            "megatron_core": "megatron.core",
-            "modules_to_save": null,
-            "peft_type": "LORA",
-            "peft_version": "0.18.0",
-            "qalora_group_size": 16,
-            "r": 16,
-            "revision": null,
-            "runtime_config": {
-              "ephemeral_gpu_offload": false
-            },
-            "target_modules": [
-              "down_proj",
-              "up_proj",
-              "q_proj",
-              "gate_proj",
-              "o_proj",
-              "v_proj",
-              "k_proj"
-            ],
-            "target_parameters": null,
-            "task_type": "CAUSAL_LM",
-            "trainable_token_indices": null,
-            "use_dora": false,
-            "use_qalora": false,
-            "use_rslora": false
-          }
-        }
-      },
-      "per_device_eval_batch_size": {
-        "value": 2
-      },
-      "per_device_train_batch_size": {
-        "value": 2
-      },
-      "per_gpu_eval_batch_size": {
-        "value": null
-      },
-      "per_gpu_train_batch_size": {
-        "value": null
-      },
-      "prediction_loss_only": {
-        "value": false
-      },
-      "prefix": {
-        "value": null
-      },
-      "pretraining_tp": {
-        "value": 1
-      },
-      "problem_type": {
-        "value": null
-      },
-      "project": {
-        "value": "huggingface"
-      },
-      "push_to_hub": {
-        "value": false
-      },
-      "push_to_hub_model_id": {
-        "value": null
-      },
-      "push_to_hub_organization": {
-        "value": null
-      },
-      "push_to_hub_token": {
-        "value": "<PUSH_TO_HUB_TOKEN>"
-      },
-      "quantization_config": {
-        "value": {
-          "bnb_4bit_compute_dtype": "float16",
-          "bnb_4bit_quant_type": "nf4",
-          "bnb_4bit_use_double_quant": true,
-          "llm_int8_enable_fp32_cpu_offload": false,
-          "llm_int8_has_fp16_weight": false,
-          "llm_int8_skip_modules": null,
-          "llm_int8_threshold": 6,
-          "load_in_4bit": true,
-          "load_in_8bit": false,
-          "quant_method": "bitsandbytes"
-        }
-      },
-      "ray_scope": {
-        "value": "last"
-      },
-      "remove_invalid_values": {
-        "value": false
-      },
-      "remove_unused_columns": {
-        "value": true
-      },
-      "repetition_penalty": {
-        "value": 1
-      },
-      "report_to": {
-        "value": [
-          "tensorboard",
-          "wandb"
-        ]
-      },
-      "restore_callback_states_from_checkpoint": {
-        "value": false
-      },
-      "resume_from_checkpoint": {
-        "value": null
-      },
-      "return_dict": {
-        "value": true
-      },
-      "return_dict_in_generate": {
-        "value": false
-      },
-      "rms_norm_eps": {
-        "value": "1e-06"
-      },
-      "rope_scaling": {
-        "value": null
-      },
-      "rope_theta": {
-        "value": 10000
-      },
-      "run_name": {
-        "value": null
-      },
-      "save_on_each_node": {
-        "value": false
-      },
-      "save_only_model": {
-        "value": false
-      },
-      "save_safetensors": {
-        "value": true
-      },
-      "save_steps": {
-        "value": 100
-      },
-      "save_strategy": {
-        "value": "steps"
-      },
-      "save_total_limit": {
-        "value": 2
-      },
-      "seed": {
-        "value": 3407
-      },
-      "sep_token_id": {
-        "value": null
-      },
-      "skip_memory_metrics": {
-        "value": true
-      },
-      "suppress_tokens": {
-        "value": null
-      },
-      "task_specific_params": {
-        "value": null
-      },
-      "temperature": {
-        "value": 1
-      },
-      "tf_legacy_loss": {
-        "value": false
-      },
-      "tf32": {
-        "value": null
-      },
-      "tie_encoder_decoder": {
-        "value": false
-      },
-      "tie_word_embeddings": {
-        "value": false
-      },
-      "tokenizer_class": {
-        "value": null
-      },
-      "top_k": {
-        "value": 50
-      },
-      "top_p": {
-        "value": 1
-      },
-      "torch_compile": {
-        "value": false
-      },
-      "torch_compile_backend": {
-        "value": null
-      },
-      "torch_compile_mode": {
-        "value": null
-      },
-      "torch_empty_cache_steps": {
-        "value": null
-      },
-      "torchdynamo": {
-        "value": null
-      },
-      "torchscript": {
-        "value": false
-      },
-      "tpu_metrics_debug": {
-        "value": false
-      },
-      "tpu_num_cores": {
-        "value": null
-      },
-      "trackio_space_id": {
-        "value": "trackio"
-      },
-      "transformers_version": {
-        "value": "4.57.3"
-      },
-      "typical_p": {
-        "value": 1
-      },
-      "unsloth_version": {
-        "value": "2025.11.4"
-      },
-      "use_bfloat16": {
-        "value": false
-      },
-      "use_cache": {
-        "value": true
-      },
-      "use_cpu": {
-        "value": false
-      },
-      "use_legacy_prediction_loop": {
-        "value": false
-      },
-      "use_liger_kernel": {
-        "value": false
-      },
-      "use_mps_device": {
-        "value": false
-      },
-      "vocab_size": {
-        "value": 102400
-      },
-      "warmup_ratio": {
-        "value": 0
-      },
-      "warmup_steps": {
-        "value": 20
-      },
-      "weight_decay": {
-        "value": 0.01
-      }
-    }
-  },
   "config/aurora/regime.yaml": {
     "keys": [
       "hmm",
@@ -4648,9 +3537,9 @@
       "instruments": {
         "SOLUSDT": {
           "symbol": "SOLUSDT",
-          "step_size": "0.1",
+          "step_size": "1",
           "tick_size": "0.01",
-          "min_qty": "0.1",
+          "min_qty": "1",
           "min_notional": "5",
           "execution": {
             "margin_mode": "isolated",
@@ -4667,7 +3556,7 @@
           "step_size": "0.001",
           "tick_size": "0.01",
           "min_qty": "0.001",
-          "min_notional": "5",
+          "min_notional": "20",
           "execution": {
             "margin_mode": "isolated",
             "target_leverage": 41,
@@ -4784,6 +3673,7 @@
             "max_risk_score": 0.9
           },
           "daily": {
+            "enabled": false,
             "max_realized_loss_usd": 250.0,
             "max_drawdown_pct": 8.0,
             "reset_time_utc": "00:00"
@@ -4836,6 +3726,13 @@
             "min_buffer_size": 3,
             "time_diff_threshold_ms": 60000,
             "anchor_update_from_ticks": false
+          },
+          "bar_aggregator": {
+            "enabled": true,
+            "timeframes_sec": [
+              180,
+              300
+            ]
           }
         },
         "ops": {
@@ -5008,7 +3905,7 @@
           ]
         },
         "flip": {
-          "enabled": true,
+          "enabled": false,
           "hysteresis_mult": 1.3
         },
         "features": {
@@ -5053,7 +3950,8 @@
           "bleed_window_sec": 300,
           "flash_threshold_norm": 1.0,
           "bleed_threshold_norm": 0.5,
-          "require_bleed_ready": true
+          "require_bleed_ready": true,
+          "pm_norm_clip_abs": 10.0
         },
         "fail_closed_on_degraded_context": false,
         "degraded_context_critical_keys": [],
@@ -5062,6 +3960,10 @@
       "feature_engineering": {
         "enable_new_metrics": true,
         "volume_input_mode": "integrate",
+        "enabled_timeframes_sec": [
+          180,
+          300
+        ],
         "ema": {
           "period_short": 3,
           "period_long": 7
@@ -5284,6 +4186,7 @@
         "enable_market_tick_subscription": false
       },
       "account_observer": {
+        "market_type": "futures",
         "poll_interval_sec": 5,
         "trade_limit": 10,
         "symbols": [
@@ -5370,8 +4273,7 @@
           "mean_reversion"
         ],
         "BTCUSDT": [
-          "aurora",
-          "mean_reversion"
+          "aurora"
         ]
       },
       "arbitration": {
@@ -5395,18 +4297,19 @@
     "raw": {
       "aurora": {
         "enabled": true,
-        "legacy_tick_path_enabled": true,
+        "legacy_tick_path_enabled": false,
         "type": "tick_based",
         "description": "Tick-based multi-signal alpha strategy with regime awareness",
+        "timeframe_sec": 300,
         "decision": {
           "testnet": {
-            "signal_threshold": null
+            "signal_threshold": 0.12
           },
           "production": {
-            "signal_threshold": null
+            "signal_threshold": 0.12
           },
-          "signal_threshold": 0.1,
-          "neutral_threshold": 0.18,
+          "signal_threshold": 0.12,
+          "neutral_threshold": 0.05,
           "symbols_to_track": [
             "BTCUSDT",
             "ETHUSDT",
@@ -5496,8 +4399,27 @@
           },
           "essential_features": [
             "obi",
-            "delta_price"
+            "delta_price",
+            "macro_resid"
           ],
+          "anchor_shock_veto": {
+            "enabled": true,
+            "anchor_symbol": "BTCUSDT",
+            "threshold": -2.0
+          },
+          "holding_period": {
+            "enabled": true,
+            "min_duration_sec": 30,
+            "emergency_exit_threshold": 0.7,
+            "apply_to_flips": true
+          },
+          "gates": {
+            "enabled": true,
+            "anti_flat_sigma": 0.5,
+            "anti_fomo_sigma": 4.0,
+            "motion_window_sec": 900
+          },
+          "reentry_cooldown_sec": 60,
           "feature_neutrals": {
             "obi": 0.0,
             "tfi": 0.0,
@@ -5524,15 +4446,20 @@
           "ETHUSDT": {
             "enabled": true,
             "position_mode": "STRICT",
+            "holding_period": {
+              "min_duration_sec": 45,
+              "emergency_exit_threshold": 0.65
+            },
+            "reentry_cooldown_sec": 120,
             "weights": {
-              "ema_bias": 0.058,
-              "volume_spike": 0.241,
-              "macro_resid": 0.131,
-              "obi": 0.155,
+              "ema_bias": 0.2,
+              "volume_spike": 0.2,
+              "macro_resid": 0.25,
+              "obi": 0.25,
               "tfi": 0.093,
               "volatility_state": 0.036,
               "depth_imbalance": -0.256,
-              "delta_price": 0.253
+              "delta_price": 0.1
             },
             "liquidity_gate": {
               "enabled": true,
@@ -5589,15 +4516,16 @@
             "timeframe_sec": null
           },
           "SOLUSDT": {
+            "reentry_cooldown_sec": 120,
             "weights": {
-              "ema_bias": 0.12,
-              "volume_spike": 0.18,
-              "macro_resid": 0.1,
-              "obi": 0.14,
+              "ema_bias": 0.2,
+              "volume_spike": 0.2,
+              "macro_resid": 0.25,
+              "obi": 0.25,
               "tfi": 0.09,
               "volatility_state": 0.05,
               "depth_imbalance": -0.2,
-              "delta_price": 0.22
+              "delta_price": 0.1
             },
             "enabled": true,
             "position_mode": "STRICT",
@@ -5781,10 +4709,10 @@
           },
           "BTCUSDT": {
             "weights": {
-              "ema_bias": 0.15,
+              "ema_bias": 0.2,
               "volume_spike": 0.15,
               "macro_resid": 0.15,
-              "obi": 0.1,
+              "obi": 0.2,
               "tfi": 0.1,
               "volatility_state": 0.1,
               "depth_imbalance": -0.05,
@@ -5792,6 +4720,11 @@
             },
             "enabled": true,
             "position_mode": "STRICT",
+            "holding_period": {
+              "min_duration_sec": 20,
+              "emergency_exit_threshold": 0.7
+            },
+            "reentry_cooldown_sec": 45,
             "liquidity_gate": {
               "enabled": true,
               "kappa_min": 0.1,
@@ -5839,7 +4772,10 @@
             ],
             "execution": null,
             "ema_clamp": null,
-            "signal_threshold": null,
+            "signal_threshold": {
+              "enabled": false,
+              "value": null
+            },
             "cooldown_sec": null,
             "timeframe_sec": null
           }
@@ -8109,8 +7045,78 @@
     }
   },
   "vfoundation/dictionaries/global_v2_2_framework.yaml": {
-    "keys": null,
-    "raw": null
+    "keys": [
+      "version",
+      "ops",
+      "stdlib_verbs",
+      "routing_modes",
+      "ttl_profiles",
+      "policies",
+      "limits",
+      "security"
+    ],
+    "raw": {
+      "version": 2.2,
+      "ops": [
+        "ASK",
+        "DEC",
+        "CMD",
+        "EVT",
+        "UPD",
+        "ERR"
+      ],
+      "stdlib_verbs": [
+        "EVAL",
+        "OPEN",
+        "CLOSE",
+        "SCALE",
+        "ADJUST",
+        "AUTH",
+        "READ",
+        "WRITE",
+        "PING",
+        "HEALTH",
+        "WHY",
+        "ALERT",
+        "RECONCILE"
+      ],
+      "routing_modes": {
+        "hot": [
+          "ASK:EVAL",
+          "DEC:EVAL",
+          "ASK:OPEN",
+          "ASK:CLOSE"
+        ],
+        "warm": [
+          "EVT:*",
+          "UPD:*"
+        ],
+        "cold": [
+          "ALERT:*",
+          "RECONCILE:*"
+        ]
+      },
+      "ttl_profiles": {
+        "critical": 50,
+        "fast": 200,
+        "normal": 2000,
+        "ml_slow": 10000,
+        "background": 30000
+      },
+      "policies": {
+        "safety_timeout_behavior": "DENY"
+      },
+      "limits": {
+        "max_verbs_per_domain": 12,
+        "max_states_per_domain": 20
+      },
+      "security": {
+        "sign_required_ops": [
+          "CMD",
+          "DEC"
+        ]
+      }
+    }
   },
   "vfoundation/dictionaries/domains/domain_feature_engineering.yaml": {
     "keys": [
@@ -8456,22 +7462,6 @@
       ]
     }
   },
-  "docs/domains/account_balance/dictionaries.yaml": {
-    "keys": null,
-    "raw": null
-  },
-  "docs/domains/account_observer/dictionaries.yaml": {
-    "keys": null,
-    "raw": null
-  },
-  "docs/domains/account_balance/examples/config.yaml": {
-    "keys": null,
-    "raw": null
-  },
-  "docs/domains/account_observer/examples/config_examples.yaml": {
-    "keys": null,
-    "raw": null
-  },
   "tests/config/aurora/regime.yaml": {
     "keys": [
       "regime"
@@ -8608,6 +7598,598 @@
           "DEC"
         ]
       }
+    }
+  },
+  "apps/reference/dictionaries/verb_registry_v1.yaml": {
+    "keys": [
+      "version",
+      "registry",
+      "policies"
+    ],
+    "raw": {
+      "version": 1,
+      "registry": [
+        {
+          "op": "CMD",
+          "verb": "CLOSE",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "CMD",
+          "verb": "OPEN",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "DEC",
+          "verb": "ADJUST",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "DEC",
+          "verb": "CANCEL",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "DEC",
+          "verb": "CANCEL_ORDER",
+          "owner": "execution_position",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "DEC",
+          "verb": "CLOSE",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "DEC",
+          "verb": "OPEN",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "DEC",
+          "verb": "PLACE_ORDER",
+          "owner": "execution_position",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "ERR",
+          "verb": "OPEN",
+          "owner": "execution_position",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ACCOUNT_UPDATE_RECEIVED",
+          "owner": "account_balance",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ALPHA_SCORE_CALCULATED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ANCHOR_UPDATED",
+          "owner": "decision_making",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "BALANCE_UPDATE_RECEIVED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "BAR_CLOSED",
+          "owner": "market_data",
+          "status": "active",
+          "schema": "schemas/bar_closed_v1.json",
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "CANCELLED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "CONFIG_DEBUG_OVERRIDE_ACTIVE",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "DECISION_BLOCKED",
+          "owner": "decision_making",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "DECISION_TRACE_EMITTED",
+          "owner": "decision_making",
+          "status": "experimental",
+          "schema": "schemas/decision_trace_emitted_v1.json",
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "EXPIRED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "EXPOSURE_SUMMARY_UPDATED",
+          "owner": "risk_management",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "FEATURES_CALCULATED",
+          "owner": "feature_engineering",
+          "status": "active",
+          "schema": "apps/reference/domains/feature_engineering/schemas/features_calculated_v1.json",
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "FILL",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "FUNDING_UPDATE",
+          "owner": "feature_engineering",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "INTENT_DEFERRED",
+          "owner": "decision_making",
+          "status": "active",
+          "schema": "schemas/intent_deferred_v1.json",
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "INTENT_DROPPED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "MARKET_TICK_FORWARDED",
+          "owner": "market_data",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "MARKET_TICK_RECEIVED",
+          "owner": "market_data",
+          "status": "active",
+          "schema": "schemas/market_tick_received_v1.json",
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "MR_SIGNAL_PRODUCED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "OI_UPDATE",
+          "owner": "feature_engineering",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORCHESTRATOR_ERROR",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORDER_ACK",
+          "owner": "execution_position",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORDER_EXECUTED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORDER_FILL",
+          "owner": "execution_position",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORDER_PLACED",
+          "owner": "execution_position",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORDER_REJECTED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORDER_STATE_CHANGED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "ORDER_TIMEOUT",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "PARTIAL_FILL",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "PORTFOLIO_STATE_UPDATED",
+          "owner": "position_tracking",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "POSITION_CLOSED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "REGIME_DETECTED",
+          "owner": "regime_detector",
+          "status": "active",
+          "schema": "apps/reference/domains/regime_detector/schemas/regime_detected_v1.json",
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "REJECTED",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "RISK_ASSESSMENT_COMPLETED",
+          "owner": "risk_management",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "STRATEGY_DECISION_BLOCKED",
+          "owner": "decision_making",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "STRATEGY_SIGNAL_PRODUCED",
+          "owner": "decision_making",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "SYMBOL_TIDY",
+          "owner": "market_data",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "TICK_RECEIVED",
+          "owner": "decision_making",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "TRADE_EXECUTED",
+          "owner": "position_tracking",
+          "status": "active",
+          "schema": "apps/reference/domains/position_tracking/schemas/trade_executed_v1.json",
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "TRADE_INTENT_PROPOSED",
+          "owner": "decision_making",
+          "status": "active",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "TRADE_INTENT_REJECTED",
+          "owner": "decision_making",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "EVT",
+          "verb": "VERB",
+          "owner": "unknown",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        },
+        {
+          "op": "UPD",
+          "verb": "TICK",
+          "owner": "execution_position",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-08"
+        }
+      ],
+      "policies": {
+        "wildcard": {
+          "UPD": true,
+          "EVT": false,
+          "CMD": false,
+          "DEC": false,
+          "ASK": false,
+          "ERR": false
+        }
+      }
+    }
+  },
+  "apps/reference/domains/neocortex/domain.yaml": {
+    "keys": [
+      "domain"
+    ],
+    "raw": {
+      "domain": {
+        "name": "neocortex",
+        "type": "shadow",
+        "description": "Autonomous learning domain using VAE + PPO for market representation learning.\nConsumes market features and trade events to build latent embeddings and learn\noptimal decision patterns. Shadow mode: observes without influencing trading.\n",
+        "imports": [
+          {
+            "event": "EVT:FEATURES_CALCULATED",
+            "description": "Market features (RSI, BB, OBI, liquidity, regime, etc.)",
+            "required": true
+          },
+          {
+            "event": "EVT:TRADE_INTENT_PROPOSED",
+            "description": "Trade decisions made by Aurora strategy logic",
+            "required": true
+          },
+          {
+            "event": "EVT:POSITION_CLOSED",
+            "description": "Position lifecycle completion (for reward calculation)",
+            "required": false
+          }
+        ],
+        "exports": [
+          {
+            "event": "EVT:NEOCORTEX_STATE_UPDATED",
+            "description": "Latent state updates, model checkpoints, learning progress",
+            "frequency": "periodic"
+          },
+          {
+            "event": "EVT:NEOCORTEX_ALERT",
+            "description": "Detected anomalies, distribution shifts, learning milestones",
+            "frequency": "triggered"
+          }
+        ],
+        "processes": {
+          "main": {
+            "type": "asyncio",
+            "description": "Event ingestion, normalization, coordination"
+          },
+          "brain": {
+            "type": "multiprocessing",
+            "description": "VAE encoding, PPO forward passes (CPU/GPU isolated)",
+            "isolation": true
+          }
+        },
+        "requires": [
+          "feature_engineering",
+          "decision_making"
+        ],
+        "resources": {
+          "memory_mb": 2048,
+          "cpu_cores": 2,
+          "gpu": "optional"
+        }
+      }
+    }
+  },
+  "apps/reference/domains/neocortex/config/system.yaml": {
+    "keys": [
+      "data_dir",
+      "checkpoint_dir",
+      "brain_workers",
+      "queue_maxsize",
+      "log_level",
+      "log_to_file"
+    ],
+    "raw": {
+      "data_dir": "./data",
+      "checkpoint_dir": "./data/checkpoints",
+      "brain_workers": 1,
+      "queue_maxsize": 1000,
+      "log_level": "INFO",
+      "log_to_file": true
+    }
+  },
+  "apps/reference/domains/neocortex/config/neuro.yaml": {
+    "keys": [
+      "vae",
+      "world_model",
+      "ppo",
+      "checkpoint_every_n_steps",
+      "keep_last_n_checkpoints"
+    ],
+    "raw": {
+      "vae": {
+        "input_dim": 9,
+        "hidden_dims": [
+          128,
+          64
+        ],
+        "latent_dim": 16,
+        "learning_rate": 0.001,
+        "beta": 1.0,
+        "batch_size": 64,
+        "use_mean": true
+      },
+      "world_model": {
+        "hidden_dim": 128,
+        "num_layers": 2,
+        "dropout": 0.1,
+        "learning_rate": 0.001,
+        "sequence_length": 50
+      },
+      "ppo": {
+        "state_dim": 20,
+        "action_dim": 3,
+        "hidden_dims": [
+          256,
+          128
+        ],
+        "learning_rate": 0.0003,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_epsilon": 0.2,
+        "rollout_length": 2048,
+        "num_epochs": 10,
+        "minibatch_size": 64
+      },
+      "checkpoint_every_n_steps": 1000,
+      "keep_last_n_checkpoints": 5
+    }
+  },
+  "apps/reference/domains/neocortex/config/ingest.yaml": {
+    "keys": [
+      "feature_list",
+      "normalization_method",
+      "normalization_window",
+      "buffer_size",
+      "min_samples_before_ready",
+      "nan_strategy"
+    ],
+    "raw": {
+      "feature_list": [
+        "rsi",
+        "bb_percent",
+        "bb_width",
+        "obi",
+        "liquidity_kappa",
+        "liquidity_depth_imbalance",
+        "delta_price",
+        "delta_volume",
+        "regime_numeric"
+      ],
+      "normalization_method": "zscore",
+      "normalization_window": 500,
+      "buffer_size": 10000,
+      "min_samples_before_ready": 100,
+      "nan_strategy": "zero"
     }
   }
 }

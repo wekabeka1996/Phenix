@@ -3,6 +3,8 @@ Tests for Backtest Engine
 """
 
 import pytest
+pytest.skip("LEGACY: alpha_discovery module removed; replaced by feature engineering and backtesting in runtime.", allow_module_level=True)
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
