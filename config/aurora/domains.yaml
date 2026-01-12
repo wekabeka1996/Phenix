@@ -16,6 +16,19 @@ decision_making:
     kappa_mode: dynamic
     liquidity_kappa_mode: dynamic
   
+  # EP-01.2-INT: EntryPlan for ATR-based entry/SL/TP computation
+  entry_plan:
+    enabled: true
+    atr_period: 14  # Must match FE bar volatility ATR window
+    entry_k_atr: 0.3  # Entry offset = 0.3 * ATR from ref price
+    sl_k_atr: 1.5  # Stop-loss = 1.5 * ATR distance
+    tp_k_atr: 2.0  # Take-profit = 2.0 * ATR distance
+    obi_weight: 0.3  # OBI modulation weight (0 = off, 1 = full)
+    obi_mod_clamp_min: 0.8  # Anti-taker drift: min multiplier
+    obi_mod_clamp_max: 1.2  # Anti-taker drift: max multiplier
+    require_atr: true  # Fail-closed: reject if ATR not ready
+    obi_missing_policy: neutral  # EXPLICIT: use multiplier=1.0 when OBI missing
+  
   qos:
     # LIVE SAFETY: stop intent spam and "shadow pass-through".
     # NOTE: `defer` requires a running asyncio loop (not available in this runtime),
@@ -388,3 +401,34 @@ execution_position:
   event_dedup:
     max_size: 100000
     ttl_ms: 86400000  # 24 hours
+
+  # EP-01.3-INT: Per-timeframe pending entry TTL
+  # When LIMIT entry order is placed, valid_for_ms = ttl_by_tf_sec[tf_sec] * 1000
+  # Cancel triggers: TTL expired, regime change, supersede, panic
+  pending_entry_ttl:
+    enabled: true
+    # Map: timeframe_seconds -> entry_ttl_seconds
+    # 3m bar = 45s TTL, 5m = 60s, 15m = 180s
+    ttl_by_tf_sec:
+      180: 45     # 3m bars: 45 sec TTL
+      300: 60     # 5m bars: 60 sec TTL
+      900: 180    # 15m bars: 180 sec (3 min) TTL
+    reject_unknown_tf: true   # fail-closed: reject if tf not in map
+    cancel_on_regime_change: true
+    cancel_on_supersede: true
+    cancel_on_panic: true
+
+  # EP-01.4-INT-B: Maker-only (post-only) entry orders
+  # When enabled, LIMIT entry orders use tif="GTX" (post-only)
+  # If order would cross the book, it's rejected (MAKER_ONLY_REJECT)
+  # NO FALLBACK to market. Entry aborted on reject.
+  maker_only_entry:
+    enabled: false          # Set to true to enforce maker-only entries
+    tif_value: "GTX"       # Post-only time-in-force
+    reject_on_fail: true   # MUST be true. No market fallback.
+
+  # ORDER-POLICY-01: Global order capabilities (SSOT)
+  # This is what the execution layer supports. Strategy policies must be a subset.
+  order_capabilities:
+    supported_order_types: ["LIMIT", "MARKET"]
+    supported_tif: ["GTC", "GTX", "IOC", "FOK"]

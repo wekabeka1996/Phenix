@@ -33,7 +33,7 @@ def neuro_config():
             "use_mean": True
         },
         world_model={
-            "hidden_dim": 8,
+            "hidden_dim": 16,
             "num_layers": 1,
             "dropout": 0.0,
             "learning_rate": 0.001,

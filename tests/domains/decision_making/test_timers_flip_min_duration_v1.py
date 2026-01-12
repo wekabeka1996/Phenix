@@ -9,6 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
+from apps.reference.domains.decision_making.aurora_scoring_kernel import ScoringResult
 
 class DeterministicClock:
     def __init__(self, start_ts=1000.0):
@@ -96,7 +97,16 @@ def test_holding_period_suppress_flip(mock_config):
     # 1. Enter LONG
     state = handler._symbol_states[symbol]
     
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="BUY", score=Decimal("0.5"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="BUY",
+        score=Decimal("0.5"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     # Verify entry tracked
@@ -108,7 +118,16 @@ def test_holding_period_suppress_flip(mock_config):
     emit_mock.reset_mock()
     
     # 3. Attempt FLIP to SELL
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="SELL", score=Decimal("0.5"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="SELL",
+        score=Decimal("0.5"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     # Verify Suppressed (Force Hold) -> Signal BUY emitted (override)
@@ -129,7 +148,16 @@ def test_holding_period_suppress_flip(mock_config):
     
     # 5. Attempt FLIP again
     # Handler mutated the previous result mock to BUY, so we must provide a fresh SELL mock
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="SELL", score=Decimal("0.5"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="SELL",
+        score=Decimal("0.5"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     # Verify Allowed
@@ -162,7 +190,16 @@ def test_holding_period_emergency_exit(mock_config):
     # Enter LONG
     state = handler._symbol_states[symbol]
     
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="BUY", score=Decimal("0.5"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="BUY",
+        score=Decimal("0.5"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     # Verify Entry
@@ -174,9 +211,80 @@ def test_holding_period_emergency_exit(mock_config):
     
     # Attempt EXIT with HIGH SCORE (Emergency)
     # Score 0.95 >= 0.9 threshold
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="", score=Decimal("0.95"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="",
+        score=Decimal("0.95"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     # Verify State Cleared (Exit happened)
     assert state.position_side == ""
     assert state.last_exit_timestamp == 2002.0
+
+
+def test_no_mutation_of_scoring_result_when_flip_suppressed(mock_config):
+    """Guardrail: AuroraHandler must not mutate ScoringResult (side/score/thresholds)."""
+    clock = DeterministicClock(start_ts=2000.0)
+    emit_mock = MagicMock()
+
+    handler = AuroraHandler(
+        config=mock_config,
+        emit_fn=emit_mock,
+        monotonic_fn=clock.now,
+        wall_time_fn=clock.now,
+    )
+    handler.timeframe_sec = 60
+
+    handler._is_symbol_enabled = MagicMock(return_value=True)
+    handler.scoring_kernel_cls = MagicMock()
+
+    symbol = "ETHUSDT"
+    event = {
+        "symbol": symbol,
+        "features": {"price": 100},
+        "tf_sec": 60,
+        "warmup": {"full_ready": True},
+    }
+
+    # Enter BUY to establish position + entry_timestamp
+    handler.scoring_kernel_cls.compute.return_value = ScoringResult(
+        score=Decimal("0.5"),
+        side="BUY",
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+    )
+    handler.on_features_calculated(event)
+
+    # Advance less than holding min_duration, attempt flip SELL
+    clock.advance(5.0)
+    emit_mock.reset_mock()
+
+    result = ScoringResult(
+        score=Decimal("0.5"),
+        side="SELL",
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+    )
+    handler.scoring_kernel_cls.compute.return_value = result
+
+    handler.on_features_calculated(event)
+
+    # Handler should FORCE HOLD in emission, but must not mutate the result object.
+    assert result.side == "SELL"
+    assert result.score == Decimal("0.5")
+    assert result.thr_buy == Decimal("0.1")
+    assert result.thr_sell == Decimal("0.1")
+
+    block_calls = [c.args[1] for c in emit_mock.call_args_list if c.args[0] == "EVT:STRATEGY_DECISION_BLOCKED"]
+    assert len(block_calls) == 1
+    assert block_calls[0]["reason_code"] == "HOLDING_PERIOD_ACTIVE"
+
+    signal_calls = [c.args[1] for c in emit_mock.call_args_list if c.args[0] == "EVT:STRATEGY_SIGNAL_PRODUCED"]
+    assert len(signal_calls) == 1
+    assert signal_calls[0]["side"] == "BUY"

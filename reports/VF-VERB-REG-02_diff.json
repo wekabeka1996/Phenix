@@ -2,14 +2,15 @@
   "date": "2026-01-08",
   "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 53,
-    "registry_tokens": 52,
-    "runtime_not_in_registry": 1,
-    "registry_not_in_runtime": 0,
-    "coverage": 0.981132
+    "runtime_tokens": 54,
+    "registry_tokens": 56,
+    "runtime_not_in_registry": 0,
+    "registry_not_in_runtime": 2,
+    "coverage": 1.0
   },
-  "runtime_not_in_registry": [
-    "EVT:NEOCORTEX_SHADOW_INTENT"
-  ],
-  "registry_not_in_runtime": []
+  "runtime_not_in_registry": [],
+  "registry_not_in_runtime": [
+    "EVT:NEOCORTEX_ALERT",
+    "EVT:NEOCORTEX_STATE_UPDATED"
+  ]
 }

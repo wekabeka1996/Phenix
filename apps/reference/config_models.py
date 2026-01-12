@@ -441,6 +441,9 @@ class MeanReversion1mStrategyConfig(BaseModel):
     # true (default) = MR emits EVT:TRADE_INTENT_PROPOSED directly (legacy behavior)
     # false = MR emits EVT:MR_SIGNAL_PRODUCED, DecisionMaking applies gates
     emit_trade_intent_directly: bool = Field(description='If true, MR emits trade intent directly (legacy). If false, emits MR_SIGNAL for DM gateway.')
+    
+    # ORDER-POLICY-01: Execution policy
+    execution: "StrategyExecutionConfig" = Field(description="Execution policy (SSOT)")
 
 # ==============================================================================
 # STRATEGIES REGISTRY (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
@@ -1079,11 +1082,77 @@ class FlipOrchestrationConfig(BaseModel):
     )
 
 
+class EntryPlanConfig(BaseModel):
+    """
+    EntryPlan configuration for ATR-based entry/SL/TP computation.
+    
+    EP-01.2-INT: Strict validation (extra='forbid'), no silent defaults.
+    All parameters must be explicitly set in domains.yaml.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(
+        description="Enable EntryPlan-based SL/TP injection into trade intents"
+    )
+    atr_period: int = Field(
+        ge=1, le=100,
+        description="Expected ATR period (for validation/tracing, must match FE config)"
+    )
+    entry_k_atr: float = Field(
+        gt=0.0, le=5.0,
+        description="Entry offset as ATR multiplier (e.g., 0.5 = 0.5*ATR from ref price)"
+    )
+    sl_k_atr: float = Field(
+        gt=0.0, le=10.0,
+        description="Stop-loss distance as ATR multiplier (e.g., 1.5 = 1.5*ATR)"
+    )
+    tp_k_atr: float = Field(
+        gt=0.0, le=10.0,
+        description="Take-profit distance as ATR multiplier (e.g., 2.0 = 2.0*ATR)"
+    )
+    obi_weight: float = Field(
+        ge=0.0, le=2.0,
+        description="OBI modulation weight (0 = no modulation, 1 = full modulation)"
+    )
+    obi_mod_clamp_min: float = Field(
+        gt=0.0, le=1.0,
+        description="Minimum clamp for OBI multiplier (anti-taker drift safety)"
+    )
+    obi_mod_clamp_max: float = Field(
+        ge=1.0, le=3.0,
+        description="Maximum clamp for OBI multiplier (anti-taker drift safety)"
+    )
+    require_atr: bool = Field(
+        description="If True, reject trade intent if ATR is not ready (fail-closed)"
+    )
+    obi_missing_policy: Literal["neutral"] = Field(
+        description="Policy when OBI is None: 'neutral' applies multiplier=1.0 (EXPLICIT, not silent)"
+    )
+    
+    @model_validator(mode='after')
+    def validate_clamp_order(self) -> 'EntryPlanConfig':
+        """Ensure obi_mod_clamp_min <= 1.0 <= obi_mod_clamp_max."""
+        if self.obi_mod_clamp_min > 1.0:
+            raise ValueError(f"obi_mod_clamp_min ({self.obi_mod_clamp_min}) must be <= 1.0")
+        if self.obi_mod_clamp_max < 1.0:
+            raise ValueError(f"obi_mod_clamp_max ({self.obi_mod_clamp_max}) must be >= 1.0")
+        if self.obi_mod_clamp_min > self.obi_mod_clamp_max:
+            raise ValueError(
+                f"obi_mod_clamp_min ({self.obi_mod_clamp_min}) must be <= obi_mod_clamp_max ({self.obi_mod_clamp_max})"
+            )
+        return self
+
+
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
     
     position_sizing: PositionSizingConfig = Field()
+    
+    # EP-01.2-INT: EntryPlan configuration for ATR-based SL/TP
+    entry_plan: EntryPlanConfig = Field(
+        description="EP-01.2: EntryPlan config for ATR-based entry/SL/TP computation"
+    )
     qos: QosConfig = Field()
     features: FeaturesTtlConfig = Field()
     bar_gating: BarGatingConfig = Field()
@@ -1816,6 +1885,107 @@ class EventDedupConfig(BaseModel):
     ttl_ms: int = Field(default=86400000, description="Event TTL in milliseconds (24h)")
 
 
+class PendingEntryTTLConfig(BaseModel):
+    """
+    EP-01.3-INT: Per-timeframe TTL for pending LIMIT entry orders.
+    
+    When a LIMIT entry order is placed, we calculate valid_for_ms based on
+    the strategy's timeframe (tf_sec). If the order is not filled within TTL,
+    it is cancelled (no market fallback, no chase).
+    
+    Cancel triggers:
+    - TTL expired: cancel via watchdog
+    - Regime change: cancel if entry no longer valid for new regime
+    - Supersede: cancel old pending if new open arrives for same symbol
+    - Panic: cancel all pending on killswitch
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(
+        description="Enable per-timeframe pending entry TTL (if False, uses global watchdog fill_ttl_ms)"
+    )
+    ttl_by_tf_sec: Dict[int, int] = Field(
+        description=(
+            "Map of timeframe_seconds -> entry_ttl_seconds. "
+            "E.g. {180: 45, 300: 60, 900: 180} means 3m bars get 45s TTL, 5m get 60s, 15m get 180s."
+        )
+    )
+    reject_unknown_tf: bool = Field(
+        description="If True (fail-closed), reject entry if tf_sec not in ttl_by_tf_sec map"
+    )
+    cancel_on_regime_change: bool = Field(
+        description="Cancel pending entry when EVT:REGIME_DETECTED indicates regime changed"
+    )
+    cancel_on_supersede: bool = Field(
+        description="Cancel old pending entry when new open request arrives for same symbol"
+    )
+    cancel_on_panic: bool = Field(
+        description="Cancel pending entry immediately when panic_killswitch is activated"
+    )
+    
+    @model_validator(mode='after')
+    def validate_ttl_values(self) -> 'PendingEntryTTLConfig':
+        """Ensure all TTL values are positive and tf_sec >= 60."""
+        for tf_sec, ttl_sec in self.ttl_by_tf_sec.items():
+            if tf_sec < 60:
+                raise ValueError(f"tf_sec must be >= 60, got {tf_sec}")
+            if ttl_sec <= 0:
+                raise ValueError(f"TTL must be > 0, got {ttl_sec} for tf_sec={tf_sec}")
+        return self
+
+
+class MakerOnlyEntryConfig(BaseModel):
+    """
+    EP-01.4-INT-B: Configuration for maker-only (post-only) entry orders.
+    
+    When enabled, LIMIT entry orders are placed with tif="GTX" (post-only).
+    If the order would cross the book, it is rejected (MAKER_ONLY_REJECT).
+    
+    NO FALLBACK to market. NO retry with different tif.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(
+        default=False,
+        description="Enable maker-only enforcement for entry LIMIT orders"
+    )
+    tif_value: Literal["GTX"] = Field(
+        default="GTX",
+        description="Time in force for maker-only. Only GTX (post-only) allowed."
+    )
+    reject_on_fail: bool = Field(
+        default=True,
+        description="MUST be True. On GTX reject, abort entry without fallback."
+    )
+    
+    @model_validator(mode='after')
+    def enforce_reject_on_fail(self) -> 'MakerOnlyEntryConfig':
+        """reject_on_fail MUST be True. No fallback allowed."""
+        if self.enabled and not self.reject_on_fail:
+            raise ValueError("maker_only.reject_on_fail MUST be True when enabled. No fallback allowed.")
+        return self
+
+
+class OrderCapabilitiesConfig(BaseModel):
+    """ORDER-POLICY-01: Supported order types and TIF values for the execution layer.
+    
+    This is SSOT for what the system can process. Strategy policies must be
+    a subset of these capabilities.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    supported_order_types: List[Literal["LIMIT", "MARKET"]] = Field(
+        ...,
+        min_length=1,
+        description="Allowed order types. No defaults - must be explicitly configured."
+    )
+    supported_tif: List[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
+        ...,
+        min_length=1,
+        description="Allowed time-in-force values. No defaults - must be explicitly configured."
+    )
+
+
 class ExecutionPositionDomainConfig(BaseModel):
     """Complete execution position domain configuration."""
     model_config = ConfigDict(extra='forbid')  # CANONICAL: strict validation
@@ -1829,6 +1999,20 @@ class ExecutionPositionDomainConfig(BaseModel):
     idempotent_cancel: IdempotentCancelConfig = Field()
     utils: ExecutionUtilsConfig = Field()
     event_dedup: Optional[EventDedupConfig] = Field(default=None, description="Event deduplication config")
+    # EP-01.3-INT: Per-timeframe pending entry TTL
+    pending_entry_ttl: PendingEntryTTLConfig = Field(
+        description="EP-01.3: Per-timeframe TTL for pending LIMIT entry orders"
+    )
+    # EP-01.4-INT-B: Maker-only (post-only) entry configuration
+    maker_only_entry: MakerOnlyEntryConfig = Field(
+        default_factory=MakerOnlyEntryConfig,
+        description="EP-01.4: Maker-only (GTX) entry order configuration"
+    )
+    # ORDER-POLICY-01: Global order capabilities (SSOT)
+    order_capabilities: OrderCapabilitiesConfig = Field(
+        description="ORDER-POLICY-01: Supported order types and TIF for the exchange adapter"
+    )
+
 
 class DomainsDebugConfig(BaseModel):
     """Debug / shadow-only switches for domain gates (fail-closed in live/prod)."""
@@ -2057,6 +2241,17 @@ class AuroraInstrumentConfig(BaseModel):
         return data
 
 
+class StrategyExecutionConfig(BaseModel):
+    """Execution policy for strategies (ORDER-POLICY-01)."""
+    model_config = ConfigDict(extra='forbid')
+    
+    entry_order_type: Literal["LIMIT", "MARKET"] = Field(...)
+    entry_tif: Optional[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
+        default=None,
+        description="Time-in-force for LIMIT orders. Required for LIMIT, None for MARKET."
+    )
+
+
 class AuroraStrategyConfig(BaseModel):
     """Aurora strategy SSOT config (strategy profile: config/aurora/strategies/aurora.yaml).
 
@@ -2070,6 +2265,9 @@ class AuroraStrategyConfig(BaseModel):
     type: str = Field(description="Strategy type identifier (informational)")
     description: str = Field(description="Human description of the strategy profile")
     timeframe_sec: int = Field(ge=60, le=3600, description='Bar timeframe in seconds')
+    
+    # ORDER-POLICY-01: Execution policy
+    execution: StrategyExecutionConfig = Field(description="Execution policy (SSOT)")
 
     # Phase 4: Migration control (DecisionMaking refactor plan).
     # When True, Aurora remains on the legacy tick-based DecisionMaking path and the AuroraHandler must be silent.
@@ -2376,6 +2574,16 @@ class AuroraConfig(BaseModel):
     models: Optional[RegimeModelsConfig] = Field(default=None, description='Regime detection models from regime.yaml')
 
     # regime.yaml SSOT (top-level keys)
+    # REG-FIX-01: BAR-ONLY SSOT - these fields are REQUIRED (no silent defaults)
+    basis_tf_sec: int = Field(
+        description='Bar-only regime updates: only process FEATURES_CALCULATED with matching tf_sec. '
+                    'REQUIRED - missing value fails config load (fail-closed).'
+    )
+    uncertain_cutoff: float = Field(
+        ge=0.0, le=1.0,
+        description='Min confidence to emit non-UNCERTAIN regime. Below this threshold, demote to UNCERTAIN. '
+                    'REQUIRED - missing value fails config load (fail-closed).'
+    )
     hmm: Dict[str, Any] = Field(description='HMM regime detector config (from regime.yaml)')
     features: Dict[str, Any] = Field(description='Regime features config (from regime.yaml)')
     hotreload_whitelist: List[str] = Field(description='Hot-reload allowlist (from regime.yaml)')

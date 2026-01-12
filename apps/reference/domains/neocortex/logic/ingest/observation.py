@@ -37,6 +37,7 @@ class MarketObservation:
     volatility: float
     obi: float
     features_vector: np.ndarray
+    normalized: bool = False
     
     def __post_init__(self):
         """Validation to ensure types are ML-ready."""
@@ -72,5 +73,5 @@ class MarketObservation:
     def __repr__(self):
         return (
             f"MarketObservation(ts={self.ts:.3f}, price={self.mid_price:.2f}, "
-            f"dims={self.feature_dim})"
+            f"dims={self.feature_dim}, normalized={self.normalized})"
         )

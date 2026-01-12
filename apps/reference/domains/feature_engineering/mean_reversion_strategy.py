@@ -161,9 +161,12 @@ class MRSymbolState:
     Tracks completed bars, indicators, and last signal time.
     
     Note: NOT thread-safe. Use separate instance per thread or add locking.
+    
+    T2B-02: resampler is deprecated. MR now consumes global EVT:BAR_CLOSED.
     """
     symbol: str
-    resampler: BarResampler
+    # T2B-02: resampler deprecated - MR uses global BarAggregator SSOT
+    resampler: Optional[BarResampler] = None
     bars: List[Bar] = field(default_factory=list)
     max_bars: int = MAX_BARS_PER_SYMBOL
     
@@ -253,14 +256,15 @@ class MeanReversion1mStrategy:
         self._atr_pct: Dict[str, Decimal] = {}
     
     def get_state(self, symbol: str) -> MRSymbolState:
-        """Get or create state for symbol."""
+        """Get or create state for symbol.
+        
+        T2B-02: No longer creates BarResampler - MR uses global BarAggregator SSOT.
+        """
         if symbol not in self._states:
-            resampler = BarResampler(
-                timeframe_sec=self.timeframe_sec
-            )
+            # T2B-02: resampler=None - we now receive bars from global BarAggregator
             self._states[symbol] = MRSymbolState(
                 symbol=symbol,
-                resampler=resampler
+                resampler=None,  # DEPRECATED: SSOT migration
             )
         return self._states[symbol]
     
@@ -275,6 +279,78 @@ class MeanReversion1mStrategy:
     def get_regime(self, symbol: str) -> str:
         """Get current regime for symbol."""
         return self._regimes[symbol] if symbol in self._regimes else "UNCERTAIN"
+
+    def on_bar(
+        self,
+        symbol: str,
+        bar: Bar,
+        timestamp_ms: int,
+    ) -> Optional[MRSignal]:
+        """
+        Process completed bar and generate MR signal (T2B-02 SSOT method).
+        
+        This is the new SSOT entry point. Bars are received from global BarAggregator
+        via EVT:BAR_CLOSED instead of being built locally from ticks.
+        
+        Args:
+            symbol: Trading pair symbol
+            bar: Completed bar from global BarAggregator
+            timestamp_ms: Event timestamp
+            
+        Returns:
+            MRSignal if signal generated, None/neutral otherwise
+        """
+        state = self.get_state(symbol)
+        price = bar.close
+        
+        # Add bar to history
+        state.add_bar(bar)
+        
+        # Check if we have enough bars
+        if len(state.bars) < self.config.min_bars:
+            return self._neutral_signal(symbol, price, timestamp_ms, "insufficient_bars")
+        
+        # Update indicators
+        self._update_indicators(state)
+        
+        # Check cooldown
+        if self._in_cooldown(state, timestamp_ms):
+            return self._neutral_signal(
+                symbol, price, timestamp_ms, "cooldown", 
+                bar=bar, rsi=state.rsi
+            )
+        
+        # Check regime - only trade in FLAT regimes
+        regime = self.get_regime(symbol)
+        atr_pct = self._atr_pct.get(symbol)
+        flat_regime = map_to_flat_regime(regime, atr_pct, self._flat_regime_thresholds)
+        
+        if flat_regime is None:
+            return self._neutral_signal(
+                symbol, price, timestamp_ms, 
+                f"regime_not_flat:{regime}",
+                bar=bar, rsi=state.rsi
+            )
+            
+        # Check whitelist if configured
+        if self.config.allowed_regimes and flat_regime.name not in self.config.allowed_regimes:
+            return self._neutral_signal(
+                symbol, price, timestamp_ms,
+                f"regime_not_allowed:{flat_regime.name}",
+                bar=bar, rsi=state.rsi
+            )
+        
+        # Get MR parameters for this regime (with config override support)
+        mr_params = MRParameters.from_flat_regime(flat_regime, self._regime_sizing)
+        
+        # Evaluate MR signal
+        signal = self._evaluate_signal(state, flat_regime, mr_params, timestamp_ms, bar)
+        
+        if signal.is_signal:
+            state.last_signal_ts = timestamp_ms
+            state.last_signal_type = signal.signal_type
+        
+        return signal
     
     def on_tick(
         self,
@@ -284,7 +360,10 @@ class MeanReversion1mStrategy:
         timestamp_ms: int
     ) -> Optional[MRSignal]:
         """
-        Process tick and potentially generate MR signal.
+        DEPRECATED: Process tick via local BarResampler.
+        
+        T2B-02: This method is deprecated. Use on_bar() with bars from
+        global BarAggregator (EVT:BAR_CLOSED) instead.
         
         Args:
             symbol: Trading pair symbol
@@ -297,7 +376,12 @@ class MeanReversion1mStrategy:
         """
         state = self.get_state(symbol)
         
-        # Add tick to resampler
+        # T2B-02: Check if resampler exists (for backward compatibility)
+        if state.resampler is None:
+            # SSOT mode: should use on_bar() instead
+            return None
+        
+        # Add tick to resampler (DEPRECATED path)
         completed_bar = state.resampler.add_tick(symbol, price, volume, timestamp_ms)
         
         if completed_bar is None:

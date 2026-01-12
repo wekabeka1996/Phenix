@@ -32,9 +32,15 @@ import json
 import logging
 from pathlib import Path
 from glob import glob
+from contextlib import asynccontextmanager
 from typing import Callable, Awaitable, Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from collections import defaultdict
+
+try:
+    import aiofiles  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    aiofiles = None
 
 from .parsers import (
     FeatureLogEntry, parse_feature_log_line,
@@ -43,6 +49,43 @@ from .parsers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _aio_open(path: Path, mode: str):
+    """
+    Async file open. Prefers aiofiles; falls back to asyncio.to_thread(open).
+    """
+    if aiofiles is not None:
+        async with aiofiles.open(path, mode) as f:  # type: ignore[attr-defined]
+            yield f
+        return
+
+    f = await asyncio.to_thread(open, path, mode)
+
+    class _AsyncFile:
+        def __init__(self, file_obj):
+            self._f = file_obj
+
+        async def seek(self, *args):
+            return await asyncio.to_thread(self._f.seek, *args)
+
+        async def tell(self):
+            return await asyncio.to_thread(self._f.tell)
+
+        async def read(self):
+            return await asyncio.to_thread(self._f.read)
+
+        async def write(self, data):
+            return await asyncio.to_thread(self._f.write, data)
+
+        async def readline(self):
+            return await asyncio.to_thread(self._f.readline)
+
+    try:
+        yield _AsyncFile(f)
+    finally:
+        await asyncio.to_thread(f.close)
 
 
 @dataclass 
@@ -96,6 +139,8 @@ class MultiTailer:
     
     TASK-R1: Added equity-based PnL estimation.
     """
+
+    REWARD_SCALE = 10.0
     
     def __init__(
         self,
@@ -137,25 +182,25 @@ class MultiTailer:
         self._orders_processed = 0
         self._episodes_completed = 0
         
-    def load_state(self) -> bool:
+    async def load_state(self) -> bool:
         """Load persisted offsets."""
         try:
             if self.state_path.exists():
-                with open(self.state_path) as f:
-                    data = json.load(f)
-                    self._offsets = data.get("offsets", {})
+                async with _aio_open(self.state_path, "r") as f:
+                    data = json.loads(await f.read())
+                self._offsets = data.get("offsets", {})
                 logger.info(f"Loaded multi-tailer state: {len(self._offsets)} offsets")
                 return True
         except Exception as e:
             logger.warning(f"Failed to load state: {e}")
         return False
     
-    def save_state(self) -> bool:
+    async def save_state(self) -> bool:
         """Persist offsets."""
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.state_path, 'w') as f:
-                json.dump({"offsets": self._offsets}, f, indent=2)
+            async with _aio_open(self.state_path, "w") as f:
+                await f.write(json.dumps({"offsets": self._offsets}, indent=2))
             return True
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
@@ -168,7 +213,7 @@ class MultiTailer:
             return
             
         self._running = True
-        self.load_state()
+        await self.load_state()
         
         logger.info("Starting MultiTailer...")
         logger.info(f"  Features: {self.config.features_dir}")
@@ -203,7 +248,7 @@ class MultiTailer:
         except asyncio.CancelledError:
             logger.info("MultiTailer cancelled")
         finally:
-            self.save_state()
+            await self.save_state()
             self._running = False
             logger.info(
                 f"MultiTailer stopped: features={self._features_processed}, "
@@ -236,11 +281,11 @@ class MultiTailer:
         batch_count = 0
         
         try:
-            with open(file_path, 'r') as f:
-                f.seek(offset)
+            async with _aio_open(file_path, "r") as f:
+                await f.seek(offset)
                 
                 while True:
-                    line = f.readline()
+                    line = await f.readline()
                     if not line:
                         break
                         
@@ -270,7 +315,7 @@ class MultiTailer:
                             await asyncio.sleep(0.001)
                             batch_count = 0
                     
-                    self._offsets[str(file_path)] = f.tell()
+                    self._offsets[str(file_path)] = await f.tell()
                     
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}")
@@ -289,11 +334,11 @@ class MultiTailer:
             return
             
         try:
-            with open(orders_file, 'r') as f:
-                f.seek(offset)
+            async with _aio_open(orders_file, "r") as f:
+                await f.seek(offset)
                 
                 while True:
-                    line = f.readline()
+                    line = await f.readline()
                     if not line:
                         break
                         
@@ -303,7 +348,7 @@ class MultiTailer:
                         await self._handle_order_event(entry)
                         self._orders_processed += 1
                     
-                    self._offsets[str(orders_file)] = f.tell()
+                    self._offsets[str(orders_file)] = await f.tell()
                     
         except Exception as e:
             logger.error(f"Error processing orders: {e}")
@@ -368,11 +413,11 @@ class MultiTailer:
             return
             
         try:
-            with open(core_log, 'r') as f:
-                f.seek(offset)
+            async with _aio_open(core_log, "r") as f:
+                await f.seek(offset)
                 
                 while True:
-                    line = f.readline()
+                    line = await f.readline()
                     if not line:
                         break
                         
@@ -390,7 +435,7 @@ class MultiTailer:
                                 if len(self._equity_history) > 100:
                                     self._equity_history = self._equity_history[-100:]
                     
-                    self._offsets[str(core_log)] = f.tell()
+                    self._offsets[str(core_log)] = await f.tell()
                     
         except Exception as e:
             logger.error(f"Error processing core log: {e}")
@@ -413,12 +458,20 @@ class MultiTailer:
             # Normalize reward using tanh for PPO stability
             # Scale factor: $10 delta -> reward ~0.76
             import numpy as np
-            normalized_reward = float(np.tanh(raw_pnl / 10.0))
+            normalized_reward = float(np.tanh(raw_pnl / self.REWARD_SCALE))
             
             episode.pnl = raw_pnl
             episode.reward = normalized_reward
-            
-            logger.info(f"DEBUG: Closing Episode {id(episode)} with Reward={episode.reward}")
+
+            if episode.reward is None:
+                logger.warning(
+                    "Episode reward is None on close; forcing 0.0 (symbol=%s, pnl=%s)",
+                    symbol,
+                    raw_pnl,
+                )
+                episode.reward = 0.0
+
+            logger.debug(f"DEBUG: Closing Episode {id(episode)} with Reward={episode.reward}")
 
             if self.episode_handler:
                 await self.episode_handler(episode)
@@ -432,7 +485,7 @@ class MultiTailer:
     def stop(self):
         """Stop tailing."""
         self._running = False
-        self.save_state()
+        # State is persisted in the async run() finalizer.
     
     @property
     def stats(self) -> Dict[str, Any]:

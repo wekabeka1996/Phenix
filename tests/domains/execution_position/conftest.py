@@ -6,9 +6,11 @@ from dataclasses import dataclass
 
 from vfoundation.core.protocol import Message
 try:
-    from apps.reference.config_models import AuroraConfig
+    from apps.reference.config_models import AuroraConfig, TradingRiskConfig, SoftLimitConfigModel
 except ImportError:
     AuroraConfig = MagicMock
+    TradingRiskConfig = MagicMock
+    SoftLimitConfigModel = MagicMock
 
 # --- Shared Harness ---
 
@@ -125,15 +127,16 @@ def fsm_config():
     cfg.trading.execution.exposure.exclude_reduce_only = True
     
     # Risk Soft Limits
-    cfg.trading.risk = {
-        "soft_limits": {
-            "mode": "clip",
-            "clip_min_notional_usdt": "10.0",
-            "directional_ratio_max": "3.0",
-            "side_exposure_usdt": "600.0",
-            "margin_exposure_usdt": "1100.0"
-        }
-    }
+    # Risk Soft Limits
+    cfg.trading.risk = TradingRiskConfig(
+        soft_limits=SoftLimitConfigModel(
+            mode="clip",
+            clip_min_notional_usdt="10.0",
+            directional_ratio_max="3.0",
+            side_exposure_usdt="600.0",
+            margin_exposure_usdt="1100.0"
+        )
+    )
     
     # Mock ops.storage for OrderLedger
     storage_mock = MagicMock()

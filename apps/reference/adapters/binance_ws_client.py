@@ -237,9 +237,11 @@ class BinanceWebSocketClient:
             filled_qty = str(order_data.get("z", "0"))
             side = order_data.get("S", "").lower()
             order_type = order_data.get("o", "").lower()
+            # EP-01.5: Extract timeInForce for GTX detection
+            time_in_force = order_data.get("f", "GTC")
 
             logger.info(
-                f"[BinanceWS] ORDER_TRADE_UPDATE: {symbol} {client_order_id}/{exchange_order_id} status={order_status}"
+                f"[BinanceWS] ORDER_TRADE_UPDATE: {symbol} {client_order_id}/{exchange_order_id} status={order_status} tif={time_in_force}"
             )
 
             # Correlate order using OrderIndex
@@ -266,6 +268,43 @@ class BinanceWebSocketClient:
             }
             standardized_status = status_mapping.get(order_status, order_status)
 
+            # EP-01.5 + EP-01.6: Detect MAKER_ONLY_REJECT (GTX order EXPIRED with 0 fill)
+            # EP-01.6: Use OrderIndex._is_entry_ref() instead of string-hack
+            is_maker_only_reject = False
+            is_entry_order = False
+            try:
+                from apps.reference.domains.execution_position.order_index import OrderIndex
+                is_entry_order = OrderIndex._is_entry_ref(order_ref)
+            except Exception:
+                # Fallback: check clientOrderId for "ENTRY" (legacy, EP-01.5)
+                is_entry_order = "ENTRY" in client_order_id.upper() if client_order_id else False
+            
+            # EP-01.6: Decimal-safe parser for filled_qty (no float() cast)
+            filled_qty_is_zero = False
+            try:
+                from decimal import Decimal, InvalidOperation
+                if filled_qty is None or filled_qty == "":
+                    # Fail-closed: if we can't determine filled_qty, don't classify as maker-only reject
+                    logger.debug(f"[BinanceWS] filled_qty is empty/None, skipping maker-only check")
+                    filled_qty_is_zero = False
+                else:
+                    qty_dec = Decimal(str(filled_qty))
+                    filled_qty_is_zero = qty_dec == 0
+            except (InvalidOperation, ValueError) as e:
+                logger.warning(f"[BinanceWS] Failed to parse filled_qty={filled_qty!r}: {e}, fail-closed")
+                filled_qty_is_zero = False
+            
+            if (standardized_status == "EXPIRED" 
+                and time_in_force == "GTX"
+                and is_entry_order
+                and filled_qty_is_zero):
+                # This is a post-only GTX order that couldn't become maker
+                is_maker_only_reject = True
+                logger.warning(
+                    f"[BinanceWS] 🚫 MAKER_ONLY_REJECT detected: GTX order EXPIRED with 0 fill, "
+                    f"symbol={symbol}, order_id={exchange_order_id}, NO FALLBACK"
+                )
+
             # Create payload
             payload = {
                 "symbol": symbol,
@@ -278,8 +317,19 @@ class BinanceWebSocketClient:
                 "side": side,
                 "order_type": order_type,
                 "qty": filled_qty,
+                "time_in_force": time_in_force,  # EP-01.5: Include tif
                 "ts_ms": msg.get("T", int(time.time() * 1000)),
             }
+
+            # EP-01.5: Add MAKER_ONLY_REJECT reason if detected
+            if is_maker_only_reject:
+                try:
+                    from apps.reference.domains.execution_position.reasons import MAKER_ONLY_REJECT
+                    payload["reason"] = MAKER_ONLY_REJECT
+                    payload["fallback"] = "NONE"
+                except ImportError:
+                    payload["reason"] = "MAKER_ONLY_REJECT"
+                    payload["fallback"] = "NONE"
 
             # Log to audit
             audit_logger.log_order_state_changed(
@@ -292,7 +342,7 @@ class BinanceWebSocketClient:
                 qty=order_data.get("q"),
                 filled_qty=filled_qty,
                 avg_fill_price=str(order_data.get("p", "0")),
-                why="websocket_update",
+                why="websocket_update" if not is_maker_only_reject else "MAKER_ONLY_REJECT",
                 ts_ms=msg.get("T", int(time.time() * 1000)),
             )
 
@@ -310,6 +360,10 @@ class BinanceWebSocketClient:
                 if standardized_status == "FILLED":
                     event_name = "EVT:TRADE_EXECUTED"
                     logger.info(f"[BinanceWS] ✅ ORDER FILLED - Emitting EVT:TRADE_EXECUTED for {symbol}")
+                elif is_maker_only_reject:
+                    # EP-01.5: Emit special rejection event for MAKER_ONLY_REJECT
+                    event_name = "EVT:ORDER_REJECTED"
+                    logger.info(f"[BinanceWS] 🚫 MAKER_ONLY_REJECT - Emitting EVT:ORDER_REJECTED for {symbol}")
                 else:
                     event_name = "EVT:ORDER_STATE_CHANGED"
                     logger.info(f"[BinanceWS] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status}")

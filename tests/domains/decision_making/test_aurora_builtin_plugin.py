@@ -112,8 +112,9 @@ class TestAuroraBuiltinKillSwitch:
         handler = plugin.create_handler(fsm=fsm, config=config)
         handler.register()
         
-        # Should have registered two listeners
-        assert fsm.listen.call_count == 2
+        # T2B-03: Should have registered three listeners (CMD:PROCESS_STRATEGY is primary trigger)
+        assert fsm.listen.call_count == 3
         listen_calls = [call[0][0] for call in fsm.listen.call_args_list]
         assert "EVT:REGIME_DETECTED" in listen_calls
-        assert "EVT:FEATURES_CALCULATED" in listen_calls
+        assert "CMD:PROCESS_STRATEGY" in listen_calls  # T2B-03: Primary trigger
+        assert "EVT:FEATURES_CALCULATED" in listen_calls  # Data-only (warmup caching)

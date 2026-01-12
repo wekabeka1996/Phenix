@@ -141,21 +141,15 @@ class VariationalAutoencoder(nn.Module):
         Returns:
             dict containing 'loss', 'mse', 'kld'
         """
-        # Reconstruction Loss (MSE)
-        # Reduction='sum' or 'mean'? Usually sum over batch, mean over features?
-        # Or mean over everything. Standard implementation often sums.
-        # We will use Mean to match scale with KLD if we normalize KLD.
-        # But commonly sum is used. Let's start with Sum and normalize by batch size later.
-        # Actually PyTorch functional.mse_loss default is Mean.
-        # Let's use Sum to be explicit about magnitude.
-        
-        mse = F.mse_loss(recon_x, x, reduction='sum')
-        
-        # KL Divergence
-        # KLD = -0.5 * sum(1 + logvar - mu^2 - logvar.exp())
-        kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        
-        total_loss = mse + beta * kld
+        # Reconstruction Loss (scale-invariant to batch size)
+        mse = F.mse_loss(recon_x, x, reduction="mean")
+
+        # KL Divergence (mean over batch; sum over latent dims per sample)
+        # KLD = -0.5 * sum(1 + logvar - mu^2 - exp(logvar))
+        kld_per_sample = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+        kld = kld_per_sample.mean()
+
+        total_loss = mse + (beta * kld)
         
         return {
             "loss": total_loss,

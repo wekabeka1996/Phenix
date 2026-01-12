@@ -52,13 +52,17 @@ WARNING_PATTERNS = [
 
 # Legacy files allowed to have time usages (strict limits)
 # Format: "rel_path": max_count
+# T2B-04: These limits MUST decrease over time as we migrate to Clock abstraction
+# T2B-08: Reduced limits after Clock migration for critical QoS/gateway paths
+# REG-FIX-01: RegimeDetector migrated to Clock (limit 1→0)
 LEGACY_USAGE_LIMITS = {
-    "apps/reference/domains/decision_making/decision_making.py": 37,
-    "apps/reference/domains/decision_making/aurora_handler.py": 3,
-    "apps/reference/domains/decision_making/mean_reversion_handler.py": 4,
-    "apps/reference/domains/feature_engineering/bar_resampler.py": 2,
-    "apps/reference/domains/decision_making/dm_log_adapter.py": 1, 
-    "apps/reference/domains/decision_making/deferred_scheduler.py": 1,
+    "apps/reference/domains/decision_making/decision_making.py": 20,  # T2B-08: reduced from 45→20 after Clock migration
+    "apps/reference/domains/decision_making/aurora_handler.py": 3,    # Uses wall_time_fn (injectable)
+    "apps/reference/domains/decision_making/mean_reversion_handler.py": 4,  # TODO: migrate to Clock
+    "apps/reference/domains/feature_engineering/bar_resampler.py": 2,  # TODO: migrate to Clock
+    "apps/reference/domains/decision_making/dm_log_adapter.py": 1,    # TODO: migrate to Clock
+    "apps/reference/domains/decision_making/deferred_scheduler.py": 1,  # TODO: migrate to Clock
+    # REG-FIX-01: RegimeDetector now uses Clock - no time.time() allowed
 }
 
 

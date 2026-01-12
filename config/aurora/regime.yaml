@@ -1,3 +1,6 @@
+basis_tf_sec: 300       # Bar-Only updates (5 min)
+uncertain_cutoff: 0.35  # Min confidence to be valid regime
+
 hmm:
   enabled: true
   K: 3               # number of hidden states (>=2)

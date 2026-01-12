@@ -16,6 +16,7 @@ from pathlib import Path
 from config_models import NeocortexConfig
 from logic.ingest.parser import FeatureParser
 from logic.ingest.observation import MarketObservation
+from logic.ingest.normalizer import WelfordNormalizer
 from logic.amygdala.valuation import ValuationEngine
 from logic.memory.buffer import EpisodicBuffer
 from logic.brain.bridge import BrainBridge
@@ -59,6 +60,27 @@ class NeocortexAdapter:
         
         # Shadow intent control
         self._shadow_intents_emitted = 0
+
+        # Online feature normalization (z-score) to stabilize VAE training.
+        self._normalizer_state_path = self.config.system.data_dir / "normalizer_state.npz"
+        self._normalizer = WelfordNormalizer(dim=len(self.config.ingest.feature_list), eps=1e-8)
+        try:
+            loaded = self._normalizer.load_state(self._normalizer_state_path)
+            if loaded:
+                logger.info(
+                    "Loaded normalizer state: count=%s path=%s",
+                    self._normalizer.count,
+                    self._normalizer_state_path,
+                )
+        except Exception as e:
+            logger.warning("Failed to load normalizer state (starting fresh): %s", e, exc_info=True)
+
+        # Phase R1.5/R2: Episode collection + dream/PPO trigger (lowered for debugging)
+        self.dream_threshold = 10
+        self._completed_episodes: List[Dict[str, Any]] = []
+        self._dream_in_progress = False
+        self._dreams_triggered = 0
+        self._ppo_trains_triggered = 0
         
         logger.info("Neocortex Adapter initialized (Phase 4: Shadow Intents + Checkpointing)")
 
@@ -77,6 +99,18 @@ class NeocortexAdapter:
         try:
             # 1. Parse (String -> Float32 Typed Observation)
             obs = self.parser.parse(payload)
+
+            # 1.5 Normalize features online for stable ML training
+            self._normalizer.update(obs.features_vector)
+            norm_vec = self._normalizer.normalize(obs.features_vector)
+            obs = MarketObservation(
+                ts=obs.ts,
+                mid_price=obs.mid_price,
+                volatility=obs.volatility,
+                obi=obs.obi,
+                features_vector=norm_vec,
+                normalized=True,
+            )
             
             # 2. Value (Calculate Importance)
             reward = float(payload.get('reward_signal', 0.0))
@@ -100,6 +134,122 @@ class NeocortexAdapter:
             
         except Exception as e:
             logger.error(f"Failed to ingest feature event: {e}", exc_info=True)
+
+    async def add_completed_episode(self, episode: Any) -> None:
+        """
+        Called when an RL episode completes (typically on trade close).
+
+        Intentionally lightweight: append + log + condition check.
+        """
+        try:
+            episode_dict = self._episode_to_dict(episode)
+
+            self._completed_episodes.append(episode_dict)
+            logger.info(
+                "Episode added. Buffer size: %s / Threshold: %s",
+                len(self._completed_episodes),
+                self.dream_threshold,
+            )
+
+            await self._maybe_dream()
+        except Exception as e:
+            logger.error(f"Failed to add completed episode: {e}", exc_info=True)
+
+    async def train_ppo_now(self) -> None:
+        """Manual debug hook to force PPO training on whatever is buffered."""
+        try:
+            episodes_to_process = list(self._completed_episodes)
+            self._completed_episodes.clear()
+
+            if not episodes_to_process:
+                logger.info("train_ppo_now: no episodes buffered; skipping")
+                return
+
+            logger.info("train_ppo_now: forcing PPO train on %d episodes", len(episodes_to_process))
+            await self._trigger_ppo_training(episodes_to_process)
+        except Exception as e:
+            logger.error(f"train_ppo_now failed: {e}", exc_info=True)
+
+    def _episode_to_dict(self, episode: Any) -> Dict[str, Any]:
+        """
+        Normalize episode input (dataclass or dict) into a worker-picklable dict.
+        """
+        if isinstance(episode, dict):
+            raw = episode
+        else:
+            raw = {
+                "symbol": getattr(episode, "symbol", None),
+                "timestamp": getattr(episode, "timestamp", None),
+                "features": getattr(episode, "features", None),
+                "side": getattr(episode, "side", None),
+                "reward": getattr(episode, "reward", None),
+                "pnl": getattr(episode, "pnl", None),
+            }
+
+        reward = raw.get("reward", 0.0)
+        if reward is None:
+            logger.warning("Episode reward is None; forcing 0.0 (episode=%s)", raw.get("symbol"))
+            reward = 0.0
+
+        features = raw.get("features") or {}
+        features_vector = [
+            float(features.get(name, 0.0) or 0.0) for name in self.config.ingest.feature_list
+        ]
+
+        return {
+            "symbol": raw.get("symbol"),
+            "timestamp": raw.get("timestamp"),
+            "side": raw.get("side") or "FLAT",
+            "reward": float(reward),
+            "pnl": raw.get("pnl"),
+            "features_vector": features_vector,
+        }
+
+    async def _maybe_dream(self) -> None:
+        """
+        Decide whether to trigger dream consolidation / PPO training.
+        """
+        logger.debug("Checking dream condition...")
+
+        if self._dream_in_progress:
+            return
+
+        if len(self._completed_episodes) < self.dream_threshold:
+            return
+
+        logger.info("TRIGGERING DREAM SEQUENCE NOW!")
+
+        episodes_to_process = list(self._completed_episodes)
+        self._completed_episodes.clear()
+
+        self._dream_in_progress = True
+        self._dreams_triggered += 1
+
+        asyncio.create_task(self._run_dream_sequence(episodes_to_process))
+
+    async def _run_dream_sequence(self, episodes_to_process: List[Dict[str, Any]]) -> None:
+        try:
+            await self._trigger_ppo_training(episodes_to_process)
+        except Exception as e:
+            logger.error(f"Dream sequence failed: {e}", exc_info=True)
+        finally:
+            self._dream_in_progress = False
+
+    async def _trigger_ppo_training(self, episodes_to_process: List[Dict[str, Any]]) -> None:
+        if self.brain_bridge is None:
+            logger.warning("PPO training skipped: BrainBridge not available")
+            return
+
+        self._ppo_trains_triggered += 1
+        logger.info("PPO training triggered on %d episodes", len(episodes_to_process))
+
+        result = await self.brain_bridge.train_ppo_async(episodes_to_process)
+        if not result:
+            logger.warning("PPO training returned empty result (likely PPO disabled); skipping")
+        elif "error" in result:
+            logger.warning("PPO training error: %s", result.get("error"))
+        else:
+            logger.info("PPO update complete: %s", result)
 
     async def _generate_shadow_intent(self, obs: MarketObservation, original_payload: Dict):
         """
@@ -213,8 +363,15 @@ class NeocortexAdapter:
             if success:
                 self._last_checkpoint_step = self._total_train_steps
                 logger.info(f"Checkpoint saved at step {self._total_train_steps}")
+                self._save_normalizer_state()
             else:
                 logger.warning(f"Checkpoint save failed at step {self._total_train_steps}")
+
+    def _save_normalizer_state(self) -> None:
+        try:
+            self._normalizer.save_state(self._normalizer_state_path)
+        except Exception as e:
+            logger.warning("Failed to save normalizer state: %s", e, exc_info=True)
 
     async def start(self):
         """
@@ -238,6 +395,7 @@ class NeocortexAdapter:
         """
         Graceful shutdown with final checkpoint.
         """
+        self._save_normalizer_state()
         if self.brain_bridge is not None:
             # Note: Can't do async save in sync shutdown
             # In production, would convert to async shutdown
@@ -255,5 +413,9 @@ class NeocortexAdapter:
             "total_train_steps": self._total_train_steps,
             "shadow_intents_emitted": self._shadow_intents_emitted,
             "buffer_size": len(self.buffer),
-            "samples_since_train": self._samples_since_last_train
+            "samples_since_train": self._samples_since_last_train,
+            "episodes_buffered": len(self._completed_episodes),
+            "dream_threshold": self.dream_threshold,
+            "dreams_triggered": self._dreams_triggered,
+            "ppo_trains_triggered": self._ppo_trains_triggered,
         }

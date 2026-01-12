@@ -33,6 +33,8 @@ class OrderDeadline:
     timeout_type: OrderTimeoutType
     corr_id: Optional[str] = None
     rid: Optional[str] = None
+    # EP-01.3-INT: Per-order fill TTL override (ms). If set, used instead of global fill_ttl_ms.
+    fill_ttl_override_ms: Optional[int] = None
 
 
 class OrderTimeoutWatchdog:
@@ -172,9 +174,16 @@ class OrderTimeoutWatchdog:
         client_order_id: str,
         symbol: str,
         corr_id: Optional[str] = None,
-        rid: Optional[str] = None
+        rid: Optional[str] = None,
+        # EP-01.3-INT: Per-order fill TTL override (ms)
+        fill_ttl_override_ms: Optional[int] = None,
     ):
-        """Track a newly placed order for ACK timeout."""
+        """Track a newly placed order for ACK timeout.
+        
+        Args:
+            fill_ttl_override_ms: If provided, overrides global fill_ttl_ms for this order.
+                                  Used for pending entry TTL based on timeframe.
+        """
         deadline_ms = int(time.time() * 1000) + self.ack_ttl_ms
 
         deadline = OrderDeadline(
@@ -184,12 +193,14 @@ class OrderTimeoutWatchdog:
             deadline_ms=deadline_ms,
             timeout_type=OrderTimeoutType.ACK_TIMEOUT,
             corr_id=corr_id,
-            rid=rid
+            rid=rid,
+            fill_ttl_override_ms=fill_ttl_override_ms,  # EP-01.3-INT
         )
 
         self.pending_orders[order_id] = deadline
+        ttl_info = f", fill_ttl_override={fill_ttl_override_ms}ms" if fill_ttl_override_ms else ""
         LOG.debug(
-            f"Tracking order {order_id} for ACK timeout at {deadline_ms}")
+            f"Tracking order {order_id} for ACK timeout at {deadline_ms}{ttl_info}")
 
     def on_order_ack(self, order_id: str):
         """Mark order as acknowledged, start FILL timeout tracking."""
@@ -199,14 +210,16 @@ class OrderTimeoutWatchdog:
 
         deadline = self.pending_orders.pop(order_id)
 
-        # Start FILL timeout
-        fill_deadline_ms = int(time.time() * 1000) + self.fill_ttl_ms
+        # EP-01.3-INT: Use per-order fill TTL if provided, else global
+        fill_ttl = deadline.fill_ttl_override_ms if deadline.fill_ttl_override_ms else self.fill_ttl_ms
+        fill_deadline_ms = int(time.time() * 1000) + fill_ttl
         deadline.deadline_ms = fill_deadline_ms
         deadline.timeout_type = OrderTimeoutType.FILL_TIMEOUT
 
         self.acked_orders[order_id] = deadline
+        ttl_source = "override" if deadline.fill_ttl_override_ms else "global"
         LOG.debug(
-            f"Order {order_id} ACKed, now tracking for FILL timeout at {fill_deadline_ms}")
+            f"Order {order_id} ACKed, now tracking for FILL timeout at {fill_deadline_ms} ({ttl_source}: {fill_ttl}ms)")
 
     def on_order_fill(self, order_id: str):
         """Remove order from timeout tracking on successful fill."""

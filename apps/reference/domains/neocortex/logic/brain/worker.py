@@ -21,7 +21,7 @@ _worker_initialized: bool = False
 logger = logging.getLogger(__name__)
 
 
-def _brain_worker_init(config_dict: Dict[str, Any]) -> bool:
+def _brain_worker_init(config_dict: Dict[str, Any], rng_seed: int = 0) -> bool:
     """
     Initialize BrainCore in the worker process.
     
@@ -44,7 +44,7 @@ def _brain_worker_init(config_dict: Dict[str, Any]) -> bool:
         config = NeuroConfig(**config_dict)
         
         # Initialize BrainCore
-        _brain_core = BrainCore(config)
+        _brain_core = BrainCore(config, rng_seed=int(rng_seed))
         _worker_initialized = True
         
         logger.info("Brain Worker initialized successfully")
@@ -87,6 +87,28 @@ def _brain_train_task(batch_data: np.ndarray) -> Dict[str, float]:
         return {"error": str(e), "vae_loss": float('nan'), "wm_loss": float('nan')}
 
 
+def _brain_train_ppo_task(episodes: list[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    PPO training task executed in worker process.
+
+    Args:
+        episodes: List of worker-picklable episode dicts.
+
+    Returns:
+        Dictionary of PPO metrics.
+    """
+    global _brain_core
+
+    if not _worker_initialized or _brain_core is None:
+        raise RuntimeError("Brain Worker not initialized")
+
+    try:
+        return _brain_core.train_ppo(episodes)
+    except Exception as e:
+        logger.error(f"PPO training task failed: {e}", exc_info=True)
+        return {"error": str(e), "episodes_processed": 0}
+
+
 def _brain_encode_task(obs_data: np.ndarray) -> np.ndarray:
     """
     Encoding task executed in worker process.
@@ -108,7 +130,16 @@ def _brain_encode_task(obs_data: np.ndarray) -> np.ndarray:
         
     except Exception as e:
         logger.error(f"Encoding task failed: {e}", exc_info=True)
-        return np.zeros(1, dtype=np.float32)
+        latent_dim = 1
+        try:
+            latent_dim = int(_brain_core.config.vae.latent_dim)
+        except Exception:
+            latent_dim = 1
+
+        obs_data = np.asarray(obs_data)
+        if obs_data.ndim > 1:
+            return np.zeros((obs_data.shape[0], latent_dim), dtype=np.float32)
+        return np.zeros((latent_dim,), dtype=np.float32)
 
 
 def _brain_act_task(z: np.ndarray) -> Dict[str, Any]:
@@ -187,4 +218,3 @@ def _brain_load_task(path: str) -> bool:
     except Exception as e:
         logger.error(f"Load task failed: {e}", exc_info=True)
         return False
-

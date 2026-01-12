@@ -1230,6 +1230,46 @@ class BinanceAdapter(AbstractExchangeAdapter):
             params["newClientOrderId"] = new_client_order_id
         return await self._request("POST", "/fapi/v1/order", params)
 
+    async def place_limit_entry(
+        self,
+        symbol: str,
+        side: str,
+        price: str,
+        quantity: str,
+        time_in_force: str = "GTC",
+        new_client_order_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        EP-01.4-INT-A: Place a LIMIT entry order with configurable time_in_force.
+
+        Args:
+            symbol: Trading pair.
+            side: BUY or SELL.
+            price: Limit price.
+            quantity: Order quantity (pre-normalized).
+            time_in_force: GTC (default), GTX (post-only/maker-only), IOC, or FOK.
+            new_client_order_id: Optional client order ID.
+
+        Returns:
+            Order response.
+
+        Notes:
+            GTX = Post-Only / Maker-Only. Will be rejected if it would cross the book.
+            On Binance USDS-M Futures, GTX orders may come as NEW -> EXPIRED via WS
+            if they cannot be maker.
+        """
+        params = {
+            "symbol": symbol,
+            "side": side.upper(),
+            "type": "LIMIT",
+            "timeInForce": time_in_force,
+            "price": price,
+            "quantity": quantity,
+        }
+        if new_client_order_id:
+            params["newClientOrderId"] = new_client_order_id
+        return await self._request("POST", "/fapi/v1/order", params)
+
     async def place_stop_market_close_position(
         self,
         symbol: str,
@@ -1372,6 +1412,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         quantity: str,
         position_side: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
+        time_in_force: str = "GTC",  # EP-01.4-INT-A: Parametrized, supports GTX
     ) -> Dict[str, Any]:
         """
         Place a limit reduce-only order.
@@ -1383,6 +1424,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
             quantity: Order quantity.
             position_side: For HEDGE mode.
             new_client_order_id: Optional client order ID.
+            time_in_force: Time in force (GTC, GTX/post-only, IOC, FOK). Default GTC.
 
         Returns:
             Order response.
@@ -1391,7 +1433,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
             "symbol": symbol,
             "side": side.upper(),
             "type": "LIMIT",
-            "timeInForce": "GTC",
+            "timeInForce": time_in_force,  # EP-01.4-INT-A: Use parameter, not hardcoded
             "price": price,
             "quantity": quantity,
             "reduceOnly": "true",

@@ -60,8 +60,9 @@ def test_atr_requires_ohlc_or_explicit_opt_in(monkeypatch):
 
     symbol = "BTCUSDT"
     now_ms = int(time.time() * 1000)
-    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": now_ms, "features": {"price": "100"}}))
-    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": now_ms + 1000, "features": {"price": "101"}}))
+    # REG-FIX-01: Must include tf_sec=basis_tf_sec (300) for BAR-ONLY mode
+    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": now_ms, "tf_sec": 300, "features": {"price": "100"}}))
+    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": now_ms + 1000, "tf_sec": 300, "features": {"price": "101"}}))
 
     assert any(domain == "regime_detector" and reason == "atr_missing_ohlc" for domain, reason in drops)
     assert fsm.emitted, "expected EVT:REGIME_DETECTED emission"
@@ -97,7 +98,8 @@ def test_stale_data_sets_regime_uncertain(monkeypatch):
 
     symbol = "BTCUSDT"
     feats = {"price": "120", "sma_short": "110", "sma_long": "100"}  # would be TREND_UP if not gated
-    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": stale_ts, "features": feats}))
+    # REG-FIX-01: Must include tf_sec=basis_tf_sec (300) for BAR-ONLY mode
+    det.handle_event(SimpleNamespace(verb="FEATURES_CALCULATED", pld={"symbol": symbol, "ts": stale_ts, "tf_sec": 300, "features": feats}))
 
     assert any(domain == "regime_detector" and reason == "stale_features" for domain, reason in drops)
     assert fsm.emitted, "expected EVT:REGIME_DETECTED emission"
@@ -234,10 +236,11 @@ def test_stale_features_do_not_update_buffers(monkeypatch):
     now_ms = int(time.time() * 1000)
 
     # Step 1: Feed 3 fresh ticks to populate buffer
+    # REG-FIX-01: Must include tf_sec=basis_tf_sec (300) for BAR-ONLY mode
     for i, price in enumerate(["100", "101", "102"]):
         det.handle_event(SimpleNamespace(
             verb="FEATURES_CALCULATED",
-            pld={"symbol": symbol, "ts": now_ms + i * 1000, "features": {"price": price}}
+            pld={"symbol": symbol, "ts": now_ms + i * 1000, "tf_sec": 300, "features": {"price": price}}
         ))
 
     buf_len_before = len(det._price_buf[symbol])
@@ -245,9 +248,10 @@ def test_stale_features_do_not_update_buffers(monkeypatch):
 
     # Step 2: Feed STALE tick (should NOT be added to buffer)
     stale_ts = now_ms - ttl_ms - 5000  # definitely stale
+    # REG-FIX-01: Must include tf_sec=basis_tf_sec (300) for BAR-ONLY mode
     det.handle_event(SimpleNamespace(
         verb="FEATURES_CALCULATED",
-        pld={"symbol": symbol, "ts": stale_ts, "features": {"price": "999"}}  # poison value
+        pld={"symbol": symbol, "ts": stale_ts, "tf_sec": 300, "features": {"price": "999"}}  # poison value
     ))
 
     # Assert: buffer NOT poisoned

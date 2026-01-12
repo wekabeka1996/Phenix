@@ -73,6 +73,15 @@ class NormalizedRejectReasons:
     # P0-3: Feature Sanity Firewall
     FEATURE_NAN_INF = "NRR-044"
     FEATURE_OUT_OF_RANGE = "NRR-045"
+    # OBS/LEGACY: Missing timeframe context (tf_sec missing/0 where forbidden)
+    MISSING_TF_SEC = "NRR-046"
+    # ORDER-POLICY-01: Order type/tif policy validation
+    ORDER_TYPE_MISSING = "NRR-047"
+    UNSUPPORTED_ORDER_TYPE = "NRR-048"
+    UNSUPPORTED_TIF = "NRR-049"
+    LIMIT_PRICE_MISSING = "NRR-050"
+    MARKET_PRICE_PRESENT = "NRR-051"
+    TIF_REQUIRED_FOR_LIMIT = "NRR-052"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex patterns for normalization

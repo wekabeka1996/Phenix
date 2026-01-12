@@ -88,7 +88,7 @@ class MockAuroraConfig:
 @pytest.fixture
 def root_mock_config(domains_config):
     """Mock configuration object with domains loaded."""
-    print("DEBUG: mock_config fixture in tests/conftest.py CALLED")
+    # print("DEBUG: mock_config fixture in tests/conftest.py CALLED")
     return MockAuroraConfig(domains_config)
 
 
@@ -269,3 +269,67 @@ def make_app_cfg_stub(**overrides):
                 setattr(obj, parts[-1], value)
         # Add more if needed
     return stub
+
+# ==============================================================================
+# STRATEGY MOCK FACTORIES (Strict Config Fix)
+# ==============================================================================
+
+def create_mock_mr_config(emit_trade_intent_directly=False):
+    """Factory for mocked MeanReversion config with STRICT execution fields."""
+    mr_config = MagicMock()
+    mr_config.enabled = True
+    mr_config.timeframe_sec = 180
+    
+    # REQUIRED FIELD for Pydantic strict validation
+    mr_config.execution = MagicMock()
+    mr_config.execution.entry_order_type = "MARKET"
+    mr_config.execution.entry_tif = None
+    
+    mr_config.emit_trade_intent_directly = emit_trade_intent_directly
+    mr_config.allowed_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+    mr_config.regime_sizing = {}
+    mr_config.liquidity_gate = None
+    
+    # Defaults
+    mr_config.risk = MagicMock()
+    mr_config.regime_thresholds = {"DEFAULT": 0.5}
+    mr_config.assets = {}
+    mr_config.strategy = MagicMock()
+    
+    return mr_config
+
+def create_mock_aurora_config_simple():
+    """Factory for basic mocked Aurora config."""
+    aurora_config = MagicMock()
+    aurora_config.execution = MagicMock()
+    aurora_config.execution.entry_order_type = "LIMIT" 
+    aurora_config.execution.entry_tif = "GTX"
+    return aurora_config
+
+
+class MockClock:
+    """Helper for deterministic time testing (monotonic & wall)."""
+    def __init__(self, start_ts=1000.0):
+        self._ts = start_ts
+        
+    def __call__(self):
+        """Behave like time.monotonic() when called directly."""
+        return self._ts
+
+    def now_sec(self) -> float:
+        """Clock interface: wall time."""
+        return self._ts
+        
+    def monotonic(self) -> float:
+        """Clock interface: monotonic time."""
+        return self._ts
+        
+    def advance(self, seconds: float):
+        self._ts += seconds
+        
+    def set(self, ts: float):
+        self._ts = ts
+
+@pytest.fixture
+def manual_clock():
+    return MockClock()

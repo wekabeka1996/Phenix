@@ -79,7 +79,10 @@
     "apps/reference/domains/neocortex/domain.yaml": {},
     "apps/reference/domains/neocortex/config/system.yaml": {},
     "apps/reference/domains/neocortex/config/neuro.yaml": {},
-    "apps/reference/domains/neocortex/config/ingest.yaml": {}
+    "apps/reference/domains/neocortex/config/ingest.yaml": {},
+    "apps/reference/domains/neocortex/config/replay.yaml": {},
+    "reports/gate_effect/gate_effect_summary.yaml": {},
+    "reports/confidence_calibration/recommendations.yaml": {}
   },
   "merged_master": {}
 }

@@ -5,17 +5,22 @@ Analyzes market features to detect current trading regime (TREND_UP, TREND_DOWN,
 Based on logic from legacy aurora/regime/detectors.py
 
 WHY: Enable regime-aware trading decisions [FSMP-PORTING-T01]
+
+REG-FIX-01: BAR-ONLY SSOT
+- Only processes FEATURES_CALCULATED events with tf_sec == basis_tf_sec
+- Ignores tick-level tf=0 events to prevent double-clocking
+- Clock abstraction for deterministic testing
 """
 
 import logging
-import time
 from collections import deque, defaultdict
 from decimal import Decimal
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from vfoundation.core.protocol import Message
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_loader import AuroraConfig
+from apps.reference.core.time.clock import Clock, LiveClock
 from apps.reference.telemetry.metrics import inc_data_quality_drop
 
 
@@ -30,22 +35,43 @@ class RegimeDetector:
     - Mean-reversion detection (planned)
 
     Emits EVT:REGIME_DETECTED events with confidence scores.
+    
+    REG-FIX-01: BAR-ONLY mode
+    - Only processes events where tf_sec == basis_tf_sec (default: 300 for 5m bars)
+    - Clock injection for deterministic testing
     """
 
-    def __init__(self, config: AuroraConfig, fsm):
+    def __init__(
+        self, 
+        config: AuroraConfig, 
+        fsm,
+        *,
+        clock: Optional[Clock] = None,
+    ):
         """
         Initializes the detector with model configurations.
 
         Args:
-            config: Configuration dict with 'models' section containing
-                   model-specific parameters (e.g., models.sma_trend)
+            config: AuroraConfig with regime.yaml fields
             fsm: FSMCore instance for event emission and logging
+            clock: Optional Clock for time abstraction (default: LiveClock)
         """
         self.fsm = fsm
         if isinstance(config, dict):
             raise TypeError("RegimeDetector requires AuroraConfig, got dict")
         self.config = config
         self.logger = logging.getLogger(__name__)
+        
+        # REG-FIX-01: Clock abstraction (T2B-08 pattern)
+        self._clock: Clock = clock or LiveClock()
+        
+        # REG-FIX-01: BAR-ONLY SSOT - required fields (fail-closed)
+        self._basis_tf_sec: int = config.basis_tf_sec
+        self._uncertain_cutoff: float = config.uncertain_cutoff
+        self.logger.info(
+            f"RegimeDetector: basis_tf_sec={self._basis_tf_sec}, uncertain_cutoff={self._uncertain_cutoff}"
+        )
+        
         self._subscribed = False
         self._last_emitted_regime: Dict[str, str] = {}
         self._last_full_ready: Dict[str, bool] = {}
@@ -159,8 +185,9 @@ class RegimeDetector:
         """
         Entry point for handling incoming events.
 
-        Currently processes EVT:FEATURES_CALCULATED events to analyze
-        market features and detect trading regimes.
+        REG-FIX-01: BAR-ONLY mode
+        - Only processes EVT:FEATURES_CALCULATED with tf_sec == basis_tf_sec
+        - Ignores tick-level events (tf_sec=0) to prevent double-clocking
 
         Args:
             event: Message object with op=EVT, verb=FEATURES_CALCULATED
@@ -178,6 +205,18 @@ class RegimeDetector:
         ts = pld.get("ts")
         features: Dict[str, Any] = (pld.get("features") or {}) if isinstance(pld, dict) else {}
 
+        # REG-FIX-01: BAR-ONLY filter - ignore non-basis timeframes
+        tf_sec = pld.get("tf_sec")
+        if tf_sec != self._basis_tf_sec:
+            # Silent ignore for tick-level events (tf=0) - NOT a data quality issue
+            if tf_sec == 0:
+                self.logger.debug(f"[{symbol}] RegimeDetector: ignoring tick-level features (tf_sec=0)")
+            else:
+                self.logger.debug(
+                    f"[{symbol}] RegimeDetector: ignoring tf_sec={tf_sec} (basis={self._basis_tf_sec})"
+                )
+            return
+
         if not symbol or ts is None:
             inc_data_quality_drop(domain="regime_detector", reason="missing_symbol_or_ts")
             return
@@ -193,7 +232,8 @@ class RegimeDetector:
 
         self._ticks_seen[symbol] += 1
 
-        now_ms = int(time.time() * 1000)
+        # REG-FIX-01: Clock abstraction for deterministic testing
+        now_ms = self._clock.now_ms()
         tick_ttl_ms = int(self.config.system.market_data.tick_ttl_ms) if self.config.system.market_data else 0
         data_drops: list[str] = []
         data_notes: list[str] = []
@@ -380,6 +420,18 @@ class RegimeDetector:
             regime = "UNCERTAIN"
             confidence = conf_min
             source_model = "data_quality_gate"
+
+        # REG-FIX-01: uncertain_cutoff - demote low-confidence regimes to UNCERTAIN
+        # This prevents weak regime claims from triggering strategy decisions
+        if regime != "UNCERTAIN" and float(confidence) < self._uncertain_cutoff:
+            data_notes.append(f"confidence_below_cutoff:{float(confidence):.3f}<{self._uncertain_cutoff}")
+            self.logger.debug(
+                f"[{symbol}] Regime {regime} demoted to UNCERTAIN: "
+                f"confidence {float(confidence):.3f} < cutoff {self._uncertain_cutoff}"
+            )
+            regime = "UNCERTAIN"
+            confidence = conf_min
+            source_model = "uncertain_cutoff_gate"
 
         warmup_ready_map = {
             "sma_short": bool(sma_short_ready),

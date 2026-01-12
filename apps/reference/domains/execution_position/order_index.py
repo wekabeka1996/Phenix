@@ -24,6 +24,8 @@ class OrderRef:
     symbol: Optional[str] = None
     side: Optional[str] = None
     order_type: Optional[str] = None
+    # EP-01.6: Explicit order kind for robust entry detection (no string-hacks)
+    order_kind: Optional[str] = None  # "ENTRY", "TP", "SL", "EXIT", etc.
     created_ts: float = field(default_factory=time)
     terminal: bool = False
 
@@ -55,6 +57,10 @@ class OrderIndex:
 
     @staticmethod
     def _is_entry_ref(ref: OrderRef) -> bool:
+        # EP-01.6: Prefer order_kind (SSOT) if set
+        if ref.order_kind:
+            return str(ref.order_kind).upper() == "ENTRY"
+        # Legacy fallback: clientOrderId starts with "ENTRY-"
         if ref.clientOrderId and str(ref.clientOrderId).startswith("ENTRY-"):
             return True
         if str(ref.order_type or "").upper() == "ENTRY_INTENT":

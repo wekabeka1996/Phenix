@@ -20,13 +20,56 @@ import json
 import logging
 import os
 from pathlib import Path
+from contextlib import asynccontextmanager
 from typing import Callable, Awaitable, Dict, Any, Optional, List
 from glob import glob
 from dataclasses import dataclass, field
 
+try:
+    import aiofiles  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    aiofiles = None
+
 from config_models import ReplayConfig
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _aio_open(path: Path, mode: str):
+    """
+    Async file open. Prefers aiofiles; falls back to asyncio.to_thread(open).
+    """
+    if aiofiles is not None:
+        async with aiofiles.open(path, mode) as f:  # type: ignore[attr-defined]
+            yield f
+        return
+
+    f = await asyncio.to_thread(open, path, mode)
+
+    class _AsyncFile:
+        def __init__(self, file_obj):
+            self._f = file_obj
+
+        async def seek(self, *args):
+            return await asyncio.to_thread(self._f.seek, *args)
+
+        async def tell(self):
+            return await asyncio.to_thread(self._f.tell)
+
+        async def read(self):
+            return await asyncio.to_thread(self._f.read)
+
+        async def write(self, data):
+            return await asyncio.to_thread(self._f.write, data)
+
+        async def readline(self):
+            return await asyncio.to_thread(self._f.readline)
+
+    try:
+        yield _AsyncFile(f)
+    finally:
+        await asyncio.to_thread(f.close)
 
 
 @dataclass
@@ -81,14 +124,14 @@ class WalTailer:
         # Polling interval when tailing
         self._poll_interval = 0.1  # seconds
         
-    def load_state(self) -> bool:
+    async def load_state(self) -> bool:
         """Load persisted offsets from state file."""
         try:
             if self.state_path.exists():
-                with open(self.state_path, 'r') as f:
-                    data = json.load(f)
-                    self._state.offsets = data.get("offsets", {})
-                    self._state.last_file = data.get("last_file")
+                async with _aio_open(self.state_path, "r") as f:
+                    data = json.loads(await f.read())
+                self._state.offsets = data.get("offsets", {})
+                self._state.last_file = data.get("last_file")
                 logger.info(f"Loaded tailer state: {len(self._state.offsets)} file offsets")
                 return True
             else:
@@ -98,15 +141,17 @@ class WalTailer:
             logger.warning(f"Failed to load tailer state: {e}")
             return False
     
-    def save_state(self) -> bool:
+    async def save_state(self) -> bool:
         """Persist offsets to state file."""
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.state_path, 'w') as f:
-                json.dump({
-                    "offsets": self._state.offsets,
-                    "last_file": self._state.last_file
-                }, f, indent=2)
+            async with _aio_open(self.state_path, "w") as f:
+                await f.write(
+                    json.dumps(
+                        {"offsets": self._state.offsets, "last_file": self._state.last_file},
+                        indent=2,
+                    )
+                )
             logger.debug(f"Saved tailer state: {len(self._state.offsets)} file offsets")
             return True
         except Exception as e:
@@ -124,7 +169,7 @@ class WalTailer:
             return
             
         self._running = True
-        self.load_state()
+        await self.load_state()
         
         logger.info(f"Starting WalTailer: {self.wal_dir}")
         
@@ -170,7 +215,7 @@ class WalTailer:
             logger.info("WalTailer cancelled")
             
         finally:
-            self.save_state()
+            await self.save_state()
             self._running = False
             logger.info(
                 f"WalTailer stopped: {self._events_processed} events, "
@@ -195,19 +240,19 @@ class WalTailer:
         logger.info(f"Processing: {file_name} (offset={offset})")
         
         try:
-            with open(file_path, 'r') as f:
-                f.seek(offset)
+            async with _aio_open(file_path, "r") as f:
+                await f.seek(offset)
                 line_count = 0
                 
                 while self._running:
-                    line = f.readline()
+                    line = await f.readline()
                     
                     if not line:
                         # EOF reached
                         break
                         
                     # Update offset before processing (in case of crash)
-                    new_offset = f.tell()
+                    new_offset = await f.tell()
                     
                     # Process line
                     await self._process_line(line)
@@ -224,7 +269,7 @@ class WalTailer:
                         # Progress log
                         if line_count % 10000 == 0:
                             logger.info(f"  {file_name}: {line_count} lines")
-                            self.save_state()  # Periodic checkpoint
+                            await self.save_state()  # Periodic checkpoint
                 
                 logger.info(f"  Completed: {file_name} ({line_count} lines)")
                 
@@ -241,11 +286,11 @@ class WalTailer:
             self._tailing = True
         
         try:
-            with open(file_path, 'r') as f:
-                f.seek(offset)
+            async with _aio_open(file_path, "r") as f:
+                await f.seek(offset)
                 
                 while self._running:
-                    line = f.readline()
+                    line = await f.readline()
                     
                     if not line:
                         # Check for file rotation
@@ -262,10 +307,10 @@ class WalTailer:
                         # Check if file was truncated/replaced
                         try:
                             current_size = file_path.stat().st_size
-                            if current_size < f.tell():
+                            if current_size < await f.tell():
                                 # File was truncated, reset
                                 logger.warning(f"File truncated: {file_name}")
-                                f.seek(0)
+                                await f.seek(0)
                         except FileNotFoundError:
                             # File deleted, exit
                             logger.warning(f"File deleted: {file_name}")
@@ -276,12 +321,12 @@ class WalTailer:
                     # Check for incomplete line (no newline at end)
                     if not line.endswith('\n'):
                         # Partial line, wait for more data
-                        f.seek(offset)  # Go back to start of partial line
+                        await f.seek(offset)  # Go back to start of partial line
                         await asyncio.sleep(self._poll_interval)
                         continue
                     
                     # Process complete line
-                    new_offset = f.tell()
+                    new_offset = await f.tell()
                     await self._process_line(line)
                     
                     # Update state
@@ -325,7 +370,7 @@ class WalTailer:
     def stop(self):
         """Stop tailing gracefully."""
         self._running = False
-        self.save_state()
+        # State is persisted in the async run() finalizer.
         
     @property
     def stats(self) -> Dict[str, Any]:

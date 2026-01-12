@@ -4,6 +4,9 @@
 data_dir: "./data"
 checkpoint_dir: "./data/checkpoints"
 
+# Reproducibility
+rng_seed: 42
+
 # Multiprocessing
 brain_workers: 1  # Start with single worker, scale up later
 queue_maxsize: 1000

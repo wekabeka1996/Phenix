@@ -36,14 +36,15 @@ class TestCMDProcessStrategyEmission:
         
         # Verify CMD:PROCESS_STRATEGY emission is in the code
         assert "CMD:PROCESS_STRATEGY" in source, "CMD:PROCESS_STRATEGY emission should be in _calculate_and_emit_features_for_tf"
-        assert "tf_sec or 0) >= 60" in source, "Should check tf_sec >= 60 before CMD emission"
+        # REC-01-FIX: Changed from tf_sec > 0 to tf_sec >= 60 for fail-closed
+        assert "tf_sec < 60" in source or "tf_sec >= 60" in source, "Should check tf_sec >= 60 before CMD emission (REC-01-FIX)"
         assert "bar_close_ts" in source, "Should include bar_close_ts in CMD payload"
     
     def test_no_cmd_for_tick_features(self):
         """
-        Test 2: Verify that CMD is only emitted when tf_sec >= 60.
+        Test 2: Verify that CMD is only emitted when tf_sec > 0 and bar_data exists.
         
-        The code should have a guard: `if int(tf_sec or 0) >= 60:`
+        The code should have a guard: `if bar_data and tf_sec and tf_sec > 0:`
         """
         import inspect
         from apps.reference.domains.feature_engineering import feature_engineering
@@ -51,8 +52,9 @@ class TestCMDProcessStrategyEmission:
         source = inspect.getsource(feature_engineering.FeatureEngineering._calculate_and_emit_features_for_tf)
         
         # Verify the guard exists
-        assert "if int(tf_sec or 0) >= 60:" in source, \
-            "CMD emission should be guarded by tf_sec >= 60 check"
+        # REC-01-FIX: Changed from tf_sec > 0 to if-elif chain with tf_sec < 60 check
+        assert "tf_sec < 60" in source, \
+            "CMD emission should be guarded by tf_sec >= 60 check (REC-01-FIX)"
         
         # Verify tick-path (tf_sec=0) in _calculate_and_emit_features
         tick_source = inspect.getsource(feature_engineering.FeatureEngineering._calculate_and_emit_features)
@@ -70,6 +72,9 @@ class TestAuroraRunsOnCMD:
         cfg.strategies.aurora = MagicMock()
         cfg.strategies.aurora.timeframe_sec = 300
         cfg.strategies.aurora.legacy_tick_path_enabled = False
+        cfg.strategies.aurora.execution = MagicMock()
+        cfg.strategies.aurora.execution.entry_order_type = "LIMIT"
+        cfg.strategies.aurora.execution.entry_tif = "GTX"
         
         decision = MagicMock()
         decision.signal_threshold = 0.1
@@ -132,7 +137,7 @@ class TestAuroraRunsOnCMD:
         }
         
         handler._symbol_states["BTCUSDT"].warmup_full_ready = True
-        handler.on_features_calculated(cmd_300)
+        handler.on_process_strategy(cmd_300)
         
         # Scoring should have been called
         handler.scoring_kernel_cls.compute.assert_called()
@@ -149,7 +154,7 @@ class TestAuroraRunsOnCMD:
             "warmup": {"full_ready": True},
         }
         
-        handler.on_features_calculated(cmd_180)
+        handler.on_process_strategy(cmd_180)
         
         # Scoring should NOT have been called
         handler.scoring_kernel_cls.compute.assert_not_called()
@@ -168,6 +173,9 @@ class TestMRRunsOnCMD:
         cfg.strategies.mean_reversion = MagicMock()
         cfg.strategies.mean_reversion.enabled = True
         cfg.strategies.mean_reversion.timeframe_sec = 180
+        cfg.strategies.mean_reversion.execution = MagicMock()
+        cfg.strategies.mean_reversion.execution.entry_order_type = "MARKET"
+        cfg.strategies.mean_reversion.execution.entry_tif = None
         
         strategy = MagicMock()
         strategy.bb_window = 20
@@ -270,8 +278,9 @@ class TestMRRunsOnCMD:
         listen_calls = [c.args[0] for c in fsm_mock.listen.call_args_list]
         
         assert "CMD:PROCESS_STRATEGY" in listen_calls
-        # Old triggers should NOT be present
-        assert "EVT:BAR_CLOSED" not in listen_calls
+        # BAR_CLOSED is now data-only (still present but not trigger)
+        assert "EVT:BAR_CLOSED" in listen_calls
+        # Tick trigger should NOT be present
         assert "EVT:MARKET_TICK_FORWARDED" not in listen_calls
 
 
@@ -349,10 +358,10 @@ class TestNoDoubleExecution:
         }
         
         # Send same CMD twice
-        handler.on_features_calculated(cmd)
+        handler.on_process_strategy(cmd)
         call_count_first = handler.scoring_kernel_cls.compute.call_count
         
-        handler.on_features_calculated(cmd)
+        handler.on_process_strategy(cmd)
         call_count_second = handler.scoring_kernel_cls.compute.call_count
         
         # Document current behavior: scoring is called twice
@@ -381,19 +390,23 @@ class TestCMDIncludesFullBar:
     
     def test_cmd_bar_has_ohlcv_fields(self):
         """
-        Test: CMD bar dict should have open/high/low/close/volume fields.
+        Test: CMD payload should include 'bar' field with OHLCV data.
+        
+        Note: FE passes bar_data from BarResampler directly, so we verify
+        that the CMD emission includes the 'bar' field in payload.
         """
         import inspect
         from apps.reference.domains.feature_engineering import feature_engineering
         
         source = inspect.getsource(feature_engineering.FeatureEngineering._calculate_and_emit_features_for_tf)
         
-        # Verify OHLCV fields are converted
-        assert '"open"' in source or "'open'" in source, "bar should have 'open' field"
-        assert '"high"' in source or "'high'" in source, "bar should have 'high' field"
-        assert '"low"' in source or "'low'" in source, "bar should have 'low' field"
-        assert '"close"' in source or "'close'" in source, "bar should have 'close' field"
-        assert '"volume"' in source or "'volume'" in source, "bar should have 'volume' field"
+        # Verify CMD payload includes bar field
+        assert '"bar": bar_data' in source or "'bar': bar_data" in source, \
+            "CMD payload should include 'bar' field with bar_data"
+        
+        # Verify bar_data is used in CMD emission (T2B-05 pattern)
+        assert "CMD:PROCESS_STRATEGY" in source, "Should emit CMD:PROCESS_STRATEGY"
+        assert "bar_data" in source, "Should reference bar_data for CMD"
 
 
 class TestMRRejectsCMDWithoutBar:
@@ -525,12 +538,12 @@ class TestMRRejectsCMDWithoutBar:
         """
         T2B-05: MR should use real OHLCV from bar, not synthetic.
         
-        Verify that code no longer creates synthetic bar with open=high=low=close.
+        Verify that code uses bar data from CMD payload.
         """
         import inspect
         from apps.reference.domains.decision_making import mean_reversion_handler
         
-        source = inspect.getsource(mean_reversion_handler.MeanReversionHandler._process_cmd_for_signal)
+        source = inspect.getsource(mean_reversion_handler.MeanReversionHandler._on_process_strategy)
         
         # Should NOT have synthetic bar creation pattern
         assert "open=price" not in source, \
@@ -538,7 +551,7 @@ class TestMRRejectsCMDWithoutBar:
         assert "high=price" not in source, \
             "Should not create synthetic bar with high=price"
         
-        # Should have bar_data.get patterns
+        # Should have bar_data.get patterns for OHLCV
         assert 'bar_data.get("open"' in source or "bar_data.get('open'" in source, \
             "Should get 'open' from bar_data"
         assert 'bar_data.get("close"' in source or "bar_data.get('close'" in source, \

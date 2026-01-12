@@ -273,6 +273,9 @@ class TestE2EDecisionPipeline:
         cfg.strategies.mean_reversion = MagicMock()
         cfg.strategies.mean_reversion.enabled = True
         cfg.strategies.mean_reversion.timeframe_sec = 180
+        cfg.strategies.mean_reversion.execution = MagicMock()
+        cfg.strategies.mean_reversion.execution.entry_order_type = "MARKET"
+        cfg.strategies.mean_reversion.execution.entry_tif = None
         
         strategy = MagicMock()
         strategy.bb_window = 20

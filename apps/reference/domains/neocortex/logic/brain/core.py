@@ -59,15 +59,23 @@ class BrainCore:
     Phase 4: With PPO decision head and checkpointing.
     """
     
-    def __init__(self, config: NeuroConfig, device: str = None):
-        if not HAS_TORCH:
-            raise ImportError("PyTorch required for BrainCore")
-            
+    def __init__(self, config: NeuroConfig, device: str = None, rng_seed: int = 0):
         self.config = config
-        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        self._torch_available = HAS_TORCH
+        self.device = device or ('cuda' if (HAS_TORCH and torch.cuda.is_available()) else 'cpu')
         self._train_steps = 0
+        self.rng_seed = int(rng_seed)
         
         logger.info(f"Initializing BrainCore on device: {self.device}")
+
+        if not self._torch_available:
+            logger.warning("PyTorch not available; BrainCore running in no-torch mock mode (VAE/WM/PPO disabled)")
+            self.vae = None
+            self.vae_opt = None
+            self.world_model = None
+            self.wm_opt = None
+            self.ppo_agent = None
+            return
         
         # 1. Representation Learning (VAE)
         self.vae = VariationalAutoencoder(config.vae).to(self.device)
@@ -97,6 +105,9 @@ class BrainCore:
         
     def _init_ppo(self):
         """Initialize PPO Agent if library is available."""
+        if not self._torch_available:
+            logger.warning("PyTorch not available; skipping PPO initialization")
+            return
         if not HAS_PPO:
             logger.warning("PPO library not found, shadow intents disabled")
             return
@@ -121,7 +132,7 @@ class BrainCore:
             train_config = TrainConfig(
                 n_steps=ppo_cfg.rollout_length,
                 device=self.device,
-                seed=42
+                seed=self.rng_seed,
             )
             
             # Create mock spaces
@@ -140,6 +151,9 @@ class BrainCore:
             
             logger.info(f"✓ PPO Agent initialized (Actions: {ppo_cfg.action_dim})")
             
+        except ImportError as e:
+            logger.warning(f"PPO import failed (likely missing torch deps): {e}")
+            self.ppo_agent = None
         except Exception as e:
             logger.warning(f"PPO initialization failed: {e}")
             self.ppo_agent = None
@@ -148,6 +162,9 @@ class BrainCore:
         """
         Perform one training step on a sequential batch of observations.
         """
+        if not self._torch_available:
+            return {"error": "torch_missing", "vae_loss": float('nan'), "wm_loss": float('nan')}
+
         if batch_obs.device != self.device:
             batch_obs = batch_obs.to(self.device)
             
@@ -166,6 +183,7 @@ class BrainCore:
         
         vae_loss = vae_losses['loss']
         vae_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.vae.parameters(), max_norm=1.0)
         self.vae_opt.step()
         
         # B. WORLD MODEL TRAINING
@@ -181,21 +199,19 @@ class BrainCore:
                 "wm_loss": 0.0
             }
             
-        z_in = z[:-1]
-        z_target = z[1:]
-        
         self.wm_opt.zero_grad()
-        
-        z_pred_seq, _ = self.world_model(z_in)
-        
-        if z_pred_seq.dim() == 3:
-            z_pred = z_pred_seq.squeeze(1)
-        else:
-            z_pred = z_pred_seq
-            
-        wm_loss = torch.nn.functional.mse_loss(z_pred, z_target)
+
+        # Treat the batch as a single sequence: (B, D) -> (1, Seq=B, D)
+        z_seq = z.unsqueeze(0)
+        z_in_seq = z_seq[:, :-1, :]
+        z_target_seq = z_seq[:, 1:, :]
+
+        z_pred_seq, _ = self.world_model(z_in_seq)
+
+        wm_loss = torch.nn.functional.mse_loss(z_pred_seq, z_target_seq, reduction="mean")
         
         wm_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.world_model.parameters(), max_norm=1.0)
         self.wm_opt.step()
         
         self._train_steps += 1
@@ -209,6 +225,10 @@ class BrainCore:
 
     def encode(self, obs: np.ndarray) -> np.ndarray:
         """Encode numpy observation to numpy latent vector."""
+        if not self._torch_available:
+            latent_dim = getattr(getattr(self.config, "vae", None), "latent_dim", 1)
+            return np.zeros(int(latent_dim), dtype=np.float32)
+
         with torch.no_grad():
             self.vae.eval()
             
@@ -257,7 +277,7 @@ class BrainCore:
             
             # Map action index to name
             action_names = ["LONG", "SHORT", "FLAT"]
-            action_idx = int(action) if isinstance(action, (int, np.integer)) else int(action.item())
+            action_idx = int(np.asarray(action).reshape(-1)[0])
             action_name = action_names[action_idx] if action_idx < len(action_names) else "UNKNOWN"
             
             return {
@@ -276,6 +296,92 @@ class BrainCore:
                 "confidence": 0.0
             }
 
+    def train_ppo(self, episodes: list[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Train PPO on a batch of completed episodes (offline update).
+
+        Episodes are expected to be dict-like and include at least:
+          - features_vector: List[float] (VAE input space)
+          - side: str ("LONG"/"SHORT"/"FLAT" or "BUY"/"SELL")
+          - reward: float
+        """
+        if not self._torch_available or self.ppo_agent is None:
+            logger.warning("PPO not available; skipping PPO training")
+            return {}
+
+        if not episodes:
+            return {}
+
+        import torch
+
+        action_map = {"LONG": 0, "SHORT": 1, "FLAT": 2, "BUY": 0, "SELL": 1}
+        device = self.ppo_agent.device
+
+        episodes_processed = 0
+        episodes_skipped = 0
+
+        # Always start from a clean collection buffer for offline updates.
+        self.ppo_agent.buffer.clear()
+
+        for ep in episodes:
+            features_vector = ep.get("features_vector")
+            if not features_vector:
+                episodes_skipped += 1
+                continue
+
+            obs_np = np.asarray(features_vector, dtype=np.float32)
+            z = self.encode(obs_np).astype(np.float32)
+
+            side = str(ep.get("side") or "FLAT").upper()
+            action_idx = action_map.get(side, 2)
+
+            reward = ep.get("reward", 0.0)
+            reward_f = 0.0 if reward is None else float(reward)
+
+            with torch.no_grad():
+                obs_t = torch.as_tensor(z, dtype=torch.float32, device=device).unsqueeze(0)
+
+                hidden = self.ppo_agent.model.init_hidden(1, device)
+                dist, value_t, _ = self.ppo_agent.model(obs_t, hidden)
+
+                act_t_long = torch.tensor([action_idx], dtype=torch.long, device=device)
+                logp_t = dist.log_prob(act_t_long)
+                if logp_t.dim() > 1:
+                    logp_t = logp_t.sum(dim=-1)
+
+                rew_t = torch.tensor([reward_f], dtype=torch.float32, device=device)
+                done_t = torch.tensor([True], dtype=torch.bool, device=device)
+                val_t = value_t.squeeze(-1)
+
+                # PPOAgent.store expects float tensors for act/logp, even in discrete mode.
+                self.ppo_agent.store(
+                    obs=obs_t,
+                    act=act_t_long.float(),
+                    rew=rew_t,
+                    val=val_t,
+                    logp=logp_t.float(),
+                    done=done_t,
+                )
+
+            episodes_processed += 1
+
+            if self.ppo_agent.buffer.full:
+                break
+
+        if episodes_processed == 0:
+            return {}
+
+        # Bootstrap value for the last step (terminal in our offline-episode framing).
+        last_values = torch.zeros(1, dtype=torch.float32, device=device)
+        self.ppo_agent.buffer.finalize(last_values)
+
+        metrics = self.ppo_agent.update()
+        self.ppo_agent.buffer.clear()
+
+        metrics["episodes_processed"] = episodes_processed
+        metrics["episodes_skipped"] = episodes_skipped
+        return metrics
+
     def save_checkpoint(self, path: Path) -> bool:
         """
         Save all model weights and optimizer states.
@@ -286,6 +392,10 @@ class BrainCore:
         Returns:
             True if successful
         """
+        if not self._torch_available:
+            logger.warning("PyTorch not available; cannot save checkpoint")
+            return False
+
         try:
             path = Path(path)
             path.mkdir(parents=True, exist_ok=True)
@@ -327,6 +437,10 @@ class BrainCore:
         Returns:
             True if successful
         """
+        if not self._torch_available:
+            logger.warning("PyTorch not available; cannot load checkpoint")
+            return False
+
         try:
             path = Path(path)
             

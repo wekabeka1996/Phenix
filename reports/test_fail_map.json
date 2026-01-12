@@ -1,0 +1,1559 @@
+[
+  {
+    "nodeid": "tests.audit.test_critical_fixes.TestProtocolA_PingPongStress::test_reentry_blocked_within_cooldown",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected REENTRY_COOLDOWN block, got 0\nassert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.audit.test_critical_fixes.TestProtocolA_PingPongStress::test_reentry_allowed_after_cooldown",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected signal produced after cooldown\nassert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.config.test_regime_yaml_strict_validation.TestRegimeYamlStrictValidation::test_valid_regime_yaml_loads_successfully",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 2 validation errors for AuroraConfig\nbasis_tf_sec\n  Field required [type=missing, input_value={'trading_mode': 'hybrid_...treload_whitelist': []}}, input_",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.config.test_task47_loader_effective_values::test_task47_loader_effective_values_from_ssot",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert {'aurora'} == {'aurora', 'mean_reversion'}\n  \n  Extra items in the right set:\n  #x1B[0m#x1B[33m'#x1B[39;49;00m#x1B[33mmean_reversion#x1B[39;49;00m#x1B[33m'#x1B[39;49;00m#x1B[90m",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_anti_churn_harden::test_risk_off_immediate_effective_update",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert None == 'TREND_UP'\n +  where None = SymbolState(regime='TREND_UP', regime_confidence=0.9, regime_ts_ms=1700000000000, regime_raw=None, regime_effective=No...estamps=[], last_sig",
+    "classification": "CONTRACT",
+    "reason": "RISK_MATRIX",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_anti_churn_harden::test_risk_on_delayed_by_confirm_window",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert None == 'FLAT_LOW'\n +  where None = SymbolState(regime='FLAT_LOW', regime_confidence=0.9, regime_ts_ms=1700000000000, regime_raw=None, regime_effective=No...estamps=[], last_sig",
+    "classification": "CONTRACT",
+    "reason": "RISK_MATRIX",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_anti_churn_harden::test_same_severity_immediate_no_freeze",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert None == 'TREND_UP'\n +  where None = SymbolState(regime='TREND_UP', regime_confidence=0.9, regime_ts_ms=1700000000000, regime_raw=None, regime_effective=No...estamps=[], last_sig",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_anti_churn_harden::test_round_trip_fee_adjustment_and_source_telemetry",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'AuroraHandler' object has no attribute '_check_cost_gate'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_anti_churn_harden::test_monotonicity_confirm_window_ignores_wall_time_jumps",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert None == 'FLAT_LOW'\n +  where None = SymbolState(regime='FLAT_LOW', regime_confidence=0.9, regime_ts_ms=1700000000000, regime_raw=None, regime_effective=No...estamps=[], last_sig",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_handler.TestSignalEmission::test_skips_when_warmup_not_ready",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 0 == 1\n +  where 0 = <MagicMock id='133152096132112'>.call_count",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_holding_period.TestHoldingPeriodBlocking::test_exit_allowed_at_t_plus_31s",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert True is False",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_holding_period.TestHelperMethods::test_track_entry_sets_timestamp_and_side",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 231502.006153052 == 1234567890.123\n +  where 231502.006153052 = SymbolState(regime=None, regime_confidence=0.0, regime_ts_ms=0, regime_raw=None, regime_effective=None, regime_ra",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_reentry_cooldown.TestReentryCooldown::test_exit_tracking",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 'buy' == ''\n  \n  #x1B[0m#x1B[92m+ buy#x1B[39;49;00m#x1B[90m#x1B[39;49;00m",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_reentry_cooldown.TestReentryCooldown::test_block_reentry_within_cooldown",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_reentry_cooldown.TestReentryCooldown::test_allow_reentry_after_cooldown",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_reentry_cooldown.TestReentryCooldown::test_per_symbol_cooldown_override",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_reentry_cooldown.TestReentryCooldown::test_holding_period_forced_hold_preserves_side",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_tick_gating.TestAuroraTickPathGating::test_tick_path_rejected_tf_sec_zero",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == (0 + 1)\n +  where 0 = <apps.reference.domains.decision_making.aurora_handler.AuroraHandler object at 0x7919e30fa810>._tick_path_rejections",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_tick_gating.TestAuroraTickPathGating::test_tick_path_rejected_tf_sec_missing",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == (0 + 1)\n +  where 0 = <apps.reference.domains.decision_making.aurora_handler.AuroraHandler object at 0x7919e32e68d0>._tick_path_rejections",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_tick_gating.TestAuroraTickPathGating::test_tick_path_rejected_tf_sec_none",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == (0 + 1)\n +  where 0 = <apps.reference.domains.decision_making.aurora_handler.AuroraHandler object at 0x7919e32b6540>._tick_path_rejections",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_tick_gating.TestAuroraTickPathGating::test_valid_bar_event_processed",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected 'compute' to have been called once. Called 0 times.",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_tick_gating.TestAuroraTickPathGating::test_multiple_tick_rejections_counted",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == (0 + 10)\n +  where 0 = <apps.reference.domains.decision_making.aurora_handler.AuroraHandler object at 0x7919e30f7470>._tick_path_rejections",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_timer_integration_contract_v1::test_timer_integration_reentry_cooldown_after_close",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 'EVT:STRATEGY_SIGNAL_PRODUCED' in []\n +  where [] = _types([])",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_aurora_timer_integration_contract_v1::test_timer_integration_flip_min_duration_holding_period",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert '' == 'buy'\n  \n  #x1B[0m#x1B[91m- buy#x1B[39;49;00m#x1B[90m#x1B[39;49;00m",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressGate::test_gate_disabled_passes",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressGate::test_blocks_trend_entry_when_rv_too_low",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressGate::test_allows_when_rv_sufficient",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressGate::test_reduce_only_not_blocked",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressGate::test_fallback_to_default_cost",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressGate::test_non_trend_regime_passes",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressGate::test_rv_bps_missing_passes_and_increments_counter",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "KeyError: 'rv_bps_missing'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressProxyHardening::test_proxy_disabled_by_default",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressProxyHardening::test_proxy_works_when_enabled",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressProxyHardening::test_bps_sanity_guard_rejects_garbage",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "KeyError: 'bps_sanity_fallback'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressConfig::test_config_loads_from_domains_yaml",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMakingDomainConfig' object has no attribute 'low_vol_cost_suppress'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressConfig::test_pydantic_validation_forbids_extra_keys",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "ImportError: cannot import name 'LowVolCostSuppressConfig' from 'apps.reference.config_models' (/home/wekabeka/\u041c\u0443\u0437\u044b\u043a\u0430/Phenix/apps/reference/config_models.py)",
+    "classification": "ENV/FLAKY",
+    "reason": "DEPENDENCY",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressConfig::test_factor_bounds_validation",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "ImportError: cannot import name 'LowVolCostSuppressConfig' from 'apps.reference.config_models' (/home/wekabeka/\u041c\u0443\u0437\u044b\u043a\u0430/Phenix/apps/reference/config_models.py)",
+    "classification": "ENV/FLAKY",
+    "reason": "DEPENDENCY",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressTelemetry::test_block_increments_counter",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_check_low_vol_cost_suppress_gate'. Did you mean: '_low_vol_cost_suppress_stats'?",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_low_vol_cost_suppress.TestLowVolCostSuppressTelemetry::test_pass_increments_counter",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "KeyError: 'passes'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_emit_trade_intent_mode::test_mr_emit_direct_trade_intent_uses_asset_risk_position_size_usd",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr..._intent_directly': ",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_emit_trade_intent_mode::test_mr_emit_direct_trade_intent_falls_back_to_global_risk_position_size_usd",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr..._intent_directly': ",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_emit_trade_intent_mode::test_mr_emit_direct_forbidden_for_hybrid_assignments",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr..._intent_directly': ",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_emit_trade_intent_mode::test_mr_emit_signal_gateway_when_direct_disabled",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_config_wiring::test_mr_handler_wires_asset_allowed_regimes_and_overrides",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_config_wiring::test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_mr_activation_assigned_enabled_true_ok",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_mr_activation_assigned_enabled_false_raises",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': False, 'timef...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_mr_no_assignments_enabled_true_stays_disabled",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_tick_drops_invalid_price_and_does_not_call_on_tick",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_tick_drops_missing_ts_and_does_not_call_on_tick",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_out_of_order_tick_dropped_and_counter_incremented",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_bars_completed_counts_once_per_bar_end_ts",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mean_reversion_handler_hardening_v1::test_bar_logging_exception_increments_counter_and_logs_warning",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_mr_risk_gate_none_fix_01::test_gateway_does_not_crash_on_missing_risk_score_emits_deferred",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert False\n +  where False = any(<generator object test_gateway_does_not_crash_on_missing_risk_score_emits_deferred.<locals>.<genexpr> at 0x7919e2d9b9f0>)",
+    "classification": "CONTRACT",
+    "reason": "RISK_MATRIX",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_qos_partitioning.TestQoSPartitioning::test_qos_allow_uses_strategy_state",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "TypeError: '<' not supported between instances of 'MagicMock' and 'int'",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_qos_strategy_allowlist::test_mean_reversion_success_path_does_not_update_qos_state_when_disabled",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected strategy gateway to propose an intent\nassert []",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownPortfolioAware::test_exit_detected_via_portfolio_update",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_prev_position_qty'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownPortfolioAware::test_cooldown_blocks_entry_after_portfolio_exit",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_last_exit_mono_ts'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownPortfolioAware::test_cooldown_allows_entry_after_cooldown_expires",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_last_exit_mono_ts'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownPortfolioAware::test_reduce_only_bypasses_cooldown",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_last_exit_mono_ts'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownPortfolioAware::test_no_cooldown_if_no_prior_exit",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_last_exit_mono_ts'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownPortfolioAware::test_partial_close_does_not_trigger_cooldown",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_prev_position_qty'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownMonotonic::test_monotonic_time_prevents_bypass",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_last_exit_mono_ts'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_reentry_cooldown.TestReentryCooldownTelemetry::test_details_include_all_fields",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_last_exit_mono_ts'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_task47_btc_dual_strategy_intents::test_task47_btc_dual_strategy_can_emit_intents_in_different_windows",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert {'aurora'} == {'aurora', 'mean_reversion'}\n  \n  Extra items in the right set:\n  #x1B[0m#x1B[33m'#x1B[39;49;00m#x1B[33mmean_reversion#x1B[39;49;00m#x1B[33m'#x1B[39;49;00m#x1B[90m",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_timers_flip_min_duration_v1::test_holding_period_suppress_flip",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert '' == 'buy'\n  \n  #x1B[0m#x1B[91m- buy#x1B[39;49;00m#x1B[90m#x1B[39;49;00m",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_timers_flip_min_duration_v1::test_holding_period_emergency_exit",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert '' == 'buy'\n  \n  #x1B[0m#x1B[91m- buy#x1B[39;49;00m#x1B[90m#x1B[39;49;00m",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_timers_flip_min_duration_v1::test_no_mutation_of_scoring_result_when_flip_suppressed",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_timers_reentry_cooldown_v1::test_reentry_cooldown_basic",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert '' == 'buy'\n  \n  #x1B[0m#x1B[91m- buy#x1B[39;49;00m#x1B[90m#x1B[39;49;00m",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.decision_making.test_timers_reentry_cooldown_v1::test_reentry_cooldown_regime_multiplier",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Exit failed. State: SymbolState(regime=None, regime_confidence=0.0, regime_ts_ms=0, regime_raw=None, regime_effective='LOW_VOLATILITY', regime_raw_change_ts=None, warmup_full_ready=Tru",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_contract_diagnostics_v1::test_diag_reject_below_min_notional",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert ('notional' in 'panic_killswitch' or 'notional' in 'panic active - all new opens blocked')\n +  where 'panic_killswitch' = <built-in method lower of str object at 0x791a1df8ebf0>",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_contract_diagnostics_v1::test_diag_idempotency_duplicate_open",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: First call should succeed\nassert (Message(v=1, op='ERR', verb='OPEN', src='exec', dst='test', rid='1', span_id='baf634ed22444ad6ad4e1eeb9cecf2e2', paren... mode_contract=None, corr_id=",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_cooldown_after_close_v1::test_execpos_blocks_open_during_global_cooldown_after_close",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_cooldown_after_close_v1::test_execpos_allows_open_after_global_post_close_cooldown_expires",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_event_ordering_v1::test_ack_portfolio_fill_order",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_event_ordering_v1::test_fill_before_ack_out_of_order",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_event_ordering_v1::test_portfolio_lagging_after_open",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_event_ordering_v1::test_duplicate_fill_idempotency",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_exposure_fail_closed_terminal_v1::test_fail_closed_blocks_and_returns_err_and_writes_wal",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_exposure_fail_closed_terminal_v1::test_passed_exposure_check_reserves_with_symbol_and_side",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_exposure_fail_closed_terminal_v1::test_exposure_check_exception_is_fail_closed_and_writes_wal",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_routes_open_to_open_flow",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_routes_ack_via_on_order_ack",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_routes_fill_to_position_update",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_duplicate_fill_event_is_ignored",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_out_of_order_fill_before_ack_does_not_corrupt_state",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_ack_missing_then_timeout_triggers_safe_path",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_adapter_error_emits_error_event",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_watchdog_triggers_deadline_callback",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_fsm_routing_recovery_v1::test_fsm_processed_events_growth_is_bounded_or_flagged",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_contracts_v1::test_manage_does_not_emit_adjust_when_flat",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_contracts_v1::test_manage_tpsl_values_respect_side_invariants",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_contracts_v1::test_manage_idempotency_on_adjustment",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_contracts_v1::test_manage_handles_missing_market_data_fail_closed",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_contracts_v1::test_manage_max_hold_time_triggers_close",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_contracts_v1::test_manage_emits_modify_only_when_auto_enabled",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_no_action_when_not_opened",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_fail_closed_when_missing_market_snapshot",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_fail_closed_when_missing_instrument_specs",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_emits_bracket_on_entry_once",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_does_not_flip_side",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_tp_sl_relative_to_entry_long",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_tp_sl_relative_to_entry_short",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_trailing_stop_monotonicity",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_respects_reduce_only_on_close_intent",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_idempotency_on_modify_same_key",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_max_hold_triggers_close_or_signal",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_manage_scenarios_v1::test_manage_no_modify_when_price_did_not_move_enough",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_max_hold_close_executes_adapter_v1::test_execpos_close_executes_reduce_only_market_via_adapter",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_max_hold_close_routed_v1::test_execpos_max_hold_close_is_executed_in_shadow_mode",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_execpos_processed_events_cap_v1::test_execpos_processed_events_unbounded_leak_risk",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_deny_missing_equity",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_deny_stale_portfolio",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_deny_max_equity_utilization",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_deny_max_portfolio_fraction",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_deny_max_long_utilization",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_deny_directional_ratio_long_heavy",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_allow_when_within_limits",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_deny_concentration_breach",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_guard_reserve_and_release",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_resolve_symbol_leverage_default_and_override",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_resolve_symbol_leverage_clamps_to_one",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_reserve_idempotent_no_duplicate",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_reserve_empty_symbol_raises_valueerror",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_exposure_guard_matrix_v1::test_reserve_whitespace_symbol_raises_valueerror",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_open_flow_fsm_leverage_and_guards_v1::test_openflow_rounds_qty_and_price_by_specs",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert ('ERR' == 'DEC'\n  \n  #x1B[0m#x1B[91m- DEC#x1B[39;49;00m#x1B[90m#x1B[39;49;00m\n  #x1B[92m+ ERR#x1B[39;49;00m#x1B[90m#x1B[39;49;00m)",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_open_flow_fsm_leverage_and_guards_v1::test_openflow_rejects_limit_notional_below_min",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 'PANIC_KILLSWITCH' == 'OPEN_GUARD_FAIL'\n  \n  #x1B[0m#x1B[91m- OPEN_GUARD_FAIL#x1B[39;49;00m#x1B[90m#x1B[39;49;00m\n  #x1B[92m+ PANIC_KILLSWITCH#x1B[39;49;00m#x1B[90m#x1B[39;49;00",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_open_flow_fsm_leverage_and_guards_v1::test_openflow_rejects_market_estimated_notional_below_min",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 'PANIC_KILLSWITCH' == 'OPEN_GUARD_FAIL'\n  \n  #x1B[0m#x1B[91m- OPEN_GUARD_FAIL#x1B[39;49;00m#x1B[90m#x1B[39;49;00m\n  #x1B[92m+ PANIC_KILLSWITCH#x1B[39;49;00m#x1B[90m#x1B[39;49;00",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_open_flow_fsm_leverage_and_guards_v1::test_openflow_idempotency_rejects_duplicate_cmd_open",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert (Message(v=1, op='ERR', verb='OPEN', src='execution_position', dst='bridge', rid='RID-1', span_id='4eaaecf0ca89405d9f62... mode_contract=None, corr_id=None, oco_group_id=None, p",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_open_flow_fsm_leverage_and_guards_v1::test_openflow_handle_async_verify_only_pass_delegates_to_sync",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert ('ERR' == 'DEC'\n  \n  #x1B[0m#x1B[91m- DEC#x1B[39;49;00m#x1B[90m#x1B[39;49;00m\n  #x1B[92m+ ERR#x1B[39;49;00m#x1B[90m#x1B[39;49;00m)",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_open_flow_fsm_leverage_and_guards_v1::test_openflow_handle_async_set_and_verify_calls_set_and_verify",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert ('ERR' == 'DEC'\n  \n  #x1B[0m#x1B[91m- DEC#x1B[39;49;00m#x1B[90m#x1B[39;49;00m\n  #x1B[92m+ ERR#x1B[39;49;00m#x1B[90m#x1B[39;49;00m)",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.execution_position.test_soft_clip_integration_execpos_v1::test_execpos_exposure_guard_soft_clip_scales_qty",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.domains.feature_engineering.test_warmup_requirements_required_keys::test_optional_not_ready_does_not_block_full_ready_when_required_ready",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'FeatureEngineeringConfig' object has no attribute 'compute_warmup_full_ready_for_symbol'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.feature_engineering.test_warmup_requirements_required_keys::test_required_not_ready_blocks_full_ready_fail_closed",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'FeatureEngineeringConfig' object has no attribute 'compute_warmup_full_ready_for_symbol'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.feature_engineering.test_warmup_requirements_required_keys::test_global_required_ready_keys_apply_when_no_symbol_override",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'FeatureEngineeringConfig' object has no attribute 'compute_warmup_full_ready_for_symbol'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.strategies.test_strat_assign_enforce_aurora::test_strat_assign_enforce_aurora_filters_unassigned_symbols",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: '_DummyAuroraHandler' object has no attribute 'on_features_data_only'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.test_mean_reversion_strategy.TestMeanReversion1mStrategy::test_on_tick_insufficient_bars",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 0 == 5\n +  where 0 = len([])\n +    where [] = MRSymbolState(symbol='BTCUSDT', resampler=None, bars=[], max_bars=1000, bb=None, atr=None, rsi=None, last_signal_ts=0, last_signal_",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.test_mean_reversion_strategy.TestMeanReversion1mStrategy::test_reset_symbol",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'NoneType' object has no attribute 'reset'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.test_mean_reversion_strategy.TestMeanReversion1mStrategy::test_reset_all",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'NoneType' object has no attribute 'reset'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.test_mean_reversion_strategy.TestMRStrategyRegimeFiltering::test_trending_regime_blocked",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 0 >= 25\n +  where 0 = len([])\n +    where [] = MRSymbolState(symbol='BTCUSDT', resampler=None, bars=[], max_bars=1000, bb=None, atr=None, rsi=None, last_signal_ts=0, last_signal",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.test_mean_reversion_strategy.TestMRStrategyForceClose::test_force_close_all",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'NoneType' object has no attribute 'force_close'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.test_mean_reversion_strategy.TestP0UncertainRegimeBlocksMRTrading::test_uncertain_regime_blocks_mr_signal",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Should have enough bars\nassert 0 >= 25\n +  where 0 = len([])\n +    where [] = MRSymbolState(symbol='BTCUSDT', resampler=None, bars=[], max_bars=1000, bb=None, atr=None, rsi=None, last_",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.domains.test_mean_reversion_strategy.TestP0UncertainRegimeBlocksMRTrading::test_mean_reversion_with_atr_allows_signal",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 0 >= 25\n +  where 0 = len([])\n +    where [] = MRSymbolState(symbol='BTCUSDT', resampler=None, bars=[], max_bars=1000, bb=None, atr=None, rsi=None, last_signal_ts=0, last_signal",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.e2e.test_e2e_bridge_intent_to_execpos_dec_open::test_e2e_trade_intent_proposed_leads_to_execpos_dec_open",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.e2e.test_e2e_dm_directional_sanity_blocks_long_sol_downtrend::test_e2e_sol_downtrend_blocks_long_before_trade_intent",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.e2e.test_s1_warmup_gate.TestS1WarmupGate::test_warmup_gate_blocks_trade_intent_until_ready",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: 'DecisionMaking' object has no attribute '_clock'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_assignments_block_aurora_e2e::test_assignments_block_aurora_signals_for_mr_only_symbols",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AttributeError: '_DummyAuroraHandler' object has no attribute 'on_features_data_only'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_block_reasons_present::test_block_reason_readiness_present",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected explicit STRATEGY_DECISION_BLOCKED event\nassert []",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_block_reasons_present::test_block_reason_regime_mapping_none_present",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected MR strategy to produce a (neutral) signal after bars complete\nassert None is not None",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_block_reasons_present::test_block_reason_spread_present",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected explicit STRATEGY_DECISION_BLOCKED for spread\nassert []",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_depth_imbalance_reachability_buy_sell::test_depth_imbalance_reachability_buy_and_sell_intents",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected BUY-path to reach an observable decision event, got=['EVT:FEATURES_CALCULATED', 'EVT:PORTFOLIO_STATE_UPDATED', 'EVT:REGIME_DETECTED', 'EVT:RISK_ASSESSMENT_COMPLETED']\nassert (",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_execpos_open_flow_decision_v1::test_execpos_cmd_open_produces_dec_open_when_exposure_allows",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.integration.test_flip_vertical_dm_bridge_execpos::test_vertical_flip_close_dm_to_bridge_to_execpos",
+    "file": null,
+    "status": "ERROR",
+    "message_head": "failed on setup with \"apps.reference.config_contract.ConfigContractError: CONFIG_CONTRACT_VIOLATION: Path='trading.risk.soft_limits' Reason='Expected dict at trading.risk, got MagicMock'\"",
+    "classification": "CONTRACT",
+    "reason": "CONTRACT_VIOLATION",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.integration.test_market_tick_forwarded_emitted::test_market_data_proxy_emits_forwarded_alias",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: assert 'EVT:MARKET_TICK_FORWARDED' in ['EVT:MARKET_TICK_RECEIVED']",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_market_tick_forwarded_emitted::test_market_data_proxy_forwarded_guard_dedup_by_ts",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == 1",
+    "classification": "LEGACY",
+    "reason": "FLOW_INTERRUPTED",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.integration.test_mean_reversion_handler_event_contract_v1::test_emits_strategy_signal_with_schema_version",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.integration.test_mean_reversion_handler_event_contract_v1::test_invalid_price_does_not_emit_signal",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.integration.test_mean_reversion_handler_event_contract_v1::test_missing_ts_does_not_emit_signal_and_does_not_call_strategy",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.integration.test_mean_reversion_handler_event_contract_v1::test_out_of_order_tick_does_not_emit_signal",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "pydantic_core._pydantic_core.ValidationError: 1 validation error for MeanReversion1mStrategyConfig\nexecution\n  Field required [type=missing, input_value={'enabled': True, 'timefr...intent_directly': F",
+    "classification": "CONTRACT",
+    "reason": "STRICT_CONFIG",
+    "confidence": "high"
+  },
+  {
+    "nodeid": "tests.integration.test_mr_receives_forwarded_tick_smoke::test_mr_receives_forwarded_tick_and_logs_bar",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert '\"source\": \"bar_closed\"' in ''",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_regime_detector_event_flow::test_regime_detector_subscribed_and_emits_regime_detected",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected EVT:REGIME_DETECTED emissions\nassert []",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_regime_detector_event_flow::test_decision_making_does_not_defer_for_regime_after_warmup_ready",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected regime warmup full_ready=true\nassert False\n +  where False = any(<generator object test_decision_making_does_not_defer_for_regime_after_warmup_ready.<locals>.<genexpr> at 0x79",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_sizing_gateway_margin_first::test_gateway_sol_margin_first_emits_qty",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: expected trade intent emission\nassert []",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.integration.test_task32_two_strategies_arbitration::test_task32_two_strategies_on_one_symbol_arbitration_works",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "assert 0 == 1\n +  where 0 = len([])",
+    "classification": "LEGACY",
+    "reason": "TIME_MOCK",
+    "confidence": "medium"
+  },
+  {
+    "nodeid": "tests.ops.test_time_discipline.TestTimeDiscipline::test_no_time_violations_in_business_logic",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "Failed: Time discipline violation: Forbidden time functions found.\nUse Clock abstraction instead.\n\n  /home/wekabeka/\u041c\u0443\u0437\u044b\u043a\u0430/Phenix/apps/reference/domains/decision_making/trade_intent_reject_wal.py:36 -",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.runtime.test_rate_forensic_account_poller::test_account_connector_clamps_poll_interval_and_sleeps",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "TypeError: AccountConnector.__init__() got an unexpected keyword argument 'adapter'",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.simulation.test_mean_reversion_simulation.TestMeanReversionSimulation::test_sine_wave_perfect_signals",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Warmup should have populated bars\nassert 0 >= 20\n +  where 0 = len([])\n +    where [] = MRSymbolState(symbol='SIM_USDT', resampler=None, bars=[], max_bars=1000, bb=None, atr=None, rsi=",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.simulation.test_mean_reversion_simulation.TestMeanReversionSimulation::test_flat_regime_filtering",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Should see regime blocking reasons in logs\nassert 0 > 0\n +  where 0 = len([])",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.test_phase3_psi_vector.TestPhase3PsiVector::test_signal_weights_from_config_has_8_metrics",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Weights should sum to ~1.0, got 0.7\nassert 0.95 <= 0.7",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.test_phase5_regression.TestSignalScoreIntegration::test_signal_score_all_metrics_high",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Expected score \u2248 1.0 when all metrics max, got 0.700\nassert Decimal('0.300') < Decimal('0.1')\n +  where Decimal('0.300') = abs((Decimal('0.700') - Decimal('1.0')))\n +    where Decimal(",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.test_phase5_regression.TestPsiVectorCompletion::test_psi_vector_weights_completeness",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Weights must sum to 1.0 (tolerance 0.06), got 0.70\nassert Decimal('0.30') < Decimal('0.06')\n +  where Decimal('0.30') = abs((Decimal('0.70') - Decimal('1.0')))\n +    where Decimal('1.0",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.test_phase5_regression.TestNormalizedMetricsComposition::test_legacy_vs_new_metrics_composition",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Legacy + new weights should sum to ~1.0, got 0.70\nassert Decimal('0.30') < Decimal('0.1')\n +  where Decimal('0.30') = abs((Decimal('0.70') - Decimal('1.0')))\n +    where Decimal('1.0')",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  },
+  {
+    "nodeid": "tests.test_phase5_regression.TestNormalizedMetricsComposition::test_signal_score_composition_formula",
+    "file": null,
+    "status": "FAIL",
+    "message_head": "AssertionError: Scores don't match: computed=0.465, manual=0.375\nassert Decimal('0.465') == Decimal('0.375')",
+    "classification": "UNKNOWN",
+    "reason": "OTHER",
+    "confidence": "low"
+  }
+]

@@ -8,6 +8,7 @@ from apps.reference.domains.decision_making.decision_making import DecisionMakin
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.contracts.reject_reasons import RejectReason
 from vfoundation.core.protocol import Message
+from vfoundation.dr import wal
 from tests.conftest import make_app_cfg_stub
 
 class TestConfigContractNormalization:
@@ -44,6 +45,14 @@ class TestConfigContractNormalization:
             # Mock internal state for on_features
             dm.symbol_states["BTCUSDT"] = {"features": {}, "risk": {}}
             return dm
+
+    @pytest.fixture(autouse=True)
+    def _isolate_wal_dir(self, tmp_path):
+        prev = wal.WAL_DIR
+        wal.set_wal_dir(tmp_path / "wal")
+        wal.reset()
+        yield
+        wal.set_wal_dir(prev)
 
     @patch("apps.reference.domains.decision_making.decision_making.inc_config_contract_violation")
     @patch("apps.reference.domains.decision_making.decision_making.normalize_config_error")

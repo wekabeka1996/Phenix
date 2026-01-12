@@ -25,6 +25,12 @@ mean_reversion:
   # MR emission mode
   emit_trade_intent_directly: false
   
+  # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
+  # MR uses MARKET orders for fast mean-reversion entries
+  execution:
+    entry_order_type: "MARKET"   # MUST be one of: LIMIT, MARKET
+    entry_tif: null              # null for MARKET orders (ignored)
+  
   # ─────────────────────────────────────────────────────────────────────────────
   # Strategy Parameters (global defaults)
   # ─────────────────────────────────────────────────────────────────────────────

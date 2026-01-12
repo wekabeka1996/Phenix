@@ -91,7 +91,8 @@ async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
         # Brain Bridge (Process Pool)
         brain_bridge = BrainBridge(
             config=config.neuro,
-            max_workers=config.system.brain_workers
+            max_workers=config.system.brain_workers,
+            rng_seed=config.system.rng_seed,
         )
         logger.info(f"✓ BrainBridge created (Workers: {config.system.brain_workers})")
         

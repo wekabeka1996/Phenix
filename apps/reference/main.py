@@ -684,8 +684,11 @@ class AuroraBridge:
             "price": order_details.get(
                 "price"
             ),  # Get price from order.price (as string)
-            "order_type": order_type_raw or "LIMIT",
-            "tif": "GTC",  # Good-Till-Cancel
+            # ORDER-POLICY-01: NO FALLBACK. order_type must come from strategy policy.
+            "order_type": order_type_raw,  # Will be validated below
+            # EP-01.4-INT-A: Pass through tif from trade_intent (no hardcode)
+            # Null means execution_position will apply default (GTC)
+            "tif": order_details.get("tif"),
             "idempotent_key": intent_msg.pld.get(
                 "idempotent_key"
             ),  # Pass through for deduplication
@@ -695,6 +698,8 @@ class AuroraBridge:
             "stop_price": intent_msg.pld.get("stop_price") or price_ctx.get("stop_price"),
             "target_price": intent_msg.pld.get("target_price") or price_ctx.get("target_price"),
             "sl_pct": intent_msg.pld.get("sl_pct"),
+            # EP-01.3-INT: Pass valid_for_ms for pending entry TTL
+            "valid_for_ms": intent_msg.pld.get("valid_for_ms"),
         }
 
         # TASK40: Use the business rid (from payload) as the command rid to keep

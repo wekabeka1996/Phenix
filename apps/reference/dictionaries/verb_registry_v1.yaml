@@ -175,6 +175,24 @@ registry:
   schema: null
   since: '2026-01-08'
 - op: EVT
+  verb: NEOCORTEX_ALERT
+  owner: neocortex
+  status: experimental
+  schema: null
+  since: '2026-01-12'
+- op: EVT
+  verb: NEOCORTEX_SHADOW_INTENT
+  owner: neocortex
+  status: experimental
+  schema: null
+  since: '2026-01-12'
+- op: EVT
+  verb: NEOCORTEX_STATE_UPDATED
+  owner: neocortex
+  status: experimental
+  schema: null
+  since: '2026-01-12'
+- op: EVT
   verb: OI_UPDATE
   owner: feature_engineering
   status: experimental
@@ -304,7 +322,7 @@ registry:
   verb: TRADE_INTENT_REJECTED
   owner: decision_making
   status: experimental
-  schema: null
+  schema: schemas/trade_intent_rejected_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: VERB

@@ -13,6 +13,8 @@ from typing import List, Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
+DEFAULT_RNG_SEED = 42
+
 
 # =============================================================================
 # SYSTEM CONFIGURATION
@@ -47,6 +49,13 @@ class SystemConfig(BaseModel):
     )
     log_to_file: bool = Field(
         description="Whether to write logs to file"
+    )
+
+    # Reproducibility
+    rng_seed: int = Field(
+        default=DEFAULT_RNG_SEED,
+        ge=0,
+        description="Global RNG seed for reproducible runs"
     )
     
     @field_validator('data_dir', 'checkpoint_dir', mode='before')

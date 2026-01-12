@@ -123,6 +123,52 @@ class HotState:
     absorption_not_ready_reason: Optional[str] = None
 
 
+# =============================================================================
+# EP-01.1: BAR VOLATILITY STATE (per-timeframe ATR tracking)
+# =============================================================================
+
+@dataclass
+class BarVolatilityState:
+    """
+    Per (symbol, tf_sec) state for bar-based volatility features.
+    
+    EP-01.1: Tracks True Range history for ATR calculation.
+    Used to compute bar_range, bar_body, true_range, ATR_N.
+    
+    This is kept SEPARATE from HotState because it's timeframe-specific,
+    while HotState is tick-level (tf_sec=0).
+    """
+    # ATR window size (configurable, default 14)
+    atr_window: int = 14
+    
+    # Rolling buffer of True Range values
+    tr_buffer: Deque[float] = field(default_factory=deque)
+    
+    # Previous bar's close price for True Range calculation
+    prev_close: Optional[decimal.Decimal] = None
+    
+    # Last computed ATR (None if not enough history)
+    last_atr: Optional[float] = None
+    
+    # Readiness flag
+    atr_ready: bool = False
+    
+    def update_tr(self, true_range: float) -> None:
+        """Add new True Range value and update ATR."""
+        # Add to buffer, respecting maxlen
+        if len(self.tr_buffer) >= self.atr_window:
+            self.tr_buffer.popleft()
+        self.tr_buffer.append(true_range)
+        
+        # Calculate ATR if we have enough history
+        if len(self.tr_buffer) >= self.atr_window:
+            self.last_atr = sum(self.tr_buffer) / len(self.tr_buffer)
+            self.atr_ready = True
+        else:
+            self.last_atr = None
+            self.atr_ready = False
+
+
 @dataclass
 class ColdState:
     """

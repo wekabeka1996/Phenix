@@ -24,7 +24,7 @@
 | EVT:MR_SIGNAL_PRODUCED | 1 | unknown | - | apps/reference/config_models.py:1 |
 | EVT:ORCHESTRATOR_ERROR | 1 | unknown | - | apps/reference/orchestrator/orchestrator_fsm.py:1 |
 | EVT:ORDER_EXECUTED | 1 | unknown | - | apps/reference/orchestrator/orchestrator_fsm.py:1 |
-| EVT:ORDER_REJECTED | 1 | unknown | - | apps/reference/orchestrator/orchestrator_fsm.py:1 |
+| EVT:ORDER_REJECTED | 3 | unknown | - | apps/reference/adapters/binance_ws_client.py:2, apps/reference/orchestrator/orchestrator_fsm.py:1 |
 | EVT:ORDER_STATE_CHANGED | 3 | unknown | execution_position:33.33%(1) | apps/reference/adapters/binance_ws_client.py:2, apps/reference/domains/execution_position/watchdog.py:1 |
 | EVT:ORDER_TIMEOUT | 1 | unknown | - | apps/reference/orchestrator/orchestrator_fsm.py:1 |
 | EVT:PARTIAL_FILL | 3 | unknown | execution_position:66.67%(2) | apps/reference/domains/execution_position/fsm_manage.py:2, vfoundation/core/adapters/execution_adapter.py:1 |

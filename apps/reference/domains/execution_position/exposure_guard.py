@@ -4,6 +4,7 @@ EXP-FIX: Exposure Guard with Portfolio Notional Hard Gate.
 Implements fail-closed behavior when portfolio positions are stale/unknown,
 and post-fill hold mechanism to prevent race conditions.
 PHASE 2: Soft-limit clipping (clip instead of reject, min notional check).
+EP-01: Regime-based risk adaptation using ExecutionRegimeBucket.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import time
 import logging
 import asyncio
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING, Union
 from dataclasses import dataclass
 
 from apps.reference.telemetry.order_logger import order_logger
@@ -25,6 +26,8 @@ from apps.reference.domains.execution_position.metrics_aggregator import metrics
 from apps.reference.domain_config import DomainConfigResolver
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_models import AuroraConfig
+# EP-01: Import bucket enum for type-safe regime adaptation
+from apps.reference.core.types.regime_types import ExecutionRegimeBucket
 
 
 @dataclass
@@ -114,6 +117,8 @@ class ExposureGuard:
         self.soft_clip_engine = SoftClipEngine(
             self.soft_limit_config, logger=self.logger
         )
+        # EP-01: Store original base ratio for regime adaptation (immutable reference)
+        self._base_directional_ratio = self.soft_limit_config.directional_ratio_max
 
         # PHASE P0: Fallback mode configuration and state
         self.fallback_config = self._load_fallback_config()
@@ -915,27 +920,42 @@ class ExposureGuard:
             "postfill_hold_ttl_sec": self.post_fill_hold_ttl_sec,
         }
 
-    def on_regime_changed(self, regime_type: str) -> None:
+    def on_regime_changed(self, bucket: Union[ExecutionRegimeBucket, str]) -> None:
         """
-        PHASE 3: Regime adaptation - update directional ratio based on market regime.
+        EP-01: Regime adaptation - update directional ratio based on market regime bucket.
 
-        regime_type: "TREND_UP", "TREND_DOWN", "FLAT", "UNCERTAIN"
+        Args:
+            bucket: ExecutionRegimeBucket enum (preferred) or legacy string.
+                    TREND_UP, TREND_DOWN → apply trend delta (more aggressive)
+                    FLAT → apply flat_delta (more conservative, reduce exposure)
+                    VOLATILE → apply flat_delta (tighten limits during high vol)
+                    UNCERTAIN → apply flat_delta (conservative fallback)
         """
         regime_adaptation = self.soft_limit_config.regime_adaptation
         if not regime_adaptation:
             return
 
-        base_ratio = self.soft_limit_config.directional_ratio_max
+        # EP-01: Convert string to enum if needed (backward compatibility)
+        if isinstance(bucket, str):
+            try:
+                bucket = ExecutionRegimeBucket(bucket)
+            except ValueError:
+                self.logger.warning(f"EP-01: Unknown regime bucket string '{bucket}', treating as UNCERTAIN")
+                bucket = ExecutionRegimeBucket.UNCERTAIN
+
+        # EP-01: Use immutable base ratio, not the mutable soft_limit_config value
+        base_ratio = self._base_directional_ratio
         bounds = regime_adaptation.bounds if regime_adaptation.bounds else [2.0, 4.0]
 
         delta = Decimal("0")
-        if regime_type == "TREND_UP":
+        if bucket == ExecutionRegimeBucket.TREND_UP:
             delta = Decimal(str(regime_adaptation.trend_up_delta)
                             ) if regime_adaptation.trend_up_delta else Decimal("0")
-        elif regime_type == "TREND_DOWN":
+        elif bucket == ExecutionRegimeBucket.TREND_DOWN:
             delta = Decimal(str(regime_adaptation.trend_down_delta)
                             ) if regime_adaptation.trend_down_delta else Decimal("0")
-        elif regime_type in ["FLAT", "UNCERTAIN"]:
+        elif bucket in (ExecutionRegimeBucket.FLAT, ExecutionRegimeBucket.VOLATILE, ExecutionRegimeBucket.UNCERTAIN):
+            # EP-01: FLAT (mean-reversion), VOLATILE (high-vol), UNCERTAIN → all use flat_delta (conservative)
             delta = Decimal(str(regime_adaptation.flat_delta)
                             ) if regime_adaptation.flat_delta else Decimal("0")
 
@@ -949,8 +969,10 @@ class ExposureGuard:
 
         # Soft-limit directional ratio (used by SoftClipEngine).
         self.soft_limit_config.directional_ratio_max = new_ratio
+        # EP-01: Also update instance attribute for direct access
+        self.max_directional_ratio = new_ratio
         self.logger.info(
-            f"REGIME_ADAPTED: {regime_type} → directional_ratio_max={float(new_ratio):.2f} "
+            f"EP-01 REGIME_ADAPTED: bucket={bucket.value} → directional_ratio_max={float(new_ratio):.2f} "
             f"(base={float(base_ratio):.2f}, delta={float(delta):.2f})"
         )
 

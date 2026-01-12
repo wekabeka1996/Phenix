@@ -5,8 +5,8 @@
 # ============================================================================
 vae:
   # Architecture
-  input_dim: 9  # Must match len(feature_list) in ingest.yaml
-  hidden_dims: [128, 64]  # Encoder: 9 -> 128 -> 64 -> latent
+  input_dim: 20  # Must match len(feature_list) in ingest.yaml
+  hidden_dims: [128, 64]  # Encoder: input_dim -> 128 -> 64 -> latent
   latent_dim: 16  # Compressed representation dimensionality
   
   # Training
@@ -35,7 +35,7 @@ world_model:
 # ============================================================================
 ppo:
   # Architecture
-  state_dim: 20  # VAE latent (16) + context (4)
+  state_dim: 16  # Must match VAE latent_dim (no extra context wired yet)
   action_dim: 3  # LONG, SHORT, FLAT
   hidden_dims: [256, 128]
   

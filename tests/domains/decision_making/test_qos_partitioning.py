@@ -19,12 +19,17 @@ class TestQoSPartitioning:
     def mock_dm(self):
         """Create a mock DecisionMaking with partitioned QoS state."""
         dm = MagicMock()
+        
+        # Validate dependency on Clock
+        dm._clock = MagicMock()
+        dm._clock.now_sec.return_value = 1000000.0
+        
         dm._qos_state = defaultdict(
             lambda: {
                 "last_exposure_block": 0.0,
                 "symbol_cooldowns": {},
                 "symbol_intent_counts": defaultdict(
-                    lambda: {"count": 0, "window_start": time.time()}
+                    lambda: {"count": 0, "window_start": 1000000.0}
                 ),
             }
         )
@@ -54,13 +59,15 @@ class TestQoSPartitioning:
         # Stub _get_symbol_cooldown
         mock_dm._get_symbol_cooldown = MagicMock(return_value=3)
         
-        # Aurora blocked, MR allowed
-        mock_dm._qos_state["aurora"]["symbol_cooldowns"]["BTCUSDT"] = time.time()
+        # Aurora blocked (update ts = now)
+        now = 1000000.0
+        mock_dm._qos_state["aurora"]["symbol_cooldowns"]["BTCUSDT"] = now
         
+        # Check permissions
         aurora_allowed, _ = DecisionMaking._qos_allow(mock_dm, "BTCUSDT", "aurora")
         mr_allowed, _ = DecisionMaking._qos_allow(mock_dm, "BTCUSDT", "mean_reversion")
         
-        assert aurora_allowed is False  # Recently updated
+        assert aurora_allowed is False  # Recently updated (diff=0 < 3)
         assert mr_allowed is True  # No update for MR
 
 

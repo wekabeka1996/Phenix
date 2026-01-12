@@ -236,10 +236,14 @@
       "op": "EVT",
       "verb": "ORDER_REJECTED",
       "token": "EVT:ORDER_REJECTED",
-      "total_occurrences": 1,
+      "total_occurrences": 3,
       "suggested_owner": "unknown",
       "candidates": [],
       "top_files": [
+        {
+          "path": "apps/reference/adapters/binance_ws_client.py",
+          "count": 2
+        },
         {
           "path": "apps/reference/orchestrator/orchestrator_fsm.py",
           "count": 1

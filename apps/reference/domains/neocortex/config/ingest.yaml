@@ -2,15 +2,26 @@
 
 # Feature selection (must match EVT:FEATURES_CALCULATED schema)
 feature_list:
-  - rsi
-  - bb_percent
-  - bb_width
+  - price
   - obi
-  - liquidity_kappa
-  - liquidity_depth_imbalance
+  - tfi
   - delta_price
-  - delta_volume
-  - regime_numeric  # Encoded as integer: FLAT=0, TREND=1, MEAN_REVERSION=2, UNCERTAIN=3
+  - ema_bias
+  - volume_spike
+  - volatility_state
+  - depth_imbalance
+  - spread_bps
+  - macro_sync
+  - macro_resid
+  - volume_zscore
+  - large_trade_imbalance
+  - volatility_bar_range
+  - volatility_bar_body
+  - volatility_true_range
+  - volatility_atr_14
+  - volatility_range_pct
+  - volatility_atr_pct
+  - liquidity_obi_close
 
 # Normalization
 normalization_method: "zscore"  # Options: zscore, minmax, robust

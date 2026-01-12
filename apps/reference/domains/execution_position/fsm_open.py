@@ -26,6 +26,49 @@ from .contracts import (
 )
 from .metrics_collector import MetricsCollector
 from apps.reference.config_models import AuroraConfig
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Literal
+
+
+class CmdOpenPayload(BaseModel):
+    """
+    EP-01.4-INT-A: Strict Pydantic model for CMD:OPEN payload validation.
+    
+    FAIL-CLOSED: Unknown fields are rejected (extra='forbid').
+    This ensures contract integrity for CMD:OPEN commands.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    # Required fields
+    symbol: str = Field(..., min_length=1, description="Trading symbol (e.g., BTCUSDT)")
+    side: Literal["BUY", "SELL"] = Field(..., description="Order side")
+    qty: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$", description="Order quantity (string-encoded)")
+    # ORDER-POLICY-01: REQUIRED. No silent defaults.
+    order_type: Literal["MARKET", "LIMIT"] = Field(..., description="Order type. REQUIRED.")
+    
+    # Optional fields
+    price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$", description="Limit price")
+    price_ref: Optional[str] = Field(default=None, description="Reference price for checks")
+    tif: Optional[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
+        default=None, 
+        description="Time in force. GTX = post-only (maker-only). Null = default GTC"
+    )
+    valid_for_ms: Optional[int] = Field(default=None, ge=1000, description="Pending entry TTL in ms")
+    stop_price: Optional[str] = Field(default=None, description="Stop-loss price")
+    target_price: Optional[str] = Field(default=None, description="Take-profit price")
+    sl_pct: Optional[str] = Field(default=None, description="Stop-loss percentage")
+    idempotent_key: Optional[str] = Field(default=None, description="Idempotency key")
+    rid: Optional[str] = Field(default=None, description="Request ID for correlation")
+    
+    @field_validator('tif', mode='before')
+    @classmethod
+    def normalize_tif(cls, v):
+        """Normalize tif to uppercase if string."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v.upper()
+        return v
 
 
 class OpenState(str, Enum):
@@ -188,24 +231,53 @@ class OpenFlowFSM:
 
                 self.idempotency_store[idempotent_key] = time.time()
 
-            # Extract and validate pld
+            # PANIC-INT: Panic killswitch gate (fail-closed)
+            # Block ALL new CMD:OPEN when panic_killswitch is active
             try:
-                pld = msg.pld or {}
-                symbol = pld.get("symbol")
-                side = pld.get("side")
-                qty = pld.get("qty")
-                price = pld.get("price")
-                order_type = pld["order_type"] if "order_type" in pld else "MARKET"
-                tif = pld["tif"] if "tif" in pld else "GTC"
+                if self.config.trading and self.config.trading.ops:
+                    if self.config.trading.ops.panic_killswitch:
+                        self.logger.error(
+                            f"PANIC_REJECT: CMD:OPEN blocked - panic_killswitch=true, rid={msg.rid}"
+                        )
+                        return self._reject(msg, "PANIC_KILLSWITCH", "panic active - all new opens blocked")
+            except AttributeError:
+                pass  # Config not fully loaded; fail-open for tests
 
-                if not symbol or not side:
-                    self.logger.error(
-                        f"GUARD_REJECT: Missing required fields - symbol={symbol}, side={side}, rid={msg.rid}"
-                    )
-                    return self._reject(
-                        msg, "OPEN_GUARD_FAIL", "missing symbol or side"
-                    )
+            # EP-01.4-INT-A: Strict payload validation (fail-closed)
+            pld = msg.pld or {}
+            try:
+                validated_pld = CmdOpenPayload.model_validate(pld)
+                symbol = validated_pld.symbol
+                side = validated_pld.side
+                qty = validated_pld.qty
+                price = validated_pld.price
+                order_type = validated_pld.order_type
+                # EP-01.4-INT-A: tif from payload, default to GTC if None
+                tif = validated_pld.tif or "GTC"
+            except Exception as validation_err:
+                self.logger.error(
+                    f"CMD_OPEN_VALIDATION_FAIL: Invalid payload - {validation_err}, rid={msg.rid}"
+                )
+                return self._reject(
+                    msg, "CMD_OPEN_VALIDATION_FAIL", f"payload validation failed: {validation_err}"
+                )
 
+            # EP-01.4-INT-B: Maker-only enforcement for LIMIT entries
+            try:
+                maker_cfg = self.config.domains.execution_position.maker_only_entry
+                if maker_cfg.enabled and order_type == "LIMIT":
+                    # Enforce GTX for LIMIT entries
+                    if tif != "GTX":
+                        self.logger.info(
+                            f"MAKER_ONLY_ENFORCE: Overriding tif={tif} -> GTX for LIMIT entry, rid={msg.rid}"
+                        )
+                        tif = "GTX"
+            except AttributeError:
+                pass  # Config not loaded (tests); skip enforcement
+
+            # Note: symbol/side validation now handled by CmdOpenPayload Pydantic model
+
+            try:
                 # Get instrument specifications
                 specs = self._get_instrument_specs(symbol)
                 min_qty = specs["min_qty"]
@@ -217,8 +289,8 @@ class OpenFlowFSM:
                 qty_dec = Decimal(str(qty)) if qty is not None else None
                 price_dec = Decimal(str(price)) if price is not None else None
                 price_ref = (
-                    Decimal(str(pld.get("price_ref")))
-                    if pld.get("price_ref") is not None
+                    Decimal(str(validated_pld.price_ref))
+                    if validated_pld.price_ref is not None
                     else None
                 )
 

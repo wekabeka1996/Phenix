@@ -98,7 +98,16 @@ def test_reentry_cooldown_basic(mock_config):
     state = handler._symbol_states[symbol]
     
     # Return BUY
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="BUY", score=Decimal("0.8"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="BUY",
+        score=Decimal("0.8"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     # Verify established
@@ -107,7 +116,16 @@ def test_reentry_cooldown_basic(mock_config):
     state.regime_effective = "DEFAULT"
     
     # 2. Exit (Neutral)
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="", score=Decimal("0.0"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="",
+        score=Decimal("0.0"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     assert state.position_side == ""
@@ -116,7 +134,16 @@ def test_reentry_cooldown_basic(mock_config):
     # 3. Re-entry too soon (30s < 60s)
     clock.advance(30.0)
     emit_mock.reset_mock()
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="BUY", score=Decimal("0.5"), deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="BUY",
+        score=Decimal("0.5"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     handler.on_features_calculated(event)
     
     # Verify BLOCKED
@@ -180,7 +207,16 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
     state = handler._symbol_states[symbol]
     
     # Helper to force exit tracking
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="", score=0, deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="",
+        score=Decimal("0.0"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     
     # Force state
     state.regime_effective = "LOW_VOLATILITY"
@@ -193,7 +229,16 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
     
     # Re-entry at 15s (Blocked: 10s * 2.0 = 20s required)
     clock.advance(15.0)
-    handler.scoring_kernel_cls.compute.return_value = MagicMock(side="BUY", score=0.5, deferred=False)
+    handler.scoring_kernel_cls.compute.return_value = MagicMock(
+        side="BUY",
+        score=Decimal("0.5"),
+        thr_buy=Decimal("0.1"),
+        thr_sell=Decimal("0.1"),
+        why_chain=[],
+        psi_vector={},
+        regime=None,
+        deferred=False,
+    )
     emit_mock.reset_mock()
     handler.on_features_calculated(event)
     

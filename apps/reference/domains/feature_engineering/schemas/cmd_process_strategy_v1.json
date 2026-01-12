@@ -26,54 +26,183 @@
         {
           "type": "object",
           "properties": {
-            "symbol": { "type": "string" },
-            "timeframe_sec": { "type": "integer" },
-            "open": { "type": "string" },
-            "high": { "type": "string" },
-            "low": { "type": "string" },
-            "close": { "type": "string" },
-            "volume": { "type": "string" },
-            "trade_count": { "type": "integer" },
-            "start_ts_ms": { "type": "integer" },
-            "end_ts_ms": { "type": "integer" }
+            "symbol": {
+              "type": "string"
+            },
+            "timeframe_sec": {
+              "type": "integer"
+            },
+            "open": {
+              "type": "string"
+            },
+            "high": {
+              "type": "string"
+            },
+            "low": {
+              "type": "string"
+            },
+            "close": {
+              "type": "string"
+            },
+            "volume": {
+              "type": "string"
+            },
+            "trade_count": {
+              "type": "integer"
+            },
+            "start_ts_ms": {
+              "type": "integer"
+            },
+            "end_ts_ms": {
+              "type": "integer"
+            }
           },
-          "required": ["symbol", "timeframe_sec", "open", "high", "low", "close", "volume"],
+          "required": [
+            "symbol",
+            "timeframe_sec",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume"
+          ],
           "additionalProperties": true
         },
-        { "type": "null" }
+        {
+          "type": "null"
+        }
       ]
     },
     "features": {
       "type": "object",
-      "description": "Feature set computed for the bar-close trigger (same structure as EVT:FEATURES_CALCULATED.features).",
+      "description": "Feature set computed for the bar-close trigger. Includes base features + EP-01.1 volatility/liquidity.",
+      "properties": {
+        "volatility": {
+          "type": "object",
+          "description": "EP-01.1: Bar-based volatility features for SL/TP sizing.",
+          "properties": {
+            "bar_range": {
+              "type": "string",
+              "description": "high - low (Decimal as string)"
+            },
+            "bar_body": {
+              "type": "string",
+              "description": "|close - open| (Decimal as string)"
+            },
+            "true_range": {
+              "type": "string",
+              "description": "TR = max(H-L, |H-prev_close|, |L-prev_close|)"
+            },
+            "atr_14": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ATR_14 (rolling mean of last 14 TR values); null if warmup incomplete"
+            },
+            "range_pct": {
+              "type": "number",
+              "description": "bar_range / close (normalized)"
+            },
+            "atr_pct": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "atr_14 / close (normalized); null if warmup incomplete"
+            },
+            "atr_ready": {
+              "type": "boolean",
+              "description": "True if ATR has sufficient history (>= 14 bars)"
+            }
+          },
+          "required": [
+            "bar_range",
+            "bar_body",
+            "true_range",
+            "atr_ready"
+          ],
+          "additionalProperties": false
+        },
+        "liquidity": {
+          "type": "object",
+          "description": "EP-01.1: Liquidity snapshot at bar close.",
+          "properties": {
+            "obi_close": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "OBI snapshot at bar close (Decimal as string); null if no tick data yet"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": true
     },
     "warmup": {
       "type": "object",
       "description": "FeatureEngineering warmup/readiness snapshot at emit time.",
       "properties": {
-        "full_ready": { "type": "boolean" },
-        "ticks_seen": { "type": "integer" },
+        "full_ready": {
+          "type": "boolean"
+        },
+        "ticks_seen": {
+          "type": "integer"
+        },
         "ready": {
           "type": "object",
-          "additionalProperties": { "type": "boolean" }
+          "additionalProperties": {
+            "type": "boolean"
+          }
         },
         "reasons": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       },
-      "required": ["full_ready", "ticks_seen"],
+      "required": [
+        "full_ready",
+        "ticks_seen"
+      ],
       "additionalProperties": true
     },
     "regime": {
       "description": "Regime snapshot injected by FeatureEngineering (from EVT:REGIME_DETECTED cache); may be null before first regime emission.",
       "anyOf": [
-        { "type": "object", "additionalProperties": true },
-        { "type": "null" }
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
       ]
     }
   },
-  "required": ["symbol", "tf_sec", "bar_close_ts", "bar", "features", "warmup", "regime"],
+  "required": [
+    "symbol",
+    "tf_sec",
+    "bar_close_ts",
+    "bar",
+    "features",
+    "warmup",
+    "regime"
+  ],
   "additionalProperties": false
 }

@@ -35,6 +35,7 @@ from apps.reference.domains.feature_engineering.types import (
     ColdState,
     SymbolFeatureState,
     FeatureEngineeringConfig,
+    BarVolatilityState,  # EP-01.1: Bar-based ATR tracking
 )
 
 # FTR-04: Import calculation engine
@@ -143,8 +144,18 @@ class FeatureEngineering:
         self._last_macro_resid_ready: dict[str, bool] = {}
         self._last_macro_resid_reason: dict[str, str | None] = {}
         
+        # EP-01.1: Bar Volatility State (per symbol,tf_sec for ATR)
+        self._bar_volatility_states: Dict[Tuple[str, int], BarVolatilityState] = {}
+        
+        # EP-01.1: Last OBI snapshot per symbol (for bar close snapshot)
+        self._last_obi: Dict[str, decimal.Decimal] = {}
+        
         # Register event listener
         self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
+        
+        # REG-FIX-01: Regime cache for CMD injection
+        self.last_regime: Dict[str, Dict] = {}
+        self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime_detected)
         
         # BAR-FEATURES-001: Listen for bar events to emit bar-based features
         self.fsm.listen("EVT:BAR_CLOSED", self.on_bar_closed)
@@ -423,6 +434,19 @@ class FeatureEngineering:
     # FSM EVENT HANDLERS
     # =========================================================================
 
+    def on_regime_detected(self, event: Message) -> None:
+        """
+        Handle EVT:REGIME_DETECTED.
+        Cache regime state to inject into CMD:PROCESS_STRATEGY.
+        """
+        try:
+            pld = event.pld if hasattr(event, 'pld') else event
+            symbol = pld.get("symbol")
+            if symbol:
+                self.last_regime[symbol] = pld
+        except Exception as e:
+            self.logger.error(f"Error handling regime: {e}")
+
     def on_market_tick(self, event: Message) -> None:
         """Handle incoming market tick event."""
         self.logger.debug(f"event.pld = {event.pld}")
@@ -521,7 +545,7 @@ class FeatureEngineering:
         bar_last_tick["ts"] = bar_ts - 1  # 1ms before bar close
         
         self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
-        self._calculate_and_emit_features_for_tf(symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick)
+        self._calculate_and_emit_features_for_tf(symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick, bar_data=bar_data)
 
     def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> None:
         """Calculate tick-features and emit EVT:FEATURES_CALCULATED.
@@ -532,8 +556,8 @@ class FeatureEngineering:
         # Tick-features: emit immediately, tf_sec=0 indicates tick-level data
         self._calculate_and_emit_features_for_tf(symbol, tf_sec=0, current_tick=current_tick, last_tick=last_tick)
 
-    def _calculate_and_emit_features_for_tf(self, symbol: str, tf_sec: int, current_tick: dict, last_tick: dict) -> None:
-        """Calculate all features for a specific tf_sec and emit EVT:FEATURES_CALCULATED."""
+    def _calculate_and_emit_features_for_tf(self, symbol: str, tf_sec: int, current_tick: dict, last_tick: dict, bar_data: Optional[Dict] = None) -> None:
+        """Calculate all features for a specific tf_sec and emit EVT:FEATURES_CALCULATED (and CMD:PROCESS_STRATEGY if bar)."""
         try:
             # Initialize symbol state if needed
             if symbol not in self.symbol_states:
@@ -600,6 +624,9 @@ class FeatureEngineering:
             # OBI (Order Book Imbalance) [-1, 1]
             depth = bid_size + ask_size
             obi = (bid_size - ask_size) / depth if depth > 0 else decimal.Decimal(0)
+            
+            # EP-01.1: Cache OBI for bar close snapshot
+            self._last_obi[symbol] = obi
 
             # TFI (Trade Flow Imbalance) [-1, 1]
             total_flow = buy_volume + sell_volume
@@ -970,6 +997,126 @@ class FeatureEngineering:
 
             # Emit event
             self.fsm.emit("EVT:FEATURES_CALCULATED", payload=features_payload, why="features_calculated")
+
+            # T2B-03 + REC-01-FIX: EMIT CMD:PROCESS_STRATEGY (Bar-Driven Trigger)
+            # FAIL-CLOSED CONDITIONS:
+            # 1. bar_data must exist
+            # 2. tf_sec >= 60 (real bars only, not tick-level)
+            # 3. warmup must exist and full_ready == True
+            # 4. bar_close_ts must be present in bar_data
+            # 5. bar must have OHLCV fields
+            
+            # Gate 1: bar_data presence
+            if not bar_data:
+                pass  # Tick-level features, no CMD emission expected
+            # Gate 2: tf_sec >= 60 (REC-01-FIX: was > 0)
+            elif not tf_sec or tf_sec < 60:
+                self.logger.warning(
+                    f"[{symbol}] CMD:PROCESS_STRATEGY rejected: tf_sec={tf_sec} < 60"
+                )
+            # Gate 3: warmup fail-closed (REC-01-FIX: no default True)
+            elif warmup is None:
+                self.logger.warning(
+                    f"[{symbol}] CMD:PROCESS_STRATEGY rejected: warmup missing"
+                )
+            elif warmup.get("full_ready") is not True:
+                self.logger.warning(
+                    f"[{symbol}] CMD:PROCESS_STRATEGY rejected: warmup not full_ready "
+                    f"(full_ready={warmup.get('full_ready')}, reasons={warmup.get('reasons', [])})"
+                )
+            else:
+                # Gate 4: Extract bar_close_ts from bar_data (SSOT)
+                bar_close_ts = bar_data.get("end_ts_ms") or bar_data.get("close_ts") or bar_data.get("kline_close_time")
+                
+                if not bar_close_ts:
+                    self.logger.warning(
+                        f"[{symbol}] CMD:PROCESS_STRATEGY rejected: bar_close_ts missing in bar_data"
+                    )
+                # Gate 5: Validate bar has OHLCV fields (REC-01-FIX: bar structure check)
+                elif not all(bar_data.get(f) is not None for f in ("open", "high", "low", "close", "volume")):
+                    missing = [f for f in ("open", "high", "low", "close", "volume") if bar_data.get(f) is None]
+                    self.logger.warning(
+                        f"[{symbol}] CMD:PROCESS_STRATEGY rejected: bar fields missing ({missing})"
+                    )
+                else:
+                    # All gates passed — compute EP-01.1 features and emit CMD
+                    
+                    # =========================================================
+                    # EP-01.1: BAR VOLATILITY FEATURES
+                    # =========================================================
+                    bar_open = decimal.Decimal(str(bar_data.get("open")))
+                    bar_high = decimal.Decimal(str(bar_data.get("high")))
+                    bar_low = decimal.Decimal(str(bar_data.get("low")))
+                    bar_close = decimal.Decimal(str(bar_data.get("close")))
+                    
+                    # bar_range = high - low
+                    bar_range = bar_high - bar_low
+                    
+                    # bar_body = |close - open|
+                    bar_body = abs(bar_close - bar_open)
+                    
+                    # Get/create bar volatility state for this (symbol, tf_sec)
+                    vol_key = (symbol, tf_sec)
+                    if vol_key not in self._bar_volatility_states:
+                        self._bar_volatility_states[vol_key] = BarVolatilityState(atr_window=14)
+                    vol_state = self._bar_volatility_states[vol_key]
+                    
+                    # True Range calculation
+                    # TR = max(H - L, |H - prev_close|, |L - prev_close|)
+                    if vol_state.prev_close is not None:
+                        tr_hl = bar_high - bar_low
+                        tr_hc = abs(bar_high - vol_state.prev_close)
+                        tr_lc = abs(bar_low - vol_state.prev_close)
+                        true_range = max(tr_hl, tr_hc, tr_lc)
+                    else:
+                        # First bar: use H - L only
+                        true_range = bar_high - bar_low
+                    
+                    # Update prev_close for next bar
+                    vol_state.prev_close = bar_close
+                    
+                    # Update TR buffer and compute ATR
+                    vol_state.update_tr(float(true_range))
+                    
+                    # Normalized values (% of price)
+                    eps = decimal.Decimal("0.00000001")
+                    close_safe = max(bar_close, eps)
+                    range_pct = float(bar_range / close_safe)
+                    atr_pct = float(vol_state.last_atr / float(close_safe)) if vol_state.atr_ready and vol_state.last_atr else None
+                    
+                    # =========================================================
+                    # EP-01.1: OBI SNAPSHOT AT BAR CLOSE
+                    # =========================================================
+                    obi_close = self._last_obi.get(symbol)
+                    obi_close_str = str(obi_close) if obi_close is not None else None
+                    
+                    # =========================================================
+                    # EP-01.1: INJECT INTO FEATURES
+                    # =========================================================
+                    features["volatility"] = {
+                        "bar_range": str(bar_range),
+                        "bar_body": str(bar_body),
+                        "true_range": str(true_range),
+                        "atr_14": vol_state.last_atr,  # None if not ready
+                        "range_pct": range_pct,
+                        "atr_pct": atr_pct,  # None if not ready
+                        "atr_ready": vol_state.atr_ready,
+                    }
+                    features["liquidity"] = {
+                        "obi_close": obi_close_str,
+                    }
+                    
+                    cmd_payload = {
+                        "symbol": symbol,
+                        "tf_sec": tf_sec,                        # T2B-03: Required for strategy routing
+                        "bar_close_ts": int(bar_close_ts),       # T2B-03: Required for dedup/idempotency
+                        "bar": bar_data,                         # T2B-05: Real Bar SSOT
+                        "features": features,                    # Calculated features + EP-01.1
+                        "warmup": warmup,                        # T2B-03: Readiness snapshot
+                        "regime": self.last_regime.get(symbol),  # REG-FIX-01: Injected regime
+                    }
+                    self.fsm.emit("CMD:PROCESS_STRATEGY", payload=cmd_payload, why="bar_closed_trigger")
+                    self.logger.debug(f"[{symbol}] Emitted CMD:PROCESS_STRATEGY (tf={tf_sec}s, bar_close_ts={bar_close_ts}, atr_ready={vol_state.atr_ready})")
 
             # Store features
             if self.feature_store:

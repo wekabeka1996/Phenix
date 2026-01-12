@@ -3,11 +3,16 @@ Mean Reversion Decision Handler.
 
 Track B: Integrates Mean Reversion 3m Strategy into DecisionMaking workflow.
 
-This handler:
-1. Receives tick data via EVT:MARKET_TICK_FORWARDED (forwarded after feature calc)
-2. Aggregates ticks into 3m bars via BarResampler
+T2B-03 Architecture (Orchestrated Cycle):
+1. FeatureEngineering emits CMD:PROCESS_STRATEGY after bar closes + features ready
+2. This handler receives bar data via CMD:PROCESS_STRATEGY (includes full OHLCV bar)
 3. Computes MR signals via MeanReversion3mStrategy
 4. Emits EVT:STRATEGY_SIGNAL_PRODUCED when signal is actionable
+
+DEPRECATED paths (T2B-06):
+- on_tick() — stub, always returns None
+- _on_market_tick() — stub, does nothing
+- _on_bar_closed() — delegates to data-only handler (no decision trigger)
 
 Activation SSOT: strategies_registry.assignments (per symbol).
 The config flag mean_reversion.enabled is a global kill-switch (can disable, does not activate without assignment).
@@ -22,6 +27,8 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
 from apps.reference.utils.accessors import aget
+from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
+from apps.reference.domains.decision_making.trade_intent_reject_wal import write_trade_intent_rejected
 
 # Import MR strategy components
 from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
@@ -72,10 +79,15 @@ def normalize_ts_ms(raw: Any) -> int:
 class MeanReversionHandler:
     """Handler for Mean Reversion 3m strategy integration with DecisionMaking.
     
-    Workflow:
-        1. on_tick() - receives tick from FeatureEngineering via EVT:MARKET_TICK_FORWARDED
-        2. Strategy processes tick, bar resampling (3 min), MR signal
+    T2B-03 Workflow (Orchestrated Cycle):
+        1. _on_process_strategy() — receives CMD:PROCESS_STRATEGY from FE
+        2. Strategy processes bar (OHLCV from CMD payload), MR signal
         3. If signal is actionable, emit EVT:STRATEGY_SIGNAL_PRODUCED
+    
+    DEPRECATED (T2B-06):
+        - on_tick() — stub (DeprecationWarning)
+        - _on_market_tick() — stub (no-op)
+        - _on_bar_closed() — delegates to data-only handler
     
     Activation SSOT: strategies_registry.assignments.
     The config flag mean_reversion.enabled is a global kill-switch.
@@ -112,6 +124,12 @@ class MeanReversionHandler:
             "bar_logging_errors": 0,
             "tick_processing_errors": 0,
             "regime_processing_errors": 0,
+            # T2B-02: Bar gating stats
+            "bars_received": 0,
+            "bars_rejected_wrong_tf": 0,
+            "bars_rejected_missing_tf": 0,
+            # T2B-05: Bar OHLCV gating
+            "bars_rejected_missing_bar": 0,
         }
         
         self._parse_config()
@@ -156,18 +174,25 @@ class MeanReversionHandler:
             self.bar_logger = MeanReversionBarLogger(self._mr_config.timeframe_sec)
 
     def register(self) -> None:
-        """Attach FSM listeners (ticks + regime)."""
+        """Attach FSM listeners.
+        
+        T2B-03: Primary trigger is CMD:PROCESS_STRATEGY (Orchestrated Cycle).
+        EVT:BAR_CLOSED and EVT:FEATURES_CALCULATED are kept for data caching only.
+        """
         if not self._enabled:
             return
-        self.fsm.listen("EVT:MARKET_TICK_FORWARDED", self._on_market_tick)
+        # T2B-03: Primary trigger - CMD:PROCESS_STRATEGY (Orchestrated Cycle)
+        self.fsm.listen("CMD:PROCESS_STRATEGY", self._on_process_strategy)
+        # T2B-03: Data-only listeners (no decision trigger)
+        self.fsm.listen("EVT:BAR_CLOSED", self._on_bar_closed_data_only)
         self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
-        self.fsm.listen("EVT:FEATURES_CALCULATED", self._on_features_calculated)
         self.mlog.info(
             "MR_REGISTER %s",
             json.dumps(
                 {
-                    "events": ["EVT:MARKET_TICK_FORWARDED", "EVT:REGIME_DETECTED", "EVT:FEATURES_CALCULATED"],
+                    "events": ["CMD:PROCESS_STRATEGY", "EVT:BAR_CLOSED", "EVT:REGIME_DETECTED"],
                     "enabled_symbols": sorted(self._enabled_symbols),
+                    "timeframe_sec": self.timeframe_sec,
                 },
                 ensure_ascii=False,
             ),
@@ -378,63 +403,19 @@ class MeanReversionHandler:
         regime: Optional[str] = None,
     ) -> Optional[MRSignal]:
         """
-        Process tick for Mean Reversion signal.
+        DEPRECATED: T2B-06 — dead code, no longer called.
+        
+        T2B-03: MR receives bars via CMD:PROCESS_STRATEGY from FE.
+        This method remains only for API compatibility; it always returns None.
         """
-        if not self._enabled:
-            return None
-        
-        # Route to symbol-specific strategy
-        strategy = self._strategies.get(symbol)
-        if not strategy:
-            return None
-        
-        # Process tick through strategy
-        signal = strategy.on_tick(symbol, price, volume, timestamp_ms)
-        
-        # Log Bar if completed
-        if signal and signal.bar:
-            self._log_bar(signal)
-            # TF-BAR-SSOT-001: Emit bar closed event for FE to use tf_sec
-            self.fsm.emit("EVT:BAR_CLOSED", payload={"symbol": symbol, "bar": signal.bar}, why="bar_closed")
-        
-        if signal and signal.is_signal:
-            if self._check_liquidity_gate(symbol):
-                self._emit_signal(signal)
-            else:
-                self.logger.info(f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
-                self._emit_strategy_blocked(
-                    symbol=symbol,
-                    reason_code="LIQUIDITY_GATE",
-                    reason="LIQUIDITY",
-                    context="mean_reversion_handler:on_tick",
-                    details={"kappa": str(self._liquidity_kappa_map.get(symbol, Decimal('0')))},
-                    why_chain=["LIQUIDITY_GATE"],
-                )
-
-        # Non-silent blocking for neutral signals with explicit deny reasons.
-        if signal and (not signal.is_signal):
-            why = str(getattr(signal, "why", "") or "")
-            why_norm = why[len("neutral:") :] if why.startswith("neutral:") else why
-            reason_code: str | None = None
-            reason: str | None = None
-            if why_norm.startswith("regime_not_flat:"):
-                reason_code = "REGIME_MAPPING_NONE"
-                reason = "REGIME_MAPPING_NONE"
-            elif why_norm.startswith("regime_not_allowed:"):
-                reason_code = "REGIME_NOT_ALLOWED"
-                reason = "REGIME"
-
-            if reason_code:
-                self._emit_strategy_blocked(
-                    symbol=symbol,
-                    reason_code=reason_code,
-                    reason=reason or reason_code,
-                    context="mean_reversion_handler:on_tick",
-                    details={"why": why},
-                    why_chain=["MR_NEUTRAL", why_norm],
-                )
-        
-        return signal
+        import warnings
+        warnings.warn(
+            "MeanReversionHandler.on_tick() is deprecated. "
+            "Use CMD:PROCESS_STRATEGY instead (T2B-03).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return None
 
     def _emit_strategy_blocked(
         self,
@@ -794,203 +775,238 @@ class MeanReversionHandler:
         
         return True
 
-    def _on_market_tick(self, event: Message) -> None:
+    # =========================================================================
+    # T2B-03: CMD:PROCESS_STRATEGY - Primary Entry Point
+    # =========================================================================
+
+    def _on_process_strategy(self, event: Message) -> None:
+        """
+        T2B-03: Handle CMD:PROCESS_STRATEGY command.
+        
+        This is the PRIMARY entry point for MR decision making.
+        Strategies are triggered ONLY by this command (orchestrated by FE).
+        
+        Payload contract:
+        - symbol: str
+        - tf_sec: int (required, must match self.timeframe_sec)
+        - bar_close_ts: int (required)
+        - bar: dict (OHLCV)
+        - features: dict
+        - warmup: dict
+        - regime: dict | None
+        """
         if not self._enabled:
             return
-
-        pld = event.pld
         
-        # === [DEBUG PROBE: Phase 2] ===
-        # Verify tick reception for enabled symbols (DOGE/XRP diagnostics)
-        sym_debug = pld.get("symbol") if isinstance(pld, dict) else getattr(pld, "symbol", "unknown")
-        if sym_debug in self._enabled_symbols:
-            self.logger.debug(f"[{sym_debug}] MR Handler received tick payload")
-        # === END DEBUG PROBE ===
+        pld = event.pld if hasattr(event, "pld") else event
+        self._stats["bars_received"] += 1
         
         try:
-            if isinstance(pld, dict):
-                symbol = str(pld.get("symbol") or "")
-                try:
-                    raw_price = pld.get("price")
-                    price = Decimal(str(raw_price if raw_price is not None else 0))
-                except Exception:
-                    price = Decimal("0")
-
-                raw_ts = pld.get("timestamp_ms")
-                if raw_ts in (None, 0, "0", ""):
-                    raw_ts = pld.get("ts")
-                timestamp_ms = normalize_ts_ms(raw_ts)
-
-                raw_vol = pld.get("volume")
-                if raw_vol is None:
-                    bv_raw = pld.get("buy_volume") or "0"
-                    sv_raw = pld.get("sell_volume") or "0"
-                    raw_vol = Decimal(str(bv_raw)) + Decimal(str(sv_raw))
-                volume = Decimal(str(raw_vol or 0))
-            else:
-                symbol = str(getattr(pld, "symbol", "") or "")
-                try:
-                    price = Decimal(str(aget(pld, "price", 0)))
-                except Exception:
-                    price = Decimal("0")
-
-                raw_ts = aget(pld, "timestamp_ms", None)
-                if raw_ts in (None, 0, "0", ""):
-                    raw_ts = aget(pld, "ts", 0)
-                timestamp_ms = normalize_ts_ms(raw_ts)
-                raw_vol = aget(pld, "volume", None)
-                if raw_vol is None:
-                    raw_vol = (aget(pld, "buy_volume", 0) or 0) + (aget(pld, "sell_volume", 0) or 0)
-                volume = Decimal(str(raw_vol or 0))
-
+            symbol = pld.get("symbol") if isinstance(pld, dict) else getattr(pld, "symbol", None)
+            tf_sec = pld.get("tf_sec") if isinstance(pld, dict) else getattr(pld, "tf_sec", None)
+            
+            # T2B-03 GATE 1: Missing tf_sec -> REJECT
+            if tf_sec is None:
+                self._stats["bars_rejected_missing_tf"] += 1
+                self.logger.warning(f"REJECTED: MR CMD missing tf_sec for {symbol}")
+                write_trade_intent_rejected(
+                    symbol=str(symbol or ""),
+                    tf_sec=None,
+                    bar_close_ts=(pld.get("bar_close_ts") if isinstance(pld, dict) else None),
+                    reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
+                    stage="STRATEGY",
+                    why="CMD:PROCESS_STRATEGY missing tf_sec for MR (fail-closed)",
+                    src="mean_reversion",
+                    ts_ms=(pld.get("bar_close_ts") if isinstance(pld, dict) else None),
+                    rid=(pld.get("rid") if isinstance(pld, dict) else None),
+                )
+                return
+            
+            # T2B-03 GATE 2: Wrong timeframe -> silently skip (other strategies handle it)
+            if tf_sec != self.timeframe_sec:
+                self._stats["bars_rejected_wrong_tf"] += 1
+                return
+            
+            # T2B-03 GATE 3: Missing bar_close_ts -> REJECT
+            bar_close_ts = pld.get("bar_close_ts") if isinstance(pld, dict) else getattr(pld, "bar_close_ts", None)
+            if not bar_close_ts:
+                self._stats["bars_rejected_missing_tf"] += 1
+                self.logger.warning(f"REJECTED: MR CMD missing bar_close_ts for {symbol}")
+                write_trade_intent_rejected(
+                    symbol=str(symbol or ""),
+                    tf_sec=int(tf_sec) if tf_sec is not None else None,
+                    bar_close_ts=None,
+                    reason_code=NormalizedRejectReasons.DATA_NOT_READY,
+                    stage="STRATEGY",
+                    why="CMD:PROCESS_STRATEGY missing bar_close_ts for MR (fail-closed)",
+                    src="mean_reversion",
+                    rid=(pld.get("rid") if isinstance(pld, dict) else None),
+                )
+                return
+            
+            # T2B-05 GATE 4: Missing bar data -> REJECT (fail-closed)
+            bar_data_raw = pld.get("bar") if isinstance(pld, dict) else getattr(pld, "bar", None)
+            if not bar_data_raw:
+                self._stats["bars_rejected_missing_bar"] += 1
+                self.logger.warning(f"REJECTED: MR CMD missing 'bar' field for {symbol}")
+                write_trade_intent_rejected(
+                    symbol=str(symbol or ""),
+                    tf_sec=int(tf_sec) if tf_sec is not None else None,
+                    bar_close_ts=int(bar_close_ts) if bar_close_ts else None,
+                    reason_code=NormalizedRejectReasons.DATA_NOT_READY,
+                    stage="STRATEGY",
+                    why="CMD:PROCESS_STRATEGY missing bar for MR (fail-closed)",
+                    src="mean_reversion",
+                    ts_ms=int(bar_close_ts) if bar_close_ts else None,
+                    rid=(pld.get("rid") if isinstance(pld, dict) else None),
+                )
+                return
+            
+            # Skip if symbol not enabled for MR
             if not symbol or symbol not in self._enabled_symbols:
                 return
-            if timestamp_ms <= 0:
-                self._stats["ticks_dropped_missing_ts"] += 1
-                self.mlog.debug(
-                    "MR_TICK_DROP %s",
-                    json.dumps(
-                        {
-                            "symbol": symbol,
-                            "reason": "missing_ts",
-                            "raw_ts": str(raw_ts) if "raw_ts" in locals() else None,
-                            "counters": dict(self._stats),
-                        },
-                        ensure_ascii=False,
-                    ),
-                )
-                return
-            if price <= 0:
-                self._stats["ticks_dropped_invalid_price"] += 1
-                self.mlog.debug(
-                    "MR_TICK_DROP %s",
-                    json.dumps(
-                        {
-                            "symbol": symbol,
-                            "reason": "invalid_price",
-                            "price": str(price),
-                            "ts_ms": timestamp_ms,
-                            "counters": dict(self._stats),
-                        },
-                        ensure_ascii=False,
-                    ),
-                )
-                return
-
-            regime = self._per_symbol_regime.get(symbol)
-            last_ts = self._last_tick_ts_ms.get(symbol, 0)
-            if last_ts and timestamp_ms < last_ts:
-                self._stats["ticks_dropped_out_of_order"] += 1
-                self.mlog.debug(
-                    "MR_TICK_DROP %s",
-                    json.dumps(
-                        {
-                            "symbol": symbol,
-                            "reason": "out_of_order",
-                            "ts_ms": timestamp_ms,
-                            "last_ts_ms": last_ts,
-                            "counters": dict(self._stats),
-                        },
-                        ensure_ascii=False,
-                    ),
-                )
-                return
-            self._last_tick_ts_ms[symbol] = timestamp_ms
-            self._stats["ticks_seen"] += 1
-
-            self.mlog.debug(
-                "MR_TICK %s",
-                json.dumps(
-                    {
-                        "symbol": symbol,
-                        "price": str(price),
-                        "volume": str(volume),
-                        "ts_ms": timestamp_ms,
-                        "regime": regime,
-                        "counters": dict(self._stats),
-                    },
-                    ensure_ascii=False,
-                ),
+            
+            # Extract bar data from CMD payload
+            bar_data = pld.get("bar", {}) if isinstance(pld, dict) else getattr(pld, "bar", None) or {}
+            
+            # Parse bar into Bar object
+            from apps.reference.domains.feature_engineering.bar_resampler import Bar
+            
+            bar = Bar(
+                symbol=symbol,
+                timeframe_sec=tf_sec,
+                open=Decimal(str(bar_data.get("open", 0) if isinstance(bar_data, dict) else getattr(bar_data, "open", 0))),
+                high=Decimal(str(bar_data.get("high", 0) if isinstance(bar_data, dict) else getattr(bar_data, "high", 0))),
+                low=Decimal(str(bar_data.get("low", 0) if isinstance(bar_data, dict) else getattr(bar_data, "low", 0))),
+                close=Decimal(str(bar_data.get("close", 0) if isinstance(bar_data, dict) else getattr(bar_data, "close", 0))),
+                volume=Decimal(str(bar_data.get("volume", 0) if isinstance(bar_data, dict) else getattr(bar_data, "volume", 0))),
+                start_ts_ms=int(bar_data.get("start_ts_ms", 0) if isinstance(bar_data, dict) else getattr(bar_data, "start_ts_ms", 0)),
+                end_ts_ms=int(bar_close_ts),
+                trade_count=int(bar_data.get("trade_count", 0) if isinstance(bar_data, dict) else getattr(bar_data, "trade_count", 0)),
             )
+            
+            ts_ms = bar.end_ts_ms or int(time.time() * 1000)
 
-            signal = self.on_tick(symbol, price, volume, timestamp_ms, regime)
+            # OBS-04-INT: Prefer bar-driven features as SSOT for liquidity gate.
+            try:
+                features_payload = pld.get("features") if isinstance(pld, dict) else getattr(pld, "features", None)
+                if isinstance(features_payload, dict):
+                    kappa_raw = features_payload.get("liquidity_kappa")
+                    if kappa_raw is not None:
+                        self._liquidity_kappa_map[symbol] = Decimal(str(kappa_raw))
+            except Exception:
+                pass
+            
+            # Get strategy for symbol
+            strategy = self._strategies.get(symbol)
+            if not strategy:
+                return
+            
+            # Set regime from CMD payload or cache
+            regime_data = pld.get("regime") if isinstance(pld, dict) else getattr(pld, "regime", None)
+            if regime_data:
+                regime_name = regime_data.get("regime") if isinstance(regime_data, dict) else getattr(regime_data, "regime", None)
+                if regime_name:
+                    strategy.set_regime(symbol, regime_name)
+            else:
+                regime = self._per_symbol_regime.get(symbol)
+                if regime:
+                    strategy.set_regime(symbol, regime)
+            
+            # Process bar through strategy (T2B-03: CMD is the ONLY trigger)
+            signal = strategy.on_bar(symbol, bar, ts_ms)
+            
+            self._stats["bars_completed"] += 1
+            
             if signal is None:
                 return
-
-            try:
-                strat = self._strategies.get(symbol)
-                if strat is not None:
-                    st = strat.get_state(symbol)
-                    if st.bars:
-                        bar = st.bars[-1]
-                        bar_end = int(getattr(bar, "end_ts_ms", 0) or 0)
-                        last_counted = self._last_counted_bar_end_ts_ms.get(symbol, 0)
-
-                        # Count bars once per new bar end timestamp.
-                        if bar_end and bar_end != last_counted:
-                            self._stats["bars_completed"] += 1
-                            if not bool(getattr(signal, "is_signal", False)):
-                                self._stats["neutral_bars"] += 1
-                            self._last_counted_bar_end_ts_ms[symbol] = bar_end
-
-                            # TAP LOG: Bar closed and ready
-                            log_entry = {
-                                "symbol": symbol,
-                                "tf_sec": self.timeframe_sec,
-                                "bar_end_ts_ms": bar.end_ts_ms,
-                                "bar_id": f"{symbol}:{self.timeframe_sec}:{bar.end_ts_ms}",
-                                "seq": getattr(self, 'seq_counter', 0),
-                                "source": "bar_closed",
-                                "why": "bar_ready"
-                            }
-                            print(json.dumps(log_entry), flush=True)
-                            self.seq_counter = getattr(self, 'seq_counter', 0) + 1
-
-                            self.mlog.info(
-                                "MR_BAR %s",
-                                json.dumps(
-                                    {
-                                        "symbol": symbol,
-                                        "start_ts_ms": bar.start_ts_ms,
-                                        "end_ts_ms": bar.end_ts_ms,
-                                        "open": str(bar.open),
-                                        "high": str(bar.high),
-                                        "low": str(bar.low),
-                                        "close": str(bar.close),
-                                        "volume": str(bar.volume),
-                                        "trade_count": int(bar.trade_count),
-                                        "bb": {
-                                            "upper": str(st.bb.upper),
-                                            "mid": str(st.bb.mid),
-                                            "lower": str(st.bb.lower),
-                                            "width": float(st.bb.width),
-                                            "pct_b": float(st.bb.pct_b),
-                                        }
-                                        if st.bb is not None
-                                        else None,
-                                        "atr": str(st.atr) if st.atr is not None else None,
-                                        "rsi": float(st.rsi) if st.rsi is not None else None,
-                                        "regime": regime,
-                                        "kappa": float(self._liquidity_kappa_map.get(symbol, 0)),
-                                        "signal_type": signal.signal_type.name,
-                                        "signal_why": signal.why,
-                                        "counters": dict(self._stats),
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                            )
-            except Exception as e:
-                self._stats["bar_logging_errors"] += 1
-                self.logger.warning(
-                    f"MRHandler: failed to log bar state: {e}",
-                    exc_info=True,
-                )
+            
+            # Log bar
+            if signal.bar:
+                self._log_bar(signal)
+            
+                if signal.is_signal:
+                    if self._check_liquidity_gate(symbol):
+                        self._emit_signal(signal)
+                    else:
+                        self.logger.info(f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
+                        write_trade_intent_rejected(
+                            symbol=str(symbol),
+                            tf_sec=int(tf_sec) if tf_sec is not None else None,
+                            bar_close_ts=int(bar_close_ts) if bar_close_ts else None,
+                            reason_code=NormalizedRejectReasons.LIQUIDITY_LOW,
+                            stage="STRATEGY",
+                            why="Liquidity gate blocked MR signal",
+                            src="mean_reversion",
+                            ts_ms=int(bar_close_ts) if bar_close_ts else None,
+                        )
+                        self._emit_strategy_blocked(
+                            symbol=symbol,
+                            reason_code="LIQUIDITY_GATE",
+                            reason="LIQUIDITY",
+                        context="mean_reversion_handler:_on_process_strategy",
+                        details={"kappa": str(self._liquidity_kappa_map.get(symbol, Decimal('0')))},
+                        why_chain=["LIQUIDITY_GATE"],
+                    )
+            else:
+                self._stats["neutral_bars"] += 1
+                why = str(getattr(signal, "why", "") or "")
+                why_norm = why[len("neutral:"):] if why.startswith("neutral:") else why
+                reason_code = None
+                if why_norm.startswith("regime_not_flat:"):
+                    reason_code = "REGIME_MAPPING_NONE"
+                elif why_norm.startswith("regime_not_allowed:"):
+                    reason_code = "REGIME_NOT_ALLOWED"
+                
+                if reason_code:
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code=reason_code,
+                        reason="REGIME",
+                        context="mean_reversion_handler:_on_process_strategy",
+                        details={"why": why_norm},
+                        why_chain=["REGIME", why_norm],
+                    )
         except Exception as e:
-            self._stats["tick_processing_errors"] += 1
-            self.logger.warning(
-                f"MRHandler: failed to process EVT:MARKET_TICK_FORWARDED: {e}",
-                exc_info=True,
-            )
+            self.logger.error(f"Error in _on_process_strategy: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
+
+    def _on_bar_closed_data_only(self, event: Message) -> None:
+        """
+        T2B-03: Data-only handler for EVT:BAR_CLOSED.
+        
+        Caches bar data but does NOT trigger decision.
+        Decision is now triggered exclusively by CMD:PROCESS_STRATEGY.
+        """
+        # No-op for now. Bar data caching can be added if needed.
+        # The primary purpose is to maintain backwards compatibility
+        # without triggering decision logic.
+        pass
+
+    def _on_bar_closed(self, event: Message) -> None:
+        """
+        DEPRECATED: Handle EVT:BAR_CLOSED from global BarAggregator.
+        
+        T2B-03: This method is DEPRECATED. Decision is now triggered by
+        CMD:PROCESS_STRATEGY. This method is kept for backwards compatibility
+        but will be removed in future versions.
+        
+        Use _on_process_strategy() instead.
+        """
+        # T2B-03: Delegate to data-only handler (no decision trigger)
+        self._on_bar_closed_data_only(event)
+
+    def _on_market_tick(self, event: Message) -> None:
+        """
+        DEPRECATED: T2B-06 — dead code, no longer subscribed.
+        
+        T2B-03: MR receives bars via CMD:PROCESS_STRATEGY from FE.
+        This method remains only for API compatibility; it does nothing.
+        
+        MR no longer subscribes to EVT:MARKET_TICK_FORWARDED.
+        """
+        pass
     
     # NOTE (SIZING-MARGIN-FIRST-SSOT-02):
     # Mean Reversion sizing moved to per-symbol instruments SSOT.

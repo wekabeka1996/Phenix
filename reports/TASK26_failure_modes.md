@@ -4,7 +4,6 @@ How the system fails closed (safe) in error conditions.
 
 | Scenario | Trigger | Expected | Observed | Fail-Closed |
 |----------|---------|----------|----------|-------------|
-| test_warmup_gate_blocks_trade_intent_until_ready | full_ready=false, trade intent | blocked=true, no trade | blocked=True | ✅ |
 | test_warmup_gate_reduce_only_bypasses | warmup incomplete, reduce_only=true | allowed (safety for position close) | blocked=False | ❌ |
 | test_warmup_progressive_buffer_build | ticks_seen >= 50 | full_ready=true | full_ready=true | ✅ |
 | test_macro_sync_insufficient_data_returns_explicit_flag | n < min_buffer (5 < 10) | macro_sync_ready=false + reason | ready=False, reason=insufficient_symbol_samples | ✅ |

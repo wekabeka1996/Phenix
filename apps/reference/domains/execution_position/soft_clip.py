@@ -1,6 +1,7 @@
 """
 PHASE 2: Soft-limit clipping logic for risk gates.
 Instead of rejecting orders, reduce their size to fit within limits.
+EP-01: Strict Pydantic configs with extra='forbid' for fail-fast validation.
 """
 
 from decimal import Decimal
@@ -8,23 +9,48 @@ from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 import logging
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-@dataclass
-class RegimeAdaptationConfig:
-    """PHASE 3: Regime adaptation configuration for directional ratio."""
-    trend_up_delta: Optional[Decimal] = Decimal("0.30")
-    trend_down_delta: Optional[Decimal] = Decimal("0.30")
-    flat_delta: Optional[Decimal] = Decimal("-0.30")
-    bounds: Optional[List] = None  # [min_ratio, max_ratio]
 
-    def __post_init__(self):
-        if self.bounds is None:
-            self.bounds = [Decimal("2.0"), Decimal("4.0")]
+class RegimeAdaptationConfig(BaseModel):
+    """
+    EP-01: Regime adaptation configuration for directional ratio.
+    
+    Strict config: unknown keys cause ValidationError (fail-fast).
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    trend_up_delta: Optional[Decimal] = Field(default=Decimal("0.30"))
+    trend_down_delta: Optional[Decimal] = Field(default=Decimal("0.30"))
+    flat_delta: Optional[Decimal] = Field(default=Decimal("-0.30"))
+    bounds: Optional[List[float]] = Field(default=None)  # [min_ratio, max_ratio]
+
+    @field_validator('bounds', mode='before')
+    @classmethod
+    def set_default_bounds(cls, v):
+        if v is None:
+            return [2.0, 4.0]
+        return v
+
+
+class SoftLimitConfigModel(BaseModel):
+    """
+    EP-01: Pydantic version of SoftLimitConfig with strict validation.
+    
+    Used when loading from typed config. Legacy dataclass retained for compatibility.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    mode: str = Field(default="clip")
+    clip_min_notional_usdt: float = Field(default=10.0)
+    directional_ratio_max: float = Field(default=3.0)
+    side_exposure_usdt: float = Field(default=600.0)
+    margin_exposure_usdt: float = Field(default=1100.0)
 
 
 @dataclass
 class SoftLimitConfig:
-    """Soft-limit clipping configuration."""
+    """Soft-limit clipping configuration (dataclass for runtime)."""
     mode: str = "clip"  # "clip" or "reject"
     clip_min_notional_usdt: Decimal = Decimal("10")
     directional_ratio_max: Decimal = Decimal("3.0")

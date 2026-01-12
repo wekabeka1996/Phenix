@@ -5,6 +5,8 @@ Responsible for converting raw event dictionaries (with string decimals)
 into strict typed MarketObservation objects.
 """
 
+from __future__ import annotations
+
 from typing import Dict, Any, Union
 import logging
 import numpy as np
@@ -13,6 +15,38 @@ from config_models import IngestConfig
 from logic.ingest.observation import MarketObservation
 
 logger = logging.getLogger(__name__)
+
+
+def _flatten_features(features: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Flatten nested feature dicts into a single-level dict.
+
+    Examples:
+      {"volatility": {"atr_14": 1.2}} -> {"volatility_atr_14": 1.2}
+      {"volatility.atr_14": 1.2} -> {"volatility_atr_14": 1.2}
+    """
+    out: Dict[str, Any] = {}
+
+    def _emit(key: str, value: Any) -> None:
+        if key not in out:
+            out[key] = value
+
+    def _recurse(prefix_parts: list[str], obj: Any) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(k, str) and "." in k:
+                    parts = [p for p in k.split(".") if p]
+                else:
+                    parts = [str(k)]
+                _recurse(prefix_parts + parts, v)
+            return
+
+        flat_key = "_".join([p for p in prefix_parts if p])
+        _emit(flat_key, obj)
+
+    _recurse([], features)
+    return out
+
 
 class FeatureParser:
     """Stateful parser that respects IngestConfig."""
@@ -62,24 +96,31 @@ class FeatureParser:
         elif not isinstance(features_dict, dict):
             logger.warning(f"Field 'features' is not a dict: {type(features_dict)}")
             features_dict = payload
+
+        flat_features = _flatten_features(features_dict)
             
         volatility = self._safe_float(payload.get('volatility'), 0.0)
         # Try to find specific features for metadata if not in root
         if volatility == 0.0:
             # Fallback: try 'bb_width' or 'atr' from features
-            vol = features_dict.get('bb_width') or features_dict.get('atr')
+            vol = (
+                flat_features.get('bb_width')
+                or flat_features.get('atr')
+                or flat_features.get('volatility_atr_14')
+                or flat_features.get('volatility_true_range')
+            )
             volatility = self._safe_float(vol, 0.0)
             
         obi = self._safe_float(payload.get('obi'), 0.0)
         if obi == 0.0:
-             obi_val = features_dict.get('obi')
+             obi_val = flat_features.get('obi')
              obi = self._safe_float(obi_val, 0.0)
 
         # 3. Build Feature Vector
         vector = np.zeros(self._feature_count, dtype=np.float32)
         
         for i, name in enumerate(self.config.feature_list):
-            raw_val = features_dict.get(name)
+            raw_val = flat_features.get(name)
             
             if raw_val is None:
                 if self.config.nan_strategy == "zero":

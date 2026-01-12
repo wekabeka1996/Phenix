@@ -6,6 +6,7 @@ and emit EVT:TRADE_INTENT_PROPOSED events.
 
 FTR-07: Refactored to use DecisionContext for type-safe feature access.
 CFG-DOMAINS-STEP-02: Enforces AuroraConfig contract (not dict).
+T2B-08: Clock abstraction for deterministic testing (QoS timers, cooldowns).
 """
 
 import decimal
@@ -19,6 +20,9 @@ from decimal import Decimal
 from typing import Dict, Any, Optional, TYPE_CHECKING, List, Tuple
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.utils.accessors import aget, dget
+
+# T2B-08: Clock abstraction for deterministic testing
+from apps.reference.core.time.clock import Clock, LiveClock
 
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal
@@ -37,6 +41,9 @@ from .sizing_margin_first import (
     validate_exchange_constraints,
 )
 from .aurora_scoring_kernel import AuroraScoringKernel, ScoringResult, SideBiasState
+
+# EP-01.2-INT: EntryPlan for ATR-based entry/SL/TP computation
+from .entry_plan import EntryPlan, EntryPlanParams, EntryPlanResult, ObiMissingPolicy
 
 # CFG-DOMAINS-STEP-02: Import AuroraConfig for type enforcement
 from apps.reference.config_models import AuroraConfig
@@ -58,6 +65,7 @@ from apps.reference.domain_config import DomainConfigResolver
 from apps.reference.config_models import AuroraInstrumentConfig
 
 from vfoundation.core.protocol import truncate_why
+from .trade_intent_reject_wal import write_trade_intent_rejected
 
 # Import AlertManager for risk gating
 try:
@@ -91,15 +99,23 @@ class DecisionMaking:
     and generates trade intents based on aurora decision logic.
     
     CFG-DOMAINS-STEP-02: Requires AuroraConfig (not dict).
+    T2B-08: Supports Clock injection for deterministic testing.
     """
 
-    def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
+    def __init__(
+        self, 
+        fsm: "FSMCore", 
+        config: AuroraConfig,
+        *,
+        clock: Optional[Clock] = None,
+    ) -> None:
         """
         Initialize DecisionMaking domain.
         
         Args:
             fsm: Finite State Machine for event emission
             config: AuroraConfig instance (NOT dict)
+            clock: Optional Clock for time abstraction (default: LiveClock)
             
         Raises:
             TypeError: If config is dict (legacy pattern)
@@ -113,6 +129,8 @@ class DecisionMaking:
         
         self.fsm = fsm
         self.config = config
+        # T2B-08: Clock abstraction for QoS timers (default: LiveClock)
+        self._clock: Clock = clock or LiveClock()
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
 
@@ -146,7 +164,7 @@ class DecisionMaking:
         # Risk gate metrics for AlertManager
         self.intents_seen_total: int = 0  # Total intents evaluated
         self.intents_blocked_total: int = 0  # Intents blocked by risk gate
-        self.last_alert_check_time: float = time.time()
+        self.last_alert_check_time: float = self._clock.now_sec()
         self.alert_manager: Optional["AlertManager"] = None
         if ALERT_MANAGER_AVAILABLE and _AlertManager is not None:
             try:
@@ -158,13 +176,14 @@ class DecisionMaking:
 
         # QoS state management (PACK EXP-4) — partitioned by strategy_id (v7).
         # This prevents one strategy from rate-limiting another (e.g. Aurora vs MeanReversion).
+        # NOTE: window_start uses 0.0 as init; actual time is set when first symbol is accessed.
         self._qos_state: dict[str, dict[str, Any]] = defaultdict(
             lambda: {
                 "last_exposure_block": 0.0,  # timestamp of last exposure block
                 "symbol_cooldowns": {},  # symbol -> last_decision_timestamp
                 "symbol_intent_counts": defaultdict(
-                    lambda: {"count": 0, "window_start": time.time()}
-                ),  # symbol -> rate tracking
+                    lambda: {"count": 0, "window_start": 0.0}
+                ),  # symbol -> rate tracking; window_start set on first access
             }
         )
 
@@ -179,7 +198,7 @@ class DecisionMaking:
         # Risk Gate Alert counters (monitoring)
         self.intents_seen_total: int = 0
         self.intents_blocked_total: int = 0
-        self.last_alert_check_time: float = time.time()
+        self.last_alert_check_time: float = self._clock.now_sec()
 
         # Initialize alpha model registry
         self.alpha_registry = None
@@ -387,6 +406,13 @@ class DecisionMaking:
             side = pld.get("side")
             rid = pld.get("rid") or f"sig-{uuid.uuid4()}"
             why_chain = pld["why_chain"] if "why_chain" in pld else []
+            # EP-01.3-INT: Extract tf_sec for pending entry TTL calculation
+            tf_sec = pld.get("tf_sec")
+            if tf_sec is not None:
+                try:
+                    tf_sec = int(tf_sec)
+                except (ValueError, TypeError):
+                    tf_sec = None
             
             if not strategy_id or not symbol or not side:
                 self.logger.warning("STRATEGY_SIGNAL_PRODUCED: missing strategy_id/symbol/side")
@@ -468,7 +494,7 @@ class DecisionMaking:
             # if until_refresh is active, fail-closed for this symbol until a new risk/features refresh clears it.
             guard_state = self.symbol_states[symbol].get("risk_skew_guard") or {}
             if guard_state.get("until_refresh"):
-                now_ms = int(time.time() * 1000)
+                now_ms = self._clock.now_ms()
                 retry_key = self._stable_retry_key(
                     prefix=str(strategy_id),
                     symbol=symbol,
@@ -504,7 +530,7 @@ class DecisionMaking:
                 self.logger.warning(
                     f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER - Risk data not yet received (NRR-DATA-NOT-READY)"
                 )
-                now_ms = int(time.time() * 1000)
+                now_ms = self._clock.now_ms()
                 retry_key = self._stable_retry_key(
                     prefix=str(strategy_id),
                     symbol=symbol,
@@ -537,7 +563,7 @@ class DecisionMaking:
                     self.logger.warning(
                         f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER - missing risk_score (RISK_SCORE_MISSING)"
                     )
-                    now_ms = int(time.time() * 1000)
+                    now_ms = self._clock.now_ms()
                     retry_key = self._stable_retry_key(
                         prefix=str(strategy_id),
                         symbol=symbol,
@@ -566,7 +592,7 @@ class DecisionMaking:
                     self.logger.warning(
                         f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: DEFER - invalid risk_score (RISK_SCORE_INVALID)"
                     )
-                    now_ms = int(time.time() * 1000)
+                    now_ms = self._clock.now_ms()
                     retry_key = self._stable_retry_key(
                         prefix=str(strategy_id),
                         symbol=symbol,
@@ -643,7 +669,7 @@ class DecisionMaking:
                 if isinstance(features_data, dict):
                     feats_payload = features_data.get("features") or {}
                     if isinstance(feats_payload, dict):
-                        ctx = create_decision_context(symbol, int(time.time() * 1000), feats_payload)
+                        ctx = create_decision_context(symbol, self._clock.now_ms(), feats_payload)
                         if self._degraded_context_gate_should_defer(
                             symbol=symbol,
                             rid=rid,
@@ -661,7 +687,7 @@ class DecisionMaking:
                         max_defer = self._get_risk_skew_config("max_defer_count")
 
                         # Track limiter state per symbol in symbol_states (SSOT)
-                        now_ms = int(time.time() * 1000)
+                        now_ms = self._clock.now_ms()
                         window_sec = self._get_risk_skew_config("defer_window_sec")
                         state = self.symbol_states[symbol].setdefault(
                             "risk_skew_guard",
@@ -698,7 +724,7 @@ class DecisionMaking:
                                 f"NRR-RISK-STALE skew={skew_sec:.1f}s > max={max_skew_sec}s. "
                                 f"Defer {defer_count}/{max_defer}"
                             )
-                            now_ms = int(time.time() * 1000)
+                            now_ms = self._clock.now_ms()
                             retry_key = self._stable_retry_key(
                                 prefix=str(strategy_id),
                                 symbol=symbol,
@@ -758,7 +784,7 @@ class DecisionMaking:
                         f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: BLOCK - {flip_result}"
                     )
                     if flip_result == "NRR-PORTFOLIO-UNKNOWN":
-                        now_ms = int(time.time() * 1000)
+                        now_ms = self._clock.now_ms()
                         # Position Tracking Stale TTL (SSOT fail-closed)
                         stale_ttl_sec_f = self.config.domains.position_tracking.positions_stale_ttl_sec
                         if stale_ttl_sec_f is None:
@@ -802,7 +828,7 @@ class DecisionMaking:
                         )
                     elif effective_mode == "defer":
                         # Defer mode: emit INTENT_DEFERRED (v1) and retry after cooldown.
-                        now_ms = int(time.time() * 1000)
+                        now_ms = self._clock.now_ms()
                         next_allowed_ts = int(self._calculate_next_allowed_time(symbol))
                         retry_key = self._stable_retry_key(
                             prefix=f"{strategy_id}:qos",
@@ -885,7 +911,7 @@ class DecisionMaking:
             # Use symbol_states SSOT (not self.latest_features which doesn't exist)
             features_data = self.symbol_states[symbol].get("features") or {}
             features_ts = features_data["ts"] if "ts" in features_data else 0
-            current_ms = int(time.time() * 1000)
+            current_ms = self._clock.now_ms()
             features_age_sec = (current_ms - features_ts) / 1000 if features_ts > 0 else float('inf')
             
             if features_age_sec > self.features_ttl_sec:
@@ -920,6 +946,93 @@ class DecisionMaking:
             if isinstance(why_chain, list):
                 why_chain.append(str(why_sizing))
 
+            # === EP-01.2-INT: EntryPlan Computation ===
+            # Extract volatility/liquidity from signal payload (propagated from AuroraHandler)
+            volatility_data = pld.get("volatility") or {}
+            liquidity_data = pld.get("liquidity") or {}
+            
+            atr_value = volatility_data.get("atr_14") if isinstance(volatility_data, dict) else None
+            atr_ready = volatility_data.get("atr_ready", False) if isinstance(volatility_data, dict) else False
+            obi_close = liquidity_data.get("obi_close") if isinstance(liquidity_data, dict) else None
+            
+            # Get EntryPlan config from domains
+            ep_cfg = self.config.domains.decision_making.entry_plan
+            stop_price: str | None = None
+            target_price: str | None = None
+            entry_plan_trace: dict | None = None
+            
+            if ep_cfg.enabled:
+                # Build EntryPlanParams from config
+                ep_params = EntryPlanParams(
+                    atr_period=ep_cfg.atr_period,
+                    entry_k_atr=ep_cfg.entry_k_atr,
+                    sl_k_atr=ep_cfg.sl_k_atr,
+                    tp_k_atr=ep_cfg.tp_k_atr,
+                    obi_weight=ep_cfg.obi_weight,
+                    obi_mod_clamp_min=ep_cfg.obi_mod_clamp_min,
+                    obi_mod_clamp_max=ep_cfg.obi_mod_clamp_max,
+                    require_atr=ep_cfg.require_atr,
+                    obi_missing_policy=ObiMissingPolicy(ep_cfg.obi_missing_policy),
+                )
+                
+                # Validate inputs (fail-closed if ATR required but not ready)
+                is_valid, error_reason = EntryPlan.validate_inputs(
+                    side=side,
+                    ref_price=entry_price_dec,
+                    atr=atr_value,
+                    atr_ready=atr_ready,
+                    params=ep_params,
+                )
+                
+                if not is_valid:
+                    self.logger.warning(
+                        f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - EntryPlan validation failed: {error_reason}"
+                    )
+                    self._emit_trade_intent_rejected(
+                        symbol=symbol,
+                        strategy_id=str(strategy_id),
+                        side=side,
+                        rid=str(rid),
+                        reason_code=str(error_reason),
+                        reason="ENTRY_PLAN_VALIDATION_FAILED",
+                        context="strategy_signal_gateway:entry_plan",
+                        why_chain=(why_chain if isinstance(why_chain, list) else []) + [str(error_reason)],
+                        details={"atr_ready": atr_ready, "atr_value": atr_value},
+                    )
+                    self._record_blocked_intent(symbol)
+                    return
+                
+                # Compute EntryPlan
+                entry_plan = EntryPlan(ep_params)
+                try:
+                    ep_result: EntryPlanResult = entry_plan.compute(
+                        side=side,
+                        ref_price=entry_price_dec,
+                        atr=atr_value,
+                        obi=obi_close,
+                    )
+                    stop_price = ep_result.stop_loss_price
+                    target_price = ep_result.take_profit_price
+                    entry_plan_trace = {
+                        "ref_price": ep_result.ref_price,
+                        "atr": ep_result.atr,
+                        "obi": ep_result.obi,
+                        "obi_multiplier": ep_result.obi_multiplier,
+                        "obi_policy_applied": ep_result.obi_policy_applied,
+                    }
+                    self.logger.info(
+                        f"[{symbol}] EntryPlan: SL={stop_price}, TP={target_price}, "
+                        f"OBI_mult={ep_result.obi_multiplier:.3f}"
+                    )
+                    if isinstance(why_chain, list):
+                        why_chain.append(f"entry_plan:sl={stop_price},tp={target_price}")
+                except Exception as ep_err:
+                    self.logger.warning(f"[{symbol}] EntryPlan computation failed: {ep_err}")
+                    # Continue without SL/TP if computation fails (non-blocking)
+                    stop_price = None
+                    target_price = None
+                    entry_plan_trace = None
+            
             self._propose_trade_intent(
                 symbol=symbol,
                 side=side,
@@ -930,6 +1043,11 @@ class DecisionMaking:
                 reduce_only=False,
                 strategy_id=str(strategy_id),
                 decision_ts_ms=timestamp_ms,
+                stop_price=stop_price,
+                target_price=target_price,
+                entry_plan_trace=entry_plan_trace,
+                # EP-01.3-INT: Pass tf_sec for pending entry TTL
+                tf_sec=tf_sec,
             )
 
             # Update QoS state for successful decision only if QoS is enabled for this strategy.
@@ -995,7 +1113,7 @@ class DecisionMaking:
         Returns:
             Tuple of (allowed: bool, reject_reason: Optional[str])
         """
-        current_time = time.time()
+        current_time = self._clock.now_sec()
         strat_state = self._qos_state[strategy_id]  # auto-creates via defaultdict
 
         # Check exposure block cooldown (only for exposure-related checks)
@@ -1042,8 +1160,11 @@ class DecisionMaking:
         return True, None
 
     def _update_symbol_cooldown(self, symbol: str, strategy_id: str = "aurora") -> None:
-        """Update cooldown timestamp for symbol (prevents rapid-fire decisions)."""
-        current_time = time.time()
+        """Update cooldown timestamp for symbol (prevents rapid-fire decisions).
+        
+        T2B-08: Uses injected Clock for deterministic testing.
+        """
+        current_time = self._clock.now_sec()
         strat_state = self._qos_state[strategy_id]
         if "symbol_cooldowns" not in strat_state:
             strat_state["symbol_cooldowns"] = {}
@@ -1060,7 +1181,8 @@ class DecisionMaking:
         symbol_intent_counts = strat_state["symbol_intent_counts"]
 
         if symbol not in symbol_intent_counts:
-            symbol_intent_counts[symbol] = {"count": 0, "window_start": time.time()}
+            # T2B-08: Use Clock for rate-limit window start
+            symbol_intent_counts[symbol] = {"count": 0, "window_start": self._clock.now_sec()}
         intent_data = symbol_intent_counts[symbol]
         intent_data["count"] = intent_data.get("count", 0) + 1
         self.logger.debug(
@@ -1068,8 +1190,11 @@ class DecisionMaking:
         )
 
     def _check_qos_rules(self, symbol: str) -> dict:
-        """Check QoS rules for symbol and return result dict."""
-        current_time = time.time()
+        """Check QoS rules for symbol and return result dict.
+        
+        T2B-08: Uses injected Clock for deterministic testing.
+        """
+        current_time = self._clock.now_sec()
 
         # Check exposure block cooldown
         last_exposure_block: float = float(
@@ -1096,8 +1221,11 @@ class DecisionMaking:
         return {"allowed": True, "reason": None}
 
     def _calculate_next_allowed_time(self, symbol: str) -> int:
-        """Calculate next allowed timestamp for symbol based on QoS rules."""
-        current_time = time.time()
+        """Calculate next allowed timestamp for symbol based on QoS rules.
+        
+        T2B-08: Uses injected Clock for deterministic testing.
+        """
+        current_time = self._clock.now_sec()
         next_allowed = current_time
 
         # Check symbol cooldown (uses per-symbol resolver)
@@ -1122,11 +1250,13 @@ class DecisionMaking:
     def _update_qos_state(self, symbol: str, strategy_id: str = "aurora") -> None:
         """Update QoS state after making a decision.
         
+        T2B-08: Uses injected Clock for deterministic testing.
+        
         Args:
             symbol: Trading symbol
             strategy_id: Strategy ID for partitioning (default: aurora for legacy path)
         """
-        current_time = time.time()
+        current_time = self._clock.now_sec()
 
         # Get strategy-partitioned state (auto-initialize if missing)
         strategy_state = self._qos_state[strategy_id]
@@ -1154,8 +1284,11 @@ class DecisionMaking:
             f"[{symbol}] QoS state updated ({strategy_id}): cooldown={current_time}, intents={intent_data['count']}")
 
     def _handle_exposure_block(self, symbol: str) -> None:
-        """Handle exposure block event by updating QoS state."""
-        current_time = time.time()
+        """Handle exposure block event by updating QoS state.
+        
+        T2B-08: Uses injected Clock for deterministic testing.
+        """
+        current_time = self._clock.now_sec()
         self._qos_state["last_exposure_block"] = current_time
         self.logger.warning(
             f"[{symbol}] Exposure block recorded at {current_time}")
@@ -1674,7 +1807,40 @@ class DecisionMaking:
             except (AttributeError, TypeError):
                 symbol = "unknown"
 
-            self.logger.info(f"✅ on_features() called for {symbol}")
+            # LEGACY-02-INT (bar-only law): ignore tick-level feature events (tf_sec missing/0)
+            tf_sec = None
+            try:
+                if isinstance(event.pld, dict):
+                    tf_sec = event.pld.get("tf_sec")
+            except Exception:
+                tf_sec = None
+            if tf_sec is not None and int(tf_sec or 0) <= 0:
+                # Throttle WAL spam: record at most once per symbol per 5 minutes.
+                try:
+                    now_ms = self._clock.now_ms()
+                except Exception:
+                    now_ms = int(time.time() * 1000)
+                state = self.symbol_states[symbol]
+                last_ms = int(state.get("_tick_features_reject_last_ts_ms", 0) or 0)
+                if (now_ms - last_ms) >= 300_000:
+                    state["_tick_features_reject_last_ts_ms"] = now_ms
+                    try:
+                        write_trade_intent_rejected(
+                            symbol=symbol,
+                            tf_sec=int(tf_sec or 0) if tf_sec is not None else None,
+                            reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
+                            stage="DECISION",
+                            why="Ignoring tick-level EVT:FEATURES_CALCULATED (bar-only strategies)",
+                            src="decision_making",
+                            ts_ms=now_ms,
+                            rid=aget(event, "rid", None),
+                            context="decision_making:on_features",
+                        )
+                    except Exception:
+                        pass
+                return
+
+            self.logger.debug(f"on_features() accepted for {symbol} tf_sec={tf_sec}")
             # Ensure per-symbol state exists (fail-safe for early events)
             if symbol not in self.symbol_states:
                 self.symbol_states[symbol] = {}
@@ -1687,7 +1853,7 @@ class DecisionMaking:
                 if guard.get("until_refresh"):
                     self.symbol_states[symbol]["risk_skew_guard"] = {
                         "defer_count": 0,
-                        "window_start_ms": int(time.time() * 1000),
+                        "window_start_ms": self._clock.now_ms(),
                         "until_refresh": False,
                     }
                     self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on features refresh")
@@ -1847,7 +2013,7 @@ class DecisionMaking:
             if guard.get("until_refresh"):
                 self.symbol_states[symbol]["risk_skew_guard"] = {
                     "defer_count": 0,
-                    "window_start_ms": int(time.time() * 1000),
+                    "window_start_ms": self._clock.now_ms(),
                     "until_refresh": False,
                 }
                 self.logger.info(f"[{symbol}] RISK_SKEW_GUARD: cleared until_refresh on risk refresh")
@@ -1858,7 +2024,7 @@ class DecisionMaking:
         if symbol not in self.symbol_states:
             self.symbol_states[symbol] = {}
         self.symbol_states[symbol]["_cached_risk"] = event.pld
-        self.symbol_states[symbol]["_last_risk_time"] = time.time()
+        self.symbol_states[symbol]["_last_risk_time"] = self._clock.now_sec()
 
 
         try:
@@ -2059,7 +2225,7 @@ class DecisionMaking:
                 f"[{symbol}] _features_ready: no features_data or ts")
             return False
 
-        now_ts = time.time() * 1000  # milliseconds
+        now_ts = self._clock.now_ms()  # milliseconds
         features_ts = features_data["ts"]
         lag_ms = now_ts - features_ts
         ttl_ms = self.features_ttl_sec * 1000
@@ -2261,6 +2427,12 @@ class DecisionMaking:
         reduce_only: bool = False,
         strategy_id: str = "aurora",  # CFG-STRATEGIES-SSOT-01: Add strategy_id
         decision_ts_ms: int | None = None,
+        # EP-01.2-INT: EntryPlan SL/TP parameters
+        stop_price: str | None = None,
+        target_price: str | None = None,
+        entry_plan_trace: dict | None = None,
+        # EP-01.3-INT: Timeframe for pending entry TTL calculation
+        tf_sec: int | None = None,
     ) -> None:
         # DM-DIR-FORENSIC-01: Directional sanity gate (fail-closed when enabled).
         trace_ts_ms = int(decision_ts_ms) if decision_ts_ms is not None else int(time.time() * 1000)
@@ -2633,6 +2805,27 @@ class DecisionMaking:
              self.logger.error(f"RiskBudget Config Block: {e}")
              return None # Block trade
         
+        # EP-01.3-INT: Calculate valid_for_ms from ttl_by_tf_sec config
+        valid_for_ms: int | None = None
+        try:
+            pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+            if pe_ttl_cfg.enabled and tf_sec is not None:
+                ttl_by_tf = pe_ttl_cfg.ttl_by_tf_sec
+                if tf_sec in ttl_by_tf:
+                    valid_for_ms = ttl_by_tf[tf_sec] * 1000  # Convert sec to ms
+                    self.logger.debug(f"[{symbol}] EP-01.3: valid_for_ms={valid_for_ms} (tf_sec={tf_sec})")
+                elif pe_ttl_cfg.reject_unknown_tf:
+                    # Fail-closed: reject entry if tf_sec not in map
+                    self.logger.warning(
+                        f"[{symbol}] EP-01.3: REJECT - tf_sec={tf_sec} not in ttl_by_tf_sec (reject_unknown_tf=True)"
+                    )
+                    self._record_blocked_intent(symbol)
+                    return None
+                # else: valid_for_ms remains None, watchdog will use global fill_ttl_ms
+        except AttributeError:
+            # Config not yet loaded or missing - use None (watchdog default)
+            pass
+        
         trade_intent = {
             # TASK40: Preserve stable business RID end-to-end (intent -> cmd -> execution).
             # Bridge uses pld["rid"] as authoritative correlation key when present.
@@ -2658,11 +2851,16 @@ class DecisionMaking:
                 "session_cvar95_max_bps": session_cvar,
             },
             "size": {"notional_cap_usd": str(qty * price), "kelly_fraction": "0.1"},
-            "valid_for_ms": 5000,
+            # EP-01.3-INT: Dynamic valid_for_ms (None means watchdog uses global fill_ttl_ms)
+            "valid_for_ms": valid_for_ms,
             "why": why_chain,
             "dto_version": "1.0.0",
             "schema_ref": "...",
             "idempotent_key": str(uuid.uuid4()),
+            # EP-01.2-INT: EntryPlan SL/TP (null if not computed)
+            "stop_price": stop_price,
+            "target_price": target_price,
+            "entry_plan": entry_plan_trace,
         }
 
         # TASK47: Commit windowed arbitration only for intents that are about to be emitted.
@@ -2765,7 +2963,7 @@ class DecisionMaking:
                     side_intent_window[symbol] = {"buys": [], "sells": []}
 
                 window_data = side_intent_window[symbol]
-                now_sec = time.time()
+                now_sec = self._clock.now_sec()
                 _, bias_window_sec, _, _ = self._get_side_bias_params(symbol)
                 window_data["buys"] = [ts for ts in window_data["buys"] if now_sec - ts < bias_window_sec]
                 window_data["sells"] = [ts for ts in window_data["sells"] if now_sec - ts < bias_window_sec]
@@ -3073,27 +3271,50 @@ class DecisionMaking:
         why_chain: list[str] | None = None,
         details: Dict[str, Any] | None = None,
     ) -> None:
-        """Emit an explicit rejection event so blocks are observable (gated vs disconnected)."""
-        payload: Dict[str, Any] = {
-            "schema_version": 1,
-            "instrument": symbol,
-            "symbol": symbol,
-            "strategy_id": str(strategy_id),
-            "side": str(side).lower(),
-            "rid": str(rid),
-            "reason_code": str(reason_code),
-            "reason": str(reason),
-            "context": str(context),
-            "ts_ms": int(time.time() * 1000),
-            "why_chain": list(why_chain or []),
-        }
-        if details:
-            payload["details"] = details
-        # Monitoring-only: rejection emission must never throw.
+        """Emit + persist an explicit rejection event so blocks are observable (Missed Opportunity)."""
+        # Monitoring-only: rejection reporting must never throw.
         try:
+            ts_ms = int(time.time() * 1000)
+
+            stage = str(reason).upper()
+            if stage not in ("RISK", "STRATEGY", "DECISION", "EXECUTION"):
+                stage = "DECISION"
+
+            payload: Dict[str, Any] = {
+                "ts_ms": ts_ms,
+                "symbol": symbol,
+                "strategy_id": str(strategy_id),
+                "side": str(side).lower(),
+                "rid": str(rid),
+                "reason_code": str(reason_code),
+                "stage": stage,
+                "why": str(context),
+                "context": str(context),
+                "why_chain": list(why_chain or []),
+            }
+            if details:
+                payload["details"] = details
+
+            # SSOT persistence (WAL)
+            write_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=str(strategy_id),
+                side=str(side).lower(),
+                rid=str(rid),
+                reason_code=str(reason_code),
+                stage=stage,  # type: ignore[arg-type]
+                why=str(context),
+                context=str(context),
+                why_chain=list(why_chain or []),
+                details=details,
+                src="decision_making",
+                ts_ms=ts_ms,
+            )
+
+            # In-process event (optional)
             self.fsm.emit("EVT:TRADE_INTENT_REJECTED", payload, why=f"intent_rejected:{reason_code}")
         except Exception:
-            pass
+            return
 
     def _schedule_open_retry(self, symbol: str, original_context: dict, cooldown_ms: int, reason: str) -> None:
         """Emit EVT:INTENT_DEFERRED to schedule retry after close."""
@@ -3143,7 +3364,7 @@ class DecisionMaking:
         if not self.alert_manager:
             return
 
-        current_time = time.time()
+        current_time = self._clock.now_sec()
         if current_time - self.last_alert_check_time < 10.0:
             return  # Too soon, skip check
 

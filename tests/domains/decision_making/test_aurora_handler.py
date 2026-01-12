@@ -222,6 +222,7 @@ class TestSignalEmission:
         
         event = {
             "symbol": "BTCUSDT",
+            "tf_sec": 300,  # T2B-01: Must match handler.timeframe_sec
             "features": {"price": "50000", "obi": 0.8, "tfi": 0.6},
             "warmup": {"full_ready": True, "ready": {"obi": True, "tfi": True}},
         }
@@ -241,6 +242,7 @@ class TestSignalEmission:
         
         event = {
             "symbol": "BTCUSDT",
+            "tf_sec": 300,  # T2B-01: Must match handler.timeframe_sec
             "features": {"price": "50000", "obi": 0.8, "tfi": 0.6},
             "warmup": {"full_ready": False, "ready": {"obi": True, "tfi": True}},
         }
@@ -259,6 +261,7 @@ class TestSignalEmission:
         
         event = {
             "symbol": "BTCUSDT",
+            "tf_sec": 300,  # T2B-01: Must match handler.timeframe_sec
             "features": {"price": "50000", "obi": 0.8, "tfi": 0.6},
             "warmup": {"full_ready": True, "ready": {"obi": True, "tfi": True}},
         }

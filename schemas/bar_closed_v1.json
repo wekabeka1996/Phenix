@@ -4,7 +4,8 @@
   "title": "EVT:BAR_CLOSED payload schema",
   "description": "Emitted when a bar period closes. SSOT for bar-based calculations.",
   "type": "object",
-  "required": ["symbol", "bar", "ts_ms"],
+  "additionalProperties": false,
+  "required": ["ts_ms", "symbol", "tf_sec", "bar_close_ts", "bar"],
   "properties": {
     "symbol": {
       "type": "string",
@@ -14,9 +15,19 @@
       "type": "integer",
       "description": "Event timestamp in milliseconds"
     },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Bar duration in seconds (timeframe)"
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "description": "Bar close timestamp in milliseconds (end of bar)"
+    },
     "bar": {
       "type": "object",
       "description": "Completed OHLCV bar",
+      "additionalProperties": false,
       "required": [
         "symbol",
         "timeframe_sec",
@@ -79,6 +90,16 @@
           "default": false,
           "description": "True if this bar was preceded by a gap"
         }
+      }
+    },
+    "bar_meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "close_reason"],
+      "properties": {
+        "source": {"type": "string"},
+        "close_reason": {"type": "string"},
+        "ticks_in_bar": {"type": "integer"}
       }
     },
     "why": {

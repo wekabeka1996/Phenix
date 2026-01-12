@@ -50,6 +50,12 @@ from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult
 # Import OrderGuardian for TP/SL cleanup
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 
+# EP-01: Import regime mapping for ExposureGuard adaptation
+from apps.reference.core.types.regime_types import (
+    ExecutionRegimeBucket,
+    map_regime_to_bucket,
+)
+
 # TASK50: Import qty normalizer for fail-closed quantity validation
 from apps.reference.domains.execution_position.qty_normalizer import (
     normalize_qty,
@@ -201,6 +207,13 @@ class ExecPosFSM:
         # Stores intent params from DEC:OPEN to be injected into Manage flow on FILL
         self._pending_intent_data: Dict[str, Dict[str, Any]] = {}
 
+        # EP-01.3-SUPERSEDE-ACK: Queued supersede state
+        # When supersede cancels old entry, new open is queued until cancel confirmed
+        # Key = symbol, Value = {"decision": decision_msg, "cancel_order_id": str, "queued_at": float}
+        self._supersede_queue: Dict[str, Dict[str, Any]] = {}
+        # Symbols currently waiting for cancel confirmation before executing queued open
+        self._supersede_canceling: set = set()
+
         # Orphan-monitor configuration (additive, safe defaults)
         orphan_cfg = {}
         try:
@@ -263,6 +276,8 @@ class ExecPosFSM:
                         self._on_portfolio_state_updated)
         self.bus.listen("EVT:ORDER_ACK", self._on_order_ack)
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
+        # EP-01: Subscribe to regime changes for dynamic risk adaptation
+        self.bus.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
 
         # Async loop used for guardian and adapter operations (set later)
         self._async_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -699,6 +714,212 @@ class ExecPosFSM:
             return True
         message = str(error).lower()
         return "unknown order" in message
+
+    def _cancel_pending_entries_for_symbol(
+        self,
+        symbol: str,
+        reason: str,
+        context: str = "",
+    ) -> None:
+        """
+        EP-01.3-INT: Cancel pending entry orders for a symbol.
+        
+        Iterates through watchdog tracked orders (pending_orders + acked_orders)
+        and cancels those matching the symbol.
+        
+        Args:
+            symbol: Symbol to cancel pending entries for
+            reason: Cancel reason code (e.g., CANCEL_STALE_REGIME, CANCEL_SUPERSEDED)
+            context: Additional context for logging
+        """
+        if not self.watchdog:
+            return
+        
+        orders_to_cancel = []
+        
+        # Check pending_orders (not yet ACKed)
+        for order_id, deadline in list(self.watchdog.pending_orders.items()):
+            if deadline.symbol == symbol:
+                orders_to_cancel.append((order_id, deadline))
+        
+        # Check acked_orders (ACKed but not yet filled)
+        for order_id, deadline in list(self.watchdog.acked_orders.items()):
+            if deadline.symbol == symbol:
+                orders_to_cancel.append((order_id, deadline))
+        
+        if not orders_to_cancel:
+            LOG.debug(f"EP-01.3: No pending entries to cancel for {symbol} ({reason})")
+            return
+        
+        LOG.info(
+            f"EP-01.3: Cancelling {len(orders_to_cancel)} pending entries for {symbol} "
+            f"(reason={reason}, context={context})"
+        )
+        
+        for order_id, deadline in orders_to_cancel:
+            # Schedule async cancel
+            loop = self._get_async_loop()
+            if loop and self.adapter and not self.shadow_mode:
+                async def _do_cancel(oid: str, sym: str, dl: 'OrderDeadline'):
+                    try:
+                        await self._cancel_order(sym, oid)
+                        LOG.info(f"✅ EP-01.3: Cancelled pending entry {oid} ({reason})")
+                        # Remove from watchdog tracking
+                        self.watchdog.on_order_cancel(oid)
+                        # Log cancellation
+                        order_logger.write({
+                            "rid": dl.rid,
+                            "event_type": "ORDER_CANCELLED",
+                            "symbol": sym,
+                            "order_id": oid,
+                            "reason": reason,
+                            "context": context,
+                            "timestamp": int(time.time() * 1000)
+                        })
+                    except Exception as e:
+                        if self._is_unknown_order_error(e):
+                            LOG.info(f"✅ EP-01.3: Pending entry {oid} already absent (-2011)")
+                            self.watchdog.on_order_cancel(oid)
+                        else:
+                            LOG.warning(f"EP-01.3: Failed to cancel pending entry {oid}: {e}")
+                
+                self._submit_async(_do_cancel(order_id, symbol, deadline), loop)
+            else:
+                # Just remove from tracking (shadow mode or no adapter)
+                self.watchdog.on_order_cancel(order_id)
+
+    def _cancel_all_pending_entries(self, reason: str = "CANCEL_PANIC_KILL") -> None:
+        """
+        PANIC-INT: Cancel ALL pending entry orders across all symbols.
+        
+        Called when panic_killswitch is activated. Iterates through all tracked
+        orders in watchdog and cancels them immediately.
+        
+        Args:
+            reason: Cancel reason code (default: CANCEL_PANIC_KILL)
+        """
+        if not self.watchdog:
+            return
+        
+        # Collect all symbols with pending entries
+        symbols_with_pending = set()
+        for deadline in self.watchdog.pending_orders.values():
+            symbols_with_pending.add(deadline.symbol)
+        for deadline in self.watchdog.acked_orders.values():
+            symbols_with_pending.add(deadline.symbol)
+        
+        if not symbols_with_pending:
+            LOG.debug(f"PANIC-INT: No pending entries to cancel ({reason})")
+            return
+        
+        LOG.warning(
+            f"PANIC-INT: Cancelling ALL pending entries for {len(symbols_with_pending)} symbols ({reason})"
+        )
+        
+        for symbol in symbols_with_pending:
+            self._cancel_pending_entries_for_symbol(
+                symbol=symbol,
+                reason=reason,
+                context="panic_killswitch_activated"
+            )
+
+    def on_panic_killswitch_activated(self) -> None:
+        """
+        PANIC-INT: Handle panic killswitch activation.
+        
+        External code (e.g., config watcher, API endpoint) should call this
+        when panic_killswitch transitions from False to True.
+        """
+        LOG.error("PANIC-INT: panic_killswitch ACTIVATED - cancelling all pending entries")
+        
+        # Check config flag
+        try:
+            pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+            if not pe_ttl_cfg.enabled or not pe_ttl_cfg.cancel_on_panic:
+                LOG.info("PANIC-INT: cancel_on_panic disabled, skipping")
+                return
+        except AttributeError:
+            LOG.warning("PANIC-INT: pending_entry_ttl config not loaded, cancelling anyway")
+        
+        self._cancel_all_pending_entries("CANCEL_PANIC_KILL")
+
+    def _process_queued_supersede(self, symbol: str) -> None:
+        """
+        EP-01.3-SUPERSEDE-ACK: Process queued DEC:OPEN after cancel is confirmed.
+        
+        Called when:
+        1. WS/REST confirms pending entry is CANCELED
+        2. Timeout expires (5s) and we proceed anyway
+        
+        Args:
+            symbol: Symbol to process queued open for
+        """
+        # Remove from canceling set
+        self._supersede_canceling.discard(symbol)
+        
+        # Get queued decision
+        queued_data = self._supersede_queue.pop(symbol, None)
+        if not queued_data:
+            LOG.debug(f"EP-01.3: No queued supersede for {symbol}")
+            return
+        
+        decision = queued_data.get("decision")
+        queued_at = queued_data.get("queued_at", 0)
+        age_sec = time.time() - queued_at
+        
+        if not decision:
+            LOG.warning(f"EP-01.3: Queued supersede for {symbol} has no decision")
+            return
+        
+        LOG.info(
+            f"EP-01.3: Executing queued supersede DEC:OPEN for {symbol} (waited {age_sec:.2f}s)"
+        )
+        
+        # Re-submit the decision for processing
+        # This will go through normal flow since cancel is now confirmed
+        loop = self._get_async_loop()
+        if loop:
+            self._submit_async(self._async_execute_decision(decision), loop)
+        else:
+            LOG.error(f"EP-01.3: No event loop for queued supersede {symbol}")
+
+    def _on_regime_detected(self, event: Message) -> None:
+        """
+        EP-01: Handle EVT:REGIME_DETECTED to update ExposureGuard risk limits.
+        EP-01.3-INT: Cancel pending entry orders on regime change.
+        
+        This wires RegimeDetector output to ExposureGuard policy adaptation.
+        The mapping from RegimeLabel → ExecutionRegimeBucket happens here.
+        """
+        pld = event.pld or {}
+        regime_str = pld.get("regime")
+        symbol = pld.get("symbol")
+        if not regime_str:
+            LOG.warning("EP-01: EVT:REGIME_DETECTED missing 'regime' field, skipping")
+            return
+        
+        # Map detector label to policy bucket
+        bucket = map_regime_to_bucket(regime_str)
+        
+        # Delegate to ExposureGuard
+        self.exposure_guard.on_regime_changed(bucket)
+        
+        LOG.info(
+            f"EP-01: Regime adaptation triggered: label={regime_str} → bucket={bucket.value}, "
+            f"new_ratio={float(self.exposure_guard.max_directional_ratio):.2f}"
+        )
+        
+        # EP-01.3-INT: Cancel pending entry orders on regime change
+        try:
+            pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+            if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_regime_change and symbol:
+                self._cancel_pending_entries_for_symbol(
+                    symbol=symbol,
+                    reason="CANCEL_STALE_REGIME",
+                    context=f"regime_changed_to_{regime_str}"
+                )
+        except AttributeError:
+            pass  # Config not loaded
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """
@@ -1656,6 +1877,69 @@ class ExecPosFSM:
             side = decision.pld["side"].upper()
             raw_qty = decision.pld["qty"]
 
+            # EP-01.3-SUPERSEDE-ACK: Check if already waiting for cancel confirmation
+            if symbol in self._supersede_canceling:
+                LOG.info(
+                    f"EP-01.3: {symbol} already canceling pending entry, queueing new DEC:OPEN (supersede)"
+                )
+                # Update queued decision (newer takes priority)
+                self._supersede_queue[symbol] = {
+                    "decision": decision,
+                    "queued_at": time.time(),
+                }
+                return  # Early return - will be processed when cancel confirmed
+
+            # EP-01.3-SUPERSEDE-ACK: Check if pending entries exist
+            has_pending = False
+            pending_order_ids = []
+            if self.watchdog:
+                for order_id, deadline in list(self.watchdog.pending_orders.items()):
+                    if deadline.symbol == symbol:
+                        has_pending = True
+                        pending_order_ids.append(order_id)
+                for order_id, deadline in list(self.watchdog.acked_orders.items()):
+                    if deadline.symbol == symbol:
+                        has_pending = True
+                        pending_order_ids.append(order_id)
+
+            # EP-01.3-SUPERSEDE-ACK: If pending exists, cancel and queue
+            if has_pending:
+                try:
+                    pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+                    if pe_ttl_cfg.enabled and pe_ttl_cfg.cancel_on_supersede:
+                        LOG.info(
+                            f"EP-01.3: {symbol} has {len(pending_order_ids)} pending entries, "
+                            f"queueing new DEC:OPEN until cancel confirmed"
+                        )
+                        # Mark symbol as canceling
+                        self._supersede_canceling.add(symbol)
+                        # Store queued decision
+                        self._supersede_queue[symbol] = {
+                            "decision": decision,
+                            "cancel_order_ids": pending_order_ids,
+                            "queued_at": time.time(),
+                        }
+                        # Initiate cancel
+                        self._cancel_pending_entries_for_symbol(
+                            symbol=symbol,
+                            reason="CANCEL_SUPERSEDED",
+                            context=f"new_open_side={side}"
+                        )
+                        # Schedule timeout check (if cancel never confirmed, proceed anyway after timeout)
+                        loop = self._get_async_loop()
+                        if loop:
+                            async def _supersede_timeout():
+                                await asyncio.sleep(5.0)  # 5 second timeout
+                                if symbol in self._supersede_canceling:
+                                    LOG.warning(
+                                        f"EP-01.3: {symbol} supersede cancel timeout, proceeding with queued open"
+                                    )
+                                    self._process_queued_supersede(symbol)
+                            self._submit_async(_supersede_timeout(), loop)
+                        return  # Early return - wait for cancel confirmation
+                except AttributeError:
+                    pass  # Config not loaded, proceed with normal flow
+
             # Get mark price and filters
             mark = await self.adapter.get_mark_price(symbol)
 
@@ -1868,12 +2152,73 @@ class ExecPosFSM:
                 if sym_for_gate and not self._entry_tidy_gate_allow(sym_for_gate):
                     return
 
-            # Place MARKET entry
+            # EP-01.4-INT-B: Entry placement (MARKET or LIMIT based on order_type)
+            order_type = decision.pld.get("order_type", "MARKET")
+            tif = decision.pld.get("tif", "GTC")
+            price = decision.pld.get("price")  # For LIMIT orders
+            
             entry_id = generate_client_order_id("ENTRY", symbol)
-            entry_resp = await self.adapter.place_market_entry(
-                symbol, side, qty, entry_id
-            )
-            LOG.info(f"✅ MARKET entry placed: {entry_resp}")
+            entry_resp = None
+            
+            if order_type == "LIMIT" and price:
+                # EP-01.4-INT-B: LIMIT entry with configurable tif (supports GTX)
+                LOG.info(f"Placing LIMIT entry: {symbol} {side} {qty} @ {price}, tif={tif}")
+                try:
+                    entry_resp = await self.adapter.place_limit_entry(
+                        symbol, side, price, qty, time_in_force=tif, new_client_order_id=entry_id
+                    )
+                    LOG.info(f"✅ LIMIT entry placed: {entry_resp}")
+                except Exception as e:
+                    # EP-01.4-INT-B: Check for post-only (GTX) rejection
+                    from .reasons import MAKER_ONLY_REJECT, is_maker_only_reject_error
+                    err_code = getattr(e, 'code', None)
+                    err_msg = str(e)
+                    
+                    if err_code and is_maker_only_reject_error(err_code):
+                        LOG.warning(
+                            f"MAKER_ONLY_REJECT: GTX order rejected (code={err_code}), "
+                            f"symbol={symbol}, side={side}, NO FALLBACK"
+                        )
+                        order_logger.write({
+                            "rid": decision.rid,
+                            "event_type": "MAKER_ONLY_REJECT",
+                            "symbol": symbol,
+                            "side": side,
+                            "quantity": float(qty),
+                            "price": str(price),
+                            "tif": tif,
+                            "error_code": err_code,
+                            "error_msg": err_msg[:200],
+                            "reason": MAKER_ONLY_REJECT,
+                            "fallback": "NONE",
+                        })
+                        # Emit rejection event
+                        reject_msg = Message(
+                            op="EVT",
+                            verb="ORDER_REJECTED",
+                            src="execution_position",
+                            dst="decision_making",
+                            rid=decision.rid,
+                            pld={
+                                "symbol": symbol,
+                                "side": side,
+                                "reason": MAKER_ONLY_REJECT,
+                                "error_code": err_code,
+                            },
+                            why=MAKER_ONLY_REJECT,
+                        )
+                        await emit_compat(self.fsm, reject_msg, logger=LOG)
+                        return  # NO FALLBACK - abort entry
+                    else:
+                        # Other error - re-raise
+                        LOG.error(f"LIMIT entry failed: {e}")
+                        raise
+            else:
+                # Place MARKET entry (default behavior)
+                entry_resp = await self.adapter.place_market_entry(
+                    symbol, side, qty, entry_id
+                )
+                LOG.info(f"✅ MARKET entry placed: {entry_resp}")
 
             # ORDER_INDEX: correlate entry order for WS updates
             try:
@@ -1920,12 +2265,20 @@ class ExecPosFSM:
             # Track order for timeout monitoring
             self.watchdog.ensure_started()  # Safe late-start if needed
             entry_order_id = str(entry_resp["orderId"])
+            # EP-01.3-INT: Extract valid_for_ms from decision payload for per-order TTL
+            valid_for_ms = None
+            if decision.pld and "valid_for_ms" in decision.pld:
+                try:
+                    valid_for_ms = int(decision.pld["valid_for_ms"]) if decision.pld["valid_for_ms"] is not None else None
+                except (ValueError, TypeError):
+                    valid_for_ms = None
             self.watchdog.track_order_placed(
                 order_id=entry_order_id,
                 client_order_id=entry_id,
                 symbol=symbol,
                 corr_id=decision.corr_id,
-                rid=decision.rid
+                rid=decision.rid,
+                fill_ttl_override_ms=valid_for_ms,  # EP-01.3-INT
             )
 
             # Log to OrderLoggerV1
@@ -2825,6 +3178,26 @@ class ExecPosFSM:
         except Exception as e:
             LOG.error(
                 f"CANCEL_EVENT_ERROR: Failed to emit exposure update for {order_id}: {e}")
+
+        # EP-01.3-SUPERSEDE-ACK: Check if this cancel allows queued supersede to proceed
+        if symbol and symbol in self._supersede_canceling:
+            # Check if pending entries for this symbol are now clear
+            has_more_pending = False
+            if self.watchdog:
+                for deadline in self.watchdog.pending_orders.values():
+                    if deadline.symbol == symbol:
+                        has_more_pending = True
+                        break
+                if not has_more_pending:
+                    for deadline in self.watchdog.acked_orders.values():
+                        if deadline.symbol == symbol:
+                            has_more_pending = True
+                            break
+            
+            if not has_more_pending:
+                LOG.info(f"EP-01.3: {symbol} cancel confirmed, processing queued supersede")
+                self._process_queued_supersede(symbol)
+
 
     async def _emit_exposure_update_async(self, msg: Message) -> None:
         """Asynchronously emit exposure update event."""

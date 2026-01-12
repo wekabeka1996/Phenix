@@ -1,13 +1,13 @@
 """
-Test MR Bar-Path Gating (T2B-02).
+Test MR Bar-Path Gating (T2B-02 + T2B-03).
 
 Verifies that MeanReversionHandler:
-1. Subscribes to EVT:BAR_CLOSED (not tick events)
+1. Subscribes to CMD:PROCESS_STRATEGY (primary trigger)
 2. Uses Fail-Closed gating on tf_sec
 3. Only processes bars with matching timeframe (180s)
 
 P1 Architecture: This test ensures MR is strictly 3-minute bar-driven
-using global BarAggregator as SSOT.
+using CMD:PROCESS_STRATEGY as the orchestrated trigger.
 """
 
 import pytest
@@ -27,6 +27,9 @@ def mock_config():
     cfg.strategies.mean_reversion = MagicMock()
     cfg.strategies.mean_reversion.enabled = True
     cfg.strategies.mean_reversion.timeframe_sec = 180  # 3 minutes
+    cfg.strategies.mean_reversion.execution = MagicMock()
+    cfg.strategies.mean_reversion.execution.entry_order_type = "MARKET"
+    cfg.strategies.mean_reversion.execution.entry_tif = None
     
     # Strategy params
     strategy = MagicMock()
@@ -99,19 +102,19 @@ def mr_handler(mock_config, fsm_mock):
 
 
 class TestMRBarPathGating:
-    """Test suite for T2B-02/T2B-03: MR Bar-Driven via CMD:PROCESS_STRATEGY."""
+    """Test suite for T2B-03: MR triggered via CMD:PROCESS_STRATEGY."""
     
-    def test_mr_subscribes_to_bar_closed(self, mr_handler, fsm_mock):
+    def test_mr_subscribes_to_cmd_process_strategy(self, mr_handler, fsm_mock):
         """
-        T2B-03 UPDATE: Verify that MR handler subscribes to CMD:PROCESS_STRATEGY.
-        (Originally T2B-02 used EVT:BAR_CLOSED, now replaced by unified CMD)
+        T2B-03: Verify that MR handler subscribes to CMD:PROCESS_STRATEGY.
         """
         listen_calls = [call.args[0] for call in fsm_mock.listen.call_args_list]
         
-        # T2B-03: Now uses CMD:PROCESS_STRATEGY
+        # T2B-03: Primary trigger is CMD:PROCESS_STRATEGY
         assert "CMD:PROCESS_STRATEGY" in listen_calls
-        # Old triggers should NOT be subscribed
-        assert "EVT:BAR_CLOSED" not in listen_calls
+        # EVT:BAR_CLOSED is now data-only (still subscribed for caching)
+        assert "EVT:BAR_CLOSED" in listen_calls
+        # Old tick trigger should NOT be subscribed
         assert "EVT:MARKET_TICK_FORWARDED" not in listen_calls
     
     def test_mr_rejects_wrong_tf(self, mr_handler):
@@ -123,7 +126,20 @@ class TestMRBarPathGating:
             "symbol": "BTCUSDT",
             "tf_sec": 300,  # Wrong timeframe (5m, not 3m)
             "bar_close_ts": 1180000,
+            "bar": {
+                "symbol": "BTCUSDT",
+                "timeframe_sec": 300,
+                "open": "50000.0",
+                "high": "50100.0",
+                "low": "49900.0",
+                "close": "50050.0",
+                "volume": "1000.0",
+                "start_ts_ms": 1000000,
+                "end_ts_ms": 1180000,
+                "trade_count": 100,
+            },
             "features": {"price": "50050.0"},
+            "warmup": {"full_ready": True},
         }
         
         initial_rejected = mr_handler._stats["bars_rejected_wrong_tf"]
@@ -140,9 +156,21 @@ class TestMRBarPathGating:
         event = MagicMock()
         event.pld = {
             "symbol": "BTCUSDT",
-            # No tf_sec field
             "bar_close_ts": 1180000,
+            # No tf_sec field
+            "bar": {
+                "symbol": "BTCUSDT",
+                "open": "50000.0",
+                "high": "50100.0",
+                "low": "49900.0",
+                "close": "50050.0",
+                "volume": "1000.0",
+                "start_ts_ms": 1000000,
+                "end_ts_ms": 1180000,
+                "trade_count": 100,
+            },
             "features": {"price": "50050.0"},
+            "warmup": {"full_ready": True},
         }
         
         initial_rejected = mr_handler._stats["bars_rejected_missing_tf"]
@@ -162,7 +190,20 @@ class TestMRBarPathGating:
             "symbol": "BTCUSDT",
             "tf_sec": 180,  # Correct timeframe
             "bar_close_ts": 1180000,
+            "bar": {
+                "symbol": "BTCUSDT",
+                "timeframe_sec": 180,
+                "open": "50000.0",
+                "high": "50100.0",
+                "low": "49900.0",
+                "close": "50050.0",
+                "volume": "1000.0",
+                "start_ts_ms": 1000000,
+                "end_ts_ms": 1180000,
+                "trade_count": 100,
+            },
             "features": {"price": "50050.0"},
+            "warmup": {"full_ready": True},
         }
         
         initial_received = mr_handler._stats["bars_received"]
@@ -190,7 +231,7 @@ class TestMRBarPathGating:
     
     def test_deprecated_tick_handler_returns_immediately(self, mr_handler):
         """
-        Test: Calling deprecated _on_market_tick should return immediately.
+        Test: Calling deprecated _on_market_tick should not crash.
         """
         event = MagicMock()
         event.pld = {
@@ -199,11 +240,8 @@ class TestMRBarPathGating:
             "ts": 1000000,
         }
         
-        # Should not crash and should return immediately
+        # Should not crash
         mr_handler._on_market_tick(event)
-        
-        # No processing should happen (check stats unchanged)
-        # The deprecated method just returns after logging warning
 
 
 class TestMRTimeframeConfig:
@@ -226,7 +264,7 @@ class TestMRTimeframeConfig:
 
 
 class TestMREventRouting:
-    """Test that CMD events are routed correctly to strategy logic."""
+    """Test that CMD:PROCESS_STRATEGY events are routed correctly to strategy logic."""
     
     def test_symbol_not_enabled_skipped(self, mr_handler):
         """
@@ -237,7 +275,20 @@ class TestMREventRouting:
             "symbol": "SOLUSDT",  # Not in enabled_symbols
             "tf_sec": 180,
             "bar_close_ts": 1180000,
-            "features": {"price": "100.0"},
+            "bar": {
+                "symbol": "SOLUSDT",
+                "timeframe_sec": 180,
+                "open": "100.0",
+                "high": "101.0",
+                "low": "99.0",
+                "close": "100.5",
+                "volume": "1000.0",
+                "start_ts_ms": 1000000,
+                "end_ts_ms": 1180000,
+                "trade_count": 100,
+            },
+            "features": {"price": "100.5"},
+            "warmup": {"full_ready": True},
         }
         
         initial_completed = mr_handler._stats["bars_completed"]

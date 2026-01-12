@@ -34,6 +34,8 @@ from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 # Re-use existing Bar model from FE (single source of truth for Bar structure)
 from apps.reference.domains.feature_engineering.bar_resampler import Bar
+from vfoundation.core.protocol import Message, truncate_why
+from vfoundation.dr import wal
 
 if TYPE_CHECKING:
     from vfoundation.core.fsm_core import FSMCore
@@ -247,9 +249,6 @@ class BarAggregator:
     
     def _emit_bar_closed(self, bar: Bar, event_ts_ms: int) -> None:
         """Emit EVT:BAR_CLOSED event."""
-        if self.emit_fn is None:
-            return
-        
         # Serialize bar to dict with string decimals (JSON-safe)
         bar_dict = {
             "symbol": bar.symbol,
@@ -265,27 +264,66 @@ class BarAggregator:
             "gap_bars_skipped": bar.gap_bars_skipped,
             "is_gap_bar": bar.is_gap_bar,
         }
-        
+
+        # OBS-03-INT: WAL-SSOT for bars
+        # Contract: ts_ms, symbol, tf_sec, bar_close_ts, bar{open,high,low,close,volume}, bar_meta(optional)
+        wal_payload = {
+            "ts_ms": int(event_ts_ms),
+            "symbol": bar.symbol,
+            "tf_sec": int(bar.timeframe_sec),
+            "bar_close_ts": int(bar.end_ts_ms),
+            "bar": bar_dict,
+            "bar_meta": {
+                "source": "bar_aggregator",
+                "close_reason": "time_boundary",
+                "ticks_in_bar": int(bar.trade_count),
+            },
+        }
+
+        try:
+            msg = Message(
+                op="EVT",
+                verb="BAR_CLOSED",
+                src="market_data",
+                dst="any",
+                rid=f"bar:{bar.symbol}:{bar.timeframe_sec}:{bar.end_ts_ms}",
+                ts=int(event_ts_ms),
+                why=truncate_why(f"bar_closed:{bar.timeframe_sec}s:{bar.symbol}"),
+                pld=wal_payload,
+            )
+            wal.append(msg.model_dump())
+        except Exception as e:
+            LOG.warning(
+                "Failed to write BAR_CLOSED to WAL",
+                extra={"symbol": bar.symbol, "tf_sec": bar.timeframe_sec, "error": str(e)},
+            )
+
+        if self.emit_fn is None:
+            return
+
+        # Keep event payload backward compatible for in-process consumers (FE/MR).
         payload = {
             "symbol": bar.symbol,
-            "ts_ms": event_ts_ms,
+            "ts_ms": int(event_ts_ms),
+            "tf_sec": int(bar.timeframe_sec),
+            "bar_close_ts": int(bar.end_ts_ms),
             "bar": bar_dict,
         }
-        
+
         why = f"Bar {bar.timeframe_sec}s closed for {bar.symbol}"
-        
+
         try:
             self.emit_fn("EVT:BAR_CLOSED", payload, why=why)
             self._events_emitted += 1
             LOG.debug(
                 "EVT:BAR_CLOSED emitted",
-                extra={"symbol": bar.symbol, "tf_sec": bar.timeframe_sec}
+                extra={"symbol": bar.symbol, "tf_sec": bar.timeframe_sec},
             )
         except Exception as e:
             LOG.error(
                 f"Failed to emit EVT:BAR_CLOSED: {e}",
                 extra={"error": str(e), "symbol": bar.symbol},
-                exc_info=True
+                exc_info=True,
             )
     
     # =========================================================================

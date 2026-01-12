@@ -13,6 +13,7 @@ from apps.reference.config_models import (
     MRRiskConfig,
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
+    StrategyExecutionConfig,
 )
 from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
 from apps.reference.domains.feature_engineering.mean_reversion_strategy import MRSignal, MRSignalType
@@ -73,6 +74,10 @@ def _mk_mr_cfg(
             expected_pnl_multiplier=1.0,
             fees_pct=0.0,
             slippage_pct=0.0,
+        ),
+        execution=StrategyExecutionConfig(
+            entry_order_type="MARKET",
+            entry_tif=None,
         ),
         emit_trade_intent_directly=emit_direct,
     )

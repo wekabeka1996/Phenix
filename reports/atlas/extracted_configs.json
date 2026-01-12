@@ -3324,12 +3324,16 @@
   },
   "config/aurora/regime.yaml": {
     "keys": [
+      "basis_tf_sec",
+      "uncertain_cutoff",
       "hmm",
       "features",
       "hotreload_whitelist",
       "models"
     ],
     "raw": {
+      "basis_tf_sec": 300,
+      "uncertain_cutoff": 0.35,
       "hmm": {
         "enabled": true,
         "K": 3,
@@ -3894,6 +3898,18 @@
           "kappa_mode": "dynamic",
           "liquidity_kappa_mode": "dynamic"
         },
+        "entry_plan": {
+          "enabled": true,
+          "atr_period": 14,
+          "entry_k_atr": 0.3,
+          "sl_k_atr": 1.5,
+          "tp_k_atr": 2.0,
+          "obi_weight": 0.3,
+          "obi_mod_clamp_min": 0.8,
+          "obi_mod_clamp_max": 1.2,
+          "require_atr": true,
+          "obi_missing_policy": "neutral"
+        },
         "qos": {
           "exposure_block_cooldown_sec": 60,
           "symbol_cooldown_sec": 3,
@@ -4247,6 +4263,35 @@
         "event_dedup": {
           "max_size": 100000,
           "ttl_ms": 86400000
+        },
+        "pending_entry_ttl": {
+          "enabled": true,
+          "ttl_by_tf_sec": {
+            "180": 45,
+            "300": 60,
+            "900": 180
+          },
+          "reject_unknown_tf": true,
+          "cancel_on_regime_change": true,
+          "cancel_on_supersede": true,
+          "cancel_on_panic": true
+        },
+        "maker_only_entry": {
+          "enabled": false,
+          "tif_value": "GTX",
+          "reject_on_fail": true
+        },
+        "order_capabilities": {
+          "supported_order_types": [
+            "LIMIT",
+            "MARKET"
+          ],
+          "supported_tif": [
+            "GTC",
+            "GTX",
+            "IOC",
+            "FOK"
+          ]
         }
       }
     }
@@ -4298,9 +4343,13 @@
       "aurora": {
         "enabled": true,
         "legacy_tick_path_enabled": false,
-        "type": "tick_based",
-        "description": "Tick-based multi-signal alpha strategy with regime awareness",
+        "type": "bar_driven",
+        "description": "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness",
         "timeframe_sec": 300,
+        "execution": {
+          "entry_order_type": "LIMIT",
+          "entry_tif": "GTX"
+        },
         "decision": {
           "testnet": {
             "signal_threshold": 0.12
@@ -4798,6 +4847,10 @@
           "MEAN_REVERSION"
         ],
         "emit_trade_intent_directly": false,
+        "execution": {
+          "entry_order_type": "MARKET",
+          "entry_tif": null
+        },
         "strategy": {
           "bb_window": 20,
           "bb_num_std": 2.0,
@@ -7626,6 +7679,14 @@
           "since": "2026-01-08"
         },
         {
+          "op": "CMD",
+          "verb": "PROCESS_STRATEGY",
+          "owner": "strategies",
+          "status": "active",
+          "schema": "apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json",
+          "since": "2026-01-11"
+        },
+        {
           "op": "DEC",
           "verb": "ADJUST",
           "owner": "execution_position",
@@ -7835,6 +7896,30 @@
         },
         {
           "op": "EVT",
+          "verb": "NEOCORTEX_ALERT",
+          "owner": "neocortex",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-12"
+        },
+        {
+          "op": "EVT",
+          "verb": "NEOCORTEX_SHADOW_INTENT",
+          "owner": "neocortex",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-12"
+        },
+        {
+          "op": "EVT",
+          "verb": "NEOCORTEX_STATE_UPDATED",
+          "owner": "neocortex",
+          "status": "experimental",
+          "schema": null,
+          "since": "2026-01-12"
+        },
+        {
+          "op": "EVT",
           "verb": "OI_UPDATE",
           "owner": "feature_engineering",
           "status": "experimental",
@@ -8006,7 +8091,7 @@
           "verb": "TRADE_INTENT_REJECTED",
           "owner": "decision_making",
           "status": "experimental",
-          "schema": null,
+          "schema": "schemas/trade_intent_rejected_v1.json",
           "since": "2026-01-08"
         },
         {
@@ -8103,6 +8188,7 @@
     "keys": [
       "data_dir",
       "checkpoint_dir",
+      "rng_seed",
       "brain_workers",
       "queue_maxsize",
       "log_level",
@@ -8111,6 +8197,7 @@
     "raw": {
       "data_dir": "./data",
       "checkpoint_dir": "./data/checkpoints",
+      "rng_seed": 42,
       "brain_workers": 1,
       "queue_maxsize": 1000,
       "log_level": "INFO",
@@ -8127,7 +8214,7 @@
     ],
     "raw": {
       "vae": {
-        "input_dim": 9,
+        "input_dim": 20,
         "hidden_dims": [
           128,
           64
@@ -8146,7 +8233,7 @@
         "sequence_length": 50
       },
       "ppo": {
-        "state_dim": 20,
+        "state_dim": 16,
         "action_dim": 3,
         "hidden_dims": [
           256,
@@ -8175,21 +8262,240 @@
     ],
     "raw": {
       "feature_list": [
-        "rsi",
-        "bb_percent",
-        "bb_width",
+        "price",
         "obi",
-        "liquidity_kappa",
-        "liquidity_depth_imbalance",
+        "tfi",
         "delta_price",
-        "delta_volume",
-        "regime_numeric"
+        "ema_bias",
+        "volume_spike",
+        "volatility_state",
+        "depth_imbalance",
+        "spread_bps",
+        "macro_sync",
+        "macro_resid",
+        "volume_zscore",
+        "large_trade_imbalance",
+        "volatility_bar_range",
+        "volatility_bar_body",
+        "volatility_true_range",
+        "volatility_atr_14",
+        "volatility_range_pct",
+        "volatility_atr_pct",
+        "liquidity_obi_close"
       ],
       "normalization_method": "zscore",
       "normalization_window": 500,
       "buffer_size": 10000,
       "min_samples_before_ready": 100,
       "nan_strategy": "zero"
+    }
+  },
+  "apps/reference/domains/neocortex/config/replay.yaml": {
+    "keys": [
+      "enabled",
+      "features_dir",
+      "orders_file",
+      "core_log",
+      "batch_size",
+      "poll_interval",
+      "symbols"
+    ],
+    "raw": {
+      "enabled": true,
+      "features_dir": "logs/features",
+      "orders_file": "logs/order_log_v1.jsonl",
+      "core_log": "logs/aurora_core.log",
+      "batch_size": 100,
+      "poll_interval": 0.1,
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "DOGEUSDT",
+        "XRPUSDT"
+      ]
+    }
+  },
+  "reports/gate_effect/gate_effect_summary.yaml": {
+    "keys": [
+      "report_generated",
+      "gate_analysis",
+      "reject_analysis"
+    ],
+    "raw": {
+      "report_generated": "2026-01-09T21:20:14.960749",
+      "gate_analysis": {
+        "error": "No gate events found"
+      },
+      "reject_analysis": {
+        "error": "No LOW_VOL_COST_SUPPRESS rejections found in events"
+      }
+    }
+  },
+  "reports/confidence_calibration/recommendations.yaml": {
+    "keys": [
+      "data_summary",
+      "issues",
+      "recommended_params",
+      "optional_safety_gate",
+      "config_patches",
+      "validation"
+    ],
+    "raw": {
+      "data_summary": {
+        "total_events": 644,
+        "period_hours": "~4",
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT",
+          "DOGEUSDT",
+          "XRPUSDT"
+        ],
+        "regime_distribution": {
+          "MEAN_REVERSION": {
+            "count": 600,
+            "pct": 93.2,
+            "avg_confidence": 0.908
+          },
+          "LOW_VOLATILITY": {
+            "count": 24,
+            "pct": 3.7,
+            "avg_confidence": 0.551
+          },
+          "HIGH_VOLATILITY": {
+            "count": 8,
+            "pct": 1.2,
+            "avg_confidence": 0.669
+          },
+          "UNCERTAIN": {
+            "count": 6,
+            "pct": 0.9,
+            "avg_confidence": 0.0
+          },
+          "TREND_UP": {
+            "count": 4,
+            "pct": 0.6,
+            "avg_confidence": 0.95
+          },
+          "TREND_DOWN": {
+            "count": 2,
+            "pct": 0.3,
+            "avg_confidence": 0.5
+          }
+        }
+      },
+      "issues": [
+        {
+          "id": "BIPOLAR_CONFIDENCE",
+          "severity": "HIGH",
+          "description": "Confidence values are clamped to 0.5 (min) or 0.95 (max),  providing no useful gradation. TREND_DOWN always 0.5, TREND_UP always 0.95.\n",
+          "status": "FIXED_IN_NORMALIZE_002"
+        },
+        {
+          "id": "MEAN_REVERSION_DOMINANCE",
+          "severity": "MEDIUM",
+          "description": "93% of regimes are MEAN_REVERSION. May indicate overly sensitive  threshold or genuinely flat market during data collection.\n",
+          "status": "MONITOR"
+        },
+        {
+          "id": "NO_COST_GATE",
+          "severity": "MEDIUM",
+          "description": "No check for \"economically viable\" trades. System may trade  when expected profit < transaction costs.\n",
+          "status": "RECOMMEND_NEW_GATE"
+        }
+      ],
+      "recommended_params": {
+        "global": {
+          "uncertain_cutoff": 0.35,
+          "reasoning": "Raised from 0.25 to filter weak signals.\nShould be below P25 of TREND confidence (~0.5 post-normalization).\nFilters noise while allowing genuine trends.\n"
+        },
+        "directional_sanity": {
+          "min_confidence": 0.45,
+          "reasoning": "Block entries when regime confidence is below threshold.\nSet above LOW_VOLATILITY median (0.55) to ensure only \nstrong regime signals trigger trades.\n",
+          "differentiated_by_regime": {
+            "TREND_UP": 0.45,
+            "TREND_DOWN": 0.45,
+            "MEAN_REVERSION": 0.5,
+            "reasoning": "MR trades have tighter margins, require higher confidence.\nTREND trades can tolerate slightly lower confidence \ndue to larger expected returns.\n"
+          }
+        },
+        "snr_params": {
+          "snr_center": 1.2,
+          "snr_sigmoid_a": 2.5,
+          "persistence_window": 5,
+          "persistence_min_ratio": 0.6,
+          "snr_noise_floor": 0.001,
+          "reasoning": "snr_center=1.2: Requires SNR > 1.2 for confidence > 0.5.\n  This filters out weak trends where divergence is barely \n  above noise level.\nsnr_sigmoid_a=2.5: Steeper sigmoid curve means faster \n  transition from uncertain to confident.\npersistence_*: Unchanged from NORMALIZE-002 defaults.\n"
+        },
+        "confidence_clamps": {
+          "confidence_min": 0.1,
+          "confidence_max": 0.95,
+          "reasoning": "confidence_min=0.1 (already set in NORMALIZE-002):\n  Allows genuinely low-confidence signals to be expressed.\nconfidence_max=0.95: Prevents overconfidence.\n"
+        }
+      },
+      "optional_safety_gate": {
+        "name": "LOW_VOL_COST_SUPPRESS",
+        "enabled": true,
+        "description": "Block TREND trades when realized volatility is too low to cover \ntransaction costs. Prevents \"feeding the exchange\" in dead markets.\n",
+        "formula": "if regime in (TREND_UP, TREND_DOWN):\n  if rv_bps < K * cost_bps:\n    BLOCK(reason=\"LOW_VOL_COST_SUPPRESS\")\n",
+        "parameters": {
+          "K": 1.5,
+          "cost_bps": 4.0
+        },
+        "example": [
+          {
+            "scenario": "Dead market",
+            "rv_bps": 3.0,
+            "cost_bps": 4.0,
+            "calculation": "3 < 1.5 * 4 = 6",
+            "result": "BLOCK"
+          },
+          {
+            "scenario": "Active market",
+            "rv_bps": 10.0,
+            "cost_bps": 4.0,
+            "calculation": "10 > 6",
+            "result": "ALLOW"
+          }
+        ],
+        "implementation": {
+          "location": "apps/reference/domains/decision_making/decision_making.py",
+          "method": "_check_low_vol_cost_gate",
+          "invaziveness": "LOW"
+        },
+        "code_snippet": "def _check_low_vol_cost_gate(self, symbol: str, context: DecisionContext) -> bool:\n    \"\"\"Block TREND trades in low-vol conditions that won't cover costs.\n    \n    Returns True to allow, False to block.\n    \"\"\"\n    if context.regime not in ('TREND_UP', 'TREND_DOWN'):\n        return True\n    \n    # Get volatility proxy (volatility_state is normalized 0-1)\n    # Convert to estimated bps (very rough: 0.5 → ~5 bps)\n    vol_state = context.features.get('volatility_state', 0.5)\n    rv_bps = vol_state * 10  # Rough approximation\n    \n    cost_cfg = getattr(self.config.trading.decision.anti_churn.cost_gate, None)\n    cost_bps = getattr(cost_cfg, 'default_cost_bps', 4.0) if cost_cfg else 4.0\n    k = 1.5\n    \n    if rv_bps < k * cost_bps:\n        self.logger.info(\n            f\"[{symbol}] LOW_VOL_COST_SUPPRESS: rv_bps={rv_bps:.1f} < {k}*{cost_bps}={k*cost_bps}\"\n        )\n        return False\n    \n    return True\n"
+      },
+      "config_patches": [
+        {
+          "file": "config/aurora/regime.yaml",
+          "patch": "global:\n  uncertain_cutoff: 0.35  # Raised from 0.25\n\nmodels:\n  sma_trend:\n    snr_center: 1.2        # Raised from 1.0\n    snr_sigmoid_a: 2.5     # Raised from 2.0\n    confidence_min: 0.1    # Already set\n"
+        },
+        {
+          "file": "config/aurora/domains.yaml (if exists, or trading.yaml)",
+          "patch": "domains:\n  decision_making:\n    directional_sanity:\n      min_confidence: 0.45  # Add/update\n"
+        }
+      ],
+      "validation": {
+        "after_applying_changes": [
+          {
+            "run": "python tools/confidence_calibration.py",
+            "expect": "- TREND confidence should show gradation (not all 0.5/0.95)\n- UNCERTAIN count may increase (good - filtering weak signals)\n- ECE for TREND should improve\n"
+          },
+          {
+            "run": "pytest tests/ -k \"regime\" -v",
+            "expect": "All pass"
+          },
+          {
+            "monitor_for": "24h",
+            "metrics": [
+              "regime_distribution_hourly",
+              "false_trend_rate (if proxy labels available)",
+              "trade_count_vs_blocked_count"
+            ]
+          }
+        ]
+      }
     }
   }
 }

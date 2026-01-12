@@ -10,6 +10,7 @@ from apps.reference.config_models import (
     MRStrategyOverrideConfig,
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
+    StrategyExecutionConfig,
 )
 from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
 
@@ -79,6 +80,10 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
             slippage_pct=0.0,
         ),
         emit_trade_intent_directly=False,
+        execution=StrategyExecutionConfig(
+            entry_order_type="MARKET",
+            entry_tif=None,
+        ),
     )
 
     cfg = SimpleNamespace(
@@ -152,6 +157,10 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
             slippage_pct=0.0,
         ),
         emit_trade_intent_directly=False,
+        execution=StrategyExecutionConfig(
+            entry_order_type="MARKET",
+            entry_tif=None,
+        ),
     )
 
     cfg = SimpleNamespace(

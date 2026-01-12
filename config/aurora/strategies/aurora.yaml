@@ -14,6 +14,12 @@ aurora:
   type: bar_driven
   description: "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness"
   timeframe_sec: 300
+  
+  # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
+  # LIMIT entries require explicit tif. No silent fallbacks.
+  execution:
+    entry_order_type: "LIMIT"   # MUST be one of: LIMIT, MARKET
+    entry_tif: "GTX"            # MUST be set for LIMIT. One of: GTC, GTX, IOC, FOK
 
   # Global Aurora policy (DecisionConfig)
   decision:

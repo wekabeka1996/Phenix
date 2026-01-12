@@ -230,7 +230,7 @@ class PositionTracking:
         # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
         open_positions_usd = self._calculate_open_positions_notional()
         # EXP-LEVERAGE-001: Calculate margin used (backward compatible)
-        open_positions_margin_usd = self._calc_margin_used_usd([])
+        open_positions_margin_usd = self._calc_margin_used_usd([], authoritative=False)
         # EXP-DIRECTION: Calculate margin by side
         margin_by_side = self._calculate_margin_by_side([])
         positions_last_ts_ms = int(time.time() * 1000)
@@ -412,7 +412,7 @@ class PositionTracking:
         open_positions_usd = self._calculate_open_positions_notional()
         # EXP-LEVERAGE-001: Calculate margin used with positionRisk data if available
         open_positions_margin_usd = self._calc_margin_used_usd(
-            account_positions)
+            account_positions, authoritative=True)
         # EXP-DIRECTION: Calculate margin by side for directional ratio checks
         margin_by_side = self._calculate_margin_by_side(account_positions)
         positions_last_ts_ms = int(time.time() * 1000)
@@ -504,7 +504,7 @@ class PositionTracking:
         # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
         open_positions_usd = self._calculate_open_positions_notional()
         # EXP-LEVERAGE-001: Calculate margin used (fallback to config leverage)
-        open_positions_margin_usd = self._calc_margin_used_usd([])
+        open_positions_margin_usd = self._calc_margin_used_usd([], authoritative=False)
         # EXP-DIRECTION: Calculate margin by side
         margin_by_side = self._calculate_margin_by_side([])
         positions_last_ts_ms = int(time.time() * 1000)
@@ -793,17 +793,23 @@ class PositionTracking:
         # Round to 2 decimal places for consistency
         return total_notional.quantize(decimal.Decimal("0.01"))
 
-    def _calc_margin_used_usd(self, positions: list[dict]) -> decimal.Decimal:
+    def _calc_margin_used_usd(self, positions: Optional[List[Dict[str, Any]]], authoritative: bool = True) -> decimal.Decimal:
         """
         Calculate total margin used by open positions in USD.
 
         EXP-LEVERAGE-001: Margin-based exposure calculation with leverage.
         If positions list is provided (from positionRisk API), use it.
         Otherwise, fallback to internal position data with leverage from config.
+        
+        Args:
+            positions: List of pos dicts from API, or None.
+            authoritative: If True, an empty list means "user has no positions" (clear cache).
+                           If False, an empty list means "no data provided" (preserve cache).
         """
         total_margin = decimal.Decimal("0")
 
         # FIX-AUDITED-ISSUES-01 (Part A): Differentiate explicit empty list (FLAT) from missing (FALLBACK)
+        # BUGFIX-007: Only clear cache if authoritative source says list is empty
         if positions is not None:
             # Explicit API data available (even if empty)
             
@@ -811,7 +817,11 @@ class PositionTracking:
             # If positions is empty list, this correctly clears internal positions.
             # If populated, we should ideally sync them, but for now we prioritize preventing 'ghosts' on empty.
             if len(positions) == 0:
-                self._positions.clear()
+                if authoritative:
+                    self.logger.info("🟢 _calc_margin_used_usd(): Clearing positions cache (authoritative empty list)")
+                    self._positions.clear()
+                else:
+                    self.logger.debug("🟡 _calc_margin_used_usd(): Ignoring empty positions list (non-authoritative)")
             
             # Use positionRisk data if available
             self.logger.info(

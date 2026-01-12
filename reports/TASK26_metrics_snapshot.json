@@ -1,18 +1,16 @@
 {
-  "generated_at": "2026-01-09T01:18:08Z",
+  "generated_at": "2026-01-12T16:00:13Z",
   "scenarios": [
     {
       "scenario": "test_warmup_gate_blocks_trade_intent_until_ready",
       "metrics": {
-        "warmup_blocks": 1,
+        "warmup_blocks": 0,
         "data_quality_drops": 0,
         "retry_scheduler_no_loop": 0,
         "intents_proposed": 0,
         "intents_dropped": 0,
         "guards_blocked": 0,
-        "no_trade_reasons": {
-          "decision_making:regime_not_ready": 1
-        }
+        "no_trade_reasons": {}
       }
     },
     {
@@ -245,7 +243,7 @@
     }
   ],
   "summary": {
-    "total_warmup_blocks": 1,
+    "total_warmup_blocks": 0,
     "total_data_quality_drops": 0,
     "total_retry_no_loop": 1,
     "total_intents_proposed": 0,

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "trade_intent_v1.json",
   "title": "Trade Intent Proposed Event",
-  "description": "Schema for EVT:TRADE_INTENT_PROPOSED event payload describing a proposed trade intent",
+  "description": "Schema for EVT:TRADE_INTENT_PROPOSED event payload describing a proposed trade intent. EP-01.2-INT: Added stop_price/target_price for ATR-based SL/TP.",
   "type": "object",
   "properties": {
     "instrument": {
@@ -11,8 +11,13 @@
     },
     "side": {
       "type": "string",
-      "enum": ["buy", "sell"],
-      "description": "Trade direction: 'buy' for long positions, 'sell' for short positions"
+      "enum": [
+        "buy",
+        "sell",
+        "BUY",
+        "SELL"
+      ],
+      "description": "Trade direction: 'buy'/'BUY' for long positions, 'sell'/'SELL' for short positions"
     },
     "p": {
       "type": "string",
@@ -42,7 +47,11 @@
           "description": "Preference for maker vs taker orders (e.g., 'allow', 'prefer', 'require')"
         }
       },
-      "required": ["max_slippage_bps", "max_latency_ms", "maker_preference"]
+      "required": [
+        "max_slippage_bps",
+        "max_latency_ms",
+        "maker_preference"
+      ]
     },
     "risk_budget": {
       "type": "object",
@@ -59,7 +68,10 @@
           "description": "Maximum CVaR95 for the entire session in basis points"
         }
       },
-      "required": ["trade_cvar95_max_bps", "session_cvar95_max_bps"]
+      "required": [
+        "trade_cvar95_max_bps",
+        "session_cvar95_max_bps"
+      ]
     },
     "size": {
       "type": "object",
@@ -76,7 +88,10 @@
           "description": "Notional cap in USD (string-encoded Decimal)"
         }
       },
-      "required": ["kelly_fraction", "notional_cap_usd"]
+      "required": [
+        "kelly_fraction",
+        "notional_cap_usd"
+      ]
     },
     "order": {
       "type": "object",
@@ -100,13 +115,118 @@
         "reduce_only": {
           "type": "boolean",
           "description": "Whether this order is reduce-only (true) or can open new positions (false)"
+        },
+        "order_type": {
+          "type": "string",
+          "enum": [
+            "LIMIT",
+            "MARKET"
+          ],
+          "description": "ORDER-POLICY-01: Order type. REQUIRED. No silent defaults."
+        },
+        "tif": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "GTC",
+                "GTX",
+                "IOC",
+                "FOK"
+              ],
+              "description": "Time in force: GTC (good-till-cancel), GTX (post-only/maker-only), IOC, FOK"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "EP-01.4-INT: Time in force for LIMIT orders. GTX = post-only (maker-only). Null only allowed for MARKET orders."
         }
       },
-      "required": ["price_ref", "qty", "price", "reduce_only"]
+      "required": [
+        "price_ref",
+        "qty",
+        "reduce_only",
+        "order_type"
+      ]
+    },
+    "stop_price": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "EP-01.2-INT: Stop-loss price (string-encoded Decimal). Null if not computed (e.g., ATR not ready)."
+    },
+    "target_price": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "EP-01.2-INT: Take-profit price (string-encoded Decimal). Null if not computed."
+    },
+    "entry_plan": {
+      "anyOf": [
+        {
+          "type": "object",
+          "description": "EP-01.2-INT: EntryPlan computation trace for debugging/audit",
+          "properties": {
+            "ref_price": {
+              "type": "string",
+              "description": "Reference price used for computation"
+            },
+            "atr": {
+              "type": "string",
+              "description": "ATR value used"
+            },
+            "obi": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "OBI value used (null if missing)"
+            },
+            "obi_multiplier": {
+              "type": "number",
+              "description": "Actual OBI multiplier applied (after clamp)"
+            },
+            "obi_policy_applied": {
+              "type": "boolean",
+              "description": "True if neutral policy was applied"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "EP-01.2-INT: EntryPlan computation trace. Null if EntryPlan not used."
     },
     "valid_for_ms": {
-      "type": "integer",
-      "description": "Validity period for this trade intent in milliseconds"
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "TTL in milliseconds (must be >= 1000)"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "EP-01.3-INT: Validity period for pending LIMIT entry order. Calculated from ttl_by_tf_sec[tf_sec]*1000. Null means use global watchdog fill_ttl_ms."
     },
     "why": {
       "type": "array",
@@ -123,8 +243,19 @@
     },
     "schema_ref": {
       "type": "string",
-      "format": "uri",
       "description": "URI reference to the schema definition"
+    },
+    "rid": {
+      "type": "string",
+      "description": "Request ID for correlation"
+    },
+    "strategy": {
+      "type": "string",
+      "description": "Strategy ID that produced this intent"
+    },
+    "idempotent_key": {
+      "type": "string",
+      "description": "Idempotency key to prevent duplicate processing"
     }
   },
   "required": [
@@ -136,7 +267,6 @@
     "risk_budget",
     "size",
     "order",
-    "valid_for_ms",
     "why",
     "dto_version",
     "schema_ref"

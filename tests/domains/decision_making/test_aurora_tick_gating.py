@@ -59,14 +59,10 @@ def aurora_handler(mock_config):
     from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
     
     emit_mock = MagicMock()
-    monotonic_mock = MagicMock(return_value=1000.0)
-    wall_time_mock = MagicMock(return_value=1000.0)
     
     handler = AuroraHandler(
         config=mock_config,
         emit_fn=emit_mock,
-        monotonic_fn=monotonic_mock,
-        wall_time_fn=wall_time_mock,
     )
     
     # Mock the scoring kernel to prevent actual computation

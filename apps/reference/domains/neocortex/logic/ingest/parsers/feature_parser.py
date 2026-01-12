@@ -38,6 +38,44 @@ FEATURE_LOG_PATTERN = re.compile(
     r'(\{.+\})$'  # JSON payload
 )
 
+def _flatten_and_coerce_features(raw: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Flatten nested feature dicts and coerce leaf values to float.
+
+    Examples:
+      {"volatility": {"atr_14": null}} -> {"volatility_atr_14": 0.0}
+      {"volatility.atr_14": "1.23"} -> {"volatility_atr_14": 1.23}
+    """
+    out: Dict[str, float] = {}
+
+    def _coerce(value: Any) -> float:
+        if value is None:
+            return 0.0
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def _emit(key: str, value: Any) -> None:
+        if key not in out:
+            out[key] = _coerce(value)
+
+    def _recurse(prefix_parts: list[str], obj: Any) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(k, str) and "." in k:
+                    parts = [p for p in k.split(".") if p]
+                else:
+                    parts = [str(k)]
+                _recurse(prefix_parts + parts, v)
+            return
+
+        flat_key = "_".join([p for p in prefix_parts if p])
+        _emit(flat_key, obj)
+
+    _recurse([], raw)
+    return out
+
 
 def parse_feature_log_line(line: str, symbol: str = None) -> Optional[FeatureLogEntry]:
     """
@@ -63,14 +101,10 @@ def parse_feature_log_line(line: str, symbol: str = None) -> Optional[FeatureLog
         try:
             import time
             raw_features = json.loads(line)
-            
-            # Convert string values to floats
-            features = {}
-            for key, value in raw_features.items():
-                try:
-                    features[key] = float(value)
-                except (ValueError, TypeError):
-                    features[key] = 0.0
+            if not isinstance(raw_features, dict):
+                return None
+
+            features = _flatten_and_coerce_features(raw_features)
             
             return FeatureLogEntry(
                 timestamp=time.time(),  # Use current time for pure JSON
@@ -96,14 +130,10 @@ def parse_feature_log_line(line: str, symbol: str = None) -> Optional[FeatureLog
             
             # Parse JSON features
             raw_features = json.loads(json_str)
-            
-            # Convert string values to floats
-            features = {}
-            for key, value in raw_features.items():
-                try:
-                    features[key] = float(value)
-                except (ValueError, TypeError):
-                    features[key] = 0.0
+            if not isinstance(raw_features, dict):
+                return None
+
+            features = _flatten_and_coerce_features(raw_features)
                     
             return FeatureLogEntry(
                 timestamp=timestamp,

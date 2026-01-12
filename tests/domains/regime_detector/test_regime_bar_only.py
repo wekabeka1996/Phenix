@@ -61,11 +61,9 @@ def mock_config():
     
     cfg.models = models
     
-    # Global
-    glob = MagicMock()
-    glob.uncertain_cutoff = 0.25
-    glob.basis_tf_sec = 300  # THE KEY
-    cfg.global_ = glob
+    # REG-FIX-01: Direct config attributes for BAR-ONLY mode
+    cfg.basis_tf_sec = 300
+    cfg.uncertain_cutoff = 0.25
     
     # System
     sys = MagicMock()

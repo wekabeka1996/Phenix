@@ -3,7 +3,11 @@ from unittest.mock import MagicMock, patch
 from decimal import Decimal
 from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.config_models import AuroraConfig, TradingConfig, TradingRiskConfig, RegimeAdaptationConfig, SoftLimitConfigModel
+from apps.reference.domains.execution_position.soft_clip import (
+    RegimeAdaptationConfig,
+    SoftLimitConfigModel,
+    SoftLimitConfig,
+)
 from apps.reference.core.types.regime_types import ExecutionRegimeBucket
 from vfoundation.core.protocol import Message
 from pydantic import ValidationError
@@ -18,28 +22,25 @@ class MockFSM:
 
 @pytest.fixture
 def mock_config():
-    # Construct strictly typed config for Risk
-    risk_real = TradingRiskConfig(
-        soft_limits=SoftLimitConfigModel(
-             mode="clip",
-             clip_min_notional_usdt=10.0,
-             directional_ratio_max=3.0,
-             side_exposure_usdt=600.0,
-             margin_exposure_usdt=1000.0
-        ),
-        regime_adaptation=RegimeAdaptationConfig(
-            trend_up_delta=0.5,
-            trend_down_delta=0.5, 
-            flat_delta=-0.5, 
-            bounds=[1.0, 5.0]
-        )
-    )
-    
+    """EP-01: Mock config for ExecPosFSM that provides regime_adaptation for ExposureGuard."""
     cfg = MagicMock()
     
-    # Config structure mocking
-    # trading.risk
-    cfg.trading.risk = risk_real
+    # trading.risk (dict path for ExposureGuard._load_soft_limit_config)
+    cfg.trading.risk = {
+        "soft_limits": {
+            "mode": "clip",
+            "clip_min_notional_usdt": 10.0,
+            "directional_ratio_max": 3.0,
+            "side_exposure_usdt": 600.0,
+            "margin_exposure_usdt": 1000.0,
+        },
+        "regime_adaptation": {
+            "trend_up_delta": 0.5,
+            "trend_down_delta": 0.5, 
+            "flat_delta": -0.5, 
+            "bounds": [1.0, 5.0]
+        }
+    }
     
     # trading.execution
     exec_cfg = MagicMock()

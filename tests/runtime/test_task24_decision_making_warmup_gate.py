@@ -1,5 +1,6 @@
 import logging
 import time
+from apps.reference.core.time.clock import LiveClock
 
 
 def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
@@ -17,6 +18,7 @@ def test_decision_making_blocks_trade_intent_until_ready(monkeypatch):
 
     dm = DecisionMaking.__new__(DecisionMaking)
     dm.logger = logging.getLogger("tests.task24.decision_making")
+    dm._clock = LiveClock()  # T2B-08: Clock required for _features_ready()
 
     dm.features_ttl_sec = 60
     dm.latest_portfolio = {"ok": True}
@@ -60,6 +62,7 @@ def test_decision_making_reduce_only_bypasses_warmup_gate(monkeypatch):
 
     dm = DecisionMaking.__new__(DecisionMaking)
     dm.logger = logging.getLogger("tests.task24.decision_making")
+    dm._clock = LiveClock()  # T2B-08: Clock required for warmup gate
     dm.latest_portfolio = None
     dm.symbol_states = {}
     dm._per_symbol_regimes = {}

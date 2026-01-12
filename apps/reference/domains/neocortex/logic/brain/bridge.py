@@ -28,6 +28,7 @@ from logic.ingest.observation import MarketObservation
 from logic.brain.worker import (
     _brain_worker_init,
     _brain_train_task,
+    _brain_train_ppo_task,
     _brain_encode_task,
     _brain_act_task,
     _brain_save_task,
@@ -42,9 +43,10 @@ class BrainBridge:
     Bridge between AsyncIO main loop and PyTorch worker process.
     """
     
-    def __init__(self, config: NeuroConfig, max_workers: int = 1):
+    def __init__(self, config: NeuroConfig, max_workers: int = 1, rng_seed: int = 0):
         self.config = config
         self.max_workers = max_workers
+        self.rng_seed = int(rng_seed)
         self._executor: Optional[ProcessPoolExecutor] = None
         self._initialized = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -72,7 +74,7 @@ class BrainBridge:
             # Convert Pydantic model to dict for pickling
             config_dict = self.config.model_dump()
             
-            future = self._executor.submit(_brain_worker_init, config_dict)
+            future = self._executor.submit(_brain_worker_init, config_dict, self.rng_seed)
             
             # Wait for init to complete (blocking is OK here, it's startup)
             result = await self._loop.run_in_executor(None, future.result, 30.0)
@@ -123,6 +125,34 @@ class BrainBridge:
             
         except Exception as e:
             logger.error(f"Training task failed: {e}", exc_info=True)
+            return {"error": str(e)}
+
+    async def train_ppo_async(self, episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Submit PPO training task asynchronously.
+
+        Args:
+            episodes: List of episode dicts (worker-picklable)
+
+        Returns:
+            Dictionary of PPO metrics or {"error": "..."}
+        """
+        if not self._initialized or self._executor is None:
+            logger.warning("BrainBridge not initialized, skipping PPO training")
+            return {"error": "not_initialized"}
+
+        try:
+            future = self._executor.submit(_brain_train_ppo_task, episodes)
+            result = await self._loop.run_in_executor(None, future.result)
+            return result
+
+        except BrokenExecutor as e:
+            logger.error(f"Worker process crashed during PPO train: {e}")
+            self._initialized = False
+            return {"error": "worker_crashed"}
+
+        except Exception as e:
+            logger.error(f"PPO training task failed: {e}", exc_info=True)
             return {"error": str(e)}
 
     async def encode_async(self, obs: MarketObservation) -> np.ndarray:
@@ -243,4 +273,3 @@ class BrainBridge:
         except Exception as e:
             logger.error(f"Load task failed: {e}")
             return False
-
