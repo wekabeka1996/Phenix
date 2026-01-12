@@ -318,6 +318,37 @@ class DecisionMaking:
         }
         self._behavior_state: Dict[str, str] = {}
 
+
+        # LOW_VOL_COST_SUPPRESS-IMPLEMENT-004: Cost-based volatility gate
+        # VERIFY-005 HARDENING: Added proxy control and sanity guards
+        lvcs_cfg = getattr(dm_cfg, 'low_vol_cost_suppress', None)
+        if lvcs_cfg:
+            self._low_vol_cost_suppress_enabled = bool(lvcs_cfg.enabled)
+            self._low_vol_cost_suppress_factor = float(lvcs_cfg.factor)
+            self._low_vol_cost_suppress_default_cost_bps = float(lvcs_cfg.default_cost_bps)
+            self._low_vol_cost_suppress_regimes = set(lvcs_cfg.apply_to_regimes)
+            self._low_vol_cost_suppress_allow_reduce_only = bool(lvcs_cfg.allow_reduce_only)
+            self._low_vol_cost_suppress_allow_rv_proxy = bool(lvcs_cfg.allow_rv_proxy_from_volatility_state)
+            self._low_vol_cost_suppress_rv_proxy_scale = float(lvcs_cfg.volatility_state_to_bps_scale)
+            self._low_vol_cost_suppress_bps_sanity_max = float(lvcs_cfg.bps_sanity_max)
+        else:
+            self._low_vol_cost_suppress_enabled = False
+            self._low_vol_cost_suppress_factor = 1.5
+            self._low_vol_cost_suppress_default_cost_bps = 4.0
+            self._low_vol_cost_suppress_regimes = {'TREND_UP', 'TREND_DOWN'}
+            self._low_vol_cost_suppress_allow_reduce_only = True
+            self._low_vol_cost_suppress_allow_rv_proxy = False
+            self._low_vol_cost_suppress_rv_proxy_scale = 10.0
+            self._low_vol_cost_suppress_bps_sanity_max = 200.0
+
+        # Telemetry counters for gate effectiveness analysis
+        self._low_vol_cost_suppress_stats = {
+            "blocks": 0,
+            "pass": 0,
+            "mean_cost_bps": 0.0,
+            "mean_rv_bps": 0.0,
+        }
+
         # Exposure cache for pre-checking exposure limits
         self._exposure_cache: Optional[Dict[str, Any]] = None
         self._exposure_cache_timestamp: float = 0.0

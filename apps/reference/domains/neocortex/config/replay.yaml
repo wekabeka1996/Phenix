@@ -1,0 +1,25 @@
+# Neocortex Multi-Source Ingestion Configuration (Phase 7)
+# 
+# This enables ingestion from multiple Aurora log sources:
+# - Feature logs: Real-time market features (State)
+# - Order logs: Trade intents and executions (Actions)
+# - Core logs: Position events and outcomes (Rewards)
+
+enabled: true
+
+# Log paths (relative to project root)
+features_dir: "logs/features"
+orders_file: "logs/order_log_v1.jsonl"
+core_log: "logs/aurora_core.log"
+
+# Processing parameters
+batch_size: 100           # Events before yield to event loop
+poll_interval: 0.1        # Seconds to wait when tailing
+
+# Symbols to monitor
+symbols:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - DOGEUSDT
+  - XRPUSDT

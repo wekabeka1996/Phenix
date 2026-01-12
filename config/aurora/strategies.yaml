@@ -18,11 +18,11 @@ version: "1.0.0"
 # ==============================================================================
 # Кожен символ має список активних стратегій (strategy_id)
 # Valid strategy_id values:
-# - "aurora": Tick-based multi-signal strategy (alpha models)
+# - "aurora": Bar-driven multi-signal strategy (5m basis)
 # - "mean_reversion": Bar-based Bollinger Bands strategy (1m bars)
 # ==============================================================================
 assignments:
-  # ETH: Aurora-only (champion tick-based asset, Phase 3+)
+  # ETH: Aurora-only (champion bar-driven asset, Phase 3+)
   ETHUSDT:
     - aurora
 

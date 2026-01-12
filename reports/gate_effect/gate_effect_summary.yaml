@@ -1,0 +1,5 @@
+report_generated: '2026-01-09T21:20:14.960749'
+gate_analysis:
+  error: No gate events found
+reject_analysis:
+  error: No LOW_VOL_COST_SUPPRESS rejections found in events

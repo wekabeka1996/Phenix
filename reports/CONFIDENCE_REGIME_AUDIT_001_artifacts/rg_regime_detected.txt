@@ -1,0 +1,76 @@
+apps/reference/main.py:1401:    # Emits EVT:REGIME_DETECTED for decision_making to use
+apps/reference/main.py:1825:    # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing
+apps/reference/dictionaries/verb_registry_v1.yaml:244:  verb: REGIME_DETECTED
+tests/runtime/test_task24_regime_detector_correctness.py:67:    assert fsm.emitted, "expected EVT:REGIME_DETECTED emission"
+tests/runtime/test_task24_regime_detector_correctness.py:69:    assert evt == "EVT:REGIME_DETECTED"
+tests/runtime/test_task24_regime_detector_correctness.py:103:    assert fsm.emitted, "expected EVT:REGIME_DETECTED emission"
+tests/runtime/test_task24_regime_detector_correctness.py:105:    assert evt == "EVT:REGIME_DETECTED"
+tests/runtime/test_task24_regime_detector_correctness.py:194:        if evt == "EVT:REGIME_DETECTED":
+tests/runtime/test_task24_regime_detector_correctness.py:265:    assert last_evt == "EVT:REGIME_DETECTED"
+tests/integration/test_depth_imbalance_reachability_buy_sell.py:39:        "EVT:REGIME_DETECTED",
+tests/integration/test_depth_imbalance_reachability_buy_sell.py:136:    bus.listen("EVT:REGIME_DETECTED", lambda msg: handler.on_regime_detected(msg.pld))
+tests/domains/test_sizing_matrix.py:47:        dm.on_regime(Message(op="EVT", verb="REGIME_DETECTED", src="t", dst="d", pld={
+tests/integration/test_mean_reversion_runtime_e2e_chain_prod_sizing.py:365:                "EVT:REGIME_DETECTED",
+tests/integration/test_mean_reversion_logging_metrics.py:107:    bus.emit("EVT:REGIME_DETECTED", {"symbol": symbol, "regime": "LOW_VOLATILITY"})
+apps/reference/domains/strategies/plugins/aurora_builtin.py:54:        logger.info("🚀 Aurora Strategy: Registering Event Listeners (REGIME_DETECTED, FEATURES_CALCULATED)")
+apps/reference/domains/strategies/plugins/aurora_builtin.py:55:        self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime)
+tests/integration/test_depth_imbalance_tick_path_smoke.py:54:    bus.listen("EVT:REGIME_DETECTED", lambda msg: aurora.on_regime_detected(msg.pld))
+tests/integration/test_depth_imbalance_tick_path_smoke.py:60:        "EVT:REGIME_DETECTED",
+apps/reference/domains/decision_making/why_codes.py:120:    INFO_REGIME_DETECTED = "INFO_REGIME_DETECTED"
+apps/reference/domains/decision_making/why_codes.py:203:        WhyCode.INFO_REGIME_DETECTED: "Market regime detected and classified",
+tests/integration/test_regime_detector_event_flow.py:16:    fsm.listen("EVT:REGIME_DETECTED", lambda msg: emitted.append(msg.pld))
+tests/integration/test_regime_detector_event_flow.py:32:    assert emitted, "Expected EVT:REGIME_DETECTED emissions"
+tests/integration/test_regime_detector_event_flow.py:46:    fsm.listen("EVT:REGIME_DETECTED", lambda msg: regimes.append(msg.pld))
+tests/integration/test_regime_detector_event_flow.py:54:    fsm.listen("EVT:REGIME_DETECTED", lambda msg: handler.on_regime_detected(msg.pld))
+tests/integration/test_regime_detector_event_flow.py:82:    # RegimeDetector emits EVT:REGIME_DETECTED before DecisionMaking stores features (listener order),
+tests/integration/test_regime_detector_event_flow.py:83:    # so we emit a second EVT:REGIME_DETECTED to evaluate the warmup guard with features present.
+tests/integration/test_regime_detector_event_flow.py:85:        "EVT:REGIME_DETECTED",
+tests/integration/test_regime_detector_event_flow.py:90:    assert regimes, "Expected RegimeDetector to emit EVT:REGIME_DETECTED"
+tests/integration/test_regime_detector_event_flow.py:113:    fsm.listen("EVT:REGIME_DETECTED", lambda msg: regimes.append(msg.pld))
+tests/domains/test_regime_detector.py:102:    assert emitted_event_name == "EVT:REGIME_DETECTED"
+tests/domains/test_regime_detector.py:156:    assert emitted_event_name == "EVT:REGIME_DETECTED"
+tests/domains/test_regime_detector.py:214:    assert emitted_event_name == "EVT:REGIME_DETECTED"
+tests/domains/test_regime_detector.py:274:    assert emitted_event_name == "EVT:REGIME_DETECTED"
+tests/domains/test_regime_detector.py:340:    assert emitted_event_name == "EVT:REGIME_DETECTED"
+apps/reference/domains/neocortex/docs/ARCHITECTURE.md:38:  RD -->|EVT:REGIME_DETECTED| STORE
+tests/integration/test_mean_reversion_runtime_e2e_chain.py:247:            "EVT:REGIME_DETECTED",
+apps/reference/domains/regime_detector/regime_detector.py:32:    Emits EVT:REGIME_DETECTED events with confidence scores.
+apps/reference/domains/regime_detector/regime_detector.py:170:            EVT:REGIME_DETECTED with regime type and confidence score
+apps/reference/domains/regime_detector/regime_detector.py:239:                "EVT:REGIME_DETECTED",
+apps/reference/domains/regime_detector/regime_detector.py:422:            "EVT:REGIME_DETECTED",
+apps/reference/domains/neocortex/docs/API_DEPENDENCIES.md:12:| `EVT:REGIME_DETECTED` | `regime_detector` | ~bar | `symbol`, `ts`, `regime`, `confidence` | conditioning, gates |
+tests/domains/decision_making/test_aurora_builtin_plugin.py:118:        assert "EVT:REGIME_DETECTED" in listen_calls
+apps/reference/domains/regime_detector/docs/domain_dict.json:12:      "event": "EVT:REGIME_DETECTED",
+apps/reference/domains/regime_detector/docs/API_DEPENDENCIES.md:39:### EVT:REGIME_DETECTED (v1)
+apps/reference/domains/regime_detector/docs/API_DEPENDENCIES.md:101:### EVT:REGIME_DETECTED Output Schema
+apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_CONCEPT.md:185:- `EVT:REGIME_DETECTED` (якщо є)
+apps/reference/domains/regime_detector/docs/TESTING.md:104:    assert 'EVT:REGIME_DETECTED' in [e['event'] for e in events]
+apps/reference/domains/regime_detector/docs/TESTING.md:107:    regime_event = next(e for e in events if e['event'] == 'EVT:REGIME_DETECTED')
+apps/reference/domains/regime_detector/docs/TESTING.md:304:    regime_events = [e for e in self.emitted_events if e['event'] == 'EVT:REGIME_DETECTED']
+apps/reference/domains/regime_detector/docs/EVENTS.md:3:## EVT:FEATURES_CALCULATED → EVT:REGIME_DETECTED
+apps/reference/domains/regime_detector/docs/EVENTS.md:23:### Payload вихідний (REGIME_DETECTED)
+tests/integration/test_decisionmaking_reason_taxonomy_contract_v1.py:46:        "EVT:REGIME_DETECTED",
+apps/reference/domains/regime_detector/docs/README.md:49:- `EVT:REGIME_DETECTED`: Визначений режим з деталями warmup та data_quality.
+apps/reference/domains/decision_making/decision_making.py:329:        self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
+apps/reference/domains/decision_making/decision_making.py:1667:            # NOTE: Regime + regime warmup are owned by RegimeDetector only (EVT:REGIME_DETECTED).
+apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_IMPLEMENTATION_PLAN.md:231:- `EVT:REGIME_DETECTED` (джерело: `regime_detector`) — режим ринку + confidence.
+apps/reference/domains/decision_making/domain_dict.json:26:      "event_name": "EVT:REGIME_DETECTED",
+tests/domains/decision_making/test_aurora_handler.py:5:1. Regime caching from EVT:REGIME_DETECTED
+apps/reference/domains/decision_making/aurora_handler.py:5:1. Regime caching (from EVT:REGIME_DETECTED)
+apps/reference/domains/decision_making/aurora_handler.py:43:    # Regime cache (from EVT:REGIME_DETECTED)
+apps/reference/domains/decision_making/aurora_handler.py:84:    2. Listen to EVT:REGIME_DETECTED, EVT:FEATURES_CALCULATED
+apps/reference/domains/decision_making/aurora_handler.py:596:        Handle EVT:REGIME_DETECTED event.
+apps/reference/domains/decision_making/docs/ANALYSIS_SUMMARY.md:88:| Regime Detector | Market regime | `EVT:REGIME_DETECTED` | ✅ Robust |
+apps/reference/domains/decision_making/__init__.py:20:    - EVT:REGIME_DETECTED
+apps/reference/domains/decision_making/docs/EVENTS.md:13:| `EVT:REGIME_DETECTED` | **IN** | Market regime from regime_detector |
+apps/reference/domains/decision_making/docs/EVENTS.md:255:### EVT:REGIME_DETECTED
+apps/reference/domains/decision_making/docs/EVENTS.md:283:│  EVT:REGIME_DETECTED ──────────┘──► on_regime()                     │
+apps/reference/domains/decision_making/docs/API_DEPENDENCIES.md:50:        self.fsm.listen("EVT:REGIME_DETECTED", self.on_regime)
+apps/reference/domains/decision_making/docs/API_DEPENDENCIES.md:212:| Regime Detector | Market regime | `EVT:REGIME_DETECTED` |
+apps/reference/domains/decision_making/docs/README.md:139:| `EVT:REGIME_DETECTED` | regime_detector | Market regime |
+apps/reference/domains/decision_making/mean_reversion_handler.py:258:        self.fsm.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
+apps/reference/domains/decision_making/mean_reversion_handler.py:264:                    "events": ["EVT:MARKET_TICK_FORWARDED", "EVT:REGIME_DETECTED", "EVT:FEATURES_CALCULATED"],
+apps/reference/domains/decision_making/mean_reversion_handler.py:799:                f"MRHandler: failed to process EVT:REGIME_DETECTED: {e}",
+apps/reference/domains/feature_engineering/docs/FTR_FEATURES_FUTURES_V2_DESIGN.md:72:| `EVT:REGIME_DETECTED` | `EVT:REGIME_DETECTED` (unchanged) |
+apps/reference/domains/feature_engineering/docs/FTR_FEATURES_FUTURES_V2_DESIGN.md:485:    regime: RegimeState,               // from EVT:REGIME_DETECTED
+apps/reference/domains/feature_engineering/docs/FTR_FEATURES_FUTURES_V2_DESIGN.md:508:- **Exports:** `EVT:REGIME_DETECTED`

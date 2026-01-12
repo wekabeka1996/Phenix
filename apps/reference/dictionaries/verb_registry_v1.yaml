@@ -12,6 +12,12 @@ registry:
   status: active
   schema: null
   since: '2026-01-08'
+- op: CMD
+  verb: PROCESS_STRATEGY
+  owner: strategies
+  status: active
+  schema: apps/reference/domains/feature_engineering/schemas/cmd_process_strategy_v1.json
+  since: '2026-01-11'
 - op: DEC
   verb: ADJUST
   owner: execution_position

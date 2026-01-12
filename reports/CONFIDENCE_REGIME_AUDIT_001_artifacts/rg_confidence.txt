@@ -1,0 +1,311 @@
+apps/reference/config_loader.py:1094:        for k in ("enabled", "min_abs_delta_price", "min_confidence", "consecutive_bars"):
+config/aurora/domains.yaml:74:    min_confidence: 0.0
+apps/reference/config_models.py:813:    confidence_min: float = Field(ge=0.0, le=1.0, description='Minimum confidence value')
+apps/reference/config_models.py:814:    confidence_max: float = Field(ge=0.0, le=1.0, description='Maximum confidence value')
+apps/reference/config_models.py:1074:    min_confidence: float = Field(
+apps/reference/config_models.py:1077:        description='Minimum confidence required (max(regime_confidence, trend_confidence))'
+tests/test_ensemble.py:63:            confidence=Decimal("0.7"),
+tests/test_ensemble.py:74:            confidence=Decimal("0.6"),
+tests/test_ensemble.py:108:        assert score.confidence > Decimal("0")
+tests/test_ensemble.py:120:        assert score.confidence == Decimal("0.0")
+tests/test_ensemble.py:124:        """Test signal generation when all models return low confidence."""
+tests/test_ensemble.py:131:            confidence=Decimal("0.05"),  # Below threshold
+tests/test_ensemble.py:142:        assert score.confidence == Decimal("0.0")
+tests/test_ensemble.py:217:            confidence=Decimal("0.8"),
+tests/test_ensemble.py:228:            confidence=Decimal("0.8"),
+tests/runtime/test_task24_regime_detector_correctness.py:195:            # If regime emitted with gap, should be low confidence or UNCERTAIN
+tests/runtime/test_task24_regime_detector_correctness.py:197:            confidence = float(payload.get("confidence", 0.5))
+tests/runtime/test_task24_regime_detector_correctness.py:198:            # Acceptable: UNCERTAIN regime OR low confidence
+tests/runtime/test_task24_regime_detector_correctness.py:199:            assert regime == "UNCERTAIN" or confidence < 0.6, \
+tests/runtime/test_task24_regime_detector_correctness.py:200:                f"Data gap should result in UNCERTAIN or low confidence, got {regime}/{confidence}"
+config/_schemas/scalp_trading.schema.json:603:              "description": "CVaR confidence level (e.g., 0.95 for CVaR95)"
+config/_schemas/portfolio.schema.json:28:                    "description": "CVaR confidence level        (0,1)"
+tests/policies/config_strictness_policy.py:24:        0.0,                # Floating point zeros (confidence, etc.) are safe
+tests/test_config_loading_externalized.py:69:        conf = detector._calculate_confidence(Decimal("4050"), Decimal("3900"))
+tests/integration/test_directional_sanity_sol_downtrend_no_long_open.py:53:    dm._per_symbol_regimes = {"SOLUSDT": {"regime": "BEAR_TREND", "confidence": 1.0}}
+tests/integration/test_directional_sanity_sol_downtrend_no_long_open.py:63:    dm.config.domains.decision_making.directional_sanity.min_confidence = 0.0
+tests/conftest.py:106:    confidence=Decimal("0.99"),
+tests/conftest.py:133:        confidence=confidence,
+tests/integration/test_mean_reversion_runtime_e2e_chain_prod_sizing.py:75:            min_confidence=0.0,
+tests/integration/test_mean_reversion_runtime_e2e_chain_prod_sizing.py:278:                    min_confidence=0.0,
+tests/integration/test_price_motion_sanity_blocks_entry.py:58:    dm.config.domains.decision_making.directional_sanity.min_confidence = 0.0
+tests/integration/test_price_motion_sanity_blocks_entry.py:133:    dm.config.domains.decision_making.directional_sanity.min_confidence = 0.0
+tests/e2e/test_e2e_dm_directional_sanity_blocks_long_sol_downtrend.py:95:    dm.config.domains.decision_making.directional_sanity.min_confidence = 0.0
+tests/e2e/test_e2e_dm_directional_sanity_blocks_long_sol_downtrend.py:102:    dm._per_symbol_regimes["SOLUSDT"] = {"regime": "BEAR_TREND", "confidence": 1.0}
+tests/integration/test_depth_imbalance_tick_path_smoke.py:64:            "confidence": 1.0,
+tests/test_phase9_tuning.py:154:        """Test confidence threshold filters weak signals."""
+tests/test_phase9_tuning.py:428:        # Check confidence
+tests/test_phase9_tuning.py:430:            action = "HOLD (below confidence)"
+tests/integration/test_mean_reversion_runtime_e2e_chain.py:74:            min_confidence=0.0,
+tests/integration/test_mean_reversion_runtime_e2e_chain.py:172:                    min_confidence=0.0,
+tests/e2e/test_s4_regime_uncertain_ohlc.py:81:                                 args[1].get("confidence", 1.0) < 0.5
+tests/e2e/test_s4_regime_uncertain_ohlc.py:84:                        expected="UNCERTAIN or low confidence",
+tests/e2e/test_s4_regime_uncertain_ohlc.py:142:        # Either block or emit with low confidence
+tests/e2e/test_s4_regime_uncertain_ohlc.py:195:        # If regime emitted during warmup, it should be low confidence or UNCERTAIN
+tests/e2e/test_s4_regime_uncertain_ohlc.py:200:                conf = float(args[1].get("confidence", 0.5))
+tests/e2e/test_s4_regime_uncertain_ohlc.py:201:                if conf > 0.7:  # High confidence during warmup = bad
+tests/e2e/test_s4_regime_uncertain_ohlc.py:206:            expected="no high-confidence regime",
+tests/integration/test_sizing_gateway_margin_first.py:36:                    min_confidence=0.0,
+tests/integration/test_depth_imbalance_reachability_buy_sell.py:43:            "confidence": 1.0,
+tests/integration/test_task32_two_strategies_arbitration.py:103:                    min_confidence=0.0,
+tests/test_backtest_engine.py:61:            confidence = 0.6 + np.random.rand() * 0.4
+tests/test_backtest_engine.py:62:            scores.append(Mock(score=score, confidence=confidence))
+tests/test_backtest_engine.py:219:            Mock(score=0.5, confidence=0.8) for _ in range(100)
+tests/test_backtest_engine.py:226:            Mock(score=-0.2, confidence=0.7) for _ in range(100)
+tests/test_backtest_engine.py:251:             'confidence': 0.8, 'price': 100.0},
+tests/test_backtest_engine.py:253:             0.5, 'confidence': 0.9, 'price': 105.0},
+tests/simulation/test_strategy_aware_gates_simulation.py:144:    def simulate_mr_signal_gateway(self, symbol: str, side: str, confidence: float) -> Dict:
+tests/simulation/test_strategy_aware_gates_simulation.py:153:            "confidence": confidence,
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:40:                'confidence': float(score.confidence),
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:216:    "confidence": {
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:237:  "required": ["ts", "model_name", "symbol", "score", "confidence"]
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:254:    confidence: Decimal = Field(
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:403:  "confidence": 0.85,
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:413:- **WARNING**: Missing features, low confidence scores
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:437:        "average_confidence": avg_confidence,
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:465:            confidence=Decimal("0.8"),
+apps/reference/domains/alpha_search/API_DEPENDENCIES.md:541:    "confidence": "number[0,1]",
+apps/reference/domains/alpha_search/alpha_model.py:31:    confidence: Decimal = Field(..., ge=0, le=1,
+apps/reference/domains/alpha_search/TESTING.md:24:        confidence=Decimal("0.85"),
+apps/reference/domains/alpha_search/TESTING.md:32:    assert score.confidence == Decimal("0.85")
+apps/reference/domains/alpha_search/TESTING.md:38:    """Тест валідації меж score та confidence"""
+apps/reference/domains/alpha_search/TESTING.md:45:        confidence=Decimal("0.8")
+apps/reference/domains/alpha_search/TESTING.md:55:            confidence=Decimal("0.8")
+apps/reference/domains/alpha_search/TESTING.md:58:    # Invalid confidence (< 0)
+apps/reference/domains/alpha_search/TESTING.md:64:            confidence=Decimal("-0.1")  # Invalid
+apps/reference/domains/alpha_search/TESTING.md:161:    assert score.confidence > 0.7  # High confidence
+apps/reference/domains/alpha_search/TESTING.md:180:    assert score.confidence > 0.7
+apps/reference/domains/alpha_search/TESTING.md:199:    assert score.confidence < 0.5  # Low confidence
+apps/reference/domains/alpha_search/TESTING.md:220:    assert score.confidence > 0.6
+apps/reference/domains/alpha_search/TESTING.md:240:    assert score.confidence > 0.6
+apps/reference/domains/alpha_search/TESTING.md:263:    assert score.confidence > 0.6
+apps/reference/domains/alpha_search/TESTING.md:284:    assert score.confidence > 0.6
+apps/reference/domains/alpha_search/TESTING.md:314:    assert isinstance(score.confidence, Decimal)
+apps/reference/domains/alpha_search/TESTING.md:341:        "confidence": float(score.confidence),
+apps/reference/domains/alpha_search/TESTING.md:351:    assert "confidence" in event_payload
+apps/reference/domains/alpha_search/TESTING.md:400:                confidence=Decimal("0.8"),
+apps/reference/domains/alpha_search/TESTING.md:418:    assert score.confidence > 0.5
+apps/reference/domains/alpha_search/TESTING.md:542:    assert result.confidence > 0
+apps/reference/domains/alpha_search/TESTING.md:562:    assert 0 <= float(score.confidence) <= 1
+apps/reference/domains/alpha_search/TESTING.md:641:    assert 0 <= score.confidence <= 1
+apps/reference/domains/alpha_search/TESTING.md:672:            confidence=Decimal("0.8"),
+apps/reference/domains/neocortex/docs/API_DEPENDENCIES.md:12:| `EVT:REGIME_DETECTED` | `regime_detector` | ~bar | `symbol`, `ts`, `regime`, `confidence` | conditioning, gates |
+apps/reference/domains/alpha_search/EVENTS.md:34:    "confidence": {
+apps/reference/domains/alpha_search/EVENTS.md:67:  "required": ["ts", "model_name", "symbol", "score", "confidence"]
+apps/reference/domains/alpha_search/EVENTS.md:80:  "confidence": 0.85,
+apps/reference/domains/alpha_search/EVENTS.md:97:  "confidence": 0.72,
+apps/reference/domains/alpha_search/EVENTS.md:114:  "confidence": 0.68,
+apps/reference/domains/alpha_search/EVENTS.md:131:  "confidence": 0.78,
+apps/reference/domains/alpha_search/EVENTS.md:188:    # Calculate confidence
+apps/reference/domains/alpha_search/EVENTS.md:190:    confidence = min(momentum_strength / Decimal('0.05'), Decimal('1'))  # 5% threshold
+apps/reference/domains/alpha_search/EVENTS.md:197:- **RSI confirmation**: RSI in extreme zones boosts confidence
+apps/reference/domains/alpha_search/EVENTS.md:234:    # Calculate confidence based on deviation magnitude
+apps/reference/domains/alpha_search/EVENTS.md:235:    confidence = min(abs(deviation_pct) / Decimal('0.05'), Decimal('1'))  # 5% threshold
+apps/reference/domains/alpha_search/EVENTS.md:241:- **Deviation magnitude**: Larger deviations = higher confidence
+apps/reference/domains/alpha_search/EVENTS.md:242:- **RSI extremes**: RSI < 30 or > 70 increases confidence
+apps/reference/domains/alpha_search/EVENTS.md:293:    # Calculate confidence
+apps/reference/domains/alpha_search/EVENTS.md:294:    confidence = self._calculate_confidence(atr_signal, bb_signal, rv_signal)
+apps/reference/domains/alpha_search/EVENTS.md:301:def _calculate_confidence(self, atr_sig: Decimal, bb_sig: Decimal, rv_sig: Decimal) -> Decimal:
+apps/reference/domains/alpha_search/EVENTS.md:313:    base_confidence = Decimal('0.6') + (agreement_ratio * Decimal('0.3'))
+apps/reference/domains/alpha_search/EVENTS.md:319:    return min(Decimal('1.0'), base_confidence * strength_factor)
+apps/reference/domains/alpha_search/EVENTS.md:329:    total_confidence = Decimal("0.0")
+apps/reference/domains/alpha_search/EVENTS.md:337:            total_confidence += score.confidence * weight
+apps/reference/domains/alpha_search/EVENTS.md:341:        final_confidence = total_confidence / total_weight
+apps/reference/domains/alpha_search/EVENTS.md:344:        final_confidence = Decimal("0.0")
+apps/reference/domains/alpha_search/EVENTS.md:429:    if not (0 <= score.confidence <= 1):
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:68:        confidence: Signal confidence [0, 1]
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:82:    confidence: Decimal = Decimal("0")
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:437:        confidence = Decimal("0")
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:443:            confidence = Decimal("0.5") + (entry_threshold - pct_b) * Decimal("2")
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:448:                confidence += Decimal("0.2")
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:454:            confidence = Decimal("0.5") + (pct_b - (1 - entry_threshold)) * Decimal("2")
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:459:                confidence += Decimal("0.2")
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:469:        # Clamp confidence
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:470:        confidence = min(Decimal("1.0"), confidence)
+apps/reference/domains/feature_engineering/mean_reversion_strategy.py:509:            confidence=confidence,
+apps/reference/domains/regime_detector/schemas/regime_detected_v1.json:32:    "confidence": {
+apps/reference/domains/regime_detector/schemas/regime_detected_v1.json:34:      "description": "A string-encoded Decimal representing the confidence in the detection (0.0 to 1.0).",
+apps/reference/domains/regime_detector/schemas/regime_detected_v1.json:78:  "required": ["ts", "symbol", "regime", "confidence", "source_model"],
+apps/reference/domains/alpha_search/README.md:121:  "confidence": 0.85,
+apps/reference/domains/alpha_search/README.md:152:    "confidence": 0.78,
+apps/reference/domains/alpha_search/README.md:189:- **Confidence calibration**: Чи відповідає confidence реальній точності
+apps/reference/domains/alpha_search/README.md:216:        confidence = self._calculate_confidence(features)
+apps/reference/domains/alpha_search/README.md:222:            confidence=confidence,
+apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_CONCEPT.md:106:- `regime`: TREND/FLAT/… + confidence
+apps/reference/domains/neocortex/tests/test_simulation.py:184:        "confidence": np.random.randn()
+apps/reference/domains/neocortex/tests/test_simulation.py:274:        "action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0
+apps/reference/domains/alpha_search/models/momentum.py:22:    Score combines weighted momentum signals with confidence based on consistency.
+apps/reference/domains/alpha_search/models/momentum.py:53:        - RSI filter: reduces confidence in overbought/oversold conditions
+apps/reference/domains/alpha_search/models/momentum.py:86:        # RSI-based confidence adjustment
+apps/reference/domains/alpha_search/models/momentum.py:87:        rsi_confidence = Decimal('1.0')
+apps/reference/domains/alpha_search/models/momentum.py:89:            rsi_confidence = Decimal('0.7')
+apps/reference/domains/alpha_search/models/momentum.py:91:            rsi_confidence = Decimal('0.7')
+apps/reference/domains/alpha_search/models/momentum.py:94:        macd_confidence = Decimal('1.0')
+apps/reference/domains/alpha_search/models/momentum.py:96:            macd_confidence = Decimal('1.1')
+apps/reference/domains/alpha_search/models/momentum.py:98:            macd_confidence = Decimal('0.9')
+apps/reference/domains/alpha_search/models/momentum.py:100:        # Overall confidence based on signal consistency and filters
+apps/reference/domains/alpha_search/models/momentum.py:101:        base_confidence = Decimal('0.8')  # Base confidence
+apps/reference/domains/alpha_search/models/momentum.py:105:        confidence = min(Decimal('1.0'), base_confidence *
+apps/reference/domains/alpha_search/models/momentum.py:106:                         rsi_confidence * macd_confidence * consistency_factor)
+apps/reference/domains/alpha_search/models/momentum.py:129:        if rsi_confidence < 1:
+apps/reference/domains/alpha_search/models/momentum.py:130:            why.append(f"RSI at {rsi:.1f} reduces confidence")
+apps/reference/domains/alpha_search/models/momentum.py:136:            confidence=confidence,
+apps/reference/domains/neocortex/docs/EVENTS.md:106:  "confidence": 0.62,
+apps/reference/domains/neocortex/tests/test_full_loop.py:123:        "confidence": 0.8
+apps/reference/domains/neocortex/tests/test_full_loop.py:185:        "action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0
+apps/reference/domains/neocortex/tests/test_full_loop.py:268:        "confidence": 0.8
+apps/reference/domains/neocortex/tests/test_full_loop.py:275:    assert "confidence" in action_result
+apps/reference/domains/neocortex/tests/test_full_loop.py:281:    assert isinstance(action_result["confidence"], float)
+apps/reference/domains/alpha_search/models/volatility.py:127:        # Calculate confidence based on signal consistency
+apps/reference/domains/alpha_search/models/volatility.py:128:        confidence = self._calculate_confidence(
+apps/reference/domains/alpha_search/models/volatility.py:139:            confidence=confidence,
+apps/reference/domains/alpha_search/models/volatility.py:144:    def _calculate_confidence(self, atr_sig: Decimal, bb_sig: Decimal,
+apps/reference/domains/alpha_search/models/volatility.py:146:        """Calculate confidence based on signal agreement and strength."""
+apps/reference/domains/alpha_search/models/volatility.py:149:        # Agreement: all signals should have same sign for high confidence
+apps/reference/domains/alpha_search/models/volatility.py:155:            return Decimal('0.4')  # Low confidence if no strong signals
+apps/reference/domains/alpha_search/models/volatility.py:161:        # Base confidence from agreement
+apps/reference/domains/alpha_search/models/volatility.py:162:        base_confidence = Decimal(
+apps/reference/domains/alpha_search/models/volatility.py:170:        return min(Decimal('1.0'), base_confidence * strength_factor)
+apps/reference/domains/regime_detector/docs/API_DEPENDENCIES.md:44:- `confidence`: String (Decimal).
+apps/reference/domains/regime_detector/docs/API_DEPENDENCIES.md:122:    "confidence": {
+apps/reference/domains/regime_detector/docs/API_DEPENDENCIES.md:138:  "required": ["ts", "symbol", "regime", "confidence", "model"]
+apps/reference/domains/regime_detector/docs/API_DEPENDENCIES.md:271:  "confidence": 0.85,
+apps/reference/domains/alpha_search/models/mean_reversion.py:130:        # Calculate confidence based on signal agreement and strength
+apps/reference/domains/alpha_search/models/mean_reversion.py:131:        confidence = self._calculate_confidence(
+apps/reference/domains/alpha_search/models/mean_reversion.py:142:            confidence=confidence,
+apps/reference/domains/alpha_search/models/mean_reversion.py:147:    def _calculate_confidence(self, bb_sig: Decimal, rsi_sig: Decimal,
+apps/reference/domains/alpha_search/models/mean_reversion.py:149:        """Calculate confidence based on signal agreement."""
+apps/reference/domains/alpha_search/models/mean_reversion.py:154:            return Decimal('0.3')  # Low confidence if no strong signals
+apps/reference/domains/alpha_search/models/mean_reversion.py:163:        # Base confidence from agreement
+apps/reference/domains/alpha_search/models/mean_reversion.py:164:        base_confidence = Decimal(
+apps/reference/domains/alpha_search/models/mean_reversion.py:172:        return min(Decimal('1.0'), base_confidence * strength_factor)
+apps/reference/domains/decision_making/decision_making.py:1922:                    "confidence": event.pld.get("confidence"),
+apps/reference/domains/decision_making/decision_making.py:2286:        regime_confidence: float | None = None
+apps/reference/domains/decision_making/decision_making.py:2291:                rc = r.get("confidence")
+apps/reference/domains/decision_making/decision_making.py:2292:                regime_confidence = float(rc) if rc not in (None, "") else None
+apps/reference/domains/decision_making/decision_making.py:2295:            regime_confidence = None
+apps/reference/domains/decision_making/decision_making.py:2300:        min_conf = float(ds_cfg.min_confidence)
+apps/reference/domains/decision_making/decision_making.py:2306:        trend_confidence: float = 0.0
+apps/reference/domains/decision_making/decision_making.py:2331:                            trend_confidence = 1.0
+apps/reference/domains/decision_making/decision_making.py:2334:                            trend_confidence = 1.0
+apps/reference/domains/decision_making/decision_making.py:2338:            trend_confidence = 0.0
+apps/reference/domains/decision_making/decision_making.py:2356:            effective_conf = max(float(regime_confidence or 0.0), float(trend_confidence or 0.0))
+apps/reference/domains/decision_making/decision_making.py:2364:                why_short = "insufficient confidence"
+apps/reference/domains/decision_making/decision_making.py:2441:                "regime_confidence": regime_confidence,
+apps/reference/domains/decision_making/decision_making.py:2496:                            "regime_confidence": regime_confidence,
+apps/reference/domains/decision_making/decision_making.py:2653:            "regime_confidence": regime_confidence,
+apps/reference/domains/neocortex/transport/adapter.py:126:                "confidence": action_result["confidence"],
+apps/reference/domains/neocortex/transport/adapter.py:141:                f"(conf={action_result['confidence']:.3f}, val={action_result['value']:.3f})"
+apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_IMPLEMENTATION_PLAN.md:231:- `EVT:REGIME_DETECTED` (джерело: `regime_detector`) — режим ринку + confidence.
+apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_IMPLEMENTATION_PLAN.md:253:- `regime` (label + confidence)
+apps/reference/domains/neocortex/docs/NEOCORTEX_DOMAIN_IMPLEMENTATION_PLAN.md:262:- `confidence`, `efe`, `empowerment`, `viability_score`
+apps/reference/domains/alpha_search/ensemble.py:146:                confidence=Decimal("0.0"),
+apps/reference/domains/alpha_search/ensemble.py:172:                if score.confidence > Decimal("0.1"):
+apps/reference/domains/alpha_search/ensemble.py:184:                confidence=Decimal("0.0"),
+apps/reference/domains/alpha_search/ensemble.py:203:        total_confidence = Decimal("0.0")
+apps/reference/domains/alpha_search/ensemble.py:216:                total_confidence += score.confidence * weight
+apps/reference/domains/alpha_search/ensemble.py:229:            final_confidence = total_confidence / total_weight
+apps/reference/domains/alpha_search/ensemble.py:232:            final_confidence = Decimal("0.0")
+apps/reference/domains/alpha_search/ensemble.py:238:            confidence=final_confidence,
+apps/reference/domains/alpha_search/ensemble.py:250:        # For now, we'll use score confidence as a proxy for performance
+apps/reference/domains/alpha_search/ensemble.py:253:            # Track model performance (using confidence as proxy)
+apps/reference/domains/alpha_search/ensemble.py:254:            self.model_performance[model_name].append(float(score.confidence))
+apps/reference/domains/alpha_search/ensemble.py:262:        self.ensemble_performance.append(float(combined_score.confidence))
+apps/reference/domains/regime_detector/docs/TESTING.md:55:        assert regime_event['confidence'] >= min_conf
+apps/reference/domains/regime_detector/docs/TESTING.md:109:    assert 'confidence' in regime_event['payload']
+apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md:140:- **Property-based testing**: Score/confidence bounds
+apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md:234:    4. Calculate confidence based on momentum strength
+apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md:237:        AlphaScore with momentum signal and confidence
+apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md:291:        # Calculate confidence based on prediction variance
+apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md:292:        confidence = self._calculate_ml_confidence(scaled_features)
+apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md:298:            confidence=Decimal(str(confidence)),
+apps/reference/domains/alpha_search/ANALYSIS_SUMMARY.md:424:2. **Confidence thresholding**: Low confidence scores не використовуються
+tests/domains/test_mean_reversion_strategy.py:184:            confidence=Decimal("0.7"),
+apps/reference/domains/regime_detector/docs/EVENTS.md:29:  "confidence": "0.85",
+apps/reference/domains/regime_detector/docs/EVENTS.md:68:    confidence = min(current_atr / (high_vol_threshold * avg_atr), 1.0)
+apps/reference/domains/regime_detector/docs/EVENTS.md:71:    confidence = min((low_vol_threshold * avg_atr) / current_atr, 1.0)
+apps/reference/domains/regime_detector/docs/EVENTS.md:92:    confidence = 1.0 - (deviation / deviation_threshold)
+apps/reference/domains/regime_detector/docs/EVENTS.md:94:    confidence = 0.0  # Не mean reversion
+apps/reference/domains/regime_detector/docs/EVENTS.md:126:    "last_confidence": float,
+apps/reference/domains/regime_detector/docs/EVENTS.md:166:confidence = min(0.0233 / 0.001, 1.0) = 1.0
+apps/reference/domains/regime_detector/docs/EVENTS.md:169:confidence = min(2.5 / 2.0, 1.0) = 1.0
+apps/reference/domains/regime_detector/docs/EVENTS.md:172:confidence = 1.0 - (0.005 / 0.02) = 0.75
+apps/reference/domains/regime_detector/docs/EVENTS.md:178:- Якщо модель не може розрахувати: confidence = 0.0
+apps/reference/domains/neocortex/docs/PHASE_0_COMPLETION.md:149:- Build confidence in predictions over time
+apps/reference/domains/regime_detector/docs/README.md:5:Домен `regime_detector` реалізує компонент аналізу ринкового режиму. Він обробляє характеристики ринку (features) та визначає поточний стан (TREND_UP, TREND_DOWN, MEAN_REVERSION, HIGH_VOLATILITY, LOW_VOLATILITY) з оцінкою впевненості (confidence).
+apps/reference/domains/regime_detector/docs/README.md:57:  "confidence": "0.85",
+apps/reference/domains/decision_making/aurora_handler.py:55:    regime_confidence: float = 0.0
+apps/reference/domains/decision_making/aurora_handler.py:608:        state.regime_confidence = float(event.get("confidence", 0.0))
+apps/reference/domains/decision_making/aurora_handler.py:624:            f"(confidence={state.regime_confidence:.2f})"
+apps/reference/domains/neocortex/docs/NEOCORTEX_ISOLATED_DOMAIN_PLAN.md:135:- `confidence`, `risk_estimate`, `why[]`
+apps/reference/domains/decision_making/mean_reversion_handler.py:628:            f"confidence={signal.confidence:.2f} "
+apps/reference/domains/decision_making/mean_reversion_handler.py:672:                "p": str(signal.confidence),
+apps/reference/domains/decision_making/mean_reversion_handler.py:710:            "score": float(signal.confidence),
+apps/reference/domains/decision_making/mean_reversion_handler.py:743:                    "confidence": float(signal.confidence),
+tests/domains/test_regime_detector.py:105:    assert Decimal(emitted_payload["confidence"]) > Decimal("0.7"), (
+tests/domains/test_regime_detector.py:161:    assert Decimal(emitted_payload["confidence"]) > Decimal("0.7"), (
+tests/domains/test_regime_detector.py:219:    assert Decimal(emitted_payload["confidence"]) > Decimal("0.8"), (
+tests/domains/test_regime_detector.py:276:    assert Decimal(emitted_payload["confidence"]) >= Decimal("0.5")
+tests/domains/alpha_search/test_registry_fail_closed.py:26:            confidence=Decimal("1.0"),
+tests/domains/test_sizing_matrix.py:48:                     "symbol": "ETHUSDT", "regime": regime_name, "confidence": "0.8"}))
+tests/domains/alpha_search/test_models_determinism.py:62:        assert score1.confidence == score2.confidence
+tests/domains/decision_making/test_mean_reversion_emit_trade_intent_mode.py:99:        confidence=Decimal("0.66"),
+tests/domains/decision_making/test_mean_reversion_emit_trade_intent_mode.py:135:        confidence=Decimal("0.5"),
+tests/domains/decision_making/test_mean_reversion_emit_trade_intent_mode.py:182:        confidence=Decimal("0.66"),
+apps/reference/domains/regime_detector/regime_detector.py:32:    Emits EVT:REGIME_DETECTED events with confidence scores.
+apps/reference/domains/regime_detector/regime_detector.py:120:    def _calculate_confidence(self, sma_short: Decimal, sma_long: Decimal) -> Decimal:
+apps/reference/domains/regime_detector/regime_detector.py:122:        Calculates a confidence score based on the divergence of short and long SMAs.
+apps/reference/domains/regime_detector/regime_detector.py:124:        The formula is heuristically tuned to map SMA spread to confidence [0.5, 0.95].
+apps/reference/domains/regime_detector/regime_detector.py:135:            >>> _calculate_confidence(Decimal("4050"), Decimal("3900"))
+apps/reference/domains/regime_detector/regime_detector.py:147:        confidence = spread_ratio * confidence_multiplier
+apps/reference/domains/regime_detector/regime_detector.py:149:        # Bound the confidence between floor (0.5) and ceiling (0.95)
+apps/reference/domains/regime_detector/regime_detector.py:154:        bounded_confidence = min(
+apps/reference/domains/regime_detector/regime_detector.py:155:            max(abs(confidence), conf_min), conf_max)
+apps/reference/domains/regime_detector/regime_detector.py:156:        return bounded_confidence
+apps/reference/domains/regime_detector/regime_detector.py:170:            EVT:REGIME_DETECTED with regime type and confidence score
+apps/reference/domains/regime_detector/regime_detector.py:233:                "confidence": str(conf_min),
+apps/reference/domains/regime_detector/regime_detector.py:325:        confidence = conf_min
+apps/reference/domains/regime_detector/regime_detector.py:347:                confidence = min(conf_max, conf_min + excess * conf_mult)
+apps/reference/domains/regime_detector/regime_detector.py:353:                confidence = min(conf_max, conf_min + calm * conf_mult)
+apps/reference/domains/regime_detector/regime_detector.py:368:                confidence = min(conf_max, conf_min + tightness * conf_mult)
+apps/reference/domains/regime_detector/regime_detector.py:373:            confidence = self._calculate_confidence(sma_short, sma_long)
+apps/reference/domains/regime_detector/regime_detector.py:376:            confidence = self._calculate_confidence(sma_short, sma_long)
+apps/reference/domains/regime_detector/regime_detector.py:381:            confidence = conf_min
+apps/reference/domains/regime_detector/regime_detector.py:415:            "confidence": str(confidence),
+apps/reference/domains/regime_detector/regime_detector.py:437:                f"[{symbol}] Regime updated: {last_regime or '∅'} → {regime} (confidence={confidence}, model={source_model})"
+tests/domains/decision_making/test_aurora_handler.py:105:            "confidence": 0.85,
+tests/domains/decision_making/test_aurora_handler.py:114:        assert state.regime_confidence == 0.85
+tests/domains/decision_making/test_aurora_handler.py:337:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "TREND_UP", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:341:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "UNCERTAIN", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:348:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "UNCERTAIN", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:352:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "TREND_UP", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:358:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "TREND_UP", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:365:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "TREND_UP", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:370:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "TREND_DOWN", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:375:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "TREND_DOWN", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+tests/domains/decision_making/test_aurora_handler.py:384:        handler.on_regime_detected({"symbol": "BTCUSDT", "regime": "TREND_UP", "confidence": 0.9, "ts_ms": int(clock.time() * 1000)})
+apps/reference/domains/neocortex/JOURNAL_neocortex.md:176:- Emitting `EVT:NEOCORTEX_SHADOW_INTENT` with action, value, confidence.
+apps/reference/domains/neocortex/JOURNAL_neocortex.md:296:- Build confidence in predictions
+tests/domains/decision_making/test_directional_sanity_gate.py:31:    dm.config.domains.decision_making.directional_sanity.min_confidence = 0.0
+tests/domains/decision_making/test_task40_one_open_order_guard.py:33:                    min_confidence=0.0,
+tests/domains/decision_making/test_anti_churn_harden.py:94:            "confidence": 0.9,
+apps/reference/domains/neocortex/logic/brain/worker.py:122:        Dict with action, action_name, value, confidence
+apps/reference/domains/neocortex/logic/brain/worker.py:139:            "confidence": 0.0,
+tests/domains/decision_making/test_mr_risk_gate_none_fix_01.py:38:                    min_confidence=0.0,
+apps/reference/domains/neocortex/logic/brain/bridge.py:176:            Dict with action, action_name, value, confidence
+apps/reference/domains/neocortex/logic/brain/bridge.py:183:                "confidence": 0.0,
+apps/reference/domains/neocortex/logic/brain/bridge.py:195:            return {"action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0}
+apps/reference/domains/neocortex/logic/brain/bridge.py:199:            return {"action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0}
+tests/domains/decision_making/test_flip_orchestration_v1.py:79:                    min_confidence=0.0,
+tests/domains/decision_making/test_side_bias_window_updates_v1.py:34:    directional_sanity = SimpleNamespace(enabled=False, min_abs_delta_price=0.0, min_confidence=0.0, consecutive_bars=2)
+tests/domains/decision_making/test_side_bias_window_updates_v1.py:74:        directional_sanity=SimpleNamespace(enabled=False, min_abs_delta_price=0.0, min_confidence=0.0, consecutive_bars=2),
+tests/domains/decision_making/test_mean_reversion_bar_logging.py:209:                 confidence=decimal.Decimal("0.9"),
+apps/reference/domains/neocortex/logic/brain/core.py:246:            dict with 'action', 'value', 'confidence' (log_prob)
+apps/reference/domains/neocortex/logic/brain/core.py:254:                "confidence": 0.0
+apps/reference/domains/neocortex/logic/brain/core.py:302:                "confidence": logp_float
+apps/reference/domains/neocortex/logic/brain/core.py:311:                "confidence": 0.0
+apps/reference/domains/decision_making/docs/TESTING.md:349:        "confidence": 0.85
+apps/reference/domains/decision_making/docs/ANALYSIS_SUMMARY.md:24:| Confidence Weighting | Signal confidence incorporated into scoring |
+apps/reference/domains/decision_making/docs/EVENTS.md:151:      "confidence": 0.85,
+apps/reference/domains/decision_making/docs/EVENTS.md:157:      "confidence": 0.62,
+apps/reference/domains/decision_making/docs/EVENTS.md:263:  "confidence": 0.85,

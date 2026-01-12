@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd_process_strategy_v1.json",
+  "title": "Process Strategy Command",
+  "description": "Schema for CMD:PROCESS_STRATEGY (unified bar-driven trigger emitted by FeatureEngineering after bar features are computed).",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 3600,
+      "description": "Timeframe in seconds (bar aggregation interval)"
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Bar close timestamp in milliseconds epoch"
+    },
+    "bar": {
+      "description": "Full OHLCV bar (SSOT) if available; may be null when upstream bar cache is missing.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "symbol": { "type": "string" },
+            "timeframe_sec": { "type": "integer" },
+            "open": { "type": "string" },
+            "high": { "type": "string" },
+            "low": { "type": "string" },
+            "close": { "type": "string" },
+            "volume": { "type": "string" },
+            "trade_count": { "type": "integer" },
+            "start_ts_ms": { "type": "integer" },
+            "end_ts_ms": { "type": "integer" }
+          },
+          "required": ["symbol", "timeframe_sec", "open", "high", "low", "close", "volume"],
+          "additionalProperties": true
+        },
+        { "type": "null" }
+      ]
+    },
+    "features": {
+      "type": "object",
+      "description": "Feature set computed for the bar-close trigger (same structure as EVT:FEATURES_CALCULATED.features).",
+      "additionalProperties": true
+    },
+    "warmup": {
+      "type": "object",
+      "description": "FeatureEngineering warmup/readiness snapshot at emit time.",
+      "properties": {
+        "full_ready": { "type": "boolean" },
+        "ticks_seen": { "type": "integer" },
+        "ready": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["full_ready", "ticks_seen"],
+      "additionalProperties": true
+    },
+    "regime": {
+      "description": "Regime snapshot injected by FeatureEngineering (from EVT:REGIME_DETECTED cache); may be null before first regime emission.",
+      "anyOf": [
+        { "type": "object", "additionalProperties": true },
+        { "type": "null" }
+      ]
+    }
+  },
+  "required": ["symbol", "tf_sec", "bar_close_ts", "bar", "features", "warmup", "regime"],
+  "additionalProperties": false
+}

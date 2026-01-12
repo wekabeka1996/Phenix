@@ -1,0 +1,222 @@
+# CONFIDENCE-CALIBRATION-003 Recommendations
+# Generated: 2026-01-09
+# Based on: 644 regime events from logs/domain_regime_detector.log
+
+# =============================================================================
+# DATA SUMMARY
+# =============================================================================
+data_summary:
+  total_events: 644
+  period_hours: ~4
+  symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT]
+  
+  regime_distribution:
+    MEAN_REVERSION:
+      count: 600
+      pct: 93.2
+      avg_confidence: 0.908
+    LOW_VOLATILITY:
+      count: 24
+      pct: 3.7
+      avg_confidence: 0.551
+    HIGH_VOLATILITY:
+      count: 8
+      pct: 1.2
+      avg_confidence: 0.669
+    UNCERTAIN:
+      count: 6
+      pct: 0.9
+      avg_confidence: 0.0
+    TREND_UP:
+      count: 4
+      pct: 0.6
+      avg_confidence: 0.95
+    TREND_DOWN:
+      count: 2
+      pct: 0.3
+      avg_confidence: 0.5
+
+# =============================================================================
+# IDENTIFIED ISSUES
+# =============================================================================
+issues:
+  - id: BIPOLAR_CONFIDENCE
+    severity: HIGH
+    description: >
+      Confidence values are clamped to 0.5 (min) or 0.95 (max), 
+      providing no useful gradation. TREND_DOWN always 0.5, TREND_UP always 0.95.
+    status: FIXED_IN_NORMALIZE_002
+    
+  - id: MEAN_REVERSION_DOMINANCE
+    severity: MEDIUM
+    description: >
+      93% of regimes are MEAN_REVERSION. May indicate overly sensitive 
+      threshold or genuinely flat market during data collection.
+    status: MONITOR
+    
+  - id: NO_COST_GATE
+    severity: MEDIUM
+    description: >
+      No check for "economically viable" trades. System may trade 
+      when expected profit < transaction costs.
+    status: RECOMMEND_NEW_GATE
+
+# =============================================================================
+# RECOMMENDED PARAMETERS
+# =============================================================================
+recommended_params:
+  
+  # Global Regime Settings (config/aurora/regime.yaml)
+  global:
+    uncertain_cutoff: 0.35
+    reasoning: |
+      Raised from 0.25 to filter weak signals.
+      Should be below P25 of TREND confidence (~0.5 post-normalization).
+      Filters noise while allowing genuine trends.
+  
+  # Directional Sanity Gate (config/aurora/domains.yaml or trading.yaml)
+  directional_sanity:
+    min_confidence: 0.45
+    reasoning: |
+      Block entries when regime confidence is below threshold.
+      Set above LOW_VOLATILITY median (0.55) to ensure only 
+      strong regime signals trigger trades.
+      
+    differentiated_by_regime:
+      TREND_UP: 0.45
+      TREND_DOWN: 0.45
+      MEAN_REVERSION: 0.50
+      reasoning: |
+        MR trades have tighter margins, require higher confidence.
+        TREND trades can tolerate slightly lower confidence 
+        due to larger expected returns.
+  
+  # SNR Parameters (config/aurora/regime.yaml → models.sma_trend)
+  snr_params:
+    snr_center: 1.2
+    snr_sigmoid_a: 2.5
+    persistence_window: 5
+    persistence_min_ratio: 0.6
+    snr_noise_floor: 0.001
+    reasoning: |
+      snr_center=1.2: Requires SNR > 1.2 for confidence > 0.5.
+        This filters out weak trends where divergence is barely 
+        above noise level.
+      snr_sigmoid_a=2.5: Steeper sigmoid curve means faster 
+        transition from uncertain to confident.
+      persistence_*: Unchanged from NORMALIZE-002 defaults.
+      
+  # Confidence Clamps (config/aurora/regime.yaml → models.sma_trend)
+  confidence_clamps:
+    confidence_min: 0.1
+    confidence_max: 0.95
+    reasoning: |
+      confidence_min=0.1 (already set in NORMALIZE-002):
+        Allows genuinely low-confidence signals to be expressed.
+      confidence_max=0.95: Prevents overconfidence.
+
+# =============================================================================
+# OPTIONAL SAFETY GATE: LOW_VOL_COST_SUPPRESS
+# =============================================================================
+optional_safety_gate:
+  name: LOW_VOL_COST_SUPPRESS
+  enabled: true
+  
+  description: |
+    Block TREND trades when realized volatility is too low to cover 
+    transaction costs. Prevents "feeding the exchange" in dead markets.
+    
+  formula: |
+    if regime in (TREND_UP, TREND_DOWN):
+      if rv_bps < K * cost_bps:
+        BLOCK(reason="LOW_VOL_COST_SUPPRESS")
+  
+  parameters:
+    K: 1.5
+    cost_bps: 4.0  # Round-trip cost (2x maker fee ~0.02%)
+    
+  example:
+    - scenario: "Dead market"
+      rv_bps: 3.0
+      cost_bps: 4.0
+      calculation: "3 < 1.5 * 4 = 6"
+      result: BLOCK
+    - scenario: "Active market"
+      rv_bps: 10.0
+      cost_bps: 4.0
+      calculation: "10 > 6"
+      result: ALLOW
+  
+  implementation:
+    location: apps/reference/domains/decision_making/decision_making.py
+    method: _check_low_vol_cost_gate
+    invaziveness: LOW  # 10-15 lines of code
+    
+  code_snippet: |
+    def _check_low_vol_cost_gate(self, symbol: str, context: DecisionContext) -> bool:
+        """Block TREND trades in low-vol conditions that won't cover costs.
+        
+        Returns True to allow, False to block.
+        """
+        if context.regime not in ('TREND_UP', 'TREND_DOWN'):
+            return True
+        
+        # Get volatility proxy (volatility_state is normalized 0-1)
+        # Convert to estimated bps (very rough: 0.5 → ~5 bps)
+        vol_state = context.features.get('volatility_state', 0.5)
+        rv_bps = vol_state * 10  # Rough approximation
+        
+        cost_cfg = getattr(self.config.trading.decision.anti_churn.cost_gate, None)
+        cost_bps = getattr(cost_cfg, 'default_cost_bps', 4.0) if cost_cfg else 4.0
+        k = 1.5
+        
+        if rv_bps < k * cost_bps:
+            self.logger.info(
+                f"[{symbol}] LOW_VOL_COST_SUPPRESS: rv_bps={rv_bps:.1f} < {k}*{cost_bps}={k*cost_bps}"
+            )
+            return False
+        
+        return True
+
+# =============================================================================
+# CONFIG PATCHES
+# =============================================================================
+config_patches:
+  
+  - file: config/aurora/regime.yaml
+    patch: |
+      global:
+        uncertain_cutoff: 0.35  # Raised from 0.25
+      
+      models:
+        sma_trend:
+          snr_center: 1.2        # Raised from 1.0
+          snr_sigmoid_a: 2.5     # Raised from 2.0
+          confidence_min: 0.1    # Already set
+  
+  - file: config/aurora/domains.yaml (if exists, or trading.yaml)
+    patch: |
+      domains:
+        decision_making:
+          directional_sanity:
+            min_confidence: 0.45  # Add/update
+
+# =============================================================================
+# VALIDATION
+# =============================================================================
+validation:
+  after_applying_changes:
+    - run: python tools/confidence_calibration.py
+      expect: |
+        - TREND confidence should show gradation (not all 0.5/0.95)
+        - UNCERTAIN count may increase (good - filtering weak signals)
+        - ECE for TREND should improve
+    
+    - run: pytest tests/ -k "regime" -v
+      expect: All pass
+    
+    - monitor_for: 24h
+      metrics:
+        - regime_distribution_hourly
+        - false_trend_rate (if proxy labels available)
+        - trade_count_vs_blocked_count

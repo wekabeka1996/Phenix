@@ -11,8 +11,8 @@ aurora:
   enabled: true
   # Migration control: keep Aurora on legacy DecisionMaking tick-path until AuroraHandler is validated.
   legacy_tick_path_enabled: false
-  type: tick_based
-  description: "Tick-based multi-signal alpha strategy with regime awareness"
+  type: bar_driven
+  description: "Bar-driven multi-signal alpha strategy (5m basis) with regime awareness"
   timeframe_sec: 300
 
   # Global Aurora policy (DecisionConfig)
