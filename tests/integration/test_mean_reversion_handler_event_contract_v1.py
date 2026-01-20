@@ -68,7 +68,6 @@ def _mk_cfg(symbol: str) -> SimpleNamespace:
             fees_pct=0.0,
             slippage_pct=0.0,
         ),
-        emit_trade_intent_directly=False,
     )
 
     return SimpleNamespace(strategies_registry=strategies_registry, strategies=SimpleNamespace(mean_reversion=mr_cfg))

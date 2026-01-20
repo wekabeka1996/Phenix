@@ -211,7 +211,6 @@ class TestMRRunsOnCMD:
         
         cfg.strategies.mean_reversion.allowed_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
         cfg.strategies.mean_reversion.regime_sizing = {}
-        cfg.strategies.mean_reversion.emit_trade_intent_directly = False
         cfg.strategies.mean_reversion.liquidity_gate = None
         
         cfg.strategies_registry = MagicMock()
@@ -457,7 +456,6 @@ class TestMRRejectsCMDWithoutBar:
         
         cfg.strategies.mean_reversion.allowed_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
         cfg.strategies.mean_reversion.regime_sizing = {}
-        cfg.strategies.mean_reversion.emit_trade_intent_directly = False
         cfg.strategies.mean_reversion.liquidity_gate = None
         
         cfg.strategies_registry = MagicMock()

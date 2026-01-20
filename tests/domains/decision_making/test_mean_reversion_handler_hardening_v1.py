@@ -72,7 +72,6 @@ def _mk_mr_cfg(*, symbol: str, enabled: bool, asset_enabled: bool = True) -> Mea
             entry_order_type="MARKET",
             entry_tif=None,
         ),
-        emit_trade_intent_directly=False,
     )
 
 

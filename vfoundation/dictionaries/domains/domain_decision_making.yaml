@@ -11,7 +11,7 @@ imports:
     from: feature_engineering
     description: "Market features for decision making"
   
-  - op: DEC
+  - op: EVT
     verb: RISK_ASSESSMENT_COMPLETED
     from: risk_management
     description: "Risk evaluation result with position sizing"
@@ -34,7 +34,7 @@ exports:
 
 critical_paths:
   - "feature_engineering -> decision_making (EVT:FEATURES_CALCULATED)"
-  - "risk_management -> decision_making (DEC:RISK_ASSESSMENT_COMPLETED)"
+  - "risk_management -> decision_making (EVT:RISK_ASSESSMENT_COMPLETED)"
   - "decision_making -> aurora_bridge (EVT:TRADE_INTENT_PROPOSED)"
 
 qos_policies:

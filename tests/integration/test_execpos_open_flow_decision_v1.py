@@ -35,6 +35,7 @@ def test_execpos_cmd_open_produces_dec_open_when_exposure_allows(fsm_harness):
             "price": str(Decimal("1000")),
             "order_type": "LIMIT",
             "tif": "GTC",
+            "valid_for_ms": 60_000,
             "idempotent_key": "K-INTEG-OPEN-1",
         },
     )

@@ -1,220 +1,133 @@
 """
-Brain Worker Process
+Brain Worker Process (Service Pattern)
 
-Contains functions that run INSIDE the worker process.
-These are submitted to ProcessPoolExecutor and execute in isolation.
-
-Pattern:
-    Main Process: BrainBridge.train_async() -> submit(_brain_train_task)
-    Worker Process: _brain_train_task() uses global _brain_core
+Long-running process that maintains BrainCore state (PyTorch model)
+and processes requests via Multiprocessing Queues.
 """
 
-from typing import Dict, Any, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, List
 import logging
+import multiprocessing as mp
 import numpy as np
+import time
 
-# Global state for worker process
-# Initialized once via _brain_worker_init
-_brain_core: Optional[Any] = None
-_worker_initialized: bool = False
+logger = logging.getLogger("brain_worker")
 
-logger = logging.getLogger(__name__)
+@dataclass
+class BridgeTask:
+    id: str
+    type: str  # TRAIN, TRAIN_PPO, ENCODE, ACT, SAVE, LOAD, SHUTDOWN
+    payload: Any
 
+@dataclass
+class BridgeResult:
+    task_id: str
+    success: bool
+    data: Any
+    error: Optional[str] = None
 
-def _brain_worker_init(config_dict: Dict[str, Any], rng_seed: int = 0) -> bool:
+def brain_service_worker(
+    task_queue: mp.Queue, 
+    result_queue: mp.Queue, 
+    config_dict: Dict[str, Any], 
+    rng_seed: int
+):
     """
-    Initialize BrainCore in the worker process.
-    
-    Called once when the worker pool starts.
-    
-    Args:
-        config_dict: Serialized NeuroConfig dictionary
-        
-    Returns:
-        True if initialization succeeded
+    Main loop for the Brain Service Worker.
+    Keeps BrainCore loaded in memory/GPU.
     """
-    global _brain_core, _worker_initialized
+    # Configure logging for this process
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s | WORKER | %(levelname)s | %(message)s'
+    )
+    
+    brain_core = None
     
     try:
-        # Import heavy modules inside worker to avoid main process overhead
+        # Lazy import heavy libraries
+        import torch
         from config_models import NeuroConfig
         from logic.brain.core import BrainCore
         
-        # Reconstruct config from dict
+        # Initialize
         config = NeuroConfig(**config_dict)
+        brain_core = BrainCore(config, rng_seed=int(rng_seed))
         
-        # Initialize BrainCore
-        _brain_core = BrainCore(config, rng_seed=int(rng_seed))
-        _worker_initialized = True
+        logger.info(f"BrainCore Service Ready (Device: {brain_core.device})")
         
-        logger.info("Brain Worker initialized successfully")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Brain Worker initialization failed: {e}", exc_info=True)
-        _worker_initialized = False
-        return False
-
-
-def _brain_train_task(batch_data: np.ndarray) -> Dict[str, float]:
-    """
-    Training task executed in worker process.
-    
-    Args:
-        batch_data: Numpy array of shape (Batch, Features)
-        
-    Returns:
-        Dictionary of loss metrics
-    """
-    global _brain_core
-    
-    if not _worker_initialized or _brain_core is None:
-        raise RuntimeError("Brain Worker not initialized")
-    
-    try:
-        import torch
-        
-        # Convert numpy to tensor
-        batch_tensor = torch.from_numpy(batch_data).float()
-        
-        # Train
-        losses = _brain_core.train_batch(batch_tensor)
-        
-        return losses
+        # Send INIT success
+        result_queue.put(BridgeResult(task_id="INIT", success=True, data="READY"))
         
     except Exception as e:
-        logger.error(f"Training task failed: {e}", exc_info=True)
-        return {"error": str(e), "vae_loss": float('nan'), "wm_loss": float('nan')}
+        logger.error(f"BrainCore Init Failed: {e}", exc_info=True)
+        result_queue.put(BridgeResult(task_id="INIT", success=False, data=None, error=str(e)))
+        return
 
-
-def _brain_train_ppo_task(episodes: list[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    PPO training task executed in worker process.
-
-    Args:
-        episodes: List of worker-picklable episode dicts.
-
-    Returns:
-        Dictionary of PPO metrics.
-    """
-    global _brain_core
-
-    if not _worker_initialized or _brain_core is None:
-        raise RuntimeError("Brain Worker not initialized")
-
-    try:
-        return _brain_core.train_ppo(episodes)
-    except Exception as e:
-        logger.error(f"PPO training task failed: {e}", exc_info=True)
-        return {"error": str(e), "episodes_processed": 0}
-
-
-def _brain_encode_task(obs_data: np.ndarray) -> np.ndarray:
-    """
-    Encoding task executed in worker process.
-    
-    Args:
-        obs_data: Numpy array of shape (Features,) or (Batch, Features)
-        
-    Returns:
-        Latent vector z of shape (Latent,) or (Batch, Latent)
-    """
-    global _brain_core
-    
-    if not _worker_initialized or _brain_core is None:
-        raise RuntimeError("Brain Worker not initialized")
-    
-    try:
-        z = _brain_core.encode(obs_data)
-        return z
-        
-    except Exception as e:
-        logger.error(f"Encoding task failed: {e}", exc_info=True)
-        latent_dim = 1
+    # Event Loop
+    while True:
         try:
-            latent_dim = int(_brain_core.config.vae.latent_dim)
-        except Exception:
-            latent_dim = 1
-
-        obs_data = np.asarray(obs_data)
-        if obs_data.ndim > 1:
-            return np.zeros((obs_data.shape[0], latent_dim), dtype=np.float32)
-        return np.zeros((latent_dim,), dtype=np.float32)
-
-
-def _brain_act_task(z: np.ndarray) -> Dict[str, Any]:
-    """
-    Get action from PPO agent given latent state.
-    
-    Args:
-        z: Latent vector from VAE
-        
-    Returns:
-        Dict with action, action_name, value, confidence
-    """
-    global _brain_core
-    
-    if not _worker_initialized or _brain_core is None:
-        raise RuntimeError("Brain Worker not initialized")
-    
-    try:
-        result = _brain_core.get_action(z)
-        return result
-        
-    except Exception as e:
-        logger.error(f"Act task failed: {e}", exc_info=True)
-        return {
-            "action": 2,
-            "action_name": "FLAT",
-            "value": 0.0,
-            "confidence": 0.0,
-            "error": str(e)
-        }
-
-
-def _brain_save_task(path: str) -> bool:
-    """
-    Save checkpoint task executed in worker process.
-    
-    Args:
-        path: Directory path to save checkpoint
-        
-    Returns:
-        True if successful
-    """
-    global _brain_core
-    
-    if not _worker_initialized or _brain_core is None:
-        raise RuntimeError("Brain Worker not initialized")
-    
-    try:
-        from pathlib import Path
-        return _brain_core.save_checkpoint(Path(path))
-        
-    except Exception as e:
-        logger.error(f"Save task failed: {e}", exc_info=True)
-        return False
-
-
-def _brain_load_task(path: str) -> bool:
-    """
-    Load checkpoint task executed in worker process.
-    
-    Args:
-        path: Path to checkpoint file or directory
-        
-    Returns:
-        True if successful
-    """
-    global _brain_core
-    
-    if not _worker_initialized or _brain_core is None:
-        raise RuntimeError("Brain Worker not initialized")
-    
-    try:
-        from pathlib import Path
-        return _brain_core.load_checkpoint(Path(path))
-        
-    except Exception as e:
-        logger.error(f"Load task failed: {e}", exc_info=True)
-        return False
+            task: BridgeTask = task_queue.get()
+            
+            if task.type == "SHUTDOWN":
+                logger.info("Worker received SHUTDOWN. Exiting.")
+                break
+            
+            result_data = None
+            success = True
+            error = None
+            
+            try:
+                # --- Dispatch ---
+                if task.type == "TRAIN":
+                    # payload: numpy array
+                    tensor = torch.from_numpy(task.payload).float().to(brain_core.device)
+                    result_data = brain_core.train_batch(tensor)
+                    
+                elif task.type == "TRAIN_PPO":
+                    # payload: list of episodes
+                    result_data = brain_core.train_ppo(task.payload)
+                    
+                elif task.type == "ENCODE":
+                    # payload: numpy array
+                    # encode expects numpy or tensor? Core.encode usually handles numpy
+                    # Let's check logic/brain/core.py if needed, but assuming standard interface
+                    result_data = brain_core.encode(task.payload)
+                    
+                elif task.type == "ACT":
+                    # payload: latent z (numpy)
+                    result_data = brain_core.get_action(task.payload)
+                    
+                elif task.type == "SAVE":
+                    from pathlib import Path
+                    save_path = Path(task.payload).resolve()
+                    logger.info(f"WORKER: Saving checkpoint to {save_path}...")
+                    result_data = brain_core.save_checkpoint(save_path)
+                    if result_data:
+                        logger.info(f"WORKER: Checkpoint saved successfully to {save_path}")
+                    else:
+                        logger.warning(f"WORKER: Checkpoint save FAILED at {save_path}")
+                    
+                elif task.type == "LOAD":
+                    from pathlib import Path
+                    result_data = brain_core.load_checkpoint(Path(task.payload))
+                    
+                else:
+                    success = False
+                    error = f"Unknown task type: {task.type}"
+                    
+            except Exception as e:
+                success = False
+                error = str(e)
+                # logger.error(f"Task {task.type} error: {e}") # Reduce log spam
+                
+            # Send result
+            result_queue.put(BridgeResult(task.id, success, result_data, error))
+            
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            logger.error(f"Critical Worker Loop Error: {e}", exc_info=True)
+            # Don't crash the loop, try to continue
+            time.sleep(1)

@@ -73,6 +73,15 @@
       },
       "required": ["drops"],
       "additionalProperties": false
+    },
+    "changed": {
+      "type": "boolean",
+      "description": "DM-CRITICAL-PATCHES-02: True if regime changed from previous, False if heartbeat only"
+    },
+    "last_update_ts_ms": {
+      "type": "integer",
+      "description": "DM-CRITICAL-PATCHES-02: Heartbeat timestamp (monotonic ms) for liveness check",
+      "minimum": 0
     }
   },
   "required": ["ts", "symbol", "regime", "confidence", "source_model"],

@@ -341,6 +341,13 @@ class FeatureEngineeringConfig:
         return int(self._cfg.large_trade_imbalance.window_ms)
 
     @property
+    def large_trade_imbalance_enabled(self) -> bool:
+        try:
+            return bool(self._cfg.large_trade_imbalance.enabled)
+        except Exception:
+            return True
+
+    @property
     def large_trade_imbalance_min_trades(self) -> int:
         return int(self._cfg.large_trade_imbalance.min_trades)
 
@@ -425,6 +432,18 @@ class FeatureEngineeringConfig:
         - Features that are configured OFF are excluded from the "full_ready" requirement.
           (e.g. absorption.mode=disabled should not block live readiness.)
         """
+        return self.compute_warmup_full_ready_for_symbol(symbol="__default__", ready_map=ready_map)
+
+    def compute_warmup_full_ready_for_symbol(self, *, symbol: str, ready_map: dict) -> bool:
+        """
+        Compute warmup.full_ready with optional required-ready overrides.
+
+        Contract:
+        - Fail-closed: missing required keys => not ready.
+        - If `warmup.required_ready_keys_by_symbol[symbol]` is set => only those keys are required.
+        - Else if `warmup.required_ready_keys` is set => only those keys are required.
+        - Else => require all declared_keys (minus configured-off features).
+        """
         if not isinstance(ready_map, dict):
             return False
 
@@ -432,13 +451,33 @@ class FeatureEngineeringConfig:
         if not isinstance(declared_keys, list) or not declared_keys:
             return False
 
+        override_keys: list[str] | None = None
+        try:
+            warmup_cfg = getattr(self._cfg, "warmup", None)
+            by_symbol = getattr(warmup_cfg, "required_ready_keys_by_symbol", None) if warmup_cfg is not None else None
+            if isinstance(by_symbol, dict) and symbol in by_symbol and isinstance(by_symbol[symbol], list):
+                override_keys = [str(k) for k in by_symbol[symbol]]
+            else:
+                global_keys = getattr(warmup_cfg, "required_ready_keys", None) if warmup_cfg is not None else None
+                if isinstance(global_keys, list):
+                    override_keys = [str(k) for k in global_keys]
+        except Exception:
+            override_keys = None
+
+        base_keys = override_keys if override_keys else [str(k) for k in declared_keys]
+
         required_keys: list[str] = []
-        for key in declared_keys:
+        declared_set = set(str(k) for k in declared_keys)
+        for key in base_keys:
+            if key not in declared_set:
+                return False
             if key == "absorption" and self.absorption_mode == "disabled":
                 continue
             if key == "macro_resid" and (not bool(self.macro_resid_enabled)):
                 continue
             if key == "macro_sync" and (not bool(self.macro_sync_enabled)):
+                continue
+            if key == "large_trade_imbalance" and (not bool(self.large_trade_imbalance_enabled)):
                 continue
             required_keys.append(str(key))
 
@@ -754,6 +793,13 @@ class FeatureEngineeringConfig:
     @property
     def macro_sync_max_gap_bins(self) -> int:
         return int(self._cfg.macro_sync.max_gap_bins)
+
+    @property
+    def macro_sync_max_late_ms(self) -> int:
+        try:
+            return int(self._cfg.macro_sync.max_late_ms)
+        except Exception:
+            return 0
 
     @property
     def macro_sync_eps(self) -> float:

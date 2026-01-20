@@ -4,6 +4,7 @@
   "title": "Trade Intent Proposed Event",
   "description": "Schema for EVT:TRADE_INTENT_PROPOSED event payload describing a proposed trade intent. EP-01.2-INT: Added stop_price/target_price for ATR-based SL/TP.",
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "instrument": {
       "type": "string",
@@ -32,6 +33,7 @@
     "tca_budget": {
       "type": "object",
       "description": "Transaction Cost Analysis budget constraints",
+      "additionalProperties": false,
       "properties": {
         "max_slippage_bps": {
           "type": "string",
@@ -56,6 +58,7 @@
     "risk_budget": {
       "type": "object",
       "description": "Risk budget constraints",
+      "additionalProperties": false,
       "properties": {
         "trade_cvar95_max_bps": {
           "type": "string",
@@ -76,6 +79,7 @@
     "size": {
       "type": "object",
       "description": "Position sizing parameters",
+      "additionalProperties": false,
       "properties": {
         "kelly_fraction": {
           "type": "string",
@@ -96,6 +100,7 @@
     "order": {
       "type": "object",
       "description": "Order execution parameters",
+      "additionalProperties": false,
       "properties": {
         "price_ref": {
           "type": "string",
@@ -179,6 +184,7 @@
         {
           "type": "object",
           "description": "EP-01.2-INT: EntryPlan computation trace for debugging/audit",
+          "additionalProperties": false,
           "properties": {
             "ref_price": {
               "type": "string",
@@ -258,6 +264,50 @@
       "description": "Idempotency key to prevent duplicate processing"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "order": {
+            "properties": { "order_type": { "const": "LIMIT" } },
+            "required": ["order_type"]
+          }
+        },
+        "required": ["order"]
+      },
+      "then": {
+        "required": ["valid_for_ms"],
+        "properties": {
+          "valid_for_ms": { "type": "integer", "minimum": 1000 },
+          "order": {
+            "required": ["price", "tif"],
+            "properties": {
+              "price": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+              "tif": { "type": "string", "enum": ["GTC", "GTX", "IOC", "FOK"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "order": {
+            "properties": { "order_type": { "const": "MARKET" } },
+            "required": ["order_type"]
+          }
+        },
+        "required": ["order"]
+      },
+      "then": {
+        "properties": {
+          "order": {
+            "properties": { "tif": { "type": "null" } }
+          }
+        }
+      }
+    }
+  ],
   "required": [
     "instrument",
     "side",

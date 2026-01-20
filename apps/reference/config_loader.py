@@ -965,6 +965,26 @@ class ConfigLoader:
             system_meta=system_meta,
         )
 
+        # BACKTEST SAFETY: allow `trading.mode: backtest` (trading.yaml) to force root `trading_mode`.
+        # This avoids accidental execution-mode leakage when system.yaml is left in hybrid/testnet.
+        try:
+            root_mode = merged_config.get("trading_mode")
+            trading_block = merged_config.get("trading")
+            if isinstance(trading_block, dict):
+                trading_mode = trading_block.get("mode")
+                if isinstance(trading_mode, str) and trading_mode.strip().lower() == "backtest":
+                    if not isinstance(root_mode, str) or root_mode.strip().lower() != "backtest":
+                        LOG.warning(
+                            "Config: trading.mode=backtest detected; forcing root trading_mode=backtest"
+                        )
+                        merged_config["trading_mode"] = "backtest"
+                elif isinstance(root_mode, str) and isinstance(trading_mode, str):
+                    # Keep legacy `trading.mode` consistent with root `trading_mode` for non-backtest modes.
+                    if trading_mode.strip().lower() != root_mode.strip().lower():
+                        trading_block["mode"] = root_mode
+        except Exception:
+            pass
+
         # Enforce service key hygiene before validation
         for key in list(merged_config.keys()):
             if isinstance(key, str) and key.startswith("_config_"):

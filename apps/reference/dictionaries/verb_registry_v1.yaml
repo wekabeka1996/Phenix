@@ -10,7 +10,7 @@ registry:
   verb: OPEN
   owner: execution_position
   status: active
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/cmd_open_v1.json
   since: '2026-01-08'
 - op: CMD
   verb: PROCESS_STRATEGY
@@ -46,7 +46,7 @@ registry:
   verb: OPEN
   owner: execution_position
   status: active
-  schema: null
+  schema: apps/reference/domains/execution_position/schemas/dec_open_v1.json
   since: '2026-01-08'
 - op: DEC
   verb: PLACE_ORDER
@@ -316,7 +316,7 @@ registry:
   verb: TRADE_INTENT_PROPOSED
   owner: decision_making
   status: active
-  schema: null
+  schema: apps/reference/domains/decision_making/schemas/trade_intent_v1.json
   since: '2026-01-08'
 - op: EVT
   verb: TRADE_INTENT_REJECTED

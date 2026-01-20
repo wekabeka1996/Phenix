@@ -132,3 +132,65 @@ def test_multi_tf_no_overwrite(monkeypatch):
     # Verify they are different bars (not overwritten)
     assert fe.last_bar[(symbol, 180)].open == Decimal("1"), "Bar 180 was overwritten"
     assert fe.last_bar[(symbol, 300)].open == Decimal("2"), "Bar 300 has wrong value"
+
+
+def test_on_bar_closed_preserves_trade_counts_for_large_trade_imbalance(monkeypatch):
+    """BAR-FEATURES-001: bar_tick must preserve buy_count/sell_count from last tick snapshot."""
+    from apps.reference.domains.feature_engineering.bar_resampler import Bar
+    from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
+
+    captured: dict = {}
+
+    with patch.object(FeatureEngineering, "__init__", lambda self, **kw: None):
+        fe = FeatureEngineering()
+        fe.last_bar = {}
+        fe.last_tick_data = {
+            "BTCUSDT": {
+                "bid_size": "1",
+                "ask_size": "1",
+                "buy_volume": "10",
+                "sell_volume": "5",
+                "buy_count": 7,
+                "sell_count": 3,
+                "buy_notional": "1000",
+                "sell_notional": "500",
+                "trades_dropped_out_of_order": 0,
+                "bid": "1",
+                "ask": "1",
+            }
+        }
+        fe.logger = MagicMock()
+
+        def _capture(symbol, tf_sec, current_tick, last_tick, bar_data=None):
+            captured["symbol"] = symbol
+            captured["tf_sec"] = tf_sec
+            captured["current_tick"] = dict(current_tick)
+
+        fe._calculate_and_emit_features_for_tf = _capture
+
+    t0 = int(time.time() * 1000)
+    bar = Bar(
+        symbol="BTCUSDT",
+        timeframe_sec=180,
+        open=Decimal("1"),
+        high=Decimal("1"),
+        low=Decimal("1"),
+        close=Decimal("1"),
+        volume=Decimal("1"),
+        trade_count=1,
+        start_ts_ms=t0,
+        end_ts_ms=t0,
+        gap_bars_skipped=0,
+        is_gap_bar=False,
+    )
+
+    fe.on_bar_closed(SimpleNamespace(pld={"bar": bar}))
+
+    assert captured["symbol"] == "BTCUSDT"
+    assert captured["tf_sec"] == 180
+    tick = captured["current_tick"]
+    assert tick.get("buy_count") == 7
+    assert tick.get("sell_count") == 3
+    assert tick.get("buy_notional") == "1000"
+    assert tick.get("sell_notional") == "500"
+    assert tick.get("trades_dropped_out_of_order") == 0

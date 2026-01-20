@@ -142,7 +142,8 @@ aurora:
       enabled: true
       anti_flat_sigma: 0.5   # Block ENTRY if |pm_norm| < 0.5 (dead market)
       anti_fomo_sigma: 4.0   # Block ENTRY if |pm_norm| > 4.0 (extreme impulse)
-      motion_window_sec: 900 # Use 15-minute window (pm_norm_900s)
+      # P0-2: FIXED 900 → 300 (pm_norm_900s doesn't exist in schema, only 10/60/300)
+      motion_window_sec: 300 # Use 5-minute window (pm_norm_300s)
 
     # === Re-entry Cooldown (Anti-Ping-Pong Gate) ===
     # Prevents immediate re-entry after position closes.
@@ -248,6 +249,19 @@ aurora:
         enabled: true
         value: 0.09
       cooldown_sec: null
+      
+      # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
+      volatility_entry_logic:
+        enabled: true
+        regime_multipliers:
+          HIGH_VOLATILITY: 0.5    # ETH less volatile than SOL
+          LOW_VOLATILITY: 0.1
+          MEAN_REVERSION: 0.25
+          TREND_UP: 0.2
+          TREND_DOWN: 0.2
+          UNCERTAIN: 0.2
+          DEFAULT: 0.2
+      
       timeframe_sec: null
 
     # SOLUSDT - Phase 3 Optuna optimized parameters
@@ -314,136 +328,29 @@ aurora:
         enabled: true
         value: 0.09
       cooldown_sec: null
-      timeframe_sec: null
-
-    # DOGEUSDT - Phase 3+ derived from Mean Reversion optimization
-    DOGEUSDT:
-      enabled: true
-      position_mode: "STRICT"
-      # Adjusted weights: Liquidity moved to Gate
-      weights:
-        ema_bias: 0.15
-        volume_spike: 0.15
-        # R1: macro_resid replaces macro_sync
-        macro_resid: 0.10
-        # macro_sync: 0.0  # DEPRECATED (telemetry only)
-        # liquidity_kappa: 0.20
-        obi: 0.15
-        tfi: 0.12
-        volatility_state: 0.08
-        depth_imbalance: -0.15
-        delta_price: 0.15
-
-      liquidity_gate:
-        enabled: true
-        kappa_min: 0.1
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
-      side_bias:
-        penalty_factor: 0.3
-        window_sec: 300
-        target_ratio: 0.6
-
-      regime_thresholds:
-        HIGH_VOLATILITY: 1.5
-        LOW_VOLATILITY: 0.85
-        MEAN_REVERSION: 0.9
-        DEFAULT: 1.0
-
-      regime_sizing:
-        HIGH_VOLATILITY: 0.4
-        LOW_VOLATILITY: 1.5
-        MEAN_REVERSION: 1.2
-
-      exit:
-        sl_pct: 0.0197
-        max_hold_sec: 1500
-
-      take_profit:
-        tp_low_ratio: 0.5
-        tp_high_ratio: 1.0
-        partial_exit_pct: 0.6
-
-      trailing_stop:
-        enabled: true
-        activation_pct: 0.015
-        trail_pct: 0.008
-        min_update_interval_sec: 5
-
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "LOW_VOLATILITY", "MEAN_REVERSION"]
-
-      execution: null
-      ema_clamp: null
-      signal_threshold:
-        enabled: true
-        value: 0.09
-      cooldown_sec: null
-      timeframe_sec: null
-
-    # XRPUSDT - Phase 3+ from Optuna optimization
-    XRPUSDT:
-      # Adjusted weights: Liquidity moved to Gate
-      weights:
-        ema_bias: 0.427
-        volume_spike: 0.385
-        # R1: macro_resid replaces macro_sync
-        macro_resid: 0.469
-        # macro_sync: 0.0  # DEPRECATED (telemetry only)
-        # liquidity_kappa: 0.199
-        obi: 0.120
-        tfi: 0.402
-        volatility_state: 0.367
-        depth_imbalance: -0.392
-        delta_price: 0.028
-      enabled: true
-      position_mode: "STRICT"
       
-      liquidity_gate:
+      # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
+      volatility_entry_logic:
         enabled: true
-        kappa_min: 0.1
-        kappa_max: 1.0
-        failsafe_qty_check: true
-
-      side_bias:
-        penalty_factor: 0.4
-        window_sec: 600
-        target_ratio: 0.6
-
-      regime_thresholds:
-        HIGH_VOLATILITY: 1.9
-        LOW_VOLATILITY: 0.95
-        DEFAULT: 1.0
-
-      regime_sizing:
-        HIGH_VOLATILITY: 0.1
-        LOW_VOLATILITY: 1.7
-        MEAN_REVERSION: 0.8
-
-      exit:
-        sl_pct: 0.0144
-        max_hold_sec: 1500
-
-      take_profit:
-        tp_low_ratio: 0.5
-        tp_high_ratio: 1.0
-        partial_exit_pct: 0.5
-
-      trailing_stop:
-        enabled: false
-        activation_pct: 0.02
-        trail_pct: 0.01
-        min_update_interval_sec: 5
-
-      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_LOW", "FLAT_NORMAL", "MEAN_REVERSION"]
-
-      execution: null
-      ema_clamp: null
-      signal_threshold:
-        enabled: true
-        value: 0.09
-      cooldown_sec: null
+        regime_multipliers:
+          HIGH_VOLATILITY: 0.6    # Deep offset (wider range)
+          LOW_VOLATILITY: 0.1     # Tight offset
+          MEAN_REVERSION: 0.3
+          TREND_UP: 0.2
+          TREND_DOWN: 0.2
+          UNCERTAIN: 0.25
+          DEFAULT: 0.2            # REQUIRED fallback
+      
       timeframe_sec: null
+
+    # =========================================================================
+    # P2-2: DOGE/XRP REMOVED - MR-only symbols per strategies.yaml registry
+    # =========================================================================
+    # DOGEUSDT and XRPUSDT are assigned to mean_reversion ONLY in strategies.yaml.
+    # Keeping them in aurora.assets was a source of confusion.
+    # Registry SSOT (strategies_registry.assignments) now controls activation.
+    # See: dm_strategy_ssot_implement_01.md, P1-1 fix.
+    # =========================================================================
 
     # BTCUSDT - baseline params
     BTCUSDT:
@@ -516,4 +423,17 @@ aurora:
         enabled: false
         value: null
       cooldown_sec: null
+      
+      # Smart Limit Entry: Volatility-based pricing (Maker/GTX compliance)
+      volatility_entry_logic:
+        enabled: true
+        regime_multipliers:
+          HIGH_VOLATILITY: 0.4    # BTC most stable, conservative offsets
+          LOW_VOLATILITY: 0.05
+          MEAN_REVERSION: 0.2
+          TREND_UP: 0.15
+          TREND_DOWN: 0.15
+          UNCERTAIN: 0.15
+          DEFAULT: 0.15
+      
       timeframe_sec: null

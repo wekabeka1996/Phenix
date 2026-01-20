@@ -49,6 +49,7 @@ def setup_logging(config: NeocortexConfig):
     return logging.getLogger("neocortex.main")
 
 from logic.ingest.tailer import WalTailer
+from logic.ingest.multi_tailer import MultiTailer, MultiSourceConfig
 
 
 # =============================================================================
@@ -58,15 +59,19 @@ from logic.ingest.tailer import WalTailer
 async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
     """
     Main async event loop.
-    Phase 6: Unified WAL Tailing (history + live).
+    Supports both Phase 6 (WAL Tailing) and Phase 7 (Multi-Source Ingestion).
     """
     adapter = None
     tailer = None
     tailer_task = None
     
+    # Determine active phase
+    is_phase7 = config.replay.enabled and config.replay.is_phase7
+    phase_name = "PHASE 7 (MULTI-SOURCE INGESTION)" if is_phase7 else "PHASE 6 (UNIFIED WAL TAILING)"
+    
     try:
         logger.info("=" * 80)
-        logger.info("NEOCORTEX DOMAIN - PHASE 6 (UNIFIED WAL TAILING)")
+        logger.info(f"NEOCORTEX DOMAIN - {phase_name}")
         logger.info("=" * 80)
         
         # Create necessary directories
@@ -112,26 +117,55 @@ async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
         logger.info("Starting BrainBridge worker processes...")
         await adapter.start()
         
-        # 3. Start WAL Tailer (if enabled)
+        # 3. Start Tailer (Phase 6 or Phase 7)
         if config.replay.enabled:
-            logger.info("Starting WalTailer (Unified Mode)...")
-            
             state_path = config.system.data_dir / "tailer_state.json"
             
-            tailer = WalTailer(
-                config=config.replay,
-                handler=adapter.handle_features,
-                state_path=state_path,
-                wal_dir=config.replay.wal_dir
-            )
-            tailer_task = asyncio.create_task(tailer.run())
-            logger.info(f"✓ WalTailer started (Dir: {config.replay.wal_dir})")
+            if is_phase7:
+                # === PHASE 7: Multi-Source Ingestion ===
+                logger.info("Starting MultiTailer (Phase 7 Multi-Source)...")
+                
+                multi_config = MultiSourceConfig(
+                    enabled=True,
+                    features_dir=config.replay.features_dir,
+                    orders_file=config.replay.orders_file,
+                    core_log=config.replay.core_log,
+                    symbols=config.replay.symbols or ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"],
+                    batch_size=config.replay.batch_size,
+                    poll_interval=config.replay.poll_interval
+                )
+                
+                tailer = MultiTailer(
+                    config=multi_config,
+                    feature_handler=adapter.handle_features,
+                    episode_handler=adapter.add_completed_episode if hasattr(adapter, 'add_completed_episode') else None,
+                    state_path=config.system.data_dir / "multi_tailer_state.json"
+                )
+                tailer_task = asyncio.create_task(tailer.run())
+                
+                logger.info(f"✓ MultiTailer started")
+                logger.info(f"  Features: {config.replay.features_dir}")
+                logger.info(f"  Orders: {config.replay.orders_file}")
+                logger.info(f"  Core: {config.replay.core_log}")
+                logger.info(f"  Symbols: {multi_config.symbols}")
+            else:
+                # === PHASE 6: WAL Tailing (Legacy) ===
+                logger.info("Starting WalTailer (Phase 6 Unified Mode)...")
+                
+                tailer = WalTailer(
+                    config=config.replay,
+                    handler=adapter.handle_features,
+                    state_path=state_path,
+                    wal_dir=config.replay.wal_dir
+                )
+                tailer_task = asyncio.create_task(tailer.run())
+                logger.info(f"✓ WalTailer started (Dir: {config.replay.wal_dir})")
         else:
-            logger.info("WAL Tailing disabled")
+            logger.info("Data ingestion disabled (replay.enabled=False)")
         
         # 4. Main Loop
         logger.info("")
-        logger.info("Phase 6: Pipeline Active. Unified Tailing Ready.")
+        logger.info(f"{phase_name}: Pipeline Active.")
         logger.info("(Ctrl+C to stop)")
         
         while True:
@@ -142,9 +176,15 @@ async def main_reactor(config: NeocortexConfig, logger: logging.Logger):
             
             if tailer:
                 tailer_stats = tailer.stats
-                stats_msg += f" Events={tailer_stats['events_processed']}"
-                if tailer.is_tailing:
+                # MultiTailer uses 'features_processed', WalTailer uses 'events_processed'
+                events = tailer_stats.get('events_processed') or tailer_stats.get('features_processed', 0)
+                stats_msg += f" Events={events}"
+                
+                # Check tailing status (property name differs between tailers)
+                if hasattr(tailer, 'is_tailing') and tailer.is_tailing:
                     stats_msg += " [LIVE]"
+                elif tailer_stats.get('running', False):
+                    stats_msg += " [RUNNING]"
                 else:
                     stats_msg += " [CATCHING UP]"
                     

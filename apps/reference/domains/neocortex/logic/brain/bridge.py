@@ -1,275 +1,254 @@
 """
-Brain Bridge
+Brain Bridge (Service Client)
 
-Orchestrates communication between Main Process (AsyncIO) and 
-Brain Worker Process (PyTorch/BrainCore).
-
-Architecture:
-    Main Process                    Worker Process
-    ─────────────                   ──────────────
-    BrainBridge                     _brain_core (global)
-        │                                │
-        ├─ train_async() ───────────────►│ _brain_train_task()
-        │      │                          │       │
-        │      └─ Future ◄────────────────┘───────┘
-        │
-        └─ encode_async() ──────────────► _brain_encode_task()
+Orchestrates communication with the persistent Brain Service Worker.
+Replaces ProcessPoolExecutor with explicit Task/Result queues.
 """
 
-from typing import List, Dict, Any, Optional
 import asyncio
 import logging
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, Future, BrokenExecutor
+import threading
+import uuid
+import time
+from typing import List, Dict, Any, Optional
+from concurrent.futures import Future
+
 import numpy as np
 
 from config_models import NeuroConfig
 from logic.ingest.observation import MarketObservation
-from logic.brain.worker import (
-    _brain_worker_init,
-    _brain_train_task,
-    _brain_train_ppo_task,
-    _brain_encode_task,
-    _brain_act_task,
-    _brain_save_task,
-    _brain_load_task
-)
+from logic.brain.worker import brain_service_worker, BridgeTask, BridgeResult
 
 logger = logging.getLogger(__name__)
 
 
 class BrainBridge:
     """
-    Bridge between AsyncIO main loop and PyTorch worker process.
+    Client for the Brain Service Worker.
+    Maintains the Task/Result queues and a background listener thread.
     """
     
     def __init__(self, config: NeuroConfig, max_workers: int = 1, rng_seed: int = 0):
         self.config = config
-        self.max_workers = max_workers
         self.rng_seed = int(rng_seed)
-        self._executor: Optional[ProcessPoolExecutor] = None
-        self._initialized = False
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
         
+        # State
+        self._process: Optional[mp.Process] = None
+        self._task_queue: Optional[mp.Queue] = None
+        self._result_queue: Optional[mp.Queue] = None
+        
+        self._futures: Dict[str, asyncio.Future] = {}
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._listener_thread: Optional[threading.Thread] = None
+        self._shutdown_event = threading.Event()
+        self._initialized = False
+
     async def start(self) -> bool:
         """
-        Start the worker pool and initialize BrainCore in worker.
-        
-        Returns:
-            True if started successfully
+        Spawn the worker process and wait for initialization.
         """
+        if self._initialized:
+            return True
+            
         try:
             self._loop = asyncio.get_running_loop()
             
-            # Use 'spawn' context for PyTorch compatibility
-            # (fork can cause issues with CUDA)
+            # Use spawn context (PyTorch requirement)
             ctx = mp.get_context("spawn")
+            self._task_queue = ctx.Queue()
+            self._result_queue = ctx.Queue()
             
-            self._executor = ProcessPoolExecutor(
-                max_workers=self.max_workers,
-                mp_context=ctx
-            )
-            
-            # Submit initialization task
-            # Convert Pydantic model to dict for pickling
+            # Convert config to dict
             config_dict = self.config.model_dump()
             
-            future = self._executor.submit(_brain_worker_init, config_dict, self.rng_seed)
+            # Spawn
+            logger.info("Spawning Brain Service Worker...")
+            self._process = ctx.Process(
+                target=brain_service_worker,
+                args=(self._task_queue, self._result_queue, config_dict, self.rng_seed),
+                daemon=True # Kill if parent dies
+            )
+            self._process.start()
             
-            # Wait for init to complete (blocking is OK here, it's startup)
-            result = await self._loop.run_in_executor(None, future.result, 30.0)
+            # Wait for INIT response (blocking get, execute in thread)
+            init_result = await self._loop.run_in_executor(None, self._wait_for_init)
             
-            if result:
+            if init_result and init_result.success:
+                logger.info("BrainBridge: Worker Initialized Successfully")
                 self._initialized = True
-                logger.info("BrainBridge started successfully")
+                
+                # Start listener thread
+                self._shutdown_event.clear()
+                self._listener_thread = threading.Thread(target=self._result_listener, daemon=True)
+                self._listener_thread.start()
                 return True
             else:
-                logger.error("BrainBridge initialization returned False")
+                err = init_result.error if init_result else "Timeout"
+                logger.error(f"BrainBridge Init Failed: {err}")
+                self._kill()
                 return False
                 
         except Exception as e:
-            logger.error(f"BrainBridge start failed: {e}", exc_info=True)
+            logger.error(f"BrainBridge start exception: {e}", exc_info=True)
+            self._kill()
             return False
 
-    async def train_async(self, batch: List[MarketObservation]) -> Dict[str, float]:
-        """
-        Submit training task asynchronously.
+    def _wait_for_init(self) -> Optional[BridgeResult]:
+        """Blocking wait for INIT message."""
+        try:
+            # 30s timeout for model loading
+            if self._result_queue:
+                return self._result_queue.get(block=True, timeout=30.0)
+        except Exception:
+            return None
+        return None
+
+    def _result_listener(self):
+        """Background thread to route results to Futures."""
+        while not self._shutdown_event.is_set():
+            try:
+                # Poll with short timeout to allow shutdown check
+                if self._result_queue is None:
+                    break
+                    
+                try:
+                    result: BridgeResult = self._result_queue.get(timeout=0.1)
+                except Exception: # Empty
+                    continue
+                    
+                # Schedule future resolution on main loop
+                if self._loop and not self._loop.is_closed():
+                    self._loop.call_soon_threadsafe(self._complete_future, result)
+                    
+            except Exception as e:
+                logger.error(f"BrainBridge Listener Error: {e}")
+                time.sleep(1)
+
+    def _complete_future(self, result: BridgeResult):
+        """Complete the asyncio future (runs on main loop)."""
+        future = self._futures.pop(result.task_id, None)
+        if future and not future.done():
+            if result.success:
+                future.set_result(result.data)
+            else:
+                # return error as dict if expected, or raise exception?
+                # The existing code expects dict return for errors often.
+                # Let's standardize on returning exceptions implies failure logic upstream.
+                # BUT existing logic handled `{"error": ...}` return values in many cases.
+                # Let's verify callers.
+                # train_async returns Dict. If error, returns {"error": ...}
+                pass
+                # Actually, Future should hold the result.
+                # If the worker returned an error object/string in data, we pass it?
+                # No, BridgeResult has .error field.
+                
+                # If it's a "soft" error, maybe we should resolve with the error dict if that is the contract.
+                # Legacy code returned {"error": str(e)}.
+                # So we can construct that here if needed, or raise.
+                # Let's raise Exception, and catch in _submit wrapper?
+                # Or just resolve with error dict?
+                # Let's try to mimic legacy:
+                # If result.error is present, return {"error": result.error} (?)
+                # Wait, acts return dict. Train returns dict.
+                # But encode returns ndarray.
+                
+                # I should handle this in the specific methods or here.
+                # Simpler: raise Exception from Future, and let methods catch and format.
+                future.set_exception(RuntimeError(result.error))
+
+    def _submit(self, type: str, payload: Any) -> asyncio.Future:
+        """Internal submit helper."""
+        if not self._initialized or self._task_queue is None:
+            f = self._loop.create_future()
+            f.set_exception(RuntimeError("BrainBridge not initialized"))
+            return f
+
+        task_id = str(uuid.uuid4())
+        task = BridgeTask(id=task_id, type=type, payload=payload)
         
-        Args:
-            batch: List of MarketObservation dataclasses
-            
-        Returns:
-            Dictionary of loss metrics
-        """
-        if not self._initialized or self._executor is None:
-            logger.warning("BrainBridge not initialized, skipping training")
-            return {"error": "not_initialized"}
+        future = self._loop.create_future()
+        self._futures[task_id] = future
         
         try:
-            # Convert list of dataclasses to numpy array
-            # Stack feature vectors
-            batch_data = np.stack([obs.features_vector for obs in batch])
-            
-            # Submit to worker pool
-            future = self._executor.submit(_brain_train_task, batch_data)
-            
-            # Await result without blocking event loop
-            result = await self._loop.run_in_executor(None, future.result)
-            
-            return result
-            
-        except BrokenExecutor as e:
-            logger.error(f"Worker process crashed: {e}")
-            self._initialized = False
-            return {"error": "worker_crashed"}
-            
+            self._task_queue.put(task)
         except Exception as e:
-            logger.error(f"Training task failed: {e}", exc_info=True)
+            del self._futures[task_id]
+            future.set_exception(e)
+            
+        return future
+
+    # --- Public API (Matches Legacy Interface) ---
+
+    async def train_async(self, batch: List[MarketObservation]) -> Dict[str, float]:
+        try:
+            # Stack features
+            batch_data = np.stack([obs.features_vector for obs in batch])
+            return await self._submit("TRAIN", batch_data)
+        except Exception as e:
+            logger.error(f"train_async failed: {e}")
             return {"error": str(e)}
 
     async def train_ppo_async(self, episodes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Submit PPO training task asynchronously.
-
-        Args:
-            episodes: List of episode dicts (worker-picklable)
-
-        Returns:
-            Dictionary of PPO metrics or {"error": "..."}
-        """
-        if not self._initialized or self._executor is None:
-            logger.warning("BrainBridge not initialized, skipping PPO training")
-            return {"error": "not_initialized"}
-
         try:
-            future = self._executor.submit(_brain_train_ppo_task, episodes)
-            result = await self._loop.run_in_executor(None, future.result)
-            return result
-
-        except BrokenExecutor as e:
-            logger.error(f"Worker process crashed during PPO train: {e}")
-            self._initialized = False
-            return {"error": "worker_crashed"}
-
+            return await self._submit("TRAIN_PPO", episodes)
         except Exception as e:
-            logger.error(f"PPO training task failed: {e}", exc_info=True)
+            logger.error(f"train_ppo_async failed: {e}")
             return {"error": str(e)}
 
     async def encode_async(self, obs: MarketObservation) -> np.ndarray:
-        """
-        Submit encoding task asynchronously.
-        
-        Args:
-            obs: Single MarketObservation
-            
-        Returns:
-            Latent vector z
-        """
-        if not self._initialized or self._executor is None:
-            logger.warning("BrainBridge not initialized, returning zeros")
-            return np.zeros(self.config.vae.latent_dim, dtype=np.float32)
-        
         try:
-            obs_data = obs.features_vector
-            
-            future = self._executor.submit(_brain_encode_task, obs_data)
-            result = await self._loop.run_in_executor(None, future.result)
-            
-            return result
-            
-        except BrokenExecutor as e:
-            logger.error(f"Worker process crashed during encoding: {e}")
-            self._initialized = False
-            return np.zeros(self.config.vae.latent_dim, dtype=np.float32)
-            
+            return await self._submit("ENCODE", obs.features_vector)
         except Exception as e:
-            logger.error(f"Encoding task failed: {e}", exc_info=True)
+            logger.error(f"encode_async failed: {e}")
             return np.zeros(self.config.vae.latent_dim, dtype=np.float32)
-
-    def shutdown(self):
-        """Gracefully shutdown worker pool."""
-        if self._executor is not None:
-            logger.info("Shutting down BrainBridge...")
-            self._executor.shutdown(wait=True, cancel_futures=True)
-            self._executor = None
-            self._initialized = False
-            logger.info("BrainBridge shutdown complete")
 
     async def act_async(self, z: np.ndarray) -> Dict[str, Any]:
-        """
-        Get action from PPO agent given latent state.
-        
-        Args:
-            z: Latent vector from VAE
-            
-        Returns:
-            Dict with action, action_name, value, confidence
-        """
-        if not self._initialized or self._executor is None:
-            return {
-                "action": 2,
-                "action_name": "FLAT",
-                "value": 0.0,
-                "confidence": 0.0,
-                "error": "not_initialized"
-            }
-        
         try:
-            future = self._executor.submit(_brain_act_task, z)
-            result = await self._loop.run_in_executor(None, future.result)
-            return result
-            
-        except BrokenExecutor as e:
-            logger.error(f"Worker crashed during act: {e}")
-            self._initialized = False
-            return {"action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0}
-            
+            return await self._submit("ACT", z)
         except Exception as e:
-            logger.error(f"Act task failed: {e}")
-            return {"action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0}
+            logger.error(f"act_async failed: {e}")
+            return {"action": 2, "action_name": "FLAT", "value": 0.0, "confidence": 0.0, "error": str(e)}
 
     async def save_async(self, path: str) -> bool:
-        """
-        Save checkpoint asynchronously.
-        
-        Args:
-            path: Directory path to save checkpoint
-            
-        Returns:
-            True if successful
-        """
-        if not self._initialized or self._executor is None:
-            logger.warning("BrainBridge not initialized, cannot save")
-            return False
-        
         try:
-            future = self._executor.submit(_brain_save_task, path)
-            result = await self._loop.run_in_executor(None, future.result)
-            return result
-            
-        except Exception as e:
-            logger.error(f"Save task failed: {e}")
+            return await self._submit("SAVE", str(path))
+        except Exception:
             return False
 
     async def load_async(self, path: str) -> bool:
-        """
-        Load checkpoint asynchronously.
-        
-        Args:
-            path: Path to checkpoint file or directory
-            
-        Returns:
-            True if successful
-        """
-        if not self._initialized or self._executor is None:
-            logger.warning("BrainBridge not initialized, cannot load")
-            return False
-        
         try:
-            future = self._executor.submit(_brain_load_task, path)
-            result = await self._loop.run_in_executor(None, future.result)
-            return result
-            
-        except Exception as e:
-            logger.error(f"Load task failed: {e}")
+            return await self._submit("LOAD", str(path))
+        except Exception:
             return False
+
+    def shutdown(self):
+        logger.info("Shutting down BrainBridge...")
+        self._shutdown_event.set()
+        self._initialized = False
+        
+        if self._task_queue:
+            try:
+                self._task_queue.put(BridgeTask(id="SHUTDOWN", type="SHUTDOWN", payload=None))
+            except Exception:
+                pass
+                
+        # Wait logic?
+        if self._listener_thread:
+            self._listener_thread.join(timeout=1.0)
+            
+        self._kill()
+        logger.info("BrainBridge shutdown complete")
+
+    def _kill(self):
+        """Force cleanup."""
+        if self._process:
+            if self._process.is_alive():
+                self._process.terminate()
+                self._process.join(timeout=1.0)
+            self._process = None
+        
+        # Close queues?
+        # In python mp.Queue, strict cleanup is tricky, but letting GC handle it usually works if process dead.
+        self._task_queue = None
+        self._result_queue = None

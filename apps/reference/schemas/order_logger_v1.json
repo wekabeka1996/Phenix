@@ -17,6 +17,7 @@
     "event_type": {
       "type": "string",
       "enum": [
+        "BOOT",
         "ORDER_INTENT",
         "ORDER_PLACED",
         "ORDER_FILLED",

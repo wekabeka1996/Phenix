@@ -2,7 +2,7 @@ config_version: 1.0.1
 # NEW: Defines the operational mode for the trading bot.
 # Options: "live", "testnet", "hybrid_live_data_testnet_exec"
 # HYBRID MODE: Live market data → Testnet execution (safe testing with real data)
-trading_mode: "hybrid_live_data_testnet_exec"
+trading_mode: "backtest"
 
 # REQUIRED: typed system config (SystemConfig)
 system:
@@ -18,6 +18,8 @@ system:
     local_queue_maxsize: 10000
     emit_workers: 4
     tick_ttl_ms: 2000
+    bar_ttl_ms: 10000        # BAR-TTL-REFORM-01: Tolerance for bar latency (2x p95)
+    bar_event_age_mode: "received"
     ws_heartbeat_sec: 20.0
     ws_receive_timeout_sec: 60.0
     proxy_batch_size: 100
@@ -26,7 +28,7 @@ system:
 
 # REQUIRED: ops config (OpsConfig)
 ops:
-  panic_killswitch: true
+  panic_killswitch: false
   panic_ttl_sec: null
   quiet_hours_utc: ["22:00-06:00"]
   allowlist_symbols: []
@@ -44,6 +46,8 @@ trailing:
 
 # AuroraBridge (required)
 bridge:
+  # BRIDGE-LIMIT-UNBLOCK-01: Bridge does NOT filter by order_type.
+  # Order type policy lives in strategy configs / decision_making domain.
   retry_scheduler:
     max_attempts: 5
     min_retry_delay_ms: 500

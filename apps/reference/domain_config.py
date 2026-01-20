@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from .config_models import (
     AuroraConfig,
@@ -31,14 +31,10 @@ from .config_models import (
     FeatureEngineeringDomainConfig,
     RiskManagementDomainConfig,
     PositionTrackingDomainConfig,
-    AccountObserverDomainConfig,
     BracketsConfig,
     ManageConfig,
     ExposureConfig,
 )
-
-if TYPE_CHECKING:
-    from decimal import Decimal
 
 LOG = logging.getLogger(__name__)
 
@@ -70,7 +66,7 @@ class DomainConfigResolver:
         """
         if isinstance(config, dict):
             raise TypeError(
-                f"DomainConfigResolver requires AuroraConfig, got dict. "
+                "DomainConfigResolver requires AuroraConfig, got dict. "
                 "Convert dict to AuroraConfig first."
             )
         self._config = config
@@ -204,11 +200,7 @@ class DomainConfigResolver:
     def get_position_tracking(self) -> PositionTrackingDomainConfig:
         """Get position_tracking domain configuration."""
         return self._domains.position_tracking
-    
-    # def get_account_observer(self) -> AccountObserverDomainConfig: (Deleted)
-    #    """Get account_observer domain configuration."""
-    #    return self._domains.account_observer
-    
+
     # =========================================================================
     # LEGACY ACCESSORS (DEPRECATED)
     # =========================================================================

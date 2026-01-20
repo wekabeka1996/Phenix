@@ -8,6 +8,7 @@ Phase 4: Added Shadow Intent emission and checkpointing.
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Dict, Any, Optional, Callable, List
@@ -20,6 +21,7 @@ from logic.ingest.normalizer import WelfordNormalizer
 from logic.amygdala.valuation import ValuationEngine
 from logic.memory.buffer import EpisodicBuffer
 from logic.brain.bridge import BrainBridge
+from logic.telemetry import TelemetryLogger
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,16 @@ class NeocortexAdapter:
         
         # Shadow intent control
         self._shadow_intents_emitted = 0
+        
+        # Shadow intent JSONL logging
+        self._shadow_intent_log_path = self.config.system.data_dir / "shadow_intents.jsonl"
+        self._shadow_intent_log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._shadow_intent_log: Optional[Any] = None
+        try:
+            self._shadow_intent_log = open(self._shadow_intent_log_path, "a")
+            logger.info(f"Shadow intent log opened: {self._shadow_intent_log_path}")
+        except Exception as e:
+            logger.warning(f"Failed to open shadow intent log: {e}")
 
         # Online feature normalization (z-score) to stabilize VAE training.
         self._normalizer_state_path = self.config.system.data_dir / "normalizer_state.npz"
@@ -81,6 +93,10 @@ class NeocortexAdapter:
         self._dream_in_progress = False
         self._dreams_triggered = 0
         self._ppo_trains_triggered = 0
+        
+        # Telemetry logging
+        self.telemetry = TelemetryLogger(log_dir=self.config.system.data_dir.parent / "logs")
+        logger.info(f"Telemetry CSV: {self.telemetry.filepath_str}")
         
         logger.info("Neocortex Adapter initialized (Phase 4: Shadow Intents + Checkpointing)")
 
@@ -285,6 +301,22 @@ class NeocortexAdapter:
             
             self._shadow_intents_emitted += 1
             
+            # Persist to JSONL file
+            if self._shadow_intent_log is not None:
+                try:
+                    self._shadow_intent_log.write(json.dumps(shadow_intent) + "\n")
+                    self._shadow_intent_log.flush()
+                except Exception as log_err:
+                    logger.warning(f"Failed to write shadow intent to JSONL: {log_err}")
+            
+            # Log to telemetry CSV
+            self.telemetry.log_shadow_intent(
+                action=action_result["action"],
+                action_name=action_result["action_name"],
+                confidence=action_result["confidence"],
+                value=action_result["value"]
+            )
+            
             # Log shadow intent
             logger.info(
                 f"Shadow Intent: {action_result['action_name']} "
@@ -339,6 +371,15 @@ class NeocortexAdapter:
                     f"Training step {self._total_train_steps}: "
                     f"VAE={losses.get('vae_loss', 0):.4f} "
                     f"WM={losses.get('wm_loss', 0):.4f}"
+                )
+                
+                # Log to telemetry CSV
+                self.telemetry.log_training(
+                    vae_loss=losses.get('vae_loss'),
+                    vae_mse=losses.get('vae_mse'),
+                    vae_kld=losses.get('vae_kld'),
+                    wm_loss=losses.get('wm_loss'),
+                    train_step=self._total_train_steps
                 )
             
             # Check if checkpoint needed

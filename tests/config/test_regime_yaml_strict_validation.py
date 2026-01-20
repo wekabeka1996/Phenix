@@ -31,8 +31,11 @@ class TestRegimeYamlStrictValidation:
         """
         config_dir = _copy_canonical_config_dir(tmp_path)
         
-        # Valid regime.yaml
+        # Valid regime.yaml (must include required fields: basis_tf_sec, uncertain_cutoff)
         regime_yaml = {
+            "basis_tf_sec": 300,
+            "uncertain_cutoff": 0.35,
+            "liveness_factor": 3,
             "hmm": {
                 "enabled": True,
                 "K": 3

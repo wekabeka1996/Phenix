@@ -101,21 +101,7 @@ class TestPPOTrainingCore:
         assert valid_count == 0
 
 
-class TestPPOWorkerTask:
-    """Tests for worker process PPO training task."""
-    
-    def test_worker_task_exists(self):
-        """Verify _brain_train_ppo_task function exists."""
-        from logic.brain.worker import _brain_train_ppo_task
-        assert callable(_brain_train_ppo_task)
-    
-    def test_worker_task_returns_dict(self):
-        """Task should return dict with error if not initialized."""
-        from logic.brain.worker import _brain_train_ppo_task
-        
-        # Worker not initialized - should raise
-        with pytest.raises(RuntimeError, match="not initialized"):
-            _brain_train_ppo_task([])
+
 
 
 class TestPPOBridgeAsync:
@@ -138,7 +124,9 @@ class TestPPOBridgeAsync:
         
         # Verify _initialized is False (bridge was not started)
         assert bridge._initialized == False
-        assert bridge._executor is None
+        # Refactor: _executor replaced by _process
+        assert bridge._process is None
+        assert bridge._task_queue is None
 
 
 class TestAdapterPPOIntegration:

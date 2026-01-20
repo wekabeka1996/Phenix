@@ -4,12 +4,10 @@ import time
 from dataclasses import asdict, is_dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Union
 from unittest import mock
 
 import jsonschema
-
-from vfoundation.config import config
 
 
 def _to_jsonable(value: Any, *, _seen: set[int] | None = None, _depth: int = 0) -> Any:
@@ -47,6 +45,11 @@ def _to_jsonable(value: Any, *, _seen: set[int] | None = None, _depth: int = 0) 
     return str(value)
 
 
+def _schema_path() -> Path:
+    base_dir = Path(__file__).resolve().parent.parent
+    return base_dir / "schemas" / "order_logger_v1.json"
+
+
 class OrderLoggerV1:
     """L1 Order Logger - Unified order lifecycle logging with schema validation."""
 
@@ -55,9 +58,31 @@ class OrderLoggerV1:
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Load schema
-        schema_path = Path("apps/reference/schemas/order_logger_v1.json")
-        with open(schema_path, 'r', encoding='utf-8') as f:
+        with open(_schema_path(), 'r', encoding='utf-8') as f:
             self.schema = json.load(f)
+
+        # Write boot record to mark session start (observability marker)
+        self._write_boot_record()
+
+    def _write_boot_record(self) -> None:
+        """Write a BOOT record to mark session start.
+
+        This is a system marker (not an order event), so it bypasses schema validation.
+        Enables observability: if order_log has BOOT but no ORDER_* events, 
+        we know the system ran but no orders were placed.
+        """
+        boot_record = {
+            "event_type": "BOOT",
+            "timestamp": int(time.time() * 1000),
+            "source_fsm": "OrderLoggerV1",
+            "rid": f"boot-{int(time.time() * 1000)}",
+            "symbol": "_SYSTEM_",
+            "why": "order_logger session start marker",
+        }
+        # Write directly without schema validation (BOOT is a system event)
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            json.dump(boot_record, f, ensure_ascii=False)
+            f.write('\n')
 
     def write(self, entry: Dict[str, Any]) -> None:
         """Write order log entry with optional schema validation."""
@@ -81,4 +106,50 @@ class OrderLoggerV1:
 
 
 # Global instance
-order_logger = OrderLoggerV1()
+_order_logger_instance: Optional[OrderLoggerV1] = None
+
+
+def get_order_logger(log_file: Optional[Union[str, Path]] = None) -> OrderLoggerV1:
+    """Return a singleton OrderLoggerV1, initialized lazily."""
+    global _order_logger_instance
+    if _order_logger_instance is None:
+        if log_file is None:
+            _order_logger_instance = OrderLoggerV1()
+        else:
+            _order_logger_instance = OrderLoggerV1(log_file=str(log_file))
+    elif log_file is not None:
+        _order_logger_instance.log_file = Path(log_file)
+    return _order_logger_instance
+
+
+class _LazyOrderLogger:
+    """Proxy that defers OrderLoggerV1 creation until first use."""
+
+    def __init__(self) -> None:
+        self._log_file_override: Optional[Path] = None
+
+    @property
+    def log_file(self) -> Path:
+        if _order_logger_instance is None:
+            return self._log_file_override or Path("logs/order_log_v1.jsonl")
+        return get_order_logger().log_file
+
+    @log_file.setter
+    def log_file(self, value: Union[str, Path]) -> None:
+        if _order_logger_instance is None:
+            self._log_file_override = Path(value)
+            return
+        get_order_logger().log_file = Path(value)
+
+    def write(self, entry: Dict[str, Any]) -> None:
+        logger = get_order_logger(log_file=self._log_file_override)
+        self._log_file_override = None
+        logger.write(entry)
+
+    def __getattr__(self, name: str) -> Any:
+        logger = get_order_logger(log_file=self._log_file_override)
+        self._log_file_override = None
+        return getattr(logger, name)
+
+
+order_logger = _LazyOrderLogger()

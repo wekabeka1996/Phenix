@@ -157,6 +157,11 @@ class DecisionMaking:
         # State: symbol -> (window_id, winner_strategy_id)
         self._arb_window_winner: Dict[str, tuple[int, str]] = {}
 
+        # DM-CRITICAL-PATCHES-02: Dedicated signal buffer for priority arbitration
+        # symbol -> (ts_ms, strategy_id, rank)
+        # Used for forensic logging and priority comparison within window_ms
+        self._arb_signal_buffer: Dict[str, Tuple[int, str, int]] = {}
+
         # Cache for equity values to prevent zero-overwrite
         self._cached_equity_free_usdt: Optional[str] = None
         self._cached_equity_cross_usdt: Optional[str] = None
@@ -910,14 +915,42 @@ class DecisionMaking:
             # === GATE 5: TTL GATE (features freshness) ===
             # Use symbol_states SSOT (not self.latest_features which doesn't exist)
             features_data = self.symbol_states[symbol].get("features") or {}
-            features_ts = features_data["ts"] if "ts" in features_data else 0
-            current_ms = self._clock.now_ms()
-            features_age_sec = (current_ms - features_ts) / 1000 if features_ts > 0 else float('inf')
+            features_ts = features_data.get("ts", 0)
             
-            if features_age_sec > self.features_ttl_sec:
+            # BAR-TTL-REFORM-01: Bar-specific TTL logic
+            tf_sec_val = int(features_data.get("tf_sec") or 0)
+            is_bar = tf_sec_val > 0
+            
+            current_ms = self._clock.now_ms()
+            
+            if is_bar:
+                # Use BAR TTL from system config
+                sys_md = getattr(self.config.system, "market_data", None)
+                if sys_md:
+                    bar_ttl_ms = float(getattr(sys_md, "bar_ttl_ms", 10000) or 10000)
+                    age_mode = getattr(sys_md, "bar_event_age_mode", "received")
+                else:
+                    bar_ttl_ms = 10000.0
+                    age_mode = "received"
+                
+                ttl_sec = bar_ttl_ms / 1000.0
+                
+                # Use specified age mode (received vs close_ts)
+                if age_mode == "received":
+                    start_ts = features_data.get("_received_ts", features_ts)
+                else:
+                    start_ts = features_ts
+            else:
+                # Use TICK TTL (standard domain config)
+                ttl_sec = self.features_ttl_sec
+                start_ts = features_ts
+
+            features_age_sec = (current_ms - start_ts) / 1000 if start_ts > 0 else float('inf')
+            
+            if features_age_sec > ttl_sec:
                 self.logger.info(
                     f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Features stale "
-                    f"(age={features_age_sec:.1f}s > ttl={self.features_ttl_sec}s)"
+                    f"(age={features_age_sec:.1f}s > ttl={ttl_sec:.1f}s)"
                 )
                 self._record_blocked_intent(symbol)
                 return
@@ -946,7 +979,27 @@ class DecisionMaking:
             if isinstance(why_chain, list):
                 why_chain.append(str(why_sizing))
 
-            # === EP-01.2-INT: EntryPlan Computation ===
+            # === STRATEGY PRIMACY FOR SL/TP (FIX: Silent Fallback Elimination) ===
+            # STEP 1: Extract Strategy-provided SL/TP from price_ctx FIRST.
+            # If Strategy did the math (e.g., MeanReversion ATR/BB), we MUST respect it.
+            strategy_stop_price: str | None = price_ctx.get("stop_price")
+            strategy_target_price: str | None = price_ctx.get("target_price")
+            
+            # Normalize to string (handle Decimal/float/None)
+            if strategy_stop_price is not None:
+                strategy_stop_price = str(strategy_stop_price) if strategy_stop_price not in ("", "None") else None
+            if strategy_target_price is not None:
+                strategy_target_price = str(strategy_target_price) if strategy_target_price not in ("", "None") else None
+            
+            # Log Strategy Primacy usage
+            if strategy_stop_price or strategy_target_price:
+                self.logger.info(
+                    f"[{symbol}] STRATEGY_PRIMACY: Using Strategy-provided SL={strategy_stop_price}, TP={strategy_target_price}"
+                )
+                if isinstance(why_chain, list):
+                    why_chain.append(f"strategy_prices:sl={strategy_stop_price},tp={strategy_target_price}")
+            
+            # === EP-01.2-INT: EntryPlan Computation (FALLBACK ONLY) ===
             # Extract volatility/liquidity from signal payload (propagated from AuroraHandler)
             volatility_data = pld.get("volatility") or {}
             liquidity_data = pld.get("liquidity") or {}
@@ -957,11 +1010,13 @@ class DecisionMaking:
             
             # Get EntryPlan config from domains
             ep_cfg = self.config.domains.decision_making.entry_plan
-            stop_price: str | None = None
-            target_price: str | None = None
+            # STEP 2: Initialize with Strategy values (Primacy), EntryPlan is fallback
+            stop_price: str | None = strategy_stop_price
+            target_price: str | None = strategy_target_price
             entry_plan_trace: dict | None = None
             
-            if ep_cfg.enabled:
+            # STEP 3: Only compute EntryPlan if Strategy did NOT provide prices
+            if ep_cfg.enabled and (stop_price is None or target_price is None):
                 # Build EntryPlanParams from config
                 ep_params = EntryPlanParams(
                     atr_period=ep_cfg.atr_period,
@@ -1011,26 +1066,39 @@ class DecisionMaking:
                         atr=atr_value,
                         obi=obi_close,
                     )
-                    stop_price = ep_result.stop_loss_price
-                    target_price = ep_result.take_profit_price
+                    # STRATEGY PRIMACY: Only fill in MISSING values from EntryPlan
+                    if stop_price is None:
+                        stop_price = ep_result.stop_loss_price
+                        self.logger.info(f"[{symbol}] EntryPlan FALLBACK SL: {stop_price}")
+                    if target_price is None:
+                        target_price = ep_result.take_profit_price
+                        self.logger.info(f"[{symbol}] EntryPlan FALLBACK TP: {target_price}")
+                    
                     entry_plan_trace = {
                         "ref_price": ep_result.ref_price,
                         "atr": ep_result.atr,
                         "obi": ep_result.obi,
                         "obi_multiplier": ep_result.obi_multiplier,
                         "obi_policy_applied": ep_result.obi_policy_applied,
+                        "strategy_sl_used": strategy_stop_price is not None,
+                        "strategy_tp_used": strategy_target_price is not None,
                     }
                     self.logger.info(
                         f"[{symbol}] EntryPlan: SL={stop_price}, TP={target_price}, "
-                        f"OBI_mult={ep_result.obi_multiplier:.3f}"
+                        f"OBI_mult={ep_result.obi_multiplier:.3f}, "
+                        f"strategy_primacy_sl={strategy_stop_price is not None}, "
+                        f"strategy_primacy_tp={strategy_target_price is not None}"
                     )
                     if isinstance(why_chain, list):
                         why_chain.append(f"entry_plan:sl={stop_price},tp={target_price}")
                 except Exception as ep_err:
                     self.logger.warning(f"[{symbol}] EntryPlan computation failed: {ep_err}")
-                    # Continue without SL/TP if computation fails (non-blocking)
-                    stop_price = None
-                    target_price = None
+                    # STRATEGY PRIMACY: Keep strategy prices even if EntryPlan fails
+                    # Only clear if strategy didn't provide AND EntryPlan failed
+                    if strategy_stop_price is None:
+                        stop_price = None
+                    if strategy_target_price is None:
+                        target_price = None
                     entry_plan_trace = None
             
             self._propose_trade_intent(
@@ -1474,10 +1542,13 @@ class DecisionMaking:
         Check if strategy is allowed to generate intent for symbol based on arbitration rules.
         
         CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION: Implements deterministic arbitration.
+        DM-CRITICAL-PATCHES-02: Uses dedicated signal buffer with priority ranks.
         
         Args:
             symbol: Trading pair symbol
             strategy_id: Strategy identifier (e.g., "aurora")
+            ts_ms: Signal timestamp (monotonic)
+            commit: If True, update buffer on success
             
         Returns:
             Dict with keys:
@@ -1511,49 +1582,83 @@ class DecisionMaking:
         if len(assignments) == 1:
             return {"allowed": True, "reason": ""}
         
-        # Multi-strategy case: windowed arbitration (TASK47).
+        # Multi-strategy case: priority arbitration with dedicated buffer
         arb = self.strategies_registry.arbitration
         
-        if arb.mode == "priority":
-            # Fail-closed: check that all assigned strategies have priorities
-            for strat in assignments:
-                if strat not in arb.priority:
-                    return {
-                        "allowed": False,
-                        "reason": f"ARBITRATION_REJECT:missing_priority:{strat}"[:80],
-                    }
-
-            # If no decision clock is provided, do NOT permanently suppress a strategy.
-            # In this mode, arbitration reduces to assignment validation only.
-            if ts_ms is None:
-                return {"allowed": True, "reason": ""}
-
-            try:
-                window_ms = int(arb.window_ms)
-            except Exception:
-                return {"allowed": False, "reason": "ARBITRATION_REJECT:invalid_window_ms"[:80]}
-            if window_ms <= 0:
-                return {"allowed": False, "reason": "ARBITRATION_REJECT:invalid_window_ms"[:80]}
-
-            window_id = int(ts_ms) // window_ms
-            existing = self._arb_window_winner.get(symbol)
-            if existing is not None and existing[0] == window_id:
-                winner = existing[1]
-                if winner != strategy_id:
-                    return {
-                        "allowed": False,
-                        "reason": f"{arb.logging.rejected_why_prefix}:window_claimed_by_{winner}"[:80],
-                    }
-
-            if commit:
-                self._arb_window_winner[symbol] = (window_id, strategy_id)
-            return {"allowed": True, "reason": ""}
-        else:
+        if arb.mode != "priority":
             # Unknown arbitration mode - fail-closed (defense-in-depth)
             return {
                 "allowed": False,
                 "reason": f"ARBITRATION_REJECT:unknown_mode_{arb.mode}"[:80]
             }
+        
+        # DM-CRITICAL-PATCHES-02: Fail-closed if strategy has no priority rank
+        rank = arb.priority.get(strategy_id)
+        if rank is None:
+            self.logger.error(
+                f"[{symbol}] ARBITRATION: strategy {strategy_id!r} missing priority rank (fail-closed DROP)"
+            )
+            return {
+                "allowed": False,
+                "reason": f"ARBITRATION_REJECT:missing_priority:{strategy_id}"[:80],
+            }
+        
+        # Validate all assigned strategies have priorities (defense-in-depth)
+        for strat in assignments:
+            if strat not in arb.priority:
+                return {
+                    "allowed": False,
+                    "reason": f"ARBITRATION_REJECT:missing_priority:{strat}"[:80],
+                }
+
+        # If no decision clock is provided, do NOT permanently suppress a strategy.
+        if ts_ms is None:
+            return {"allowed": True, "reason": ""}
+
+        try:
+            window_ms = int(arb.window_ms)
+        except Exception:
+            return {"allowed": False, "reason": "ARBITRATION_REJECT:invalid_window_ms"[:80]}
+        if window_ms <= 0:
+            return {"allowed": False, "reason": "ARBITRATION_REJECT:invalid_window_ms"[:80]}
+
+        # DM-CRITICAL-PATCHES-02: Dedicated signal buffer arbitration
+        now_ms = int(ts_ms)
+        existing = self._arb_signal_buffer.get(symbol)
+        
+        if existing is not None:
+            last_ts, last_sid, last_rank = existing
+            delta_ms = now_ms - last_ts
+            
+            # Within window: compare ranks
+            if delta_ms <= window_ms:
+                if rank < last_rank:
+                    # Higher priority (lower rank) wins - overwrite buffer
+                    self.logger.info(
+                        f"[{symbol}] ARBITRATION: {strategy_id}(rank={rank}) overrides "
+                        f"{last_sid}(rank={last_rank}) delta={delta_ms}ms window={window_ms}ms"
+                    )
+                    if commit:
+                        self._arb_signal_buffer[symbol] = (now_ms, strategy_id, rank)
+                        self._arb_window_winner[symbol] = (now_ms // window_ms, strategy_id)
+                    return {"allowed": True, "reason": ""}
+                elif rank >= last_rank:
+                    # Lower or equal priority - DROP
+                    self.logger.info(
+                        f"[{symbol}] ARBITRATION: dropped {strategy_id}(rank={rank}) - "
+                        f"window claimed by {last_sid}(rank={last_rank}) delta={delta_ms}ms"
+                    )
+                    return {
+                        "allowed": False,
+                        "reason": f"{arb.logging.rejected_why_prefix}:lower_priority_vs_{last_sid}"[:80],
+                    }
+            # Window expired - allow and update buffer
+        
+        # No existing entry or window expired: allow and commit
+        if commit:
+            self._arb_signal_buffer[symbol] = (now_ms, strategy_id, rank)
+            self._arb_window_winner[symbol] = (now_ms // window_ms, strategy_id)
+        return {"allowed": True, "reason": ""}
 
     def _get_symbol_cooldown(self, symbol: str, strategy_id: str = "aurora") -> int:
         """
@@ -1846,6 +1951,8 @@ class DecisionMaking:
                 self.symbol_states[symbol] = {}
 
             self.symbol_states[symbol]["features"] = event.pld
+            # BAR-TTL-REFORM-01: Inject reception time for "received" mode TTL checks
+            self.symbol_states[symbol]["features"]["_received_ts"] = self._clock.now_ms()
 
             # Commit 5: Clear risk-skew until-refresh state on data refresh
             try:
@@ -2219,24 +2326,77 @@ class DecisionMaking:
             self.logger.warning(f"[{symbol}] Error in _handle_regime_flip: {e}")
 
     def _features_ready(self, symbol: str, features_data: dict) -> bool:
-        """Check if features are fresh within TTL."""
+        """
+        DM-BAR-TTL-PREEMIT-01: Check if features are fresh within TTL.
+        
+        Bar-aware logic (mirrors Gate 5):
+        - For bars (tf_sec > 0): use bar_ttl_ms and bar_event_age_mode
+        - For ticks (tf_sec == 0): use strict tick TTL (features_ttl_sec)
+        
+        Safety guard: even in "received" mode, reject bars older than
+        max(tf_sec*1000, bar_ttl_ms) to prevent ancient bar leakage.
+        """
         if not features_data or "ts" not in features_data:
             self.logger.debug(
                 f"[{symbol}] _features_ready: no features_data or ts")
             return False
 
-        now_ts = self._clock.now_ms()  # milliseconds
-        features_ts = features_data["ts"]
-        lag_ms = now_ts - features_ts
-        ttl_ms = self.features_ttl_sec * 1000
-
-        is_ready = lag_ms <= ttl_ms
-        self.logger.debug(
-            f"[{symbol}] _features_ready: now={now_ts:.0f}, features_ts={features_ts}, "
-            f"lag={lag_ms:.0f}ms, ttl={ttl_ms}ms, ready={is_ready}"
-        )
+        now_ms = self._clock.now_ms()
+        features_ts = features_data.get("ts", 0)
+        tf_sec = int(features_data.get("tf_sec", 0) or 0)
+        is_bar = tf_sec > 0
+        
+        if is_bar:
+            # BAR-AWARE TTL: Use lenient bar_ttl_ms and age_mode
+            sys_md = getattr(self.config.system, "market_data", None) if self.config.system else None
+            if sys_md:
+                bar_ttl_ms = float(getattr(sys_md, "bar_ttl_ms", 10000) or 10000)
+                age_mode = str(getattr(sys_md, "bar_event_age_mode", "received") or "received")
+            else:
+                bar_ttl_ms = 10000.0
+                age_mode = "received"
+            
+            ttl_ms = bar_ttl_ms
+            
+            # Select age calculation based on mode
+            if age_mode == "received":
+                # Age from when we received the data, not when bar closed
+                start_ts = features_data.get("_received_ts", features_ts)
+            else:
+                # Age from bar_close_ts / features_ts
+                start_ts = features_ts
+            
+            lag_ms = now_ms - start_ts
+            is_ready = lag_ms <= ttl_ms
+            
+            # SAFETY GUARD: Reject ancient bars even in received mode
+            # A bar older than max(tf_sec*1000, bar_ttl_ms) is garbage data
+            bar_close_ts = features_data.get("bar_close_ts", features_ts)
+            max_bar_age_ms = max(tf_sec * 1000, bar_ttl_ms)
+            bar_actual_age_ms = now_ms - bar_close_ts
+            
+            if bar_actual_age_ms > max_bar_age_ms:
+                self.logger.debug(
+                    f"[{symbol}] _features_ready: BAR_TOO_OLD bar_age={bar_actual_age_ms:.0f}ms > max={max_bar_age_ms:.0f}ms"
+                )
+                is_ready = False
+            
+            self.logger.debug(
+                f"[{symbol}] _features_ready: BAR tf={tf_sec}s mode={age_mode} "
+                f"lag={lag_ms:.0f}ms ttl={ttl_ms:.0f}ms bar_age={bar_actual_age_ms:.0f}ms ready={is_ready}"
+            )
+        else:
+            # TICK: Use strict tick TTL (features_ttl_sec)
+            ttl_ms = self.features_ttl_sec * 1000
+            lag_ms = now_ms - features_ts
+            is_ready = lag_ms <= ttl_ms
+            
+            self.logger.debug(
+                f"[{symbol}] _features_ready: TICK lag={lag_ms:.0f}ms ttl={ttl_ms:.0f}ms ready={is_ready}"
+            )
 
         return is_ready
+
 
     def _warmup_not_ready(self, symbol: str, reason: str, *, details: str | None = None) -> None:
         why = truncate_why(f"WARMUP_NOT_READY:{reason}")
@@ -2805,26 +2965,178 @@ class DecisionMaking:
              self.logger.error(f"RiskBudget Config Block: {e}")
              return None # Block trade
         
-        # EP-01.3-INT: Calculate valid_for_ms from ttl_by_tf_sec config
-        valid_for_ms: int | None = None
+        # ORDER-POLICY-01: Resolve per-strategy execution policy (fail-closed).
+        order_type: str | None = None
+        tif: str | None = None
         try:
-            pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
-            if pe_ttl_cfg.enabled and tf_sec is not None:
-                ttl_by_tf = pe_ttl_cfg.ttl_by_tf_sec
-                if tf_sec in ttl_by_tf:
-                    valid_for_ms = ttl_by_tf[tf_sec] * 1000  # Convert sec to ms
-                    self.logger.debug(f"[{symbol}] EP-01.3: valid_for_ms={valid_for_ms} (tf_sec={tf_sec})")
-                elif pe_ttl_cfg.reject_unknown_tf:
-                    # Fail-closed: reject entry if tf_sec not in map
-                    self.logger.warning(
-                        f"[{symbol}] EP-01.3: REJECT - tf_sec={tf_sec} not in ttl_by_tf_sec (reject_unknown_tf=True)"
-                    )
-                    self._record_blocked_intent(symbol)
-                    return None
-                # else: valid_for_ms remains None, watchdog will use global fill_ttl_ms
-        except AttributeError:
-            # Config not yet loaded or missing - use None (watchdog default)
-            pass
+            strat_cfg = getattr(self.config.strategies, str(strategy_id), None)
+            exec_cfg = getattr(strat_cfg, "execution", None) if strat_cfg is not None else None
+            order_type = getattr(exec_cfg, "entry_order_type", None) if exec_cfg is not None else None
+            tif = getattr(exec_cfg, "entry_tif", None) if exec_cfg is not None else None
+        except Exception:
+            order_type = None
+            tif = None
+
+        if not order_type:
+            self._emit_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=str(strategy_id),
+                side=str(side),
+                rid=str(rid),
+                reason_code=NormalizedRejectReasons.ORDER_TYPE_MISSING,
+                reason="DECISION",
+                context="ORDER-POLICY-01: missing strategy execution.entry_order_type",
+                why_chain=(why_chain if isinstance(why_chain, list) else []),
+                details={"strategy_id": str(strategy_id)},
+            )
+            self._record_blocked_intent(symbol)
+            return None
+
+        order_type_u = str(order_type).upper()
+
+        # Validate against global capabilities (SSOT).
+        try:
+            caps = self.config.domains.execution_position.order_capabilities
+            supported_types = set(str(x).upper() for x in (caps.supported_order_types or []))
+            supported_tifs = set(str(x).upper() for x in (caps.supported_tif or []))
+        except Exception:
+            supported_types = set()
+            supported_tifs = set()
+
+        if supported_types and order_type_u not in supported_types:
+            self._emit_trade_intent_rejected(
+                symbol=symbol,
+                strategy_id=str(strategy_id),
+                side=str(side),
+                rid=str(rid),
+                reason_code=NormalizedRejectReasons.UNSUPPORTED_ORDER_TYPE,
+                reason="DECISION",
+                context=f"ORDER-POLICY-01: unsupported order_type={order_type_u}",
+                why_chain=(why_chain if isinstance(why_chain, list) else []),
+                details={"order_type": order_type_u, "supported": sorted(supported_types)},
+            )
+            self._record_blocked_intent(symbol)
+            return None
+
+        if order_type_u == "LIMIT":
+            if tif is None:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.TIF_REQUIRED_FOR_LIMIT,
+                    reason="DECISION",
+                    context="ORDER-POLICY-01: LIMIT requires explicit tif (no defaults)",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                    details={"order_type": "LIMIT"},
+                )
+                self._record_blocked_intent(symbol)
+                return None
+
+            tif_u = str(tif).upper()
+            if supported_tifs and tif_u not in supported_tifs:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.UNSUPPORTED_TIF,
+                    reason="DECISION",
+                    context=f"ORDER-POLICY-01: unsupported tif={tif_u}",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                    details={"tif": tif_u, "supported": sorted(supported_tifs)},
+                )
+                self._record_blocked_intent(symbol)
+                return None
+            tif = tif_u
+        else:
+            # MARKET: tif must be null (fail-closed; no silent ignore).
+            if tif is not None:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.UNSUPPORTED_TIF,
+                    reason="DECISION",
+                    context="ORDER-POLICY-01: MARKET must have tif=null",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                    details={"order_type": "MARKET", "tif": str(tif)},
+                )
+                self._record_blocked_intent(symbol)
+                return None
+            tif = None
+
+        # EP-01.3-INT: Calculate valid_for_ms ONLY for LIMIT (pending entry TTL, fail-closed).
+        valid_for_ms: int | None = None
+        if order_type_u == "LIMIT":
+            if tf_sec is None:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
+                    reason="DECISION",
+                    context="EP-01.3-INT: LIMIT requires tf_sec to derive valid_for_ms",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                    details={"order_type": "LIMIT"},
+                )
+                self._record_blocked_intent(symbol)
+                return None
+
+            try:
+                pe_ttl_cfg = self.config.domains.execution_position.pending_entry_ttl
+                if pe_ttl_cfg.enabled:
+                    ttl_by_tf = pe_ttl_cfg.ttl_by_tf_sec
+                    if tf_sec in ttl_by_tf:
+                        valid_for_ms = int(ttl_by_tf[tf_sec]) * 1000
+                        self.logger.debug(
+                            f"[{symbol}] EP-01.3: valid_for_ms={valid_for_ms} (tf_sec={tf_sec})"
+                        )
+                    elif pe_ttl_cfg.reject_unknown_tf:
+                        self._emit_trade_intent_rejected(
+                            symbol=symbol,
+                            strategy_id=str(strategy_id),
+                            side=str(side),
+                            rid=str(rid),
+                            reason_code=NormalizedRejectReasons.MISSING_TF_SEC,
+                            reason="DECISION",
+                            context=f"EP-01.3-INT: tf_sec={tf_sec} not in ttl_by_tf_sec (reject_unknown_tf=true)",
+                            why_chain=(why_chain if isinstance(why_chain, list) else []),
+                            details={"tf_sec": int(tf_sec), "known_tfs": sorted(ttl_by_tf.keys())},
+                        )
+                        self._record_blocked_intent(symbol)
+                        return None
+            except Exception as e:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.DATA_NOT_READY,
+                    reason="DECISION",
+                    context=f"EP-01.3-INT: failed to derive valid_for_ms: {e}",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                )
+                self._record_blocked_intent(symbol)
+                return None
+
+            if valid_for_ms is None:
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    rid=str(rid),
+                    reason_code=NormalizedRejectReasons.DATA_NOT_READY,
+                    reason="DECISION",
+                    context="EP-01.3-INT: LIMIT requires valid_for_ms (no fallback to global fill_ttl_ms)",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []),
+                    details={"order_type": "LIMIT"},
+                )
+                self._record_blocked_intent(symbol)
+                return None
         
         trade_intent = {
             # TASK40: Preserve stable business RID end-to-end (intent -> cmd -> execution).
@@ -2839,23 +3151,26 @@ class DecisionMaking:
                 "price": str(price),
                 "price_ref": str(price),
                 "reduce_only": reduce_only,
+                "order_type": order_type_u,
+                "tif": tif,
             },
             "p": "0.75",
             "payoff_ratio_r": "2.0",
             "tca_budget": {
                 "max_slippage_bps": max_slippage,
                 "max_latency_ms": max_latency,
+                "maker_preference": str(maker_pref),
             },
             "risk_budget": {
                 "trade_cvar95_max_bps": trade_cvar,
                 "session_cvar95_max_bps": session_cvar,
             },
             "size": {"notional_cap_usd": str(qty * price), "kelly_fraction": "0.1"},
-            # EP-01.3-INT: Dynamic valid_for_ms (None means watchdog uses global fill_ttl_ms)
+            # EP-01.3-INT: LIMIT-only pending entry TTL (fail-closed: no silent fallback).
             "valid_for_ms": valid_for_ms,
             "why": why_chain,
             "dto_version": "1.0.0",
-            "schema_ref": "...",
+            "schema_ref": "trade_intent_v1.json",
             "idempotent_key": str(uuid.uuid4()),
             # EP-01.2-INT: EntryPlan SL/TP (null if not computed)
             "stop_price": stop_price,

@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, TYPE_CHECKING
 from apps.reference.config_contract import ConfigContractError
 
 from vfoundation.core.protocol import Message
+from apps.reference.telemetry.alerts import AlertManager, AlertLevel, AlertType
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -58,6 +59,11 @@ class RiskManagement:
         self.config = config
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__name__}")
+        try:
+            self.alert_manager: Optional[AlertManager] = AlertManager(config, logger=self.logger)
+        except Exception as e:
+            self.alert_manager = None
+            self.logger.warning(f"AlertManager unavailable in RiskManagement: {e}")
         
         # Initialize Domain Config Resolver
         from apps.reference.domain_config import DomainConfigResolver
@@ -117,64 +123,80 @@ class RiskManagement:
         Args:
             event: FSM event with features payload
         """
-        # Generate RID for this processing chain
-        rid = str(uuid.uuid4())
+        try:
+            # Generate RID for this processing chain
+            rid = str(uuid.uuid4())
 
-        self.logger.info("Handling EVT:FEATURES_CALCULATED...")
-        payload = event.pld
-        print(f"DEBUG: risk_management payload = {payload}")
-        print(f"DEBUG: risk_management payload type = {type(payload)}")
+            self.logger.info("Handling EVT:FEATURES_CALCULATED...")
+            payload = event.pld  # type: ignore[union-attr]
+            print(f"DEBUG: risk_management payload = {payload}")
+            print(f"DEBUG: risk_management payload type = {type(payload)}")
 
-        # Log event receipt to chain
-        chain_logger.info(
-            "Event received",
-            extra={
-                "rid": rid,
-                "event_type": "EVT:FEATURES_CALCULATED",
-                "domain": "risk_management",
-                "symbol": payload.get("symbol"),
-                "stage": "input",
-            },
-        )
-
-        # Extract required fields from payload
-        symbol = payload["symbol"]
-        timestamp = payload["ts"]
-        features = payload["features"]
-
-        # Calculate risk parameters
-        risk_parameters = self._calculate_risk_parameters(features)
-
-        # Create risk assessment payload
-        risk_payload = {
-            "symbol": symbol,
-            "ts": timestamp,
-            "risk_parameters": risk_parameters,
-        }
-
-        # Emit risk assessment completed event
-        self.logger.info("Emitting EVT:RISK_ASSESSMENT_COMPLETED...")
-        self.fsm.emit(
-            "EVT:RISK_ASSESSMENT_COMPLETED",
-            payload=risk_payload,
-            why="Risk parameters calculated based on new features.",
-        )
-
-        # Log event emission to chain
-        chain_logger.info(
-            "Event emitted",
-            extra={
-                "rid": rid,
-                "event_type": "EVT:RISK_ASSESSMENT_COMPLETED",
-                "domain": "risk_management",
-                "symbol": symbol,
-                "stage": "output",
-                "risk_assessment": {
-                    "is_trading_allowed": risk_parameters.get("is_trading_allowed"),
-                    "risk_score": risk_parameters.get("risk_score"),
+            # Log event receipt to chain
+            chain_logger.info(
+                "Event received",
+                extra={
+                    "rid": rid,
+                    "event_type": "EVT:FEATURES_CALCULATED",
+                    "domain": "risk_management",
+                    "symbol": payload.get("symbol") if isinstance(payload, dict) else None,
+                    "stage": "input",
                 },
-            },
-        )
+            )
+
+            # Extract required fields from payload
+            symbol = payload["symbol"]
+            timestamp = payload["ts"]
+            features = payload["features"]
+
+            # Calculate risk parameters
+            risk_parameters = self._calculate_risk_parameters(features)
+
+            # Create risk assessment payload
+            risk_payload = {
+                "symbol": symbol,
+                "ts": timestamp,
+                "risk_parameters": risk_parameters,
+            }
+
+            # Emit risk assessment completed event
+            self.logger.info("Emitting EVT:RISK_ASSESSMENT_COMPLETED...")
+            self.fsm.emit(
+                "EVT:RISK_ASSESSMENT_COMPLETED",
+                payload=risk_payload,
+                why="Risk parameters calculated based on new features.",
+            )
+
+            # Log event emission to chain
+            chain_logger.info(
+                "Event emitted",
+                extra={
+                    "rid": rid,
+                    "event_type": "EVT:RISK_ASSESSMENT_COMPLETED",
+                    "domain": "risk_management",
+                    "symbol": symbol,
+                    "stage": "output",
+                    "risk_assessment": {
+                        "is_trading_allowed": risk_parameters.get("is_trading_allowed"),
+                        "risk_score": risk_parameters.get("risk_score"),
+                    },
+                },
+            )
+        except Exception as e:
+            self.logger.exception("RiskManagement crash in on_features_calculated (fail-closed)")
+            try:
+                if self.alert_manager:
+                    self.alert_manager.raise_alert(
+                        level=AlertLevel.CRITICAL,
+                        alert_type=AlertType.SYSTEM_HEALTH,
+                        title="Risk Logic Crash",
+                        message=str(e),
+                        details={"domain": "risk_management"},
+                    )
+            except Exception:
+                # Never allow alerting failures to crash the pipeline.
+                pass
+            return {"is_trading_allowed": False, "reason": "RISK_INTERNAL_ERROR"}  # type: ignore[return-value]
 
     def on_portfolio_state_updated(self, event: Message) -> None:
         """

@@ -133,6 +133,7 @@ class FeatureEngineering:
             ttl_ms=self.cfg.macro_sync_ttl_ms,
             max_gap_bins=self.cfg.macro_sync_max_gap_bins,
             eps=self.cfg.macro_sync_eps,
+            max_late_ms=self.cfg.macro_sync_max_late_ms,
         )
         self._macro_sync_anchor_ts_missing: bool = False
 
@@ -535,14 +536,30 @@ class FeatureEngineering:
             "ask_size": last_tick.get("ask_size", "0"),
             "buy_volume": last_tick.get("buy_volume", "0"),
             "sell_volume": last_tick.get("sell_volume", "0"),
+            "buy_count": last_tick.get("buy_count"),
+            "sell_count": last_tick.get("sell_count"),
+            "buy_notional": last_tick.get("buy_notional"),
+            "sell_notional": last_tick.get("sell_notional"),
+            "trades_dropped_out_of_order": last_tick.get("trades_dropped_out_of_order"),
             "bid": last_tick.get("bid"),
             "ask": last_tick.get("ask"),
         }
         
         # Create synthetic last_tick with ts slightly before bar_ts
         # to ensure time_diff > 0 in feature calculation
+        # FIX-NRR026-BACKTEST: Use bar's OPEN price as prev_price for delta_price calculation
+        # This ensures delta_price = (close - open), not (close - last_tick_price)
         bar_last_tick = dict(last_tick)
         bar_last_tick["ts"] = bar_ts - 1  # 1ms before bar close
+        
+        # Extract bar's open price for correct delta_price
+        if isinstance(bar_data, dict):
+            bar_open = bar_data.get("open")
+        else:
+            bar_open = getattr(bar_data, "open", None)
+        
+        if bar_open is not None:
+            bar_last_tick["price"] = str(bar_open)  # Use bar's OPEN as prev_price
         
         self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
         self._calculate_and_emit_features_for_tf(symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick, bar_data=bar_data)
@@ -760,7 +777,14 @@ class FeatureEngineering:
                 features["volume_zscore"] = str(self._compute_volume_zscore(symbol))
                 
                 # Large Trade Imbalance (TASK31)
-                features["large_trade_imbalance"] = str(self._compute_large_trade_imbalance(symbol, current_tick))
+                if self.cfg.large_trade_imbalance_enabled:
+                    features["large_trade_imbalance"] = str(self._compute_large_trade_imbalance(symbol, current_tick))
+                else:
+                    hot.large_trade_imbalance_ready = True
+                    hot.large_trade_imbalance_not_ready_reason = None
+                    hot.large_trade_imbalance_trades_used = 0
+                    hot.large_trade_imbalance_dropped_out_of_order = 0
+                    features["large_trade_imbalance"] = str(self.cfg.neutral_value)
                 
                 # Spread in basis points
                 # P1-2 FIX: Track spread_ready - if bid/ask missing, spread is unreliable
@@ -840,7 +864,9 @@ class FeatureEngineering:
                     "volatility_state": bool(hot.volatility_state_ready),
                     "macro_sync": bool(hot.macro_sync_ready) if self.cfg.macro_sync_enabled else True,
                     "spread_bps": bool(hot.spread_ready),  # P1-2 FIX: Include spread readiness
-                    "large_trade_imbalance": bool(hot.large_trade_imbalance_ready),
+                    "large_trade_imbalance": bool(hot.large_trade_imbalance_ready)
+                    if self.cfg.large_trade_imbalance_enabled
+                    else True,
                     "volume_zscore": True,  # Computed each tick
                     # R1: Macro Resid (SIGNED, neutral=0)
                     "macro_resid": bool(hot.macro_resid_ready) if self.cfg.macro_resid_enabled else True,
@@ -857,7 +883,11 @@ class FeatureEngineering:
                 if self.cfg.macro_sync_enabled and (not hot.macro_sync_ready) and hot.macro_sync_not_ready_reason:
                     reasons.append(f"macro_sync:{hot.macro_sync_not_ready_reason}")
                     inc_data_quality_drop(domain="feature_engineering", reason="macro_sync_not_ready")
-                if (not hot.large_trade_imbalance_ready) and hot.large_trade_imbalance_not_ready_reason:
+                if (
+                    self.cfg.large_trade_imbalance_enabled
+                    and (not hot.large_trade_imbalance_ready)
+                    and hot.large_trade_imbalance_not_ready_reason
+                ):
                     reasons.append(f"large_trade_imbalance:{hot.large_trade_imbalance_not_ready_reason}")
                     inc_data_quality_drop(domain="feature_engineering", reason="large_trade_imbalance_not_ready")
                 # R1: macro_resid not ready
@@ -874,7 +904,7 @@ class FeatureEngineering:
 
                 warmup["ready"] = ready_map
                 warmup["reasons"] = reasons
-                warmup["full_ready"] = self.cfg.compute_warmup_full_ready(ready_map)
+                warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(symbol=symbol, ready_map=ready_map)
                 warmup["large_trade_imbalance_ready"] = bool(hot.large_trade_imbalance_ready)
                 warmup["large_trade_imbalance_not_ready_reason"] = hot.large_trade_imbalance_not_ready_reason
                 warmup["large_trade_imbalance_trades_used"] = int(hot.large_trade_imbalance_trades_used)
@@ -950,7 +980,7 @@ class FeatureEngineering:
                 warmup["reasons"] = existing_reasons
                 
                 # Recalculate full_ready after sanity
-                warmup["full_ready"] = self.cfg.compute_warmup_full_ready(ready_map)
+                warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(symbol=symbol, ready_map=ready_map)
 
             # ================================================================
             # P0-2: BOOK HEALTH CHECK (spread truth validation)
@@ -973,7 +1003,7 @@ class FeatureEngineering:
                     ready_map = warmup.get("ready", {})
                     ready_map["spread_bps"] = False
                     warmup["ready"] = ready_map
-                    warmup["full_ready"] = self.cfg.compute_warmup_full_ready(ready_map)
+                    warmup["full_ready"] = self.cfg.compute_warmup_full_ready_for_symbol(symbol=symbol, ready_map=ready_map)
                     existing_reasons = list(warmup.get("reasons", []))
                     existing_reasons.append(f"spread_bps:{book_reason}")
                     warmup["reasons"] = existing_reasons
@@ -987,6 +1017,7 @@ class FeatureEngineering:
                 "features": features,
                 "warmup": warmup,
                 "price_motion": pm_block,
+                "bar": bar_data,  # DATA-RECORDER-01: Inject raw bar (OHLCV) for recording
             }
 
             # FTR-10: Dynamic logging for all features (no manual f-string updates needed)
@@ -1019,12 +1050,21 @@ class FeatureEngineering:
                 self.logger.warning(
                     f"[{symbol}] CMD:PROCESS_STRATEGY rejected: warmup missing"
                 )
-            elif warmup.get("full_ready") is not True:
-                self.logger.warning(
-                    f"[{symbol}] CMD:PROCESS_STRATEGY rejected: warmup not full_ready "
-                    f"(full_ready={warmup.get('full_ready')}, reasons={warmup.get('reasons', [])})"
-                )
             else:
+                warmup_mode = str(self.cfg.warmup_enforcement_mode or "fail_fast")
+                warmup_full_ready = warmup.get("full_ready") is True
+                if not warmup_full_ready:
+                    msg = (
+                        f"[{symbol}] CMD:PROCESS_STRATEGY warmup not full_ready "
+                        f"(full_ready={warmup.get('full_ready')}, reasons={warmup.get('reasons', [])}, "
+                        f"enforcement_mode={warmup_mode})"
+                    )
+                    if warmup_mode == "fail_fast":
+                        self.logger.warning(f"{msg} -> rejected")
+                        return
+                    # warn_only / disabled: allow strategy processing to proceed
+                    self.logger.warning(f"{msg} -> allowed")
+
                 # Gate 4: Extract bar_close_ts from bar_data (SSOT)
                 bar_close_ts = bar_data.get("end_ts_ms") or bar_data.get("close_ts") or bar_data.get("kline_close_time")
                 

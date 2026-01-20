@@ -211,6 +211,8 @@ class TestPrecisionMinNotionalInvariant:
                 "qty": "0.0019",
                 "price": "50000",
                 "order_type": "LIMIT",
+                "tif": "GTC",
+                "valid_for_ms": 60_000,
             },
         )
         

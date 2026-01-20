@@ -38,10 +38,11 @@ assignments:
   XRPUSDT:
     - mean_reversion
 
-  # BTC: Aurora-only (FIXED: removed mean_reversion to prevent churn/conflict)
-  # See: Remediation Plan Phase 1 - 2026-01-07
+  # BTC: Mean Reversion (CHANGED from aurora)
+  # Backtest showed 59% MEAN_REVERSION regime - Aurora unsuitable for ranging markets.
+  # Mean Reversion strategy designed for sideways/flat market conditions.
   BTCUSDT:
-    - aurora
+    - mean_reversion
 
 # ==============================================================================
 # ARBITRATION (conflict resolution)

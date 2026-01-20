@@ -126,6 +126,27 @@
         "pm_norm_60s",
         "pm_norm_300s"
       ]
+    },
+    "bar": {
+      "description": "Raw OHLCV bar data (null for tick-level features). Shape from bar_closed_v1.json.",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["symbol", "timeframe_sec", "start_ts_ms", "end_ts_ms", "open", "high", "low", "close", "volume"],
+          "properties": {
+            "symbol": {"type": "string"},
+            "timeframe_sec": {"type": "integer", "minimum": 1},
+            "start_ts_ms": {"type": "integer"},
+            "end_ts_ms": {"type": "integer"},
+            "open": {"type": "string"},
+            "high": {"type": "string"},
+            "low": {"type": "string"},
+            "close": {"type": "string"},
+            "volume": {"type": "string"}
+          }
+        },
+        {"type": "null"}
+      ]
     }
   },
   "required": ["ts", "symbol", "features"],

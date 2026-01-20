@@ -85,7 +85,6 @@ def test_mean_reversion_logs_signal_with_indicators() -> None:
             fees_pct=0.0,
             slippage_pct=0.0,
         ),
-        emit_trade_intent_directly=False,
     )
 
     cfg = SimpleNamespace(strategies_registry=strategies_registry, strategies=SimpleNamespace(mean_reversion=mr_cfg))

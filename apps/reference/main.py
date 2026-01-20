@@ -31,9 +31,11 @@ from apps.reference.domains.decision_making.decision_making import DecisionMakin
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
+from apps.reference.core.time.clock import MockClock
 from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
 )
+from apps.reference.domains.data_recorder.recorder import CsvRecorder
 # FSMP-ARCH-01: Import both MarketDataConnector and MarketDataProxy
 # The actual class used is determined by feature flag at runtime
 from apps.reference.domains.market_data.market_data_connector import MarketDataConnector
@@ -43,6 +45,9 @@ from apps.reference.domains.market_data.bar_aggregator import BarAggregator  # B
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
+from backtest_engine.engine import BacktestEngine
+from backtest_engine.mock_broker import MockBroker
+from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 from vfoundation.core.protocol import truncate_why
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from vfoundation.dr import wal
@@ -88,974 +93,8 @@ def _run_async_loop(loop: asyncio.AbstractEventLoop) -> None:
 # Import config loader
 
 
-class AuroraBridge:
-    """
-    Bridge component that handles TRADE_INTENT_PROPOSED → CMD:OPEN conversion
-    with portfolio freshness gate to prevent race conditions.
-    """
-
-    def __init__(self, fsm: FSMCore, config: AuroraConfig, logger: logging.Logger | None = None):
-        self.fsm = fsm
-        if isinstance(config, dict):
-            raise TypeError("AuroraBridge requires AuroraConfig, got dict")
-        self.config = config
-        self.logger = logger or logging.getLogger("AuroraBridge")
-
-        # Portfolio freshness state
-        self._last_portfolio: dict[str, Any] = {}
-        self._last_portfolio_ts = 0
-
-        # Deferred intents queue (key: idempotent_key or rid, value: intent Message)
-        self._deferred: dict[str, Message] = {}
-        self._deferred_tries: dict[str, int] = {}
-
-        # QoS state for symbol cooldowns (from DecisionMaking deferrals)
-        self._qos_next_allowed_ts_per_symbol: dict[str, int] = {}
-
-        # Configuration (strict object config)
-        from apps.reference.domain_config import DomainConfigResolver
-        resolver = DomainConfigResolver(config)
-        self._ttl_sec = int(resolver.get_position_tracking().positions_stale_ttl_sec)
-
-        # TASK47: DEV/SHADOW ONLY — disable portfolio stale TTL gate (never enable in live/prod).
-        self._debug_disable_positions_stale_gate = bool(
-            getattr(getattr(config.domains, "debug", None), "disable_positions_stale_gate", False)
-        )
-        if self._debug_disable_positions_stale_gate:
-            self.logger.warning(
-                "TASK47: DEBUG OVERRIDE ACTIVE: disable_positions_stale_gate=True (DEV/SHADOW ONLY)"
-            )
-            try:
-                self.fsm.emit(
-                    "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
-                    payload={
-                        "flag": "disable_positions_stale_gate",
-                        "why": "portfolio_stale_gate_disabled",
-                    },
-                    why="debug_override_active",
-                )
-            except Exception:
-                pass
-        
-        # D2: Initialize reliable retry scheduler (strict object config)
-        retry_config = config.bridge.retry_scheduler
-        self._max_retries = int(retry_config.max_attempts)
-        self._retry_delay_sec = int(retry_config.min_retry_delay_ms) / 1000.0
-        self._retry_scheduler = RetryScheduler(
-            fsm=fsm,
-            logger=self.logger,
-            default_max_attempts=int(retry_config.max_attempts),
-            min_retry_delay_ms=int(retry_config.min_retry_delay_ms),
-            backoff_factor=float(retry_config.backoff_factor),
-            jitter_ms=int(retry_config.jitter_ms),
-        )
-
-        # Register event listeners
-        # Note: We register global handlers that properly handle async calls
-        # instead of registering async methods directly (FSMCore calls listeners synchronously)
-        self.fsm.listen("EVT:TRADE_INTENT_PROPOSED", on_trade_intent_proposed)
-        self.fsm.listen("EVT:PORTFOLIO_STATE_UPDATED",
-                        on_portfolio_state_updated)
-        self.fsm.listen("EVT:INTENT_DEFERRED", on_intent_deferred)
-        
-        self.logger.info(
-            "AuroraBridge initialized (ttl_sec=%d, retry_scheduler_max_attempts=%d)",
-            self._ttl_sec, self._retry_scheduler.default_max_attempts
-        )
-    
-    @property
-    def retry_scheduler(self) -> RetryScheduler:
-        """Get the retry scheduler instance."""
-        return self._retry_scheduler
-    
-    def clear_pending_on_restart(self) -> int:
-        """
-        D6: Clear all pending deferred intents on restart (fail-closed default).
-        
-        Emits EVT:INTENT_DROPPED with reason=RESTART_NO_PERSISTENCE for each.
-        Call this during startup to ensure clean state.
-        
-        Returns:
-            Number of intents dropped
-        """
-        return self._retry_scheduler.clear_all_pending(
-            emit_dropped=True,
-            drop_reason="RESTART_NO_PERSISTENCE"
-        )
-
-    def _is_portfolio_fresh(self) -> bool:
-        """Check if portfolio data is fresh (within TTL)."""
-        if not self._last_portfolio_ts:
-            return False
-        now_ms = int(time.time() * 1000)
-        return (now_ms - self._last_portfolio_ts) <= self._ttl_sec * 1000
-
-    def _is_qos_allowed(self, symbol: str) -> bool:
-        """Check if QoS allows trading for the given symbol."""
-        if not symbol:
-            return True  # Allow if no symbol specified
-
-        next_allowed_ts = self._qos_next_allowed_ts_per_symbol.get(symbol, 0)
-        current_ts = int(time.time() * 1000)
-        return current_ts >= next_allowed_ts
-
-    # =========================================================================
-    # TASK47c-C: Capacity Gate (L1)
-    # =========================================================================
-    
-    def _check_capacity_gate(self, intent_msg: Message) -> tuple[bool, str, str]:
-        """Check if intent passes capacity gate (max_notional by leverage).
-        
-        TASK47c-C: Capacity Gate L1 implementation.
-        Formula: max_notional = equity_free_usdt * target_leverage * max_notional_utilization
-        
-        Args:
-            intent_msg: TRADE_INTENT_PROPOSED message
-            
-        Returns:
-            Tuple of (allowed: bool, reason: str, log_details: str)
-            - allowed=True: proceed to dispatch
-            - allowed=False: drop with reason
-        """
-        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol") or ""
-        order_details = intent_msg.pld.get("order", {})
-        
-        # 1. Get notional from payload or calculate
-        notional = intent_msg.pld.get("notional") or order_details.get("notional")
-        
-        if notional is None:
-            # Calculate from qty * price_ref
-            qty = order_details.get("qty")
-            price_ref = (
-                order_details.get("price_ref")
-                or intent_msg.pld.get("price_ref")
-                or intent_msg.pld.get("entry_price")
-                or order_details.get("price")
-                or intent_msg.pld.get("price")
-            )
-            
-            if qty is None or price_ref is None:
-                return (False, "missing_price_ref", f"symbol={symbol} qty={qty} price_ref={price_ref}")
-            
-            try:
-                notional = abs(float(qty)) * float(price_ref)
-            except (TypeError, ValueError) as e:
-                return (False, "invalid_qty_price", f"symbol={symbol} qty={qty} price_ref={price_ref} error={e}")
-        else:
-            try:
-                notional = float(notional)
-            except (TypeError, ValueError) as e:
-                return (False, "invalid_notional", f"symbol={symbol} notional={notional} error={e}")
-        
-        # 2. Get per-instrument execution config (TASK47c-A SSOT)
-        instrument_specs = self.config.instruments.get(symbol) if self.config.instruments else None
-        if instrument_specs is None:
-            return (False, "missing_instrument_config", f"symbol={symbol} not in instruments")
-        
-        execution_config = getattr(instrument_specs, "execution", None)
-        if execution_config is None:
-            return (False, "missing_execution_config", f"symbol={symbol} has no execution config")
-        
-        try:
-            target_leverage = float(execution_config.target_leverage)
-            max_notional_utilization = float(execution_config.max_notional_utilization)
-        except (TypeError, ValueError) as e:
-            return (
-                False,
-                "invalid_execution_config",
-                f"symbol={symbol} target_leverage={getattr(execution_config, 'target_leverage', None)} "
-                f"max_notional_utilization={getattr(execution_config, 'max_notional_utilization', None)} error={e}",
-            )
-        
-        # 3. Get equity_free_usdt from portfolio
-        equity_free_usdt_raw = self._last_portfolio.get("equity_free_usdt", 0)
-        try:
-            equity_free_usdt = float(equity_free_usdt_raw)
-        except (TypeError, ValueError) as e:
-            return (
-                False,
-                "invalid_equity_data",
-                f"symbol={symbol} equity_free_usdt={equity_free_usdt_raw} error={e}",
-            )
-
-        if equity_free_usdt <= 0:
-            # Defensive: no equity data = fail-closed
-            return (False, "missing_equity_data", f"symbol={symbol} equity_free_usdt={equity_free_usdt}")
-        
-        # 4. Calculate max_notional
-        max_notional = equity_free_usdt * target_leverage * max_notional_utilization
-        
-        # 5. Compare
-        log_details = (
-            f"symbol={symbol} notional={notional:.2f} max_notional={max_notional:.2f} "
-            f"equity={equity_free_usdt:.2f} leverage={target_leverage} utilization={max_notional_utilization}"
-        )
-        
-        if notional > max_notional:
-            return (False, "capacity_exceeded", log_details)
-        
-        return (True, "ok", log_details)
-
-    async def on_portfolio_state_updated(self, event: Message) -> None:
-        """Handle fresh portfolio updates and flush deferred intents."""
-        self._last_portfolio = event.pld or {}
-        self._last_portfolio_ts = int(
-            self._last_portfolio.get("positions_last_ts_ms", 0)
-        ) or int(time.time() * 1000)
-
-        # Flush any deferred intents now that portfolio is fresh
-        await self._flush_deferred_if_fresh()
-
-    async def on_intent_deferred(self, event: Message) -> None:
-        """Handle INTENT_DEFERRED events from DecisionMaking QoS."""
-        symbol = event.pld.get("symbol")
-        reason = event.pld.get("reason", "unknown")
-        next_allowed_ts = event.pld.get("next_allowed_ts", 0)
-
-        if not symbol:
-            self.logger.warning(
-                f"BRIDGE: INTENT_DEFERRED missing symbol: {event.pld}")
-            return
-
-        # Register QoS cooldown
-        self._qos_next_allowed_ts_per_symbol[symbol] = next_allowed_ts
-
-        # FIX: Ignore PORTFOLIO_STALE reason to prevent infinite loop
-        # PORTFOLIO_STALE is handled by local retry task in on_trade_intent_proposed
-        if reason == "PORTFOLIO_STALE":
-            return
-
-        self.logger.info(
-            f"BRIDGE: QoS defer registered for {symbol} until {next_allowed_ts} (reason: {reason})")
-
-        # Increment metrics (optional)
-        try:
-            from apps.reference.telemetry.metrics import inc_bridge_deferred
-            inc_bridge_deferred(reason, symbol)
-        except ImportError:
-            pass  # Metrics unavailable
-
-        # Schedule retry when QoS allows
-        import asyncio
-
-        async def _retry_after_qos():
-            # Wait until QoS allows
-            current_ts = int(time.time() * 1000)
-            if next_allowed_ts > current_ts:
-                delay_sec = (next_allowed_ts - current_ts) / 1000.0
-                await asyncio.sleep(delay_sec)
-
-            # Check if still blocked by QoS
-            if not self._is_qos_allowed(symbol):
-                self.logger.info(
-                    f"BRIDGE: {symbol} still QoS blocked after defer wait")
-                return
-
-            # Re-emit the original signal to trigger new decision
-            # This will cause DecisionMaking to re-evaluate with fresh data
-            original_context = event.pld.get("original_context", {})
-            if original_context:
-                # Re-emit features to trigger new decision cycle
-                features_msg = Message(
-                    op="EVT",
-                    verb="FEATURES_CALCULATED",
-                    src="bridge",
-                    dst="decision_making",
-                    rid=event.rid,
-                    pld=original_context.get("features", {}),
-                    why="qos_defer_retry"
-                )
-                await emit_compat(self.fsm, features_msg, logger=self.logger)
-                self.logger.info(
-                    f"BRIDGE: Re-triggered decision cycle for {symbol} after QoS defer")
-            else:
-                self.logger.warning(
-                    f"BRIDGE: No original context to retry {symbol} QoS defer")
-
-        asyncio.create_task(_retry_after_qos())
-
-    async def on_trade_intent_proposed(self, event: Message) -> None:
-        """
-        Handle trade intent with QoS and portfolio freshness gates.
-
-        Checks QoS first, then portfolio freshness.
-        If QoS blocks → defer intent
-        If portfolio stale → defer intent
-        If both OK → convert immediately to CMD:OPEN
-        """
-        symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
-
-        order_details = event.pld.get("order", {})
-        reduce_only = bool(
-            order_details.get("reduce_only")
-            or order_details.get("reduceOnly")
-            or event.pld.get("reduce_only")
-        )
-        if reduce_only:
-            # Reduce-only closes must bypass QoS/portfolio freshness gates.
-            self._dispatch_close(event)
-            return
-
-        # Check for forbidden LIMIT entry
-        if order_details.get("order_type") == "LIMIT":
-            self.logger.error(
-                "BRIDGE: LIMIT entry forbidden. Only MARKET entry allowed."
-            )
-            return
-
-        # Check QoS first
-        if not self._is_qos_allowed(symbol):
-            # QoS blocked - defer the intent
-            key = event.pld.get(
-                "idempotent_key") or event.rid or str(time.time())
-            self._deferred[key] = event
-            self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
-
-            # Emit deferred event
-            defer_evt = Message(
-                op="EVT",
-                verb="INTENT_DEFERRED",
-                src="bridge",
-                dst="*",
-                rid=event.rid,
-                pld={
-                    "reason": "QOS_COOLDOWN",
-                    "symbol": symbol,
-                    "idempotent_key": event.pld.get("idempotent_key"),
-                    "next_allowed_ts": self._qos_next_allowed_ts_per_symbol.get(symbol, 0),
-                },
-                why="bridge_qoS_blocked",
-            )
-            await emit_compat(self.fsm, defer_evt, logger=self.logger)
-
-            self.logger.info(
-                f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
-                f"(QoS blocked, try #{self._deferred_tries[key]})"
-            )
-
-            # Schedule QoS retry
-            import asyncio
-
-            async def _retry_after_qos():
-                await asyncio.sleep(1.0)  # Check every second
-                if self._is_qos_allowed(symbol):
-                    # QoS now allows - try to process
-                    await self._flush_deferred_if_fresh()
-                else:
-                    # Still blocked - reschedule
-                    asyncio.create_task(_retry_after_qos())
-
-            asyncio.create_task(_retry_after_qos())
-            return
-
-        # QoS OK - check portfolio freshness
-        if self._is_portfolio_fresh():
-            self._dispatch_open(event)
-            return
-
-        # TASK47: DEV/SHADOW override — do NOT block on stale/missing portfolio.
-        if getattr(self, "_debug_disable_positions_stale_gate", False):
-            self.logger.warning(
-                "BRIDGE: portfolio stale but override active; proceeding OPEN (why=portfolio_stale_gate_disabled)"
-            )
-            try:
-                override_evt = Message(
-                    op="EVT",
-                    verb="CONFIG_DEBUG_OVERRIDE_ACTIVE",
-                    src="bridge",
-                    dst="*",
-                    rid=event.rid,
-                    pld={"flag": "disable_positions_stale_gate", "why": "portfolio_stale_gate_disabled"},
-                    why="debug_override_active",
-                )
-                await emit_compat(self.fsm, override_evt, logger=self.logger)
-            except Exception:
-                pass
-            self._dispatch_open(event)
-            return
-
-        # Portfolio stale - defer the intent
-        key = event.pld.get("idempotent_key") or event.rid or str(time.time())
-        self._deferred[key] = event
-        self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
-
-        # Emit deferred event
-        defer_evt = Message(
-            op="EVT",
-            verb="INTENT_DEFERRED",
-            src="bridge",
-            dst="*",
-            rid=event.rid,
-            pld={
-                "reason": "PORTFOLIO_STALE",
-                "symbol": symbol,
-                "idempotent_key": event.pld.get("idempotent_key"),
-            },
-            why="bridge_waits_fresh_portfolio",
-        )
-        await emit_compat(self.fsm, defer_evt, logger=self.logger)
-
-        self.logger.info(
-            f"BRIDGE: Deferred TRADE_INTENT_PROPOSED rid={event.rid} for {symbol} "
-            f"(portfolio stale, try #{self._deferred_tries[key]})"
-        )
-
-        # Schedule retry after delay
-        import asyncio
-
-        async def _retry_once():
-            await asyncio.sleep(self._retry_delay_sec)
-            # Check if we should drop due to timeout
-            if self._deferred_tries.get(key, 0) >= self._max_retries:
-                # Drop after max retries
-                drop_evt = Message(
-                    op="EVT",
-                    verb="INTENT_DROPPED",
-                    src="bridge",
-                    dst="*",
-                    rid=event.rid,
-                    pld={
-                        "reason": "STALE_PORTFOLIO_TIMEOUT",
-                        "symbol": symbol,
-                        "idempotent_key": event.pld.get("idempotent_key"),
-                    },
-                    why="bridge_drop_after_retries",
-                )
-                await emit_compat(self.fsm, drop_evt, logger=self.logger)
-                self._deferred.pop(key, None)
-                self._deferred_tries.pop(key, None)
-                self.logger.info(
-                    f"BRIDGE: Dropped deferred intent after {self._max_retries} retries: {key}"
-                )
-                return
-
-            # Otherwise, try to flush if portfolio became fresh
-            await self._flush_deferred_if_fresh()
-
-        asyncio.create_task(_retry_once())
-
-    async def _flush_deferred_if_fresh(self) -> None:
-        """Flush deferred intents if portfolio is now fresh and QoS allows."""
-        if not self._is_portfolio_fresh() and not getattr(self, "_debug_disable_positions_stale_gate", False):
-            return
-
-        dropped_count = 0
-        processed_count = 0
-
-        for key, intent_msg in list(self._deferred.items()):
-            symbol = intent_msg.pld.get(
-                "instrument") or intent_msg.pld.get("symbol") or ""
-            order_details = intent_msg.pld.get("order", {})
-            reduce_only = bool(
-                order_details.get("reduce_only")
-                or order_details.get("reduceOnly")
-                or intent_msg.pld.get("reduce_only")
-            )
-            if reduce_only:
-                # Reduce-only closes bypass freshness/QoS gates; dispatch immediately.
-                self._dispatch_close(intent_msg)
-                self._deferred.pop(key, None)
-                self._deferred_tries.pop(key, None)
-                processed_count += 1
-                continue
-
-            # Check QoS for this symbol
-            if not self._is_qos_allowed(symbol):
-                continue  # Still QoS blocked, keep deferred
-
-            tries = self._deferred_tries.get(key, 0)
-            if tries > self._max_retries:
-                # Drop after max retries
-                drop_evt = Message(
-                    op="EVT",
-                    verb="INTENT_DROPPED",
-                    src="bridge",
-                    dst="*",
-                    rid=intent_msg.rid,
-                    pld={
-                        "reason": "STALE_PORTFOLIO_TIMEOUT",
-                        "symbol": symbol,
-                        "idempotent_key": intent_msg.pld.get("idempotent_key"),
-                    },
-                    why="bridge_drop_after_retries",
-                )
-                await emit_compat(self.fsm, drop_evt, logger=self.logger)
-                self._deferred.pop(key, None)
-                self._deferred_tries.pop(key, None)
-                dropped_count += 1
-                continue
-
-            # Process the deferred intent
-            self._dispatch_open(intent_msg)
-            self._deferred.pop(key, None)
-            self._deferred_tries.pop(key, None)
-            processed_count += 1
-
-            # Increment retry metric if this was retried
-            if tries > 1:
-                symbol = intent_msg.pld.get(
-                    "instrument") or intent_msg.pld.get("symbol")
-                try:
-                    from apps.reference.telemetry.metrics import inc_bridge_retry
-                    inc_bridge_retry(symbol)
-                except ImportError:
-                    pass  # Metrics unavailable
-
-        if dropped_count > 0 or processed_count > 0:
-            self.logger.info(
-                f"BRIDGE: Flushed deferred intents - processed: {processed_count}, dropped: {dropped_count}"
-            )
-
-    def _dispatch_open(self, intent_msg: Message) -> None:
-        """Convert TRADE_INTENT_PROPOSED to CMD:OPEN and dispatch."""
-        order_details = intent_msg.pld.get("order", {})
-        reduce_only = bool(
-            order_details.get("reduce_only")
-            or order_details.get("reduceOnly")
-            or intent_msg.pld.get("reduce_only")
-        )
-        if reduce_only:
-            self._dispatch_close(intent_msg)
-            return
-
-        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol") or ""
-        
-        # TASK47c-C: Capacity Gate - check before proceeding
-        allowed, reason, log_details = self._check_capacity_gate(intent_msg)
-        if not allowed:
-            # Log structured capacity gate rejection
-            self.logger.warning(f"CAPACITY_GATE_REJECT: {log_details}")
-            
-            # Emit INTENT_DROPPED
-            drop_evt = Message(
-                op="EVT",
-                verb="INTENT_DROPPED",
-                src="bridge",
-                dst="*",
-                rid=intent_msg.rid,
-                pld={
-                    "reason": reason,
-                    "symbol": symbol,
-                    "idempotent_key": intent_msg.pld.get("idempotent_key"),
-                    "details": log_details[:80],  # Truncate to 80 chars
-                },
-                why=f"capacity_gate_{reason}"[:80],
-            )
-
-            # WAL: persist drop decision for post-mortem and DR traceability.
-            # Best-effort: do not crash bridge on WAL issues.
-            try:
-                wal.append(drop_evt.model_dump())
-            except Exception as wal_e:
-                self.logger.warning(f"Failed to write INTENT_DROPPED to WAL: {wal_e}")
-            try:
-                self.fsm.emit("EVT:INTENT_DROPPED", drop_evt.pld, drop_evt.why)
-            except Exception as e:
-                self.logger.error(f"Failed to emit INTENT_DROPPED: {e}")
-            return
-
-        self.logger.info(
-            f"BRIDGE: Converting TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {intent_msg.pld.get('instrument', 'unknown')} to CMD:OPEN"
-        )
-
-        # Extract order details from nested structure
-        # Accept multiple upstream shapes (legacy + MR handler)
-        order_type_raw = order_details.get("order_type") or order_details.get("type")
-        price_ref = (
-            order_details.get("price_ref")
-            or intent_msg.pld.get("price_ref")
-            or intent_msg.pld.get("entry_price")
-            or order_details.get("price")
-            or intent_msg.pld.get("price")
-        )
-
-        # BUG FIX: MR Handler puts stop_price/target_price in price_ctx, not top-level
-        # Extract from both locations for compatibility with all upstream sources
-        price_ctx = intent_msg.pld.get("price_ctx") or {}
-        
-        command_payload = {
-            # Pass through request ID for tracing
-            "rid": intent_msg.pld.get("rid"),
-            # Map 'instrument' to 'symbol'
-            "symbol": intent_msg.pld.get("instrument"),
-            "side": intent_msg.pld.get("side"),
-            # Get qty from order.qty (as string)
-            "qty": order_details.get("qty"),
-            "price": order_details.get(
-                "price"
-            ),  # Get price from order.price (as string)
-            # ORDER-POLICY-01: NO FALLBACK. order_type must come from strategy policy.
-            "order_type": order_type_raw,  # Will be validated below
-            # EP-01.4-INT-A: Pass through tif from trade_intent (no hardcode)
-            # Null means execution_position will apply default (GTC)
-            "tif": order_details.get("tif"),
-            "idempotent_key": intent_msg.pld.get(
-                "idempotent_key"
-            ),  # Pass through for deduplication
-            "price_ref": price_ref,  # Pass current market price for min_notional/exposure checks
-            # TP/SL Intent Data Propagation (PHASE A2 fix + price_ctx extraction)
-            # Check top-level first, then price_ctx (MR Handler uses price_ctx)
-            "stop_price": intent_msg.pld.get("stop_price") or price_ctx.get("stop_price"),
-            "target_price": intent_msg.pld.get("target_price") or price_ctx.get("target_price"),
-            "sl_pct": intent_msg.pld.get("sl_pct"),
-            # EP-01.3-INT: Pass valid_for_ms for pending entry TTL
-            "valid_for_ms": intent_msg.pld.get("valid_for_ms"),
-        }
-
-        # TASK40: Use the business rid (from payload) as the command rid to keep
-        # OrderIndex correlation stable end-to-end (intent -> cmd -> entry).
-        stable_rid = str(command_payload.get("rid") or intent_msg.rid)
-        command_payload["rid"] = stable_rid
-
-        # XAI instrumentation: exec_open_enter
-        from vfoundation.core.why_codes import WhyCode, format_why_with_details
-        exposure_reservation_state = "unknown"  # TODO: get actual reservation state
-        self.logger.info(
-            format_why_with_details(
-                WhyCode.SUCCESS_ORDER_PLACED,  # closest match for execution entry
-                f"rid={command_payload.get('rid')} symbol={command_payload.get('symbol')} side={command_payload.get('side')} qty={command_payload.get('qty')} clientOrderId={command_payload.get('idempotent_key')} exposure_reservation_state={exposure_reservation_state} why=exec_open_enter"
-            )
-        )
-
-        self.logger.debug(
-            f"BRIDGE: CMD:OPEN payload being sent: {command_payload}")
-
-        # Preserve XAI chain: pass full WHY chain in data_ref.
-        # SSOT: Message.data_ref must be list[str]; some upstreams still send pld["why"] as str.
-        event_why_chain: list[str] = []
-        pld_why = intent_msg.pld.get("why", [])
-        if isinstance(intent_msg.data_ref, list) and intent_msg.data_ref:
-            event_why_chain = [str(x) for x in intent_msg.data_ref if x is not None]
-            # If upstream also provided a human WHY string (e.g., MR), preserve it as an additional ref.
-            if isinstance(pld_why, str) and pld_why.strip() and pld_why.strip() not in event_why_chain:
-                event_why_chain.append(pld_why.strip())
-        else:
-            if isinstance(pld_why, list):
-                event_why_chain = [str(x) for x in pld_why if x is not None]
-            elif isinstance(pld_why, str) and pld_why.strip():
-                event_why_chain = [pld_why.strip()]
-
-        # Pick a safe short WHY (<=80 chars). Prefer a known short code, else truncate.
-        default_why = "exec_open_enter"
-        bridge_why = default_why
-        if isinstance(event_why_chain, list) and event_why_chain:
-            candidate = str(event_why_chain[0])
-            bridge_why = truncate_why(candidate) or default_why
-
-        # Create Message for CMD:OPEN
-        open_command = Message(
-            op="CMD",
-            verb="OPEN",
-            src="decision_making",  # Source is decision_making
-            dst="execution_position",
-            rid=stable_rid,
-            parent_span_id=intent_msg.span_id,  # Link to parent event for tracing
-            intent="COMMAND",  # v2.2: Classify as command
-            why=bridge_why,  # Preserve first WHY for backward compatibility
-            pld=command_payload,
-            data_ref=event_why_chain,  # Full WHY chain (validated list[str])
-        )
-
-        # WAL: persist CMD:OPEN emission so WAL contains non-account lifecycle evidence.
-        # Best-effort: do not block or crash bridge on WAL issues.
-        try:
-            wal.append(open_command.model_dump())
-        except Exception as wal_e:
-            self.logger.warning(f"Failed to write CMD:OPEN to WAL: {wal_e}")
-
-        self.logger.info(
-            f"BRIDGE: Dispatched CMD:OPEN with rid={open_command.rid}, parent_span={intent_msg.span_id}"
-        )
-
-        # Handle the command directly with execution_position FSM
-        if execution_position is not None:
-            # TASK40: Mark "open intent in-flight" early (before the exchange ACK)
-            # to stop order storms on repeated signals.
-            try:
-                if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
-                    self.fsm.order_index.upsert_from_open(  # type: ignore[attr-defined]
-                        rid=stable_rid,
-                        idempotent_key=str(command_payload.get("idempotent_key") or stable_rid),
-                        clientOrderId=None,
-                        symbol=str(command_payload.get("symbol") or ""),
-                        side=str(command_payload.get("side") or ""),
-                        order_type="ENTRY_INTENT",
-                    )
-            except Exception:
-                pass
-
-            result = execution_position.handle(open_command)
-            if result:
-                self.logger.info(
-                    f"BRIDGE: Execution FSM processed CMD:OPEN, result: {result.op}:{result.verb}"
-                )
-                # Emit the result synchronously via fsm.emit
-                try:
-                    event_name = f"{result.op}:{result.verb}"
-                    self.fsm.emit(event_name, result.pld or {}, result.why or "bridge_result", result.data_ref)
-                except Exception as e:
-                    self.logger.error(f"BRIDGE: Error emitting result: {e}")
-                
-                if result.op == "ERR":
-                    self.logger.error(
-                        f"BRIDGE: Execution rejected - why={result.why}, pld={result.pld}"
-                    )
-                    # Unblock guard on immediate execution rejection.
-                    try:
-                        if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
-                            ref = self.fsm.order_index.get(rid=stable_rid)  # type: ignore[attr-defined]
-                            if ref is not None:
-                                self.fsm.order_index.mark_terminal(ref)  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
-        else:
-            self.logger.error("BRIDGE: execution_position FSM not initialized")
-
-    def _dispatch_close(self, intent_msg: Message) -> None:
-        """Convert reduce-only TRADE_INTENT_PROPOSED to CMD:CLOSE and dispatch."""
-        symbol = intent_msg.pld.get("instrument") or intent_msg.pld.get("symbol")
-        if not symbol:
-            self.logger.error(
-                "BRIDGE: reduce-only intent missing symbol/instrument; cannot dispatch CLOSE"
-            )
-            return
-
-        self.logger.info(
-            f"BRIDGE: Converting reduce-only TRADE_INTENT_PROPOSED rid={intent_msg.rid} for {symbol} to CMD:CLOSE"
-        )
-
-        # Preserve XAI chain: pass full WHY chain in data_ref.
-        # SSOT: Message.data_ref must be list[str]; some upstreams still send pld["why"] as str.
-        event_why_chain: list[str] = []
-        pld_why = intent_msg.pld.get("why", [])
-        if isinstance(intent_msg.data_ref, list) and intent_msg.data_ref:
-            event_why_chain = [str(x) for x in intent_msg.data_ref if x is not None]
-            if isinstance(pld_why, str) and pld_why.strip() and pld_why.strip() not in event_why_chain:
-                event_why_chain.append(pld_why.strip())
-        else:
-            if isinstance(pld_why, list):
-                event_why_chain = [str(x) for x in pld_why if x is not None]
-            elif isinstance(pld_why, str) and pld_why.strip():
-                event_why_chain = [pld_why.strip()]
-
-        default_why = "exec_close_enter"
-        bridge_why = default_why
-        if isinstance(event_why_chain, list) and event_why_chain:
-            candidate = str(event_why_chain[0])
-            bridge_why = truncate_why(candidate) or default_why
-
-        close_command = Message(
-            op="CMD",
-            verb="CLOSE",
-            src="bridge",
-            dst="execution_position",
-            rid=intent_msg.rid,
-            why=bridge_why,
-            pld={
-                "symbol": symbol,
-                "reason": intent_msg.pld.get("reason") or "reduce_only_trade_intent",
-                "idempotent_key": intent_msg.pld.get("idempotent_key"),
-                "retry_key": intent_msg.pld.get("retry_key"),
-            },
-            data_ref=event_why_chain,
-        )
-
-        if execution_position is not None:
-            result = execution_position.handle(close_command)
-            if result:
-                try:
-                    event_name = f"{result.op}:{result.verb}"
-                    self.fsm.emit(
-                        event_name,
-                        result.pld or {},
-                        result.why or "bridge_result",
-                        result.data_ref,
-                    )
-                except Exception as e:
-                    self.logger.error(f"BRIDGE: Error emitting CLOSE result: {e}")
-        else:
-            self.logger.error("BRIDGE: execution_position FSM not initialized for CLOSE")
-
-    # ========== SYNCHRONOUS VERSIONS OF HANDLERS ==========
-    
-    def on_trade_intent_proposed_sync(self, event: Message) -> None:
-        """
-        Synchronous handler for trade intent.
-        Checks QoS and portfolio freshness, dispatches CMD:OPEN if OK.
-        If portfolio stale, defers intent for retry on next portfolio update.
-        """
-        symbol = event.pld.get("instrument") or event.pld.get("symbol") or ""
-        rid = event.pld.get("rid", "unknown")
-        
-        order_details = event.pld.get("order", {})
-        reduce_only = bool(
-            order_details.get("reduce_only")
-            or order_details.get("reduceOnly")
-            or event.pld.get("reduce_only")
-        )
-        if reduce_only:
-            self._dispatch_close(event)
-            return
-
-        # Check for forbidden LIMIT entry
-        if order_details.get("order_type") == "LIMIT":
-            self.logger.error("BRIDGE: LIMIT entry forbidden. Only MARKET entry allowed.")
-            return
-        
-        # Check QoS first
-        if not self._is_qos_allowed(symbol):
-            self.logger.info(f"BRIDGE: QoS blocked for {symbol}, skipping")
-            return
-        
-        # Check portfolio freshness
-        if not self._is_portfolio_fresh():
-            # Defer intent for retry on next portfolio update (sync mode)
-            idempotent_key = f"{symbol}_{rid}"
-            if idempotent_key not in self._deferred:
-                self._deferred[idempotent_key] = event
-                self._deferred_tries[idempotent_key] = 0
-                self.logger.info(f"BRIDGE: Portfolio stale for {symbol}, deferring intent (rid={rid})")
-            else:
-                self.logger.debug(f"BRIDGE: Intent already deferred for {symbol} (rid={rid})")
-            return
-        
-        # Both OK - dispatch
-        self._dispatch_open(event)
-    
-    def on_portfolio_state_updated_sync(self, event: Message) -> None:
-        """Synchronous handler for portfolio updates. Flushes deferred intents."""
-        self._last_portfolio = event.pld or {}
-        self._last_portfolio_ts = int(
-            self._last_portfolio.get("positions_last_ts_ms", 0)
-        ) or int(time.time() * 1000)
-        
-        # Flush deferred intents now that portfolio is fresh
-        if self._deferred:
-            self.logger.info(f"BRIDGE: Portfolio updated, flushing {len(self._deferred)} deferred intents")
-            to_remove = []
-            for key, deferred_event in list(self._deferred.items()):
-                self._deferred_tries[key] = self._deferred_tries.get(key, 0) + 1
-                if self._deferred_tries[key] > self._max_retries:
-                    self.logger.warning(f"BRIDGE: Deferred intent {key} exceeded max retries, dropping")
-                    to_remove.append(key)
-                    continue
-                    
-                symbol = deferred_event.pld.get("instrument") or deferred_event.pld.get("symbol") or ""
-                if not self._is_qos_allowed(symbol):
-                    self.logger.info(f"BRIDGE: Deferred intent {key} still QoS blocked, keeping")
-                    continue
-                
-                # Dispatch and mark for removal
-                self._dispatch_open(deferred_event)
-                to_remove.append(key)
-            
-            # Clean up processed intents
-            for key in to_remove:
-                self._deferred.pop(key, None)
-                self._deferred_tries.pop(key, None)
-    
-    def on_intent_deferred_sync(self, event: Message) -> None:
-        """
-        Synchronous handler for intent deferral.
-        
-        D2: Supports both legacy format and intent_deferred_v1.json compliant format.
-        If payload has retry_key and original_event, uses RetryScheduler.
-        Otherwise, falls back to legacy QoS cooldown registration.
-        """
-        pld = event.pld or {}
-        symbol = pld.get("symbol")
-        reason = pld.get("reason", "unknown")
-        next_allowed_ts = pld.get("next_allowed_ts", 0)
-        
-        if not symbol:
-            self.logger.warning(f"BRIDGE: INTENT_DEFERRED missing symbol: {pld}")
-            return
-        
-        # Register QoS cooldown (always, for both legacy and v1)
-        self._qos_next_allowed_ts_per_symbol[symbol] = next_allowed_ts
-        
-        # D2: Check if v1-compliant payload with retry_key and original_event
-        retry_key = pld.get("retry_key")
-        original_event = pld.get("original_event")
-        
-        if retry_key and original_event:
-            # V1-compliant: use RetryScheduler for reliable retry
-            deferred_payload = {
-                "retry_key": retry_key,
-                "symbol": symbol,
-                "reason": reason,
-                "next_allowed_ts": next_allowed_ts,
-                "attempt": pld.get("attempt", 1),
-                "max_attempts": int(pld.get("max_attempts", self._retry_scheduler.default_max_attempts)),
-                "original_event": original_event,
-                "why_chain": pld.get("why_chain", []),
-                "created_ts": pld.get("created_ts", int(time.time() * 1000)),
-            }
-            registered = self._retry_scheduler.register_deferred(deferred_payload)
-            if registered:
-                self.logger.info(
-                    f"BRIDGE: V1 deferred registered via RetryScheduler for {symbol} "
-                    f"(retry_key={retry_key}, reason={reason})"
-                )
-            else:
-                self.logger.debug(
-                    f"BRIDGE: V1 deferred already pending or invalid for {symbol} (retry_key={retry_key})"
-                )
-        else:
-            # Legacy format: just log QoS registration (no reliable retry)
-            self.logger.info(
-                f"BRIDGE: Legacy QoS defer registered for {symbol} until {next_allowed_ts} (reason={reason})"
-            )
-
-
-# Global bridge instance for backward compatibility
-_bridge_instance: AuroraBridge | None = None
-
-
-def on_trade_intent_proposed(event: Message) -> None:
-    """Global handler for TRADE_INTENT_PROPOSED events - delegates to bridge."""
-    global _bridge_instance
-    LOG.info(f"BRIDGE_HANDLER: on_trade_intent_proposed called for {event.pld.get('instrument', 'unknown')}")
-    if _bridge_instance is not None:
-        try:
-            # Call synchronous method directly
-            _bridge_instance.on_trade_intent_proposed_sync(event)
-            LOG.info("BRIDGE_HANDLER: Task completed")
-        except Exception as e:
-            LOG.error(f"BRIDGE_HANDLER: Error: {e}")
-            import traceback
-            LOG.error(traceback.format_exc())
-    else:
-        LOG.error(
-            "BRIDGE: No bridge instance available for on_trade_intent_proposed")
-
-
-def on_portfolio_state_updated(event: Message) -> None:
-    """Global handler for PORTFOLIO_STATE_UPDATED events - delegates to bridge."""
-    global _bridge_instance
-    if _bridge_instance is not None:
-        try:
-            # Call synchronous method directly
-            _bridge_instance.on_portfolio_state_updated_sync(event)
-        except Exception as e:
-            LOG.error(f"BRIDGE: Error in on_portfolio_state_updated: {e}")
-    else:
-        LOG.error(
-            "BRIDGE: No bridge instance available for on_portfolio_state_updated")
-
-
-def on_intent_deferred(event: Message) -> None:
-    """Global handler for INTENT_DEFERRED events - delegates to bridge."""
-    global _bridge_instance
-    if _bridge_instance is not None:
-        try:
-            # Call synchronous method directly
-            _bridge_instance.on_intent_deferred_sync(event)
-        except Exception as e:
-            LOG.error(f"BRIDGE: Error in on_intent_deferred: {e}")
-    else:
-        LOG.error("BRIDGE: No bridge instance available for on_intent_deferred")
-# Local FSMCore mock has been removed. The real FSMCore from vfoundation is now used.
+# AuroraBridge and global handlers removed (BRIDGE-SUNSET-01).
+# TRADE_INTENT_PROPOSED is now handled directly by ExecPosFSM.
 
 
 # JSON Formatter for structured logging
@@ -1423,6 +462,305 @@ def initialize_domains(config: dict[str, Any]) -> FSMCore:
     return fsm
 
 
+def run_backtest_simulation(config: AuroraConfig) -> None:
+    """
+    Run the application in BACKTEST mode.
+    
+    This replaces the standard main loop with a simulation loop driven by BacktestEngine.
+    It initializes a subset of domains (FeatureEngineering, DecisionMaking, etc.) 
+    and wires them to a MockBroker and LocalBus (FSMCore).
+    """
+    LOG.info("="*60)
+    LOG.info("🚀 STARTING AURORA CORE IN BACKTEST MODE")
+    LOG.info("="*60)
+
+    # BACKTEST UNBLOCKER: allow strategy loop to proceed even if FE warmup is not full_ready
+    try:
+        fe = getattr(config.domains, "feature_engineering", None)
+        warm = getattr(fe, "warmup", None) if fe is not None else None
+        if warm is not None:
+            warm.enforcement_mode = "warn_only"
+        else:
+            from apps.reference.config_models import WarmupEnforcementConfig
+
+            if fe is not None:
+                fe.warmup = WarmupEnforcementConfig(enforcement_mode="warn_only")
+        LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
+    except Exception as e:
+        LOG.warning(f"BACKTEST OVERRIDE failed (warmup warn_only): {e}")
+
+    # BACKTEST OVERRIDE: disable macro_sync (macro trend alignment) to force local-only trading.
+    # Rationale: in historical replay we frequently lack reliable anchor alignment/bins, which keeps
+    # warmup in NOT_READY and causes strategies to see unknown trend.
+    try:
+        fe = getattr(config.domains, "feature_engineering", None)
+        ms_cfg = getattr(fe, "macro_sync", None) if fe is not None else None
+        if ms_cfg is not None and hasattr(ms_cfg, "enabled"):
+            ms_cfg.enabled = False
+            LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.macro_sync.enabled=False")
+            print("🔧 [Backtest Config] Macro Sync DISABLED to force local trading.")
+        else:
+            LOG.warning("BACKTEST OVERRIDE: macro_sync config not present on domains.feature_engineering")
+    except Exception as e:
+        LOG.warning(f"BACKTEST OVERRIDE failed (disable macro_sync): {e}")
+    
+    # 1. Initialize Core Event Bus
+    fsm = FSMCore()
+    # FIX-BACKTEST-ORDER-IN-FLIGHT: Skip order_index for backtest.
+    # The order-in-flight guard prevents duplicate ENTRY orders in live trading.
+    # In backtest, orders never receive FILL/CANCEL feedback, so they never become terminal,
+    # causing ALL subsequent intents to be blocked with NRR-ORDER-IN-FLIGHT.
+    # Solution: Don't initialize order_index for backtest - the guard check will be skipped
+    # because `hasattr(self.fsm, "order_index") and self.fsm.order_index` returns False.
+    # _init_order_index(fsm, config)  # DISABLED FOR BACKTEST
+
+    # 1b. Start dedicated asyncio loop for async domains (ExecPosFSM order execution, watchdog, etc.)
+    loop = asyncio.new_event_loop()
+    loop_thread = threading.Thread(target=_run_async_loop, args=(loop,), daemon=True)
+    loop_thread.start()
+
+    # Backtest timebase: prevent stale-feature gates by running domains on simulated time.
+    # LiveClock (wall time) makes all 2023 events look stale in 2026.
+    bt_clock = MockClock(start_ms=0)
+
+    # --- Backtest telemetry: capture regimes & feature readiness ---
+    regime_events: list[dict] = []
+    last_regime_by_symbol: dict[str, dict] = {}
+    regime_counts_by_symbol: dict[str, dict[str, int]] = {}
+    features_counts_by_tf: dict[int, int] = {}
+    features_full_ready_by_tf: dict[int, int] = {}
+
+    def _advance_clock_from_ts(ts_ms: int) -> None:
+        try:
+            bt_clock.set_time_ms(int(ts_ms))
+        except Exception:
+            pass
+
+    def _on_regime(event: Message) -> None:
+        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        if not isinstance(pld, dict):
+            return
+        symbol = pld.get("symbol")
+        regime = pld.get("regime")
+        if not symbol or not regime:
+            return
+        regime_events.append(pld)
+        last_regime_by_symbol[str(symbol)] = pld
+        bucket = regime_counts_by_symbol.setdefault(str(symbol), {})
+        bucket[str(regime)] = int(bucket.get(str(regime), 0)) + 1
+
+    def _on_features(event: Message) -> None:
+        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        if not isinstance(pld, dict):
+            return
+        ts_ms = pld.get("ts")
+        if ts_ms is not None:
+            _advance_clock_from_ts(int(ts_ms))
+        tf_sec = pld.get("tf_sec")
+        try:
+            tf_i = int(tf_sec)
+        except Exception:
+            return
+        features_counts_by_tf[tf_i] = int(features_counts_by_tf.get(tf_i, 0)) + 1
+        warmup = pld.get("warmup") if isinstance(pld.get("warmup"), dict) else {}
+        if bool(warmup.get("full_ready")):
+            features_full_ready_by_tf[tf_i] = int(features_full_ready_by_tf.get(tf_i, 0)) + 1
+
+    fsm.listen("EVT:REGIME_DETECTED", _on_regime)
+    fsm.listen("EVT:FEATURES_CALCULATED", _on_features)
+    
+    # 2. Initialize Backtest Engine (The Driver)
+    
+    start_date = datetime(2024, 1, 1) # Fallback
+    end_date = datetime(2024, 1, 7)   # Fallback
+    initial_balance = 10000.0         # Fallback
+
+    # Read from config.trading.backtest if available
+    if config.trading.backtest:
+        try:
+            start_date = datetime.strptime(config.trading.backtest.start_date, "%Y-%m-%d")
+            end_date = datetime.strptime(config.trading.backtest.end_date, "%Y-%m-%d")
+            initial_balance = config.trading.backtest.initial_balance
+            LOG.info(f"Loaded backtest configuration: {start_date.date()} -> {end_date.date()}, Balance: {initial_balance}")
+        except ValueError as e:
+            LOG.error(f"Invalid date format in config.trading.backtest: {e}")
+            sys.exit(1)
+
+    # Symbols to test
+    symbols = list(config.instruments.keys()) if config.instruments else ["BTCUSDT", "ETHUSDT"]
+    
+    engine = BacktestEngine(
+        start_date=start_date,
+        end_date=end_date,
+        symbol_list=symbols,
+        timeframe="5m", # Configurable?
+        initial_balance=initial_balance,
+        event_bus=fsm
+    )
+
+    from backtest_engine.wrappers import BacktestExecPosFSM
+    
+    # 3. Initialize Domains (Subset)
+    LOG.info("Initializing Backtest Domains...")
+    
+    # Feature Engineering (Calculates indicators)
+    # Task 18: FeatureEngineering requires AuroraConfig object
+    feature_engineering = FeatureEngineering(fsm, config)
+    fsm.register_domain("feature_engineering", feature_engineering)
+    
+    # Regime Detector
+    # Task 18: RegimeDetector requires AuroraConfig object
+    regime_detector = RegimeDetector(config, fsm, clock=bt_clock)
+    fsm.register_domain("regime_detector", regime_detector)
+    
+    # Risk Management
+    # Task 18: RiskManagement requires AuroraConfig object
+    risk_management = RiskManagement(fsm, config)
+    fsm.register_domain("risk_management", risk_management)
+    
+    # Decision Making (Strategy Logic)
+    # Task 18: DecisionMaking requires AuroraConfig object
+    decision_making = DecisionMaking(fsm, config, clock=bt_clock)
+    fsm.register_domain("decision_making", decision_making)
+    
+    # Execution Position (The Trader)
+    exec_pos = BacktestExecPosFSM(config=config, fsm=fsm, shadow_mode=False)
+    exec_pos.set_async_loop(loop)
+    # Ensure BacktestEngine uses the same broker instance created by ExecPosFSM
+    if exec_pos.adapter is not None:
+        engine.broker = exec_pos.adapter
+    fsm.register_domain("execution_position", exec_pos)
+    
+    # 3b. Initialize Aurora Strategy Handler (processes CMD:PROCESS_STRATEGY)
+    # This is CRITICAL - without this, no signals will be generated!
+    try:
+        from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
+        aurora_plugin = AuroraBuiltinPlugin()
+        aurora_handler = aurora_plugin.create_handler(fsm=fsm, config=config)
+        aurora_handler.register()
+        LOG.info("✅ Aurora Strategy Handler registered for Backtest.")
+    except Exception as e:
+        LOG.error(f"Failed to register Aurora Strategy Handler: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # 3c. Initialize Mean Reversion Strategy Handler
+    # FIX-BACKTEST-MR: Mean Reversion was not registered, so BTC (assigned to MR) couldn't trade!
+    try:
+        from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
+        mr_plugin = MeanReversionPlugin()
+        mr_handler = mr_plugin.create_handler(fsm=fsm, config=config)
+        mr_handler.register()
+        LOG.info("✅ Mean Reversion Strategy Handler registered for Backtest.")
+    except Exception as e:
+        LOG.error(f"Failed to register Mean Reversion Strategy Handler: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    LOG.info("✅ Domains initialized and wired for Backtest.")
+    
+    # 4. Run Simulation
+    try:
+        results = engine.run()
+
+        # --- Regime summary (console) ---
+        if last_regime_by_symbol:
+            print("\n" + "=" * 60)
+            print("🧭 REGIME SUMMARY (last known per symbol)")
+            print("=" * 60)
+            # Show up to 10 symbols for readability
+            for sym in sorted(last_regime_by_symbol.keys())[:10]:
+                last = last_regime_by_symbol[sym]
+                print(
+                    f"{sym}: {last.get('regime')} conf={last.get('confidence')} "
+                    f"warmup_full_ready={bool((last.get('warmup') or {}).get('full_ready'))}"
+                )
+            if len(last_regime_by_symbol) > 10:
+                print(f"... ({len(last_regime_by_symbol) - 10} more symbols)")
+            print("=" * 60 + "\n")
+        else:
+            print("\n[WARN] No EVT:REGIME_DETECTED captured during backtest. Likely no bar-features emitted (check FEATURES_CALCULATED tf_sec=300 counters).")
+        
+        # --- Reporting ---
+        from dataclasses import asdict
+        import json
+        
+        # 1. Console Output
+        print("\n" + "="*60)
+        print(f"🏁 BACKTEST RESULTS ({start_date.date()} to {end_date.date()})")
+        print("="*60)
+        print(f"💰 PnL:           {results.total_pnl: >10.2f} USDT")
+        print(f"📈 ROI:           {results.roi_pct: >10.2f} %")
+        print(f"📉 Max Drawdown:  {results.max_drawdown: >10.2f} %")
+        print(f"🎲 Win Rate:      {results.win_rate*100: >10.1f} %")
+        print(f"🔢 Total Trades:  {results.total_trades: >10}")
+        print(f"💵 End Balance:   {results.end_balance: >10.2f} USDT")
+        print("="*60 + "\n")
+
+        # 2. JSON Report
+        report_data = {
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "symbols": symbols,
+                "timeframe": "5m", 
+                "initial_balance": initial_balance
+            },
+            "metrics": asdict(results)
+            ,
+            "regimes": {
+                "events_total": int(len(regime_events)),
+                "last_by_symbol": last_regime_by_symbol,
+                "counts_by_symbol": regime_counts_by_symbol,
+            },
+            "features": {
+                "counts_by_tf_sec": {str(k): int(v) for k, v in features_counts_by_tf.items()},
+                "full_ready_counts_by_tf_sec": {str(k): int(v) for k, v in features_full_ready_by_tf.items()},
+            },
+        }
+        
+        reports_dir = project_root / "reports" / "backtests"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Filename: backtest_{iso_timestamp}.json
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = reports_dir / f"backtest_{timestamp_str}.json"
+        
+        with open(report_path, "w") as f:
+            json.dump(report_data, f, indent=2)
+            
+        LOG.info(f"✅ Report saved to: {report_path}")
+
+    except Exception as e:
+        LOG.error(f"❌ Backtest failed: {e}", exc_info=True)
+        sys.exit(1)
+    finally:
+        try:
+            if hasattr(exec_pos, "watchdog") and exec_pos.watchdog is not None:
+                exec_pos.watchdog.stop()
+        except Exception:
+            pass
+
+        try:
+            async def _shutdown_asyncio_loop() -> None:
+                tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+            asyncio.run_coroutine_threadsafe(_shutdown_asyncio_loop(), loop).result(timeout=2.0)
+        except Exception:
+            pass
+
+        try:
+            loop.call_soon_threadsafe(loop.stop)
+            loop_thread.join(timeout=2.0)
+            loop.close()
+        except Exception:
+            pass
+
+
 def main() -> None:
     """Main application entry point."""
     LOG.info("Starting Aurora Core...")
@@ -1433,6 +771,28 @@ def main() -> None:
     config_loader = ConfigLoader(config_dir=project_root / "config" / "aurora")
     config = config_loader.load_config()
     LOG.info("Configuration loaded successfully")
+
+    # BACKTEST UNBLOCKER: force FeatureEngineering warmup to warn_only in backtest mode
+    if config.trading_mode == "backtest":
+        try:
+            fe = getattr(config.domains, "feature_engineering", None)
+            warm = getattr(fe, "warmup", None) if fe is not None else None
+            if warm is not None:
+                warm.enforcement_mode = "warn_only"
+            else:
+                from apps.reference.config_models import WarmupEnforcementConfig
+
+                if fe is not None:
+                    fe.warmup = WarmupEnforcementConfig(enforcement_mode="warn_only")
+            LOG.warning("BACKTEST OVERRIDE: domains.feature_engineering.warmup.enforcement_mode=warn_only")
+        except Exception as e:
+            LOG.warning(f"BACKTEST OVERRIDE failed (warmup warn_only): {e}")
+
+    # TASK: BACKTEST MODE INTERCEPTION
+    if config.trading_mode == "backtest":
+        run_backtest_simulation(config)
+        return # Exit main after backtest finishes
+
 
     # TASK-EXF-WIRE-STARTUP-09: Validate Instruments vs Exchange
     if config.system.validate_instruments_on_startup:
@@ -1563,20 +923,10 @@ def main() -> None:
 
     # Step 2: Create event listeners
     LOG.info("Setting up event listeners...")
-    # Initialize AuroraBridge (handles TRADE_INTENT_PROPOSED → CMD:OPEN with freshness gate)
-    bridge = AuroraBridge(fsm=fsm, config=config, logger=LOG)
+    # AuroraBridge removed (BRIDGE-SUNSET-01).
+    # TRADE_INTENT_PROPOSED is now handled directly by ExecPosFSM.
+    # bridge = AuroraBridge(fsm=fsm, config=config, logger=LOG)
 
-    # D6: Fail-closed restart behavior - clear any pending deferred intents
-    # This ensures clean state after restart/crash, emitting EVT:INTENT_DROPPED for each
-    dropped_count = bridge.clear_pending_on_restart()
-    if dropped_count > 0:
-        LOG.warning(f"🗑️ D6: Cleared {dropped_count} pending deferred intents on restart (fail-closed)")
-    else:
-        LOG.info("✅ D6: No pending deferred intents on restart (clean state)")
-
-    # Set global bridge instance for backward compatibility
-    global _bridge_instance
-    _bridge_instance = bridge
 
     # P2 FIX: Gate debug listener with environment variable to avoid hot-path prints in production
     # Set AURORA_DEBUG_EVENTS=1 to enable debug event logging
@@ -1767,18 +1117,7 @@ def main() -> None:
     execution_position.set_async_loop(guardian_loop)
     guardian_loop_thread.start()
 
-    # Bind Bridge RetryScheduler to the running Aurora async loop (loop-safe scheduling).
-    try:
-        if _bridge_instance is not None and guardian_loop is not None:
-            # Ensure the loop thread actually entered run_forever() before binding.
-            for _ in range(100):
-                if guardian_loop.is_running():
-                    break
-                time.sleep(0.01)
-            _bridge_instance.retry_scheduler.bind_loop(guardian_loop)
-            LOG.info("✅ Bound RetryScheduler to AuroraAsyncLoop")
-    except Exception as e:
-        LOG.warning(f"Failed to bind RetryScheduler to AuroraAsyncLoop: {e}")
+    # Bridge RetryScheduler binding removed (BRIDGE-SUNSET-01)
 
     try:
         sync_fn = getattr(
@@ -1830,6 +1169,12 @@ def main() -> None:
     # Emits EVT:REGIME_DETECTED which decision_making uses for regime-aware sizing
     regime_detector = RegimeDetector(config=config, fsm=fsm)
     LOG.info("✅ RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
+
+    # DATA-RECORDER-01: Unified Backtest Recorder
+    # Captures [Bar + Features + Regime] into CSVs for offline analysis.
+    csv_recorder = CsvRecorder(fsm=fsm, config=config)
+    csv_recorder.start()
+    LOG.info("✅ CsvRecorder initialized and started")
 
 
     # P2 CLEANUP: register_domain calls are now done in initialize_domains()

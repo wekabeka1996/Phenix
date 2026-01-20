@@ -45,8 +45,6 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
     assert mr.enabled == raw_mr["enabled"]
     assert mr.timeframe_sec == raw_mr["timeframe_sec"]
     assert mr.allowed_regimes == raw_mr["allowed_regimes"]
-    assert mr.emit_trade_intent_directly == raw_mr["emit_trade_intent_directly"]
-
     # Strategy fields
     raw_strategy = raw_mr["strategy"]
     assert mr.strategy.bb_window == raw_strategy["bb_window"]

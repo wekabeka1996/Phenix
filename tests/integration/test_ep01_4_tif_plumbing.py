@@ -35,6 +35,7 @@ class TestCmdOpenPayload:
             "order_type": "LIMIT",
             "price": "42000.0",
             "tif": "GTX",  # Post-only / maker-only
+            "valid_for_ms": 60_000,
         }
         
         validated = CmdOpenPayload.model_validate(payload)
@@ -43,8 +44,9 @@ class TestCmdOpenPayload:
         assert validated.side == "BUY"
     
     def test_valid_payload_with_tif_null(self):
-        """CmdOpenPayload should accept tif=None."""
+        """CmdOpenPayload should reject LIMIT with tif=None (fail-closed)."""
         from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from pydantic import ValidationError
         
         payload = {
             "symbol": "ETHUSDT",
@@ -52,11 +54,12 @@ class TestCmdOpenPayload:
             "qty": "0.1",
             "order_type": "LIMIT",
             "price": "3000.0",
-            "tif": None,  # Will default to GTC
+            "tif": None,
+            "valid_for_ms": 60_000,
         }
         
-        validated = CmdOpenPayload.model_validate(payload)
-        assert validated.tif is None
+        with pytest.raises(ValidationError):
+            CmdOpenPayload.model_validate(payload)
     
     def test_tif_normalized_to_uppercase(self):
         """CmdOpenPayload should normalize tif to uppercase."""
@@ -69,6 +72,7 @@ class TestCmdOpenPayload:
             "order_type": "LIMIT",
             "price": "42000.0",
             "tif": "gtx",  # lowercase
+            "valid_for_ms": 60_000,
         }
         
         validated = CmdOpenPayload.model_validate(payload)
@@ -115,6 +119,9 @@ class TestCmdOpenPayload:
             "symbol": "BTCUSDT",
             "side": "BUY",
             "qty": "0.01",
+            "order_type": "LIMIT",
+            "price": "42000.0",
+            "tif": "GTX",
             "valid_for_ms": 500,  # Too small
         }
         
@@ -165,6 +172,7 @@ class TestTradeIntentSchema:
                 "order_type": "LIMIT",  # ORDER-POLICY-01: required
                 "tif": "GTX",  # EP-01.4-INT
             },
+            "valid_for_ms": 60_000,
             "why": ["test"],
             "dto_version": "1.0.0",
             "schema_ref": "trade_intent_v1.json"
@@ -174,8 +182,9 @@ class TestTradeIntentSchema:
         jsonschema.validate(payload, schema)
     
     def test_schema_accepts_order_tif_null(self):
-        """Schema should accept order.tif=null."""
+        """Schema should reject LIMIT with order.tif=null (fail-closed)."""
         import jsonschema
+        from jsonschema import ValidationError
         
         schema_path = Path(__file__).parent.parent.parent / \
             "apps/reference/domains/decision_making/schemas/trade_intent_v1.json"
@@ -209,13 +218,14 @@ class TestTradeIntentSchema:
                 "order_type": "LIMIT",  # ORDER-POLICY-01: required
                 "tif": None,  # Null allowed
             },
+            "valid_for_ms": 60_000,
             "why": ["test"],
             "dto_version": "1.0.0",
             "schema_ref": "trade_intent_v1.json"
         }
         
-        # Should not raise
-        jsonschema.validate(payload, schema)
+        with pytest.raises(ValidationError):
+            jsonschema.validate(payload, schema)
 
 
 # ============================================================================

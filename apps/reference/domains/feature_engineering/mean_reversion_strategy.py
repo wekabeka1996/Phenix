@@ -144,6 +144,10 @@ class MRStrategyConfig:
     
     cooldown_sec: int = 60  # 1 minute cooldown
     
+    # Buffer percentages to widen TP/SL (additive, on top of ATR-based)
+    sl_buffer_pct: Decimal = Decimal("0")  # Default 0%, can set 0.002 for +0.20%
+    tp_buffer_pct: Decimal = Decimal("0")  # Default 0%, can set 0.002 for +0.20%
+    
     # Whitelist of allowed Flat regimes (e.g., ["FLAT_LOW", "FLAT_NORMAL"])
     # If empty, all Flat regimes are allowed.
     allowed_regimes: List[str] = field(default_factory=list)
@@ -515,7 +519,7 @@ class MeanReversion1mStrategy:
         
         # Evaluate signal based on %B
         pct_b = Decimal(str(bb.pct_b))
-        entry_threshold = self.config.entry_threshold
+        entry_threshold = Decimal(str(self.config.entry_threshold))
         
         signal_type = MRSignalType.NEUTRAL
         confidence = Decimal("0")
@@ -560,13 +564,20 @@ class MeanReversion1mStrategy:
         )
         
         # Stop price: ATR-based, adjusted by regime
-        sl_mult = self.config.sl_atr_mult * mr_params.stop_mult
+        sl_mult = Decimal(str(self.config.sl_atr_mult)) * mr_params.stop_mult
         atr_for_stop = atr if atr else (bb.upper - bb.lower) / Decimal("4")
         
         if signal_type == MRSignalType.LONG:
             stop_price = entry_price - (atr_for_stop * sl_mult)
         else:
             stop_price = entry_price + (atr_for_stop * sl_mult)
+        
+        # Apply SL buffer percentage (widen the stop)
+        sl_buffer = entry_price * Decimal(str(self.config.sl_buffer_pct))
+        if signal_type == MRSignalType.LONG:
+            stop_price = stop_price - sl_buffer  # Move SL further down
+        else:
+            stop_price = stop_price + sl_buffer  # Move SL further up
         
         # Adjust target by regime
         if signal_type == MRSignalType.LONG:
@@ -575,6 +586,13 @@ class MeanReversion1mStrategy:
         else:
             target_distance = entry_price - target_price
             target_price = entry_price - (target_distance * mr_params.target_mult)
+        
+        # Apply TP buffer percentage (widen the target)
+        tp_buffer = entry_price * Decimal(str(self.config.tp_buffer_pct))
+        if signal_type == MRSignalType.LONG:
+            target_price = target_price + tp_buffer  # Move TP further up
+        else:
+            target_price = target_price - tp_buffer  # Move TP further down
         
         why_parts.append(f"regime:{flat_regime.name}")
         why = ";".join(why_parts)

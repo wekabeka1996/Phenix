@@ -84,7 +84,8 @@ class TestCmdOpenPayloadStrict:
             qty="0.001",
             order_type="LIMIT",
             price="50000.00",
-            tif="GTX"
+            tif="GTX",
+            valid_for_ms=60_000,
         )
         assert payload.order_type == "LIMIT"
         assert payload.tif == "GTX"

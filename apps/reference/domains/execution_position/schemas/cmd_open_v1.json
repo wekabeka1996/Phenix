@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cmd_open_v1.json",
+  "title": "CMD:OPEN payload schema",
+  "description": "Strict schema for CMD:OPEN. Fail-closed: no silent defaults for order_type/tif/price/valid_for_ms.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["symbol", "side", "qty", "order_type"],
+  "properties": {
+    "rid": { "type": "string", "description": "Request ID for correlation" },
+    "symbol": { "type": "string", "minLength": 1 },
+    "side": { "type": "string", "enum": ["BUY", "SELL"] },
+    "qty": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "description": "Quantity (string-encoded Decimal)"
+    },
+    "order_type": { "type": "string", "enum": ["MARKET", "LIMIT"] },
+    "price": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+        { "type": "null" }
+      ],
+      "description": "LIMIT price (required for LIMIT, null for MARKET)"
+    },
+    "price_ref": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+        { "type": "null" }
+      ],
+      "description": "Reference/mark price (optional)"
+    },
+    "tif": {
+      "anyOf": [
+        { "type": "string", "enum": ["GTC", "GTX", "IOC", "FOK"] },
+        { "type": "null" }
+      ],
+      "description": "Time-in-force (required for LIMIT, null for MARKET)"
+    },
+    "valid_for_ms": {
+      "anyOf": [
+        { "type": "integer", "minimum": 1000 },
+        { "type": "null" }
+      ],
+      "description": "Pending entry TTL in ms (required for LIMIT, null/absent for MARKET)"
+    },
+    "stop_price": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+        { "type": "null" }
+      ]
+    },
+    "target_price": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+        { "type": "null" }
+      ]
+    },
+    "sl_pct": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+        { "type": "null" }
+      ]
+    },
+    "idempotent_key": { "type": ["string", "null"] }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "order_type": { "const": "LIMIT" } },
+        "required": ["order_type"]
+      },
+      "then": {
+        "required": ["price", "tif", "valid_for_ms"],
+        "properties": {
+          "price": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+          "tif": { "type": "string", "enum": ["GTC", "GTX", "IOC", "FOK"] },
+          "valid_for_ms": { "type": "integer", "minimum": 1000 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "order_type": { "const": "MARKET" } },
+        "required": ["order_type"]
+      },
+      "then": {
+        "properties": {
+          "tif": { "type": "null" }
+        }
+      }
+    }
+  ]
+}
+

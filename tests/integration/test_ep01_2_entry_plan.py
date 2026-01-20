@@ -355,7 +355,8 @@ class TestTradeIntentSchema:
                 "qty": "0.001",
                 "price": "50000.00",
                 "reduce_only": False,
-                "order_type": "LIMIT"  # ORDER-POLICY-01: required
+                "order_type": "LIMIT",  # ORDER-POLICY-01: required
+                "tif": "GTX",
             },
             "valid_for_ms": 5000,
             "why": ["test"],

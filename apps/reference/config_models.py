@@ -322,6 +322,8 @@ class MRStrategyOverrideConfig(BaseModel):
     tp_to_mid: Optional[bool] = Field(default=None, description='TP to mid vs outer band')
     sl_atr_mult: Optional[float] = Field(default=None, description='SL ATR multiplier override')
     cooldown_sec: Optional[int] = Field(default=None, description='Cooldown between trades')
+    sl_buffer_pct: Optional[float] = Field(default=None, description='Additional SL buffer percentage (0.002 = 0.20%)')
+    tp_buffer_pct: Optional[float] = Field(default=None, description='Additional TP buffer percentage (0.002 = 0.20%)')
     allowed_regimes: Optional[List[str]] = Field(default=None, description='Override allowed regimes for this symbol')
 
 
@@ -436,12 +438,6 @@ class MeanReversion1mStrategyConfig(BaseModel):
 
     # Risk management
     risk: MRRiskConfig = Field()
-    
-    # Strict Sequential Trading Contract: MR emission mode
-    # true (default) = MR emits EVT:TRADE_INTENT_PROPOSED directly (legacy behavior)
-    # false = MR emits EVT:MR_SIGNAL_PRODUCED, DecisionMaking applies gates
-    emit_trade_intent_directly: bool = Field(description='If true, MR emits trade intent directly (legacy). If false, emits MR_SIGNAL for DM gateway.')
-    
     # ORDER-POLICY-01: Execution policy
     execution: "StrategyExecutionConfig" = Field(description="Execution policy (SSOT)")
 
@@ -1028,9 +1024,9 @@ class DirectionalSanityConfig(BaseModel):
         description='Minimum confidence required (max(regime_confidence, trend_confidence))'
     )
     consecutive_bars: int = Field(
-        ge=2,
+        ge=1,  # FIX-NRR026-BACKTEST: Allow 1 for bar-based backtest (was ge=2)
         le=3,
-        description='Number of consecutive deltas required to confirm trend (2–3)'
+        description='Number of consecutive deltas required to confirm trend (1–3). Use 1 for bar-based backtest, 2+ for live tick-based.'
     )
 
 
@@ -1276,6 +1272,10 @@ class LargeTradeImbalanceConfig(BaseModel):
     """Large trade imbalance configuration (TASK31)."""
     model_config = ConfigDict(extra='forbid')
 
+    enabled: bool = Field(
+        default=True,
+        description="Enable large_trade_imbalance calculation and warmup blocking. If False, feature is treated as ready and value is neutral.",
+    )
     window_ms: int = Field(
         ge=1000,
         le=600000,
@@ -1297,6 +1297,12 @@ class MacroSyncMetricsConfig(BaseModel):
     window: int = Field(ge=10, le=1000, description='Rolling window size for correlation calculation')
     bin_ms: int = Field(default=1000, ge=250, le=5000, description='Time-grid bin size in ms for Macro Sync V2 alignment')
     max_gap_bins: int = Field(default=2, ge=0, le=120, description='Max consecutive missing bins allowed before NOT_READY (Macro Sync V2)')
+    max_late_ms: int = Field(
+        default=0,
+        ge=0,
+        le=60000,
+        description="Late out-of-order tolerance (ms): if a tick falls behind last_bin_ts by <= max_late_ms, it is reordered/inserted; if larger, it is dropped (without forcing NOT_READY).",
+    )
     eps: float = Field(default=1e-12, gt=0.0, le=1e-3, description='Epsilon for sigma/variance guards (Macro Sync V2)')
     anchors: List[str] = Field(min_length=1, description='Anchor symbols for correlation (market leaders)')
     
@@ -1340,7 +1346,7 @@ class DeltaPriceConfig(BaseModel):
     """Delta price calculation configuration."""
     model_config = ConfigDict(extra='forbid')
     
-    spike_filter_ms: int = Field(ge=100, le=60000, description='Time gap (ms) above which delta_price is zeroed to filter spikes')
+    spike_filter_ms: int = Field(ge=100, le=3600000, description='Time gap (ms) above which delta_price is zeroed to filter spikes. Increase for backtest with larger bar intervals.')
 
 
 class FeatureDefaultsConfig(BaseModel):
@@ -2126,6 +2132,32 @@ class MaxRiskScoreConfig(BaseModel):
         return self
 
 
+class VolatilityEntryConfig(BaseModel):
+    """Volatility-based limit entry pricing (Maker/GTX compliance).
+    
+    Calculates entry price offset: LimitPrice = AnchorPrice ± (ATR × RegimeMultiplier).
+    - LONG/BUY: entry_price = anchor_price - offset (bid below)
+    - SHORT/SELL: entry_price = anchor_price + offset (ask above)
+    
+    STRICT: Requires 'atr' feature from FeatureEngineering. No fallbacks.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    enabled: bool = Field(default=True, description="Enable volatility-based entry pricing")
+    regime_multipliers: Dict[str, float] = Field(
+        description="Regime → multiplier. MUST include 'DEFAULT' key (fail-closed)."
+    )
+    
+    @model_validator(mode='after')
+    def validate_default_exists(self) -> 'VolatilityEntryConfig':
+        """Fail-closed: DEFAULT key is mandatory."""
+        if 'DEFAULT' not in self.regime_multipliers:
+            raise ValueError(
+                "volatility_entry_logic.regime_multipliers must contain 'DEFAULT' key (fail-closed)"
+            )
+        return self
+
+
 # Canonical feature keys for per-asset signal weights (TASK54: Weight Key Fix)
 # These MUST match the feature names emitted by FeatureEngineering
 # R1: macro_resid added, macro_sync deprecated but kept for backward compat
@@ -2221,6 +2253,12 @@ class AuroraInstrumentConfig(BaseModel):
 
     # Phase 1.5 Recovery: Per-instrument timeframe
     timeframe_sec: Optional[int] = Field(description='Bar timeframe in seconds for this instrument. SOL=180 (3m), BTC/ETH=300 (5m)')
+
+    # Smart Limit Entry: Volatility-based entry pricing (Maker/GTX compliance)
+    volatility_entry_logic: Optional[VolatilityEntryConfig] = Field(
+        default=None,
+        description="Volatility-based limit entry config. Requires 'atr' feature (fail-closed)."
+    )
 
     # NOTE: Position control is expressed via `position_mode` above.
 
@@ -2354,6 +2392,16 @@ class DomainConfigurationConfig(BaseModel):
     audit_trail: DomainModeConfig = Field(description="Audit trail mode (usually 'live' for logging)")
 
 
+
+class BacktestConfig(BaseModel):
+    """Configuration for Backtest Execution Mode."""
+    model_config = ConfigDict(extra='forbid')
+    
+    start_date: str = Field(description="Backtest start date (YYYY-MM-DD)")
+    end_date: str = Field(description="Backtest end date (YYYY-MM-DD)")
+    initial_balance: float = Field(default=10000.0, description="Initial USDT balance")
+
+
 class TradingConfig(BaseModel):
     """Main trading configuration (with mode overrides)."""
     model_config = ConfigDict(extra='forbid')
@@ -2391,6 +2439,9 @@ class TradingConfig(BaseModel):
     # CRITICAL: Domain-level mode configuration (Hybrid Mode)
     # Default is all-testnet for safety. Production MUST explicitly set live modes!
     domain_configuration: DomainConfigurationConfig = Field(description='Domain-level trading mode configuration for hybrid mode (live data + testnet execution)')
+
+    # Backtest Configuration (Optional, used only when mode='backtest')
+    backtest: Optional[BacktestConfig] = Field(default=None, description="Backtest specific settings")
 
     @field_validator("symbols_to_track")
     @classmethod
@@ -2432,6 +2483,8 @@ class BridgeConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     retry_scheduler: RetrySchedulerConfig = Field(...)
+    # BRIDGE-LIMIT-UNBLOCK-01: Bridge does NOT filter by order_type.
+    # Order type policy lives in strategy configs / decision_making domain.
 
 
 class RiskManagementDataSourcesConfig(BaseModel):
@@ -2473,6 +2526,11 @@ class SystemMarketDataConfig(BaseModel):
     local_queue_maxsize: int = Field(..., description="Max size of local queue (proxy internal)")
     emit_workers: int = Field(..., description="Thread pool size for non-blocking FSM.emit()")
     tick_ttl_ms: int = Field(..., description="Max age of tick data in ms — older ticks are DROPPED")
+    bar_ttl_ms: Optional[int] = Field(default=10000, description="Max age of bar data in ms (BAR-TTL-REFORM-01)")
+    bar_event_age_mode: Literal["received", "close_ts"] = Field(
+        default="received", 
+        description="How to calculate bar age: 'received' (arrival time) or 'close_ts' (event time)"
+    )
     ws_heartbeat_sec: float = Field(..., description="aiohttp WS heartbeat interval (sec) to keep connection alive")
     ws_receive_timeout_sec: float = Field(..., description="Max time without WS messages (sec) before reconnect")
     proxy_batch_size: int = Field(..., description="Proxy consumer: max items processed per batch")
@@ -2584,6 +2642,12 @@ class AuroraConfig(BaseModel):
         description='Min confidence to emit non-UNCERTAIN regime. Below this threshold, demote to UNCERTAIN. '
                     'REQUIRED - missing value fails config load (fail-closed).'
     )
+    # DM-CRITICAL-PATCHES-02: Liveness guard factor
+    liveness_factor: int = Field(
+        default=3, ge=1,
+        description='If no regime heartbeat received within (basis_tf_sec * liveness_factor) seconds, '
+                    'block trading. Default: 3 (i.e., 15 minutes for 5m basis).'
+    )
     hmm: Dict[str, Any] = Field(description='HMM regime detector config (from regime.yaml)')
     features: Dict[str, Any] = Field(description='Regime features config (from regime.yaml)')
     hotreload_whitelist: List[str] = Field(description='Hot-reload allowlist (from regime.yaml)')
@@ -2593,7 +2657,7 @@ class AuroraConfig(BaseModel):
     def validate_trading_mode(cls, v: str) -> str:
         """Ensure trading_mode is one of the valid values."""
         allowed_modes = ("testnet", "production", "live",
-                         "hybrid_live_data_testnet_exec")
+                         "hybrid_live_data_testnet_exec", "backtest")
         if v not in allowed_modes:
             raise ValueError(
                 f"trading_mode must be one of: {', '.join(allowed_modes)}. Got: {v}")
@@ -2666,11 +2730,16 @@ class AuroraConfig(BaseModel):
                 f"trading.execution.preflight_backoff_ms must be positive ints, got: {backoff_ms_ints}"
             )
 
-        active_symbols: list[str] = []
+        # Collect symbols that have 'aurora' strategy assigned
+        aurora_symbols: list[str] = []
         if self.strategies_registry is not None and isinstance(self.strategies_registry.assignments, dict):
-            active_symbols = [str(s) for s in self.strategies_registry.assignments.keys()]
-        if not active_symbols:
-            active_symbols = [str(s) for s in self.instruments.keys()]
+            for sym, strategies in self.strategies_registry.assignments.items():
+                # Only require aurora assets for symbols with 'aurora' in assignments
+                if isinstance(strategies, list) and "aurora" in strategies:
+                    aurora_symbols.append(str(sym))
+        # Fallback: if no registry, check all instruments
+        if not aurora_symbols and self.strategies_registry is None:
+            aurora_symbols = [str(s) for s in self.instruments.keys()]
 
         aurora = getattr(self.strategies, "aurora", None)
         if aurora is None:
@@ -2679,7 +2748,7 @@ class AuroraConfig(BaseModel):
             )
 
         missing: list[str] = []
-        for symbol in active_symbols:
+        for symbol in aurora_symbols:
             cfg = aurora.assets.get(symbol)
             if cfg is None:
                 missing.append(f"{symbol} missing strategies.aurora.assets.{symbol}")

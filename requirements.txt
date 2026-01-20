@@ -3,6 +3,8 @@ fastapi>=0.110.0
 pytest-aiohttp
 trio>=0.25.0
 prometheus_client>=0.20.0
+jsonschema
+requests
 pydantic==2.12.3
 PyYAML>=6.0
 python-dotenv>=1.0.0

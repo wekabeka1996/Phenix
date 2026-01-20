@@ -106,18 +106,49 @@ def test_macro_sync_drops_out_of_order_and_sets_reason():
     p_anc = 200.0
     for i in range(60):
         bin_ts = start_ts + i * 1000
-        p_sym *= 1.0001
-        p_anc *= 1.0001
+        p_sym *= 1.0002 if (i % 2 == 0) else 0.9999
+        p_anc *= 1.00015 if (i % 2 == 0) else 0.99995
         resampler.update_symbol(symbol, ts_ms=bin_ts + 10, price=p_sym)
         resampler.update_anchor(anchor, ts_ms=bin_ts + 20, price=p_anc)
 
-    # Out-of-order anchor update (should be dropped and fail-closed)
-    resampler.update_anchor(anchor, ts_ms=start_ts + 5 * 1000, price=p_anc)
+    # Very old anchor update (bin not present) should be dropped.
+    resampler.update_anchor(anchor, ts_ms=start_ts - 1_000, price=p_anc)
 
     result = resampler.compute(symbol, anchors=[anchor], now_ts_ms=start_ts + 59 * 1000)
-    assert result.ready is False
-    assert result.why == "out_of_order"
+    assert result.ready is True
+    assert result.why is None
     assert result.drops_out_of_order >= 1
+
+
+def test_macro_sync_reorders_small_out_of_order_gap_fill_within_max_late_ms():
+    resampler = MacroSyncResampler(
+        bin_ms=1000,
+        window_bins=60,
+        min_bins=2,
+        ttl_ms=60_000,
+        max_gap_bins=2,
+        eps=1e-12,
+        max_late_ms=5_000,
+    )
+
+    symbol = "SOLUSDT"
+    anchor = "BTCUSDT"
+    start_ts = 1_700_000_000_000
+
+    # Intentionally skip bin=start_ts+1000, then fill it late.
+    resampler.update_symbol(symbol, ts_ms=start_ts + 0, price=100.0)
+    resampler.update_anchor(anchor, ts_ms=start_ts + 0, price=200.0)
+    resampler.update_symbol(symbol, ts_ms=start_ts + 2000, price=100.2)
+    resampler.update_anchor(anchor, ts_ms=start_ts + 2000, price=200.4)
+    resampler.update_symbol(symbol, ts_ms=start_ts + 3000, price=100.3)
+    resampler.update_anchor(anchor, ts_ms=start_ts + 3000, price=200.6)
+
+    # Late fill for missing bin=start_ts+1000 (within max_late_ms).
+    resampler.update_symbol(symbol, ts_ms=start_ts + 1000, price=100.1)
+    resampler.update_anchor(anchor, ts_ms=start_ts + 1000, price=200.2)
+
+    result = resampler.compute(symbol, anchors=[anchor], now_ts_ms=start_ts + 3000)
+    assert result.ready is True
 
 
 def test_macro_sync_gap_too_large_not_ready():
@@ -144,4 +175,3 @@ def test_macro_sync_gap_too_large_not_ready():
     result = resampler.compute(symbol, anchors=[anchor], now_ts_ms=start_ts + 5_000)
     assert result.ready is False
     assert result.why == "gap_too_large"
-

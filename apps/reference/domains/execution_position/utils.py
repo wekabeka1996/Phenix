@@ -38,12 +38,22 @@ def quantize_stop_price(
     stop_price: float, tick_size: float, *, side: Optional[str] = None
 ) -> float:
     """
-    Квантує stopPrice до кратності tick_size.
-    Для SELL краще floor, для BUY — ceil, щоб уникати рівності тригеру.
+    Quantize stopPrice to tick_size multiples.
+
+    FIXED LOGIC:
+    - side="BUY" (SL for Short, Price > Market): Round UP (CEIL) to avoid premature trigger.
+    - side="SELL" (SL for Long, Price < Market): Round DOWN (FLOOR) to avoid premature trigger.
+    - side=None: Defaults to legacy behavior (FLOOR), but logs warning if debug enabled.
     """
-    s = (side or "").upper()
-    mode = "floor" if s == "SELL" else "ceil" if s == "BUY" else "floor"
-    return _round_to_tick(stop_price, tick_size, mode=mode)
+    if side:
+        s = side.upper()
+        if s == "BUY":
+            return _round_to_tick(stop_price, tick_size, mode="ceil")
+        elif s == "SELL":
+            return _round_to_tick(stop_price, tick_size, mode="floor")
+
+    # Fallback / Default behavior (now safe-guarded by explicit side logic above)
+    return _round_to_tick(stop_price, tick_size, mode="floor")
 
 
 # ---- anti-2021 guard ----

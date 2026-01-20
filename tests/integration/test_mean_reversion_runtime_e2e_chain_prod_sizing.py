@@ -242,7 +242,6 @@ def test_mean_reversion_e2e_chain_with_real_margin_first_sizing_multi_symbol(cas
             fees_pct=0.0,
             slippage_pct=0.0,
         ),
-        emit_trade_intent_directly=False,
     )
 
     cfg = SimpleNamespace(

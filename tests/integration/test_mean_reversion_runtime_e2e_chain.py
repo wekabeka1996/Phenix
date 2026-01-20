@@ -140,7 +140,6 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
             fees_pct=0.0,
             slippage_pct=0.0,
         ),
-        emit_trade_intent_directly=False,
     )
 
     cfg = SimpleNamespace(

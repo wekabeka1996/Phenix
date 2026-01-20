@@ -1,6 +1,11 @@
 basis_tf_sec: 300       # Bar-Only updates (5 min)
 uncertain_cutoff: 0.35  # Min confidence to be valid regime
 
+# DM-CRITICAL-PATCHES-02: Liveness guard factor
+# If no heartbeat received within (basis_tf_sec * liveness_factor) ms, block trading.
+# Default: 3 (i.e., 15 minutes for 5m basis)
+liveness_factor: 3
+
 hmm:
   enabled: true
   K: 3               # number of hidden states (>=2)
@@ -23,15 +28,21 @@ hotreload_whitelist:
   - hmm.change_conf_min
 models:
   sma_trend:
-    sma_short_period: 10
-    sma_long_period: 50
+    # TESTNET SMOKE: minimize warmup (min allowed: 2)
+    # LIVE (was): sma_short_period: 10
+    sma_short_period: 2
+    # LIVE (was): sma_long_period: 50 (min allowed: 5)
+    sma_long_period: 5
     confidence_multiplier: 20.0
     confidence_min: 0.5
     confidence_max: 0.95
   volatility:
     enabled: true
-    atr_period: 14
-    atr_sma_length: 100
+    # TESTNET SMOKE: minimize warmup
+    # LIVE (was): atr_period: 14
+    atr_period: 1
+    # LIVE (was): atr_sma_length: 100 (min allowed: 10)
+    atr_sma_length: 10
     allow_close_to_close_atr: true
     threshold_multiplier: 2.0
     low_vol_multiplier: 0.5

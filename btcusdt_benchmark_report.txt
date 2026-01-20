@@ -1,0 +1,28 @@
+======================================================================
+HISTORICAL REAL MARKET BENCHMARK
+BTCUSDT 5-minute Candles (May 2023)
+======================================================================
+
+DATASET STATISTICS:
+  Total Samples: 8,928
+  Features: 5
+  Timeframe: 5 minutes
+
+WESTERN BOT (Baseline LSTM):
+  Final 5-ep Avg: -73.6009 bps
+  Best Episode:  176.7908 bps
+  Worst Episode: -124.7288 bps
+  Mean Profit:   30.0121 bps
+  Std Dev:       74.9174
+
+SOVIET-WESTERN BOT (LSTM + Spectral):
+  Final 5-ep Avg: 14.9509 bps
+  Best Episode:  121.6961 bps
+  Worst Episode: -123.1795 bps
+  Mean Profit:   3.0955 bps
+  Std Dev:       56.4452
+
+COMPARATIVE ANALYSIS:
+  Absolute Advantage: +88.5518 bps
+  Relative Advantage: +120.31%
+  Soviet Win Rate:    36.0%

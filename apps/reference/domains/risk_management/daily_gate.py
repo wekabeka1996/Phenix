@@ -6,8 +6,11 @@ Fail-closed: without data — block.
 """
 
 from __future__ import annotations
+import json
+import os
 from dataclasses import dataclass
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
+from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
 
@@ -68,6 +71,9 @@ class DailyRiskState:
 
     def __init__(self, cfg: Dict[str, Any], logger=None):
         self.log = logger
+        self._state_path = Path(os.environ.get("AURORA_RISK_GATE_STATE_PATH", "data/risk_gate_state.json"))
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        self._last_gate_open: Optional[bool] = None
 
         # Strict Object Config: No dict support (Task 18)
         # cfg must be AuroraConfig object
@@ -116,6 +122,86 @@ class DailyRiskState:
         self._equity_open = z
         self._equity_now = z
         self._last_reset_date: Optional[date] = None  # YYYY-MM-DD
+        self._load_state()
+
+    @property
+    def reference_equity(self):
+        return self._equity_open
+
+    @reference_equity.setter
+    def reference_equity(self, value: Any) -> None:
+        self._equity_open = _d(value)
+        self._save_state()
+
+    @property
+    def is_gate_open(self) -> bool:
+        if self._last_gate_open is None:
+            allowed, _ = self.can_open()
+            self._last_gate_open = bool(allowed)
+        return bool(self._last_gate_open)
+
+    def reset(self) -> None:
+        """Reset state to an uninitialized fail-closed baseline (new day or missing state)."""
+        z = _d("0")
+        self._equity_open = z
+        self._equity_now = z
+        self._last_reset_date = None
+        self._last_gate_open = None
+
+    def _active_trading_date(self, now: Optional[datetime] = None) -> date:
+        """Compute the active 'trading day' date based on reset_time_utc."""
+        now = now or _now_utc()
+        is_past_reset = (now.hour > self.cfg.reset_h) or (
+            now.hour == self.cfg.reset_h and now.minute >= self.cfg.reset_m
+        )
+        if is_past_reset:
+            return now.date()
+        # Before reset time, trading day is considered the previous date.
+        return (now.date() - timedelta(days=1))
+
+    def _save_state(self) -> None:
+        payload = {
+            "reference_equity": _fmt_usd(self._equity_open),
+            "last_reset_date": self._last_reset_date.isoformat() if self._last_reset_date else None,
+            "is_gate_open": bool(self.is_gate_open),
+        }
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            tmp.replace(self._state_path)
+        except Exception:
+            # Fail-safe: persistence errors must never crash trading loop.
+            if self.log:
+                self.log.exception("[DailyGate] Failed to save state")
+
+    def _load_state(self) -> None:
+        now = _now_utc()
+        active_date = self._active_trading_date(now=now)
+        try:
+            if not self._state_path.exists():
+                self.reset()
+                return
+            raw = self._state_path.read_text(encoding="utf-8")
+            data = json.loads(raw) if raw.strip() else {}
+            last_reset = data.get("last_reset_date")
+            if not last_reset:
+                self.reset()
+                return
+            stored_date = date.fromisoformat(str(last_reset))
+            if stored_date != active_date:
+                self.reset()
+                return
+            self._equity_open = _d(data.get("reference_equity"))
+            self._last_reset_date = stored_date
+            self._last_gate_open = bool(data.get("is_gate_open", True))
+        except Exception:
+            # Corrupt state → fail-closed reset (and drop the bad file)
+            try:
+                self._state_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            self.reset()
 
     def _maybe_reset(self, now: Optional[datetime] = None) -> None:
         """Reset daily metrics if it's time for daily reset."""
@@ -132,6 +218,7 @@ class DailyRiskState:
                 self.log.info(
                     f"[DailyGate] Daily reset: equity_open={self._equity_open}, date={reset_date}"
                 )
+            self._save_state()
 
     def on_portfolio(self, pld: Dict[str, Any], now: Optional[datetime] = None) -> None:
         """Update current equity from portfolio state."""
@@ -139,10 +226,17 @@ class DailyRiskState:
         equity_cross = _d(pld.get("equity_cross_usdt"))
         equity_free = _d(pld.get("equity_free_usdt"))
         self._equity_now = equity_cross if equity_cross > 0 else equity_free
-        # Initialize equity_open on first portfolio update if not set
-        if self._equity_open == _d("0") and self._equity_now > 0:
+        # Initialize reference equity ONLY on first run (or after explicit reset).
+        # Do NOT blindly re-anchor if state was loaded from disk (amnesia fix).
+        if self._equity_open <= 0 and self._equity_now > 0 and self._last_reset_date is None:
             self._equity_open = self._equity_now
+            self._save_state()
         self._maybe_reset(now=now)
+        self._last_gate_open = None  # force recompute on next access
+
+    def update_portfolio(self, pld: Dict[str, Any], now: Optional[datetime] = None) -> None:
+        """Alias for on_portfolio (for legacy naming)."""
+        self.on_portfolio(pld, now=now)
 
     def can_open(self) -> Tuple[bool, Dict[str, Any]]:
         """
@@ -151,10 +245,12 @@ class DailyRiskState:
         Fail-closed: without correct equity — block.
         """
         if not getattr(self, "_enabled", True):
+            self._last_gate_open = True
             return True, {"why": "daily_gate_disabled"}
 
         # Fail-closed: without correct equity — block
         if self._equity_open <= 0 or self._equity_now <= 0:
+            self._last_gate_open = False
             return False, {
                 "reason": "DAILY_RISK_LIMIT",
                 "detail": "NO_EQUITY",
@@ -170,6 +266,7 @@ class DailyRiskState:
 
         # Check drawdown limit first
         if dd >= self.cfg.max_drawdown_pct:
+            self._last_gate_open = False
             return False, {
                 "reason": "DAILY_RISK_LIMIT",
                 "detail": "MAX_DRAWDOWN",
@@ -181,6 +278,7 @@ class DailyRiskState:
             }
 
         # All checks passed
+        self._last_gate_open = True
         return True, {
             "equity_open_usd": _fmt_usd(self._equity_open),
             "equity_now_usd": _fmt_usd(self._equity_now),

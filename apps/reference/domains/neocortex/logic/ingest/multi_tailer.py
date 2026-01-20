@@ -241,6 +241,9 @@ class MultiTailer:
                         f"MarketState={len(self._market_state)} symbols"
                     )
                     last_log_time = now
+                    
+                    # TASK (Optimization): Cleanup stale episodes
+                    self._cleanup_stale_episodes(now)
                 
                 # Yield to event loop
                 await asyncio.sleep(self.config.poll_interval)
@@ -503,3 +506,17 @@ class MultiTailer:
     def market_state(self) -> Dict[str, Dict[str, float]]:
         """Current market state per symbol."""
         return dict(self._market_state)
+
+    def _cleanup_stale_episodes(self, current_time: float, ttl: float = 3600.0):
+        """
+        Cleanup pending episodes that exceeded TTL (e.g. orphan orders never closed).
+        Prevent indefinite memory growth.
+        """
+        expired = []
+        for symbol, episode in self._pending_episodes.items():
+            if current_time - episode.timestamp > ttl:
+                expired.append(symbol)
+        
+        for symbol in expired:
+            del self._pending_episodes[symbol]
+            logger.warning(f"Cleaned up stale episode for {symbol} (Age > {ttl}s)")

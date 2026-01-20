@@ -274,7 +274,7 @@ def make_app_cfg_stub(**overrides):
 # STRATEGY MOCK FACTORIES (Strict Config Fix)
 # ==============================================================================
 
-def create_mock_mr_config(emit_trade_intent_directly=False):
+def create_mock_mr_config():
     """Factory for mocked MeanReversion config with STRICT execution fields."""
     mr_config = MagicMock()
     mr_config.enabled = True
@@ -284,8 +284,6 @@ def create_mock_mr_config(emit_trade_intent_directly=False):
     mr_config.execution = MagicMock()
     mr_config.execution.entry_order_type = "MARKET"
     mr_config.execution.entry_tif = None
-    
-    mr_config.emit_trade_intent_directly = emit_trade_intent_directly
     mr_config.allowed_regimes = ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
     mr_config.regime_sizing = {}
     mr_config.liquidity_gate = None

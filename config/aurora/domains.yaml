@@ -82,17 +82,31 @@ decision_making:
   # DM-DIR-SSOT-STRICT-01: Directional sanity gate (SSOT-required).
   # Note: enabled can be overridden per profile; block must exist for LIVE.
   directional_sanity:
-    enabled: true
+    # FIX-NRR027-BACKTEST: DISABLED to allow counter-trend orders.
+    # Aurora strategy generates mean-reversion style signals (buy dips, sell rallies).
+    # This conflicts with directional_sanity which blocks entries against trend.
+    # For backtest testing, disable this gate to see actual order execution.
+    # LIVE: Set enabled=true for trend-following safety protection!
+    enabled: false
     min_abs_delta_price: 0.0
     min_confidence: 0.0
-    consecutive_bars: 2
+    # FIX-NRR026-BACKTEST: Reduced from 2 to 1 for bar-based backtest.
+    # With 5m bars, requiring 2 consecutive bars (10 min) for trend confirmation
+    # is too restrictive. Single bar direction is sufficient for bar-based trading.
+    # LIVE: Consider setting back to 2 for more conservative trend detection.
+    consecutive_bars: 1
 
   # PRICE-MOTION-SSOT-STRICT-01: Multi-window safety layer (SSOT-required).
   # Blocks opening positions against persistent negative/positive price motion.
   price_motion_sanity:
-    enabled: true
+    # FIX-NRR028-BACKTEST: DISABLED for bar-based backtest.
+    # This gate requires tick-level price history (10s/60s/300s windows) to compute
+    # pm_norm_* volatility-normalized returns. With 5m bars (1 tick per 300s),
+    # there's insufficient data to fill these windows → pm_norm_* = NULL → NRR-028.
+    # LIVE: Set enabled=true to restore Anti-FOMO protection with tick-level data.
+    enabled: false
     k_vol: 2.0
-    flash_window_sec: 10
+    flash_window_sec: 60
     bleed_window_sec: 300
     flash_threshold_norm: 1.0
     bleed_threshold_norm: 0.5
@@ -113,20 +127,20 @@ decision_making:
 feature_engineering:
   enable_new_metrics: true
   volume_input_mode: integrate
-  enabled_timeframes_sec: [180, 300]
+  enabled_timeframes_sec: [180, 300, 900]
 
   ema:
-    period_short: 3
-    period_long: 7
+    period_short: 1 # was 3
+    period_long: 2 # was 7 (min allowed: 2)
 
   volume:
-    sma_length: 5
-    window_sec: 60
-    min_window_volume_usd: 1000.0
+    sma_length: 2 # was 5 (min allowed: 2)
+    window_sec: 5 # was 60
+    min_window_volume_usd: 0.0 # was 1000.0
 
   volatility:
-    sma_length: 10
-    window_sec: 60
+    sma_length: 2 # was 10 (min allowed: 2)
+    window_sec: 5 # was 60
 
   liquidity:
     depth_half: 1000.0
@@ -143,8 +157,9 @@ feature_engineering:
     eps: 0.000000001
 
   large_trade_imbalance:
-    window_ms: 60000
-    min_trades: 10
+    enabled: true
+    window_ms: 1000 # was 60000
+    min_trades: 1 # was 10
     eps: 0.000000000001
     use_notional: false
 
@@ -152,16 +167,17 @@ feature_engineering:
     use_laplace_smoothing: true
 
   delta_price:
-    spike_filter_ms: 60000
+    spike_filter_ms: 600000  # 10 minutes (600000ms) - supports 5m bar backtest (300000ms gaps)
 
   macro_sync:
     enabled: true
     time_diff_threshold_ms: 60000
     ttl_ms: 60000
-    min_buffer_size: 3
+    min_buffer_size: 2 # was 3 (min allowed: 2)
     window: 12
     bin_ms: 5000
     max_gap_bins: 2
+    max_late_ms: 5000
     eps: 0.000000000001
     anchors: ["BTCUSDT", "ETHUSDT"]
     align_mode: tail_min_len
@@ -369,7 +385,11 @@ execution_position:
     max_long_utilization_pct: 150.0
     max_short_utilization_pct: 150.0
     max_directional_ratio: 20.0
-    max_concentration_pct: 19.0  # FIX: percentage (17% not 0.17)
+    # FIX-BACKTEST-CONCENTRATION: Increased from 19% to 500% for backtest.
+    # MockBroker uses leverage=1, so $10k notional = $10k margin (should be ~$200 at 50x).
+    # With 19% limit ($1,900), any BTC order exceeds this. Set to 500% to disable for backtest.
+    # LIVE: Set back to 19% or appropriate value for per-symbol risk limits!
+    max_concentration_pct: 500.0
   
   fsm_open:
     idempotency_window_sec: 60

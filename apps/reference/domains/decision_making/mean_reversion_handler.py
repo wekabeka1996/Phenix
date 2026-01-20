@@ -146,6 +146,10 @@ class MeanReversionHandler:
         # Cache for liquidity kappa (from FeatureEngineering)
         self._liquidity_kappa_map: Dict[str, Decimal] = {}
 
+        # P0-1: Per-symbol features cache (keyed by symbol) for volatility/liquidity propagation
+        # Stores cmd.features from last CMD:PROCESS_STRATEGY per symbol
+        self._last_cmd_features: Dict[str, Dict[str, Any]] = {}
+
         # Block reason throttling (avoid per-tick spam)
         self._last_block_reason: Dict[str, str] = {}
         self._last_block_ts_ms: Dict[str, int] = {}
@@ -263,24 +267,6 @@ class MeanReversionHandler:
                 elif isinstance(asset_cfg, dict):
                     raise TypeError("mean_reversion.assets must contain typed MRAssetConfig values, got dict")
 
-        # Strict Sequential Trading Contract: direct intent mode is only safe when MR is the ONLY
-        # strategy assigned for that symbol. Otherwise it bypasses DecisionMaking arbitration/QoS.
-        if self._mr_config and bool(self._mr_config.emit_trade_intent_directly) and mr_assigned_symbols:
-            hybrid = []
-            assignments = {}
-            if hasattr(self.config, 'strategies_registry') and self.config.strategies_registry:
-                assignments = getattr(self.config.strategies_registry, 'assignments', {}) or {}
-            for symbol in sorted(mr_assigned_symbols):
-                strategies = assignments.get(symbol) or []
-                if any(sid != 'mean_reversion' for sid in strategies):
-                    hybrid.append({"symbol": symbol, "assigned": list(strategies)})
-            if hybrid:
-                raise ValueError(
-                    "❌ CRITICAL: mean_reversion.emit_trade_intent_directly=true is forbidden for hybrid symbols "
-                    "(it would bypass DecisionMaking arbitration/QoS). Affected: "
-                    f"{hybrid}. Set emit_trade_intent_directly=false or remove other strategies from assignments."
-                )
-
         missing_assets = sorted([s for s in mr_assigned_symbols if not self._mr_config or s not in self._mr_config.assets])
         disabled_assets = sorted(
             [
@@ -375,7 +361,9 @@ class MeanReversionHandler:
                 if strat_override.cooldown_sec is not None: config.cooldown_sec = strat_override.cooldown_sec
                 if strat_override.sl_atr_mult is not None: config.sl_atr_mult = Decimal(str(strat_override.sl_atr_mult))
                 if strat_override.allowed_regimes is not None: config.allowed_regimes = list(strat_override.allowed_regimes)
-                # Add other overrides as needed...
+                # Wire sl_buffer_pct and tp_buffer_pct from YAML
+                if strat_override.sl_buffer_pct is not None: config.sl_buffer_pct = Decimal(str(strat_override.sl_buffer_pct))
+                if strat_override.tp_buffer_pct is not None: config.tp_buffer_pct = Decimal(str(strat_override.tp_buffer_pct))
 
             self._strategies[symbol] = MeanReversion1mStrategy(
                 config=config,
@@ -522,69 +510,8 @@ class MeanReversionHandler:
         # Mean Reversion does NOT own sizing. DecisionMaking computes qty from:
         # instruments.<SYM>.sizing.margin_pct + instruments.<SYM>.execution.target_leverage.
 
-        # If configured, MR can emit trade intent directly (legacy mode). This bypasses DecisionMaking.
-        if self._mr_config and bool(self._mr_config.emit_trade_intent_directly):
-            if side not in ("BUY", "SELL"):
-                return
-
-            entry_price = signal.entry_price
-            if entry_price is None or entry_price <= 0:
-                return
-
-            # Position sizing in direct mode comes from MR risk config.
-            # Per-asset override (assets.<SYM>.risk.position_size_usd) wins over global.
-            pos_usd = None
-            asset_cfg = self._mr_config.assets.get(symbol) if self._mr_config.assets else None
-            if isinstance(asset_cfg, MRAssetConfig) and asset_cfg.risk is not None:
-                if asset_cfg.risk.position_size_usd is not None:
-                    pos_usd = float(asset_cfg.risk.position_size_usd)
-            if pos_usd is None:
-                pos_usd = float(self._mr_config.risk.position_size_usd)
-
-            qty = Decimal(str(pos_usd)) / Decimal(str(entry_price))
-            side_lc = "buy" if side == "BUY" else "sell"
-            why_chain = [signal.why] if signal.why else ["mr_signal"]
-            trade_intent = {
-                "rid": rid,
-                "instrument": symbol,
-                "side": side_lc,
-                "strategy": "mean_reversion",
-                "order": {
-                    "qty": str(qty),
-                    "price": str(entry_price),
-                    "price_ref": str(entry_price),
-                    "reduce_only": False,
-                },
-                "p": str(signal.confidence),
-                "payoff_ratio_r": "2.0",
-                "tca_budget": {
-                    "max_slippage_bps": "10",
-                    "max_latency_ms": 500,
-                    "maker_preference": "neutral",
-                },
-                "risk_budget": {
-                    "trade_cvar95_max_bps": "100",
-                    "session_cvar95_max_bps": "200",
-                },
-                "size": {
-                    "kelly_fraction": "0.1",
-                    "notional_cap_usd": str(Decimal(str(qty)) * Decimal(str(entry_price))),
-                },
-                "valid_for_ms": 5000,
-                "why": why_chain,
-                "dto_version": "1.0.0",
-                "schema_ref": "trade_intent_v1.json",
-                "idempotent_key": str(uuid.uuid4()),
-            }
-
-            self.fsm.emit(
-                "EVT:TRADE_INTENT_PROPOSED",
-                payload=trade_intent,
-                why=f"trade_intent:mean_reversion:{side_lc}",
-                data_ref=why_chain,
-            )
-            self._stats["signals_emitted"] += 1
-            return
+        # P0-1: Get cached features for this symbol (from last CMD:PROCESS_STRATEGY)
+        cached_features = self._last_cmd_features.get(symbol, {})
         
         pld = {
             "schema_version": 1,
@@ -604,6 +531,9 @@ class MeanReversionHandler:
                 "target_price": str(signal.target_price) if signal.target_price else None,
             },
             "regime": signal.flat_regime.name if signal.flat_regime else "UNKNOWN",
+            # P0-1: Propagate volatility/liquidity from cmd.features for EntryPlan compatibility
+            "volatility": cached_features.get("volatility"),
+            "liquidity": cached_features.get("liquidity"),
             "mr_params": {
                 "sizing_mult": float(signal.mr_params.sizing_mult) if signal.mr_params else 1.0,
                 "stop_mult": float(signal.mr_params.stop_mult) if signal.mr_params else 1.0,
@@ -888,9 +818,12 @@ class MeanReversionHandler:
             ts_ms = bar.end_ts_ms or int(time.time() * 1000)
 
             # OBS-04-INT: Prefer bar-driven features as SSOT for liquidity gate.
+            # P0-1: Cache full features for volatility/liquidity propagation to signal
             try:
                 features_payload = pld.get("features") if isinstance(pld, dict) else getattr(pld, "features", None)
                 if isinstance(features_payload, dict):
+                    # P0-1: Store features keyed by symbol for propagation
+                    self._last_cmd_features[symbol] = features_payload
                     kappa_raw = features_payload.get("liquidity_kappa")
                     if kappa_raw is not None:
                         self._liquidity_kappa_map[symbol] = Decimal(str(kappa_raw))

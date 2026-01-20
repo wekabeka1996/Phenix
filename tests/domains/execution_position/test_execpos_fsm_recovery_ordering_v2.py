@@ -574,7 +574,14 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
     exec_pos_fsm.shadow_mode = False
     
     symbol = "BTCUSDT"
-    msg = Message(op="DEC", verb="OPEN", src="s", dst="d", pld={"symbol": symbol, "side": "BUY", "qty": "0.1"}, rid="open_1")
+    msg = Message(
+        op="DEC",
+        verb="OPEN",
+        src="s",
+        dst="d",
+        pld={"symbol": symbol, "side": "BUY", "qty": "0.1", "order_type": "MARKET", "tif": None},
+        rid="open_1",
+    )
     
     # Mocks
     exec_pos_fsm.adapter.get_mark_price = AsyncMock(return_value=50000.0)

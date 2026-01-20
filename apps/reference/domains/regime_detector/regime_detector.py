@@ -234,13 +234,23 @@ class RegimeDetector:
 
         # REG-FIX-01: Clock abstraction for deterministic testing
         now_ms = self._clock.now_ms()
-        tick_ttl_ms = int(self.config.system.market_data.tick_ttl_ms) if self.config.system.market_data else 0
+        
+        # BAR-TTL-REFORM-02: Use bar_ttl_ms for bar events, tick_ttl_ms for ticks
+        # This mirrors the fix in decision_making.py Gate 5
+        sys_md = self.config.system.market_data if self.config.system else None
+        if tf_sec and tf_sec > 0:
+            # Bar event - use lenient bar TTL
+            ttl_ms = int(getattr(sys_md, "bar_ttl_ms", 10000)) if sys_md else 10000
+        else:
+            # Tick event - use strict tick TTL
+            ttl_ms = int(sys_md.tick_ttl_ms) if sys_md else 0
+        
         data_drops: list[str] = []
         data_notes: list[str] = []
 
         # P0-1 FIX: Check for stale features BEFORE any buffer updates
         is_stale = False
-        if tick_ttl_ms > 0 and (now_ms - ts_ms) > tick_ttl_ms:
+        if ttl_ms > 0 and (now_ms - ts_ms) > ttl_ms:
             data_drops.append("stale_features")
             inc_data_quality_drop(domain="regime_detector", reason="stale_features")
             is_stale = True
@@ -460,6 +470,12 @@ class RegimeDetector:
             "reasons": warmup_reasons,
         }
 
+        # DM-CRITICAL-PATCHES-02: Heartbeat emission with changed flag
+        # EVT:REGIME_DETECTED is emitted on EVERY basis bar close (heartbeat).
+        # 'changed' indicates if regime actually transitioned.
+        last_regime = self._last_emitted_regime.get(symbol)
+        changed = (last_regime is None) or (last_regime != regime)
+
         payload: Dict[str, Any] = {
             "ts": ts_ms,
             "symbol": symbol,
@@ -468,12 +484,15 @@ class RegimeDetector:
             "source_model": source_model,
             "warmup": warmup,
             "data_quality": {"drops": data_drops, "notes": data_notes},
+            # DM-CRITICAL-PATCHES-02: Heartbeat fields
+            "changed": changed,
+            "last_update_ts_ms": now_ms,  # Heartbeat timestamp (monotonic)
         }
 
         self.fsm.emit(
             "EVT:REGIME_DETECTED",
             payload,
-            why=f"Regime '{regime}' detected by {source_model} for {symbol}",
+            why=f"Regime '{regime}' detected by {source_model} for {symbol}" + (" (unchanged)" if not changed else ""),
         )
 
         # Log only on meaningful transitions (avoid hot-path log spam).
@@ -483,8 +502,7 @@ class RegimeDetector:
             self.logger.info(f"[{symbol}] RegimeDetector warmup COMPLETE")
         self._last_full_ready[symbol] = full_ready
 
-        last_regime = self._last_emitted_regime.get(symbol)
-        if last_regime is None or last_regime != regime:
+        if changed:
             self.logger.info(
                 f"[{symbol}] Regime updated: {last_regime or '∅'} → {regime} (confidence={confidence}, model={source_model})"
             )

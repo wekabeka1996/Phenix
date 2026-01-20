@@ -109,6 +109,23 @@ c_data_quality_bad_dt_total = Counter(
     ["domain"],
 )
 
+# Macro sync out-of-order observability (FE-WARMUP-UNBLOCK-01)
+c_macro_sync_ooo_dropped_total = Counter(
+    "macro_sync_ooo_dropped_total",
+    "Macro sync: out-of-order bins dropped (too late to reorder)",
+    ["key"],
+)
+c_macro_sync_ooo_reordered_total = Counter(
+    "macro_sync_ooo_reordered_total",
+    "Macro sync: out-of-order bins reordered/inserted (within tolerance)",
+    ["key"],
+)
+g_macro_sync_last_bin_ts_ms = Gauge(
+    "macro_sync_last_bin_ts_ms",
+    "Macro sync: latest observed bin_ts (ms) per series",
+    ["key"],
+)
+
 # RetryScheduler loop contract (TASK24)
 c_retry_scheduler_no_loop_total = Counter(
     "retry_scheduler_no_loop_total",
@@ -228,6 +245,18 @@ def inc_data_quality_drop(domain: str, reason: str) -> None:
 
 def inc_data_quality_bad_dt(domain: str) -> None:
     c_data_quality_bad_dt_total.labels(domain=domain).inc()
+
+
+def inc_macro_sync_ooo_dropped(key: str) -> None:
+    c_macro_sync_ooo_dropped_total.labels(key=str(key)).inc()
+
+
+def inc_macro_sync_ooo_reordered(key: str) -> None:
+    c_macro_sync_ooo_reordered_total.labels(key=str(key)).inc()
+
+
+def set_macro_sync_last_bin_ts_ms(key: str, last_bin_ts_ms: int) -> None:
+    g_macro_sync_last_bin_ts_ms.labels(key=str(key)).set(float(last_bin_ts_ms))
 
 def inc_retry_scheduler_no_loop() -> None:
     c_retry_scheduler_no_loop_total.inc()

@@ -165,7 +165,9 @@ def test_diag_reject_below_min_notional(fsm_config):
             "side": "BUY", 
             "qty": "0.001", 
             "price": "10.0", # Notional = 0.01
-            "order_type": "LIMIT"
+            "order_type": "LIMIT",
+            "tif": "GTC",
+            "valid_for_ms": 60_000,
         }
     )
     
@@ -189,7 +191,11 @@ def test_diag_idempotency_duplicate_open(fsm_config):
         op="CMD", verb="OPEN", src="test", dst="exec", rid="1",
         pld={
             "symbol": "BTCUSDT", "side": "BUY", 
-            "qty": "0.1", "price": "50000", "order_type": "LIMIT",
+            "qty": "0.1",
+            "price": "50000",
+            "order_type": "LIMIT",
+            "tif": "GTC",
+            "valid_for_ms": 60_000,
             "idempotent_key": key
         }
     )
@@ -281,4 +287,3 @@ def test_diag_ttl_timeout_safety(fsm_harness):
     assert deadline_arg.symbol == "BTCUSDT"
     # timeout_type is an Enum, check value string
     assert deadline_arg.timeout_type.value == "fill_timeout"
-

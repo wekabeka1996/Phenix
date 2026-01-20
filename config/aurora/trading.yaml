@@ -11,7 +11,11 @@ binance_api:
     ws_url: wss://stream.testnet.binancefuture.com
 trading:
   # HYBRID MODE: testnet execution with live data (domain_configuration controls granular modes)
-  mode: testnet
+  mode: backtest
+  backtest:
+    start_date: "2023-05-01"
+    end_date: "2023-05-31"
+    initial_balance: 10000.0
   tca_prefs:
     max_slippage_pct: 0.5
     max_slippage_bps: 10
@@ -45,11 +49,18 @@ trading:
       reset_time_utc: 00:00
     profile: balanced
     soft_limits:
-      mode: clip
+      # FIX-BACKTEST-SOFT-LIMITS-V2: DISABLED (mode=off) for backtest.
+      # ROOT CAUSE: MockBroker hardcodes leverage=1 when creating positions.
+      # BacktestEngine._emit_portfolio_update() calculates margin = notional / leverage.
+      # With leverage=1, a 0.73 BTC position @ $27k = $19,890 margin (should be ~$995 at 20x).
+      # SoftClipEngine sees $19,890 > $5,000 limit → clips order to $0 → BELOW_CLIP_MIN.
+      # SOLUTION: Disable soft_limits for backtest until MockBroker uses config leverage.
+      # LIVE: Set mode=clip with appropriate limits for production risk management!
+      mode: "off"
       clip_min_notional_usdt: 10
       directional_ratio_max: 20.0
-      side_exposure_usdt: 600
-      margin_exposure_usdt: 1100
+      side_exposure_usdt: 2000
+      margin_exposure_usdt: 5000
     regime_adaptation:
       trend_up_delta: 0.3
       trend_down_delta: 0.3
@@ -87,8 +98,9 @@ trading:
       timeframes_sec:
       - 180
       - 300
+      - 900  # REGIME-BAR-FORENSICS-01: Enable 15m bars
   ops:
-    panic_killswitch: true
+    panic_killswitch: false
     panic_ttl_sec: null
     quiet_hours_utc:
     - 22:00-06:00

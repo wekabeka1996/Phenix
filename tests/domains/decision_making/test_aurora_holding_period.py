@@ -105,12 +105,30 @@ def create_mock_config(
     return config
 
 
-def create_handler_with_config(config):
-    """Create AuroraHandler with given config."""
+class ControllableClock:
+    """A controllable clock for testing monotonic time."""
+    def __init__(self, start: float = 0.0):
+        self._time = start
+    
+    def __call__(self) -> float:
+        return self._time
+    
+    def set(self, t: float) -> None:
+        self._time = t
+    
+    def advance(self, delta: float) -> None:
+        self._time += delta
+
+
+def create_handler_with_config(config, clock: ControllableClock = None):
+    """Create AuroraHandler with given config and optional controllable clock."""
     from apps.reference.domains.decision_making.aurora_handler import AuroraHandler
     
     emit_fn = MagicMock()
-    handler = AuroraHandler(config=config, emit_fn=emit_fn, strategy_id="aurora")
+    kwargs = {"config": config, "emit_fn": emit_fn, "strategy_id": "aurora"}
+    if clock is not None:
+        kwargs["monotonic_fn"] = clock
+    handler = AuroraHandler(**kwargs)
     return handler
 
 
@@ -126,29 +144,27 @@ class TestHoldingPeriodBlocking:
         - Flip signal at T=10s
         - Expected: BLOCKED (time_in_position=10s < min_duration=30s)
         """
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
             emergency_threshold=0.7,
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("ETHUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("ETHUSDT", "buy")
         
         # Advance time by 10 seconds
-        check_time = entry_time + 10  # T+10s
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.15"),  # Flip signal (opposite direction)
-                side="sell",
-            )
-            
-            should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
-            
-            assert should_suppress is True
+        clock.advance(10)  # T=1010
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.15"),  # Flip signal (opposite direction)
+            side="sell",
+        )
+        
+        should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
+        
+        assert should_suppress is True
     
     def test_exit_allowed_at_t_plus_31s(self):
         """
@@ -159,28 +175,26 @@ class TestHoldingPeriodBlocking:
         - Flip signal at T=31s
         - Expected: ALLOWED (time_in_position=31s >= min_duration=30s)
         """
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("ETHUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("ETHUSDT", "buy")
         
         # Advance time by 31 seconds
-        check_time = entry_time + 31  # T+31s
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.15"),
-                side="sell",
-            )
-            
-            should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
-            
-            assert should_suppress is False
+        clock.advance(31)  # T=1031
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.15"),
+            side="sell",
+        )
+        
+        should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
+        
+        assert should_suppress is False
     
     def test_emergency_override_at_t_plus_5s(self):
         """
@@ -192,29 +206,27 @@ class TestHoldingPeriodBlocking:
         - Flip signal at T=5s
         - Expected: ALLOWED (emergency override)
         """
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
             emergency_threshold=0.7,
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("ETHUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("ETHUSDT", "buy")
         
         # Advance time by 5 seconds
-        check_time = entry_time + 5  # T+5s
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.85"),  # Emergency level!
-                side="sell",
-            )
-            
-            should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
-            
-            assert should_suppress is False  # Emergency override
+        clock.advance(5)  # T=1005
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.85"),  # Emergency level!
+            side="sell",
+        )
+        
+        should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
+        
+        assert should_suppress is False  # Emergency override
 
 
 class TestFlipBehavior:
@@ -224,60 +236,56 @@ class TestFlipBehavior:
         """
         Test that flip (buy→sell) is blocked within holding period.
         """
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
             apply_to_flips=True,
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("BTCUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("BTCUSDT", "buy")
         
         # Advance time by 15 seconds
-        check_time = entry_time + 15  # T+15s
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.15"),  # Flip signal
-                side="sell",
-            )
-            
-            should_suppress = handler._should_suppress_soft_exit(
-                "BTCUSDT", result, is_flip=True
-            )
-            
-            assert should_suppress is True
+        clock.advance(15)  # T=1015
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.15"),  # Flip signal
+            side="sell",
+        )
+        
+        should_suppress = handler._should_suppress_soft_exit(
+            "BTCUSDT", result, is_flip=True
+        )
+        
+        assert should_suppress is True
     
     def test_flip_allowed_when_apply_to_flips_false(self):
         """
         Test that flip is allowed when apply_to_flips=False.
         """
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
             apply_to_flips=False,  # Don't apply to flips
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("BTCUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("BTCUSDT", "buy")
         
         # Advance time by 10 seconds (within holding period)
-        check_time = entry_time + 10
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.15"),
-                side="sell",
-            )
-            
-            # Should NOT suppress because apply_to_flips=False
-            should_suppress = handler._should_suppress_soft_exit(
-                "BTCUSDT", result, is_flip=True
-            )
+        clock.advance(10)  # T=1010
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.15"),
+            side="sell",
+        )
+        
+        # Should NOT suppress because apply_to_flips=False
+        should_suppress = handler._should_suppress_soft_exit(
+            "BTCUSDT", result, is_flip=True
+        )
             
             assert should_suppress is False
 
@@ -295,6 +303,7 @@ class TestConfigOverride:
         
         At T+35s: global would allow, per-symbol should block.
         """
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
@@ -306,25 +315,22 @@ class TestConfigOverride:
                 }
             }
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("ETHUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("ETHUSDT", "buy")
         
         # Advance time by 35 seconds
-        check_time = entry_time + 35  # T+35s
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.15"),
-                side="sell",
-            )
-            
-            should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
-            
-            # Per-symbol: 45s, time_in_position: 35s → should block
-            assert should_suppress is True
+        clock.advance(35)  # T=1035
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.15"),
+            side="sell",
+        )
+        
+        should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
+        
+        # Per-symbol: 45s, time_in_position: 35s → should block
+        assert should_suppress is True
     
     def test_per_symbol_emergency_threshold(self):
         """
@@ -336,6 +342,7 @@ class TestConfigOverride:
         
         Score = -0.6: global would NOT trigger, per-symbol SHOULD trigger.
         """
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
@@ -348,25 +355,22 @@ class TestConfigOverride:
                 }
             }
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("ETHUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("ETHUSDT", "buy")
         
-        # Check at T+5s with score=-0.6
-        check_time = entry_time + 5
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.6"),  # Between 0.5 and 0.7
-                side="sell",
-            )
-            
-            # Per-symbol threshold is 0.5, |score|=0.6 >= 0.5 → emergency override
-            should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
-            
-            assert should_suppress is False  # Emergency override triggered
+        # Advance time by 5 seconds
+        clock.advance(5)  # T=1005
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.6"),  # Between 0.5 and 0.7
+            side="sell",
+        )
+        
+        # Per-symbol threshold is 0.5, |score|=0.6 >= 0.5 → emergency override
+        should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
+        
+        assert should_suppress is False  # Emergency override triggered
 
 
 class TestFeatureDisabled:
@@ -374,29 +378,27 @@ class TestFeatureDisabled:
     
     def test_exit_allowed_when_disabled(self):
         """Exit always allowed when holding_period.enabled = false."""
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=False,  # Disabled
             min_duration_sec=30.0,
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("ETHUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("ETHUSDT", "buy")
         
-        # Check at T+5s (well within holding period)
-        check_time = entry_time + 5
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.15"),
-                side="sell",
-            )
-            
-            # Feature disabled → never suppress
-            should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
-            
-            assert should_suppress is False
+        # Advance time by 5 seconds (well within holding period)
+        clock.advance(5)  # T=1005
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.15"),
+            side="sell",
+        )
+        
+        # Feature disabled → never suppress
+        should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
+        
+        assert should_suppress is False
 
 
 class TestFailOpen:
@@ -437,12 +439,12 @@ class TestHelperMethods:
     
     def test_track_entry_sets_timestamp_and_side(self):
         """Test that _track_entry correctly sets entry_timestamp and position_side."""
-        config = create_mock_config()
-        handler = create_handler_with_config(config)
-        
         test_time = 1234567890.123
-        with patch("time.time", return_value=test_time):
-            handler._track_entry("BTCUSDT", "BUY")
+        clock = ControllableClock(start=test_time)
+        config = create_mock_config()
+        handler = create_handler_with_config(config, clock=clock)
+        
+        handler._track_entry("BTCUSDT", "BUY")
         
         state = handler._symbol_states["BTCUSDT"]
         assert state.entry_timestamp == test_time
@@ -450,12 +452,12 @@ class TestHelperMethods:
     
     def test_clear_entry_resets_state(self):
         """Test that _clear_entry correctly resets entry tracking."""
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config()
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
         # First, track an entry
-        with patch("time.time", return_value=1000.0):
-            handler._track_entry("BTCUSDT", "buy")
+        handler._track_entry("BTCUSDT", "buy")
         
         # Then clear it
         handler._clear_entry("BTCUSDT")
@@ -514,37 +516,35 @@ class TestEmitBlocked:
     
     def test_blocked_event_emitted_when_suppressed(self):
         """Test that EVT:STRATEGY_DECISION_BLOCKED is emitted when exit is suppressed."""
+        clock = ControllableClock(start=1000.0)
         config = create_mock_config(
             holding_period_enabled=True,
             min_duration_sec=30.0,
         )
-        handler = create_handler_with_config(config)
+        handler = create_handler_with_config(config, clock=clock)
         
-        # Simulate entry
-        entry_time = 1000.0
-        with patch("time.time", return_value=entry_time):
-            handler._track_entry("ETHUSDT", "buy")
+        # Simulate entry at T=1000
+        handler._track_entry("ETHUSDT", "buy")
         
-        # Check at T+10s
-        check_time = entry_time + 10
-        with patch("time.time", return_value=check_time):
-            result = MockScoringResult(
-                score=decimal.Decimal("-0.15"),
-                side="sell",
-            )
-            
-            should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
-            
-            assert should_suppress is True
-            
-            # Check that emit_fn was called with EVT:STRATEGY_DECISION_BLOCKED
-            handler.emit_fn.assert_called()
-            call_args = handler.emit_fn.call_args
-            event_name = call_args[0][0]
-            payload = call_args[0][1]
-            
-            assert event_name == "EVT:STRATEGY_DECISION_BLOCKED"
-            assert payload["reason_code"] == "HOLDING_PERIOD_ACTIVE"
-            assert payload["symbol"] == "ETHUSDT"
-            assert "time_in_position_sec" in payload["details"]
-            assert "min_duration_sec" in payload["details"]
+        # Advance time by 10 seconds
+        clock.advance(10)  # T=1010
+        result = MockScoringResult(
+            score=decimal.Decimal("-0.15"),
+            side="sell",
+        )
+        
+        should_suppress = handler._should_suppress_soft_exit("ETHUSDT", result, is_flip=True)
+        
+        assert should_suppress is True
+        
+        # Check that emit_fn was called with EVT:STRATEGY_DECISION_BLOCKED
+        handler.emit_fn.assert_called()
+        call_args = handler.emit_fn.call_args
+        event_name = call_args[0][0]
+        payload = call_args[0][1]
+        
+        assert event_name == "EVT:STRATEGY_DECISION_BLOCKED"
+        assert payload["reason_code"] == "HOLDING_PERIOD_ACTIVE"
+        assert payload["symbol"] == "ETHUSDT"
+        assert "time_in_position_sec" in payload["details"]
+        assert "min_duration_sec" in payload["details"]

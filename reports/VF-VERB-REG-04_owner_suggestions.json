@@ -114,23 +114,19 @@
       "op": "EVT",
       "verb": "CONFIG_DEBUG_OVERRIDE_ACTIVE",
       "token": "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE",
-      "total_occurrences": 3,
-      "suggested_owner": "unknown",
+      "total_occurrences": 2,
+      "suggested_owner": "risk_management",
       "candidates": [
         {
           "owner": "risk_management",
           "count": 2,
-          "pct": 66.67
+          "pct": 100.0
         }
       ],
       "top_files": [
         {
           "path": "apps/reference/domains/risk_management/risk_management.py",
           "count": 2
-        },
-        {
-          "path": "apps/reference/main.py",
-          "count": 1
         }
       ]
     },
@@ -180,29 +176,19 @@
       "op": "EVT",
       "verb": "INTENT_DROPPED",
       "token": "EVT:INTENT_DROPPED",
-      "total_occurrences": 3,
+      "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],
-      "top_files": [
-        {
-          "path": "apps/reference/main.py",
-          "count": 3
-        }
-      ]
+      "top_files": []
     },
     {
       "op": "EVT",
       "verb": "MR_SIGNAL_PRODUCED",
       "token": "EVT:MR_SIGNAL_PRODUCED",
-      "total_occurrences": 1,
+      "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],
-      "top_files": [
-        {
-          "path": "apps/reference/config_models.py",
-          "count": 1
-        }
-      ]
+      "top_files": []
     },
     {
       "op": "EVT",
@@ -236,12 +222,22 @@
       "op": "EVT",
       "verb": "ORDER_REJECTED",
       "token": "EVT:ORDER_REJECTED",
-      "total_occurrences": 3,
+      "total_occurrences": 5,
       "suggested_owner": "unknown",
-      "candidates": [],
+      "candidates": [
+        {
+          "owner": "execution_position",
+          "count": 2,
+          "pct": 40.0
+        }
+      ],
       "top_files": [
         {
           "path": "apps/reference/adapters/binance_ws_client.py",
+          "count": 2
+        },
+        {
+          "path": "apps/reference/domains/execution_position/fsm.py",
           "count": 2
         },
         {

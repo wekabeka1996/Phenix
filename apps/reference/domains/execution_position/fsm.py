@@ -278,6 +278,9 @@ class ExecPosFSM:
         self.bus.listen("EVT:ORDER_FILL", self._on_order_fill)
         # EP-01: Subscribe to regime changes for dynamic risk adaptation
         self.bus.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
+        # BUGFIX: Connect DecisionMaking intent to ExecutionPosition logic
+        self.bus.listen("EVT:TRADE_INTENT_PROPOSED", self._on_trade_intent_proposed)
+        self.bus.listen("EVT:TRADE_INTENT_REJECTED", self._on_trade_intent_rejected)
 
         # Async loop used for guardian and adapter operations (set later)
         self._async_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -920,6 +923,205 @@ class ExecPosFSM:
                 )
         except AttributeError:
             pass  # Config not loaded
+
+    def _on_trade_intent_proposed(self, msg: Message) -> None:
+        """
+        Handle TRADE_INTENT_PROPOSED event from DecisionMaking directly (SSOT).
+        
+        This handler replaces the legacy AuroraBridge. It routes:
+        - Normal Intents -> CMD:OPEN
+        - Reduce-Only Intents -> CMD:CLOSE
+        - Failures -> EVT:TRADE_INTENT_REJECTED
+        """
+        try:
+            pld = msg.pld or {}
+            # DecisionMaking uses "instrument" for symbol in trade_intent_v1 schema
+            symbol = pld.get("instrument") or pld.get("symbol")
+            if not symbol:
+                LOG.error(f"TRADE_INTENT_PROPOSED missing symbol/instrument: keys={list(pld.keys())}")
+                return
+
+            # Log intent via authorized adapter
+            self.log_adapter.log_trade_intent(
+                rid=msg.rid or "unknown",
+                symbol=symbol,
+                side=pld.get("side", ""),
+                qty=pld.get("order", {}).get("qty"),
+                price=pld.get("order", {}).get("price"),
+                features=pld.get("features"),
+                risk_score=pld.get("risk_budget", {}).get("trade_cvar95_max_bps") # Approx mapping
+            )
+
+            order_info = pld.get("order", {})
+            reduce_only = (
+                pld.get("reduce_only") 
+                or order_info.get("reduce_only") 
+                or order_info.get("reduceOnly")
+            )
+
+            result: Optional[Message] = None
+
+            if reduce_only:
+                # Route to CLOSE flow
+                cmd_close = Message(
+                    op="CMD",
+                    verb="CLOSE",
+                    src="execution_position",
+                    dst="execution_position",
+                    rid=msg.rid,
+                    pld={
+                        "symbol": symbol,
+                        "reason": pld.get("reason") or "intent_reduce_only",
+                        "idempotent_key": pld.get("idempotent_key"),
+                        "retry_key": pld.get("retry_key"),
+                    },
+                    why=f"intent_reduce_only:{msg.rid}",
+                    data_ref=msg.data_ref
+                )
+                LOG.info(f"[{symbol}] Processing TRADE_INTENT (reduce_only) -> CMD:CLOSE")
+                result = self.handle(cmd_close)
+
+            else:
+                # Route to OPEN flow - STRICT FAIL-CLOSED VALIDATION (EXEC-FAILCLOSED-ORDERFIELDS-01)
+                
+                # 1. Check strict existence of order_type (No defaults to MARKET)
+                order_type = order_info.get("order_type")
+                if not order_type:
+                    raise ValueError("NRR-INTENT-MISSING-ORDER_TYPE: Strategy must provide explicit order_type (LIMIT/MARKET)")
+                
+                # 2. Validate Constraints
+                price = str(order_info.get("price")) if order_info.get("price") else None
+                tif = order_info.get("tif")
+                
+                if order_type == "LIMIT":
+                    if not price:
+                        raise ValueError("NRR-INTENT-MISSING-PRICE: LIMIT order requires price")
+                    if not tif:
+                        raise ValueError("NRR-INTENT-MISSING-TIF: LIMIT order requires tif (GTC/GTX/IOC/FOK)")
+                
+                elif order_type == "MARKET":
+                    if tif: 
+                        # User requested strict cleanliness. "MARKET with tif present -> reject"
+                        raise ValueError(f"NRR-INTENT-INVALID-TIF: MARKET order must not have tif (got {tif})")
+
+                cmd_payload = {
+                    "symbol": symbol,
+                    "side": pld.get("side"),
+                    "qty": str(order_info.get("qty")),
+                    "order_type": order_type,
+                    "price": price,
+                    "tif": tif,
+                    "stop_price": str(pld.get("stop_price")) if pld.get("stop_price") else None,
+                    "target_price": str(pld.get("target_price")) if pld.get("target_price") else None,
+                    "rid": str(msg.rid) if msg.rid else None,
+                    "valid_for_ms": pld.get("valid_for_ms"),
+                    "idempotent_key": pld.get("idempotent_key"),
+                    "price_ref": str(order_info.get("price_ref")) if order_info.get("price_ref") else None,
+                }
+                
+                cmd_open = Message(
+                    op="CMD",
+                    verb="OPEN",
+                    src="execution_position",
+                    dst="execution_position",
+                    rid=msg.rid,
+                    pld=cmd_payload,
+                    why=f"intent_execution:{msg.rid}",
+                    data_ref=msg.data_ref
+                )
+
+                LOG.info(f"[{symbol}] Processing TRADE_INTENT -> CMD:OPEN (qty={cmd_payload['qty']} side={cmd_payload.get('side')} type={order_type})")
+                result = self.handle(cmd_open)
+            
+            # Handle Result
+            if result:
+                 LOG.info(f"[{symbol}] TRADE_INTENT processed: {result.op}:{result.verb}")
+                 
+                 # Emit the decision event (DEC:OPEN, DEC:CLOSE, etc.) to the bus
+                 # so that listeners (Adapters, Loggers, Tests) can react.
+                 if hasattr(self, "bus"):
+                     self.bus.emit(
+                         f"{result.op}:{result.verb}",
+                         result.pld or {},
+                         result.why,
+                         result.data_ref
+                     )
+
+                 if result.op == "ERR":
+                     # Emit REJECT event for feedback loop
+                     LOG.warning(f"[{symbol}] Execution Rejected: {result.why}")
+                     reject_evt = Message(
+                         op="EVT",
+                         verb="TRADE_INTENT_REJECTED",
+                         src="execution_position",
+                         dst="*",
+                         rid=msg.rid,
+                         pld={
+                            "symbol": symbol,
+                            "reason": result.why,
+                            "original_verification_key": pld.get("idempotent_key")
+                         },
+                         why="execution_rejected"
+                     )
+                     if hasattr(self, "bus"):
+                         self.bus.emit(
+                             "EVT:TRADE_INTENT_REJECTED", 
+                             reject_evt.pld, 
+                             reject_evt.why, 
+                             reject_evt.data_ref
+                         )
+            else:
+                 # Silent failure (should not happen if handle works properly)
+                 LOG.warning(f"[{symbol}] TRADE_INTENT processed but no result returned from handle()")
+                 # Emit generic reject? Safe to do so.
+                 if hasattr(self, "bus"):
+                     self.bus.emit(
+                         "EVT:TRADE_INTENT_REJECTED",
+                         {"symbol": symbol, "reason": "internal_error_no_result"},
+                         "execution_no_result"
+                     )
+
+        except Exception as e:
+            LOG.error(f"Failed to process TRADE_INTENT_PROPOSED: {e}", exc_info=True)
+            # Emit REJECT for fail-closed feedback
+            if hasattr(self, "bus"):
+                try:
+                    pld = msg.pld or {}
+                    symbol = pld.get("instrument") or pld.get("symbol") or "unknown"
+                    self.bus.emit(
+                        "EVT:TRADE_INTENT_REJECTED",
+                        {
+                            "symbol": symbol,
+                            "reason": f"EXCEPTION: {str(e)}",
+                            "error_type": type(e).__name__
+                        },
+                        "execution_exception"
+                    )
+                except Exception as emit_e:
+                    LOG.error(f"Failed to emit exception rejection: {emit_e}")
+
+    def _on_trade_intent_rejected(self, msg: Message) -> None:
+        """
+        Handle TRADE_INTENT_REJECTED event from DecisionMaking.
+        
+        Logs the rejection to aurora_trades.log for comprehensive audit trail.
+        """
+        try:
+            pld = msg.pld or {}
+            symbol = pld.get("instrument") or pld.get("symbol")
+            if not symbol:
+                return
+
+            self.log_adapter.log_guard_rejection(
+                rid=msg.rid or "unknown",
+                symbol=symbol,
+                side=pld.get("side", "unknown"),
+                guard_type=pld.get("reason", "DECISION_REJECT"),
+                reason=pld.get("context") or pld.get("details", "") or "Strategy rejection",
+                strategy_id=pld.get("strategy_id")
+            )
+        except Exception as e:
+            LOG.error(f"Failed to process TRADE_INTENT_REJECTED: {e}")
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """
@@ -2042,95 +2244,146 @@ class ExecPosFSM:
                 f"(step={step_size}, min_qty={min_qty})"
             )
 
+            # === STRATEGY PRIMACY FOR SL/TP (FIX: Silent Fallback Elimination) ===
+            # STEP 1: Check for explicit Strategy-provided prices in DEC:OPEN payload
+            explicit_sl_raw = decision.pld.get("stop_price") if decision.pld else None
+            explicit_tp_raw = decision.pld.get("target_price") if decision.pld else None
+            
+            # Normalize to Decimal (handle string/Decimal/float/None)
+            explicit_sl: Optional[Decimal] = None
+            explicit_tp: Optional[Decimal] = None
+            
+            if explicit_sl_raw not in (None, "", "None", "null"):
+                try:
+                    explicit_sl = Decimal(str(explicit_sl_raw))
+                    LOG.info(f"✅ [{symbol}] STRATEGY_PRIMACY: Using Strategy-provided SL={explicit_sl}")
+                except Exception as e:
+                    LOG.warning(f"[{symbol}] Invalid explicit stop_price '{explicit_sl_raw}': {e}")
+            
+            if explicit_tp_raw not in (None, "", "None", "null"):
+                try:
+                    explicit_tp = Decimal(str(explicit_tp_raw))
+                    LOG.info(f"✅ [{symbol}] STRATEGY_PRIMACY: Using Strategy-provided TP={explicit_tp}")
+                except Exception as e:
+                    LOG.warning(f"[{symbol}] Invalid explicit target_price '{explicit_tp_raw}': {e}")
+            
+            # STEP 2: Config-based fallback (ONLY if Strategy did not provide prices)
             # TP/SL extraction (FAIL-CLOSED: per-symbol sl_pct from aurora.yaml)
-            # SSOT: strategies.aurora.assets.<SYMBOL>.exit.sl_pct (NOT brackets.fixed_bps!)
+            # SSOT: strategies.aurora.assets.<SYMBOL>.exit.sl_pct (fallback only)
             sl_pct: Optional[float] = None
             tp_low_ratio: Optional[float] = None
             tp_high_ratio: Optional[float] = None
+            config_loaded = False
             
-            try:
-                aurora = getattr(self.config.strategies, "aurora", None)
-                if aurora is None:
-                    raise ValueError(f"strategies.aurora not configured")
-                
-                instr_cfg = aurora.assets.get(symbol)
-                if instr_cfg is None:
-                    raise ValueError(f"strategies.aurora.assets.{symbol} not configured")
-                
-                # Extract exit config (FAIL-CLOSED: must exist)
-                exit_cfg = getattr(instr_cfg, "exit", None)
-                if exit_cfg is None or exit_cfg.sl_pct is None:
-                    raise ValueError(
-                        f"strategies.aurora.assets.{symbol}.exit.sl_pct is required"
+            # Only load config if we need fallback values
+            if explicit_sl is None or explicit_tp is None:
+                try:
+                    aurora = getattr(self.config.strategies, "aurora", None)
+                    if aurora is None:
+                        raise ValueError(f"strategies.aurora not configured")
+                    
+                    instr_cfg = aurora.assets.get(symbol)
+                    if instr_cfg is None:
+                        raise ValueError(f"strategies.aurora.assets.{symbol} not configured")
+                    
+                    # Extract exit config (FAIL-CLOSED: must exist if fallback needed)
+                    exit_cfg = getattr(instr_cfg, "exit", None)
+                    if exit_cfg is None or exit_cfg.sl_pct is None:
+                        raise ValueError(
+                            f"strategies.aurora.assets.{symbol}.exit.sl_pct is required"
+                        )
+                    sl_pct = exit_cfg.sl_pct
+                    
+                    # Extract take_profit config (FAIL-CLOSED: must exist if fallback needed)
+                    tp_cfg = getattr(instr_cfg, "take_profit", None)
+                    if tp_cfg is None or tp_cfg.tp_low_ratio is None:
+                        raise ValueError(
+                            f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio is required"
+                        )
+                    tp_low_ratio = tp_cfg.tp_low_ratio
+                    tp_high_ratio = getattr(tp_cfg, "tp_high_ratio", None)
+                    config_loaded = True
+                    
+                    LOG.debug(
+                        f"[{symbol}] CONFIG_FALLBACK_LOADED: sl_pct={sl_pct}, "
+                        f"tp_low_ratio={tp_low_ratio}, tp_high_ratio={tp_high_ratio} "
+                        f"(source=strategies.aurora.assets.{symbol})"
                     )
-                sl_pct = exit_cfg.sl_pct
-                
-                # Extract take_profit config (FAIL-CLOSED: must exist)
-                tp_cfg = getattr(instr_cfg, "take_profit", None)
-                if tp_cfg is None or tp_cfg.tp_low_ratio is None:
-                    raise ValueError(
-                        f"strategies.aurora.assets.{symbol}.take_profit.tp_low_ratio is required"
-                    )
-                tp_low_ratio = tp_cfg.tp_low_ratio
-                tp_high_ratio = getattr(tp_cfg, "tp_high_ratio", None)
-                
-                LOG.debug(
-                    f"[{symbol}] PER_SYMBOL_CONFIG_LOADED: sl_pct={sl_pct}, "
-                    f"tp_low_ratio={tp_low_ratio}, tp_high_ratio={tp_high_ratio} "
-                    f"(source=strategies.aurora.assets.{symbol})"
-                )
-            except (ValueError, AttributeError) as cfg_err:
-                # FAIL-CLOSED: Missing per-symbol config = reject order
-                LOG.error(
-                    f"❌ [{symbol}] PER_SYMBOL_CONFIG_MISSING: {cfg_err}. "
-                    "Order rejected - cannot calculate TP/SL without per-symbol config."
-                )
-                order_logger.write({
-                    "rid": decision.rid,
-                    "event_type": "ORDER_REJECTED",
-                    "symbol": symbol,
-                    "side": side,
-                    "quantity": str(raw_qty),
-                    "nrr_code": "NRR-BRACKETS-CONFIG-MISSING",
-                    "why": str(cfg_err),
-                })
-                # Emit rejection event
-                reject_msg = Message(
-                    op="EVT",
-                    verb="ORDER_REJECTED",
-                    src="execution_position",
-                    dst="decision_making",
-                    rid=decision.rid,
-                    pld={
-                        "symbol": symbol,
-                        "side": side,
-                        "raw_qty": str(raw_qty),
-                        "reason": "NRR-BRACKETS-CONFIG-MISSING",
-                        "details": str(cfg_err),
-                    },
-                    why="NRR-BRACKETS-CONFIG-MISSING",
-                )
-                await emit_compat(self.fsm, reject_msg, logger=LOG)
-                return
+                except (ValueError, AttributeError) as cfg_err:
+                    # FAIL-CLOSED: If Strategy didn't provide prices AND config missing → reject
+                    if explicit_sl is None or explicit_tp is None:
+                        LOG.error(
+                            f"❌ [{symbol}] FAIL-CLOSED: Strategy did not provide SL/TP and config fallback missing: {cfg_err}"
+                        )
+                        order_logger.write({
+                            "rid": decision.rid,
+                            "event_type": "ORDER_REJECTED",
+                            "symbol": symbol,
+                            "side": side,
+                            "quantity": str(raw_qty),
+                            "nrr_code": "NRR-BRACKETS-CONFIG-MISSING",
+                            "why": str(cfg_err),
+                            "explicit_sl_provided": explicit_sl is not None,
+                            "explicit_tp_provided": explicit_tp is not None,
+                        })
+                        reject_msg = Message(
+                            op="EVT",
+                            verb="ORDER_REJECTED",
+                            src="execution_position",
+                            dst="decision_making",
+                            rid=decision.rid,
+                            pld={
+                                "symbol": symbol,
+                                "side": side,
+                                "raw_qty": str(raw_qty),
+                                "reason": "NRR-BRACKETS-CONFIG-MISSING",
+                                "details": str(cfg_err),
+                            },
+                            why="NRR-BRACKETS-CONFIG-MISSING",
+                        )
+                        await emit_compat(self.fsm, reject_msg, logger=LOG)
+                        return
 
-            # Calculate SL/TP from per-symbol sl_pct (NOT global bps!)
-            # sl_pct is percentage (0.019 = 1.9%), tp_low_ratio is multiplier on SL distance
+            # STEP 3: Calculate final SL/TP with Strategy Primacy
             mark_dec = Decimal(str(mark))
-            sl_pct_dec = Decimal(str(sl_pct))
-            tp_low_ratio_dec = Decimal(str(tp_low_ratio))
             
-            if side == "BUY":
-                # LONG: SL below entry, TP above
-                sl = mark_dec * (Decimal("1") - sl_pct_dec)
-                tp = mark_dec * (Decimal("1") + sl_pct_dec * tp_low_ratio_dec)
+            # SL: Strategy value takes priority, else calculate from config
+            if explicit_sl is not None:
+                sl = explicit_sl
+                sl_source = "STRATEGY"
+            elif config_loaded and sl_pct is not None:
+                sl_pct_dec = Decimal(str(sl_pct))
+                if side == "BUY":
+                    sl = mark_dec * (Decimal("1") - sl_pct_dec)
+                else:
+                    sl = mark_dec * (Decimal("1") + sl_pct_dec)
+                sl_source = "CONFIG_FALLBACK"
+                LOG.warning(f"⚠️ [{symbol}] Using CONFIG FALLBACK for SL (Strategy did not provide): sl_pct={sl_pct}")
             else:
-                # SHORT: SL above entry, TP below
-                sl = mark_dec * (Decimal("1") + sl_pct_dec)
-                tp = mark_dec * (Decimal("1") - sl_pct_dec * tp_low_ratio_dec)
+                # This shouldn't happen due to fail-closed above, but safety net
+                LOG.error(f"❌ [{symbol}] FAIL-CLOSED: No SL source available")
+                return
+            
+            # TP: Strategy value takes priority, else calculate from config
+            if explicit_tp is not None:
+                tp = explicit_tp
+                tp_source = "STRATEGY"
+            elif config_loaded and sl_pct is not None and tp_low_ratio is not None:
+                sl_pct_dec = Decimal(str(sl_pct))
+                tp_low_ratio_dec = Decimal(str(tp_low_ratio))
+                if side == "BUY":
+                    tp = mark_dec * (Decimal("1") + sl_pct_dec * tp_low_ratio_dec)
+                else:
+                    tp = mark_dec * (Decimal("1") - sl_pct_dec * tp_low_ratio_dec)
+                tp_source = "CONFIG_FALLBACK"
+                LOG.warning(f"⚠️ [{symbol}] Using CONFIG FALLBACK for TP (Strategy did not provide): tp_low_ratio={tp_low_ratio}")
+            else:
+                LOG.error(f"❌ [{symbol}] FAIL-CLOSED: No TP source available")
+                return
             
             LOG.info(
-                f"[{symbol}] TP/SL_CALCULATED: mark={mark}, sl_pct={sl_pct}, "
-                f"tp_low_ratio={tp_low_ratio} → SL={sl}, TP={tp}"
+                f"[{symbol}] TP/SL_RESOLVED: mark={mark}, SL={sl} (source={sl_source}), "
+                f"TP={tp} (source={tp_source})"
             )
 
             # Quantize (convert Decimal to float for utility function)
@@ -2153,9 +2406,181 @@ class ExecPosFSM:
                     return
 
             # EP-01.4-INT-B: Entry placement (MARKET or LIMIT based on order_type)
-            order_type = decision.pld.get("order_type", "MARKET")
-            tif = decision.pld.get("tif", "GTC")
+            # Fail-closed: no silent defaults for order_type/tif/price.
+            order_type = decision.pld.get("order_type")
+            tif = decision.pld.get("tif")
             price = decision.pld.get("price")  # For LIMIT orders
+
+            if not order_type:
+                order_logger.write({
+                    "rid": decision.rid,
+                    "event_type": "ORDER_REJECTED",
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": float(qty),
+                    "nrr_code": "NRR-047",
+                    "why": "ORDER-POLICY-01: missing order_type (fail-closed)"[:80],
+                    "source_fsm": "ExecPosFSM",
+                })
+                reject_msg = Message(
+                    op="EVT",
+                    verb="ORDER_REJECTED",
+                    src="execution_position",
+                    dst="decision_making",
+                    rid=decision.rid,
+                    pld={
+                        "symbol": symbol,
+                        "side": side,
+                        "reason": "NRR-047",
+                        "details": "missing order_type",
+                    },
+                    why="NRR-047",
+                )
+                await emit_compat(self.fsm, reject_msg, logger=LOG)
+                return
+
+            order_type = str(order_type).upper()
+            if order_type == "MARKET":
+                # Contract: MARKET must not carry tif (fail-closed).
+                if tif is not None:
+                    order_logger.write({
+                        "rid": decision.rid,
+                        "event_type": "ORDER_REJECTED",
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": float(qty),
+                        "nrr_code": "NRR-049",
+                        "why": "ORDER-POLICY-01: MARKET must have tif=null"[:80],
+                        "source_fsm": "ExecPosFSM",
+                        "metadata": {"tif": str(tif)},
+                    })
+                    reject_msg = Message(
+                        op="EVT",
+                        verb="ORDER_REJECTED",
+                        src="execution_position",
+                        dst="decision_making",
+                        rid=decision.rid,
+                        pld={
+                            "symbol": symbol,
+                            "side": side,
+                            "reason": "NRR-049",
+                            "details": "MARKET must have tif=null",
+                        },
+                        why="NRR-049",
+                    )
+                    await emit_compat(self.fsm, reject_msg, logger=LOG)
+                    return
+            elif order_type == "LIMIT":
+                if not price:
+                    order_logger.write({
+                        "rid": decision.rid,
+                        "event_type": "ORDER_REJECTED",
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": float(qty),
+                        "nrr_code": "NRR-050",
+                        "why": "ORDER-POLICY-01: LIMIT requires price"[:80],
+                        "source_fsm": "ExecPosFSM",
+                    })
+                    reject_msg = Message(
+                        op="EVT",
+                        verb="ORDER_REJECTED",
+                        src="execution_position",
+                        dst="decision_making",
+                        rid=decision.rid,
+                        pld={
+                            "symbol": symbol,
+                            "side": side,
+                            "reason": "NRR-050",
+                            "details": "LIMIT requires price",
+                        },
+                        why="NRR-050",
+                    )
+                    await emit_compat(self.fsm, reject_msg, logger=LOG)
+                    return
+                if tif is None:
+                    order_logger.write({
+                        "rid": decision.rid,
+                        "event_type": "ORDER_REJECTED",
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": float(qty),
+                        "nrr_code": "NRR-052",
+                        "why": "ORDER-POLICY-01: LIMIT requires tif (no default)"[:80],
+                        "source_fsm": "ExecPosFSM",
+                    })
+                    reject_msg = Message(
+                        op="EVT",
+                        verb="ORDER_REJECTED",
+                        src="execution_position",
+                        dst="decision_making",
+                        rid=decision.rid,
+                        pld={
+                            "symbol": symbol,
+                            "side": side,
+                            "reason": "NRR-052",
+                            "details": "LIMIT requires tif",
+                        },
+                        why="NRR-052",
+                    )
+                    await emit_compat(self.fsm, reject_msg, logger=LOG)
+                    return
+                tif = str(tif).upper()
+                # EP-01.3-INT: LIMIT requires explicit per-order TTL (fail-closed).
+                if decision.pld.get("valid_for_ms") is None:
+                    order_logger.write({
+                        "rid": decision.rid,
+                        "event_type": "ORDER_REJECTED",
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": float(qty),
+                        "nrr_code": "NRR-025",
+                        "why": "EP-01.3-INT: LIMIT requires valid_for_ms"[:80],
+                        "source_fsm": "ExecPosFSM",
+                    })
+                    reject_msg = Message(
+                        op="EVT",
+                        verb="ORDER_REJECTED",
+                        src="execution_position",
+                        dst="decision_making",
+                        rid=decision.rid,
+                        pld={
+                            "symbol": symbol,
+                            "side": side,
+                            "reason": "NRR-025",
+                            "details": "LIMIT requires valid_for_ms",
+                        },
+                        why="NRR-025",
+                    )
+                    await emit_compat(self.fsm, reject_msg, logger=LOG)
+                    return
+            else:
+                order_logger.write({
+                    "rid": decision.rid,
+                    "event_type": "ORDER_REJECTED",
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": float(qty),
+                    "nrr_code": "NRR-048",
+                    "why": f"ORDER-POLICY-01: unsupported order_type={order_type}"[:80],
+                    "source_fsm": "ExecPosFSM",
+                })
+                reject_msg = Message(
+                    op="EVT",
+                    verb="ORDER_REJECTED",
+                    src="execution_position",
+                    dst="decision_making",
+                    rid=decision.rid,
+                    pld={
+                        "symbol": symbol,
+                        "side": side,
+                        "reason": "NRR-048",
+                        "details": f"unsupported order_type={order_type}",
+                    },
+                    why="NRR-048",
+                )
+                await emit_compat(self.fsm, reject_msg, logger=LOG)
+                return
             
             entry_id = generate_client_order_id("ENTRY", symbol)
             entry_resp = None
@@ -2181,16 +2606,21 @@ class ExecPosFSM:
                         )
                         order_logger.write({
                             "rid": decision.rid,
-                            "event_type": "MAKER_ONLY_REJECT",
+                            "event_type": "ORDER_REJECTED",
                             "symbol": symbol,
                             "side": side,
                             "quantity": float(qty),
-                            "price": str(price),
-                            "tif": tif,
-                            "error_code": err_code,
-                            "error_msg": err_msg[:200],
-                            "reason": MAKER_ONLY_REJECT,
-                            "fallback": "NONE",
+                            "price": float(price) if price is not None else 0.0,
+                            "nrr_code": "NRR-018",
+                            "why": MAKER_ONLY_REJECT,
+                            "source_fsm": "ExecPosFSM",
+                            "metadata": {
+                                "reason_code": MAKER_ONLY_REJECT,
+                                "tif": tif,
+                                "error_code": err_code,
+                                "error_msg": err_msg[:200],
+                                "fallback": "NONE",
+                            },
                         })
                         # Emit rejection event
                         reject_msg = Message(
@@ -2207,6 +2637,11 @@ class ExecPosFSM:
                             },
                             why=MAKER_ONLY_REJECT,
                         )
+                        # B2: WAL persistence for LIMIT ORDER_REJECTED
+                        try:
+                            wal.append(reject_msg.model_dump())
+                        except Exception as wal_e:
+                            LOG.warning(f"Failed to write EVT:ORDER_REJECTED (LIMIT) to WAL: {wal_e}")
                         await emit_compat(self.fsm, reject_msg, logger=LOG)
                         return  # NO FALLBACK - abort entry
                     else:
@@ -2302,6 +2737,31 @@ class ExecPosFSM:
                 "adapter_response": entry_resp,
                 "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id}
             })
+            
+            # B1: WAL persistence for ORDER_PLACED (INTENT-TO-ORDER-TRACE-SSOT-01)
+            # Ensures WAL contains full intent→order chain for replay and forensics
+            try:
+                order_placed_msg = Message(
+                    op="EVT",
+                    verb="ORDER_PLACED",
+                    src="execution_position",
+                    dst="observability",
+                    rid=decision.rid,
+                    pld={
+                        "symbol": symbol,
+                        "side": side,
+                        "qty": str(qty),
+                        "order_type": order_type,
+                        "client_order_id": entry_id,
+                        "exchange_order_id": str(entry_resp.get("orderId")),
+                        "ts_ms": int(time.time() * 1000),
+                        "corr_id": decision.corr_id,
+                    },
+                    why="order_placed",
+                )
+                wal.append(order_placed_msg.model_dump())
+            except Exception as wal_e:
+                LOG.warning(f"Failed to write EVT:ORDER_PLACED to WAL: {wal_e}")
 
             # Correlation: store entry ACK
             entry_order_id = str(entry_resp["orderId"])
@@ -2565,6 +3025,29 @@ class ExecPosFSM:
                 "source_fsm": "ExecPosFSM",
                 "metadata": {"error": str(e), "decision_verb": decision.verb}
             })
+            
+            # B2: WAL persistence for ORDER_REJECTED (INTENT-TO-ORDER-TRACE-SSOT-01)
+            # Ensures adapter failures are visible in WAL for full trace
+            try:
+                order_rejected_msg = Message(
+                    op="EVT",
+                    verb="ORDER_REJECTED",
+                    src="execution_position",
+                    dst="observability",
+                    rid=decision.rid,
+                    pld={
+                        "symbol": decision_pld.get("symbol", ""),
+                        "side": decision_pld.get("side", "NONE"),
+                        "reason_code": "ADAPTER_ERROR",
+                        "reason_text": str(e)[:200],
+                        "exception_class": type(e).__name__,
+                        "ts_ms": int(time.time() * 1000),
+                    },
+                    why="adapter_execution_failed",
+                )
+                wal.append(order_rejected_msg.model_dump())
+            except Exception as wal_e:
+                LOG.warning(f"Failed to write EVT:ORDER_REJECTED to WAL: {wal_e}")
 
             # Emit an error event
             exec_failed_msg = Message(

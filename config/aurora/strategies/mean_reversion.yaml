@@ -17,14 +17,13 @@ mean_reversion:
   enabled: true
   
   # Timeframe for bar aggregation
-  timeframe_sec: 180  # 3-minute bars
+  # FIX-BACKTEST-TF: Changed from 180 (3m) to 300 (5m) to match BacktestEngine.
+  # BacktestEngine emits 5m bars, so MR strategy receiving 3m bars was rejecting everything.
+  timeframe_sec: 300  # 5-minute bars
 
   # Global allowed regimes whitelist (default; can be overridden per-asset)
   allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
-  # MR emission mode
-  emit_trade_intent_directly: false
-  
   # ORDER-POLICY-01: Entry order execution policy (SSOT for strategy)
   # MR uses MARKET orders for fast mean-reversion entries
   execution:
@@ -106,7 +105,7 @@ mean_reversion:
         min_bb_width: 0.006
         entry_threshold: 0.05
         tp_to_mid: true      # Default behavior
-        sl_atr_mult: null
+        sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
         cooldown_sec: 0      # No cooldown
       # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "MEAN_REVERSION"]
@@ -123,7 +122,7 @@ mean_reversion:
         min_bb_width: 0.007
         entry_threshold: 0.05
         tp_to_mid: true
-        sl_atr_mult: null
+        sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
         cooldown_sec: 165
       # Regime Gating - XRP stable (+$121) - similar to DOGE
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
@@ -169,7 +168,7 @@ mean_reversion:
   regime_sizing:
     FLAT_LOW:
       sizing_mult: 0.8         # Smaller size in low vol
-      stop_mult: 0.6           # Tighter stops
+      stop_mult: 1.0           # Tighter stops -> Standard stops (prevent suffocation)
       target_mult: 0.8         # Smaller targets
     
     FLAT_NORMAL:

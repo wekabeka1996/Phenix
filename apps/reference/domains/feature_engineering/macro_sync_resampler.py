@@ -15,6 +15,22 @@ from dataclasses import dataclass, field
 from typing import Deque, Dict, Iterable, List, Optional, Tuple
 from collections import deque
 
+try:
+    from apps.reference.telemetry.metrics import (
+        inc_macro_sync_ooo_dropped,
+        inc_macro_sync_ooo_reordered,
+        set_macro_sync_last_bin_ts_ms,
+    )
+except Exception:  # telemetry is optional in some test harnesses
+    def inc_macro_sync_ooo_dropped(_key: str) -> None:  # type: ignore
+        pass
+
+    def inc_macro_sync_ooo_reordered(_key: str) -> None:  # type: ignore
+        pass
+
+    def set_macro_sync_last_bin_ts_ms(_key: str, _last_bin_ts_ms: int) -> None:  # type: ignore
+        pass
+
 
 @dataclass
 class MacroSyncResult:
@@ -36,20 +52,61 @@ class TimeGridSeries:
     last_ts_ms: int = 0
 
     drops_out_of_order_total: int = 0
+    reorders_out_of_order_total: int = 0
     gaps_total: int = 0
     _flag_out_of_order: bool = False
     _flag_large_gap: bool = False
 
-    def update(self, *, ts_ms: int, price: float, max_gap_bins: int) -> None:
+    def update(self, *, key: str, ts_ms: int, price: float, max_gap_bins: int, max_late_ms: int) -> None:
         if ts_ms <= 0:
             raise ValueError("ts_ms must be > 0 (exchange timestamp SSOT)")
         if not (price > 0.0):
             return
 
+        old_last_bin_ts = self.last_bin_ts
         bin_ts = (int(ts_ms) // self.bin_ms) * self.bin_ms
         if self.last_bin_ts is not None and bin_ts < self.last_bin_ts:
+            # Allow late updates for an existing bin (idempotent corrections).
+            if bin_ts in self._by_bin:
+                self._by_bin[bin_ts] = float(price)
+                for idx in range(len(self._bins) - 1, -1, -1):
+                    if self._bins[idx][0] == bin_ts:
+                        self._bins[idx] = (bin_ts, float(price))
+                        break
+                # last_ts_ms tracks latest observed exchange ts for TTL checks.
+                self.last_ts_ms = max(int(self.last_ts_ms), int(ts_ms))
+                return
+
+            # Reorder/insert late bins within a bounded tolerance.
+            late_ms = int(self.last_bin_ts) - int(bin_ts)
+            if max_late_ms > 0 and late_ms <= int(max_late_ms):
+                self.reorders_out_of_order_total += 1
+                inc_macro_sync_ooo_reordered(key)
+                bins = list(self._bins)
+                inserted = False
+                for i, (bts, _p) in enumerate(bins):
+                    if bin_ts < bts:
+                        bins.insert(i, (bin_ts, float(price)))
+                        inserted = True
+                        break
+                if not inserted:
+                    bins.append((bin_ts, float(price)))
+                self._bins = deque(bins)
+                self._by_bin[bin_ts] = float(price)
+
+                # Keep latest markers unchanged (late insert should not regress last_bin_ts).
+                self.last_ts_ms = max(int(self.last_ts_ms), int(ts_ms))
+
+                keep = self.window_bins + 1
+                while len(self._bins) > keep:
+                    old_bin_ts, _old_price = self._bins.popleft()
+                    self._by_bin.pop(old_bin_ts, None)
+                return
+
+            # Too-late tick: drop and mark for observability.
             self.drops_out_of_order_total += 1
             self._flag_out_of_order = True
+            inc_macro_sync_ooo_dropped(key)
             return
 
         if self.last_bin_ts is not None and bin_ts > self.last_bin_ts:
@@ -61,6 +118,8 @@ class TimeGridSeries:
 
         self.last_bin_ts = bin_ts
         self.last_ts_ms = int(ts_ms)
+        if old_last_bin_ts != self.last_bin_ts and self.last_bin_ts is not None:
+            set_macro_sync_last_bin_ts_ms(key, int(self.last_bin_ts))
 
         if bin_ts in self._by_bin:
             self._by_bin[bin_ts] = float(price)
@@ -107,6 +166,7 @@ class MacroSyncResampler:
         ttl_ms: int,
         max_gap_bins: int,
         eps: float,
+        max_late_ms: int = 0,
     ) -> None:
         if bin_ms <= 0:
             raise ValueError("bin_ms must be > 0")
@@ -118,6 +178,8 @@ class MacroSyncResampler:
             raise ValueError("ttl_ms must be > 0")
         if max_gap_bins < 0:
             raise ValueError("max_gap_bins must be >= 0")
+        if max_late_ms < 0:
+            raise ValueError("max_late_ms must be >= 0")
         if not (eps > 0.0):
             raise ValueError("eps must be > 0")
 
@@ -126,15 +188,28 @@ class MacroSyncResampler:
         self._min_bins = int(min_bins)
         self._ttl_ms = int(ttl_ms)
         self._max_gap_bins = int(max_gap_bins)
+        self._max_late_ms = int(max_late_ms)
         self._eps = float(eps)
 
         self._series: Dict[str, TimeGridSeries] = {}
 
     def update_symbol(self, symbol: str, *, ts_ms: int, price: float) -> None:
-        self._get_series(symbol).update(ts_ms=int(ts_ms), price=float(price), max_gap_bins=self._max_gap_bins)
+        self._get_series(symbol).update(
+            key=symbol,
+            ts_ms=int(ts_ms),
+            price=float(price),
+            max_gap_bins=self._max_gap_bins,
+            max_late_ms=self._max_late_ms,
+        )
 
     def update_anchor(self, anchor: str, *, ts_ms: int, price: float) -> None:
-        self._get_series(anchor).update(ts_ms=int(ts_ms), price=float(price), max_gap_bins=self._max_gap_bins)
+        self._get_series(anchor).update(
+            key=anchor,
+            ts_ms=int(ts_ms),
+            price=float(price),
+            max_gap_bins=self._max_gap_bins,
+            max_late_ms=self._max_late_ms,
+        )
 
     def compute(self, symbol: str, *, anchors: Iterable[str], now_ts_ms: int) -> MacroSyncResult:
         if now_ts_ms <= 0:
@@ -144,16 +219,10 @@ class MacroSyncResampler:
         if sym_series is None:
             return MacroSyncResult(phi=0.5, ready=False, why="insufficient_bins", bins_used=0, drops_out_of_order=0, gaps=0)
 
+        # Consume flags for observability (but do NOT force NOT_READY).
+        # Policy: out-of-order/late ticks are dropped (or reordered within tolerance) and must not
+        # make the system perpetually not-ready if enough data exists.
         sym_out_of_order, sym_large_gap = sym_series.consume_flags()
-        if sym_out_of_order:
-            return MacroSyncResult(
-                phi=0.5,
-                ready=False,
-                why="out_of_order",
-                bins_used=0,
-                drops_out_of_order=sym_series.drops_out_of_order_total,
-                gaps=sym_series.gaps_total,
-            )
         if sym_large_gap:
             return MacroSyncResult(
                 phi=0.5,
@@ -179,8 +248,8 @@ class MacroSyncResampler:
         bins_used_max = 0
         saw_any_overlap = False
         saw_any_fresh = False
-        saw_any_large_gap = False
-        saw_any_out_of_order = False
+        saw_any_large_gap = sym_large_gap
+        saw_any_out_of_order = sym_out_of_order
         saw_any_sigma_zero = False
         drops_total = sym_series.drops_out_of_order_total
         gaps_total = sym_series.gaps_total
@@ -224,15 +293,6 @@ class MacroSyncResampler:
                 continue
             correlations.append(corr)
 
-        if saw_any_out_of_order:
-            return MacroSyncResult(
-                phi=0.5,
-                ready=False,
-                why="out_of_order",
-                bins_used=bins_used_max,
-                drops_out_of_order=drops_total,
-                gaps=gaps_total,
-            )
         if saw_any_large_gap:
             return MacroSyncResult(
                 phi=0.5,
@@ -242,6 +302,8 @@ class MacroSyncResampler:
                 drops_out_of_order=drops_total,
                 gaps=gaps_total,
             )
+
+        # Note: out-of-order signals are reflected via counters, but do not force NOT_READY.
 
         if not correlations:
             if not saw_any_fresh:

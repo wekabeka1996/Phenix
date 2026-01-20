@@ -9,7 +9,7 @@ PHILOSOPHY:
 """
 
 from pathlib import Path
-from typing import List, Literal
+from typing import List, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
@@ -265,29 +265,57 @@ class NeuroConfig(BaseModel):
 # =============================================================================
 
 class ReplayConfig(BaseModel):
-    """Configuration for WAL tailing (unified historical + live)."""
+    """Configuration for data ingestion (Phase 6 WAL or Phase 7 Multi-Source)."""
     
     model_config = ConfigDict(extra='forbid', frozen=True)
     
     enabled: bool = Field(
-        description="Enable WAL tailing for data ingestion"
+        description="Enable data ingestion"
     )
+    
+    # =========================================================================
+    # Phase 6: WAL Tailing (legacy)
+    # =========================================================================
     wal_dir: Path = Field(
         default=Path("ops/wal"),
-        description="Directory containing WAL files"
+        description="Directory containing WAL files (Phase 6)"
     )
     wal_glob: str = Field(
         default="",
-        description="DEPRECATED: Use wal_dir instead. Glob pattern for WAL files."
+        description="DEPRECATED: Use wal_dir instead."
     )
+    filter_verb: str = Field(
+        default="FEATURES_CALCULATED",
+        description="Event verb to filter for in WAL (Phase 6)"
+    )
+    
+    # =========================================================================
+    # Phase 7: Multi-Source Ingestion
+    # =========================================================================
+    features_dir: Optional[Path] = Field(
+        default=None,
+        description="Directory with feature logs per symbol (Phase 7)"
+    )
+    orders_file: Optional[Path] = Field(
+        default=None,
+        description="Path to order log JSONL file (Phase 7)"
+    )
+    core_log: Optional[Path] = Field(
+        default=None,
+        description="Path to aurora_core.log for rewards (Phase 7)"
+    )
+    symbols: Optional[List[str]] = Field(
+        default=None,
+        description="List of symbols to monitor (Phase 7)"
+    )
+    
+    # =========================================================================
+    # Common Settings
+    # =========================================================================
     batch_size: int = Field(
         default=100,
         ge=1, le=10000,
         description="Number of events to process before yielding"
-    )
-    filter_verb: str = Field(
-        default="FEATURES_CALCULATED",
-        description="Event verb to filter for in WAL"
     )
     poll_interval: float = Field(
         default=0.1,
@@ -298,7 +326,21 @@ class ReplayConfig(BaseModel):
     @field_validator('wal_dir', mode='before')
     @classmethod
     def resolve_wal_dir(cls, v):
+        if v is None:
+            return Path("ops/wal").resolve()
         return Path(v).resolve()
+    
+    @field_validator('features_dir', 'orders_file', 'core_log', mode='before')
+    @classmethod
+    def resolve_optional_paths(cls, v):
+        if v is None:
+            return None
+        return Path(v).resolve()
+    
+    @property
+    def is_phase7(self) -> bool:
+        """Check if Phase 7 (multi-source) is configured."""
+        return self.features_dir is not None
 
 
 # =============================================================================
@@ -390,12 +432,27 @@ def load_config(config_dir: Path) -> NeocortexConfig:
     with open(neuro_path) as f:
         neuro_data = yaml.safe_load(f)
     
+    # Load optional replay config (Phase 6/7 ingestion)
+    replay_path = config_dir / "replay.yaml"
+    replay_data = None
+    if replay_path.exists():
+        with open(replay_path) as f:
+            replay_data = yaml.safe_load(f)
+    
     # Pydantic validation (fail on extra fields, missing fields, type errors)
-    return NeocortexConfig(
-        system=system_data,
-        ingest=ingest_data,
-        neuro=neuro_data
-    )
+    if replay_data is not None:
+        return NeocortexConfig(
+            system=system_data,
+            ingest=ingest_data,
+            neuro=neuro_data,
+            replay=replay_data
+        )
+    else:
+        return NeocortexConfig(
+            system=system_data,
+            ingest=ingest_data,
+            neuro=neuro_data
+        )
 
 
 # =============================================================================

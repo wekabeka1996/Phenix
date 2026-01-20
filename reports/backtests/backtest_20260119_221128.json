@@ -1,0 +1,78 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-19T22:11:28.413869",
+    "start_date": "2023-05-01T00:00:00",
+    "end_date": "2023-05-31T00:00:00",
+    "symbols": [
+      "SOLUSDT",
+      "ETHUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "XRPUSDT"
+    ],
+    "timeframe": "5m",
+    "initial_balance": 10000.0
+  },
+  "metrics": {
+    "total_pnl": 0.0,
+    "max_drawdown": 0.0,
+    "total_trades": 0,
+    "win_rate": 0.0,
+    "start_balance": 10000.0,
+    "end_balance": 10000.0,
+    "roi_pct": 0.0
+  },
+  "regimes": {
+    "events_total": 8641,
+    "last_by_symbol": {
+      "BTCUSDT": {
+        "ts": 1685491200000,
+        "symbol": "BTCUSDT",
+        "regime": "MEAN_REVERSION",
+        "confidence": "0.95",
+        "source_model": "mean_reversion_v2",
+        "warmup": {
+          "ticks_seen": 8641,
+          "full_ready": true,
+          "ready": {
+            "sma_short": true,
+            "sma_long": true,
+            "atr": true,
+            "atr_baseline": true
+          },
+          "reasons": [
+            "note:atr_close_to_close"
+          ]
+        },
+        "data_quality": {
+          "drops": [],
+          "notes": [
+            "atr_close_to_close"
+          ]
+        },
+        "changed": false,
+        "last_update_ts_ms": 1685491200000
+      }
+    },
+    "counts_by_symbol": {
+      "BTCUSDT": {
+        "UNCERTAIN": 14,
+        "MEAN_REVERSION": 5087,
+        "HIGH_VOLATILITY": 924,
+        "TREND_DOWN": 10,
+        "LOW_VOLATILITY": 2597,
+        "TREND_UP": 9
+      }
+    }
+  },
+  "features": {
+    "counts_by_tf_sec": {
+      "300": 8641,
+      "0": 8640
+    },
+    "full_ready_counts_by_tf_sec": {
+      "300": 8597,
+      "0": 8596
+    }
+  }
+}

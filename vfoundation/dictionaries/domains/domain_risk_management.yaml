@@ -17,7 +17,7 @@ imports:
     description: "Current account balance for risk calculations"
 
 exports:
-  - op: DEC
+  - op: EVT
     verb: RISK_ASSESSMENT_COMPLETED
     to: decision_making
     description: "Risk evaluation with recommended position size and TP/SL levels"
@@ -29,7 +29,7 @@ exports:
 
 critical_paths:
   - "feature_engineering -> risk_management (EVT:FEATURES_CALCULATED)"
-  - "risk_management -> decision_making (DEC:RISK_ASSESSMENT_COMPLETED)"
+  - "risk_management -> decision_making (EVT:RISK_ASSESSMENT_COMPLETED)"
 
 risk_parameters:
   - max_position_size_pct: 10.0  # Max 10% of balance per position

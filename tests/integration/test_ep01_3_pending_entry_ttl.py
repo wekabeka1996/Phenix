@@ -266,7 +266,8 @@ class TestTradeIntentSchema:
                 "price": "42000.0",
                 "price_ref": "42000.0",
                 "reduce_only": False,
-                "order_type": "LIMIT"  # ORDER-POLICY-01: required
+                "order_type": "LIMIT",  # ORDER-POLICY-01: required
+                "tif": "GTX",
             },
             "valid_for_ms": 45000,  # EP-01.3-INT
             "why": ["test"],
@@ -278,7 +279,7 @@ class TestTradeIntentSchema:
         jsonschema.validate(payload, schema)
     
     def test_schema_accepts_valid_for_ms_null(self):
-        """Schema should accept valid_for_ms as null."""
+        """Schema should accept valid_for_ms as null for MARKET intents."""
         import json
         import jsonschema
         from pathlib import Path
@@ -312,7 +313,8 @@ class TestTradeIntentSchema:
                 "price": "42000.0",
                 "price_ref": "42000.0",
                 "reduce_only": False,
-                "order_type": "LIMIT"  # ORDER-POLICY-01: required
+                "order_type": "MARKET",
+                "tif": None,
             },
             "valid_for_ms": None,  # Null allowed
             "why": ["test"],
@@ -467,4 +469,3 @@ class TestSupersedeAck:
         assert "BTCUSDT" in symbols
         assert "ETHUSDT" in symbols
         assert len(symbols) == 2
-

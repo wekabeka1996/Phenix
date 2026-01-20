@@ -943,9 +943,6 @@ MeanReversion1mStrategyConfig.allowed_regimes:
 MeanReversion1mStrategyConfig.assets:
   file: config/aurora/strategies/mean_reversion.yaml
   path: mean_reversion.assets
-MeanReversion1mStrategyConfig.emit_trade_intent_directly:
-  file: config/aurora/strategies/mean_reversion.yaml
-  path: mean_reversion.emit_trade_intent_directly
 MeanReversion1mStrategyConfig.enabled:
   file: config/aurora/strategies/mean_reversion.yaml
   path: mean_reversion.enabled

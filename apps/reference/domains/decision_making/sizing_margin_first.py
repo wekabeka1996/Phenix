@@ -23,6 +23,7 @@ def compute_notional_target(
     margin_pct: Decimal,
     leverage: int,
     notional_cap: Optional[Decimal] = None,
+    fee_buffer: Decimal = Decimal("0.001"),  # NEW: Default 0.1% buffer
 ) -> tuple[Decimal, Decimal]:
     if equity <= 0:
         raise ValueError("equity must be > 0")
@@ -31,10 +32,16 @@ def compute_notional_target(
     if leverage < 1:
         raise ValueError("leverage must be >= 1")
 
-    margin_usdt = equity * margin_pct
+    # FIX: Deduct fee buffer from equity BEFORE calculating margin
+    # This prevents "insufficient balance" when margin_pct=1.0
+    safe_equity = equity * (Decimal("1") - fee_buffer)
+
+    margin_usdt = safe_equity * margin_pct
     notional_target = margin_usdt * Decimal(leverage)
+
     if notional_cap is not None and notional_target > notional_cap:
         notional_target = notional_cap
+
     return margin_usdt, notional_target
 
 

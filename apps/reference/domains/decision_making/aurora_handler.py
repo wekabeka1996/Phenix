@@ -47,6 +47,10 @@ class SymbolState:
     regime_effective: Optional[str] = None
     regime_raw_change_ts: Optional[float] = None
     
+    # DM-CRITICAL-PATCHES-02: Liveness heartbeat tracking
+    # Updated on EVERY EVT:REGIME_DETECTED (even if changed=False)
+    last_regime_heartbeat_ms: Optional[int] = None
+    
     # Warmup state
     warmup_full_ready: bool = False
     warmup_ticks_seen: int = 0
@@ -65,6 +69,10 @@ class SymbolState:
     
     # Re-entry cooldown state (Anti-Ping-Pong)
     last_exit_timestamp: Optional[float] = None  # Time when position was closed
+    
+    # P0-3: Cached price_motion from EVT:FEATURES_CALCULATED
+    # CMD:PROCESS_STRATEGY does not include price_motion, so we cache it here
+    cached_price_motion: Optional[Dict[str, Any]] = None
 
 
 class AuroraHandler:
@@ -128,6 +136,21 @@ class AuroraHandler:
         """Extract configuration parameters."""
         aurora_cfg = getattr(self.config, "strategies", None)
         aurora = getattr(aurora_cfg, "aurora", None) if aurora_cfg else None
+
+        # FeatureEngineering warmup enforcement mode (used for readiness fail-closed behavior).
+        # Default is fail_fast to preserve live safety if config can't be resolved.
+        self._fe_warmup_enforcement_mode: str = "fail_fast"
+        try:
+            from apps.reference.config_models import AuroraConfig
+            from apps.reference.domain_config import DomainConfigResolver
+
+            if isinstance(self.config, AuroraConfig):
+                fe_cfg = DomainConfigResolver(self.config).get_feature_engineering()
+                warmup_cfg = getattr(fe_cfg, "warmup", None)
+                if warmup_cfg is not None:
+                    self._fe_warmup_enforcement_mode = str(getattr(warmup_cfg, "enforcement_mode", "fail_fast"))
+        except Exception:
+            self._fe_warmup_enforcement_mode = "fail_fast"
         
         # TF-SSOT-PACK-003: Get timeframe_sec from config (MANDATORY)
         # CLOSEOUT-BASELINE-001: Strict contract - no fallbacks
@@ -326,6 +349,65 @@ class AuroraHandler:
         if (now - raw_change_ts) >= self.regime_inertia_confirm_window_sec:
             state.regime_effective = raw
 
+    def _check_regime_liveness(
+        self,
+        symbol: str,
+        state: SymbolState,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        DM-CRITICAL-PATCHES-02: Check if RegimeDetector is still alive (heartbeat-based).
+        
+        Block trading if:
+        1. No heartbeat ever received (last_regime_heartbeat_ms is None)
+        2. Heartbeat is stale (> basis_tf_sec * liveness_factor)
+        
+        Returns:
+            None if liveness OK
+            Dict with reason_code/why/details if blocked
+        """
+        # Fail-closed: no heartbeat ever → block
+        if state.last_regime_heartbeat_ms is None:
+            return {
+                "reason_code": "NRR-REGIME-NO-HEARTBEAT",
+                "why": "Regime detector heartbeat never received (fail-closed)",
+                "details": {"last_regime_heartbeat_ms": None},
+            }
+        
+        # Get liveness config from SSOT
+        try:
+            basis_tf_sec = int(self.config.basis_tf_sec)
+            liveness_factor = int(getattr(self.config, "liveness_factor", 3))
+        except (AttributeError, TypeError):
+            # Config not available - use safe defaults and log
+            basis_tf_sec = 300
+            liveness_factor = 3
+            self.logger.warning(
+                f"[{symbol}] Liveness guard using fallback: basis_tf_sec={basis_tf_sec}, factor={liveness_factor}"
+            )
+        
+        max_delay_ms = basis_tf_sec * 1000 * liveness_factor
+        now_ms = int(self.monotonic_fn() * 1000)
+        delta_ms = now_ms - state.last_regime_heartbeat_ms
+        
+        if delta_ms > max_delay_ms:
+            self.logger.warning(
+                f"[{symbol}] LIVENESS BLOCK: Regime heartbeat stale - "
+                f"delta={delta_ms}ms > max={max_delay_ms}ms (basis={basis_tf_sec}s * factor={liveness_factor})"
+            )
+            return {
+                "reason_code": "NRR-REGIME-DETECTOR-DEAD",
+                "why": f"Regime detector heartbeat stale: {delta_ms}ms > {max_delay_ms}ms",
+                "details": {
+                    "last_regime_heartbeat_ms": state.last_regime_heartbeat_ms,
+                    "delta_ms": delta_ms,
+                    "max_delay_ms": max_delay_ms,
+                    "basis_tf_sec": basis_tf_sec,
+                    "liveness_factor": liveness_factor,
+                },
+            }
+        
+        return None  # Liveness OK
+
     def _emit_strategy_blocked(
         self,
         *,
@@ -355,6 +437,7 @@ class AuroraHandler:
         Handle EVT:REGIME_DETECTED event.
         
         Updates cached regime state for symbol.
+        DM-CRITICAL-PATCHES-02: Always updates heartbeat timestamp (even if changed=False).
         """
         symbol = event.get("symbol")
         if not symbol:
@@ -365,6 +448,14 @@ class AuroraHandler:
         state.regime_confidence = float(event.get("confidence", 0.0))
         state.regime_ts_ms = int(event.get("ts_ms", int(self.wall_time_fn() * 1000)))
 
+        # DM-CRITICAL-PATCHES-02: Update heartbeat on EVERY regime event (liveness tracking)
+        # Use last_update_ts_ms from payload if available, else use monotonic clock
+        heartbeat_ts = event.get("last_update_ts_ms")
+        if heartbeat_ts is not None:
+            state.last_regime_heartbeat_ms = int(heartbeat_ts)
+        else:
+            state.last_regime_heartbeat_ms = int(self.monotonic_fn() * 1000)
+
         if getattr(self, "anti_churn_enabled", False):
             self._update_effective_regime(symbol, state.regime)
         
@@ -373,8 +464,9 @@ class AuroraHandler:
         state.warmup_full_ready = bool(warmup.get("full_ready", False))
         state.warmup_ticks_seen = int(warmup.get("ticks_seen", 0))
         
+        changed = event.get("changed", True)  # Default True for backward compat
         self.logger.debug(
-            f"[{symbol}] Regime cached: {state.regime} (confidence={state.regime_confidence:.2f})"
+            f"[{symbol}] Regime cached: {state.regime} (confidence={state.regime_confidence:.2f}, changed={changed})"
         )
     
     # =========================================================================
@@ -472,6 +564,8 @@ class AuroraHandler:
         
         Updates warmup state cache but does NOT trigger decision.
         Decision is now triggered exclusively by CMD:PROCESS_STRATEGY.
+        
+        P0-3: Also caches price_motion since CMD:PROCESS_STRATEGY doesn't include it.
         """
         symbol = event.get("symbol")
         if not symbol:
@@ -482,6 +576,12 @@ class AuroraHandler:
         state = self._symbol_states[symbol]
         state.warmup_full_ready = bool(warmup.get("full_ready", False))
         state.warmup_ticks_seen = int(warmup.get("ticks_seen", 0))
+        
+        # P0-3: Cache price_motion for vol-adj gates
+        # CMD:PROCESS_STRATEGY does not include price_motion, only EVT:FEATURES_CALCULATED
+        price_motion = event.get("price_motion")
+        if price_motion:
+            state.cached_price_motion = price_motion
     
     def on_features_calculated(self, event: Dict[str, Any]) -> None:
         """
@@ -522,25 +622,57 @@ class AuroraHandler:
         
         # Check warmup readiness (fail-closed)
         if not state.warmup_full_ready:
-            self.logger.debug(f"[{symbol}] Warmup not ready, skipping")
+            mode = str(getattr(self, "_fe_warmup_enforcement_mode", "fail_fast"))
+            if mode == "fail_fast":
+                self.logger.debug(f"[{symbol}] Warmup not ready, skipping (mode=fail_fast)")
+                write_trade_intent_rejected(
+                    symbol=symbol,
+                    tf_sec=int(cmd.get("tf_sec") or 0),
+                    bar_close_ts=cmd.get("bar_close_ts"),
+                    reason_code=NormalizedRejectReasons.FEATURES_NOT_READY,
+                    stage="STRATEGY",
+                    why="Warmup not full_ready (fail-closed; enforcement_mode=fail_fast)",
+                    src="aurora_handler",
+                    ts_ms=cmd.get("bar_close_ts"),
+                    rid=cmd.get("rid"),
+                )
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code="READINESS_FE_WARMUP_NOT_READY",
+                    reason="READINESS",
+                    context="aurora_handler:_process_decision",
+                    details={"warmup_full_ready": False, "enforcement_mode": mode},
+                    why_chain=["READINESS", "warmup_full_ready:false", f"enforcement_mode:{mode}"],
+                )
+                return
+
+            # warn_only / disabled: allow decision processing to proceed in degraded mode
+            self.logger.debug(
+                f"[{symbol}] Warmup not ready, continuing (enforcement_mode={mode})"
+            )
+        
+        # DM-CRITICAL-PATCHES-02: Regime liveness guard
+        # Block trading if RegimeDetector heartbeat is stale (detector may be dead)
+        liveness_block = self._check_regime_liveness(symbol, state)
+        if liveness_block is not None:
             write_trade_intent_rejected(
                 symbol=symbol,
                 tf_sec=int(cmd.get("tf_sec") or 0),
                 bar_close_ts=cmd.get("bar_close_ts"),
-                reason_code=NormalizedRejectReasons.FEATURES_NOT_READY,
+                reason_code=liveness_block["reason_code"],
                 stage="STRATEGY",
-                why="Warmup not full_ready (fail-closed)",
+                why=liveness_block["why"],
                 src="aurora_handler",
                 ts_ms=cmd.get("bar_close_ts"),
                 rid=cmd.get("rid"),
             )
             self._emit_strategy_blocked(
                 symbol=symbol,
-                reason_code="READINESS_FE_WARMUP_NOT_READY",
-                reason="READINESS",
-                context="aurora_handler:_process_decision",
-                details={"warmup_full_ready": False},
-                why_chain=["READINESS", "warmup_full_ready:false"],
+                reason_code=liveness_block["reason_code"],
+                reason="LIVENESS",
+                context="aurora_handler:regime_liveness_guard",
+                details=liveness_block.get("details", {}),
+                why_chain=["LIVENESS", liveness_block["reason_code"]],
             )
             return
         
@@ -777,7 +909,23 @@ class AuroraHandler:
         self._update_side_bias(symbol, effective_side)
     
     def _is_symbol_enabled(self, symbol: str) -> bool:
-        """Check if symbol is enabled for Aurora strategy."""
+        """
+        Check if symbol is enabled for Aurora strategy.
+        
+        P1-1: Registry SSOT takes precedence.
+        1. Check strategies_registry.assignments first
+        2. Fall back to aurora.assets.enabled
+        """
+        # P1-1: Registry check takes precedence (SSOT)
+        registry = getattr(self.config, "strategies_registry", None)
+        if registry:
+            assignments = getattr(registry, "assignments", {}) or {}
+            symbol_strategies = assignments.get(symbol, [])
+            if symbol_strategies:
+                # Registry has explicit assignment - use it
+                return "aurora" in symbol_strategies
+        
+        # Fallback: legacy aurora.assets.enabled check
         aurora = getattr(self.config.strategies, "aurora", None)
         if not aurora:
             return False
@@ -975,8 +1123,17 @@ class AuroraHandler:
         
         Uses pm_norm_{window}s from price_motion block.
         Returns absolute value (sigma magnitude) or None if unavailable.
+        
+        P0-3: Falls back to cached price_motion if not in CMD features.
         """
         pm = features.get("price_motion")
+        
+        # P0-3: Fallback to cached price_motion from EVT:FEATURES_CALCULATED
+        if not isinstance(pm, dict):
+            state = self._symbol_states.get(symbol)
+            if state and state.cached_price_motion:
+                pm = state.cached_price_motion
+        
         if not isinstance(pm, dict):
             return None
         
@@ -1071,6 +1228,55 @@ class AuroraHandler:
     # END VOL-ADJ GATES METHODS
     # =========================================================================
     
+    # =========================================================================
+    # VOLATILITY-BASED ENTRY OFFSET (Maker/GTX Compliance)
+    # =========================================================================
+    
+    def _get_volatility_strict(
+        self,
+        symbol: str,
+        features: Dict[str, Any],
+    ) -> Optional[decimal.Decimal]:
+        """
+        Get ATR volatility (STRICT: no fallbacks, fail-closed).
+        
+        Reads from:
+        1. features["volatility"]["atr_14"] (canonical FE output)
+        2. features["atr"] (backward compatibility)
+        
+        Returns None if ATR is missing → caller MUST abort signal emission.
+        This is fail-closed behavior: prefer no trade over a bad trade.
+        """
+        atr = None
+        
+        # Primary path: nested volatility.atr_14 (from FeatureEngineering)
+        volatility_block = features.get("volatility")
+        if isinstance(volatility_block, dict):
+            atr = volatility_block.get("atr_14")
+        
+        # Fallback: top-level "atr" (backward compatibility / tests)
+        if atr is None:
+            atr = features.get("atr")
+        
+        if atr is None:
+            self.logger.error(
+                f"[{symbol}] ATR_MISSING: volatility_entry_logic requires 'volatility.atr_14' or 'atr'. "
+                f"Signal ABORTED (fail-closed). Check FeatureEngineering pipeline."
+            )
+            return None
+        
+        try:
+            return decimal.Decimal(str(atr))
+        except (decimal.InvalidOperation, ValueError) as e:
+            self.logger.error(f"[{symbol}] ATR_INVALID: Cannot convert atr={atr!r} to Decimal: {e}")
+            return None
+            return None
+    
+    # =========================================================================
+    # END VOLATILITY-BASED ENTRY OFFSET
+    # =========================================================================
+
+    
     def _get_signal_weights(self, symbol: str, instr_cfg: Any) -> Dict[str, float]:
         """Get signal weights for symbol."""
         weights = getattr(instr_cfg, "weights", None)
@@ -1140,6 +1346,53 @@ class AuroraHandler:
         side = effective_side if effective_side is not None else result.side
         now_ms = int(self.wall_time_fn() * 1000)
         
+        # Get anchor price and default entry price
+        anchor_price = decimal.Decimal(str(features.get("price", "0")))
+        entry_price = anchor_price
+        
+        # === VOLATILITY-BASED ENTRY OFFSET (Maker/GTX Compliance) ===
+        instr_cfg = self._get_instrument_config(symbol)
+        vel_cfg = getattr(instr_cfg, "volatility_entry_logic", None) if instr_cfg else None
+        
+        if vel_cfg and getattr(vel_cfg, "enabled", False):
+            # 1. Get ATR (STRICT: no fallbacks)
+            volatility = self._get_volatility_strict(symbol, features)
+            if volatility is None:
+                # ABORT: ATR missing, fail-closed
+                self._emit_strategy_blocked(
+                    symbol=symbol,
+                    reason_code="ATR_MISSING_FAIL_CLOSED",
+                    reason="DATA_NOT_READY",
+                    context="aurora_handler:volatility_entry",
+                    details={"required_feature": "atr"},
+                    why_chain=["VOLATILITY_ENTRY", "ATR_MISSING", "FAIL_CLOSED"],
+                )
+                return  # Signal aborted - prefer no trade over bad trade
+            
+            # 2. Get regime multiplier (fail-closed: DEFAULT required)
+            regime = state.regime or "DEFAULT"
+            multipliers = getattr(vel_cfg, "regime_multipliers", {})
+            mult_raw = multipliers.get(regime, multipliers.get("DEFAULT"))
+            if mult_raw is None:
+                self.logger.error(f"[{symbol}] regime_multipliers missing DEFAULT key (fail-closed)")
+                return
+            mult = decimal.Decimal(str(mult_raw))
+            
+            # 3. Calculate offset
+            offset = volatility * mult
+            
+            # 4. Apply offset based on side
+            if side.lower() == "buy":
+                entry_price = anchor_price - offset  # Bid below anchor
+            elif side.lower() == "sell":
+                entry_price = anchor_price + offset  # Ask above anchor
+            
+            self.logger.debug(
+                f"[{symbol}] Limit Offset: {offset:.6f} for Regime: {regime} "
+                f"(atr={volatility:.6f}, mult={mult}, entry={entry_price:.6f})"
+            )
+        # === END VOLATILITY OFFSET ===
+        
         # Build payload per v7 contract
         payload = {
             "strategy_id": self.strategy_id,
@@ -1150,7 +1403,7 @@ class AuroraHandler:
             "why_chain": result.why_chain,
             "readiness": {"warmup_ok": state.warmup_full_ready},
             "price_ctx": {
-                "entry_price": str(features.get("price", "0")),
+                "entry_price": str(entry_price),
             },
             "scoring": {
                 "score": float(result.score),
@@ -1176,3 +1429,4 @@ class AuroraHandler:
         # Update state
         state.last_signal_ts_ms = now_ms
         state.last_signal_side = side
+

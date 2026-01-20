@@ -405,7 +405,13 @@ class MarketDataWorker:
             if self._session is None or self._session.closed:
                 if aiohttp is None:
                     raise ImportError("aiohttp is required for MarketDataWorker WebSocket connections")
-                self._session = aiohttp.ClientSession()
+                # BUGFIX: Add connection timeout to prevent 5-minute hangs on network issues
+                conn_timeout = aiohttp.ClientTimeout(
+                    total=30,      # Total request timeout
+                    connect=10,    # Connection timeout (was infinite!)
+                    sock_read=30   # Socket read timeout
+                )
+                self._session = aiohttp.ClientSession(timeout=conn_timeout)
             
             ws_url = self._get_ws_url()
             self._logger.info(f"Connecting to WebSocket: {ws_url}")

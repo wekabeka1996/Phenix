@@ -106,8 +106,7 @@ class TestMeanReversionBarLogging(unittest.TestCase):
                 "expected_pnl_multiplier": 1.0,
                 "fees_pct": 0.001,
                 "slippage_pct": 0.001
-            },
-            emit_trade_intent_directly=False
+            }
         )
         
         strategies = MagicMock()

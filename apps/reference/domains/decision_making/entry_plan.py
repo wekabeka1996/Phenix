@@ -149,17 +149,22 @@ class EntryPlan:
         self,
         side: str,
         ref_price: Union[str, float, Decimal],
-        atr: Union[str, float],
+        atr: Union[str, float, None],
         obi: Union[str, float, None] = None,
+        *,
+        tick_size: Union[str, float, Decimal, None] = None,
     ) -> EntryPlanResult:
         """
         Compute entry, stop-loss, and take-profit prices.
         
+        DM-CRITICAL-PATCHES-02: Fail-closed for ATR, safety guard for zero offsets.
+        
         Args:
             side: Trade direction ("BUY"/"LONG" or "SELL"/"SHORT")
             ref_price: Reference price (typically bar close)
-            atr: Average True Range value
+            atr: Average True Range value (can be None if require_atr=False)
             obi: Order Book Imbalance [-1, 1] or None
+            tick_size: Minimum price increment for safety floor (optional)
             
         Returns:
             EntryPlanResult with all computed prices
@@ -176,9 +181,19 @@ class EntryPlan:
         if ref_dec is None:
             raise ValueError(f"Invalid ref_price: {ref_price}")
         
+        # DM-CRITICAL-PATCHES-02: Fail-closed ATR handling
         atr_dec = _to_decimal(atr)
-        if atr_dec is None or atr_dec <= 0:
-            raise ValueError(f"Invalid ATR: {atr}")
+        if atr_dec is None:
+            if self.params.require_atr:
+                # Fail-closed: ATR required but missing
+                raise ValueError("ENTRYPLAN_ATR_MISSING: ATR is None but require_atr=True")
+            else:
+                # Soft-start: use ATR=0 (will apply safety floor below)
+                atr_dec = Decimal("0")
+        elif atr_dec < 0:
+            raise ValueError(f"Invalid ATR (negative): {atr}")
+        
+        # ATR=0 is now allowed when require_atr=False (soft-start)
         
         obi_dec = _to_decimal(obi)
         
@@ -215,12 +230,26 @@ class EntryPlan:
         atr_float = float(atr_dec)
         ref_float = float(ref_dec)
         
+        # DM-CRITICAL-PATCHES-02: Safety floor for tick_size
+        # If tick_size provided, use as minimum offset floor
+        # Otherwise use ref_price * 0.0001 (1 bp) as emergency floor
+        if tick_size is not None:
+            tick_dec = _to_decimal(tick_size)
+            min_offset = tick_dec if tick_dec and tick_dec > 0 else Decimal("0")
+        else:
+            min_offset = ref_dec * Decimal("0.0001")  # 1 basis point fallback
+        
         # Entry offset with OBI modulation
-        entry_offset = Decimal(str(self.params.entry_k_atr * atr_float * obi_multiplier))
+        entry_offset_raw = Decimal(str(self.params.entry_k_atr * atr_float * obi_multiplier))
+        entry_offset = max(entry_offset_raw, Decimal("0"))  # Entry can be zero (market order)
         
         # Stop-loss and take-profit offsets (no OBI modulation - pure ATR)
-        sl_offset = Decimal(str(self.params.sl_k_atr * atr_float))
-        tp_offset = Decimal(str(self.params.tp_k_atr * atr_float))
+        # DM-CRITICAL-PATCHES-02: Safety guard - offset must be >= min_offset to avoid zero SL/TP
+        sl_offset_raw = Decimal(str(self.params.sl_k_atr * atr_float))
+        sl_offset = max(sl_offset_raw, min_offset)
+        
+        tp_offset_raw = Decimal(str(self.params.tp_k_atr * atr_float))
+        tp_offset = max(tp_offset_raw, min_offset)
         
         if is_long:
             # LONG: entry below ref, SL below entry, TP above entry

@@ -7,6 +7,7 @@ Provides structured JSONL logging for order lifecycle and other audit events.
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -72,7 +73,7 @@ class AuroraEventLogger:
         try:
             event_data = {
                 # fallback to process time
-                "ts_ms": kwargs.get("ts_ms", int(os.times()[4] * 1000)),
+                "ts_ms": kwargs.get("ts_ms", int(time.time() * 1000)),
                 "event": event_type,
                 **kwargs,
             }

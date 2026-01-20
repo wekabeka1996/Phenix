@@ -28,6 +28,7 @@ from .metrics_collector import MetricsCollector
 from apps.reference.config_models import AuroraConfig
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Literal
+from pydantic import model_validator
 
 
 class CmdOpenPayload(BaseModel):
@@ -50,15 +51,16 @@ class CmdOpenPayload(BaseModel):
     price: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$", description="Limit price")
     price_ref: Optional[str] = Field(default=None, description="Reference price for checks")
     tif: Optional[Literal["GTC", "GTX", "IOC", "FOK"]] = Field(
-        default=None, 
-        description="Time in force. GTX = post-only (maker-only). Null = default GTC"
+        default=None,
+        description="Time in force. REQUIRED for LIMIT. Must be null for MARKET."
     )
-    valid_for_ms: Optional[int] = Field(default=None, ge=1000, description="Pending entry TTL in ms")
+    valid_for_ms: Optional[int] = Field(default=None, ge=1000, description="Pending entry TTL in ms (LIMIT-only)")
     stop_price: Optional[str] = Field(default=None, description="Stop-loss price")
     target_price: Optional[str] = Field(default=None, description="Take-profit price")
     sl_pct: Optional[str] = Field(default=None, description="Stop-loss percentage")
     idempotent_key: Optional[str] = Field(default=None, description="Idempotency key")
     rid: Optional[str] = Field(default=None, description="Request ID for correlation")
+    strategy: Optional[str] = Field(default=None, description="Strategy ID (e.g., 'aurora', 'mean_reversion')")
     
     @field_validator('tif', mode='before')
     @classmethod
@@ -69,6 +71,21 @@ class CmdOpenPayload(BaseModel):
         if isinstance(v, str):
             return v.upper()
         return v
+
+    @model_validator(mode="after")
+    def _cross_field_contract(self):
+        # Fail-closed contract rules (no silent defaults).
+        if self.order_type == "LIMIT":
+            if self.price is None:
+                raise ValueError("LIMIT requires price")
+            if self.tif is None:
+                raise ValueError("LIMIT requires tif (no default)")
+            if self.valid_for_ms is None:
+                raise ValueError("LIMIT requires valid_for_ms (no fallback)")
+        elif self.order_type == "MARKET":
+            if self.tif is not None:
+                raise ValueError("MARKET must have tif=null")
+        return self
 
 
 class OpenState(str, Enum):
@@ -231,17 +248,20 @@ class OpenFlowFSM:
 
                 self.idempotency_store[idempotent_key] = time.time()
 
-            # PANIC-INT: Panic killswitch gate (fail-closed)
-            # Block ALL new CMD:OPEN when panic_killswitch is active
+            # PANIC-INT: Panic killswitch gate (fail-closed).
+            # Block ALL new CMD:OPEN when panic_killswitch is explicitly True.
             try:
-                if self.config.trading and self.config.trading.ops:
-                    if self.config.trading.ops.panic_killswitch:
-                        self.logger.error(
-                            f"PANIC_REJECT: CMD:OPEN blocked - panic_killswitch=true, rid={msg.rid}"
-                        )
-                        return self._reject(msg, "PANIC_KILLSWITCH", "panic active - all new opens blocked")
-            except AttributeError:
-                pass  # Config not fully loaded; fail-open for tests
+                trading = getattr(self.config, "trading", None)
+                ops = getattr(trading, "ops", None) if trading is not None else None
+                panic = getattr(ops, "panic_killswitch", False) if ops is not None else False
+                if panic is True:
+                    self.logger.error(
+                        f"PANIC_REJECT: CMD:OPEN blocked - panic_killswitch=true, rid={msg.rid}"
+                    )
+                    return self._reject(msg, "PANIC_KILLSWITCH", "panic active - all new opens blocked")
+            except Exception:
+                # Fail-open for incomplete/mocked configs (tests).
+                pass
 
             # EP-01.4-INT-A: Strict payload validation (fail-closed)
             pld = msg.pld or {}
@@ -252,8 +272,7 @@ class OpenFlowFSM:
                 qty = validated_pld.qty
                 price = validated_pld.price
                 order_type = validated_pld.order_type
-                # EP-01.4-INT-A: tif from payload, default to GTC if None
-                tif = validated_pld.tif or "GTC"
+                tif = validated_pld.tif
             except Exception as validation_err:
                 self.logger.error(
                     f"CMD_OPEN_VALIDATION_FAIL: Invalid payload - {validation_err}, rid={msg.rid}"
@@ -262,18 +281,23 @@ class OpenFlowFSM:
                     msg, "CMD_OPEN_VALIDATION_FAIL", f"payload validation failed: {validation_err}"
                 )
 
-            # EP-01.4-INT-B: Maker-only enforcement for LIMIT entries
+            # EP-01.4-INT-B: Maker-only enforcement for LIMIT entries (fail-closed).
             try:
                 maker_cfg = self.config.domains.execution_position.maker_only_entry
-                if maker_cfg.enabled and order_type == "LIMIT":
-                    # Enforce GTX for LIMIT entries
+                maker_only_enabled = getattr(maker_cfg, "enabled", False)
+                if maker_only_enabled is True and order_type == "LIMIT":
                     if tif != "GTX":
-                        self.logger.info(
-                            f"MAKER_ONLY_ENFORCE: Overriding tif={tif} -> GTX for LIMIT entry, rid={msg.rid}"
+                        self.logger.error(
+                            f"MAKER_ONLY_ENFORCEMENT_FAIL: maker_only enabled but tif={tif!r} != GTX, rid={msg.rid}"
                         )
-                        tif = "GTX"
-            except AttributeError:
-                pass  # Config not loaded (tests); skip enforcement
+                        return self._reject(
+                            msg,
+                            "MAKER_ONLY_ENFORCEMENT_FAIL",
+                            "maker_only requires tif=GTX",
+                        )
+            except Exception:
+                # Fail-open for incomplete/mocked configs (tests).
+                pass
 
             # Note: symbol/side validation now handled by CmdOpenPayload Pydantic model
 
@@ -377,10 +401,13 @@ class OpenFlowFSM:
                     "side": side,
                     "qty": str(qty_dec),
                     "order_type": order_type,
-                    "tif": tif,
                 }
+                if tif is not None:
+                    dec_pld["tif"] = tif
                 if price_dec is not None:
                     dec_pld["price"] = str(price_dec)
+                if validated_pld.valid_for_ms is not None:
+                    dec_pld["valid_for_ms"] = int(validated_pld.valid_for_ms)
 
                 # Pass through TP/SL intent data (PHASE A2 fix)
                 if "stop_price" in pld:

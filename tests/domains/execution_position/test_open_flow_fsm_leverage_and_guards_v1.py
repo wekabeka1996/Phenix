@@ -27,6 +27,8 @@ def _cmd_open(
     price: str | None = "10000",
     order_type: str = "LIMIT",
     price_ref: str | None = None,
+    tif: str | None = None,
+    valid_for_ms: int | None = None,
     idempotent_key: str | None = None,
 ) -> Message:
     pld: dict = {
@@ -35,6 +37,11 @@ def _cmd_open(
         "qty": qty,
         "order_type": order_type,
     }
+    if order_type.upper() == "LIMIT":
+        pld["tif"] = tif or "GTC"
+        pld["valid_for_ms"] = valid_for_ms or 60_000
+    else:
+        pld["tif"] = None
     if price is not None:
         pld["price"] = price
     if price_ref is not None:
