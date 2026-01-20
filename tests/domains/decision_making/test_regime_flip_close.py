@@ -10,7 +10,18 @@ from unittest.mock import patch
 
 import pytest
 
+from apps.reference.config_models import create_aurora_config
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
+
+
+def _to_dict(obj):
+    if isinstance(obj, SimpleNamespace):
+        return {k: _to_dict(v) for k, v in vars(obj).items()}
+    if isinstance(obj, dict):
+        return {k: _to_dict(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_dict(v) for v in obj]
+    return obj
 
 
 class _Bus:
@@ -126,7 +137,7 @@ def test_regime_flip_short_in_bull_trend_emits_reduce_only_close():
 
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
-        dm = DecisionMaking(fsm=bus, config=cfg)
+        dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
     # Set portfolio: SHORT position (negative qty)
     now_ms = int(time.time() * 1000)
@@ -174,7 +185,7 @@ def test_regime_flip_long_in_bear_trend_emits_reduce_only_close():
 
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
-        dm = DecisionMaking(fsm=bus, config=cfg)
+        dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
     # Set portfolio: LONG position (positive qty)
     now_ms = int(time.time() * 1000)
@@ -220,7 +231,7 @@ def test_regime_flip_uncertain_closes_any_position():
 
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
-        dm = DecisionMaking(fsm=bus, config=cfg)
+        dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
     # Set portfolio: LONG position
     now_ms = int(time.time() * 1000)
@@ -264,7 +275,7 @@ def test_regime_flip_no_position_does_nothing():
 
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
-        dm = DecisionMaking(fsm=bus, config=cfg)
+        dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
     # Set portfolio: FLAT (no position)
     now_ms = int(time.time() * 1000)
@@ -297,7 +308,7 @@ def test_regime_flip_no_portfolio_does_nothing():
 
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
-        dm = DecisionMaking(fsm=bus, config=cfg)
+        dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
     # No portfolio
     dm.latest_portfolio = None
@@ -325,7 +336,7 @@ def test_regime_flip_long_in_bull_trend_does_nothing():
 
     with patch("apps.reference.domains.decision_making.decision_making.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_cfg()
-        dm = DecisionMaking(fsm=bus, config=cfg)
+        dm = DecisionMaking(fsm=bus, config=create_aurora_config(_to_dict(cfg)))
 
     now_ms = int(time.time() * 1000)
     dm.latest_portfolio = {

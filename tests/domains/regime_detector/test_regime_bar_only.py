@@ -113,18 +113,19 @@ def test_regime_updates_only_on_basis_bar(mock_config):
     assert len(fsm.events) == 1, "1m bar should be ignored (1 != 1)"
 
 def test_no_double_clocking(mock_config):
-    """Ensure strictly one update per basis bar."""
+    """Ensure strictly one update per basis bar (with fresh data)."""
     fsm = EventRecorder()
-    clock = MockClock()
+    clock = MockClock(ts_sec=1)  # Set clock to match event timestamps
     detector = RegimeDetector(mock_config, fsm, clock=clock)
     detector.start()
     
     # Sequence of events in a single cycle
-    # 1. Features (Tick) -> filters
-    # 2. Features (Bar) -> accepts
+    # 1. Features (Tick) -> filters (tf_sec=0 ignored by REG-FIX-01)
+    # 2. Features (Bar) -> accepts (tf_sec=300 matches basis)
     
-    msg_tick = Message(op="EVT", verb="FEATURES_CALCULATED", pld={"symbol":"S", "ts":1, "features":{"price":1}, "tf_sec":0}, src="t", dst="a")
-    msg_bar = Message(op="EVT", verb="FEATURES_CALCULATED", pld={"symbol":"S", "ts":1, "features":{"price":1}, "tf_sec":300}, src="t", dst="a")
+    # Use ts in ms matching clock (1000ms = 1sec)
+    msg_tick = Message(op="EVT", verb="FEATURES_CALCULATED", pld={"symbol":"S", "ts":1000, "features":{"price":1}, "tf_sec":0}, src="t", dst="a")
+    msg_bar = Message(op="EVT", verb="FEATURES_CALCULATED", pld={"symbol":"S", "ts":1000, "features":{"price":1}, "tf_sec":300}, src="t", dst="a")
     
     detector.handle_event(msg_tick)
     detector.handle_event(msg_bar)

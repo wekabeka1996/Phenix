@@ -2,14 +2,15 @@
   "date": "2026-01-08",
   "registry_path": "apps/reference/dictionaries/verb_registry_v1.yaml",
   "counts": {
-    "runtime_tokens": 52,
+    "runtime_tokens": 51,
     "registry_tokens": 56,
     "runtime_not_in_registry": 0,
-    "registry_not_in_runtime": 4,
+    "registry_not_in_runtime": 5,
     "coverage": 1.0
   },
   "runtime_not_in_registry": [],
   "registry_not_in_runtime": [
+    "DEC:CANCEL",
     "EVT:INTENT_DROPPED",
     "EVT:MR_SIGNAL_PRODUCED",
     "EVT:NEOCORTEX_ALERT",

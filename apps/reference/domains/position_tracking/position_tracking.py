@@ -17,6 +17,7 @@ from vfoundation.dr import wal  # WAL module for disaster recovery
 from apps.reference.config_loader import AuroraConfig
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.domain_config import DomainConfigResolver
+from apps.reference.core.time import get_clock
 
 # Import AlertManager for manual intervention alerts
 try:
@@ -135,33 +136,52 @@ class PositionTracking:
             self.logger.warning(f"Error processing market tick: {e}")
 
     def start(self) -> None:
-        """Start the position tracking component and emit initial portfolio state."""
-        # Emit initial portfolio state with zero positions
-        positions_last_ts_ms = int(time.time() * 1000)
+        """
+        Start the position tracking component.
 
-        portfolio_payload = {
-            "ts": positions_last_ts_ms,
-            "equity": "0",  # No equity data yet
-            "realized_pnl": "0",
-            "unrealized_pnl": "0",
-            "available_balance": "0",
-            "positions": [],  # Empty positions list
-            "open_positions_usd": "0",
-            "open_positions_margin_usd": "0",
-            # EXP-DIRECTION: Initial zero margin by side
-            "positions_by_side": {
-                "long_margin": "0",
-                "short_margin": "0"
-            },
-            "positions_last_ts_ms": positions_last_ts_ms,
-        }
-
-        self.logger.info("Emitting initial EVT:PORTFOLIO_STATE_UPDATED...")
-        self.fsm.emit(
-            "EVT:PORTFOLIO_STATE_UPDATED",
-            payload=portfolio_payload,
-            why="Initial portfolio state with no positions.",
+        TRUTH DOMAIN HARDENING:
+        - Do NOT emit a "fresh zero" portfolio at startup.
+        - First authoritative portfolio state must come from:
+          (a) DR snapshot + WAL replay, or (b) initial account sync (ACCOUNT_UPDATE/BALANCE_UPDATE).
+        """
+        self.logger.info(
+            "PositionTracking.start(): skipping initial EVT:PORTFOLIO_STATE_UPDATED (truth-first startup)"
         )
+
+    def _write_wal_record(self, event: Message) -> Optional[str]:
+        """
+        Append a durability record for this event to WAL.
+
+        Timestamp contract:
+        - `timestamp` is epoch milliseconds (int) for DR filtering.
+        - `event_ts_ms` preserves the event's own logical timestamp (if present).
+        """
+        try:
+            event_ts_ms = None
+            try:
+                if isinstance(event.pld, dict) and event.pld.get("ts") is not None:
+                    event_ts_ms = event.pld.get("ts")
+            except Exception:
+                event_ts_ms = None
+
+            record = {
+                "op": event.op,
+                "verb": event.verb,
+                "pld": event.pld,
+                "src": event.src,
+                "dst": event.dst,
+                "rid": str(event.rid),
+                "timestamp": int(get_clock().now_ms()),
+                "event_ts_ms": event_ts_ms,
+            }
+
+            return wal.append(record)
+        except Exception as e:
+            self.logger.critical(
+                "CRITICAL: Failed to write event to WAL. "
+                f"Halting processing for safety. RID={getattr(event, 'rid', None)}, Error: {e}"
+            )
+            return None
 
     def on_trade_executed(self, event: Message) -> None:
         """
@@ -174,35 +194,17 @@ class PositionTracking:
 
         # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
         # Write event to WAL BEFORE processing to ensure disaster recovery
-        try:
-            event_dict = {
-                "op": event.op,
-                "verb": event.verb,
-                "pld": event.pld,
-                "src": event.src,
-                "dst": event.dst,
-                # Convert RID to string for JSON serialization
-                "rid": str(event.rid),
-                "timestamp": time.time(),
-            }
-            wal_hash = wal.append(event_dict)
-            if wal_hash is None:
-                # WAL write failed due to lock timeout
-                self.logger.critical(
-                    "CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL "
-                    f"(lock timeout). Halting processing for safety. RID={event.rid}"
-                )
-                return
-            self.logger.debug(
-                f"WAL: Appended TRADE_EXECUTED to WAL with hash={wal_hash[:8]}..."
-            )
-        except Exception as e:
-            # Any WAL write failure is critical - we cannot process without durability guarantee
+        wal_hash = self._write_wal_record(event)
+        if wal_hash is None:
+            # WAL write failed due to lock timeout or exception.
             self.logger.critical(
                 "CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL. "
-                f"Halting processing for safety. RID={event.rid}, Error: {e}"
+                f"Halting processing for safety. RID={event.rid}"
             )
             return
+        self.logger.debug(
+            f"WAL: Appended TRADE_EXECUTED to WAL with hash={wal_hash[:8]}..."
+        )
         # --- END WAL INTEGRATION ---
 
         payload = event.pld
@@ -283,35 +285,16 @@ class PositionTracking:
 
         # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
         # Write event to WAL BEFORE processing to ensure disaster recovery
-        try:
-            event_dict = {
-                "op": event.op,
-                "verb": event.verb,
-                "pld": event.pld,
-                "src": event.src,
-                "dst": event.dst,
-                # Convert RID to string for JSON serialization
-                "rid": str(event.rid),
-                "timestamp": time.time(),
-            }
-            wal_hash = wal.append(event_dict)
-            if wal_hash is None:
-                # WAL write failed due to lock timeout
-                self.logger.critical(
-                    "CRITICAL: Failed to write EVT:ACCOUNT_UPDATE_RECEIVED to WAL "
-                    "(lock timeout). Halting processing for safety. RID={event.rid}"
-                )
-                return
-            self.logger.debug(
-                f"WAL: Appended ACCOUNT_UPDATE_RECEIVED to WAL with hash={wal_hash[:8]}..."
-            )
-        except Exception as e:
-            # Any WAL write failure is critical - we cannot process without durability guarantee
+        wal_hash = self._write_wal_record(event)
+        if wal_hash is None:
             self.logger.critical(
                 "CRITICAL: Failed to write EVT:ACCOUNT_UPDATE_RECEIVED to WAL. "
-                f"Halting processing for safety. RID={event.rid}, Error: {e}"
+                f"Halting processing for safety. RID={event.rid}"
             )
             return
+        self.logger.debug(
+            f"WAL: Appended ACCOUNT_UPDATE_RECEIVED to WAL with hash={wal_hash[:8]}..."
+        )
         # --- END WAL INTEGRATION ---
 
         payload = event.pld

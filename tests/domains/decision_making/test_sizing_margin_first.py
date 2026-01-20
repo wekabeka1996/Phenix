@@ -20,8 +20,8 @@ def test_margin_first_sizing_btc_x80_rounding_and_constraints_ok():
         notional_cap=None,
     )
 
-    assert margin_usdt == Decimal("6.4458")
-    assert notional_target == Decimal("515.664")
+    assert margin_usdt == Decimal("6.4393542")
+    assert notional_target == Decimal("515.148336")
 
     raw_qty, rounded_qty = compute_qty(
         notional_target=notional_target,

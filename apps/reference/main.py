@@ -1117,6 +1117,67 @@ def main() -> None:
     execution_position.set_async_loop(guardian_loop)
     guardian_loop_thread.start()
 
+    # ==========================================
+    # IN-FLIGHT RECONCILER (TRUTH DOMAIN REPAIR)
+    # ==========================================
+    try:
+        from apps.reference.domains.inflight_reconcile.reconciler import InFlightReconciler, InFlightStatus
+        from apps.reference.domains.inflight_reconcile.config import InFlightConfig
+
+        domains_dict = {}
+        try:
+            if getattr(config, "domains", None) is not None and hasattr(config.domains, "model_dump"):
+                domains_dict = config.domains.model_dump()  # type: ignore[assignment]
+        except Exception:
+            domains_dict = {}
+
+        inflight_cfg = InFlightConfig.from_ssot(domains_dict)
+        inflight_reconciler = InFlightReconciler(config=inflight_cfg, adapter=getattr(execution_position, "adapter", None))
+
+        # Bind ACK/FILL events so the reconciler can track orders without touching execution code.
+        def _inflight_on_order_ack(event: "Message") -> None:
+            pld = event.pld or {}
+            rid = str(pld.get("rid") or event.rid or pld.get("clientOrderId") or pld.get("orderId") or "")
+            symbol = pld.get("symbol")
+            if not rid or not symbol:
+                return
+            client_order_id = pld.get("clientOrderId") or pld.get("client_order_id")
+            exchange_order_id = str(pld.get("orderId")) if pld.get("orderId") is not None else None
+            if not inflight_reconciler.update_order_id(
+                rid=rid,
+                client_order_id=client_order_id,
+                exchange_order_id=exchange_order_id,
+            ):
+                inflight_reconciler.register(
+                    rid=rid,
+                    symbol=str(symbol),
+                    client_order_id=client_order_id,
+                    exchange_order_id=exchange_order_id,
+                )
+
+        def _inflight_on_order_fill(event: "Message") -> None:
+            pld = event.pld or {}
+            rid = str(pld.get("rid") or event.rid or pld.get("clientOrderId") or pld.get("orderId") or "")
+            if not rid:
+                return
+            inflight_reconciler.mark_terminal(
+                rid=rid,
+                status=InFlightStatus.FILLED,
+                reason="EVT:ORDER_FILL received",
+            )
+            inflight_reconciler.clear(rid)
+
+        fsm.listen("EVT:ORDER_ACK", _inflight_on_order_ack)
+        fsm.listen("EVT:ORDER_FILL", _inflight_on_order_fill)
+
+        if guardian_loop.is_running():
+            asyncio.run_coroutine_threadsafe(inflight_reconciler.run_forever(), guardian_loop)
+            LOG.info("✅ InFlightReconciler started")
+        else:
+            LOG.warning("⚠️ InFlightReconciler not started: async loop is not running")
+    except Exception as e:
+        LOG.warning(f"⚠️ InFlightReconciler disabled (init failed): {e}")
+
     # Bridge RetryScheduler binding removed (BRIDGE-SUNSET-01)
 
     try:

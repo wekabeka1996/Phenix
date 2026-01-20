@@ -18,9 +18,11 @@ class _DummyFsm:
 
 def _mk_dm(*, fsm):
     from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.core.time.clock import LiveClock
 
     dm = DecisionMaking.__new__(DecisionMaking)
     dm.fsm = fsm
+    dm._clock = LiveClock()
     dm.logger = logging.getLogger("tests.task40.dm")
 
     # DM-DIR-SSOT-STRICT-01: directional_sanity is SSOT-required
@@ -44,7 +46,12 @@ def _mk_dm(*, fsm):
                     require_bleed_ready=True,
                 ),
             )
-        )
+        ),
+        strategies=SimpleNamespace(
+            mean_reversion=SimpleNamespace(
+                execution=SimpleNamespace(entry_order_type="MARKET"),
+            ),
+        ),
     )
 
     dm._check_strategy_arbitration = lambda _symbol, _strategy_id, **_k: {"allowed": True, "reason": None}
@@ -122,6 +129,7 @@ def test_unlock_on_terminal_allows_next_open():
         rid="rid-2",
         reduce_only=False,
         strategy_id="mean_reversion",
+        tf_sec=300,
     )
 
     assert any(name == "EVT:TRADE_INTENT_PROPOSED" for name, _ in fsm.emitted)
@@ -145,6 +153,7 @@ def test_double_signal_only_one_order_placed():
         rid="rid-1",
         reduce_only=False,
         strategy_id="mean_reversion",
+        tf_sec=300,
     )
 
     # Simulate bridge/execution creating an in-flight entry reference.
@@ -166,6 +175,7 @@ def test_double_signal_only_one_order_placed():
         rid="rid-2",
         reduce_only=False,
         strategy_id="mean_reversion",
+        tf_sec=300,
     )
 
     assert sum(1 for name, _ in fsm.emitted if name == "EVT:TRADE_INTENT_PROPOSED") == 1

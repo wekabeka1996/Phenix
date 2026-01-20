@@ -13,7 +13,19 @@ To fix: Either implement these internal methods or rewrite tests to use public A
 import pytest
 import time
 from unittest.mock import Mock
+from types import SimpleNamespace
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.config_models import create_aurora_config
+
+
+def _to_dict(obj):
+    if isinstance(obj, SimpleNamespace):
+        return {k: _to_dict(v) for k, v in vars(obj).items()}
+    if isinstance(obj, dict):
+        return {k: _to_dict(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_dict(v) for v in obj]
+    return obj
 
 
 @pytest.mark.skip(reason="Method _qos_allow does not exist in DecisionMaking - legacy test")
@@ -56,7 +68,7 @@ def test_nrr_012_rate_limit_semantics():
         }
     }
 
-    dm = DecisionMaking(fsm, cfg)
+    dm = DecisionMaking(fsm, create_aurora_config(_to_dict(cfg)))
 
     symbol = "SOLUSDT"
 
@@ -128,7 +140,7 @@ def test_symbol_cooldown_semantics():
         }
     }
 
-    dm = DecisionMaking(fsm, cfg)
+    dm = DecisionMaking(fsm, create_aurora_config(_to_dict(cfg)))
 
     symbol = "SOLUSDT"
 
@@ -196,7 +208,7 @@ def test_defer_mode_emits_correct_event():
         }
     }
 
-    dm = DecisionMaking(fsm, cfg)
+    dm = DecisionMaking(fsm, create_aurora_config(_to_dict(cfg)))
 
     # Exhaust rate limit
     symbol = "SOLUSDT"

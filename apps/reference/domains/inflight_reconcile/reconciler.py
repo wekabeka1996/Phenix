@@ -24,6 +24,15 @@ from .config import InFlightConfig
 
 LOG = logging.getLogger(__name__)
 
+class CancelOrderAdapter(Protocol):
+    async def cancel_order(
+        self,
+        symbol: str,
+        order_id: Optional[str] = None,
+        client_order_id: Optional[str] = None,
+    ) -> Any:
+        ...
+
 
 class InFlightStatus(Enum):
     """Status of an in-flight order after reconciliation."""
@@ -137,6 +146,7 @@ class InFlightReconciler:
         self,
         config: Optional[InFlightConfig] = None,
         exchange_checker: Optional[ExchangeOrderChecker] = None,
+        adapter: Optional[CancelOrderAdapter] = None,
     ):
         """
         Initialize reconciler.
@@ -147,6 +157,7 @@ class InFlightReconciler:
         """
         self.config = config or InFlightConfig()
         self._checker = exchange_checker
+        self._adapter = adapter
         self._lock = RLock()
         self._entries: Dict[str, InFlightEntry] = {}  # rid -> entry
         self._by_symbol: Dict[str, set] = {}  # symbol -> set of rids
@@ -154,6 +165,70 @@ class InFlightReconciler:
     def set_exchange_checker(self, checker: ExchangeOrderChecker) -> None:
         """Set exchange checker (for late binding after adapter init)."""
         self._checker = checker
+
+    def set_adapter(self, adapter: CancelOrderAdapter) -> None:
+        """Set cancellation adapter (for late binding after adapter init)."""
+        self._adapter = adapter
+
+    def _is_order_not_found_error(self, err: BaseException) -> bool:
+        code = getattr(err, "code", None)
+        if code == -2011:
+            return True
+        msg = str(err).lower()
+        return any(
+            s in msg
+            for s in (
+                "unknown order",
+                "order not found",
+                "cannot determine symbol: order not found",
+                "not found in open orders",
+            )
+        )
+
+    async def _cancel_on_exchange(self, entry: InFlightEntry) -> Any:
+        if not self._adapter:
+            raise RuntimeError("No adapter configured for cancellation")
+
+        # Prefer cancel by exchange order id if present, else by client order id.
+        if entry.exchange_order_id:
+            return await self._adapter.cancel_order(entry.symbol, order_id=str(entry.exchange_order_id))
+
+        if entry.client_order_id:
+            try:
+                return await self._adapter.cancel_order(
+                    entry.symbol, client_order_id=str(entry.client_order_id)
+                )
+            except TypeError:
+                # Fallback for adapters that accept positional order_id only.
+                return await self._adapter.cancel_order(entry.symbol, str(entry.client_order_id))
+
+        raise ValueError("No order identifiers available for cancellation")
+
+    async def run_forever(self, stop_event: Optional[asyncio.Event] = None) -> None:
+        """
+        Periodically reconcile expired in-flight entries.
+
+        Designed to run inside an asyncio loop managed by the runtime.
+        """
+        LOG.info(
+            "InFlightReconciler started",
+            extra={
+                "inflight_ttl_sec": self.config.inflight_ttl_sec,
+                "max_ttl_sec": self.config.max_ttl_sec,
+                "reconcile_interval_sec": self.config.reconcile_interval_sec,
+            },
+        )
+        while True:
+            if stop_event is not None and stop_event.is_set():
+                LOG.info("InFlightReconciler stopping (stop_event set)")
+                return
+
+            try:
+                await self.reconcile_all_expired()
+            except Exception as e:
+                LOG.warning(f"InFlightReconciler loop error: {e}")
+
+            await asyncio.sleep(self.config.reconcile_interval_sec)
     
     def register(
         self,
@@ -355,22 +430,51 @@ class InFlightReconciler:
         
         # Check if max TTL exceeded (force cleanup)
         if entry.age_sec >= self.config.max_ttl_sec:
-            entry.status = InFlightStatus.TTL_EXPIRED
-            self.clear(entry.rid)
-            
+            # Truth-domain hardening: attempt exchange cancellation before local clear.
             LOG.warning(
-                f"[{entry.symbol}] FORCE_CLEAR: rid={entry.rid} exceeded max TTL "
-                f"({entry.age_sec:.1f}s > {self.config.max_ttl_sec}s)"
+                f"[{entry.symbol}] TTL_EXPIRED: rid={entry.rid} exceeded max TTL "
+                f"({entry.age_sec:.1f}s > {self.config.max_ttl_sec}s) - attempting cancel"
             )
-            
-            return ReconcileResult(
-                rid=entry.rid,
-                symbol=entry.symbol,
-                old_status=old_status,
-                new_status=InFlightStatus.TTL_EXPIRED,
-                reason=f"Max TTL exceeded ({self.config.max_ttl_sec}s)",
-                cleared=True,
-            )
+
+            try:
+                await self._cancel_on_exchange(entry)
+                entry.status = InFlightStatus.CANCELED
+                self.clear(entry.rid)
+                return ReconcileResult(
+                    rid=entry.rid,
+                    symbol=entry.symbol,
+                    old_status=old_status,
+                    new_status=InFlightStatus.CANCELED,
+                    reason=f"Canceled on exchange after max TTL ({self.config.max_ttl_sec}s)",
+                    cleared=True,
+                )
+            except Exception as e:
+                # Success criteria: if order is already gone, treat as safe to clear local.
+                if self._is_order_not_found_error(e):
+                    entry.status = InFlightStatus.NOT_FOUND
+                    self.clear(entry.rid)
+                    return ReconcileResult(
+                        rid=entry.rid,
+                        symbol=entry.symbol,
+                        old_status=old_status,
+                        new_status=InFlightStatus.NOT_FOUND,
+                        reason=f"Order missing on exchange after max TTL ({self.config.max_ttl_sec}s)",
+                        cleared=True,
+                    )
+
+                # Network/unknown error: keep local state and retry later.
+                entry.status = InFlightStatus.ERROR
+                LOG.warning(
+                    f"[{entry.symbol}] TTL_EXPIRED cancel failed for rid={entry.rid}: {e} (keeping local state)"
+                )
+                return ReconcileResult(
+                    rid=entry.rid,
+                    symbol=entry.symbol,
+                    old_status=old_status,
+                    new_status=InFlightStatus.ERROR,
+                    reason=f"Cancel failed: {e}",
+                    cleared=False,
+                )
         
         # Try to check order status via REST
         if not self._checker:

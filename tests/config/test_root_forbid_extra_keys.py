@@ -31,5 +31,5 @@ def test_canonical_config_loads_strict(tmp_path):
     loader = ConfigLoader(config_dir=cfg_dir)
     config = loader.load_config()
 
-    assert config.trading_mode in {"testnet", "production", "live", "hybrid_live_data_testnet_exec"}
+    assert config.trading_mode in {"testnet", "production", "live", "hybrid_live_data_testnet_exec", "backtest"}
     assert config.system_meta.system_config_version is not None

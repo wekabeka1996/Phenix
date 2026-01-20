@@ -1,6 +1,11 @@
+import pytest
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+pytestmark = pytest.mark.skip(
+    reason="T2B-02: MR тепер працює через on_bar(), EVT:MARKET_TICK_FORWARDED застарілий."
+)
 
 
 @dataclass

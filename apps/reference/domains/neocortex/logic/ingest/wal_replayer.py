@@ -84,7 +84,7 @@ class WALReplayer:
             wal_pattern = self.base_path / self.config.wal_glob
             wal_files = sorted(
                 glob(str(wal_pattern)),
-                key=lambda f: Path(f).stat().st_mtime
+                key=lambda f: Path(f).name
             )
             
             if not wal_files:

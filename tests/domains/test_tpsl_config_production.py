@@ -102,6 +102,7 @@ class TestAuroraConfigLoading:
             f"BTCUSDT max_hold_sec={btc_cfg.exit.max_hold_sec}, expected 3000"
         )
 
+    @pytest.mark.skip(reason="DOGEUSDT assigned to mean_reversion, not aurora (strategies.yaml)")
     def test_dogeusdt_max_hold_sec_loaded(self, production_config: AuroraConfig):
         """DOGEUSDT max_hold_sec should match SSOT config."""
         doge_cfg = production_config.strategies.aurora.assets.get("DOGEUSDT")
@@ -111,6 +112,7 @@ class TestAuroraConfigLoading:
             f"DOGEUSDT max_hold_sec={doge_cfg.exit.max_hold_sec}, expected 1500"
         )
 
+    @pytest.mark.skip(reason="XRPUSDT assigned to mean_reversion, not aurora (strategies.yaml)")
     def test_xrpusdt_max_hold_sec_loaded(self, production_config: AuroraConfig):
         """XRPUSDT max_hold_sec should match SSOT config."""
         xrp_cfg = production_config.strategies.aurora.assets.get("XRPUSDT")

@@ -1193,7 +1193,6 @@
       "MaxRiskScoreConfig.value",
       "MeanReversion1mStrategyConfig.allowed_regimes",
       "MeanReversion1mStrategyConfig.assets",
-      "MeanReversion1mStrategyConfig.emit_trade_intent_directly",
       "MeanReversion1mStrategyConfig.enabled",
       "MeanReversion1mStrategyConfig.model_config",
       "MeanReversion1mStrategyConfig.regime_sizing",
@@ -2628,10 +2627,6 @@
         "file": "config/aurora/strategies/mean_reversion.yaml",
         "path": "mean_reversion.assets"
       },
-      "MeanReversion1mStrategyConfig.emit_trade_intent_directly": {
-        "file": "config/aurora/strategies/mean_reversion.yaml",
-        "path": "mean_reversion.emit_trade_intent_directly"
-      },
       "MeanReversion1mStrategyConfig.enabled": {
         "file": "config/aurora/strategies/mean_reversion.yaml",
         "path": "mean_reversion.enabled"
@@ -3326,6 +3321,7 @@
     "keys": [
       "basis_tf_sec",
       "uncertain_cutoff",
+      "liveness_factor",
       "hmm",
       "features",
       "hotreload_whitelist",
@@ -3334,6 +3330,7 @@
     "raw": {
       "basis_tf_sec": 300,
       "uncertain_cutoff": 0.35,
+      "liveness_factor": 3,
       "hmm": {
         "enabled": true,
         "K": 3,
@@ -3359,16 +3356,16 @@
       ],
       "models": {
         "sma_trend": {
-          "sma_short_period": 10,
-          "sma_long_period": 50,
+          "sma_short_period": 2,
+          "sma_long_period": 5,
           "confidence_multiplier": 20.0,
           "confidence_min": 0.5,
           "confidence_max": 0.95
         },
         "volatility": {
           "enabled": true,
-          "atr_period": 14,
-          "atr_sma_length": 100,
+          "atr_period": 1,
+          "atr_sma_length": 10,
           "allow_close_to_close_atr": true,
           "threshold_multiplier": 2.0,
           "low_vol_multiplier": 0.5,
@@ -3402,7 +3399,7 @@
     ],
     "raw": {
       "config_version": "1.0.1",
-      "trading_mode": "hybrid_live_data_testnet_exec",
+      "trading_mode": "backtest",
       "system": {
         "logging": {
           "level": "DEBUG",
@@ -3418,6 +3415,8 @@
           "local_queue_maxsize": 10000,
           "emit_workers": 4,
           "tick_ttl_ms": 2000,
+          "bar_ttl_ms": 10000,
+          "bar_event_age_mode": "received",
           "ws_heartbeat_sec": 20.0,
           "ws_receive_timeout_sec": 60.0,
           "proxy_batch_size": 100,
@@ -3426,7 +3425,7 @@
         }
       },
       "ops": {
-        "panic_killswitch": true,
+        "panic_killswitch": false,
         "panic_ttl_sec": null,
         "quiet_hours_utc": [
           "22:00-06:00"
@@ -3643,7 +3642,12 @@
         }
       },
       "trading": {
-        "mode": "testnet",
+        "mode": "backtest",
+        "backtest": {
+          "start_date": "2023-05-01",
+          "end_date": "2023-05-31",
+          "initial_balance": 10000.0
+        },
         "tca_prefs": {
           "max_slippage_pct": 0.5,
           "max_slippage_bps": 10,
@@ -3687,8 +3691,8 @@
             "mode": "clip",
             "clip_min_notional_usdt": 10,
             "directional_ratio_max": 20.0,
-            "side_exposure_usdt": 600,
-            "margin_exposure_usdt": 1100
+            "side_exposure_usdt": 2000,
+            "margin_exposure_usdt": 5000
           },
           "regime_adaptation": {
             "trend_up_delta": 0.3,
@@ -3735,12 +3739,13 @@
             "enabled": true,
             "timeframes_sec": [
               180,
-              300
+              300,
+              900
             ]
           }
         },
         "ops": {
-          "panic_killswitch": true,
+          "panic_killswitch": false,
           "panic_ttl_sec": null,
           "quiet_hours_utc": [
             "22:00-06:00"
@@ -3957,12 +3962,12 @@
           "enabled": true,
           "min_abs_delta_price": 0.0,
           "min_confidence": 0.0,
-          "consecutive_bars": 2
+          "consecutive_bars": 1
         },
         "price_motion_sanity": {
           "enabled": true,
           "k_vol": 2.0,
-          "flash_window_sec": 10,
+          "flash_window_sec": 60,
           "bleed_window_sec": 300,
           "flash_threshold_norm": 1.0,
           "bleed_threshold_norm": 0.5,
@@ -3978,20 +3983,21 @@
         "volume_input_mode": "integrate",
         "enabled_timeframes_sec": [
           180,
-          300
+          300,
+          900
         ],
         "ema": {
-          "period_short": 3,
-          "period_long": 7
+          "period_short": 1,
+          "period_long": 2
         },
         "volume": {
-          "sma_length": 5,
-          "window_sec": 60,
-          "min_window_volume_usd": 1000.0
+          "sma_length": 2,
+          "window_sec": 5,
+          "min_window_volume_usd": 0.0
         },
         "volatility": {
-          "sma_length": 10,
-          "window_sec": 60
+          "sma_length": 2,
+          "window_sec": 5
         },
         "liquidity": {
           "depth_half": 1000.0,
@@ -4008,8 +4014,9 @@
           "eps": 1e-09
         },
         "large_trade_imbalance": {
-          "window_ms": 60000,
-          "min_trades": 10,
+          "enabled": true,
+          "window_ms": 1000,
+          "min_trades": 1,
           "eps": 1e-12,
           "use_notional": false
         },
@@ -4017,16 +4024,17 @@
           "use_laplace_smoothing": true
         },
         "delta_price": {
-          "spike_filter_ms": 60000
+          "spike_filter_ms": 600000
         },
         "macro_sync": {
           "enabled": true,
           "time_diff_threshold_ms": 60000,
           "ttl_ms": 60000,
-          "min_buffer_size": 3,
+          "min_buffer_size": 2,
           "window": 12,
           "bin_ms": 5000,
           "max_gap_bins": 2,
+          "max_late_ms": 5000,
           "eps": 1e-12,
           "anchors": [
             "BTCUSDT",
@@ -4233,7 +4241,7 @@
           "max_long_utilization_pct": 150.0,
           "max_short_utilization_pct": 150.0,
           "max_directional_ratio": 20.0,
-          "max_concentration_pct": 19.0
+          "max_concentration_pct": 500.0
         },
         "fsm_open": {
           "idempotency_window_sec": 60
@@ -4318,7 +4326,7 @@
           "mean_reversion"
         ],
         "BTCUSDT": [
-          "aurora"
+          "mean_reversion"
         ]
       },
       "arbitration": {
@@ -4331,6 +4339,42 @@
         "logging": {
           "rejected_why_prefix": "ARBITRATION_REJECT",
           "log_level": "INFO"
+        }
+      }
+    }
+  },
+  "config/aurora/backtest_override.yaml": {
+    "keys": [
+      "domains",
+      "trading"
+    ],
+    "raw": {
+      "domains": {
+        "feature_engineering": {
+          "warmup": {
+            "enforcement_mode": "warn_only"
+          }
+        },
+        "decision_making": {
+          "risk_skew": {
+            "max_skew_sec": 999999
+          },
+          "directional_sanity": {
+            "enabled": false
+          },
+          "price_motion_sanity": {
+            "enabled": false
+          }
+        }
+      },
+      "trading": {
+        "tca_prefs": {
+          "max_slippage_bps": 50
+        },
+        "risk": {
+          "soft_limits": {
+            "mode": "off"
+          }
         }
       }
     }
@@ -4466,7 +4510,7 @@
             "enabled": true,
             "anti_flat_sigma": 0.5,
             "anti_fomo_sigma": 4.0,
-            "motion_window_sec": 900
+            "motion_window_sec": 300
           },
           "reentry_cooldown_sec": 60,
           "feature_neutrals": {
@@ -4562,6 +4606,18 @@
               "value": 0.09
             },
             "cooldown_sec": null,
+            "volatility_entry_logic": {
+              "enabled": true,
+              "regime_multipliers": {
+                "HIGH_VOLATILITY": 0.5,
+                "LOW_VOLATILITY": 0.1,
+                "MEAN_REVERSION": 0.25,
+                "TREND_UP": 0.2,
+                "TREND_DOWN": 0.2,
+                "UNCERTAIN": 0.2,
+                "DEFAULT": 0.2
+              }
+            },
             "timeframe_sec": null
           },
           "SOLUSDT": {
@@ -4623,137 +4679,18 @@
               "value": 0.09
             },
             "cooldown_sec": null,
-            "timeframe_sec": null
-          },
-          "DOGEUSDT": {
-            "enabled": true,
-            "position_mode": "STRICT",
-            "weights": {
-              "ema_bias": 0.15,
-              "volume_spike": 0.15,
-              "macro_resid": 0.1,
-              "obi": 0.15,
-              "tfi": 0.12,
-              "volatility_state": 0.08,
-              "depth_imbalance": -0.15,
-              "delta_price": 0.15
-            },
-            "liquidity_gate": {
+            "volatility_entry_logic": {
               "enabled": true,
-              "kappa_min": 0.1,
-              "kappa_max": 1.0,
-              "failsafe_qty_check": true
+              "regime_multipliers": {
+                "HIGH_VOLATILITY": 0.6,
+                "LOW_VOLATILITY": 0.1,
+                "MEAN_REVERSION": 0.3,
+                "TREND_UP": 0.2,
+                "TREND_DOWN": 0.2,
+                "UNCERTAIN": 0.25,
+                "DEFAULT": 0.2
+              }
             },
-            "side_bias": {
-              "penalty_factor": 0.3,
-              "window_sec": 300,
-              "target_ratio": 0.6
-            },
-            "regime_thresholds": {
-              "HIGH_VOLATILITY": 1.5,
-              "LOW_VOLATILITY": 0.85,
-              "MEAN_REVERSION": 0.9,
-              "DEFAULT": 1.0
-            },
-            "regime_sizing": {
-              "HIGH_VOLATILITY": 0.4,
-              "LOW_VOLATILITY": 1.5,
-              "MEAN_REVERSION": 1.2
-            },
-            "exit": {
-              "sl_pct": 0.0197,
-              "max_hold_sec": 1500
-            },
-            "take_profit": {
-              "tp_low_ratio": 0.5,
-              "tp_high_ratio": 1.0,
-              "partial_exit_pct": 0.6
-            },
-            "trailing_stop": {
-              "enabled": true,
-              "activation_pct": 0.015,
-              "trail_pct": 0.008,
-              "min_update_interval_sec": 5
-            },
-            "allowed_regimes": [
-              "FLAT_LOW",
-              "FLAT_NORMAL",
-              "FLAT_HIGH",
-              "LOW_VOLATILITY",
-              "MEAN_REVERSION"
-            ],
-            "execution": null,
-            "ema_clamp": null,
-            "signal_threshold": {
-              "enabled": true,
-              "value": 0.09
-            },
-            "cooldown_sec": null,
-            "timeframe_sec": null
-          },
-          "XRPUSDT": {
-            "weights": {
-              "ema_bias": 0.427,
-              "volume_spike": 0.385,
-              "macro_resid": 0.469,
-              "obi": 0.12,
-              "tfi": 0.402,
-              "volatility_state": 0.367,
-              "depth_imbalance": -0.392,
-              "delta_price": 0.028
-            },
-            "enabled": true,
-            "position_mode": "STRICT",
-            "liquidity_gate": {
-              "enabled": true,
-              "kappa_min": 0.1,
-              "kappa_max": 1.0,
-              "failsafe_qty_check": true
-            },
-            "side_bias": {
-              "penalty_factor": 0.4,
-              "window_sec": 600,
-              "target_ratio": 0.6
-            },
-            "regime_thresholds": {
-              "HIGH_VOLATILITY": 1.9,
-              "LOW_VOLATILITY": 0.95,
-              "DEFAULT": 1.0
-            },
-            "regime_sizing": {
-              "HIGH_VOLATILITY": 0.1,
-              "LOW_VOLATILITY": 1.7,
-              "MEAN_REVERSION": 0.8
-            },
-            "exit": {
-              "sl_pct": 0.0144,
-              "max_hold_sec": 1500
-            },
-            "take_profit": {
-              "tp_low_ratio": 0.5,
-              "tp_high_ratio": 1.0,
-              "partial_exit_pct": 0.5
-            },
-            "trailing_stop": {
-              "enabled": false,
-              "activation_pct": 0.02,
-              "trail_pct": 0.01,
-              "min_update_interval_sec": 5
-            },
-            "allowed_regimes": [
-              "TREND_DOWN",
-              "LOW_VOLATILITY",
-              "FLAT_LOW",
-              "FLAT_NORMAL",
-              "MEAN_REVERSION"
-            ],
-            "execution": null,
-            "ema_clamp": null,
-            "signal_threshold": {
-              "enabled": true,
-              "value": 0.09
-            },
-            "cooldown_sec": null,
             "timeframe_sec": null
           },
           "BTCUSDT": {
@@ -4826,6 +4763,18 @@
               "value": null
             },
             "cooldown_sec": null,
+            "volatility_entry_logic": {
+              "enabled": true,
+              "regime_multipliers": {
+                "HIGH_VOLATILITY": 0.4,
+                "LOW_VOLATILITY": 0.05,
+                "MEAN_REVERSION": 0.2,
+                "TREND_UP": 0.15,
+                "TREND_DOWN": 0.15,
+                "UNCERTAIN": 0.15,
+                "DEFAULT": 0.15
+              }
+            },
             "timeframe_sec": null
           }
         }
@@ -4839,14 +4788,13 @@
     "raw": {
       "mean_reversion": {
         "enabled": true,
-        "timeframe_sec": 180,
+        "timeframe_sec": 300,
         "allowed_regimes": [
           "FLAT_LOW",
           "FLAT_NORMAL",
           "FLAT_HIGH",
           "MEAN_REVERSION"
         ],
-        "emit_trade_intent_directly": false,
         "execution": {
           "entry_order_type": "MARKET",
           "entry_tif": null
@@ -4861,7 +4809,7 @@
           "rsi_overbought": 70,
           "min_bars": 25,
           "min_bb_width": 0.001,
-          "max_bb_width": 0.05,
+          "max_bb_width": 0.15,
           "sl_atr_mult": 1.5,
           "tp_to_mid": true,
           "cooldown_sec": 60
@@ -4898,17 +4846,17 @@
             "position_mode": "STRICT",
             "strategy": {
               "bb_window": 40,
-              "bb_num_std": 2.3,
+              "bb_num_std": 1.5,
               "min_bb_width": 0.006,
-              "entry_threshold": 0.05,
+              "entry_threshold": 0.2,
               "tp_to_mid": true,
-              "sl_atr_mult": null,
+              "sl_atr_mult": 2.0,
               "cooldown_sec": 0
             },
             "allowed_regimes": [
               "FLAT_LOW",
               "FLAT_NORMAL",
-              "MEAN_REVERSION"
+              "FLAT_HIGH"
             ],
             "risk": {
               "position_size_usd": 150
@@ -4923,7 +4871,7 @@
               "min_bb_width": 0.007,
               "entry_threshold": 0.05,
               "tp_to_mid": true,
-              "sl_atr_mult": null,
+              "sl_atr_mult": 2.0,
               "cooldown_sec": 165
             },
             "allowed_regimes": [
@@ -4984,7 +4932,7 @@
         "regime_sizing": {
           "FLAT_LOW": {
             "sizing_mult": 0.8,
-            "stop_mult": 0.6,
+            "stop_mult": 1.0,
             "target_mult": 0.8
           },
           "FLAT_NORMAL": {
@@ -7352,7 +7300,7 @@
       ],
       "exports": [
         {
-          "op": "DEC",
+          "op": "EVT",
           "verb": "RISK_ASSESSMENT_COMPLETED",
           "to": "decision_making",
           "description": "Risk evaluation with recommended position size and TP/SL levels"
@@ -7366,7 +7314,7 @@
       ],
       "critical_paths": [
         "feature_engineering -> risk_management (EVT:FEATURES_CALCULATED)",
-        "risk_management -> decision_making (DEC:RISK_ASSESSMENT_COMPLETED)"
+        "risk_management -> decision_making (EVT:RISK_ASSESSMENT_COMPLETED)"
       ],
       "risk_parameters": [
         {
@@ -7471,7 +7419,7 @@
           "description": "Market features for decision making"
         },
         {
-          "op": "DEC",
+          "op": "EVT",
           "verb": "RISK_ASSESSMENT_COMPLETED",
           "from": "risk_management",
           "description": "Risk evaluation result with position sizing"
@@ -7499,7 +7447,7 @@
       ],
       "critical_paths": [
         "feature_engineering -> decision_making (EVT:FEATURES_CALCULATED)",
-        "risk_management -> decision_making (DEC:RISK_ASSESSMENT_COMPLETED)",
+        "risk_management -> decision_making (EVT:RISK_ASSESSMENT_COMPLETED)",
         "decision_making -> aurora_bridge (EVT:TRADE_INTENT_PROPOSED)"
       ],
       "qos_policies": [
@@ -7675,7 +7623,7 @@
           "verb": "OPEN",
           "owner": "execution_position",
           "status": "active",
-          "schema": null,
+          "schema": "apps/reference/domains/execution_position/schemas/cmd_open_v1.json",
           "since": "2026-01-08"
         },
         {
@@ -7723,7 +7671,7 @@
           "verb": "OPEN",
           "owner": "execution_position",
           "status": "active",
-          "schema": null,
+          "schema": "apps/reference/domains/execution_position/schemas/dec_open_v1.json",
           "since": "2026-01-08"
         },
         {
@@ -8083,7 +8031,7 @@
           "verb": "TRADE_INTENT_PROPOSED",
           "owner": "decision_making",
           "status": "active",
-          "schema": null,
+          "schema": "apps/reference/domains/decision_making/schemas/trade_intent_v1.json",
           "since": "2026-01-08"
         },
         {

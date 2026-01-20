@@ -52,7 +52,7 @@ mean_reversion:
     
     # BB width filters (avoid too tight/wide ranges)
     min_bb_width: 0.001        # 0.1%
-    max_bb_width: 0.05         # 5%
+    max_bb_width: 0.15         # 15%
     
     # Stop loss (ATR multiple)
     sl_atr_mult: 1.5
@@ -101,14 +101,14 @@ mean_reversion:
       position_mode: "STRICT"
       strategy:
         bb_window: 40
-        bb_num_std: 2.3
+        bb_num_std: 1.5
         min_bb_width: 0.006
-        entry_threshold: 0.05
+        entry_threshold: 0.20
         tp_to_mid: true      # Default behavior
         sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
         cooldown_sec: 0      # No cooldown
       # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "MEAN_REVERSION"]
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       risk:
         position_size_usd: 150
     

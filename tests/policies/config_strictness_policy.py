@@ -23,6 +23,8 @@ class ConfigStrictnessPolicy:
         False,              # Boolean flags defaulting to False are usually safe (disable feature)
         0.0,                # Floating point zeros (confidence, etc.) are safe
         "EMPTY_DICT",       # Empty dict literal {} used for recursive traversal
+        10000,              # BAR_TTL_MS fallback when sys_md not configured (T2B safe default)
+        "received",         # bar_event_age_mode sentinel
     ]
     
     # Forbidden patterns description for error messages

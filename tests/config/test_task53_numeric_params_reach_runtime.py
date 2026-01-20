@@ -337,7 +337,7 @@ class TestMeanReversionConfigsReachRuntime:
         
         mr = config.strategies.mean_reversion
         assert mr.enabled is True
-        assert mr.timeframe_sec == 180
+        assert mr.timeframe_sec == 300
         
         # DOGE specific overrides
         doge = mr.assets.get("DOGEUSDT")
@@ -357,8 +357,8 @@ class TestMeanReversionConfigsReachRuntime:
         assert xrp.strategy.cooldown_sec == 165
         assert xrp.risk.position_size_usd == 150.0
         
-        # XRP has null sl_atr_mult - should fall back to global 1.5
-        assert xrp.strategy.sl_atr_mult is None
+        # XRP has sl_atr_mult = 2.0 (FIX: was null, now uses industry standard 2.0x ATR)
+        assert xrp.strategy.sl_atr_mult == 2.0
         assert mr.strategy.sl_atr_mult == 1.5
 
     def test_mr_handler_uses_per_asset_overrides(self, tmp_path: Path) -> None:
@@ -393,5 +393,5 @@ class TestMeanReversionConfigsReachRuntime:
             assert xrp_strat.config.tp_to_mid is True
             assert xrp_strat.config.bb_num_std == 2.5
             assert xrp_strat.config.cooldown_sec == 165
-            # sl_atr_mult should fall back to 1.5 (global, since XRP has null)
-            assert xrp_strat.config.sl_atr_mult == Decimal("1.5")
+            # sl_atr_mult = 2.0 (FIX: was null, now uses industry standard 2.0x ATR)
+            assert xrp_strat.config.sl_atr_mult == Decimal("2.0")

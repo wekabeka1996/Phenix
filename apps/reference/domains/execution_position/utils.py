@@ -135,7 +135,13 @@ def validate_anti_2021(
 
 
 def generate_client_order_id(
-    prefix: str, decision_id: str, extra: str | None = None, *, max_len: int = 32, config: Optional[Any] = None
+    prefix: str,
+    decision_id: str,
+    extra: str | None = None,
+    *,
+    idempotent_key: str | None = None,
+    max_len: int = 32,
+    config: Optional[Any] = None,
 ) -> str:
     """
     Створює короткий детермінований clientOrderId (Binance: <36 симв.).
@@ -148,9 +154,30 @@ def generate_client_order_id(
         except (AttributeError, TypeError):
             pass  # Use provided/default value
     
-    base = f"{prefix}:{decision_id}:{extra or ''}:{int(time.time() * 1000)}"
-    h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
-    cid = f"{prefix}-{h}"
+    role_set = {"ENTRY", "SL", "TP", "CLOSE"}
+
+    # Deterministic mode:
+    # - If idempotent_key is explicitly provided, derive a stable clientOrderId from it.
+    # - Also support stable IDs for legacy callers that pass (role, rid, extra=symbol).
+    if idempotent_key is not None:
+        role = str(prefix)
+        symbol = str(decision_id)
+        raw_str = f"{idempotent_key}|{role}|{symbol}"
+        hash_part = hashlib.md5(raw_str.encode("utf-8")).hexdigest()[:12]
+        cid = f"{role}-{hash_part}"
+    elif extra is not None and str(prefix).upper() in role_set:
+        role = str(prefix).upper()
+        stable_key = str(decision_id)
+        symbol = str(extra)
+        raw_str = f"{stable_key}|{role}|{symbol}"
+        hash_part = hashlib.md5(raw_str.encode("utf-8")).hexdigest()[:12]
+        cid = f"{role}-{hash_part}"
+    else:
+        # Fallback: time-based uniqueness (non-deterministic across restarts).
+        base = f"{prefix}:{decision_id}:{extra or ''}:{int(time.time() * 1000)}"
+        h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
+        cid = f"{prefix}-{h}"
+
     if len(cid) > max_len:
         cid = cid[:max_len]
     # тільки дозволені символи

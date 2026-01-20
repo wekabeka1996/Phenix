@@ -10,10 +10,12 @@ Shadow-mode: no live API calls, all I/O via ACL stub.
 
 from __future__ import annotations
 
-import time
 import logging
 import uuid
 from decimal import Decimal, InvalidOperation
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 from enum import Enum
 from typing import Dict, Optional, Any
 
@@ -207,7 +209,7 @@ class OpenFlowFSM:
 
     def _cleanup_idempotency_store(self):
         """Remove expired keys from the idempotency store."""
-        now = time.time()
+        now = get_clock().now_sec()
         expired_keys = [
             key
             for key, timestamp in self.idempotency_store.items()
@@ -234,7 +236,7 @@ class OpenFlowFSM:
             # Record CMD:OPEN
             if self.metrics_collector:
                 self.metrics_collector.record_cmd_open()
-            timestamp_cmd = time.time()
+            timestamp_cmd = get_clock().now_sec()
 
             # 0. Idempotency Check
             self._cleanup_idempotency_store()
@@ -246,7 +248,7 @@ class OpenFlowFSM:
                     )
                     return self._reject(msg, "IDEMPOTENCY_FAIL", "duplicate command")
 
-                self.idempotency_store[idempotent_key] = time.time()
+                self.idempotency_store[idempotent_key] = get_clock().now_sec()
 
             # PANIC-INT: Panic killswitch gate (fail-closed).
             # Block ALL new CMD:OPEN when panic_killswitch is explicitly True.
@@ -386,7 +388,7 @@ class OpenFlowFSM:
                         )
 
                 # Guard: cooldown
-                now = time.time()
+                now = get_clock().now_sec()
                 if self.guard_enabled and now - self.last_open_ts < self.cooldown_sec:
                     self.logger.warning(
                         f"GUARD_REJECT: Cooldown active - elapsed={now - self.last_open_ts:.2f}s, required={self.cooldown_sec}s, rid={msg.rid}"
@@ -443,7 +445,7 @@ class OpenFlowFSM:
 
                 # Record metrics
                 if self.metrics_collector:
-                    ms = (time.time() - timestamp_cmd) * 1000
+                    ms = (get_clock().now_sec() - timestamp_cmd) * 1000
                     self.metrics_collector.record_time_to_open(ms)
                     self.metrics_collector.record_open_success()
 

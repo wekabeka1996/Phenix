@@ -59,8 +59,9 @@ def mock_config():
     
     # Add instruments to assets (AuroraHandler looks here)
     # Explicitly set Optional overrides to None to allow fallback
+    from types import SimpleNamespace as _SN
     cfg.strategies.aurora.assets = {
-        "ETHUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None)
+        "ETHUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None, volatility_entry_logic=_SN(enabled=False))
     }
     cfg.instruments = {}
     return cfg
@@ -78,6 +79,9 @@ def test_holding_period_suppress_flip(mock_config):
     )
     handler.strategies_registry = None
     handler.timeframe_sec = 60
+    handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
     
     # MOCK GUARDS
     handler._is_symbol_enabled = MagicMock(return_value=True)
@@ -88,15 +92,18 @@ def test_holding_period_suppress_flip(mock_config):
     
     symbol = "ETHUSDT"
     event = {
-        "symbol": symbol, 
-        "features": {"price": 100}, 
+        "symbol": symbol,
+        "features": {"price": 100, "atr": 10},
         "tf_sec": 60,
-        "warmup": {"full_ready": True}
+        "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now()),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
     }
-    
+
     # 1. Enter LONG
     state = handler._symbol_states[symbol]
-    
+    state.last_regime_heartbeat_ms = int(clock.now() * 1000)
+
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="BUY",
         score=Decimal("0.5"),
@@ -107,16 +114,17 @@ def test_holding_period_suppress_flip(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    handler.on_process_strategy(event)
+
     # Verify entry tracked
     assert state.position_side == "buy"
     assert state.entry_timestamp == 2000.0
-    
+
     # 2. Advance 5s (min 10s)
     clock.advance(5.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     emit_mock.reset_mock()
-    
+
     # 3. Attempt FLIP to SELL
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="SELL",
@@ -128,24 +136,26 @@ def test_holding_period_suppress_flip(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     # Verify Suppressed (Force Hold) -> Signal BUY emitted (override)
     # c.args[0] is type, c.args[1] is payload
     calls = [c.args[1] for c in emit_mock.call_args_list if c.args[0] == "EVT:STRATEGY_SIGNAL_PRODUCED"]
     assert len(calls) == 1
     payload = calls[0]
     assert payload["side"] == "BUY", f"Expected override to BUY, got {payload['side']}" # Forced Hold
-    
+
     # Also verify BLOCK event was emitted for observability
     block_calls = [c.args[1] for c in emit_mock.call_args_list if c.args[0] == "EVT:STRATEGY_DECISION_BLOCKED"]
     assert len(block_calls) == 1
     assert block_calls[0]["reason_code"] == "HOLDING_PERIOD_ACTIVE"
-    
+
     # 4. Advance +6s (Total 11s > 10s)
     clock.advance(6.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     emit_mock.reset_mock()
-    
+
     # 5. Attempt FLIP again
     # Handler mutated the previous result mock to BUY, so we must provide a fresh SELL mock
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
@@ -158,8 +168,9 @@ def test_holding_period_suppress_flip(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     # Verify Allowed
     calls = [c.args[1] for c in emit_mock.call_args_list if c.args[0] == "EVT:STRATEGY_SIGNAL_PRODUCED"]
     assert len(calls) == 1
@@ -172,6 +183,7 @@ def test_holding_period_emergency_exit(mock_config):
     handler = AuroraHandler(config=mock_config, emit_fn=emit_mock, monotonic_fn=clock.now, wall_time_fn=clock.now)
     handler.strategies_registry = None
     handler.timeframe_sec = 60
+    handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
     
     # MOCK GUARDS
     handler._is_symbol_enabled = MagicMock(return_value=True)
@@ -181,15 +193,17 @@ def test_holding_period_emergency_exit(mock_config):
     
     symbol = "ETHUSDT"
     event = {
-        "symbol": symbol, 
-        "features": {"price": 100}, 
+        "symbol": symbol,
+        "features": {"price": 100, "atr": 10},
         "tf_sec": 60,
-        "warmup": {"full_ready": True}
+        "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now()),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
     }
-    
+
     # Enter LONG
     state = handler._symbol_states[symbol]
-    
+
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="BUY",
         score=Decimal("0.5"),
@@ -200,15 +214,16 @@ def test_holding_period_emergency_exit(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    handler.on_process_strategy(event)
+
     # Verify Entry
     assert state.position_side == "buy"
-    
+
     # Advance 2s (< 10s)
     clock.advance(2.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     emit_mock.reset_mock()
-    
+
     # Attempt EXIT with HIGH SCORE (Emergency)
     # Score 0.95 >= 0.9 threshold
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
@@ -221,8 +236,9 @@ def test_holding_period_emergency_exit(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     # Verify State Cleared (Exit happened)
     assert state.position_side == ""
     assert state.last_exit_timestamp == 2002.0
@@ -240,16 +256,21 @@ def test_no_mutation_of_scoring_result_when_flip_suppressed(mock_config):
         wall_time_fn=clock.now,
     )
     handler.timeframe_sec = 60
+    handler._symbol_states["ETHUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
 
     handler._is_symbol_enabled = MagicMock(return_value=True)
     handler.scoring_kernel_cls = MagicMock()
 
     symbol = "ETHUSDT"
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    
     event = {
         "symbol": symbol,
-        "features": {"price": 100},
+        "features": {"price": 100, "atr": 10},
         "tf_sec": 60,
         "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now()),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
     }
 
     # Enter BUY to establish position + entry_timestamp
@@ -259,10 +280,11 @@ def test_no_mutation_of_scoring_result_when_flip_suppressed(mock_config):
         thr_buy=Decimal("0.1"),
         thr_sell=Decimal("0.1"),
     )
-    handler.on_features_calculated(event)
+    handler.on_process_strategy(event)
 
     # Advance less than holding min_duration, attempt flip SELL
     clock.advance(5.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     emit_mock.reset_mock()
 
     result = ScoringResult(
@@ -273,7 +295,8 @@ def test_no_mutation_of_scoring_result_when_flip_suppressed(mock_config):
     )
     handler.scoring_kernel_cls.compute.return_value = result
 
-    handler.on_features_calculated(event)
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
 
     # Handler should FORCE HOLD in emission, but must not mutate the result object.
     assert result.side == "SELL"

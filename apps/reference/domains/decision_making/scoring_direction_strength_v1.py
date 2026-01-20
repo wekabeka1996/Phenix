@@ -65,7 +65,16 @@ def _apply_signed_v2_transforms(
 
         neutral = decimal.Decimal(str(neutrals[feat]))
         raw = out[feat]
-        x = _to_decimal(raw)
+
+        # Preserve missing/malformed values (e.g., None) so downstream fail-closed
+        # logic can treat them as missing instead of silently coercing to 0.
+        if raw is None:
+            continue
+
+        try:
+            x = decimal.Decimal(str(raw))
+        except Exception:
+            continue
 
         # [0,1] features with neutral 0.5: rescale to make centered component span [-1,1].
         if neutral == decimal.Decimal("0.5"):

@@ -6,7 +6,15 @@ from typing import Any, Optional
 
 
 def _d(v: Any) -> Decimal:
-    return Decimal(str(v))
+    if v is None:
+        raise ValueError("cannot convert None to Decimal")
+    try:
+        d = Decimal(str(v))
+    except Exception as e:
+        raise ValueError(f"cannot convert to Decimal: {v!r}") from e
+    if not d.is_finite():
+        raise ValueError(f"non-finite Decimal: {v!r}")
+    return d
 
 
 def floor_to_step(qty: Decimal, step_size: Decimal) -> Decimal:

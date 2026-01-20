@@ -14,15 +14,10 @@
       "op": "DEC",
       "verb": "CANCEL",
       "token": "DEC:CANCEL",
-      "total_occurrences": 1,
+      "total_occurrences": 0,
       "suggested_owner": "unknown",
       "candidates": [],
-      "top_files": [
-        {
-          "path": "apps/reference/adapters/simulated_adapter.py",
-          "count": 1
-        }
-      ]
+      "top_files": []
     },
     {
       "op": "EVT",

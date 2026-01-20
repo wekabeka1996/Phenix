@@ -800,6 +800,95 @@ class ConfigLoader:
                 f"Missing: {missing_sorted}{more}"
             )
 
+    def _apply_backtest_overlay(self, resolved_config: Dict[str, Any]) -> None:
+        """Apply backtest-specific configuration overlay (Configuration Overlay Pattern).
+
+        CFG-BACKTEST-OVERLAY-01:
+        This method loads config/aurora/backtest_override.yaml and deep-merges it
+        ON TOP of the resolved config when trading_mode == "backtest".
+
+        This allows:
+        - Production SSOT files (domains.yaml, trading.yaml) to remain strict
+        - Backtest-specific relaxations to be isolated in a single overlay file
+        - Clear separation between LIVE safety and simulation convenience
+
+        SAFETY: This overlay is ONLY applied for backtest mode, never for live/production.
+        """
+        # Detect backtest mode from multiple sources
+        is_backtest = False
+
+        # Check root trading_mode
+        root_mode = resolved_config.get("trading_mode")
+        if isinstance(root_mode, str) and root_mode.strip().lower() == "backtest":
+            is_backtest = True
+
+        # Check trading.mode (secondary, but respected if set)
+        trading_block = resolved_config.get("trading")
+        if isinstance(trading_block, dict):
+            trading_mode = trading_block.get("mode")
+            if isinstance(trading_mode, str) and trading_mode.strip().lower() == "backtest":
+                is_backtest = True
+
+        if not is_backtest:
+            LOG.debug("[overlay] Not backtest mode, skipping backtest_override.yaml")
+            return
+
+        # Load overlay file (optional - graceful if missing)
+        overlay_path = self.config_dir / "backtest_override.yaml"
+        if not overlay_path.exists():
+            LOG.info("[overlay] backtest_override.yaml not found, using base config only")
+            return
+
+        try:
+            with open(overlay_path, "r", encoding="utf-8-sig", errors="replace") as f:
+                overlay_data = yaml.safe_load(f)
+
+            if not isinstance(overlay_data, dict) or not overlay_data:
+                LOG.warning("[overlay] backtest_override.yaml is empty or invalid, skipping")
+                return
+
+            # Deep-merge overlay into resolved_config
+            LOG.warning(
+                "⚠️ BACKTEST OVERRIDE APPLIED: Loaded settings from backtest_override.yaml. "
+                "These settings are NOT safe for LIVE trading!"
+            )
+
+            # Apply overlay sections
+            if "domains" in overlay_data and isinstance(overlay_data["domains"], dict):
+                domains_block = resolved_config.get("domains")
+                if isinstance(domains_block, dict):
+                    deep_merge(
+                        overlay_data["domains"],
+                        domains_block,
+                        _provenance=self.provenance_map,
+                        _source_name="backtest_override.yaml",
+                    )
+                    LOG.info("[overlay] Applied domains overrides from backtest_override.yaml")
+
+            if "trading" in overlay_data and isinstance(overlay_data["trading"], dict):
+                trading_block = resolved_config.get("trading")
+                if isinstance(trading_block, dict):
+                    deep_merge(
+                        overlay_data["trading"],
+                        trading_block,
+                        _provenance=self.provenance_map,
+                        _source_name="backtest_override.yaml",
+                    )
+                    LOG.info("[overlay] Applied trading overrides from backtest_override.yaml")
+
+            # Log what was applied for debugging
+            for section_key in overlay_data:
+                if section_key not in ("domains", "trading"):
+                    LOG.warning(
+                        f"[overlay] Unexpected section '{section_key}' in backtest_override.yaml - ignored"
+                    )
+
+        except Exception as e:
+            LOG.error(f"[overlay] Failed to load backtest_override.yaml: {e}")
+            raise ConfigContractError(
+                path="backtest_override.yaml",
+                why=f"Failed to parse backtest overlay: {e}",
+            )
 
     def load_config(
         self,
@@ -1024,6 +1113,13 @@ class ConfigLoader:
 
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)
+
+        # =========================================================================
+        # CFG-BACKTEST-OVERLAY-01: Apply backtest overlay (if in backtest mode)
+        # =========================================================================
+        # This MUST happen after env resolution but BEFORE mode overrides,
+        # so backtest_override.yaml values take precedence over base config.
+        self._apply_backtest_overlay(resolved_config)
 
         # Apply mode-specific decision overrides
         self._resolve_mode_overrides(resolved_config)

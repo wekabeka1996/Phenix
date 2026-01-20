@@ -25,12 +25,14 @@ Usage:
 from __future__ import annotations
 
 import logging
-import time
 from collections import defaultdict
 from dataclasses import asdict
 from decimal import Decimal
 from threading import Lock
 from typing import Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 
 # Re-use existing Bar model from FE (single source of truth for Bar structure)
 from apps.reference.domains.feature_engineering.bar_resampler import Bar
@@ -124,7 +126,7 @@ class BarAggregator:
             List of completed bars (one per timeframe that closed)
         """
         if ts_ms is None:
-            ts_ms = int(time.time() * 1000)
+            ts_ms = get_clock().now_ms()
         
         completed = []
         

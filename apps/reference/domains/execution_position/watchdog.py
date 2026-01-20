@@ -7,10 +7,12 @@ Provides idempotent cancellation for timed-out orders.
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Set, Any, Callable
 from enum import Enum
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 
 from apps.reference.utils.accessors import dget
 
@@ -104,7 +106,7 @@ class OrderTimeoutWatchdog:
 
         Returns True if request is allowed, False if throttled.
         """
-        current_time_ms = int(time.time() * 1000)
+        current_time_ms = get_clock().now_ms()
         window_start = current_time_ms // 1000 * 1000  # Current second window
 
         # Reset counter if we're in a new second
@@ -184,7 +186,7 @@ class OrderTimeoutWatchdog:
             fill_ttl_override_ms: If provided, overrides global fill_ttl_ms for this order.
                                   Used for pending entry TTL based on timeframe.
         """
-        deadline_ms = int(time.time() * 1000) + self.ack_ttl_ms
+        deadline_ms = get_clock().now_ms() + self.ack_ttl_ms
 
         deadline = OrderDeadline(
             order_id=order_id,
@@ -212,7 +214,7 @@ class OrderTimeoutWatchdog:
 
         # EP-01.3-INT: Use per-order fill TTL if provided, else global
         fill_ttl = deadline.fill_ttl_override_ms if deadline.fill_ttl_override_ms else self.fill_ttl_ms
-        fill_deadline_ms = int(time.time() * 1000) + fill_ttl
+        fill_deadline_ms = get_clock().now_ms() + fill_ttl
         deadline.deadline_ms = fill_deadline_ms
         deadline.timeout_type = OrderTimeoutType.FILL_TIMEOUT
 
@@ -254,7 +256,7 @@ class OrderTimeoutWatchdog:
 
     async def _check_timeouts(self):
         """Check all tracked orders for timeouts."""
-        current_time_ms = int(time.time() * 1000)
+        current_time_ms = get_clock().now_ms()
 
         # Check pending orders (ACK timeout)
         expired_pending = [
@@ -294,7 +296,7 @@ class OrderTimeoutWatchdog:
             if not tracked_order_ids:
                 return
 
-            current_time_ms = int(time.time() * 1000)
+            current_time_ms = get_clock().now_ms()
 
             # Poll each tracked order individually
             for order_id in tracked_order_ids:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+import pytest
 
+from apps.reference.core.time import MockClock, reset_clock, set_clock
 from vfoundation.core.protocol import Message
 
 
@@ -39,25 +40,33 @@ def _cmd_open(rid: str = "rid-open", symbol: str = "BTCUSDT") -> Message:
     )
 
 
-def test_execpos_blocks_open_during_global_cooldown_after_close(fsm_harness) -> None:
+@pytest.fixture
+def mock_clock() -> MockClock:
+    clock = MockClock(start_ms=1_000_000)
+    set_clock(clock)
+    yield clock
+    reset_clock()
+
+
+def test_execpos_blocks_open_during_global_cooldown_after_close(fsm_harness, mock_clock) -> None:
     fsm, _bus, _cfg = fsm_harness
 
     # Position is open in snapshot.
-    with patch("apps.reference.domains.execution_position.fsm.time.time", return_value=1000.0):
-        fsm.handle(
-            _portfolio_evt(
-                [{"symbol": "BTCUSDT", "positionAmt": "1.0"}],
-                positions_last_ts_ms=1_000_000,
-            )
+    mock_clock.set_time_ms(1_000_000)
+    fsm.handle(
+        _portfolio_evt(
+            [{"symbol": "BTCUSDT", "positionAmt": "1.0"}],
+            positions_last_ts_ms=1_000_000,
         )
+    )
 
     # Next snapshot: position disappears => close detected at t=1000.
-    with patch("apps.reference.domains.execution_position.fsm.time.time", return_value=1000.0):
-        fsm.handle(_portfolio_evt([], positions_last_ts_ms=1_000_000))
+    mock_clock.set_time_ms(1_000_000)
+    fsm.handle(_portfolio_evt([], positions_last_ts_ms=1_000_000))
 
     # Try to open at t=1005 (< 10s cooldown) => blocked.
-    with patch("apps.reference.domains.execution_position.fsm.time.time", return_value=1005.0):
-        out = fsm.handle(_cmd_open(rid="rid-open-1"))
+    mock_clock.set_time_ms(1_005_000)
+    out = fsm.handle(_cmd_open(rid="rid-open-1"))
 
     assert out is not None
     assert out.op == "ERR" and out.verb == "OPEN"
@@ -65,25 +74,25 @@ def test_execpos_blocks_open_during_global_cooldown_after_close(fsm_harness) -> 
     assert out.pld.get("reason") == "cooldown_after_close active"
 
 
-def test_execpos_allows_open_after_global_post_close_cooldown_expires(fsm_harness) -> None:
+def test_execpos_allows_open_after_global_post_close_cooldown_expires(fsm_harness, mock_clock) -> None:
     fsm, _bus, _cfg = fsm_harness
 
-    with patch("apps.reference.domains.execution_position.fsm.time.time", return_value=1000.0):
-        fsm.handle(
-            _portfolio_evt(
-                [{"symbol": "BTCUSDT", "positionAmt": "1.0"}],
-                positions_last_ts_ms=1_000_000,
-            )
+    mock_clock.set_time_ms(1_000_000)
+    fsm.handle(
+        _portfolio_evt(
+            [{"symbol": "BTCUSDT", "positionAmt": "1.0"}],
+            positions_last_ts_ms=1_000_000,
         )
-        fsm.handle(_portfolio_evt([], positions_last_ts_ms=1_000_000))
+    )
+    fsm.handle(_portfolio_evt([], positions_last_ts_ms=1_000_000))
 
     # Refresh portfolio timestamp so exposure guard isn't stale at open time.
-    with patch("apps.reference.domains.execution_position.fsm.time.time", return_value=1011.0):
-        fsm.handle(_portfolio_evt([], positions_last_ts_ms=1_011_000))
+    mock_clock.set_time_ms(1_011_000)
+    fsm.handle(_portfolio_evt([], positions_last_ts_ms=1_011_000))
 
     # After cooldown, open returns DEC:OPEN (shadow-mode doesn't execute).
-    with patch("apps.reference.domains.execution_position.fsm.time.time", return_value=1011.0):
-        out = fsm.handle(_cmd_open(rid="rid-open-2"))
+    mock_clock.set_time_ms(1_011_000)
+    out = fsm.handle(_cmd_open(rid="rid-open-2"))
 
     assert out is not None
     assert out.op == "DEC" and out.verb == "OPEN"

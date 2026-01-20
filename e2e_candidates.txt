@@ -1,0 +1,13 @@
+./tests/e2e/conftest.py
+./tests/e2e/test_e2e_bar_to_order_placement.py
+./tests/e2e/test_s5_retry_scheduler_bounded.py
+./tests/e2e/test_e2e_bridge_intent_to_execpos_dec_open.py
+./tests/e2e/test_s1_warmup_gate.py
+./tests/e2e/test_s2_macro_sync_async.py
+./tests/e2e/test_s6_intent_order_idempotency.py
+./tests/e2e/test_s4_regime_uncertain_ohlc.py
+./tests/e2e/test_s3_volume_spike_dt.py
+./tests/e2e/test_e2e_dm_directional_sanity_blocks_long_sol_downtrend.py
+./tests/integration/test_mean_reversion_runtime_e2e_chain.py
+./tests/integration/test_mean_reversion_runtime_e2e_chain_prod_sizing.py
+./tools/batch_replace_tests.py

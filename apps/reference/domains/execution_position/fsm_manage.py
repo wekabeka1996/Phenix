@@ -11,9 +11,11 @@ Shadow-mode: decisions only, no live modifications.
 from __future__ import annotations
 
 import logging
-import time
 from decimal import Decimal, ROUND_DOWN
 from enum import Enum
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 from typing import Dict, Any, Optional, Union
 
 from vfoundation.core.protocol import Message
@@ -402,10 +404,10 @@ class ManageFlowFSM:
         try:
             pld = msg.pld or {}
             ts_value = pld.get("ts") if isinstance(pld, dict) else None
-            now_ts = int(ts_value) if ts_value else int(time.time() * 1000)
+            now_ts = int(ts_value) if ts_value else get_clock().now_ms()
         except (ValueError, TypeError, AttributeError) as e:
             LOG.debug(f"Failed to parse timestamp from message: {e}")
-            now_ts = int(time.time() * 1000)
+            now_ts = get_clock().now_ms()
 
         if self.state == ManageState.WAIT_MODE:
             if now_ts < self._wait_mode_until_ts:
@@ -503,7 +505,7 @@ class ManageFlowFSM:
                 self.position_entry_price = price
                 self.position_side = side
                 self.symbol = symbol  # Phase 0: track symbol for per-instrument config
-                self.position_open_ts = time.time()
+                self.position_open_ts = get_clock().now_sec()
             else:
                 # Average down (stub logic)
                 total_qty = self.position_qty + qty
@@ -527,7 +529,7 @@ class ManageFlowFSM:
 
         # PHASE A2: Anti-race check - skip if position is closing
         if self._closing_position:
-            elapsed_s = time.time() - self._closing_position_ts
+            elapsed_s = get_clock().now_sec() - self._closing_position_ts
             if elapsed_s < (self._anti_race_close_ms / 1000.0):  # configurable anti-race window
                 # Position close still in progress, skip bracket placement
                 LOG.info(
@@ -1036,9 +1038,9 @@ class ManageFlowFSM:
                             # Move to WAIT_MODE for configured number of bars
                             try:
                                 now_ts = int((msg.pld or {}).get("ts")) if (
-                                    msg.pld or {}).get("ts") else int(time.time() * 1000)
+                                    msg.pld or {}).get("ts") else get_clock().now_ms()
                             except Exception:
-                                now_ts = int(time.time() * 1000)
+                                now_ts = get_clock().now_ms()
                             # Direct access (fail-closed: missing emergency config → crash)
                             if not hasattr(self, "_bar_ms") or not hasattr(self, "_wait_mode_bars"):
                                 raise ValueError(
@@ -1072,7 +1074,7 @@ class ManageFlowFSM:
                 if trailing_action:
                     return trailing_action
 
-            now = time.time()
+            now = get_clock().now_sec()
             elapsed = now - self.position_open_ts
 
             # Phase A4: Max hold time watchdog (per-instrument config)
@@ -1210,7 +1212,7 @@ class ManageFlowFSM:
                 return None
 
             current_price_dec = Decimal(str(current_price))
-            now = time.time()
+            now = get_clock().now_sec()
 
             # Update peak price (high-water mark)
             if self.peak_price is None:
@@ -1297,7 +1299,7 @@ class ManageFlowFSM:
 
         Phase A3: CANCEL+NEW flow for trailing stop modification.
         """
-        self.last_trailing_ts = time.time()
+        self.last_trailing_ts = get_clock().now_sec()
         self.sl_price = new_sl_price
         self._metrics["fsm_trailing_adjustments"] += 1
 
@@ -1307,7 +1309,7 @@ class ManageFlowFSM:
 
         # Place new SL (will be handled by next message)
         position_id = f"{msg.rid}_{int(self.position_open_ts)}"
-        new_client_id = f"{position_id}_sl_trail_{int(time.time())}"
+        new_client_id = f"{position_id}_sl_trail_{int(get_clock().now_sec())}"
 
         # Use opposite side for SL order (to close position)
         new_sl_msg = self._emit_place_order(
@@ -1337,7 +1339,7 @@ class ManageFlowFSM:
             dst="execution_position",
             rid=msg.rid,
             why=why[:80],
-            idempotent_key=f"cancel_{order_id}_{int(time.time())}",
+            idempotent_key=f"cancel_{order_id}_{int(get_clock().now_sec())}",
             pld={
                 "orderId": order_id,
                 "symbol": symbol,
@@ -1357,7 +1359,7 @@ class ManageFlowFSM:
             dst="execution_position",
             rid=msg.rid,
             why=why[:80],
-            idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
+            idempotent_key=f"{msg.rid}_{why}_{int(get_clock().now_sec())}",
             pld=details,
             data_ref=msg.data_ref.copy() if msg.data_ref else [],  # Preserve WHY chain
         )

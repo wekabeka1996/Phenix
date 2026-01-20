@@ -133,9 +133,20 @@ class AuroraScoringKernel:
             why_chain=[],
             regime=regime_name,
         )
+
+        def _to_decimal_or_none(v: Any) -> Optional[decimal.Decimal]:
+            if v is None:
+                return None
+            if isinstance(v, decimal.Decimal):
+                return v if v.is_finite() else None
+            try:
+                d = decimal.Decimal(str(v))
+            except Exception:
+                return None
+            return d if d.is_finite() else None
         
         # 1. Normalize delta_price
-        dp_raw = decimal.Decimal(str(features.get("delta_price", 0)))
+        dp_raw = _to_decimal_or_none(features.get("delta_price")) or decimal.Decimal("0")
         if price > 0 and delta_price_cap_pct > 0:
             dp_pct = dp_raw / price
             if dp_pct > delta_price_cap_pct:
@@ -191,13 +202,18 @@ class AuroraScoringKernel:
         
         # 6. Calculate threshold factor from regime
         if regime_name and regime_name in regime_thresholds:
-            factor = decimal.Decimal(str(regime_thresholds[regime_name]))
+            factor = _to_decimal_or_none(regime_thresholds[regime_name])
         elif "DEFAULT" in regime_thresholds:
-            factor = decimal.Decimal(str(regime_thresholds["DEFAULT"]))
+            factor = _to_decimal_or_none(regime_thresholds["DEFAULT"])
         else:
             # Fail-closed: no factor means we can't proceed
             result.deferred = True
             result.defer_reason = f"MISSING_REGIME_THRESHOLD:{regime_name}"
+            return result
+
+        if factor is None or factor <= 0:
+            result.deferred = True
+            result.defer_reason = f"INVALID_REGIME_THRESHOLD_VALUE:{regime_name}"
             return result
         
         result.threshold_factor = factor

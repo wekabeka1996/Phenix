@@ -9,7 +9,7 @@ import pytest
 from vfoundation.core.protocol import Message
 
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
-from apps.reference.main import AuroraBridge
+# from apps.reference.main import AuroraBridge  # REMOVED: AuroraBridge does not exist
 
 
 pytest_plugins = ("tests.domains.execution_position.conftest",)
@@ -172,9 +172,14 @@ def test_vertical_flip_close_dm_to_bridge_to_execpos(monkeypatch, fsm_harness):
 
     import apps.reference.main as mainmod
 
-    bridge = AuroraBridge(fsm=bus, config=bridge_cfg)  # type: ignore[arg-type]
+    # bridge = AuroraBridge(fsm=bus, config=bridge_cfg)  # type: ignore[arg-type]
+    # No bridge needed: ExecPosFSM now listens to TRADE_INTENT_PROPOSED via LocalBus
+    exec_fsm.bus = bus  # Wire to test bus
+    exec_fsm.bus.listen("EVT:TRADE_INTENT_PROPOSED", exec_fsm._on_trade_intent_proposed)
+    
     monkeypatch.setattr(mainmod, "execution_position", exec_fsm)
-    monkeypatch.setattr(mainmod, "_bridge_instance", bridge)
+    # monkeypatch.setattr(mainmod, "_bridge_instance", bridge)
+    pass
 
     # 2) DecisionMaking flip orchestration will emit reduce-only close, then INTENT_DEFERRED.
     dm_cfg = _mk_dm_cfg(symbol=symbol, stale_ttl_sec=stale_ttl_sec)

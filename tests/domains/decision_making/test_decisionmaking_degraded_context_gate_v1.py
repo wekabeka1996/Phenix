@@ -1,4 +1,5 @@
 import logging
+from apps.reference.core.time.clock import LiveClock
 
 
 class _DummyDM:
@@ -6,6 +7,7 @@ class _DummyDM:
         self.logger = logging.getLogger("tests.dm.degraded_ctx_gate")
         self.emitted: list[dict] = []
         self.blocked: list[str] = []
+        self._clock = LiveClock()
 
         # Enable the gate explicitly.
         self._fail_closed_on_degraded_context = True

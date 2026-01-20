@@ -40,6 +40,7 @@ def test_e2e_trade_intent_proposed_leads_to_execpos_dec_open(monkeypatch, fsm_ha
             "instrument": "BTCUSDT",
             "side": "BUY",
             "order": {
+                "order_type": "MARKET",  # ORDER-POLICY-01: explicit order_type required
                 "qty": str(Decimal("0.01")),
                 "price": str(Decimal("1000")),
                 "price_ref": str(Decimal("1000")),

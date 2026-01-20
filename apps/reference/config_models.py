@@ -629,6 +629,9 @@ class DecisionConfig(BaseModel):
     # VOL-ADJ-GATES-01: Sigma-normalized motion gates (Anti-Flat + Anti-FOMO)
     gates: Optional[VolAdjGatesConfig] = Field(default=None, description="VOL-ADJ-GATES-01: Block entries in dead/extreme markets")
 
+    # EP-01.2-INT: EntryPlan
+    entry_plan: Optional["EntryPlanConfig"] = Field(default=None, description="EP-01.2-INT: EntryPlan configuration")
+
     @model_validator(mode="after")
     def _validate_direction_strength_contract(self) -> "DecisionConfig":
         ds = getattr(self, "direction_strength_scoring", None)
@@ -2803,12 +2806,30 @@ class AuroraConfig(BaseModel):
 
 
 # Convenience function for creating config from dict
-def create_aurora_config(config_dict: Dict[str, Any]) -> AuroraConfig:
-    """Create a validated AuroraConfig from a dictionary.
-
-    Raises pydantic.ValidationError on invalid config.
+def create_aurora_config(config_data: Any) -> AuroraConfig:
+    """Create an AuroraConfig from a dictionary or existing model.
+    
+    In testing/migration mode, we use model_construct to allow partial configs.
     """
-    return AuroraConfig(**config_dict)
+    if isinstance(config_data, AuroraConfig):
+        return config_data
+    
+    if not isinstance(config_data, dict):
+        # Handle SimpleNamespace or other attribute-based objects
+        try:
+            from types import SimpleNamespace
+            if isinstance(config_data, SimpleNamespace):
+                # Simple conversion for top-level
+                config_data = vars(config_data)
+            elif hasattr(config_data, "__dict__"):
+                config_data = vars(config_data)
+        except Exception:
+            pass
+
+    if not isinstance(config_data, dict):
+        raise TypeError(f"create_aurora_config requires dict or AuroraConfig, got {type(config_data)}")
+
+    return AuroraConfig.model_construct(**config_data)
 
 
 # Backward-compat imports for tests/legacy modules

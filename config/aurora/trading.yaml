@@ -49,14 +49,9 @@ trading:
       reset_time_utc: 00:00
     profile: balanced
     soft_limits:
-      # FIX-BACKTEST-SOFT-LIMITS-V2: DISABLED (mode=off) for backtest.
-      # ROOT CAUSE: MockBroker hardcodes leverage=1 when creating positions.
-      # BacktestEngine._emit_portfolio_update() calculates margin = notional / leverage.
-      # With leverage=1, a 0.73 BTC position @ $27k = $19,890 margin (should be ~$995 at 20x).
-      # SoftClipEngine sees $19,890 > $5,000 limit → clips order to $0 → BELOW_CLIP_MIN.
-      # SOLUTION: Disable soft_limits for backtest until MockBroker uses config leverage.
-      # LIVE: Set mode=clip with appropriate limits for production risk management!
-      mode: "off"
+      # LIVE SAFETY: Soft clipping for position sizing risk management.
+      # Backtest override: see config/aurora/backtest_override.yaml
+      mode: clip
       clip_min_notional_usdt: 10
       directional_ratio_max: 20.0
       side_exposure_usdt: 2000

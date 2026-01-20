@@ -10,9 +10,11 @@ Shadow-mode: decisions only, no live closures.
 
 from __future__ import annotations
 
-import time
 from enum import Enum
 from typing import Dict, Any, Optional
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 
 from vfoundation.core.protocol import Message
 
@@ -58,7 +60,7 @@ class CloseFlowFSM:
             self.state = CloseState.OPENED
             self.position_active = True
             self.position_open_ts = float(
-                position_data["open_ts"] if "open_ts" in position_data else time.time())
+                position_data["open_ts"] if "open_ts" in position_data else get_clock().now_sec())
 
             print(
                 f"[CloseFlowFSM] Hydrated state for position: open_ts={self.position_open_ts}"
@@ -100,7 +102,7 @@ class CloseFlowFSM:
             qty = float(pld["qty"] if "qty" in pld else 0)
             if qty > 0:
                 self.position_active = True
-                self.position_open_ts = time.time()
+                self.position_open_ts = get_clock().now_sec()
                 self.state = CloseState.OPENED
                 # Log the transition reason
                 transition_reason = (
@@ -145,7 +147,7 @@ class CloseFlowFSM:
             dst="execution_position",
             rid=msg.rid,
             why=why[:80],
-            idempotent_key=f"{msg.rid}_{why}_{int(time.time())}",
+            idempotent_key=f"{msg.rid}_{why}_{int(get_clock().now_sec())}",
             pld={
                 "reduce_only": True,
                 **({"symbol": symbol} if symbol else {}),

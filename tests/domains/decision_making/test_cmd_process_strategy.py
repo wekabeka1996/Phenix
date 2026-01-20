@@ -12,6 +12,7 @@ P1 Architecture: This test ensures the orchestrated decision cycle.
 """
 
 import pytest
+import time
 from decimal import Decimal
 from unittest.mock import MagicMock, patch, call
 
@@ -132,11 +133,15 @@ class TestAuroraRunsOnCMD:
             "symbol": "BTCUSDT",
             "tf_sec": 300,
             "bar_close_ts": 1000000,
+            "bar": {"close": "50000.0", "open": "50000.0", "high": "50100.0", "low": "49900.0", "volume": "100"},
             "features": {"price": "50000.0", "obi": "0.5", "tfi": "0.3"},
             "warmup": {"full_ready": True, "ready": {}},
         }
         
         handler._symbol_states["BTCUSDT"].warmup_full_ready = True
+        # DM-CRITICAL-PATCHES-02: Inject heartbeat
+        handler._symbol_states["BTCUSDT"].last_regime_heartbeat_ms = int(time.time() * 1000)
+        
         handler.on_process_strategy(cmd_300)
         
         # Scoring should have been called
@@ -347,6 +352,7 @@ class TestNoDoubleExecution:
             return_value=MagicMock(side="BUY", score=Decimal("0.5"), deferred=False, defer_reason=None)
         )
         handler._symbol_states["BTCUSDT"].warmup_full_ready = True
+        handler._symbol_states["BTCUSDT"].last_regime_heartbeat_ms = int(time.time() * 1000)
         
         cmd = {
             "symbol": "BTCUSDT",

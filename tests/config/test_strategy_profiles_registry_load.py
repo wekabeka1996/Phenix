@@ -92,7 +92,7 @@ class TestRegistryDrivenLoading:
         # VERIFY: mean_reversion config loaded from profile (not hardcoded)
         assert config.strategies.mean_reversion is not None
         assert config.strategies.mean_reversion.enabled is True
-        assert config.strategies.mean_reversion.timeframe_sec == 180
+        assert config.strategies.mean_reversion.timeframe_sec == 300
     
     def test_assigned_strategy_missing_profile_fails(self, tmp_path):
         """

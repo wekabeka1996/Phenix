@@ -9,12 +9,14 @@ EP-01: Regime-based risk adaptation using ExecutionRegimeBucket.
 
 from __future__ import annotations
 
-import time
 import logging
 import asyncio
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING, Union
 from dataclasses import dataclass
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 
 from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.domains.execution_position.soft_clip import (
@@ -190,7 +192,7 @@ class ExposureGuard:
         Args:
             reason: Reason for entering fallback mode (e.g., "API_TIMEOUT", "EMPTY_POSITIONS")
         """
-        now_ms = int(time.time() * 1000)
+        now_ms = get_clock().now_ms()
 
         if self.fallback_state.active:
             self.logger.warning(
@@ -261,7 +263,7 @@ class ExposureGuard:
             return
 
         # Calculate duration
-        now_ms = int(time.time() * 1000)
+        now_ms = get_clock().now_ms()
         duration_ms = now_ms - self.fallback_state.entered_at
 
         # Update metrics
@@ -451,7 +453,7 @@ class ExposureGuard:
 
         stale_ttl = self.positions_stale_ttl_sec
         last_ts_ms = portfolio_state.get("positions_last_ts_ms", 0)
-        stale_sec = time.time() - (last_ts_ms / 1000)
+        stale_sec = get_clock().now_sec() - (last_ts_ms / 1000)
         if last_ts_ms == 0 or stale_sec > stale_ttl:
             return {"allowed": False, "reason": "PORTFOLIO_STALE", "stale_sec": float(stale_sec)}
 
@@ -547,7 +549,7 @@ class ExposureGuard:
         )
 
         # Post-fill holds always count as exposure until portfolio catches up (race-safe, conservative).
-        now = time.time()
+        now = get_clock().now_sec()
         post_long_m = sum(
             _d(item.get("margin"))
             for item in self.state.postfill_reservations.values()
@@ -715,7 +717,7 @@ class ExposureGuard:
             symbol: Trading symbol for leverage calculation
             side: Order side (BUY or SELL)
         """
-        now = time.time()
+        now = get_clock().now_sec()
 
         symbol = str(symbol or "").strip()
         if not symbol:
@@ -837,7 +839,7 @@ class ExposureGuard:
             filled_margin = notional_usd / symbol_leverage
 
             # Move to post-fill hold instead of releasing
-            expiration_ts = time.time() + self.post_fill_hold_ttl_sec
+            expiration_ts = get_clock().now_sec() + self.post_fill_hold_ttl_sec
             self.state.postfill_reservations[key] = {
                 "notional": notional_usd,
                 "margin": filled_margin,
@@ -863,7 +865,7 @@ class ExposureGuard:
         Returns:
             List of expired reservation keys
         """
-        now = time.time()
+        now = get_clock().now_sec()
         expired = []
 
         # Clean up stale reservations

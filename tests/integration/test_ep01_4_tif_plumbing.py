@@ -260,6 +260,7 @@ class TestAdapterTimeInForce:
 class TestBridgeTifPassthrough:
     """Tests for Bridge tif passthrough (no hardcode)."""
     
+    @pytest.mark.skip(reason="BRIDGE-SUNSET-01: AuroraBridge removed. This test scans source code, not actual behavior.")
     def test_bridge_passes_tif_from_order(self):
         """Bridge should pass tif from order_details, not hardcode GTC."""
         # This is a structural test - verify main.py code doesn't hardcode tif

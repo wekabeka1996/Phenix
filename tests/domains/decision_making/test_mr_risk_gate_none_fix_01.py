@@ -19,9 +19,11 @@ class _DummyFsm:
 
 def _mk_dm(*, max_risk_score=0.96, aurora_override=None):
     from apps.reference.domains.decision_making.decision_making import DecisionMaking
+    from apps.reference.core.time.clock import LiveClock
 
     dm = DecisionMaking.__new__(DecisionMaking)
     dm.fsm = _DummyFsm()
+    dm._clock = LiveClock()
     dm.logger = logging.getLogger("tests.mr_risk_gate_none_fix")
     dm.symbol_states = {}
     dm.features_ttl_sec = 60

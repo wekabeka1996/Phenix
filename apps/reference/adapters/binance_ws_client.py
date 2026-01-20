@@ -62,6 +62,28 @@ class BinanceWebSocketClient:
         self.ws_reconnect_delay = 1.0
         self.ws_max_reconnect_delay = 60.0
         self.listen_key_last_refresh = 0.0
+        
+        # ADPT-FIX-01: Capture event loop for thread-safe emission
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("[BinanceWS] No running event loop captured in __init__. Safe emit may fail if used.")
+            self._loop = None
+
+    def _safe_emit(self, event_name: str, payload: Dict[str, Any], why: str) -> None:
+        """
+        Thread-safe wrapper for fsm_core.emit.
+        Marshals the call to the main event loop.
+        """
+        if self._loop and self.fsm_core:
+            self._loop.call_soon_threadsafe(
+                self.fsm_core.emit, event_name, payload, why
+            )
+        else:
+             # Fallback (dangerous, but better than silent drop if loop missing)
+             logger.warning(f"[BinanceWS] _safe_emit called without loop layer! Thread safety compromised for {event_name}")
+             if self.fsm_core:
+                 self.fsm_core.emit(event_name, payload, why)
 
     def start(self) -> None:
         """
@@ -368,7 +390,7 @@ class BinanceWebSocketClient:
                     event_name = "EVT:ORDER_STATE_CHANGED"
                     logger.info(f"[BinanceWS] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status}")
 
-                self.fsm_core.emit(event_name, payload, f"WS_ORDER_UPDATE_{standardized_status}")
+                self._safe_emit(event_name, payload, f"WS_ORDER_UPDATE_{standardized_status}")
 
         except Exception as e:
             logger.error(f"[BinanceWS] Error processing ORDER_TRADE_UPDATE: {e}", exc_info=True)
@@ -394,7 +416,7 @@ class BinanceWebSocketClient:
 
             # Emit FSM event
             if self.fsm_core:
-                self.fsm_core.emit("EVT:ACCOUNT_UPDATE_RECEIVED", payload, "WS_ACCOUNT_UPDATE")
+                self._safe_emit("EVT:ACCOUNT_UPDATE_RECEIVED", payload, "WS_ACCOUNT_UPDATE")
                 logger.info("[BinanceWS] Emitted EVT:ACCOUNT_UPDATE_RECEIVED")
 
         except Exception as e:

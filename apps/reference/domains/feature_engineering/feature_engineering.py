@@ -334,10 +334,10 @@ class FeatureEngineering:
         state = self._get_symbol_state(symbol).hot
         self._engine.update_macro_sync_buffer(state, price, time_diff_ms)
 
-    def _compute_macro_sync(self, symbol: str) -> decimal.Decimal:
+    def _compute_macro_sync(self, symbol: str, *, current_ts_ms: int) -> decimal.Decimal:
         """Compute macro_sync = correlation with anchor returns, normalized to [0,1]."""
         state = self._get_symbol_state(symbol).hot
-        if self._last_tick_ts_ms <= 0:
+        if current_ts_ms <= 0:
             inc_config_contract_violation(path="market_data.tick.ts", symbol=str(symbol))
             state.macro_sync_ready = False
             state.macro_sync_not_ready_reason = "tick_ts_missing"
@@ -346,12 +346,22 @@ class FeatureEngineering:
             state.macro_sync_ready = False
             state.macro_sync_not_ready_reason = "anchor_ts_missing"
             return self.cfg.neutral_value
+
+        # FIX 2 (P0): Causality guard.
+        # Never mix anchor updates from the future (relative to this tick) into macro features.
+        for anchor in self.cfg.macro_sync_anchors:
+            anchor_ts = int((self._anchor_last_ts_ms.get(anchor, 0) or 0))
+            if anchor_ts > 0 and anchor_ts > int(current_ts_ms):
+                state.macro_sync_ready = False
+                state.macro_sync_not_ready_reason = f"anchor_from_future:{anchor}"
+                inc_data_quality_drop(domain="feature_engineering", reason="macro_anchor_future")
+                return self.cfg.neutral_value
         return self._engine.compute_macro_sync_v2(
             state,
             self._macro_sync_resampler,
             symbol=symbol,
             anchors=self.cfg.macro_sync_anchors,
-            current_ts_ms=int(self._last_tick_ts_ms),
+            current_ts_ms=int(current_ts_ms),
         )
 
     @staticmethod
@@ -460,24 +470,39 @@ class FeatureEngineering:
             inc_data_quality_drop(domain="feature_engineering", reason="tick_ts_missing")
             return
 
-        # Update anchor prices if this is an anchor and config allows tick-based updates.
-        # Default (anchor_update_from_ticks=false): anchors are updated via EVT:ANCHOR_UPDATED only.
+        current_tick = event.pld
+        last_tick = self.last_tick_data.get(symbol)
+
+        # First tick initializes state (no feature calc) but MUST be stored.
+        if not last_tick:
+            self.last_tick_data[symbol] = current_tick
+
+            # Update anchor prices if this is an anchor and config allows tick-based updates.
+            # Default (anchor_update_from_ticks=false): anchors are updated via EVT:ANCHOR_UPDATED only.
+            if self.cfg.macro_sync_anchor_update_from_ticks and symbol in self.cfg.macro_sync_anchors:
+                price = decimal.Decimal(str(current_tick.get("price", 0)))
+                self.anchor_prices[symbol].append(price)
+                self._anchor_last_ts_ms[symbol] = int(ts_pld)
+                if price > 0:
+                    self._macro_sync_resampler.update_anchor(symbol, ts_ms=int(ts_pld), price=float(price))
+
+            self.logger.debug(f"No previous tick for {symbol}, skipping feature calculation")
+            return
+
+        # FIX 1 (P0): Only advance last_tick_data when the tick is accepted.
+        accepted = self._calculate_and_emit_features(symbol, current_tick, last_tick)
+        if not accepted:
+            return
+
+        self.last_tick_data[symbol] = current_tick
+
+        # If this is an anchor and tick-based updates are enabled, update anchor buffers ONLY on accepted ticks.
         if self.cfg.macro_sync_anchor_update_from_ticks and symbol in self.cfg.macro_sync_anchors:
-            price = decimal.Decimal(str(event.pld["price"] if "price" in event.pld else 0))
+            price = decimal.Decimal(str(current_tick.get("price", 0)))
             self.anchor_prices[symbol].append(price)
             self._anchor_last_ts_ms[symbol] = int(ts_pld)
             if price > 0:
                 self._macro_sync_resampler.update_anchor(symbol, ts_ms=int(ts_pld), price=float(price))
-
-        current_tick = event.pld
-        last_tick = self.last_tick_data.get(symbol)
-        self.last_tick_data[symbol] = current_tick
-
-        if not last_tick:
-            self.logger.debug(f"No previous tick for {symbol}, skipping feature calculation")
-            return
-
-        self._calculate_and_emit_features(symbol, current_tick, last_tick)
 
     def on_bar_closed(self, event: Message) -> None:
         """Handle bar closed event - emit bar-features for MR strategy.
@@ -564,16 +589,16 @@ class FeatureEngineering:
         self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
         self._calculate_and_emit_features_for_tf(symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick, bar_data=bar_data)
 
-    def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> None:
+    def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> bool:
         """Calculate tick-features and emit EVT:FEATURES_CALCULATED.
         
         FIX-TICK-FE-GATE-001: Tick-features do NOT depend on bars.
         Bar-features (OHLC-based) will be a separate pipeline (BAR-FEATURES-001).
         """
         # Tick-features: emit immediately, tf_sec=0 indicates tick-level data
-        self._calculate_and_emit_features_for_tf(symbol, tf_sec=0, current_tick=current_tick, last_tick=last_tick)
+        return self._calculate_and_emit_features_for_tf(symbol, tf_sec=0, current_tick=current_tick, last_tick=last_tick)
 
-    def _calculate_and_emit_features_for_tf(self, symbol: str, tf_sec: int, current_tick: dict, last_tick: dict, bar_data: Optional[Dict] = None) -> None:
+    def _calculate_and_emit_features_for_tf(self, symbol: str, tf_sec: int, current_tick: dict, last_tick: dict, bar_data: Optional[Dict] = None) -> bool:
         """Calculate all features for a specific tf_sec and emit EVT:FEATURES_CALCULATED (and CMD:PROCESS_STRATEGY if bar)."""
         try:
             # Initialize symbol state if needed
@@ -588,7 +613,7 @@ class FeatureEngineering:
             price = decimal.Decimal(str(current_tick["price"] if "price" in current_tick else 0))
             prev_price = decimal.Decimal(str(last_tick["price"] if "price" in last_tick else 0))
             time_diff = current_tick["ts"] - last_tick["ts"]
-            self._last_tick_ts_ms = int((current_tick["ts"] if "ts" in current_tick else 0) or 0)
+            current_ts_ms = int((current_tick["ts"] if "ts" in current_tick else 0) or 0)
             self._ticks_seen[symbol] += 1
 
             # P1-1 FIX: Early return on bad time_diff (out-of-order or duplicate tick)
@@ -620,7 +645,10 @@ class FeatureEngineering:
                 }
                 self.fsm.emit("EVT:FEATURES_CALCULATED", payload=payload_bad_dt, why="features_degraded_bad_dt")
                 self.logger.warning(f"[{symbol}] Dropping tick: time_diff={time_diff}ms (out-of-order or duplicate)")
-                return
+                return False
+
+            # Update last tick timestamp ONLY after validation.
+            self._last_tick_ts_ms = current_ts_ms
 
             if self._last_tick_ts_ms > 0 and price > 0:
                 self._macro_sync_resampler.update_symbol(symbol, ts_ms=self._last_tick_ts_ms, price=float(price))
@@ -698,27 +726,38 @@ class FeatureEngineering:
                 features["depth_imbalance"] = str(self._compute_depth_imbalance(bid_size * price, ask_size * price))
 
                 # Macro Sync (legacy, kept for telemetry)
-                features["macro_sync"] = str(self._compute_macro_sync(symbol))
+                features["macro_sync"] = str(self._compute_macro_sync(symbol, current_ts_ms=int(current_ts_ms)))
                 
                 # ================================================================
                 # R1 (P1): MACRO RESID — Beta-Adjusted Residual
                 # ================================================================
                 # Replaces macro_sync for direction scoring (SIGNED, neutral=0)
                 if self.cfg.macro_resid_enabled:
-                    # Get BTC price for anchor return
-                    btc_price_hist = self.anchor_prices.get("BTCUSDT", None)
-                    if btc_price_hist and len(btc_price_hist) >= 2 and prev_price > 0:
-                        # Calculate returns
-                        asset_return = float((price - prev_price) / prev_price) if prev_price > 0 else 0.0
-                        btc_prev = btc_price_hist[-2] if len(btc_price_hist) >= 2 else btc_price_hist[-1]
-                        btc_curr = btc_price_hist[-1]
-                        anchor_return = float((btc_curr - btc_prev) / btc_prev) if btc_prev > 0 else 0.0
+                    # FIX 2 (P0): Causality guard.
+                    # Never use anchor data from the future relative to this tick.
+                    btc_anchor_ts = int((self._anchor_last_ts_ms.get("BTCUSDT", 0) or 0))
+                    if btc_anchor_ts > 0 and btc_anchor_ts > int(current_ts_ms):
+                        hot.macro_resid_ready = False
+                        hot.macro_resid_not_ready_reason = "anchor_from_future:BTCUSDT"
+                        inc_data_quality_drop(domain="feature_engineering", reason="macro_anchor_future")
+                        macro_resid_val = self.cfg.zero_value
+                        macro_resid_ready = False
+                        macro_resid_reason = hot.macro_resid_not_ready_reason
+                    else:
+                        # Get BTC price for anchor return
+                        btc_price_hist = self.anchor_prices.get("BTCUSDT", None)
+                        if btc_price_hist and len(btc_price_hist) >= 2 and prev_price > 0:
+                            # Calculate returns
+                            asset_return = float((price - prev_price) / prev_price) if prev_price > 0 else 0.0
+                            btc_prev = btc_price_hist[-2] if len(btc_price_hist) >= 2 else btc_price_hist[-1]
+                            btc_curr = btc_price_hist[-1]
+                            anchor_return = float((btc_curr - btc_prev) / btc_prev) if btc_prev > 0 else 0.0
+                            
+                            # Update buffers
+                            self._engine.update_macro_resid(hot, asset_return, anchor_return)
                         
-                        # Update buffers
-                        self._engine.update_macro_resid(hot, asset_return, anchor_return)
-                    
-                    # Compute
-                    macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
+                        # Compute
+                        macro_resid_val, macro_resid_ready, macro_resid_reason = self._engine.compute_macro_resid(hot)
                     
                     # FIX-AUDITED-ISSUES-01 (Part C): Fail-closed emission.
                     # If not ready (warmup or missing anchor), emit None instead of 0.0 (neutral).
@@ -745,7 +784,7 @@ class FeatureEngineering:
                     features["macro_resid"] = str(self.cfg.zero_value)
                     hot.macro_resid_ready = False
                     hot.macro_resid_not_ready_reason = "disabled_in_config"
-                
+
                 # ================================================================
                 # R2 (P2): ABSORPTION — Experimental (Default OFF)
                 # ================================================================
@@ -1169,10 +1208,13 @@ class FeatureEngineering:
                 except Exception as e:
                     self.logger.error(f"Error storing features: {e}")
 
+            return True
+
         except Exception as e:
             self.logger.error(f"Error calculating features for {symbol}: {e}")
             import traceback
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
+            return False
 
     def start(self) -> None:
         """Start the feature engineering component."""

@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "timestamp": "2026-01-19T14:39:17.230781",
+    "timestamp": "2026-01-20T21:14:26.280652",
     "start_date": "2023-05-01T00:00:00",
     "end_date": "2023-05-31T00:00:00",
     "symbols": [
@@ -14,13 +14,13 @@
     "initial_balance": 10000.0
   },
   "metrics": {
-    "total_pnl": -65.15655408000202,
+    "total_pnl": 0.0,
     "max_drawdown": 0.0,
-    "total_trades": 2,
+    "total_trades": 0,
     "win_rate": 0.0,
     "start_balance": 10000.0,
-    "end_balance": 9934.843445919998,
-    "roi_pct": -0.6515655408000203
+    "end_balance": 10000.0,
+    "roi_pct": 0.0
   },
   "regimes": {
     "events_total": 8641,
@@ -51,7 +51,8 @@
           ]
         },
         "changed": false,
-        "last_update_ts_ms": 1685491200000
+        "last_update_ts_ms": 1685491200000,
+        "calc_lag_ms": 0
       }
     },
     "counts_by_symbol": {

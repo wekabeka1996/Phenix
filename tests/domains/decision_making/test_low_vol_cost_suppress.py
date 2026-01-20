@@ -20,6 +20,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Refactoring: LowVolCostSuppress logic removed from DecisionMaking")
+
 
 class _DummyFsm:
     def __init__(self):

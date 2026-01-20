@@ -1,8 +1,20 @@
 
 import unittest
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.config_models import create_aurora_config
 from tests.conftest import make_app_cfg_stub
+
+
+def _to_dict(obj):
+    if isinstance(obj, SimpleNamespace):
+        return {k: _to_dict(v) for k, v in vars(obj).items()}
+    if isinstance(obj, dict):
+        return {k: _to_dict(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_dict(v) for v in obj]
+    return obj
 
 class TestMonitoringSafety(unittest.TestCase):
     """
@@ -28,7 +40,7 @@ class TestMonitoringSafety(unittest.TestCase):
     def test_dm_initialization_counters(self):
         """Test that monitoring counters are initialized in __init__."""
         try:
-            dm = DecisionMaking(fsm=self.mock_fsm, config=self.mock_config)
+            dm = DecisionMaking(fsm=self.mock_fsm, config=create_aurora_config(_to_dict(self.mock_config)))
         except Exception as e:
             self.fail(f"DecisionMaking failed to initialize: {e}")
 
@@ -42,7 +54,7 @@ class TestMonitoringSafety(unittest.TestCase):
 
     def test_record_accepted_intent_safety(self):
         """Test that _record_accepted_intent increments counters and doesn't crash."""
-        dm = DecisionMaking(fsm=self.mock_fsm, config=self.mock_config)
+        dm = DecisionMaking(fsm=self.mock_fsm, config=create_aurora_config(_to_dict(self.mock_config)))
         
         # Call the method
         dm._record_accepted_intent("ETHUSDT")
@@ -53,7 +65,7 @@ class TestMonitoringSafety(unittest.TestCase):
 
     def test_record_blocked_intent_safety(self):
         """Test that _record_blocked_intent increments counters and doesn't crash."""
-        dm = DecisionMaking(fsm=self.mock_fsm, config=self.mock_config)
+        dm = DecisionMaking(fsm=self.mock_fsm, config=create_aurora_config(_to_dict(self.mock_config)))
         
         # Call the method
         dm._record_blocked_intent("ETHUSDT")

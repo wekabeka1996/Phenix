@@ -13,7 +13,7 @@
 ## Таблица (token → suggested_owner → candidates → evidence)
 | token | total | suggested_owner | candidates (owner:pct,count) | top_files (path:count) |
 |---|---:|---|---|---|
-| DEC:CANCEL | 1 | unknown | - | apps/reference/adapters/simulated_adapter.py:1 |
+| DEC:CANCEL | 0 | unknown | - | - |
 | EVT:ALPHA_SCORE_CALCULATED | 3 | unknown | decision_making:66.67%(2), alpha_search:33.33%(1) | apps/reference/domains/decision_making/__init__.py:1, apps/reference/domains/decision_making/decision_making.py:1, apps/reference/domains/alpha_search/alpha_model.py:1 |
 | EVT:BALANCE_UPDATE_RECEIVED | 3 | unknown | position_tracking:66.67%(2), account_balance:33.33%(1) | apps/reference/domains/position_tracking/position_tracking.py:2, apps/reference/domains/account_balance/account_connector.py:1 |
 | EVT:CANCELLED | 4 | unknown | execution_position:25.0%(1) | vfoundation/core/adapters/execution_adapter.py:3, apps/reference/domains/execution_position/drift_monitor.py:1 |

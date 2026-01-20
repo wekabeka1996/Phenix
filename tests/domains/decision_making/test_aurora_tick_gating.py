@@ -8,6 +8,7 @@ P0 CRITICAL: This test ensures Aurora is strictly 5-minute bar-driven.
 """
 
 import pytest
+import time
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -15,15 +16,16 @@ from unittest.mock import MagicMock, patch
 @pytest.fixture
 def mock_config():
     """Create a mock AuroraConfig with aurora strategy configured."""
-    cfg = MagicMock()
+    from types import SimpleNamespace
+    cfg = SimpleNamespace()
     
     # strategies.aurora
-    cfg.strategies = MagicMock()
-    cfg.strategies.aurora = MagicMock()
+    cfg.strategies = SimpleNamespace()
+    cfg.strategies.aurora = SimpleNamespace()
     cfg.strategies.aurora.timeframe_sec = 300  # 5 minutes
     
     # Decision config
-    decision = MagicMock()
+    decision = SimpleNamespace()
     decision.signal_threshold = 0.1
     decision.neutral_threshold = 0.05
     decision.side_bias_window_sec = 420
@@ -39,9 +41,9 @@ def mock_config():
     decision.anti_churn = None
     cfg.strategies.aurora.decision = decision
     
-    # Assets with explicit None for optional fields
+    # Assets
     cfg.strategies.aurora.assets = {
-        "BTCUSDT": MagicMock(
+        "BTCUSDT": SimpleNamespace(
             enabled=True, 
             signal_threshold=None, 
             neutral_threshold=None,
@@ -71,6 +73,10 @@ def aurora_handler(mock_config):
         return_value=MagicMock(side="BUY", score=Decimal("0.5"), deferred=False, defer_reason=None)
     )
     
+    # DM-CRITICAL-PATCHES-02: Inject heartbeat
+    for symbol in ["BTCUSDT"]:
+        handler._symbol_states[symbol].last_regime_heartbeat_ms = int(time.time() * 1000)
+    
     return handler
 
 
@@ -96,7 +102,8 @@ class TestAuroraTickPathGating:
         
         initial_rejections = aurora_handler._tick_path_rejections
         
-        aurora_handler.on_features_calculated(event)
+        # Should NOT use on_features_calculated for trigger
+        aurora_handler.on_process_strategy(event)
         
         # Should have incremented rejection counter
         assert aurora_handler._tick_path_rejections == initial_rejections + 1
@@ -123,7 +130,7 @@ class TestAuroraTickPathGating:
         initial_rejections = aurora_handler._tick_path_rejections
         
         # Should NOT crash
-        aurora_handler.on_features_calculated(event)
+        aurora_handler.on_process_strategy(event)
         
         # Should have incremented rejection counter
         assert aurora_handler._tick_path_rejections == initial_rejections + 1
@@ -144,7 +151,7 @@ class TestAuroraTickPathGating:
         
         initial_rejections = aurora_handler._tick_path_rejections
         
-        aurora_handler.on_features_calculated(event)
+        aurora_handler.on_process_strategy(event)
         
         assert aurora_handler._tick_path_rejections == initial_rejections + 1
         aurora_handler.scoring_kernel_cls.compute.assert_not_called()
@@ -161,6 +168,8 @@ class TestAuroraTickPathGating:
         event = {
             "symbol": "BTCUSDT",
             "tf_sec": 300,  # Matches handler.timeframe_sec
+            "bar_close_ts": 1234567890,
+            "bar": {"close": 50000.0, "open": 49900.0, "high": 50100.0, "low": 49800.0, "volume": 10},
             "features": {
                 "price": "50000.0",
                 "obi": "0.5",
@@ -171,7 +180,7 @@ class TestAuroraTickPathGating:
         
         initial_rejections = aurora_handler._tick_path_rejections
         
-        aurora_handler.on_features_calculated(event)
+        aurora_handler.on_process_strategy(event)
         
         # Rejection counter should NOT have been incremented
         assert aurora_handler._tick_path_rejections == initial_rejections
@@ -192,7 +201,7 @@ class TestAuroraTickPathGating:
             "warmup": {"full_ready": True},
         }
         
-        aurora_handler.on_features_calculated(event)
+        aurora_handler.on_process_strategy(event)
         
         # Scoring kernel should NOT have been called (wrong timeframe)
         aurora_handler.scoring_kernel_cls.compute.assert_not_called()
@@ -214,7 +223,7 @@ class TestAuroraTickPathGating:
         
         # Send 10 tick events
         for _ in range(10):
-            aurora_handler.on_features_calculated(tick_event)
+            aurora_handler.on_process_strategy(tick_event)
         
         # Should have rejected all 10
         assert aurora_handler._tick_path_rejections == initial_count + 10

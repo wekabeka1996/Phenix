@@ -207,14 +207,16 @@ class RegimeDetector:
 
         # REG-FIX-01: BAR-ONLY filter - ignore non-basis timeframes
         tf_sec = pld.get("tf_sec")
+        
+        # Silent ignore tick-level events (tf_sec=0) - NOT a data quality issue
+        if tf_sec == 0:
+            self.logger.debug(f"[{symbol}] RegimeDetector: ignoring tick-level features (tf_sec=0)")
+            return
+            
         if tf_sec != self._basis_tf_sec:
-            # Silent ignore for tick-level events (tf=0) - NOT a data quality issue
-            if tf_sec == 0:
-                self.logger.debug(f"[{symbol}] RegimeDetector: ignoring tick-level features (tf_sec=0)")
-            else:
-                self.logger.debug(
-                    f"[{symbol}] RegimeDetector: ignoring tf_sec={tf_sec} (basis={self._basis_tf_sec})"
-                )
+            self.logger.debug(
+                f"[{symbol}] RegimeDetector: ignoring tf_sec={tf_sec} (basis={self._basis_tf_sec})"
+            )
             return
 
         if not symbol or ts is None:
@@ -487,6 +489,7 @@ class RegimeDetector:
             # DM-CRITICAL-PATCHES-02: Heartbeat fields
             "changed": changed,
             "last_update_ts_ms": now_ms,  # Heartbeat timestamp (monotonic)
+            "calc_lag_ms": now_ms - ts_ms, # Latency for audit
         }
 
         self.fsm.emit(

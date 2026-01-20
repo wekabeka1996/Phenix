@@ -585,7 +585,7 @@ class MeanReversionHandler:
             "symbol": symbol,
             "tf_sec": self.timeframe_sec,
             "bar_end_ts_ms": signal.bar.end_ts_ms if signal.bar else 0,
-            "bar_id": f"{symbol}:{self.timeframe_sec}:{signal.bar.bar_id if signal.bar else 0}",
+            "bar_id": 0,
             "seq": getattr(self, 'seq_counter', 0),
             "source": "mr_signal_emitted",
             "why": signal.why
@@ -849,6 +849,9 @@ class MeanReversionHandler:
             # Process bar through strategy (T2B-03: CMD is the ONLY trigger)
             signal = strategy.on_bar(symbol, bar, ts_ms)
             
+            if signal:
+                print(f"[DEBUG MR] Signal why: {signal.why} | Type: {signal.signal_type} | Regime: {strategy.get_regime(symbol)} | Allowed: {strategy.config.allowed_regimes}", flush=True)
+
             self._stats["bars_completed"] += 1
             
             if signal is None:

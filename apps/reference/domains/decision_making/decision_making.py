@@ -12,7 +12,6 @@ T2B-08: Clock abstraction for deterministic testing (QoS timers, cooldowns).
 import decimal
 import json
 import logging
-import time
 from collections import deque
 import uuid
 from collections import defaultdict
@@ -150,6 +149,8 @@ class DecisionMaking:
         self._last_successful_features_ts: Dict[str, int] = {}  # Idempotency guard
         # Per-symbol regime cache: {symbol: {regime: str, warmup: dict, ...}}
         self._per_symbol_regimes: Dict[str, Dict[str, Any]] = {}
+        # Side-bias history (symbols -> {buys: [ts], sells: [ts]})
+        self._side_intent_window: Dict[str, Dict[str, list[float]]] = {}
         # Contract State: pending flips {symbol: {desired_open_intent, created_ts, ...}}
         self._pending_flips: Dict[str, Dict[str, Any]] = {}
 
@@ -231,15 +232,15 @@ class DecisionMaking:
 
         # CFG-DOMAINS-STEP-02-FIX: Strict Config Access (Task 18)
         # Direct Pydantic access - overrides handled by ConfigLoader
-        trading_config = self.config.trading
+        trading_config = getattr(self.config, 'trading', self.config)
         
-        # TCA Preferences (Dict)
-        self._tca_prefs = trading_config.tca_prefs
+        # TCA Preferences (Dict or Object)
+        self._tca_prefs = getattr(trading_config, 'tca_prefs', {})
         if not self._tca_prefs:
              self.logger.warning("tca_prefs missing/empty - using conservative TCA mode")
 
-        # Risk Budgets (Dict)
-        self._risk_budgets = trading_config.risk_budgets
+        # Risk Budgets (Dict or Object)
+        self._risk_budgets = getattr(trading_config, 'risk_budgets', {})
         if not self._risk_budgets:
              self.logger.warning("risk_budgets missing/empty - using conservative sizing mode")
 
@@ -386,6 +387,26 @@ class DecisionMaking:
                         self.update_exposure_cache)
         self.fsm.listen("EVT:STRATEGY_SIGNAL_PRODUCED", self._on_strategy_signal_gateway)
         self.logger.info("Strategy-gateway enabled: listening for EVT:STRATEGY_SIGNAL_PRODUCED")
+
+    def _safe_decimal(
+        self,
+        value: Any,
+        default: Optional[Decimal] = None,
+    ) -> Optional[Decimal]:
+        """Best-effort Decimal parser for untrusted inputs.
+
+        - Returns `default` (or None) for None/invalid/non-finite values.
+        - Never raises.
+        """
+        if value is None:
+            return default
+        if isinstance(value, Decimal):
+            return value if value.is_finite() else default
+        try:
+            d = Decimal(str(value))
+        except Exception:
+            return default
+        return d if d.is_finite() else default
 
     def _on_strategy_signal_gateway(self, event: Message) -> None:
         """
@@ -886,6 +907,8 @@ class DecisionMaking:
                 self._record_blocked_intent(symbol)
                 return
 
+            # NOTE: Gate 1 (Risk Data Readiness) is handled earlier at lines 532-560
+
             if not self.latest_portfolio:
                 self.logger.warning(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - portfolio_missing")
                 self._record_blocked_intent(symbol)
@@ -895,9 +918,25 @@ class DecisionMaking:
                 "portfolio": self.latest_portfolio,
                 "features": self.symbol_states[symbol].get("features") if symbol in self.symbol_states else {},
             }
-            qty_dec, why_sizing, sizing_reject_reason, _sizing_dbg = self._calculate_position_size(
-                symbol, entry_price_dec, side, sizing_ctx
-            )
+            try:
+                qty_dec, why_sizing, sizing_reject_reason, _sizing_dbg = self._calculate_position_size(
+                    symbol, entry_price_dec, side, sizing_ctx
+                )
+            except Exception as e:
+                self.logger.error(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Sizing error: {e}", exc_info=True)
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=side,
+                    rid=str(rid),
+                    reason_code="SIZING_ERROR",
+                    reason="DECISION",
+                    context=f"strategy_signal_gateway:sizing_exception:{type(e).__name__}",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []) + ["sizing_exception"],
+                    details={"error": str(e)},
+                )
+                self._record_blocked_intent(symbol)
+                return
             if qty_dec is None:
                 self.logger.warning(
                     f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - "
@@ -1009,14 +1048,16 @@ class DecisionMaking:
             obi_close = liquidity_data.get("obi_close") if isinstance(liquidity_data, dict) else None
             
             # Get EntryPlan config from domains
-            ep_cfg = self.config.domains.decision_making.entry_plan
+            ep_cfg = getattr(self.config.domains.decision_making, "entry_plan", None)
+            ep_enabled = ep_cfg.enabled if ep_cfg else False
+            
             # STEP 2: Initialize with Strategy values (Primacy), EntryPlan is fallback
             stop_price: str | None = strategy_stop_price
             target_price: str | None = strategy_target_price
             entry_plan_trace: dict | None = None
             
             # STEP 3: Only compute EntryPlan if Strategy did NOT provide prices
-            if ep_cfg.enabled and (stop_price is None or target_price is None):
+            if ep_enabled and (stop_price is None or target_price is None):
                 # Build EntryPlanParams from config
                 ep_params = EntryPlanParams(
                     atr_period=ep_cfg.atr_period,
@@ -1101,6 +1142,16 @@ class DecisionMaking:
                         target_price = None
                     entry_plan_trace = None
             
+            # Extract TCA/Risk Context from latest_risk (SSOT)
+            tca_budget = latest_risk.get("tca_budget") or {}
+            max_slippage_bps = int(tca_budget.get("max_slippage_bps", 0)) or None
+            max_latency_ms = int(tca_budget.get("max_latency_ms", 0)) or None
+            
+            risk_params = latest_risk.get("risk_parameters") or {}
+            # We already validated risk_score exists in Gate 1.5, safe to extract now
+            # Note: We validated it as 'risk_score_raw' earlier, here we fetch fresh or re-use
+            risk_score_val = float(risk_params.get("risk_score", 0.0))
+
             self._propose_trade_intent(
                 symbol=symbol,
                 side=side,
@@ -1116,6 +1167,10 @@ class DecisionMaking:
                 entry_plan_trace=entry_plan_trace,
                 # EP-01.3-INT: Pass tf_sec for pending entry TTL
                 tf_sec=tf_sec,
+                # TCA & Risk Context (Degradation Report Point 3)
+                max_slippage_bps=max_slippage_bps,
+                max_latency_ms=max_latency_ms,
+                risk_score=risk_score_val,
             )
 
             # Update QoS state for successful decision only if QoS is enabled for this strategy.
@@ -1924,7 +1979,7 @@ class DecisionMaking:
                 try:
                     now_ms = self._clock.now_ms()
                 except Exception:
-                    now_ms = int(time.time() * 1000)
+                    now_ms = self._clock.now_ms()
                 state = self.symbol_states[symbol]
                 last_ms = int(state.get("_tick_features_reject_last_ts_ms", 0) or 0)
                 if (now_ms - last_ms) >= 300_000:
@@ -2018,7 +2073,7 @@ class DecisionMaking:
                         alpha_payload = {
                             "symbol": symbol,
                             "scores": [score.dict() for score in alpha_scores],
-                            "timestamp": int(time.time() * 1000)
+                            "timestamp": self._clock.now_ms()
                         }
                         self.fsm.emit(
                             "EVT:ALPHA_SCORE_CALCULATED",
@@ -2035,7 +2090,7 @@ class DecisionMaking:
                                 "verb": "ALPHA_SCORE_CALCULATED",
                                 "symbol": symbol,
                                 "scores": [score.dict() for score in alpha_scores],
-                                "timestamp": int(time.time() * 1000),
+                                "timestamp": self._clock.now_ms(),
                                 "why": "alpha_calculation"
                             }
                             wal.append(wal_record)
@@ -2088,7 +2143,7 @@ class DecisionMaking:
                     path=str(e.path),
                     why=str(e.why),
                     stage="on_features",
-                    ts_ms=int(time.time() * 1000),
+                    ts_ms=self._clock.now_ms(),
                 )
                 self.fsm.emit("EVT:DECISION_BLOCKED", payload_obj.model_dump(), why=f"decision_blocked:{nrr_code}")
                 # Metric
@@ -2311,7 +2366,7 @@ class DecisionMaking:
                 
                 # Emit intent
                 why_chain = ["regime_flip_enforcement", regime]
-                rid = f"rf-{int(time.time())}"
+                rid = f"rf-{int(self._clock.now_sec())}"
                 
                 self._propose_trade_intent(
                     symbol=symbol,
@@ -2422,6 +2477,12 @@ class DecisionMaking:
         if reduce_only:
             return False
 
+        # BYPASS IF WARN_ONLY (config-driven, not hardcoded)
+        cfg_dm = self.config.domains.decision_making if hasattr(self.config.domains, "decision_making") else None
+        if cfg_dm and hasattr(cfg_dm, "warmup") and cfg_dm.warmup.enforcement_mode == "warn_only":
+             self.logger.debug(f"[{symbol}] WARMUP GATE BYPASS (warn_only mode)")
+             return False
+
         if not self.latest_portfolio:
             self._warmup_not_ready(symbol, "portfolio_missing", details=f"context={context} rid={rid}")
             self._record_blocked_intent(symbol)
@@ -2501,7 +2562,9 @@ class DecisionMaking:
         if not isinstance(portfolio, dict):
             return None, "portfolio_missing", "PORTFOLIO_MISSING", {}
 
-        equity = decimal.Decimal(str(portfolio.get("equity", "0")))
+        equity = self._safe_decimal(portfolio.get("equity", "0"), default=decimal.Decimal("0"))
+        if equity is None:
+            return None, "equity_invalid:None", "ZERO_EQUITY", {"equity": str(portfolio.get("equity"))}
         if equity <= 0:
             return None, f"equity_invalid:{equity}", "ZERO_EQUITY", {"equity": str(equity)}
 
@@ -2509,7 +2572,10 @@ class DecisionMaking:
             return None, "price_invalid", "INVALID_PRICE", {"price": str(price)}
 
         # SSOT: per-symbol instruments config (constraints + execution + sizing)
-        spec = self.config.instruments[symbol]
+        try:
+            spec = self.config.instruments[symbol]
+        except Exception as e:
+            return None, f"unknown_instrument:{symbol}:{e}", "UNKNOWN_INSTRUMENT", {"symbol": str(symbol)}
         margin_pct = decimal.Decimal(str(spec.sizing.margin_pct))
         leverage = int(spec.execution.target_leverage)
         step_size = decimal.Decimal(str(spec.step_size))
@@ -2593,9 +2659,13 @@ class DecisionMaking:
         entry_plan_trace: dict | None = None,
         # EP-01.3-INT: Timeframe for pending entry TTL calculation
         tf_sec: int | None = None,
+        # TCA & Risk restoration
+        max_slippage_bps: int | None = None,
+        max_latency_ms: int | None = None,
+        risk_score: float | None = None,
     ) -> None:
         # DM-DIR-FORENSIC-01: Directional sanity gate (fail-closed when enabled).
-        trace_ts_ms = int(decision_ts_ms) if decision_ts_ms is not None else int(time.time() * 1000)
+        trace_ts_ms = int(decision_ts_ms) if decision_ts_ms is not None else self._clock.now_ms()
         intent_side = "LONG" if str(side).upper() == "BUY" else "SHORT"
 
         # Strategy-aware safety gates:
@@ -2893,7 +2963,7 @@ class DecisionMaking:
                 if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
                     # Try atomic reservation - returns False if another ENTRY in-flight
                     if not self.fsm.order_index.try_reserve_entry(symbol, rid):  # type: ignore[attr-defined]
-                        now_ms = int(time.time() * 1000)
+                        now_ms = self._clock.now_ms()
                         retry_key = f"order_in_flight:{symbol}:{rid}"
                         self.logger.info(
                             f"[{symbol}] TRADE_INTENT_DEFERRED: NRR-ORDER-IN-FLIGHT (retry_key={retry_key})"
@@ -2948,9 +3018,17 @@ class DecisionMaking:
             return val
 
         try:
-             # TCA Prefs
-             max_slippage = str(_get_strict(tca, 'max_slippage_bps', "Missing max_slippage_bps"))
-             max_latency = _get_strict(tca, 'max_latency_ms', "Missing max_latency_ms")
+             # TCA Prefs: Prefer passed arguments (from Risk Engine), fall back to config
+             if max_slippage_bps is not None:
+                 max_slippage = str(max_slippage_bps)
+             else:
+                 max_slippage = str(_get_strict(tca, 'max_slippage_bps', "Missing max_slippage_bps"))
+
+             if max_latency_ms is not None:
+                 max_latency = max_latency_ms
+             else:
+                 max_latency = _get_strict(tca, 'max_latency_ms', "Missing max_latency_ms")
+             
              maker_pref = _get_strict(tca, 'maker_preference', "Missing maker_preference")
         except ValueError as e:
              self.logger.error(f"TCA Config Block: {e}")
@@ -3137,6 +3215,16 @@ class DecisionMaking:
                 )
                 self._record_blocked_intent(symbol)
                 return None
+
+        # Sanitize strategy/EntryPlan SL/TP to avoid payload pollution ("nan", "inf", "None").
+        stop_price_payload: str | None = None
+        target_price_payload: str | None = None
+        if stop_price not in (None, "", "None"):
+            sd = self._safe_decimal(stop_price, default=None)
+            stop_price_payload = str(sd) if sd is not None else None
+        if target_price not in (None, "", "None"):
+            td = self._safe_decimal(target_price, default=None)
+            target_price_payload = str(td) if td is not None else None
         
         trade_intent = {
             # TASK40: Preserve stable business RID end-to-end (intent -> cmd -> execution).
@@ -3161,6 +3249,10 @@ class DecisionMaking:
                 "max_latency_ms": max_latency,
                 "maker_preference": str(maker_pref),
             },
+            # RESTORED: Risk Context (Degradation Report Point 3)
+            "risk_context": {
+                "risk_score": risk_score if risk_score is not None else 0.0,
+            },
             "risk_budget": {
                 "trade_cvar95_max_bps": trade_cvar,
                 "session_cvar95_max_bps": session_cvar,
@@ -3173,8 +3265,8 @@ class DecisionMaking:
             "schema_ref": "trade_intent_v1.json",
             "idempotent_key": str(uuid.uuid4()),
             # EP-01.2-INT: EntryPlan SL/TP (null if not computed)
-            "stop_price": stop_price,
-            "target_price": target_price,
+            "stop_price": stop_price_payload,
+            "target_price": target_price_payload,
             "entry_plan": entry_plan_trace,
         }
 
@@ -3435,7 +3527,7 @@ class DecisionMaking:
         if rid:
             return f"{prefix}:{symbol}:{rid}"
         if ts_ms is None:
-            ts_ms = int(time.time() * 1000)
+            ts_ms = self._clock.now_ms()
         if side:
             return f"{prefix}:{symbol}:{side}:{ts_ms}"
         return f"{prefix}:{symbol}:{ts_ms}"
@@ -3496,7 +3588,7 @@ class DecisionMaking:
         if not missing_critical:
             return False
 
-        now_ms = int(time.time() * 1000)
+        now_ms = self._clock.now_ms()
         features_ts = int(features_evt["ts"] if "ts" in features_evt else 0)
         retry_prefix = f"ctx:{strategy_id}" if strategy_id else "ctx"
         retry_key = self._stable_retry_key(prefix=retry_prefix, symbol=symbol, rid=rid, ts_ms=features_ts)
@@ -3540,7 +3632,7 @@ class DecisionMaking:
         why_chain: list[str] | None = None,
         context: str | None = None,
     ) -> None:
-        now_ms = int(time.time() * 1000)
+        now_ms = self._clock.now_ms()
         try:
             ttl_ms = int(self.config.strategies.aurora.decision.retry_ttl_ms)
         except AttributeError as e:
@@ -3589,7 +3681,7 @@ class DecisionMaking:
         """Emit + persist an explicit rejection event so blocks are observable (Missed Opportunity)."""
         # Monitoring-only: rejection reporting must never throw.
         try:
-            ts_ms = int(time.time() * 1000)
+            ts_ms = self._clock.now_ms()
 
             stage = str(reason).upper()
             if stage not in ("RISK", "STRATEGY", "DECISION", "EXECUTION"):
@@ -3633,11 +3725,11 @@ class DecisionMaking:
 
     def _schedule_open_retry(self, symbol: str, original_context: dict, cooldown_ms: int, reason: str) -> None:
         """Emit EVT:INTENT_DEFERRED to schedule retry after close."""
-        next_ts = int(time.time() * 1000) + cooldown_ms
+        next_ts = self._clock.now_ms() + cooldown_ms
         
         # Match schema intent_deferred_v1.json
         payload = {
-            "retry_key": f"flip-{symbol}-{int(time.time())}", 
+            "retry_key": f"flip-{symbol}-{int(self._clock.now_sec())}", 
             "symbol": symbol,
             "reason": reason,
             "next_allowed_ts": next_ts,
@@ -3647,7 +3739,7 @@ class DecisionMaking:
                 "event_name": "EVT:TRADE_INTENT_PROPOSED", # Default assumption for open intent
                 "payload_min": original_context
             },
-            "created_ts": int(time.time() * 1000),
+            "created_ts": self._clock.now_ms(),
             "why_chain": ["flip_orchestration_defer"]
         }
         
@@ -3736,7 +3828,7 @@ class DecisionMaking:
             exposure_summary = payload["exposure_summary"] if "exposure_summary" in payload else {}
             if exposure_summary:
                 self._exposure_cache = exposure_summary
-                self._exposure_cache_timestamp = time.time()
+                self._exposure_cache_timestamp = self._clock.now_sec()
                 self.logger.debug(
                     f"✅ Exposure cache updated: {len(exposure_summary)} symbols")
         except Exception as e:
@@ -3754,7 +3846,7 @@ class DecisionMaking:
 
         try:
             # Check if cache is stale (older than 30 seconds)
-            cache_age = time.time() - self._exposure_cache_timestamp
+            cache_age = self._clock.now_sec() - self._exposure_cache_timestamp
             if cache_age > 30.0:
                 self.logger.debug(
                     f"Exposure cache stale ({cache_age:.1f}s), allowing trade")
@@ -3798,7 +3890,7 @@ class DecisionMaking:
         """Generate stable retry_key for a flip transaction."""
         if seed:
             return f"flip:{symbol}:{side}:{seed}"
-        ts_ms = int(time.time() * 1000)
+        ts_ms = self._clock.now_ms()
         return f"flip:{symbol}:{side}:{ts_ms}"
 
     def _resolve_position_mode(self, *, symbol: str, source: str) -> str | None:
@@ -3915,13 +4007,13 @@ class DecisionMaking:
                         return "FLIP_HYSTERESIS_BLOCK"
 
         # Emit Reduce-Only Close
-        rid = original_pld.get("rid") or f"flip-{int(time.time())}"
+        rid = original_pld.get("rid") or f"flip-{int(self._clock.now_sec())}"
         close_emitted = self._emit_reduce_only_close(symbol, "flip_orchestration", f"{rid}-close")
         
         # Schedule Retry (Defer Open)
         # Use simple cooldown for now (e.g. 5s) or fetch per-symbol config
         retry_key = self._generate_flip_retry_key(symbol, intent_side, seed=rid)
-        now_ms = int(time.time() * 1000)
+        now_ms = self._clock.now_ms()
         
         # Get stale TTL for retry delay (SSOT fail-closed)
         stale_ttl_sec = self.config.domains.position_tracking.positions_stale_ttl_sec
@@ -3982,7 +4074,7 @@ class DecisionMaking:
             "FLIP_CLOSE_PENDING" reason (always blocks current intent)
         """
         retry_key = self._generate_flip_retry_key(symbol, intent_side, seed=original_pld.get("rid"))
-        now_ms = int(time.time() * 1000)
+        now_ms = self._clock.now_ms()
         
         # Get stale TTL for retry delay (SSOT fail-closed)
         stale_ttl_sec = self.config.domains.position_tracking.positions_stale_ttl_sec

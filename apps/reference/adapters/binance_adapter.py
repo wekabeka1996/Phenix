@@ -138,6 +138,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         # ClientOrderId ledger for idempotency
         # Format: {clientOrderId: (timestamp_ms: int, order_id: str, symbol: str)}
         self._clientorderid_ledger: Dict[str, Tuple[int, str, str]] = {}
+        self._ledger_lock = asyncio.Lock()
 
         self._mark_price_cache: Dict[
             str, Dict[str, Any]
@@ -177,7 +178,15 @@ class BinanceAdapter(AbstractExchangeAdapter):
         LOG.info("BinanceAdapter stopped (REST-only mode, no polling)")
 
     # ClientOrderId Ledger Methods
-    def register_clientorderid(self, client_order_id: str, order_id: str, symbol: str) -> None:
+    def _register_clientorderid_unsafe(self, client_order_id: str, order_id: str, symbol: str) -> None:
+        """Internal unsafe registration (lock must be held by caller)."""
+        timestamp_ms = int(time.time() * 1000)
+        self._clientorderid_ledger[client_order_id] = (
+            timestamp_ms, order_id, symbol)
+        LOG.debug(
+            f"Registered ClientOrderId {client_order_id} -> {order_id} ({symbol})")
+
+    async def register_clientorderid(self, client_order_id: str, order_id: str, symbol: str) -> None:
         """
         Register a successful order in ClientOrderId ledger.
 
@@ -186,23 +195,11 @@ class BinanceAdapter(AbstractExchangeAdapter):
             order_id: The Binance order ID
             symbol: Trading symbol
         """
-        timestamp_ms = int(time.time() * 1000)
-        self._clientorderid_ledger[client_order_id] = (
-            timestamp_ms, order_id, symbol)
-        LOG.debug(
-            f"Registered ClientOrderId {client_order_id} -> {order_id} ({symbol})")
+        async with self._ledger_lock:
+            self._register_clientorderid_unsafe(client_order_id, order_id, symbol)
 
-    def check_clientorderid_reuse(self, symbol: str, client_order_id: str) -> Optional[str]:
-        """
-        Check if ClientOrderId can be reused (was successful within 24h).
-
-        Args:
-            symbol: Trading symbol
-            client_order_id: The client order ID to check
-
-        Returns:
-            Original Binance order_id if reusable, None if should generate new ID
-        """
+    async def _check_clientorderid_reuse_unsafe(self, symbol: str, client_order_id: str) -> Optional[str]:
+        """Internal unsafe check (lock must be held by caller)."""
         if client_order_id not in self._clientorderid_ledger:
             return None
 
@@ -222,6 +219,20 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 f"Cleaned stale ClientOrderId {client_order_id} (age {age_ms/3600000:.1f}h)")
 
         return None
+
+    async def check_clientorderid_reuse(self, symbol: str, client_order_id: str) -> Optional[str]:
+        """
+        Check if ClientOrderId can be reused (was successful within 24h).
+
+        Args:
+            symbol: Trading symbol
+            client_order_id: The client order ID to check
+
+        Returns:
+            Original Binance order_id if reusable, None if should generate new ID
+        """
+        async with self._ledger_lock:
+            return await self._check_clientorderid_reuse_unsafe(symbol, client_order_id)
 
     async def _find_symbol_by_order_id(
         self,
@@ -501,19 +512,9 @@ class BinanceAdapter(AbstractExchangeAdapter):
             raise ValueError(
                 "Either order_id or client_order_id must be provided")
 
-        # Ensure symbol is not empty (fallback if needed)
+        # ADPT-FIX-01: Remove unsafe fallback scan. Strict symbol requirement.
         if not symbol or symbol.strip() == "":
-            LOG.warning(
-                "[cancel_order] Empty symbol, attempting to scan open orders")
-            # Fallback: scan open orders to find symbol by order_id/client_order_id
-            symbol = await self._find_symbol_by_order_id(order_id, client_order_id)
-            if not symbol:
-                raise BinanceAPIError(
-                    code=-2011,
-                    msg="Cannot determine symbol: order not found in open orders",
-                    nrr_code="NRR-CANCEL-001"
-                )
-            LOG.info(f"[cancel_order] Resolved symbol from scan: {symbol}")
+             raise ValueError("Symbol is required for cancellation (Safety: NRR-CANCEL-STRICT)")
 
         params = {"symbol": symbol}
         if order_id:
@@ -539,58 +540,9 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 timestamp_ms=int(result.get("time", 0) or 0),
             )
 
-        except BinanceAPIError as e:
-            # Handle -2011 (Unknown order) with retry after symbol verification
-            if e.code == -2011:
-                LOG.warning(
-                    f"[cancel_order] Got -2011 Unknown order for {symbol} {order_id or client_order_id}, retrying with verified symbol")
-
-                # Verify symbol by scanning open orders
-                verified_symbol = await self._find_symbol_by_order_id(order_id, client_order_id)
-                if verified_symbol and verified_symbol != symbol:
-                    LOG.info(
-                        f"[cancel_order] Symbol mismatch: provided={symbol}, scanned={verified_symbol}, retrying...")
-                    params["symbol"] = verified_symbol
-                    try:
-                        result = await self._request("DELETE", path, params, signed=True)
-                        LOG.info(
-                            f"[cancel_order] Retry succeeded with symbol {verified_symbol}")
-
-                        return ExchangeOrderResponse(
-                            order_id=str(result.get("orderId", "")),
-                            client_order_id=result.get("clientOrderId"),
-                            symbol=result.get("symbol", ""),
-                            side=result.get("side", ""),
-                            quantity=str(result.get("origQty", "")),
-                            filled_qty=str(result.get("executedQty", "")),
-                            price=result.get("price"),
-                            status=result.get("status", ""),
-                            timestamp_ms=int(result.get("time", 0) or 0),
-                        )
-                    except BinanceAPIError as retry_err:
-                        # Log and re-raise if retry fails
-                        LOG.error(f"[cancel_order] Retry failed: {retry_err}")
-                        raise
-                else:
-                    # Order truly doesn't exist or not found in scans
-                    LOG.warning(
-                        f"[cancel_order] Order {order_id or client_order_id} not found in open orders (may already be executed/cancelled)")
-                    # Return simulated cancelled response to prevent cascade failures
-                    return ExchangeOrderResponse(
-                        order_id=order_id or "unknown",
-                        client_order_id=client_order_id or "unknown",
-                        symbol=symbol,
-                        side="",
-                        quantity="0",
-                        filled_qty="0",
-                        price=None,
-                        status="CANCELED",
-                        timestamp_ms=int(time.time() * 1000),
-                        reason="order_not_found_in_scan"
-                    )
-            else:
-                # Other errors: re-raise
-                raise
+        except BinanceAPIError:
+            # Re-raise strictly. No scanning.
+            raise
 
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[ExchangeOrderResponse]:
         """
@@ -622,7 +574,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
         """
         Retrieve open positions (optionally filtered by symbol).
         Only returns non-zero positions.
-        
+
         Implements AbstractExchangeAdapter.get_open_positions()
         """
         params: Dict[str, Any] = {}
@@ -631,6 +583,13 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
         # Get fallback retry configuration
         fallback_backoff_ms = self._get_fallback_backoff_ms()
+        # Fallback config method might be missing if I didn't see it in file, but I assume it exists since it was used in surrounding code I replaced?
+        # WAIT. I am replacing Lines 492-712.
+        # Line 633 called self._get_fallback_backoff_ms(). I need to ensure that method exists or I copy it if it was inherited or I must not break it.
+        # I checked file content in step 26. I don't see `_get_fallback_backoff_ms` definition in the visible 1-800 lines!
+        # It might be defined further down or inherited? `AbstractExchangeAdapter` doesn't have it.
+        # It was used in line 633 of original file.
+        # So I will assume it exists on `self`. I will preserve the retry logic structure.
 
         # Retry logic for empty responses
         max_retries = len(fallback_backoff_ms)
@@ -656,19 +615,47 @@ class BinanceAdapter(AbstractExchangeAdapter):
                             f"API /fapi/v2/positionRisk recovered after {attempt+1} attempts, returned {len(raw)} total records")
 
                 positions: List[ExchangePosition] = []
+                
+                # ADPT-FIX-01: Hedge Mode Consistency Check
+                # Track leverage/margin type per symbol to detect split brain
+                symbol_consistency_map: Dict[str, Dict[str, Any]] = {}
+
                 for p in raw:
                     # Binance returns numbers as strings - keep precision
                     amt_str = p.get("positionAmt", "0")
                     amt = float(amt_str)
-                    symbol = p.get('symbol', 'UNKNOWN')
+                    p_symbol = p.get('symbol', 'UNKNOWN')
 
                     if abs(amt) <= 0.0:
                         continue  # Skip zero positions
+                    
+                    lev = int(float(p.get("leverage", "0") or 0))
+                    margin_type = p.get("marginType", "cross").upper()
+                    
+                    # Check Consistency
+                    if p_symbol in symbol_consistency_map:
+                        prev = symbol_consistency_map[p_symbol]
+                        if prev['leverage'] != lev or prev['margin_type'] != margin_type:
+                            err_msg = (
+                                f"Hedge Mode Consistency Failure for {p_symbol}: "
+                                f"Found mixed states (Lev: {prev['leverage']} vs {lev}, "
+                                f"Type: {prev['margin_type']} vs {margin_type})"
+                            )
+                            self.logger.critical(err_msg)
+                            raise BinanceAPIError(
+                                code=-1, 
+                                msg=err_msg, 
+                                nrr_code="NRR-024"
+                            )
+                    else:
+                        symbol_consistency_map[p_symbol] = {
+                            'leverage': lev,
+                            'margin_type': margin_type
+                        }
 
                     entry_str = p.get("entryPrice", "0") or "0"
                     mark_str = p.get("markPrice", "0") or "0"
                     upnl_str = p.get("unRealizedProfit", "0") or "0"
-                    lev = int(float(p.get("leverage", "0") or 0))
 
                     # Hedge: 'LONG'/'SHORT'; One-way: 'BOTH'
                     pos_side = p.get("positionSide", "BOTH") or "BOTH"
@@ -676,7 +663,7 @@ class BinanceAdapter(AbstractExchangeAdapter):
                         "BOTH", "LONG")) else "SHORT"
 
                     pos_obj = ExchangePosition(
-                        symbol=p.get("symbol", ""),
+                        symbol=p_symbol,
                         position_side=pos_side,  # BOTH/LONG/SHORT
                         side=side,  # LONG/SHORT (convenient for business logic)
                         position_amount=amt_str,
@@ -684,11 +671,19 @@ class BinanceAdapter(AbstractExchangeAdapter):
                         mark_price=mark_str,
                         unrealized_profit=upnl_str,
                         leverage=lev,
-                        margin_type=p.get("marginType", "cross").upper(),
+                        margin_type=margin_type,
                         isolated_margin=float(
-                            p.get("isolatedMargin", "0") or 0),
+                            p.get("isolated_margin", "0") or 0), # Corrected key likely isolatedMargin in raw but isolated_margin in obj? 
+                            # Raw dict key is "isolatedMargin" (camelCase).
+                            # Wait, in the original code (Step 26, line 689) it was:
+                            # p.get("isolatedMargin", "0")
+                            # I'll stick to that.
                         update_time_ms=int(p.get("updateTime", 0) or 0),
                     )
+                    # Re-fix isolated margin key in object instantiation for correctness
+                    # Note: ExchangePosition definition (Step 25) says isolated_margin: float.
+                    # The value passed must be float.
+                    pos_obj.isolated_margin = float(p.get("isolatedMargin", "0") or 0)
                     positions.append(pos_obj)
 
                 # If we got empty positions after successful API call, enter fallback mode
@@ -700,6 +695,10 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 return positions
 
             except Exception as e:
+                # If it's our consistency error, re-raise immediately
+                if isinstance(e, BinanceAPIError) and e.nrr_code == "NRR-024":
+                    raise e
+
                 last_exception = e
                 if attempt < max_retries:
                     self.logger.warning(

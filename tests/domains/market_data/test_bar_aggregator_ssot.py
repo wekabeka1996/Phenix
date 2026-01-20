@@ -29,10 +29,10 @@ class TestBarAggregator180s:
         2. Emit EVT:BAR_CLOSED with bar payload
         """
         emit_spy = MagicMock()
-        agg = BarAggregator(timeframes_sec=[180], emit_fn=emit_spy)
+        agg = BarAggregator(timeframes_sec=[300], emit_fn=emit_spy)
         
         # T=0: First tick at bar boundary (for simplicity)
-        base_ts = 180_000  # 180s in ms, aligned
+        base_ts = 300_000  # 300s in ms, aligned
         
         # Tick 1: Open
         agg.on_tick("BTCUSDT", Decimal("100.00"), Decimal("1.0"), base_ts + 1000)
@@ -48,7 +48,7 @@ class TestBarAggregator180s:
         
         # Tick 4: This tick triggers bar close, but belongs to NEW bar
         # (this is standard bar aggregation behavior: tick at boundary starts new bar)
-        completed = agg.on_tick("BTCUSDT", Decimal("102.00"), Decimal("4.0"), base_ts + 180_000)
+        completed = agg.on_tick("BTCUSDT", Decimal("102.00"), Decimal("4.0"), base_ts + 300_000)
         
         # Should have completed 1 bar
         assert len(completed) == 1
@@ -56,7 +56,7 @@ class TestBarAggregator180s:
         
         # Verify OHLCV - close is the LAST tick before boundary (tick 3)
         assert bar.symbol == "BTCUSDT"
-        assert bar.timeframe_sec == 180
+        assert bar.timeframe_sec == 300
         assert bar.open == Decimal("100.00")
         assert bar.high == Decimal("105.00")
         assert bar.low == Decimal("95.00")
@@ -71,7 +71,7 @@ class TestBarAggregator180s:
         
         payload = call_args[0][1]
         assert payload["symbol"] == "BTCUSDT"
-        assert payload["bar"]["timeframe_sec"] == 180
+        assert payload["bar"]["timeframe_sec"] == 300
         assert payload["bar"]["open"] == "100.00"
         assert payload["bar"]["high"] == "105.00"
         assert payload["bar"]["low"] == "95.00"

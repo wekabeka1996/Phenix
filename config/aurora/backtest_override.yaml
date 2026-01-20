@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKTEST CONFIGURATION OVERLAY
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# This file is ONLY loaded when trading_mode == "backtest".
+# Values here OVERRIDE the base SSOT configs (domains.yaml, trading.yaml).
+# Keep this file minimal - override only what's necessary for simulation.
+#
+# Pattern: Configuration Overlay (deep-merge on top of base config)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ---------------------------------------------------------------------------
+# DOMAINS OVERRIDES (base: config/aurora/domains.yaml)
+# ---------------------------------------------------------------------------
+domains:
+
+  # Feature Engineering: warmup enforcement for simulation
+  feature_engineering:
+    warmup:
+      # BACKTEST: warn_only allows intents even if features not fully warmed up
+      # LIVE: MUST be fail_fast to prevent trading with incomplete data
+      enforcement_mode: warn_only
+
+  decision_making:
+    # Risk Skew Guard: disable strict skew check for historical data
+    risk_skew:
+      # BACKTEST: Set very high to disable skew check (historical data has no "staleness")
+      # LIVE: Set to 5 seconds for production safety
+      max_skew_sec: 999999
+
+    # Directional Sanity: allow counter-trend entries for mean-reversion testing
+    directional_sanity:
+      # BACKTEST: disabled to allow counter-trend orders
+      # LIVE: enabled=true for trend-following safety protection
+      enabled: false
+
+    # Price Motion Sanity: requires tick-level data not available in bar-based backtest
+    price_motion_sanity:
+      # BACKTEST: disabled (5m bars don't provide 10s/60s granularity for pm_norm_*)
+      # LIVE: enabled=true to restore Anti-FOMO protection with tick-level data
+      enabled: false
+
+# ---------------------------------------------------------------------------
+# TRADING OVERRIDES (base: config/aurora/trading.yaml)
+# ---------------------------------------------------------------------------
+trading:
+  # TCA preferences relaxed for simulation
+  tca_prefs:
+    # BACKTEST: relaxed slippage for historical simulation
+    # LIVE: use stricter values (e.g., 10 bps)
+    max_slippage_bps: 50
+
+  risk:
+    soft_limits:
+      # BACKTEST: disabled until MockBroker correctly uses config leverage
+      # LIVE: mode=clip with appropriate limits
+      mode: "off"

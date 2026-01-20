@@ -69,9 +69,10 @@ def _to_decimal(value: Union[str, float, int, Decimal, None]) -> Optional[Decima
     if value is None:
         return None
     if isinstance(value, Decimal):
-        return value
+        return value if value.is_finite() else None
     try:
-        return Decimal(str(value))
+        d = Decimal(str(value))
+        return d if d.is_finite() else None
     except (InvalidOperation, ValueError):
         return None
 

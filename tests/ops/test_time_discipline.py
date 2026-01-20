@@ -62,6 +62,7 @@ LEGACY_USAGE_LIMITS = {
     "apps/reference/domains/feature_engineering/bar_resampler.py": 2,  # TODO: migrate to Clock
     "apps/reference/domains/decision_making/dm_log_adapter.py": 1,    # TODO: migrate to Clock
     "apps/reference/domains/decision_making/deferred_scheduler.py": 1,  # TODO: migrate to Clock
+    "apps/reference/domains/decision_making/trade_intent_reject_wal.py": 2,  # WAL persistence uses wall-clock time
     # REG-FIX-01: RegimeDetector now uses Clock - no time.time() allowed
 }
 

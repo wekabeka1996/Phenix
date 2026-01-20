@@ -26,7 +26,7 @@ def mock_config():
     cfg.strategies = MagicMock()
     cfg.strategies.mean_reversion = MagicMock()
     cfg.strategies.mean_reversion.enabled = True
-    cfg.strategies.mean_reversion.timeframe_sec = 180  # 3 minutes
+    cfg.strategies.mean_reversion.timeframe_sec = 300  # 5 minutes (FIX-BACKTEST-TF)
     cfg.strategies.mean_reversion.execution = MagicMock()
     cfg.strategies.mean_reversion.execution.entry_order_type = "MARKET"
     cfg.strategies.mean_reversion.execution.entry_tif = None
@@ -118,16 +118,16 @@ class TestMRBarPathGating:
     
     def test_mr_rejects_wrong_tf(self, mr_handler):
         """
-        Test: CMD with tf_sec=300 (5m) should be REJECTED (MR is 3m).
+        Test: CMD with tf_sec=180 (3m) should be REJECTED (MR is 5m).
         """
         event = MagicMock()
         event.pld = {
             "symbol": "BTCUSDT",
-            "tf_sec": 300,  # Wrong timeframe (5m, not 3m)
+            "tf_sec": 180,  # Wrong timeframe (3m, not 5m)
             "bar_close_ts": 1180000,
             "bar": {
                 "symbol": "BTCUSDT",
-                "timeframe_sec": 300,
+                "timeframe_sec": 180,
                 "open": "50000.0",
                 "high": "50100.0",
                 "low": "49900.0",
@@ -182,23 +182,23 @@ class TestMRBarPathGating:
     
     def test_mr_accepts_correct_tf(self, mr_handler):
         """
-        Test: CMD with tf_sec=180 (3m) should be PROCESSED.
+        Test: CMD with tf_sec=300 (5m) should be PROCESSED.
         """
         event = MagicMock()
         event.pld = {
             "symbol": "BTCUSDT",
-            "tf_sec": 180,  # Correct timeframe
-            "bar_close_ts": 1180000,
+            "tf_sec": 300,  # Correct timeframe (5m per FIX-BACKTEST-TF)
+            "bar_close_ts": 1300000,
             "bar": {
                 "symbol": "BTCUSDT",
-                "timeframe_sec": 180,
+                "timeframe_sec": 300,
                 "open": "50000.0",
                 "high": "50100.0",
                 "low": "49900.0",
                 "close": "50050.0",
                 "volume": "1000.0",
                 "start_ts_ms": 1000000,
-                "end_ts_ms": 1180000,
+                "end_ts_ms": 1300000,
                 "trade_count": 100,
             },
             "features": {"price": "50050.0"},
@@ -248,7 +248,7 @@ class TestMRTimeframeConfig:
     
     def test_timeframe_loaded_from_config(self, mr_handler):
         """Verify handler loads timeframe_sec from config."""
-        assert mr_handler.timeframe_sec == 180
+        assert mr_handler.timeframe_sec == 300
     
     def test_stats_initialized(self, mr_handler):
         """Verify T2B-02 stats counters are initialized."""
@@ -272,18 +272,18 @@ class TestMREventRouting:
         event = MagicMock()
         event.pld = {
             "symbol": "SOLUSDT",  # Not in enabled_symbols
-            "tf_sec": 180,
-            "bar_close_ts": 1180000,
+            "tf_sec": 300,
+            "bar_close_ts": 1300000,
             "bar": {
                 "symbol": "SOLUSDT",
-                "timeframe_sec": 180,
+                "timeframe_sec": 300,
                 "open": "100.0",
                 "high": "101.0",
                 "low": "99.0",
                 "close": "100.5",
                 "volume": "1000.0",
                 "start_ts_ms": 1000000,
-                "end_ts_ms": 1180000,
+                "end_ts_ms": 1300000,
                 "trade_count": 100,
             },
             "features": {"price": "100.5"},

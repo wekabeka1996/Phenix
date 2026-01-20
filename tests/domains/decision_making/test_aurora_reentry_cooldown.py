@@ -1,7 +1,9 @@
 import logging
 import pytest
+import time
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
+from types import SimpleNamespace
 
 from apps.reference.domains.decision_making.aurora_handler import (
     AuroraHandler,
@@ -18,20 +20,25 @@ def mock_emit():
 
 @pytest.fixture
 def mock_config():
-    config = MagicMock()
+    from types import SimpleNamespace
+    config = SimpleNamespace()
+    config.strategies = SimpleNamespace()
+    config.strategies.aurora = SimpleNamespace()
     config.strategies.aurora.timeframe_sec = 300
+    config.strategies.aurora.decision = SimpleNamespace()
+    config.strategies.aurora.decision.signals = SimpleNamespace()
     config.strategies.aurora.decision.signals.delta_price_cap_pct = "0.005"
     config.strategies.aurora.decision.neutral_threshold = "0.05"
     config.strategies.aurora.decision.signal_threshold = "0.1"
-    config.strategies.aurora.decision.holding_period.enabled = False
+    
+    # Explicitly False to avoid MagicMock truthiness trap
+    config.strategies.aurora.decision.holding_period = SimpleNamespace(enabled=False)
+    config.strategies.aurora.decision.anti_churn = SimpleNamespace(enabled=False)
+    config.strategies.aurora.decision.gates = SimpleNamespace(enabled=False)
+    
     config.strategies.aurora.decision.reentry_cooldown_sec = 60
     
-    def get_instrument_config(symbol):
-        cfg = MagicMock()
-        cfg.reentry_cooldown_sec = None
-        cfg.holding_period = None
-        return cfg
-    
+    config.strategies.aurora.assets = {}
     return config
 
 @pytest.fixture
@@ -47,10 +54,14 @@ def handler(mock_config, mock_emit, manual_clock):
         reentry_cooldown_sec=None,
         signal_threshold=None,
         neutral_threshold=None,
-        holding_period=None
+        holding_period=None,
+        volatility_entry_logic=SimpleNamespace(enabled=False)
     )
     h._check_warmup = lambda s: True
-    h._symbol_states["BTCUSDT"] = SymbolState()
+    state = SymbolState()
+    # DM-CRITICAL-PATCHES-02: Inject heartbeat to satisfy liveness guard
+    state.last_regime_heartbeat_ms = int(time.time() * 1000)
+    h._symbol_states["BTCUSDT"] = state
     # Explicitly disable holding period to prevent interference in other tests
     h.holding_period_enabled = False
     return h
@@ -65,7 +76,7 @@ class TestReentryCooldown:
             "bar": {
                 "close": price, "open": price, "high": price, "low": price, "volume": 100
             },
-            "features": {"price": price},
+            "features": {"price": price, "atr": 10},
             "warmup": {"full_ready": True}
         }
 
@@ -129,6 +140,8 @@ class TestReentryCooldown:
         state = handler._symbol_states[symbol]
         state.last_exit_timestamp = now - 65
         state.position_side = ""
+        # Refresh heartbeat to pass liveness guard
+        state.last_regime_heartbeat_ms = int(manual_clock.now_sec() * 1000)
         
         cmd = self._make_cmd(symbol)
         
@@ -150,9 +163,11 @@ class TestReentryCooldown:
         symbol = "FAST_BTC"
         handler._symbol_states[symbol] = SymbolState()
         state = handler._symbol_states[symbol]
+        state.last_regime_heartbeat_ms = int(manual_clock.now_sec() * 1000)
         
         mock_instr_cfg = MagicMock()
         mock_instr_cfg.reentry_cooldown_sec = 30
+        mock_instr_cfg.volatility_entry_logic = SimpleNamespace(enabled=False)
         mock_instr_cfg.signal_threshold = None 
         mock_instr_cfg.neutral_threshold = None
         mock_instr_cfg.holding_period = None
@@ -186,6 +201,8 @@ class TestReentryCooldown:
         now = manual_clock.monotonic()
         state.position_side = "buy"
         state.entry_timestamp = now - 5
+        # Refresh heartbeat to pass liveness guard
+        state.last_regime_heartbeat_ms = int(manual_clock.now_sec() * 1000)
         
         handler.holding_period_enabled = True
         handler.default_min_duration_sec = 30

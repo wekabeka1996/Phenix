@@ -4,6 +4,7 @@ Money Run 2.0 - Final System Simulation
 Replicates the 8-trade scenario with FIXED logic.
 """
 import sys
+from apps.reference.core.time.clock import MockClock
 import os
 import shutil
 import tempfile
@@ -38,6 +39,7 @@ from backtest_engine.wrappers import BacktestExecPosFSM
 from apps.reference.domains.feature_engineering.feature_engineering import FeatureEngineering
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
 
 # Logging
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(levelname)s: %(message)s')
@@ -45,9 +47,11 @@ LOG = logging.getLogger("MoneyRun")
 LOG.setLevel(logging.INFO)
 
 # Force domain logs to INFO/WARNING
+# Force domain logs to INFO/WARNING
 logging.getLogger("apps.reference.domains.execution_position").setLevel(logging.INFO)
-logging.getLogger("apps.reference.domains.decision_making").setLevel(logging.INFO)
-logging.getLogger("apps.reference.domains.feature_engineering").setLevel(logging.WARNING)
+logging.getLogger("apps.reference.domains.decision_making").setLevel(logging.DEBUG)
+logging.getLogger("apps.reference.domains.feature_engineering").setLevel(logging.DEBUG) # DEBUG FE emission
+logging.getLogger("domain_mean_reversion").setLevel(logging.INFO) # MR Internal Logs
 logging.getLogger("apps.reference.domains.regime_detector").setLevel(logging.WARNING)
 
 def _run_loop(loop: asyncio.AbstractEventLoop) -> None:
@@ -68,10 +72,10 @@ def generate_synthetic_data(bars=3000, start_price=27000.0) -> pl.DataFrame:
     rows = []
     
     # Sine wave parameters
-    # Period 40 bars (3.3 hours)
-    period = 40
-    # Base amplitude 0.2% (triggers FLAT_NORMAL/FLAT_LOW)
-    amp = start_price * 0.002
+    # Period 20 bars (1.6 hours)
+    period = 20
+    # Base amplitude 1.0% (Fit between min/max BB width)
+    amp = start_price * 0.01
     
     for i in range(bars):
         ts = start_ts + timedelta(minutes=5 * i)
@@ -88,6 +92,8 @@ def generate_synthetic_data(bars=3000, start_price=27000.0) -> pl.DataFrame:
             current_amp = amp * 2.5 # HIGH_VOLATILITY (0.5%)
             
         val = start_price + (math.sin(angle) * current_amp) + noise
+        if i == 1000:
+            val = val * 1.10
         
         # OHLC
         close = val
@@ -143,15 +149,15 @@ def calculate_pnl(broker: MockBroker):
     wins = 0
     losses = 0
     
-    # Sort by time
-    filled.sort(key=lambda x: x.time)
+    # Sort by timestamp
+    filled.sort(key=lambda x: x.timestamp_ms)
     
     position = 0.0
     avg_entry = 0.0
     
     for o in filled:
-        price = float(o.avg_price or o.price or 0)
-        qty = float(o.executed_qty or o.orig_qty or 0)
+        price = float(o.price or 0)
+        qty = float(o.filled_qty or o.quantity or 0)
         
         if o.side == "BUY":
             # If closing SHORT
@@ -256,17 +262,19 @@ def main():
             fe.absorption.mode = "disabled"
             LOG.info("Disabled absorption")
             
-    # PATCH: Switch to Tick-Based Regime Detection
-    # BacktestEngine emits ticks (tf=0). To ensure RD receives data, we match basis_tf_sec=0.
-    config.basis_tf_sec = 0
-    LOG.info("Set basis_tf_sec=0 (Tick-Based Mode)")
-
     # PATCH: Relax warmup enforcement
     if hasattr(config.domains, "decision_making") and hasattr(config.domains.decision_making, "warmup"):
         config.domains.decision_making.warmup.enforcement_mode = "warn_only"
         LOG.info("Set enforcement_mode=warn_only")
     
     fsm = FSMCore()
+
+    # Listen for CMD
+    def on_cmd(event):
+        if event.verb == "PROCESS_STRATEGY":
+            LOG.info(f"CAPTURED CMD:PROCESS_STRATEGY: {event.pld.keys()}")
+
+    fsm.listen("CMD:PROCESS_STRATEGY", on_cmd)
 
     # DEBUG: Monitor FE Readiness
     def debug_fe(event):
@@ -293,16 +301,29 @@ def main():
     except Exception:
         pass
 
+    # Data
+    df = generate_synthetic_data(bars=3000) # 10 days
+
+    # Initialize Clock with simulation start time
+    start_ts_ms = int(df["ts"][0].timestamp() * 1000)
+    sim_clock = MockClock(start_ts_ms)
+    LOG.info(f"Initialized SimClock at {start_ts_ms}")
+    
     # 1. Feature Engineering (Auto-wire)
     fe = FeatureEngineering(fsm, config)
     
     # 2. Regime Detector (Auto-wire)
-    rd = RegimeDetector(config, fsm)
+    rd = RegimeDetector(config, fsm, clock=sim_clock)
     
     # 3. Decision Making (Auto-wire)
-    dm = DecisionMaking(fsm, config)
+    dm = DecisionMaking(fsm, config, clock=sim_clock)
     
-    # 4. Execution
+    # 4. Strategy Handler (Orchestration)
+    mrh = MeanReversionHandler(fsm, config)
+    mrh.register()
+    LOG.info("Initialized MeanReversionHandler")
+    
+    # 5. Execution
     ep = BacktestExecPosFSM(config=config, fsm=fsm, shadow_mode=False)
     
     # Async Loop
@@ -310,9 +331,6 @@ def main():
     t = threading.Thread(target=_run_loop, args=(loop,), daemon=True)
     t.start()
     ep.set_async_loop(loop)
-    
-    # Data
-    df = generate_synthetic_data(bars=3000) # 10 days
     
     # Engine
     engine = BacktestEngine(
@@ -329,6 +347,20 @@ def main():
     # Prime
     engine._emit_portfolio_update()
     engine.broker._last_prices["BTCUSDT"] = df["close"][0]
+    
+    # INJECT MOCK RISK DATA for simulation (satisfies Gate 1: Risk Data)
+    # In production, this comes from RiskManagement domain via EVT:RISK_UPDATED
+    mock_risk_data = {
+        "symbol": "BTCUSDT",
+        "ts": start_ts_ms,
+        "risk_parameters": {
+            "is_trading_allowed": True,
+            "risk_score": 0.5,  # Conservative risk score
+        },
+        "source": "mock_simulation",
+    }
+    dm.symbol_states["BTCUSDT"]["risk"] = mock_risk_data
+    LOG.info(f"Injected mock Risk data for BTCUSDT: is_trading_allowed=True, risk_score=0.5")
     
     LOG.info("🚀 STARTING SIMULATION...")
     engine.run(max_ticks=len(df))

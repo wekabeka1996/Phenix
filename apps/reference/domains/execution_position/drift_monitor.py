@@ -17,9 +17,11 @@ Off-path computation: processes WAL/fixtures, not hot-path.
 """
 
 from __future__ import annotations
-import time
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 
 from vfoundation.config import config
 
@@ -72,7 +74,7 @@ class Mismatch:
     type: str  # "FP" or "FN"
     decision_verb: Optional[str] = None  # "OPEN" or "CLOSE" for FP
     event_verb: Optional[str] = None  # "ORDER_PLACED" etc for FN
-    timestamp: float = field(default_factory=time.time)
+    timestamp: float = field(default_factory=lambda: get_clock().now_sec())
 
     def to_dict(self) -> Dict[str, Any]:
         """Export as dict."""
@@ -92,7 +94,7 @@ class DriftReport:
 
     confusion: ConfusionMatrix
     mismatches: List[Mismatch] = field(default_factory=list)
-    computed_at: float = field(default_factory=time.time)
+    computed_at: float = field(default_factory=lambda: get_clock().now_sec())
     records_processed: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
@@ -148,14 +150,14 @@ def compute_drift(
         pld = pld_raw if isinstance(pld_raw, dict) else {}
         symbol = dget(pld, "symbol", "UNKNOWN")
         rid = dget(dec, "rid", "unknown")
-        dec_ts = dec["timestamp"] if "timestamp" in dec else time.time()
+        dec_ts = dec["timestamp"] if "timestamp" in dec else get_clock().now_sec()
 
         # Look for matching events by RID
         candidate_events = event_index[rid] if rid in event_index else []
 
         matched = False
         for evt in candidate_events:
-            evt_ts = evt["timestamp"] if "timestamp" in evt else time.time()
+            evt_ts = evt["timestamp"] if "timestamp" in evt else get_clock().now_sec()
             evt_verb = dget(evt, "verb", "")
 
             # Check time window
@@ -208,7 +210,7 @@ def compute_drift(
             symbol = dget(pld, "symbol", "UNKNOWN")
             rid = dget(evt, "rid", "unknown")
             evt_verb = dget(evt, "verb", "")
-            evt_ts = evt["timestamp"] if "timestamp" in evt else time.time()
+            evt_ts = evt["timestamp"] if "timestamp" in evt else get_clock().now_sec()
 
             confusion.fn += 1
             mismatches.append(
@@ -228,7 +230,7 @@ def compute_drift(
     return DriftReport(
         confusion=confusion,
         mismatches=mismatches,
-        computed_at=time.time(),
+        computed_at=get_clock().now_sec(),
         records_processed=len(decisions) + len(events),
     )
 

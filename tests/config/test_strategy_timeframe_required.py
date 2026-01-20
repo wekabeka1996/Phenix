@@ -32,7 +32,7 @@ def test_mean_reversion_timeframe_required():
     
     # Validation should pass on unmodified config
     mr = MeanReversion1mStrategyConfig(**config)
-    assert mr.timeframe_sec == 180  # Default 3m (180s)
+    assert mr.timeframe_sec == 300  # 5m (300s) per FIX-BACKTEST-TF
     
     # Missing timeframe_sec
     config_missing = config.copy()

@@ -109,6 +109,9 @@ def _mk_cfg(*, symbol: str):
         },
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(
+                execution=SimpleNamespace(
+                    entry_order_type="MARKET",
+                ),
                 decision=SimpleNamespace(
                     signal_threshold=0.0,
                     retry_ttl_ms=1000,
@@ -174,6 +177,7 @@ def test_side_bias_window_updates_on_emitted_open_intents():
                 reduce_only=False,
                 strategy_id="aurora",
                 decision_ts_ms=now_ms,
+                tf_sec=300,
             )
 
             dm._propose_trade_intent(
@@ -186,6 +190,7 @@ def test_side_bias_window_updates_on_emitted_open_intents():
                 reduce_only=False,
                 strategy_id="aurora",
                 decision_ts_ms=now_ms + 1,
+                tf_sec=300,
             )
 
     assert hasattr(dm, "_side_intent_window")

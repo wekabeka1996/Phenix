@@ -26,8 +26,22 @@ class _DummyAuroraHandler:
         self.emit_fn = emit_fn
         self.strategy_id = strategy_id
 
-    def on_features_calculated(self, pld: Any) -> None:
+    def _is_symbol_enabled(self, symbol: str) -> bool:
+        """Check assignments registry to see if Aurora is assigned to this symbol."""
+        registry = getattr(self.config, "strategies_registry", None)
+        if registry:
+            assignments = getattr(registry, "assignments", {}) or {}
+            symbol_strategies = assignments.get(symbol, [])
+            if symbol_strategies:
+                return "aurora" in symbol_strategies
+        return True  # Default if no assignments
+
+    def on_features_data_only(self, pld: Any) -> None:
+        """T2B-03: Now data-only handler, renamed from on_features_calculated."""
         symbol = pld.get("symbol") if isinstance(pld, dict) else getattr(pld, "symbol", None)
+        # Check assignments before emitting
+        if not self._is_symbol_enabled(str(symbol or "")):
+            return
         self.emit_fn(
             "EVT:STRATEGY_SIGNAL_PRODUCED",
             {

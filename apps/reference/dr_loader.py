@@ -17,6 +17,45 @@ from vfoundation.core.protocol import Message
 
 logger = logging.getLogger(__name__)
 
+def _normalize_epoch_to_ms(raw_ts) -> Optional[int]:
+    """
+    Normalize a timestamp to epoch milliseconds.
+
+    Accepts:
+    - seconds (float/int): ~1e9
+    - milliseconds (int): ~1e12
+    - microseconds (int): ~1e15
+    - nanoseconds (int): ~1e18
+    """
+    if raw_ts is None:
+        return None
+
+    try:
+        ts = float(raw_ts)
+    except (TypeError, ValueError):
+        return None
+
+    if ts <= 0:
+        return None
+
+    # Heuristic by magnitude.
+    if ts >= 1e18:  # ns
+        return int(ts / 1_000_000)
+    if ts >= 1e15:  # us
+        return int(ts / 1_000)
+    if ts >= 1e12:  # ms
+        return int(ts)
+    # Assume seconds
+    return int(ts * 1_000)
+
+
+def _strip_evt_prefix(verb: Optional[str]) -> Optional[str]:
+    if not verb:
+        return verb
+    if verb.startswith("EVT:"):
+        return verb[len("EVT:") :]
+    return verb
+
 
 def find_latest_snapshot(snapshot_dir: str = "ops/snapshots") -> Optional[Path]:
     """
@@ -99,23 +138,22 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
                     try:
                         msg_dict = json.loads(line)
 
-                        # Extract timestamp (stored in microseconds in 'timestamp' field or 'ts' in payload)
-                        timestamp_us = msg_dict.get("timestamp")
-                        if timestamp_us is None:
-                            # Fallback to payload timestamp
-                            timestamp_us = msg_dict.get("pld", {}).get("ts")
+                        # Extract timestamp (supports seconds/ms/us/ns across producers)
+                        raw_ts = msg_dict.get("timestamp")
+                        if raw_ts is None:
+                            raw_ts = msg_dict.get("event_ts_ms")
+                        if raw_ts is None:
+                            raw_ts = msg_dict.get("pld", {}).get("ts")
 
-                        if timestamp_us is None:
+                        timestamp_ms = _normalize_epoch_to_ms(raw_ts)
+                        if timestamp_ms is None:
                             logger.warning(
                                 f"No timestamp found in {file_path.name}:{line_num}, skipping"
                             )
                             skipped_count += 1
                             continue
 
-                        # Convert microseconds to datetime
-                        msg_ts = datetime.fromtimestamp(
-                            timestamp_us / 1_000_000, tz=timezone.utc
-                        )
+                        msg_ts = datetime.fromtimestamp(timestamp_ms / 1_000, tz=timezone.utc)
 
                         # Skip events before snapshot
                         if msg_ts <= start_dt:
@@ -123,7 +161,7 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
                             continue
 
                         # Replay only position-tracking events
-                        verb = msg_dict.get("verb")
+                        verb = _strip_evt_prefix(msg_dict.get("verb"))
                         if verb in ["TRADE_EXECUTED", "ACCOUNT_UPDATE_RECEIVED"]:
                             # Reconstruct Message object
                             msg = Message(
@@ -134,7 +172,7 @@ def replay_wal_after(wal_dir: str, start_timestamp_utc: str, target_fsm) -> int:
                                 dst=msg_dict.get("dst"),
                                 rid=msg_dict.get("rid"),
                                 why=msg_dict.get("why", "WAL replay"),
-                                timestamp=timestamp_us,
+                                ts=timestamp_ms,
                             )
 
                             # Dispatch to appropriate handler

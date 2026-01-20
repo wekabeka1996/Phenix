@@ -79,6 +79,9 @@ ALLOWED_PATTERNS = {
     "position.get",
     "spec.get",
     
+    # LEGACY: OrderGuardian uses guardian_cfg dict for backwards compat (TODO: refactor)
+    "guardian_cfg.get",
+    
     # Environment variables
     "os.environ.get",
     "os.getenv",

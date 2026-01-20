@@ -13,12 +13,12 @@ FIX: AuroraBridge now checks both pld["stop_price"] AND pld["price_ctx"]["stop_p
 import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
-from apps.reference.main import AuroraBridge
+# from apps.reference.main import AuroraBridge  # REMOVED: AuroraBridge does not exist
 from vfoundation.core.protocol import Message
 
 
-class TestAuroraBridgePriceCtxExtraction:
-    """Test that AuroraBridge correctly extracts stop_price/target_price from price_ctx."""
+class TestPriceCtxExtraction:
+    """Test correctly extracts stop_price/target_price from price_ctx."""
 
     def test_price_ctx_extraction_from_mr_signal(self):
         """

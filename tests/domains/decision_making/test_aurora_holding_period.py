@@ -286,8 +286,7 @@ class TestFlipBehavior:
         should_suppress = handler._should_suppress_soft_exit(
             "BTCUSDT", result, is_flip=True
         )
-            
-            assert should_suppress is False
+        assert should_suppress is False
 
 
 class TestConfigOverride:

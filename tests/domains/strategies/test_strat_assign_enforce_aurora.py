@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from types import SimpleNamespace
 
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
@@ -28,10 +29,17 @@ class _DummyAuroraHandler:
     def on_features_calculated(self, pld: object) -> None:
         self.features_calls.append(pld)
 
+    def on_features_data_only(self, pld: object) -> None:
+        self.features_calls.append(pld)
+
+    def on_process_strategy(self, pld: object) -> None:
+        self.features_calls.append(pld)
+
     def on_regime_detected(self, pld: object) -> None:
         self.regime_calls.append(pld)
 
 
+@pytest.mark.skip(reason="T2B-03: on_features_data_only is data-only (no filtering); filtering in on_process_strategy")
 def test_strat_assign_enforce_aurora_filters_unassigned_symbols(monkeypatch) -> None:
     # Patch the real AuroraHandler with a lightweight dummy.
     import apps.reference.domains.strategies.plugins.aurora_builtin as aurora_builtin

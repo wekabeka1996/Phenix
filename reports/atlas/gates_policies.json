@@ -11,7 +11,7 @@
     "config/aurora/system.yaml": {
       "execution": null,
       "ops": {
-        "panic_killswitch": true,
+        "panic_killswitch": false,
         "panic_ttl_sec": null,
         "quiet_hours_utc": [
           "22:00-06:00"
@@ -25,6 +25,7 @@
     "config/aurora/trading.yaml": {},
     "config/aurora/domains.yaml": {},
     "config/aurora/strategies.yaml": {},
+    "config/aurora/backtest_override.yaml": {},
     "config/aurora/strategies/aurora.yaml": {},
     "config/aurora/strategies/mean_reversion.yaml": {},
     "config/aurora/archive/trading_1m_best_optuna.yaml": {},

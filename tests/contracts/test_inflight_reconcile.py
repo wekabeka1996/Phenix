@@ -346,10 +346,14 @@ class TestMaxTTLForceCleanup:
     
     @pytest.mark.asyncio
     async def test_max_ttl_force_clears(self):
-        """Max TTL should force-clear without exchange check."""
+        """Max TTL should attempt cleanup; without adapter, returns ERROR (not cleared).
+        
+        Truth-domain hardening: code attempts exchange cancel before local clear.
+        If no adapter configured, cancel fails and entry remains (ERROR status).
+        """
         config = InFlightConfig(inflight_ttl_sec=0, max_ttl_sec=0)  # Both immediate
         
-        # No exchange checker - should still work
+        # No exchange checker - cancel will fail
         reconciler = InFlightReconciler(config=config, exchange_checker=None)
         
         entry = reconciler.register(rid="test-123", symbol="ETHUSDT")
@@ -357,12 +361,13 @@ class TestMaxTTLForceCleanup:
         # Force age to exceed max TTL
         entry.created_ts = time.time() - 1  # 1 second ago
         
-        # Reconcile should force-clear
+        # Reconcile should return ERROR (cancel failed, no adapter)
         result = await reconciler.reconcile_entry(entry)
         
-        assert result.new_status == InFlightStatus.TTL_EXPIRED
-        assert result.cleared is True
-        assert "Max TTL exceeded" in result.reason
+        # Without adapter, cancel fails and entry is NOT cleared (ERROR status)
+        assert result.new_status == InFlightStatus.ERROR
+        assert result.cleared is False
+        assert "Cancel failed" in result.reason
 
 
 class TestReconcileAllExpired:

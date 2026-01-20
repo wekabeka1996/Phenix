@@ -12,9 +12,11 @@ import asyncio
 from collections import deque
 import logging
 import threading
-import time
 from datetime import datetime, timezone
 from decimal import Decimal
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 from typing import Dict, Any, Optional, Tuple, Set, Coroutine
 from pydantic import BaseModel
 
@@ -507,12 +509,45 @@ class ExecPosFSM:
         except Exception:
             pass
 
+    def _resolve_price(self, pld: Dict[str, Any], key: str) -> Optional[str]:
+        """
+        Smart extraction to handle flat (DecisionMaking) vs nested (Strategy) payloads.
+        
+        Priority:
+        1. Root level (normalized by DM)
+        2. price_ctx (raw strategy output, e.g., MeanReversion)
+        3. order nested object (legacy/alternative structure)
+        
+        CFG-SMART-EXTRACT-01: Ensures stop_price/target_price are found regardless
+        of where Strategy places them in the payload hierarchy.
+        """
+        # 1. Root level
+        val = pld.get(key)
+        if val not in (None, "", "None", "null"):
+            return str(val)
+
+        # 2. Nested price_ctx (e.g., from MeanReversion strategy)
+        price_ctx = pld.get("price_ctx")
+        if isinstance(price_ctx, dict):
+            ctx_val = price_ctx.get(key)
+            if ctx_val not in (None, "", "None", "null"):
+                return str(ctx_val)
+
+        # 3. Nested order object (alternative/legacy structure)
+        order = pld.get("order")
+        if isinstance(order, dict):
+            order_val = order.get(key)
+            if order_val not in (None, "", "None", "null"):
+                return str(order_val)
+
+        return None
+
     def _mark_processed_event(self, event_key: str) -> bool:
         """Idempotency helper with bounded memory."""
         if self._processed_events.seen(event_key):
             return False
         
-        now_ms = int(time.time() * 1000)
+        now_ms = get_clock().now_ms()
         self._processed_events.add(event_key, now_ms)
         return True
 
@@ -777,7 +812,7 @@ class ExecPosFSM:
                             "order_id": oid,
                             "reason": reason,
                             "context": context,
-                            "timestamp": int(time.time() * 1000)
+                            "timestamp": get_clock().now_ms()
                         })
                     except Exception as e:
                         if self._is_unknown_order_error(e):
@@ -868,7 +903,7 @@ class ExecPosFSM:
         
         decision = queued_data.get("decision")
         queued_at = queued_data.get("queued_at", 0)
-        age_sec = time.time() - queued_at
+        age_sec = get_clock().now_sec() - queued_at
         
         if not decision:
             LOG.warning(f"EP-01.3: Queued supersede for {symbol} has no decision")
@@ -940,6 +975,7 @@ class ExecPosFSM:
             if not symbol:
                 LOG.error(f"TRADE_INTENT_PROPOSED missing symbol/instrument: keys={list(pld.keys())}")
                 return
+            strategy_id = pld.get("strategy") or pld.get("strategy_id")
 
             # Log intent via authorized adapter
             self.log_adapter.log_trade_intent(
@@ -984,6 +1020,26 @@ class ExecPosFSM:
             else:
                 # Route to OPEN flow - STRICT FAIL-CLOSED VALIDATION (EXEC-FAILCLOSED-ORDERFIELDS-01)
                 
+                # CFG-SMART-EXTRACT-02: Extract and log TCA & Risk Context for forensics
+                tca_budget = pld.get("tca_budget") or {}
+                risk_ctx = pld.get("risk_context") or {}
+                
+                # Extract key TCA parameters
+                slippage_limit = tca_budget.get("max_slippage_bps")
+                latency_limit = tca_budget.get("max_latency_ms")
+                maker_pref = tca_budget.get("maker_preference")
+                
+                # Extract key Risk parameters
+                risk_score = risk_ctx.get("risk_score")
+                cvar_budget = risk_ctx.get("trade_cvar95_bps")
+                
+                # Enhanced metadata logging for debugging strategy→execution contract
+                LOG.info(
+                    f"[{symbol}] Intent Metadata: Strategy={strategy_id} "
+                    f"TCA={{slippage={slippage_limit}bps, latency={latency_limit}ms, maker={maker_pref}}} "
+                    f"Risk={{score={risk_score}, cvar={cvar_budget}bps}}"
+                )
+
                 # 1. Check strict existence of order_type (No defaults to MARKET)
                 order_type = order_info.get("order_type")
                 if not order_type:
@@ -1004,6 +1060,10 @@ class ExecPosFSM:
                         # User requested strict cleanliness. "MARKET with tif present -> reject"
                         raise ValueError(f"NRR-INTENT-INVALID-TIF: MARKET order must not have tif (got {tif})")
 
+                # SSOT-BRIDGE-SUNSET-01: Extract stop/target prices with price_ctx fallback
+                stop_price_raw = self._resolve_price(pld, "stop_price")
+                target_price_raw = self._resolve_price(pld, "target_price")
+
                 cmd_payload = {
                     "symbol": symbol,
                     "side": pld.get("side"),
@@ -1011,13 +1071,24 @@ class ExecPosFSM:
                     "order_type": order_type,
                     "price": price,
                     "tif": tif,
-                    "stop_price": str(pld.get("stop_price")) if pld.get("stop_price") else None,
-                    "target_price": str(pld.get("target_price")) if pld.get("target_price") else None,
+                    "stop_price": stop_price_raw,
+                    "target_price": target_price_raw,
                     "rid": str(msg.rid) if msg.rid else None,
                     "valid_for_ms": pld.get("valid_for_ms"),
                     "idempotent_key": pld.get("idempotent_key"),
                     "price_ref": str(order_info.get("price_ref")) if order_info.get("price_ref") else None,
+                    "strategy": strategy_id,
                 }
+
+                cmd_metadata: Dict[str, Any] = {}
+                if strategy_id:
+                    cmd_metadata["strategy_id"] = str(strategy_id)
+                if isinstance(tca_budget, dict) and tca_budget:
+                    cmd_metadata["tca_budget"] = dict(tca_budget)
+                if isinstance(risk_ctx, dict) and risk_ctx:
+                    cmd_metadata["risk_context"] = dict(risk_ctx)
+                if cmd_metadata:
+                    cmd_payload["metadata"] = cmd_metadata
                 
                 cmd_open = Message(
                     op="CMD",
@@ -1155,7 +1226,7 @@ class ExecPosFSM:
                 pld={
                     "exposure_summary": exposure_summary,
                     "portfolio_state": self._latest_portfolio_state,
-                    "timestamp_ms": int(time.time() * 1000)
+                    "timestamp_ms": get_clock().now_ms()
                 },
                 why="exposure_summary_updated_after_portfolio_change",
             )
@@ -1187,7 +1258,7 @@ class ExecPosFSM:
                 prev_amt = float(self._prev_position_amts.get(sym, 0.0))
                 now_amt = float(current_amts.get(sym, 0.0))
                 if abs(prev_amt) >= epsilon and abs(now_amt) < epsilon:
-                    closed_at = time.time()
+                    closed_at = get_clock().now_sec()
                     self._last_position_closed_ts[sym] = closed_at
                     self._last_any_position_closed_ts = closed_at
 
@@ -1388,7 +1459,7 @@ class ExecPosFSM:
                     "fill_order_id": order_id,
                     "fill_symbol": symbol,
                     "fill_quantity": filled_qty,
-                    "timestamp_ms": int(time.time() * 1000)
+                    "timestamp_ms": get_clock().now_ms()
                 },
                 why="exposure_summary_updated_after_fill",
             )
@@ -1566,7 +1637,7 @@ class ExecPosFSM:
         # Route to the correct FSM based on the message verb
         if msg.verb == "OPEN":
             # Post-close cooldown: prevent immediate re-entry after any position closes (global).
-            now = time.time()
+            now = get_clock().now_sec()
             last_close = float(self._last_any_position_closed_ts or 0.0)
             if last_close > 0 and self._cooldown_after_close_sec > 0 and (now - last_close) < self._cooldown_after_close_sec:
                 remaining = max(0.0, self._cooldown_after_close_sec - (now - last_close))
@@ -1624,7 +1695,7 @@ class ExecPosFSM:
                             "stop_price": raw_stop if _is_real_value(raw_stop) else None,
                             "target_price": raw_target if _is_real_value(raw_target) else None,
                             "sl_pct": raw_sl_pct if _is_real_value(raw_sl_pct) else None,
-                            "timestamp": time.time()
+                            "timestamp": get_clock().now_sec()
                         }
                         self._pending_intent_data[result.rid] = intent_data
                         LOG.info(f"CAPTURED_INTENT_DATA for {result.rid}: {intent_data}")
@@ -1652,7 +1723,7 @@ class ExecPosFSM:
                 manage = self.manage_flows.get(symbol)
                 if manage:
                     manage._closing_position = True
-                    manage._closing_position_ts = time.time()
+                    manage._closing_position_ts = get_clock().now_sec()
                     print(
                         f"🔒 [CMD:CLOSE] Set closing flag for {symbol} to prevent bracket race")
             result = close_flow.handle(msg)
@@ -1778,7 +1849,7 @@ class ExecPosFSM:
                 manage = self.manage_flows.get(symbol)
                 if manage:
                     manage._closing_position = True
-                    manage._closing_position_ts = time.time()
+                    manage._closing_position_ts = get_clock().now_sec()
                     LOG.info(
                         f"🔒 [PHASE A2] Set closing flag for {symbol} to prevent bracket race")
 
@@ -1809,7 +1880,7 @@ class ExecPosFSM:
                                     "order_id": order_id,
                                     "bracket_type": bracket_type,
                                     "reason": "close_cancel_idempotent",
-                                    "timestamp": int(time.time() * 1000)
+                                    "timestamp": get_clock().now_ms()
                                 })
                             else:
                                 LOG.warning(
@@ -1822,7 +1893,7 @@ class ExecPosFSM:
                                     "bracket_type": bracket_type,
                                     "reason": "close_cancel_exception",
                                     "error": str(result),
-                                    "timestamp": int(time.time() * 1000)
+                                    "timestamp": get_clock().now_ms()
                                 })
                         else:
                             if self._is_cancel_success_response(result):
@@ -1836,7 +1907,7 @@ class ExecPosFSM:
                                     "bracket_type": bracket_type,
                                     "reason": "manual_close",
                                     "adapter_response": result,
-                                    "timestamp": int(time.time() * 1000)
+                                    "timestamp": get_clock().now_ms()
                                 })
                             else:
                                 cancel_status = self._cancel_status_str(result)
@@ -1850,7 +1921,7 @@ class ExecPosFSM:
                                     "bracket_type": bracket_type,
                                     "reason": f"close_cancel_rejected_status_{cancel_status}",
                                     "adapter_response": result,
-                                    "timestamp": int(time.time() * 1000)
+                                    "timestamp": get_clock().now_ms()
                                 })
 
                 # Determine side/qty from current positions
@@ -1878,7 +1949,11 @@ class ExecPosFSM:
                     return
                 close_side = "SELL" if amt > 0 else "BUY"
                 close_qty = str(abs(Decimal(str(amt))))
-                close_id = generate_client_order_id("CLOSE", symbol)
+                close_id = generate_client_order_id(
+                    "CLOSE",
+                    symbol,
+                    idempotent_key=str((decision.pld or {}).get("idempotent_key") or decision.rid or "manual-close"),
+                )
                 await self.adapter.place_market_reduce_only(symbol, close_side, close_qty, new_client_order_id=close_id)
                 LOG.info(
                     f"Close executed for {symbol}: side={close_side} qty={close_qty}")
@@ -1973,7 +2048,7 @@ class ExecPosFSM:
 
                 # PHASE C: Emit observability event for DEC:CLOSE completion
                 # Message.ts is in milliseconds since epoch
-                close_elapsed_ms = int(time.time() * 1000 - decision.ts) if decision.ts else 0
+                close_elapsed_ms = int(get_clock().now_sec() * 1000 - decision.ts) if decision.ts else 0
                 self._emit_observability_event("DEC_CLOSE_COMPLETED", {
                     "symbol": symbol,
                     "elapsed_ms": close_elapsed_ms,
@@ -2087,7 +2162,7 @@ class ExecPosFSM:
                 # Update queued decision (newer takes priority)
                 self._supersede_queue[symbol] = {
                     "decision": decision,
-                    "queued_at": time.time(),
+                    "queued_at": get_clock().now_sec(),
                 }
                 return  # Early return - will be processed when cancel confirmed
 
@@ -2119,7 +2194,7 @@ class ExecPosFSM:
                         self._supersede_queue[symbol] = {
                             "decision": decision,
                             "cancel_order_ids": pending_order_ids,
-                            "queued_at": time.time(),
+                            "queued_at": get_clock().now_sec(),
                         }
                         # Initiate cancel
                         self._cancel_pending_entries_for_symbol(
@@ -2582,7 +2657,16 @@ class ExecPosFSM:
                 await emit_compat(self.fsm, reject_msg, logger=LOG)
                 return
             
-            entry_id = generate_client_order_id("ENTRY", symbol)
+            idem_key = (
+                (decision.pld or {}).get("idempotent_key")
+                or getattr(decision, "idempotent_key", None)
+                or decision.rid
+            )
+            entry_id = generate_client_order_id(
+                "ENTRY",
+                symbol,
+                idempotent_key=str(idem_key) if idem_key else None,
+            )
             entry_resp = None
             
             if order_type == "LIMIT" and price:
@@ -2754,7 +2838,7 @@ class ExecPosFSM:
                         "order_type": order_type,
                         "client_order_id": entry_id,
                         "exchange_order_id": str(entry_resp.get("orderId")),
-                        "ts_ms": int(time.time() * 1000),
+                        "ts_ms": get_clock().now_ms(),
                         "corr_id": decision.corr_id,
                     },
                     why="order_placed",
@@ -2800,9 +2884,17 @@ class ExecPosFSM:
 
             # Generate bracket IDs
             sl_side = opposite_side(side)
-            sl_id = generate_client_order_id("SL", symbol)
+            sl_id = generate_client_order_id(
+                "SL",
+                symbol,
+                idempotent_key=str(idem_key) if idem_key else None,
+            )
             tp_side = opposite_side(side)
-            tp_id = generate_client_order_id("TP", symbol)
+            tp_id = generate_client_order_id(
+                "TP",
+                symbol,
+                idempotent_key=str(idem_key) if idem_key else None,
+	            )
 
             # ✅ Place SL and TP in parallel (not sequentially)
             sl_resp = None
@@ -3041,7 +3133,7 @@ class ExecPosFSM:
                         "reason_code": "ADAPTER_ERROR",
                         "reason_text": str(e)[:200],
                         "exception_class": type(e).__name__,
-                        "ts_ms": int(time.time() * 1000),
+                        "ts_ms": get_clock().now_ms(),
                     },
                     why="adapter_execution_failed",
                 )
@@ -3134,7 +3226,7 @@ class ExecPosFSM:
             symbol = payload.get("symbol") if isinstance(
                 payload, dict) else None
             if symbol:
-                self._symbol_last_tidy_ts[symbol] = time.time()
+                self._symbol_last_tidy_ts[symbol] = get_clock().now_sec()
                 LOG.info(f"[GATE] tidy_event: symbol={symbol}")
         except Exception:
             pass
@@ -3156,7 +3248,7 @@ class ExecPosFSM:
         ttl_ms = int(dget(self._guardian_cfg, "cleanup_ttl_ms", 6000))
         cooldown_ms = int(dget(self._guardian_cfg, "symbol_cooldown_ms", 4000))
 
-        now = time.time()
+        now = get_clock().now_sec()
         last_tidy = self._symbol_last_tidy_ts[symbol] if symbol in self._symbol_last_tidy_ts else 0.0
         fresh = (now - last_tidy) * 1000.0 <= ttl_ms
         last_block = self._last_entry_block_ts[symbol] if symbol in self._last_entry_block_ts else 0.0
@@ -3222,7 +3314,7 @@ class ExecPosFSM:
                         "reason": "timeout_cancellation",
                         "timeout_type": deadline.timeout_type.value,
                         "adapter_response": cancel_result,
-                        "timestamp": int(time.time() * 1000)
+                        "timestamp": get_clock().now_ms()
                     })
                 else:
                     status = str(
@@ -3243,7 +3335,7 @@ class ExecPosFSM:
                         "reason": f"timeout_cancel_rejected_status_{status}",
                         "timeout_type": deadline.timeout_type.value,
                         "adapter_response": cancel_result,
-                        "timestamp": int(time.time() * 1000)
+                        "timestamp": get_clock().now_ms()
                     })
 
             except Exception as e:
@@ -3258,7 +3350,7 @@ class ExecPosFSM:
                         "order_id": deadline.order_id,
                         "reason": "timeout_cancel_idempotent",
                         "timeout_type": deadline.timeout_type.value,
-                        "timestamp": int(time.time() * 1000)
+                        "timestamp": get_clock().now_ms()
                     })
                 else:
                     LOG.warning(
@@ -3273,7 +3365,7 @@ class ExecPosFSM:
                         "reason": "timeout_cancel_exception",
                         "timeout_type": deadline.timeout_type.value,
                         "error": str(e),
-                        "timestamp": int(time.time() * 1000)
+                        "timestamp": get_clock().now_ms()
                     })
 
         # Record timeout metric
@@ -3584,7 +3676,7 @@ class ExecPosFSM:
                     "fill_order_id": pld.get("order_id"),
                     "fill_symbol": pld.get("symbol"),
                     "fill_quantity": qty,
-                    "timestamp_ms": int(time.time() * 1000)
+                    "timestamp_ms": get_clock().now_ms()
                 },
                 why="exposure_summary_updated_after_fill",
             )
@@ -3644,7 +3736,7 @@ class ExecPosFSM:
                     "order_id": order_id,
                     "client_order_id": client_order_id,
                     "reason": "order_cancelled",
-                    "timestamp": int(time.time() * 1000)
+                    "timestamp": get_clock().now_ms()
                 },
                 why="order_cancelled_exposure_update",
             )
@@ -3797,7 +3889,7 @@ class ExecPosFSM:
                 f"trading.execution.preflight_backoff_ms must be positive ints, got: {backoff_ms}"
             )
         tries = 0
-        start = time.time()
+        start = get_clock().now_sec()
 
         while True:
             tries += 1
@@ -3824,7 +3916,7 @@ class ExecPosFSM:
                     LOG.info(
                         f"[BRK] preflight: found position for {symbol}, position_amount={position_amt}")
 
-                elapsed_ms = int((time.time() - start) * 1000)
+                elapsed_ms = int((get_clock().now_sec() - start) * 1000)
                 LOG.info(
                     f"[BRK] preflight positionRisk posAmt={position_amt} try={tries} elapsed={elapsed_ms}ms")
 

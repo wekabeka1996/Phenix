@@ -122,6 +122,13 @@ class SignalScoreV2:
                 # "ВАЖЛИВО: якщо фіча not-ready або відсутня → вона не входить ні в score_raw, ні в wabs."
             
             val_raw = features[feat]
+
+            # Treat explicit None as "missing" (do not attempt math).
+            # Fail-closed only if the feature is essential.
+            if val_raw is None:
+                if feat in essential_features:
+                    missing.append(feat)
+                continue
             
             # Check readiness
             # If readiness dict provided, use it. If key missing, assume NOT ready (fail-closed)
@@ -152,7 +159,10 @@ class SignalScoreV2:
                 contribs[feat] = float(component)
             except Exception as e:
                 logger.warning(f"[{symbol}] Error calc feature {feat}: {e}")
-                missing.append(f"{feat}(err)")
+                if feat in essential_features:
+                    missing.append(feat)
+                # If non-essential feature is malformed, skip it without deferring.
+                continue
 
         # 2. Check essential blockers
         deferred = False
@@ -194,9 +204,11 @@ class SignalScoreV2:
             )
 
         score_norm = score_raw / wabs
+        # Final clamp: contain upstream feature drift (e.g. feature=100.0) from exploding trading decisions.
+        score_clamped = max(decimal.Decimal("-1"), min(decimal.Decimal("1"), score_norm))
         
         return ScoreResult(
-            score=score_norm,
+            score=score_clamped,
             score_raw=score_raw,
             wabs=wabs,
             is_ready=True,

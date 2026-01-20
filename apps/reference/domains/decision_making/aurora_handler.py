@@ -36,43 +36,41 @@ logger = logging.getLogger("aurora_handler")
 @dataclass
 class SymbolState:
     """Per-symbol state for Aurora handler."""
-    
-    # Regime cache (from EVT:REGIME_DETECTED)
-    regime: Optional[str] = None
-    regime_confidence: float = 0.0
-    regime_ts_ms: int = 0
+    def __init__(self):
+        # Regime cache (from EVT:REGIME_DETECTED)
+        self.regime = None
+        self.regime_confidence = 0.0
+        self.regime_ts_ms = 0
 
-    # Anti-churn regime inertia (monotonic timebase)
-    regime_raw: Optional[str] = None
-    regime_effective: Optional[str] = None
-    regime_raw_change_ts: Optional[float] = None
-    
-    # DM-CRITICAL-PATCHES-02: Liveness heartbeat tracking
-    # Updated on EVERY EVT:REGIME_DETECTED (even if changed=False)
-    last_regime_heartbeat_ms: Optional[int] = None
-    
-    # Warmup state
-    warmup_full_ready: bool = False
-    warmup_ticks_seen: int = 0
-    
-    # Side bias history (timestamps)
-    buy_timestamps: List[float] = field(default_factory=list)
-    sell_timestamps: List[float] = field(default_factory=list)
-    
-    # Last signal state
-    last_signal_ts_ms: int = 0
-    last_signal_side: str = ""
-    
-    # Holding period state (Anti-Churn)
-    entry_timestamp: Optional[float] = None  # Time when position was opened
-    position_side: str = ""                   # Current position side ("buy"/"sell")
-    
-    # Re-entry cooldown state (Anti-Ping-Pong)
-    last_exit_timestamp: Optional[float] = None  # Time when position was closed
-    
-    # P0-3: Cached price_motion from EVT:FEATURES_CALCULATED
-    # CMD:PROCESS_STRATEGY does not include price_motion, so we cache it here
-    cached_price_motion: Optional[Dict[str, Any]] = None
+        # Anti-churn regime inertia (monotonic timebase)
+        self.regime_raw = None
+        self.regime_effective = None
+        self.regime_raw_change_ts = None
+        
+        # DM-CRITICAL-PATCHES-02: Liveness heartbeat tracking
+        self.last_regime_heartbeat_ms = None
+        
+        # Warmup state
+        self.warmup_full_ready = False
+        self.warmup_ticks_seen = 0
+        
+        # Side bias history (timestamps)
+        self.buy_timestamps = []
+        self.sell_timestamps = []
+        
+        # Last signal state
+        self.last_signal_ts_ms = 0
+        self.last_signal_side = ""
+        
+        # Holding period state (Anti-Churn)
+        self.entry_timestamp = None
+        self.position_side = ""
+        
+        # Re-entry cooldown state (Anti-Ping-Pong)
+        self.last_exit_timestamp = None
+        
+        # P0-3: Cached price_motion
+        self.cached_price_motion = None
 
 
 class AuroraHandler:

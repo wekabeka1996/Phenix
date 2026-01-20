@@ -143,6 +143,8 @@ def test_timer_integration_reentry_cooldown_after_close() -> None:
         monotonic_fn=clock.now,
         wall_time_fn=clock.now,
     )
+    # DM-CRITICAL-PATCHES-02: Inject heartbeat
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
 
     handler.scoring_kernel_cls = QueueKernel
     QueueKernel.queue = [
@@ -152,14 +154,22 @@ def test_timer_integration_reentry_cooldown_after_close() -> None:
         ScoringResult(score=Decimal("0.5"), side="BUY", thr_buy=Decimal("0.1"), thr_sell=Decimal("0.1")),
     ]
 
-    event = {"symbol": symbol, "features": {"price": 100}, "tf_sec": 60, "warmup": {"full_ready": True}}
+    event = {
+        "symbol": symbol,
+        "features": {"price": 100},
+        "tf_sec": 60,
+        "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now()),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
+    }
 
     # open
-    handler.on_features_calculated(event)
+    handler.on_process_strategy(event)
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" in _types(events)
 
     # close
-    handler.on_features_calculated(event)
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
     state = handler._symbol_states[symbol]
     assert state.position_side == ""
     assert state.last_exit_timestamp == 5000.0
@@ -167,7 +177,8 @@ def test_timer_integration_reentry_cooldown_after_close() -> None:
     # reentry too soon
     events.clear()
     clock.advance(30.0)
-    handler.on_features_calculated(event)
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
     assert "EVT:STRATEGY_DECISION_BLOCKED" in _types(events)
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" not in _types(events)
 
@@ -177,7 +188,8 @@ def test_timer_integration_reentry_cooldown_after_close() -> None:
     # reentry allowed
     events.clear()
     clock.advance(31.0)
-    handler.on_features_calculated(event)
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" in _types(events)
 
 
@@ -199,6 +211,8 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
         monotonic_fn=clock.now,
         wall_time_fn=clock.now,
     )
+    # DM-CRITICAL-PATCHES-02: Inject heartbeat
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
 
     handler.scoring_kernel_cls = QueueKernel
     QueueKernel.queue = [
@@ -207,10 +221,17 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
         ScoringResult(score=Decimal("0.5"), side="SELL", thr_buy=Decimal("0.1"), thr_sell=Decimal("0.1")),
     ]
 
-    event = {"symbol": symbol, "features": {"price": 100}, "tf_sec": 60, "warmup": {"full_ready": True}}
+    event = {
+        "symbol": symbol,
+        "features": {"price": 100},
+        "tf_sec": 60,
+        "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now()),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
+    }
 
     # open buy
-    handler.on_features_calculated(event)
+    handler.on_process_strategy(event)
     state = handler._symbol_states[symbol]
     assert state.position_side == "buy"
     assert state.entry_timestamp == 2000.0
@@ -218,7 +239,8 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
     # flip too soon -> blocked + hold emitted
     events.clear()
     clock.advance(5.0)
-    handler.on_features_calculated(event)
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
 
     blocked = _payloads(events, "EVT:STRATEGY_DECISION_BLOCKED")
     assert blocked[0]["reason_code"] == "HOLDING_PERIOD_ACTIVE"
@@ -229,7 +251,8 @@ def test_timer_integration_flip_min_duration_holding_period() -> None:
     # flip allowed
     events.clear()
     clock.advance(6.0)
-    handler.on_features_calculated(event)
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
     produced = _payloads(events, "EVT:STRATEGY_SIGNAL_PRODUCED")
     assert produced[0]["side"] == "SELL"
 

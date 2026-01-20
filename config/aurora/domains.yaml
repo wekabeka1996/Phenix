@@ -62,7 +62,9 @@ decision_making:
   
   # Commit 5: Risk Skew Guard
   risk_skew:
-    max_skew_sec: 5           # Max age difference between features.ts and risk.ts
+    # LIVE SAFETY: Max age difference between features.ts and risk.ts
+    # Backtest override: see config/aurora/backtest_override.yaml
+    max_skew_sec: 5             # LIVE: 5 seconds max staleness
     max_defer_count: 3        # Max DEFERs per symbol before NO_TRADE_UNTIL_REFRESH
     defer_cooldown_sec: 2     # Cooldown between deferred retries
     defer_window_sec: 60      # Window duration (seconds) - resets defer_count after this period
@@ -82,12 +84,9 @@ decision_making:
   # DM-DIR-SSOT-STRICT-01: Directional sanity gate (SSOT-required).
   # Note: enabled can be overridden per profile; block must exist for LIVE.
   directional_sanity:
-    # FIX-NRR027-BACKTEST: DISABLED to allow counter-trend orders.
-    # Aurora strategy generates mean-reversion style signals (buy dips, sell rallies).
-    # This conflicts with directional_sanity which blocks entries against trend.
-    # For backtest testing, disable this gate to see actual order execution.
-    # LIVE: Set enabled=true for trend-following safety protection!
-    enabled: false
+    # LIVE SAFETY: Blocks entries against established trend direction.
+    # Backtest override: see config/aurora/backtest_override.yaml
+    enabled: true
     min_abs_delta_price: 0.0
     min_confidence: 0.0
     # FIX-NRR026-BACKTEST: Reduced from 2 to 1 for bar-based backtest.
@@ -99,12 +98,9 @@ decision_making:
   # PRICE-MOTION-SSOT-STRICT-01: Multi-window safety layer (SSOT-required).
   # Blocks opening positions against persistent negative/positive price motion.
   price_motion_sanity:
-    # FIX-NRR028-BACKTEST: DISABLED for bar-based backtest.
-    # This gate requires tick-level price history (10s/60s/300s windows) to compute
-    # pm_norm_* volatility-normalized returns. With 5m bars (1 tick per 300s),
-    # there's insufficient data to fill these windows → pm_norm_* = NULL → NRR-028.
-    # LIVE: Set enabled=true to restore Anti-FOMO protection with tick-level data.
-    enabled: false
+    # LIVE SAFETY: Anti-FOMO protection using tick-level price motion.
+    # Backtest override: see config/aurora/backtest_override.yaml
+    enabled: true
     k_vol: 2.0
     flash_window_sec: 60
     bleed_window_sec: 300
@@ -214,8 +210,9 @@ feature_engineering:
   # WARMUP ENFORCEMENT: MANDATORY MODE (NOT A SWITCH!)
   # ═══════════════════════════════════════════════════════════════════════════════
   warmup:
-    # MANDATORY: fail_fast — system does not trade until all features ready
-    enforcement_mode: fail_fast  # LOCKED: fail_fast (warn_only/disabled forbidden in prod)
+    # LIVE SAFETY: fail_fast — system does not trade until all features ready
+    # Backtest override: see config/aurora/backtest_override.yaml
+    enforcement_mode: fail_fast
     # Validate essential ⊆ declared_keys at startup
     validate_essential_subset: true
     # Invariant: full_ready=True ⇒ all declared_keys present

@@ -4,9 +4,21 @@ import time
 import decimal
 
 from vfoundation.core.fsm_core import FSMCore
+from types import SimpleNamespace
 
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
+from apps.reference.config_models import create_aurora_config
+
+
+def _to_dict(obj):
+    if isinstance(obj, SimpleNamespace):
+        return {k: _to_dict(v) for k, v in vars(obj).items()}
+    if isinstance(obj, dict):
+        return {k: _to_dict(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_dict(v) for v in obj]
+    return obj
 
 
 def _seed_common_state(fsm: FSMCore, symbol: str) -> int:
@@ -41,7 +53,7 @@ def test_qos_is_applied_only_for_allowlisted_strategies_in_strategy_gateway() ->
     cfg.domains.decision_making.qos.apply_to_strategies = ["aurora"]
 
     fsm = FSMCore()
-    dm = DecisionMaking(fsm=fsm, config=cfg)
+    dm = DecisionMaking(fsm=fsm, config=create_aurora_config(_to_dict(cfg)))
     dm.strategies_registry = None
 
     symbol = "ETHUSDT"
@@ -79,7 +91,7 @@ def test_mean_reversion_success_path_does_not_update_qos_state_when_disabled() -
     cfg.domains.decision_making.qos.apply_to_strategies = ["aurora"]
 
     fsm = FSMCore()
-    dm = DecisionMaking(fsm=fsm, config=cfg)
+    dm = DecisionMaking(fsm=fsm, config=create_aurora_config(_to_dict(cfg)))
     dm.strategies_registry = None
 
     symbol = "ETHUSDT"
@@ -112,6 +124,7 @@ def test_mean_reversion_success_path_does_not_update_qos_state_when_disabled() -
             "why_chain": ["test"],
             "price_ctx": {"entry_price": "100.0"},
             "readiness": {"warmup_ok": True},
+            "volatility": {"atr_ready": True, "atr_14": "1.0"},
         },
         why="test",
     )
@@ -125,7 +138,7 @@ def test_empty_allowlist_applies_qos_to_all_strategies() -> None:
     cfg.domains.decision_making.qos.apply_to_strategies = []
 
     fsm = FSMCore()
-    dm = DecisionMaking(fsm=fsm, config=cfg)
+    dm = DecisionMaking(fsm=fsm, config=create_aurora_config(_to_dict(cfg)))
     dm.strategies_registry = None
 
     symbol = "ETHUSDT"

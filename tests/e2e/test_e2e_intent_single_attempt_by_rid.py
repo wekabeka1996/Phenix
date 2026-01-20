@@ -30,6 +30,7 @@ def test_single_attempt_by_rid(fsm_harness):
         "instrument": "BTCUSDT",
         "side": "BUY",
         "order": {
+            "order_type": "MARKET",  # ORDER-POLICY-01: explicit order_type required
             "qty": "0.01",
             "price": "1000",
             "price_ref": "1000",

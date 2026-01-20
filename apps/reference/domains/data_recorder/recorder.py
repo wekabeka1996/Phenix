@@ -9,13 +9,16 @@ Architecture:
 """
 
 import os
-import time
+import time  # T2B-04: Keep for sync sleep in _flush_loop
 import json
 import logging
 import threading
 from collections import defaultdict
 from typing import Dict, Any, Optional
 from datetime import datetime
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 
 from vfoundation.core.protocol import Message
 from apps.reference.config_loader import AuroraConfig
@@ -87,7 +90,7 @@ class CsvRecorder:
                 if "features" not in entry:
                     # Initialize
                     entry["features"] = pld
-                    entry["recv_time"] = time.time()
+                    entry["recv_time"] = get_clock().now_sec()
                     # If we already have regime (rare race), we are good
         except Exception as e:
             self.logger.error(f"Error handling features: {e}")
@@ -146,7 +149,7 @@ class CsvRecorder:
                 self.logger.error(f"Flush error: {e}")
 
     def _flush(self):
-        now = time.time()
+        now = get_clock().now_sec()
         to_write = []
         keys_to_remove = []
         

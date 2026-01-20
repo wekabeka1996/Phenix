@@ -58,9 +58,10 @@ def mock_config():
     
     # Add instruments to assets (AuroraHandler looks here)
     # Explicitly set Optional overrides to None to allow fallback to Decision Config
+    from types import SimpleNamespace as _SN
     cfg.strategies.aurora.assets = {
-        "BTCUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None), 
-        "ETHUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None)
+        "BTCUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None, volatility_entry_logic=_SN(enabled=False)), 
+        "ETHUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None, volatility_entry_logic=_SN(enabled=False))
     }
     cfg.instruments = {}
     return cfg
@@ -78,6 +79,8 @@ def test_reentry_cooldown_basic(mock_config):
     )
     handler.strategies_registry = None
     handler.timeframe_sec = 60
+    handler._symbol_states["BTCUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["BTCUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
     
     # --- PROACTIVE GUARD MOCKING ---
     handler._is_symbol_enabled = MagicMock(return_value=True)
@@ -87,16 +90,20 @@ def test_reentry_cooldown_basic(mock_config):
     handler.scoring_kernel_cls = MagicMock()
     
     symbol = "BTCUSDT"
-    event = {
-        "symbol": symbol, 
-        "features": {"price": 100}, 
-        "tf_sec": 60,
-        "warmup": {"full_ready": True}
-    }
-    
-    # 1. Init state (Buy)
     state = handler._symbol_states[symbol]
+    state.last_regime_heartbeat_ms = int(clock.now() * 1000)
     
+    event = {
+        "symbol": symbol,
+        "features": {"price": 100, "atr": 10},
+        "tf_sec": 60,
+        "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now()),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
+    }
+
+    # 1. Init state (Buy)
+
     # Return BUY
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="BUY",
@@ -108,13 +115,13 @@ def test_reentry_cooldown_basic(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    handler.on_process_strategy(event)
+
     # Verify established
     assert state.position_side == "buy"
-    state.entry_timestamp = clock.now() - 100 
+    state.entry_timestamp = clock.now() - 100
     state.regime_effective = "DEFAULT"
-    
+
     # 2. Exit (Neutral)
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="",
@@ -126,13 +133,15 @@ def test_reentry_cooldown_basic(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     assert state.position_side == ""
     assert state.last_exit_timestamp == 5000.0
-    
+
     # 3. Re-entry too soon (30s < 60s)
     clock.advance(30.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     emit_mock.reset_mock()
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="BUY",
@@ -144,19 +153,22 @@ def test_reentry_cooldown_basic(mock_config):
         regime=None,
         deferred=False,
     )
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     # Verify BLOCKED
     # emit_mock calls are Call objects. args[0] is tuple of args. args[0][0] is type.
     types = [c.args[0] for c in emit_mock.call_args_list]
     assert "EVT:STRATEGY_DECISION_BLOCKED" in types
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" not in types
-    
+
     # 4. Re-entry allowed (total 61s)
     clock.advance(31.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     emit_mock.reset_mock()
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     types = [c.args[0] for c in emit_mock.call_args_list]
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" in types
 
@@ -187,6 +199,7 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
     )
     handler.strategies_registry = None
     handler.timeframe_sec = 60
+    handler._symbol_states["BTCUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
     
     # --- PROACTIVE GUARD MOCKING ---
     handler._is_symbol_enabled = MagicMock(return_value=True)
@@ -197,15 +210,17 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
     
     symbol = "BTCUSDT"
     event = {
-        "symbol": symbol, 
-        "features": {"price": 100}, 
+        "symbol": symbol,
+        "features": {"price": 100, "atr": 10},
         "tf_sec": 60,
-        "warmup": {"full_ready": True}
+        "warmup": {"full_ready": True},
+        "bar_close_ts": int(clock.now()),
+        "bar": {"close": 100, "open": 100, "high": 100, "low": 100, "volume": 10},
     }
-    
+
     # Init
     state = handler._symbol_states[symbol]
-    
+
     # Helper to force exit tracking
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="",
@@ -217,18 +232,19 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
         regime=None,
         deferred=False,
     )
-    
+
     # Force state
     state.regime_effective = "LOW_VOLATILITY"
     state.position_side = "buy"
-    state.entry_timestamp = 0.0 
-    
+    state.entry_timestamp = 0.0
+
     # Exit
-    handler.on_features_calculated(event)
+    handler.on_process_strategy(event)
     assert state.last_exit_timestamp == 1000.0, f"Exit failed. State: {state}"
-    
+
     # Re-entry at 15s (Blocked: 10s * 2.0 = 20s required)
     clock.advance(15.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
         side="BUY",
         score=Decimal("0.5"),
@@ -240,15 +256,18 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
         deferred=False,
     )
     emit_mock.reset_mock()
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     types = [c.args[0] for c in emit_mock.call_args_list]
     assert "EVT:STRATEGY_DECISION_BLOCKED" in types
-    
+
     # Re-entry at 21s (Allowed)
     clock.advance(6.0)
+    handler._symbol_states[symbol].last_regime_heartbeat_ms = int(clock.now() * 1000)
     emit_mock.reset_mock()
-    handler.on_features_calculated(event)
-    
+    event["bar_close_ts"] = int(clock.now())
+    handler.on_process_strategy(event)
+
     types = [c.args[0] for c in emit_mock.call_args_list]
     assert "EVT:STRATEGY_SIGNAL_PRODUCED" in types

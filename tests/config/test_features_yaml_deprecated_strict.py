@@ -93,4 +93,4 @@ class TestFeaturesYamlDeprecated:
         # VERIFY: config loaded successfully
         assert config is not None
         assert hasattr(config, "trading_mode")
-        assert config.trading_mode in {"testnet", "production", "live", "hybrid_live_data_testnet_exec"}
+        assert config.trading_mode in {"testnet", "production", "live", "hybrid_live_data_testnet_exec", "backtest"}

@@ -6,11 +6,13 @@ Collects and aggregates trading metrics for monitoring and analysis.
 Tracks trade success rates, rejection patterns, and system performance.
 """
 
-import time
 import threading
 from typing import Dict, Any, List, Optional
 from collections import defaultdict, deque
 import logging
+
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 
 from apps.reference.utils.accessors import dget
 
@@ -90,7 +92,7 @@ class MetricsCollector:
                 "type": "intent",
                 "symbol": symbol,
                 "side": side,
-                "timestamp": time.time(),
+                "timestamp": get_clock().now_sec(),
                 **extra_data,
             }
             self._rolling_data.append(event)
@@ -109,7 +111,7 @@ class MetricsCollector:
                 self._metrics["trade_decisions_accepted"] = int(self._metrics["trade_decisions_accepted"]) + 1
                 symbol_metrics = self._symbol_metrics[symbol]
                 symbol_metrics["accepted"] = int(symbol_metrics["accepted"]) + 1
-                symbol_metrics["last_trade_time"] = time.time()
+                symbol_metrics["last_trade_time"] = get_clock().now_sec()
             else:
                 self._metrics["trade_decisions_rejected"] = int(self._metrics["trade_decisions_rejected"]) + 1
                 symbol_metrics = self._symbol_metrics[symbol]
@@ -128,7 +130,7 @@ class MetricsCollector:
                 "side": side,
                 "decision": decision,
                 "reason": reason,
-                "timestamp": time.time(),
+                "timestamp": get_clock().now_sec(),
                 **extra_data,
             }
             self._rolling_data.append(event)
@@ -147,7 +149,7 @@ class MetricsCollector:
                 "symbol": symbol,
                 "side": side,
                 "status": status,
-                "timestamp": time.time(),
+                "timestamp": get_clock().now_sec(),
                 **extra_data,
             }
             self._rolling_data.append(event)
@@ -300,7 +302,7 @@ class MetricsCollector:
     def get_recent_rejections(self, minutes: int = 5) -> List[Dict[str, Any]]:
         """Get recent rejection events within the specified time window."""
         with self._lock:
-            cutoff_time = time.time() - (minutes * 60)
+            cutoff_time = get_clock().now_sec() - (minutes * 60)
             recent_rejections = []
 
             for event in reversed(self._rolling_data):

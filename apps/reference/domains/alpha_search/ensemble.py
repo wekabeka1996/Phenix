@@ -9,12 +9,20 @@ Supports dynamic weight adjustment based on performance metrics.
 import logging
 from typing import Dict, List, Optional, Any, Tuple, cast
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import numpy as np
 import pandas as pd
 
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
+
 from .alpha_model import AlphaModel, AlphaScore
+
+
+def _clock_datetime() -> datetime:
+    """Get current datetime from clock abstraction (T2B-04 compliant)."""
+    return datetime.fromtimestamp(get_clock().now_sec(), tz=timezone.utc)
 
 
 @dataclass
@@ -120,7 +128,7 @@ class EnsembleModel(AlphaModel):
         self.weights.model_weights = {
             name: equal_weight for name in self.models.keys()
         }
-        self.weights.last_updated = datetime.now()
+        self.weights.last_updated = _clock_datetime()
 
     def generate_signal(
         self,
@@ -265,7 +273,7 @@ class EnsembleModel(AlphaModel):
 
     def _check_rebalance(self) -> None:
         """Check if weights need rebalancing based on performance."""
-        now = datetime.now()
+        now = _clock_datetime()
         if (self.weights.last_updated and
                 (now - self.weights.last_updated).days >= self._ensemble_config.rebalance_frequency_days):
             self._rebalance_weights()
@@ -315,7 +323,7 @@ class EnsembleModel(AlphaModel):
                                v in new_weights.items()}
 
             self.weights.model_weights = new_weights
-            self.weights.last_updated = datetime.now()
+            self.weights.last_updated = _clock_datetime()
             self.weights.performance_score = total_score / \
                 len(performance_scores)
 
