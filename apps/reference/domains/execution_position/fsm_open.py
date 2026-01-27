@@ -63,6 +63,10 @@ class CmdOpenPayload(BaseModel):
     idempotent_key: Optional[str] = Field(default=None, description="Idempotency key")
     rid: Optional[str] = Field(default=None, description="Request ID for correlation")
     strategy: Optional[str] = Field(default=None, description="Strategy ID (e.g., 'aurora', 'mean_reversion')")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional structured metadata (e.g., strategy/tca/risk context).",
+    )
     
     @field_validator('tif', mode='before')
     @classmethod
@@ -123,7 +127,12 @@ class OpenFlowFSM:
         
         if isinstance(config, dict):
             raise TypeError("OpenFlowFSM requires typed AuroraConfig, got dict")
-        self.config = AuroraConfig() if config is None else config
+        if config is None:
+            raise ValueError(
+                f"CRITICAL: {self.__class__.__name__} requires valid AuroraConfig. "
+                "Refusing to start with empty defaults."
+            )
+        self.config = config
 
         self.last_open_ts: float = 0.0
         self.logger = logging.getLogger(__name__)
@@ -184,21 +193,17 @@ class OpenFlowFSM:
 
         if specs:
             # Pydantic model InstrumentPrecisionSpec fields, convert to Decimal
-            try:
-                # Primary fields (tick_size/step_size are float in canonical model)
-                if hasattr(specs, 'tick_size') and specs.tick_size is not None:
-                    tick_size = Decimal(str(specs.tick_size))
-                if hasattr(specs, 'step_size') and specs.step_size is not None:
-                    step_size = Decimal(str(specs.step_size))
-                
-                # Optional legacy fields (may not be in InstrumentPrecisionSpec)
-                if hasattr(specs, 'min_qty') and specs.min_qty is not None:
-                    min_qty = Decimal(str(specs.min_qty))
-                if hasattr(specs, 'min_notional') and specs.min_notional is not None:
-                    min_notional = Decimal(str(specs.min_notional))
-            except (ValueError, TypeError, InvalidOperation) as e:
-                # Log but continue with defaults
-                pass
+            # Primary fields (tick_size/step_size are float in canonical model)
+            if hasattr(specs, 'tick_size') and specs.tick_size is not None:
+                tick_size = Decimal(str(specs.tick_size))
+            if hasattr(specs, 'step_size') and specs.step_size is not None:
+                step_size = Decimal(str(specs.step_size))
+            
+            # Optional legacy fields (may not be in InstrumentPrecisionSpec)
+            if hasattr(specs, 'min_qty') and specs.min_qty is not None:
+                min_qty = Decimal(str(specs.min_qty))
+            if hasattr(specs, 'min_notional') and specs.min_notional is not None:
+                min_notional = Decimal(str(specs.min_notional))
 
         return {
             "min_qty": min_qty,

@@ -9,17 +9,13 @@ T2B-03 Architecture (Orchestrated Cycle):
 3. Computes MR signals via MeanReversion3mStrategy
 4. Emits EVT:STRATEGY_SIGNAL_PRODUCED when signal is actionable
 
-DEPRECATED paths (T2B-06):
-- on_tick() — stub, always returns None
-- _on_market_tick() — stub, does nothing
-- _on_bar_closed() — delegates to data-only handler (no decision trigger)
-
 Activation SSOT: strategies_registry.assignments (per symbol).
 The config flag mean_reversion.enabled is a global kill-switch (can disable, does not activate without assignment).
 """
 
 import logging
-import time
+# DET-BT-09: Removed 'import time' - use get_clock() for deterministic backtest
+from apps.reference.core.time import get_clock
 import uuid
 import json
 from decimal import Decimal
@@ -83,11 +79,6 @@ class MeanReversionHandler:
         1. _on_process_strategy() — receives CMD:PROCESS_STRATEGY from FE
         2. Strategy processes bar (OHLCV from CMD payload), MR signal
         3. If signal is actionable, emit EVT:STRATEGY_SIGNAL_PRODUCED
-    
-    DEPRECATED (T2B-06):
-        - on_tick() — stub (DeprecationWarning)
-        - _on_market_tick() — stub (no-op)
-        - _on_bar_closed() — delegates to data-only handler
     
     Activation SSOT: strategies_registry.assignments.
     The config flag mean_reversion.enabled is a global kill-switch.
@@ -381,29 +372,6 @@ class MeanReversionHandler:
     def is_symbol_enabled(self, symbol: str) -> bool:
         """Check if MR is enabled for specific symbol."""
         return self._enabled and symbol in self._enabled_symbols
-    
-    def on_tick(
-        self,
-        symbol: str,
-        price: Decimal,
-        volume: Decimal,
-        timestamp_ms: int,
-        regime: Optional[str] = None,
-    ) -> Optional[MRSignal]:
-        """
-        DEPRECATED: T2B-06 — dead code, no longer called.
-        
-        T2B-03: MR receives bars via CMD:PROCESS_STRATEGY from FE.
-        This method remains only for API compatibility; it always returns None.
-        """
-        import warnings
-        warnings.warn(
-            "MeanReversionHandler.on_tick() is deprecated. "
-            "Use CMD:PROCESS_STRATEGY instead (T2B-03).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return None
 
     def _emit_strategy_blocked(
         self,
@@ -416,7 +384,8 @@ class MeanReversionHandler:
         why_chain: list[str] | None = None,
         throttle_ms: int = 10_000,
     ) -> None:
-        now_ms = int(time.time() * 1000)
+        # DET-BT-09: Use get_clock() for deterministic backtest
+        now_ms = get_clock().now_ms()
         last_reason = self._last_block_reason.get(symbol)
         last_ts = self._last_block_ts_ms.get(symbol, 0)
         if last_reason == reason_code and (now_ms - last_ts) < int(throttle_ms):
@@ -462,7 +431,8 @@ class MeanReversionHandler:
             
             # Build context
             context = {
-                "generated_ts_ms": int(time.time() * 1000),
+                # DET-BT-09: Use get_clock() for deterministic backtest
+                "generated_ts_ms": get_clock().now_ms(),
                 "signal_type": signal.signal_type.name,
                 "reason": why_norm,
                 "regime": signal.flat_regime.name if signal.flat_regime else (self._per_symbol_regime.get(signal.symbol) or "UNKNOWN"), 
@@ -495,7 +465,8 @@ class MeanReversionHandler:
         
         # Track signal
         self._signal_counts[symbol] = (self._signal_counts[symbol] if symbol in self._signal_counts else 0) + 1
-        self._last_signal_time[symbol] = time.time()
+        # DET-BT-09: Use get_clock() for deterministic backtest
+        self._last_signal_time[symbol] = get_clock().now_sec()
         
         self.logger.info(
             f"[{symbol}] MR Signal: {signal.signal_type.name} "
@@ -504,7 +475,11 @@ class MeanReversionHandler:
             f"why={signal.why}"
         )
         
-        rid = str(uuid.uuid4())
+        # DET-BT-13: Use deterministic rid from bar timestamp + symbol + signal type (not random uuid)
+        import hashlib
+        ts_ms = get_clock().now_ms()
+        rid_raw = f"{symbol}:{signal.signal_type.name}:{ts_ms}"
+        rid = f"rid-{hashlib.md5(rid_raw.encode()).hexdigest()[:16]}"
         side = signal.side  # "BUY" or "SELL"
         # NOTE (SIZING-MARGIN-FIRST-SSOT-02):
         # Mean Reversion does NOT own sizing. DecisionMaking computes qty from:
@@ -689,19 +664,29 @@ class MeanReversionHandler:
 
     def _check_liquidity_gate(self, symbol: str) -> bool:
         """Check if symbol passes liquidity gate."""
-        # Get Config
-        gate_cfg = self._mr_config.liquidity_gate # Global default
+        # CONFIG HIERARCHY (most specific wins):
+        # 1. Per-asset override: mean_reversion.assets.<symbol>.liquidity_gate
+        # 2. Global fallback: mean_reversion.liquidity_gate
+        gate_cfg = self._mr_config.liquidity_gate  # Global default
         asset_cfg = self._mr_config.assets.get(symbol)
         if asset_cfg and isinstance(asset_cfg, MRAssetConfig) and asset_cfg.liquidity_gate:
             gate_cfg = asset_cfg.liquidity_gate
         
         if not gate_cfg or not gate_cfg.enabled:
-            return True # Gate disabled / not configured -> Pass
-            
-        kappa = self._liquidity_kappa_map.get(symbol, Decimal("0"))
+            return True  # Gate disabled / not configured -> Pass
+        
+        # FAIL-CLOSED: Require explicit kappa when gate is enabled.
+        # No silent fallback - missing kappa is a contract violation.
+        kappa = self._liquidity_kappa_map.get(symbol)
+        if kappa is None:
+            raise RuntimeError(
+                f"[{symbol}] Liquidity gate enabled but liquidity_kappa not found in cache. "
+                f"Ensure FeatureEngineering emits liquidity_kappa before MR decision. "
+                f"Gate config: enabled={gate_cfg.enabled}, kappa_min={gate_cfg.kappa_min}"
+            )
         if kappa < Decimal(str(gate_cfg.kappa_min)):
-             self.logger.info(f"[{symbol}] Liquidity Gate Fail: kappa={kappa} < min={gate_cfg.kappa_min}")
-             return False
+            self.logger.info(f"[{symbol}] Liquidity Gate Fail: kappa={kappa} < min={gate_cfg.kappa_min}")
+            return False
         
         return True
 
@@ -815,7 +800,8 @@ class MeanReversionHandler:
                 trade_count=int(bar_data.get("trade_count", 0) if isinstance(bar_data, dict) else getattr(bar_data, "trade_count", 0)),
             )
             
-            ts_ms = bar.end_ts_ms or int(time.time() * 1000)
+            # DET-BT-09: Use get_clock() for deterministic backtest
+            ts_ms = bar.end_ts_ms or get_clock().now_ms()
 
             # OBS-04-INT: Prefer bar-driven features as SSOT for liquidity gate.
             # P0-1: Cache full features for volatility/liquidity propagation to signal
@@ -881,7 +867,7 @@ class MeanReversionHandler:
                             reason_code="LIQUIDITY_GATE",
                             reason="LIQUIDITY",
                         context="mean_reversion_handler:_on_process_strategy",
-                        details={"kappa": str(self._liquidity_kappa_map.get(symbol, Decimal('0')))},
+                        details={"kappa": str(self._liquidity_kappa_map.get(symbol, "MISSING"))},
                         why_chain=["LIQUIDITY_GATE"],
                     )
             else:
@@ -918,30 +904,6 @@ class MeanReversionHandler:
         # No-op for now. Bar data caching can be added if needed.
         # The primary purpose is to maintain backwards compatibility
         # without triggering decision logic.
-        pass
-
-    def _on_bar_closed(self, event: Message) -> None:
-        """
-        DEPRECATED: Handle EVT:BAR_CLOSED from global BarAggregator.
-        
-        T2B-03: This method is DEPRECATED. Decision is now triggered by
-        CMD:PROCESS_STRATEGY. This method is kept for backwards compatibility
-        but will be removed in future versions.
-        
-        Use _on_process_strategy() instead.
-        """
-        # T2B-03: Delegate to data-only handler (no decision trigger)
-        self._on_bar_closed_data_only(event)
-
-    def _on_market_tick(self, event: Message) -> None:
-        """
-        DEPRECATED: T2B-06 — dead code, no longer subscribed.
-        
-        T2B-03: MR receives bars via CMD:PROCESS_STRATEGY from FE.
-        This method remains only for API compatibility; it does nothing.
-        
-        MR no longer subscribes to EVT:MARKET_TICK_FORWARDED.
-        """
         pass
     
     # NOTE (SIZING-MARGIN-FIRST-SSOT-02):

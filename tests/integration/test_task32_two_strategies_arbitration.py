@@ -84,12 +84,10 @@ def test_task32_two_strategies_on_one_symbol_arbitration_works() -> None:
         ),
         domains=SimpleNamespace(
             decision_making=SimpleNamespace(
+                # TASK-ZOMBIE-FIX: Removed dead fields (risk_fraction_q, liquidity_kappa_mode, liquidity_kappa)
                 position_sizing=SimpleNamespace(
                     min_position_size_usd=10,
                     liquidity_based_cap_usd=10_000,
-                    risk_fraction_q=None,
-                    liquidity_kappa_mode="dynamic",
-                    liquidity_kappa=1.0,
                 ),
                 risk_skew=SimpleNamespace(
                     max_skew_sec=5,

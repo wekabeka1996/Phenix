@@ -81,6 +81,12 @@ mean_reversion:
     DOGEUSDT:
       enabled: true
       position_mode: "STRICT"
+      
+      # P1: Active Leverage Management
+      leverage:
+        target: 10
+        mode: "ISOLATED"
+      
       strategy:
         bb_window: 20
         bb_num_std: 2.1
@@ -92,30 +98,38 @@ mean_reversion:
         cooldown_sec: 210
       # Regime Gating - DOGE champion (+$387) - includes FLAT_HIGH for "жирні" угоди
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-      risk:
-        position_size_usd: 150
 
     # --- BTC (BRONZE 🥉) ---
     BTCUSDT:
       enabled: true
       position_mode: "STRICT"
+      
+      # P1: Active Leverage Management
+      leverage:
+        target: 15
+        mode: "ISOLATED"
+      
       strategy:
         bb_window: 40
         bb_num_std: 1.5
-        min_bb_width: 0.006
+        min_bb_width: 0.004
         entry_threshold: 0.20
         tp_to_mid: true      # Default behavior
         sl_atr_mult: 2.0   # FIX: Was null, preventing ATR-based SL. 2.0x ATR = industry standard
         cooldown_sec: 0      # No cooldown
-      # Regime Gating - BTC conservative (+$103) - exclude HIGH for safety
-      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
-      risk:
-        position_size_usd: 150
+      # Regime Gating - BTC conservative (+$103) - include MEAN_REVERSION for backtest
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
     
     # --- XRP (SILVER 🥈) ---
     XRPUSDT:
       enabled: true
       position_mode: "STRICT"
+      
+      # P1: Active Leverage Management
+      leverage:
+        target: 10
+        mode: "ISOLATED"
+      
       strategy:
         bb_window: 40
         bb_num_std: 2.5
@@ -126,8 +140,6 @@ mean_reversion:
         cooldown_sec: 165
       # Regime Gating - XRP stable (+$121) - similar to DOGE
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
-      risk:
-        position_size_usd: 150
     
     # --- Optional assets (disabled) ---
     ETHUSDT:
@@ -141,8 +153,6 @@ mean_reversion:
         tp_to_mid: null
         sl_atr_mult: null
         cooldown_sec: null
-      risk:
-        position_size_usd: null
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
     SOLUSDT:
@@ -156,8 +166,6 @@ mean_reversion:
         tp_to_mid: null
         sl_atr_mult: null
         cooldown_sec: null
-      risk:
-        position_size_usd: null
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
   
   # ─────────────────────────────────────────────────────────────────────────────
@@ -180,18 +188,3 @@ mean_reversion:
       sizing_mult: 0.7         # Smaller size in high vol
       stop_mult: 1.5           # Wider stops
       target_mult: 1.2         # Larger targets
-  
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Risk Management
-  # ─────────────────────────────────────────────────────────────────────────────
-  risk:
-    position_size_usd: 100     # Base position size
-    max_concurrent_positions: 3
-    daily_loss_limit_usd: 50
-    
-    # Fee-aware expected PnL filter
-    expected_pnl_multiplier: 1.5  # expected_pnl > cost * 1.5
-    
-    # Slippage and fees (for expected PnL calculation)
-    fees_pct: 0.0004           # 0.04% taker fee
-    slippage_pct: 0.0002       # 0.02% estimated slippage

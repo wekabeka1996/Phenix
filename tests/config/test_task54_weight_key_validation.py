@@ -29,8 +29,7 @@ def _make_minimal_aurora_instrument_config(**overrides):
         "exit": None,
         "take_profit": None,
         "trailing_stop": None,
-        "execution": None,
-        "ema_clamp": None,
+        # PURGE-04: execution and ema_clamp removed from model
         "signal_threshold": None,
         # max_risk_score OMITTED - explicit null is forbidden
         "cooldown_sec": None,

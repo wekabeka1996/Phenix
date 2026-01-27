@@ -8,13 +8,10 @@ debug:
   disable_daily_loss_limit: false
 
 decision_making:
+  # TASK-ZOMBIE-FIX: Removed dead fields (kappa_mode, liquidity_kappa, risk_fraction_q, liquidity_kappa_mode)
   position_sizing:
     min_position_size_usd: 10
     liquidity_based_cap_usd: 10000
-    risk_fraction_q: null
-    liquidity_kappa: 1.0
-    kappa_mode: dynamic
-    liquidity_kappa_mode: dynamic
   
   # EP-01.2-INT: EntryPlan for ATR-based entry/SL/TP computation
   entry_plan:
@@ -213,23 +210,17 @@ feature_engineering:
     # LIVE SAFETY: fail_fast — system does not trade until all features ready
     # Backtest override: see config/aurora/backtest_override.yaml
     enforcement_mode: fail_fast
-    # Validate essential ⊆ declared_keys at startup
-    validate_essential_subset: true
+    # TASK-ZOMBIE-FIX: Removed validate_essential_subset (dead, never read in runtime)
     # Invariant: full_ready=True ⇒ all declared_keys present
     check_full_ready_invariant: true
 
   # ═══════════════════════════════════════════════════════════════════════════════
   # P0-1: VOLATILITY STATE HARD FLOOR + CAP + FIREWALL
+  # TASK-ZOMBIE-FIX: Removed dead fields (hard_floor_enabled, hist_floor_enabled, hist_floor_k_small)
   # ═══════════════════════════════════════════════════════════════════════════════
   volatility_state:
     cap_max: 3.0
-    hard_floor_enabled: true
-    # Floor in price units (per-asset, use smallest reasonable value)
     tick_floor: 0.0001
-    # Historical floor multiplier (k_small * median_avg_range)
-    hist_floor_enabled: false
-    hist_floor_k_small: 0.1
-    # Division safety epsilon
     division_eps: 0.000000001
 
   # ═══════════════════════════════════════════════════════════════════════════════
@@ -292,8 +283,7 @@ feature_engineering:
     clip: 3.0                   # |macro_resid| <= 3.0
     # Semantic definition
     neutral: 0.0                # SIGNED feature: neutral is 0.0
-    # Bounds for sanity firewall
-    bounds: { min: -3.0, max: 3.0 }
+    # TASK-ZOMBIE-FIX: Removed bounds (dead, feature_sanity.feature_bounds is SSOT)
 
   # ═══════════════════════════════════════════════════════════════════════════════
   # R2 (P2): ABSORPTION — Experimental (Default OFF, no live impact)
@@ -316,8 +306,7 @@ feature_engineering:
     clip: 1.0                   # |absorption| <= 1.0
     # Semantic definition
     neutral: 0.0                # SIGNED feature: neutral is 0.0
-    # Bounds for sanity firewall
-    bounds: { min: -1.0, max: 1.0 }
+    # TASK-ZOMBIE-FIX: Removed bounds (dead, feature_sanity.feature_bounds is SSOT)
 
 risk_management:
   # Commit 6: Disable placeholder absorption penalty by default
@@ -344,35 +333,27 @@ position_tracking:
   # Must be > account_observer.poll_interval_sec to avoid race conditions
   positions_stale_ttl_sec: 15
   
-  thread_timeouts:
-    join_timeout_sec: 10
+  # TASK-ZOMBIE-FIX: Removed thread_timeouts section (dead, join_timeout_sec never read in runtime)
   enable_market_tick_subscription: false
 
-account_observer:
-  market_type: "futures"
-  poll_interval_sec: 5
-  trade_limit: 10
-  symbols:
-    - BTCUSDT
-    - ETHUSDT
-    - SOLUSDT
-    - DOGEUSDT
-    - XRPUSDT
-  thread_timeouts:
-    join_timeout_sec: 10
+# NOTE: account_observer section removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
+# AccountObserver was Legacy Spot code, system now uses Futures-only via ExecPosFSM.
 
 execution_position:
-  watchdog:
-    ack_ttl_ms: 8000
-    fill_ttl_ms: 30000
-    check_interval_ms: 1000
-    rps_limit: 10
+  # P1-CONFIG-EXTRACTION: Fallback mode configuration (fail-closed SSOT)
+  # Consumed by: exposure_guard.py:_load_fallback_config()
+  fallback:
+    policy: fail_closed           # fail_closed = block all, reduce_exposure = scale down
+    risk_reduction_pct: 0.5       # Exposure reduction when policy=reduce_exposure
+    backoff_ms: [200, 500, 1000]  # Retry backoff intervals (ms)
+
+  # TASK-ZOMBIE-FIX: Removed duplicate watchdog section (FSM reads from trading.execution.watchdog)
   
   exposure_guard:
     pending_ttl_sec: 90
     post_fill_ttl_sec: 5
     stale_ttl_sec: 60  # Increased from 15 to allow for slower portfolio updates
-    pending_timeout_sec: 5
+    # PURGE-DEAD-CONFIG-03: pending_timeout_sec removed (never read in runtime)
     # FIX: Values should be percentages (0-100), not fractions (0-1)!
     # 0.95 meant "0.95% of equity" which blocked almost all trades.
     # Correct values: 95 means "95% of equity".
@@ -399,8 +380,7 @@ execution_position:
     inflight_ttl_sec: 60      # TTL before reconciliation check (seconds)
     max_ttl_sec: 120          # Force-clear after this TTL (seconds)
     reconcile_interval_sec: 10  # Interval between reconcile attempts
-    reconcile_retries: 3      # Number of REST retries
-    reconcile_backoff_ms: 500 # Backoff between retries
+    # PURGE-DEAD-CONFIG-03: reconcile_retries/backoff_ms removed (retry logic not implemented)
     verbose_logging: true     # Log reconciliation details
   
   metrics_collector:
@@ -441,11 +421,72 @@ execution_position:
   # NO FALLBACK to market. Entry aborted on reject.
   maker_only_entry:
     enabled: false          # Set to true to enforce maker-only entries
-    tif_value: "GTX"       # Post-only time-in-force
-    reject_on_fail: true   # MUST be true. No market fallback.
+    # PURGE-DEAD-CONFIG-03: tif_value/reject_on_fail removed (hardcoded GTX, always reject)
 
   # ORDER-POLICY-01: Global order capabilities (SSOT)
   # This is what the execution layer supports. Strategy policies must be a subset.
   order_capabilities:
     supported_order_types: ["LIMIT", "MARKET"]
     supported_tif: ["GTC", "GTX", "IOC", "FOK"]
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MAGIC-NUM-EXTRACTION: Bracket Placement Configuration
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Handles Binance -2021 error: "The stop price is too close to the mark price"
+  # Strategy: Progressive TP widening with exponential backoff
+  bracket_placement:
+    # First retry: widen TP by 20 bps (0.2%) - handles most transient cases
+    tp_widen_first_bps: 20
+    # Second retry: widen TP by 50 bps (0.5%) - handles volatile markets
+    tp_widen_second_bps: 50
+    # Backoff delays between retries (ms) - exponential: 200, 400
+    retry_backoff_ms: [200, 400]
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MAGIC-NUM-EXTRACTION: Order Lifecycle Timing Configuration
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Timing parameters for order lifecycle stages
+  order_lifecycle:
+    # Delay after MARKET fill before bracket placement (REST API propagation lag)
+    # Binance Futures typical: 300-500ms for position update after fill
+    fill_settlement_delay_ms: 500
+    # Delay after CLOSE before orphan bracket cleanup (exchange-side settlement)
+    # Conservative: 2000ms to ensure all exchange state is finalized
+    position_close_cleanup_delay_ms: 2000
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MAGIC-NUM-EXTRACTION: Shadow Exposure Check Configuration
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Periodic validation: FSM-tracked exposure vs exchange-reported positions
+  # Detects state drift between internal tracking and exchange reality
+  shadow_check:
+    enabled: true
+    # Run shadow check every N exposure requests (sampling rate)
+    # 10 = ~10% sampling on average, balances cost vs detection speed
+    check_every_n_requests: 10
+    # Allowed mismatch percentage before warning (1.0 = 1%)
+    # For most portfolios, 1% is acceptable noise from rounding/timing
+    tolerance_pct: 1.0
+    # Absolute mismatch threshold in USD (for large portfolios)
+    # $5k absolute is more meaningful than 1% for $1M+ portfolios
+    absolute_threshold_usd: 5000.0
+    # Use absolute threshold for large portfolios
+    use_absolute_for_large_portfolios: true
+    # Portfolio size threshold for switching to absolute tolerance
+    large_portfolio_threshold_usd: 1000000.0
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MAGIC-NUM-EXTRACTION: OrderGuardian Configuration
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # Centralized orphan bracket detection and cleanup
+  guardian:
+    # Polling interval for reconciliation loop (ms)
+    # 500ms balances responsiveness vs exchange rate limits
+    poll_interval_ms: 500
+    # Unified mode: single reconcile loop for all symbols
+    unified: true
+    # Emit EVT:SYMBOL_TIDY after successful orphan cleanup
+    emit_tidy_event: true
+    # TTL before considering bracket as orphaned (ms)
+    cleanup_ttl_ms: 6000
+    # Cooldown after symbol tidy before next cleanup attempt (ms)
+    symbol_cooldown_ms: 4000

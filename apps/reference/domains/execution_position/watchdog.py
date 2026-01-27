@@ -69,6 +69,8 @@ class OrderTimeoutWatchdog:
         # Background task
         self._watchdog_task: Optional[asyncio.Task] = None
         self._started: bool = False
+        # DET-BT-09: Allow disabling for deterministic backtest
+        self._enabled: bool = True
 
         # Metrics
         self.timeout_count = 0
@@ -130,6 +132,9 @@ class OrderTimeoutWatchdog:
         """
         if self._started:
             return
+        # DET-BT-09: Skip if disabled (backtest mode)
+        if not self._enabled:
+            return
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -150,6 +155,9 @@ class OrderTimeoutWatchdog:
         """
         if self._started:
             return
+        # DET-BT-09: Skip if disabled (backtest mode)
+        if not self._enabled:
+            return
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -169,6 +177,17 @@ class OrderTimeoutWatchdog:
         self._watchdog_task = None
         self._started = False
         LOG.info("OrderTimeoutWatchdog stopped.")
+
+    def disable(self) -> None:
+        """
+        DET-BT-09: Disable watchdog permanently (for backtest mode).
+        
+        Once disabled, start() and ensure_started() become no-ops.
+        Use this in backtest to prevent race conditions.
+        """
+        self._enabled = False
+        self.stop()
+        LOG.info("OrderTimeoutWatchdog DISABLED for deterministic backtest.")
 
     def track_order_placed(
         self,
@@ -206,8 +225,14 @@ class OrderTimeoutWatchdog:
 
     def on_order_ack(self, order_id: str):
         """Mark order as acknowledged, start FILL timeout tracking."""
+        # WD-001: Idempotency - already acked orders are skipped silently
+        if order_id in self.acked_orders:
+            LOG.debug(f"Order {order_id} already ACKed, skipping duplicate")
+            return
+        
         if order_id not in self.pending_orders:
-            LOG.warning(f"ACK received for unknown order {order_id}")
+            # WD-001: Demote to DEBUG - SL/TP orders are not tracked, this is expected
+            LOG.debug(f"ACK received for untracked order {order_id} (SL/TP or external)")
             return
 
         deadline = self.pending_orders.pop(order_id)

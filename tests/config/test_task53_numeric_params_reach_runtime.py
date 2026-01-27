@@ -36,47 +36,50 @@ def _write_yaml(path: Path, data: Dict[str, Any]) -> None:
 
 
 class TestWatchdogAckTtlMsReachesRuntime:
-    """Prove that execution_position.watchdog.ack_ttl_ms affects watchdog behavior."""
+    """Prove that trading.execution.watchdog.ack_ttl_ms affects watchdog behavior.
+    
+    NOTE: watchdog was moved from domains.yaml to trading.yaml (TASK-ZOMBIE-FIX).
+    """
     
     def test_ack_ttl_ms_is_loaded_correctly(self, tmp_path: Path) -> None:
         """ack_ttl_ms from config reaches the ExecPosFSM watchdog settings."""
         cfg_dir = _copy_config_to_tmp(tmp_path)
         
-        # Modify ack_ttl_ms to a unique value
-        domains_path = cfg_dir / "domains.yaml"
-        domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+        # Modify ack_ttl_ms to a unique value (now in trading.yaml under trading.execution.watchdog)
+        trading_path = cfg_dir / "trading.yaml"
+        trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
         TEST_VALUE = 12345
-        domains["execution_position"]["watchdog"]["ack_ttl_ms"] = TEST_VALUE
-        _write_yaml(domains_path, domains)
+        trading["trading"]["execution"]["watchdog"]["ack_ttl_ms"] = TEST_VALUE
+        _write_yaml(trading_path, trading)
         
         # Load config
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
         
-        # Verify value is accessible at runtime
-        assert config.domains.execution_position.watchdog.ack_ttl_ms == TEST_VALUE
+        # Verify value is accessible at runtime (now via trading.execution.watchdog)
+        assert config.trading.execution.watchdog.ack_ttl_ms == TEST_VALUE
     
     def test_different_ack_ttl_values_produce_different_configs(self, tmp_path: Path) -> None:
         """Changing ack_ttl_ms produces different config objects (not cached)."""
         cfg_dir = _copy_config_to_tmp(tmp_path)
-        domains_path = cfg_dir / "domains.yaml"
+        trading_path = cfg_dir / "trading.yaml"
         
-        # Value 1
-        domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
-        domains["execution_position"]["watchdog"]["ack_ttl_ms"] = 5000
-        _write_yaml(domains_path, domains)
+        # Value 1 (now in trading.yaml under trading.execution.watchdog)
+        trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
+        trading["trading"]["execution"]["watchdog"]["ack_ttl_ms"] = 5000
+        _write_yaml(trading_path, trading)
         
         loader1 = ConfigLoader(config_dir=cfg_dir)
         config1 = loader1.load_config()
-        val1 = config1.domains.execution_position.watchdog.ack_ttl_ms
+        val1 = config1.trading.execution.watchdog.ack_ttl_ms
         
         # Value 2 (different)
-        domains["execution_position"]["watchdog"]["ack_ttl_ms"] = 15000
-        _write_yaml(domains_path, domains)
+        trading["trading"]["execution"]["watchdog"]["ack_ttl_ms"] = 15000
+        _write_yaml(trading_path, trading)
         
         loader2 = ConfigLoader(config_dir=cfg_dir)
         config2 = loader2.load_config()
-        val2 = config2.domains.execution_position.watchdog.ack_ttl_ms
+        val2 = config2.trading.execution.watchdog.ack_ttl_ms
         
         assert val1 == 5000
         assert val2 == 15000
@@ -128,6 +131,15 @@ class TestQosSymbolCooldownSecReachesRuntime:
         domains["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
         _write_yaml(domains_path, domains)
         
+        # TASK53-FIX: Also update backtest_override.yaml since it takes precedence in backtest mode
+        override_path = cfg_dir / "backtest_override.yaml"
+        if override_path.exists():
+            override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
+            if "domains" in override and "decision_making" in override["domains"]:
+                if "qos" in override["domains"]["decision_making"]:
+                    override["domains"]["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
+                    _write_yaml(override_path, override)
+        
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
         
@@ -144,6 +156,15 @@ class TestQosSymbolCooldownSecReachesRuntime:
         TEST_VALUE = 99
         domains["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
         _write_yaml(domains_path, domains)
+        
+        # TASK53-FIX: Also update backtest_override.yaml since it takes precedence in backtest mode
+        override_path = cfg_dir / "backtest_override.yaml"
+        if override_path.exists():
+            override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
+            if "domains" in override and "decision_making" in override["domains"]:
+                if "qos" in override["domains"]["decision_making"]:
+                    override["domains"]["decision_making"]["qos"]["symbol_cooldown_sec"] = TEST_VALUE
+                    _write_yaml(override_path, override)
         
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
@@ -255,9 +276,9 @@ class TestEffectiveConfigSnapshot:
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
         
-        # Check integer fields
-        assert isinstance(config.domains.execution_position.watchdog.ack_ttl_ms, int)
-        assert isinstance(config.domains.execution_position.watchdog.fill_ttl_ms, int)
+        # Check integer fields (watchdog now in trading.execution, not domains)
+        assert isinstance(config.trading.execution.watchdog.ack_ttl_ms, int)
+        assert isinstance(config.trading.execution.watchdog.fill_ttl_ms, int)
         assert isinstance(config.domains.decision_making.qos.symbol_cooldown_sec, int)
         assert isinstance(config.domains.feature_engineering.volatility.window_sec, int)
         assert isinstance(config.domains.position_tracking.positions_stale_ttl_sec, int)
@@ -272,10 +293,11 @@ class TestEffectiveConfigSnapshot:
         config = loader.load_config()
         
         # List of critical paths that must be present
+        # NOTE: watchdog moved from domains.execution_position to trading.execution (TASK-ZOMBIE-FIX)
         critical_numeric_paths = [
-            ("domains", "execution_position", "watchdog", "ack_ttl_ms"),
-            ("domains", "execution_position", "watchdog", "fill_ttl_ms"),
-            ("domains", "execution_position", "watchdog", "check_interval_ms"),
+            ("trading", "execution", "watchdog", "ack_ttl_ms"),
+            ("trading", "execution", "watchdog", "fill_ttl_ms"),
+            ("trading", "execution", "watchdog", "check_interval_ms"),
             ("domains", "decision_making", "qos", "symbol_cooldown_sec"),
             ("domains", "decision_making", "qos", "max_intents_per_minute_per_symbol"),
             ("domains", "feature_engineering", "volatility", "window_sec"),
@@ -300,9 +322,9 @@ class TestEffectiveConfigSnapshot:
         # Get dict representation
         config_dict = config.model_dump() if hasattr(config, "model_dump") else config.to_dict()
         
-        # Verify numeric values are preserved
-        assert isinstance(config_dict["domains"]["execution_position"]["watchdog"]["ack_ttl_ms"], int)
-        assert config_dict["domains"]["execution_position"]["watchdog"]["ack_ttl_ms"] > 0
+        # Verify numeric values are preserved (watchdog now in trading.execution)
+        assert isinstance(config_dict["trading"]["execution"]["watchdog"]["ack_ttl_ms"], int)
+        assert config_dict["trading"]["execution"]["watchdog"]["ack_ttl_ms"] > 0
 
 
 class TestRiskManagementThresholdsReachRuntime:
@@ -346,7 +368,7 @@ class TestMeanReversionConfigsReachRuntime:
         assert doge.strategy.bb_num_std == 2.1
         assert doge.strategy.tp_to_mid is False  # DOGE targets outer band
         assert doge.strategy.cooldown_sec == 210
-        assert doge.risk.position_size_usd == 150.0
+        # NOTE: risk.position_size_usd removed from MRAssetConfig (TASK-ZOMBIE-FIX), sizing now via instruments
         
         # XRP specific overrides
         xrp = mr.assets.get("XRPUSDT")
@@ -355,7 +377,7 @@ class TestMeanReversionConfigsReachRuntime:
         assert xrp.strategy.bb_num_std == 2.5
         assert xrp.strategy.tp_to_mid is True  # XRP targets mid band
         assert xrp.strategy.cooldown_sec == 165
-        assert xrp.risk.position_size_usd == 150.0
+        # NOTE: risk.position_size_usd removed from MRAssetConfig (TASK-ZOMBIE-FIX)
         
         # XRP has sl_atr_mult = 2.0 (FIX: was null, now uses industry standard 2.0x ATR)
         assert xrp.strategy.sl_atr_mult == 2.0

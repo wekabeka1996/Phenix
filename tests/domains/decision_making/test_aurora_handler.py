@@ -95,8 +95,9 @@ class TestRegimeCaching:
         state = handler._symbol_states["BTCUSDT"]
         assert state.regime == "TREND_UP"
         assert state.regime_confidence == 0.85
-        assert state.warmup_full_ready is True
-        assert state.warmup_ticks_seen == 100
+        # SSOT: warmup comes from CMD:PROCESS_STRATEGY only (REGIME_DETECTED must NOT update warmup)
+        assert state.warmup_full_ready is False
+        assert state.warmup_ticks_seen == 0
 
     def test_regime_detected_handles_missing_symbol(self, handler):
         """on_regime_detected should handle missing symbol gracefully."""

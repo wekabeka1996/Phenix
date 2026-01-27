@@ -1,3 +1,4 @@
+
 import pytest
 import time
 from decimal import Decimal
@@ -35,44 +36,44 @@ def fsm_config():
     # Mock defaults for accessors
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
-    cfg.trading.execution.anti_race_close_ms = 800  # SSOT: fail-closed
-    cfg.trading.execution.cooldown_after_close_ms = 10_000  # SSOT: required
-    cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60  # SSOT: fail-closed
+    cfg.trading.execution.anti_race_close_ms = 800
+    cfg.trading.execution.cooldown_after_close_ms = 10_000
+    cfg.domains.execution_position.fsm_open.idempotency_window_sec = 60
     
-    # Event deduplication config - SSOT: fail-closed
+    # Event deduplication config
     event_dedup = MagicMock()
     event_dedup.max_size = 100000
     event_dedup.ttl_ms = 86400000
     cfg.domains.execution_position.event_dedup = event_dedup
     
-    # Idempotent cancel config - SSOT: fail-closed
+    # Idempotent cancel config
     idempotent_cancel = MagicMock()
     idempotent_cancel.max_retries = 2
     cfg.domains.execution_position.idempotent_cancel = idempotent_cancel
     
-    # Emergency config - SSOT: fail-closed
+    # Emergency config
     emergency = MagicMock()
     emergency.enabled = False
     emergency.wait_mode_bars = 2
     emergency.emergency_sl_bps = 100
     cfg.trading.execution.manage.emergency = emergency
     
-    # Trailing defaults - SSOT
+    # Trailing defaults
     trailing = MagicMock()
     trailing.activation_pct = 0.003
     trailing.trail_pct = 0.006
     trailing.min_update_interval_sec = 5
     cfg.trailing = trailing
     
-    # Brackets config for ManageFlow
+    # Brackets config (enabled for functionality)
     cfg.trading.execution.manage.auto = True
     cfg.trading.execution.manage.brackets.enable = True
     cfg.trading.execution.manage.brackets.oco_emulation = True
-    cfg.trading.execution.manage.brackets.sl.fixed_bps = 40  # Production SSOT value
-    cfg.trading.execution.manage.brackets.tp.fixed_bps = 80  # Production SSOT value
+    cfg.trading.execution.manage.brackets.sl.fixed_bps = 40
+    cfg.trading.execution.manage.brackets.tp.fixed_bps = 80
     cfg.trading.execution.manage.brackets.offset_bps = 5
     
-    # Mock instrument specs for BTCUSDT
+    # Mock instrument specs
     btc_spec = MagicMock()
     btc_spec.tick_size = Decimal("0.01")
     btc_spec.step_size = Decimal("0.001")
@@ -81,18 +82,16 @@ def fsm_config():
     btc_spec.execution = MagicMock()
     btc_spec.execution.target_leverage = 20
     
-    # Dict-like instruments for proper 'in' and get() support (fail-closed SSOT)
     class InstrumentsDict(dict):
         pass
     
     instruments_dict = InstrumentsDict({"BTCUSDT": btc_spec})
     cfg.instruments = instruments_dict
     
-    # Mock strategies.aurora.assets (per-symbol strategy overrides)
-    # Production-like config required for fail-closed policy
+    # Strategies Assets
     btc_asset_config = MagicMock()
     btc_asset_config.exit = MagicMock()
-    btc_asset_config.exit.sl_pct = 0.02  # 2%
+    btc_asset_config.exit.sl_pct = 0.02
     btc_asset_config.exit.max_hold_sec = 600
     btc_asset_config.take_profit = MagicMock()
     btc_asset_config.take_profit.tp_low_ratio = 0.5
@@ -100,14 +99,11 @@ def fsm_config():
     btc_asset_config.take_profit.partial_exit_pct = 0.5
     btc_asset_config.trailing_stop = MagicMock()
     btc_asset_config.trailing_stop.enabled = False
-    btc_asset_config.trailing_stop.activation_pct = 0.02
-    btc_asset_config.trailing_stop.trail_pct = 0.01
-    btc_asset_config.trailing_stop.min_update_interval_sec = 5
     
     cfg.strategies.aurora.assets = {"BTCUSDT": btc_asset_config}
     cfg.strategies.aurora.decision.bar_gating = None
     
-    # Mock domains.execution_position.exposure_guard fields
+    # ExposureGuard config
     eg = cfg.domains.execution_position.exposure_guard
     eg.max_equity_utilization_pct = "95.0"
     eg.max_portfolio_fraction = "1.0"
@@ -118,14 +114,16 @@ def fsm_config():
     eg.pending_ttl_sec = 5
     eg.post_fill_ttl_sec = 5
     eg.stale_ttl_sec = 10
+    
+    fb = cfg.domains.execution_position.fallback
+    fb.policy = "fail_closed"
+    fb.risk_reduction_pct = "0.5"
+    fb.backoff_ms = [200, 500, 1000]
 
-    # Exposure leverage defaults are required by ExposureGuard.resolve_symbol_leverage()
     cfg.trading.execution.exposure.leverage_defaults = {"__default__": 20, "BTCUSDT": 20}
     cfg.trading.execution.exposure.count_pending_orders = True
     cfg.trading.execution.exposure.exclude_reduce_only = True
     
-    # Risk Soft Limits
-    # ExposureGuard.load_soft_limit_config expects a dict at trading.risk (tests harness).
     cfg.trading.risk = {
         "soft_limits": {
             "mode": "clip",
@@ -136,14 +134,11 @@ def fsm_config():
         }
     }
     
-    # Mock ops.storage for OrderLedger
     storage_mock = MagicMock()
     storage_mock.order_history_db = ":memory:"
     cfg.ops.storage = storage_mock
 
-    # Ensure ExecPosFSM stays in shadow_mode for this harness.
-    # These tests exercise internal event-ordering logic and must not
-    # initialize a real HTTP client.
+    # Mock API keys to keep shadow mode
     cfg.binance_api.testnet.api_key = ""
     cfg.binance_api.testnet.api_secret = ""
     cfg.binance_api.testnet.rest_url = ""
@@ -151,25 +146,25 @@ def fsm_config():
     cfg.binance_api.live.api_secret = ""
     cfg.binance_api.live.rest_url = ""
 
+    # NEW: Support get_domain_mode
+    cfg.get_domain_mode.return_value = "testnet"
+    cfg.trading.mode = "testnet"
+
     return cfg
 
 @pytest.fixture
 def fsm_harness(fsm_config):
     """
-    Harness to inject ExecPosFSM with mocked dependencies to avoid DB/Network calls.
-    Patches OrderGuardian to avoid sqlite3 initialization.
+    Harness to inject ExecPosFSM with mocked dependencies.
     """
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
     
     with patch("apps.reference.domains.execution_position.fsm.OrderGuardian") as mock_guardian_cls:
-        # Configure the mock guardian instance
         mock_guardian = mock_guardian_cls.return_value
         mock_guardian.is_duplicate.return_value = False
         
         bus = FakeBus()
         fsm = ExecPosFSM(config=fsm_config, fsm=bus)
-        
-        # Inject standard mocks to sub-components if needed
         fsm.order_guardian = mock_guardian
         
         yield fsm, bus, fsm_config

@@ -47,11 +47,11 @@ def infer_location(class_name: str, field_name: str) -> tuple[str, str]:
         'FeatureEngineeringDomainConfig': 'config/aurora/domains.yaml',
         'RiskManagementDomainConfig': 'config/aurora/domains.yaml',
         'PositionTrackingDomainConfig': 'config/aurora/domains.yaml',
-        'AccountObserverDomainConfig': 'config/aurora/domains.yaml',
+        # NOTE: AccountObserverDomainConfig removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
         'ExecutionPositionDomainConfig': 'config/aurora/domains.yaml',
         'SystemConfig': 'config/aurora/system.yaml',
         'OpsConfig': 'config/aurora/system.yaml',
-        'BridgeConfig': 'config/aurora/system.yaml',
+        # NOTE: BridgeConfig removed (BRIDGE-SUNSET-01)
         'BinanceApiConfig': 'config/aurora/trading.yaml',
         'StrategiesRegistryConfig': 'config/aurora/strategies.yaml',
         'MeanReversion1mStrategyConfig': 'config/aurora/strategies/mean_reversion.yaml',
@@ -177,16 +177,14 @@ def infer_location(class_name: str, field_name: str) -> tuple[str, str]:
         yaml_path = f"domains.risk_management.{field_name}"
     elif class_name == 'PositionTrackingDomainConfig':
         yaml_path = f"domains.position_tracking.{field_name}"
-    elif class_name == 'AccountObserverDomainConfig':
-        yaml_path = f"domains.account_observer.{field_name}"
+    # NOTE: AccountObserverDomainConfig removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
     elif class_name == 'ExecutionPositionDomainConfig':
         yaml_path = f"domains.execution_position.{field_name}"
     elif class_name == 'SystemConfig':
         yaml_path = f"system.{field_name}"
     elif class_name == 'OpsConfig':
         yaml_path = f"ops.{field_name}"
-    elif class_name == 'BridgeConfig':
-        yaml_path = f"bridge.{field_name}"
+    # NOTE: BridgeConfig removed (BRIDGE-SUNSET-01)
     elif class_name == 'BinanceApiConfig':
         yaml_path = f"binance_api.{field_name}"
     elif class_name == 'StrategiesRegistryConfig':

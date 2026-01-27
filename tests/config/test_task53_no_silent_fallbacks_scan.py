@@ -260,13 +260,14 @@ class TestMissingFieldCausesCrash:
         cfg_dir = tmp_path / "aurora"
         shutil.copytree(Path("config/aurora"), cfg_dir)
         
-        domains_path = cfg_dir / "domains.yaml"
-        domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+        # NOTE: watchdog was moved from domains.yaml to trading.yaml (TASK-ZOMBIE-FIX)
+        trading_path = cfg_dir / "trading.yaml"
+        trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
         
-        # Remove entire watchdog section
-        del domains["execution_position"]["watchdog"]
+        # Remove entire watchdog section (now under trading.execution)
+        del trading["trading"]["execution"]["watchdog"]
         
-        domains_path.write_text(yaml.safe_dump(domains, sort_keys=False), encoding="utf-8")
+        trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
         
         from apps.reference.config_loader import ConfigLoader
         from pydantic import ValidationError
@@ -290,7 +291,8 @@ class TestMissingFieldCausesCrash:
         config = loader.load_config()
         
         # These should NOT be None - they are required
-        assert config.domains.execution_position.watchdog.ack_ttl_ms is not None
+        # NOTE: watchdog moved to trading.execution (TASK-ZOMBIE-FIX)
+        assert config.trading.execution.watchdog.ack_ttl_ms is not None
         assert config.domains.decision_making.qos.symbol_cooldown_sec is not None
         assert config.domains.feature_engineering.volatility.window_sec is not None
         

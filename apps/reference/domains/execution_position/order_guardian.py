@@ -141,6 +141,10 @@ class OrderGuardian:
         return self._impl.register_entry(**kwargs)
 
     # type: ignore[no-untyped-def]
+    def register_bracket(self, **kwargs) -> None:
+        return self._impl.register_bracket(**kwargs)
+
+    # type: ignore[no-untyped-def]
     def register_brackets(self, **kwargs) -> None:
         return self._impl.register_brackets(**kwargs)
 

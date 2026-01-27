@@ -14,6 +14,7 @@ class InFlightConfig:
     Configuration for in-flight order management.
     
     TASK51-C: Configurable TTL and reconciliation behavior.
+    PURGE-DEAD-CONFIG-03: reconcile_retries/backoff_ms removed (never read in reconciler.py)
     """
     
     # TTL for in-flight orders before reconciliation (seconds)
@@ -25,12 +26,6 @@ class InFlightConfig:
     # Interval for reconciliation checks (seconds)
     reconcile_interval_sec: int = 10
     
-    # Number of retries for REST reconciliation
-    reconcile_retries: int = 3
-    
-    # Backoff between retries (milliseconds)
-    reconcile_backoff_ms: int = 500
-    
     # Whether to log detailed reconciliation info
     verbose_logging: bool = True
     
@@ -41,8 +36,6 @@ class InFlightConfig:
             inflight_ttl_sec=int(data.get("inflight_ttl_sec", 60)),
             max_ttl_sec=int(data.get("max_ttl_sec", 120)),
             reconcile_interval_sec=int(data.get("reconcile_interval_sec", 10)),
-            reconcile_retries=int(data.get("reconcile_retries", 3)),
-            reconcile_backoff_ms=int(data.get("reconcile_backoff_ms", 500)),
             verbose_logging=bool(data.get("verbose_logging", True)),
         )
     

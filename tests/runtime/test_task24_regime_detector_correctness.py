@@ -1,7 +1,6 @@
+import pytest
 import time
 from types import SimpleNamespace
-
-import pytest
 
 
 class _DummyFsm:
@@ -87,14 +86,15 @@ def test_stale_data_sets_regime_uncertain(monkeypatch):
     )
 
     cfg = get_config()
-    ttl_ms = int(getattr(getattr(cfg.system, "market_data", None), "tick_ttl_ms", 0) or 0)
-    assert ttl_ms > 0, "expected tick_ttl_ms > 0 in canonical config"
+    # BAR-TTL-REFORM-02: With tf_sec=300 (bar event), RegimeDetector uses bar_ttl_ms, not tick_ttl_ms
+    bar_ttl_ms = int(getattr(getattr(cfg.system, "market_data", None), "bar_ttl_ms", 10000) or 10000)
+    assert bar_ttl_ms > 0, "expected bar_ttl_ms > 0 in canonical config"
 
     fsm = _DummyFsm()
     det = RegimeDetector(config=cfg, fsm=fsm)
 
     now_ms = int(time.time() * 1000)
-    stale_ts = now_ms - ttl_ms - 1
+    stale_ts = now_ms - bar_ttl_ms - 1  # Use bar TTL for staleness calculation
 
     symbol = "BTCUSDT"
     feats = {"price": "120", "sma_short": "110", "sma_long": "100"}  # would be TREND_UP if not gated
@@ -226,8 +226,9 @@ def test_stale_features_do_not_update_buffers(monkeypatch):
     )
 
     cfg = get_config()
-    ttl_ms = int(getattr(getattr(cfg.system, "market_data", None), "tick_ttl_ms", 0) or 0)
-    assert ttl_ms > 0, "expected tick_ttl_ms > 0 in canonical config"
+    # BAR-TTL-REFORM-02: With tf_sec=300 (bar event), RegimeDetector uses bar_ttl_ms, not tick_ttl_ms
+    bar_ttl_ms = int(getattr(getattr(cfg.system, "market_data", None), "bar_ttl_ms", 10000) or 10000)
+    assert bar_ttl_ms > 0, "expected bar_ttl_ms > 0 in canonical config"
 
     fsm = _DummyFsm()
     det = RegimeDetector(config=cfg, fsm=fsm)
@@ -247,7 +248,7 @@ def test_stale_features_do_not_update_buffers(monkeypatch):
     assert buf_len_before == 3, f"expected 3 prices in buffer, got {buf_len_before}"
 
     # Step 2: Feed STALE tick (should NOT be added to buffer)
-    stale_ts = now_ms - ttl_ms - 5000  # definitely stale
+    stale_ts = now_ms - bar_ttl_ms - 5000  # definitely stale (use bar TTL)
     # REG-FIX-01: Must include tf_sec=basis_tf_sec (300) for BAR-ONLY mode
     det.handle_event(SimpleNamespace(
         verb="FEATURES_CALCULATED",

@@ -40,6 +40,7 @@ from pydantic import ValidationError
 
 from .config_models import AuroraConfig as PydanticAuroraConfig
 from .config_models import SystemRuntimeMeta
+from .config_models import ObservabilityConfig
 from .config_contract import ConfigContractError
 
 LOG = logging.getLogger(__name__)
@@ -248,14 +249,7 @@ class ConfigLoader:
         # These are runtime/meta-only and must not participate in SSOT dedup checks.
         if "position_tracking" not in meta:
             meta["position_tracking"] = {}
-        if "hotreload_whitelist" not in meta:
-            # Source of truth is regime.yaml root.hotreload_whitelist (keep it there; copy for meta).
-            wl = []
-            if isinstance(regime_config, dict):
-                wl_val = regime_config.get("hotreload_whitelist")
-                if isinstance(wl_val, list):
-                    wl = wl_val
-            meta["hotreload_whitelist"] = wl
+        # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist copying (dead stub) - 2026-01-25
 
         if isinstance(regime_config, dict) and "config_version" in regime_config:
             meta["regime_config_version"] = regime_config.pop("config_version")
@@ -418,6 +412,38 @@ class ConfigLoader:
         merged_config["system_meta"] = system_meta
 
         return merged_config
+
+    def _load_observability(self) -> ObservabilityConfig:
+        """Load observability.yaml with Pydantic validation.
+        
+        CFG-OBS-001: Centralized logging/metrics/tracing configuration.
+        
+        Returns:
+            ObservabilityConfig with validated settings (defaults if file missing)
+        """
+        try:
+            obs_raw = self._load_yaml("observability.yaml")
+            if not obs_raw:
+                LOG.info("observability.yaml is empty, using defaults")
+                return ObservabilityConfig()
+            
+            config = ObservabilityConfig.model_validate(obs_raw)
+            LOG.info(f"✅ Loaded observability.yaml (version: {config.config_version})")
+            
+            # Track provenance
+            flat_paths = self._flatten_leaf_paths(obs_raw, prefix="observability")
+            for p in flat_paths:
+                self.provenance_map[p] = "observability.yaml"
+            
+            return config
+        except FileNotFoundError:
+            LOG.info("observability.yaml not found, using defaults")
+            return ObservabilityConfig()
+        except ValidationError as e:
+            raise ConfigContractError(
+                path="observability",
+                why=f"Invalid observability.yaml: {e}"
+            )
 
     def _inject_runtime_meta(self, config: AuroraConfig) -> AuroraConfig:
         """Inject runtime-only metadata AFTER successful validation."""
@@ -876,9 +902,22 @@ class ConfigLoader:
                     )
                     LOG.info("[overlay] Applied trading overrides from backtest_override.yaml")
 
+            # CFG-OVERLAY-STRATEGIES-01: Support strategies override for backtest
+            # Allows enabling/disabling features like regime_tpsl in backtest only
+            if "strategies" in overlay_data and isinstance(overlay_data["strategies"], dict):
+                strategies_block = resolved_config.get("strategies")
+                if isinstance(strategies_block, dict):
+                    deep_merge(
+                        overlay_data["strategies"],
+                        strategies_block,
+                        _provenance=self.provenance_map,
+                        _source_name="backtest_override.yaml",
+                    )
+                    LOG.info("[overlay] Applied strategies overrides from backtest_override.yaml")
+
             # Log what was applied for debugging
             for section_key in overlay_data:
-                if section_key not in ("domains", "trading"):
+                if section_key not in ("domains", "trading", "strategies"):
                     LOG.warning(
                         f"[overlay] Unexpected section '{section_key}' in backtest_override.yaml - ignored"
                     )
@@ -888,6 +927,69 @@ class ConfigLoader:
             raise ConfigContractError(
                 path="backtest_override.yaml",
                 why=f"Failed to parse backtest overlay: {e}",
+            )
+
+    def _apply_backtest_symbols_filter(self, resolved_config: Dict[str, Any]) -> None:
+        """Backtest-only: allow running on a strict subset of SSOT symbols.
+
+        Problem:
+        - SSOT for active symbols is strategies.yaml assignments keys.
+        - In backtest we often have historical data only for a subset (e.g., BTCUSDT).
+
+        Contract:
+        - If trading_mode == backtest and trading.symbols_to_track is set,
+          then we FILTER strategies_registry.assignments down to that subset.
+        - After filtering, the regular SSOT enforcement stays intact.
+        """
+        if not isinstance(resolved_config, dict):
+            return
+
+        root_mode = resolved_config.get("trading_mode")
+        trading = resolved_config.get("trading")
+        trading_mode = None
+        if isinstance(trading, dict):
+            trading_mode = trading.get("mode")
+
+        is_backtest = False
+        if isinstance(root_mode, str) and root_mode.strip().lower() == "backtest":
+            is_backtest = True
+        if isinstance(trading_mode, str) and trading_mode.strip().lower() == "backtest":
+            is_backtest = True
+        if not is_backtest:
+            return
+
+        if not isinstance(trading, dict):
+            return
+        wanted = trading.get("symbols_to_track")
+        if not (isinstance(wanted, list) and wanted):
+            return
+        wanted_symbols = [str(s) for s in wanted if str(s).strip()]
+        if not wanted_symbols:
+            return
+
+        sr = resolved_config.get("strategies_registry")
+        if not isinstance(sr, dict):
+            return
+        assignments = sr.get("assignments")
+        if not isinstance(assignments, dict):
+            return
+
+        filtered = {k: v for k, v in assignments.items() if str(k) in set(wanted_symbols)}
+        if not filtered:
+            raise ConfigContractError(
+                path="strategies_registry.assignments",
+                why=(
+                    "Backtest symbols filter removed all assignments. "
+                    f"trading.symbols_to_track={wanted_symbols} had no overlap with strategies.yaml assignments."
+                ),
+            )
+
+        if set(filtered.keys()) != set(assignments.keys()):
+            sr["assignments"] = filtered
+            resolved_config["strategies_registry"] = sr
+            LOG.warning(
+                "[backtest] Filtered strategies_registry.assignments to symbols_to_track=%s",
+                sorted(set(wanted_symbols)),
             )
 
     def load_config(
@@ -1054,6 +1156,12 @@ class ConfigLoader:
             system_meta=system_meta,
         )
 
+        # =========================================================================
+        # CFG-OBS-001: Load observability.yaml (centralized logging config)
+        # =========================================================================
+        observability_config = self._load_observability()
+        merged_config["observability"] = observability_config.model_dump()
+
         # BACKTEST SAFETY: allow `trading.mode: backtest` (trading.yaml) to force root `trading_mode`.
         # This avoids accidental execution-mode leakage when system.yaml is left in hybrid/testnet.
         try:
@@ -1120,6 +1228,9 @@ class ConfigLoader:
         # This MUST happen after env resolution but BEFORE mode overrides,
         # so backtest_override.yaml values take precedence over base config.
         self._apply_backtest_overlay(resolved_config)
+
+        # BACKTEST BTC-only support: allow subset run when data is limited.
+        self._apply_backtest_symbols_filter(resolved_config)
 
         # Apply mode-specific decision overrides
         self._resolve_mode_overrides(resolved_config)

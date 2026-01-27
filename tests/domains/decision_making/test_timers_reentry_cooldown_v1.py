@@ -60,8 +60,24 @@ def mock_config():
     # Explicitly set Optional overrides to None to allow fallback to Decision Config
     from types import SimpleNamespace as _SN
     cfg.strategies.aurora.assets = {
-        "BTCUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None, volatility_entry_logic=_SN(enabled=False)), 
-        "ETHUSDT": MagicMock(signal_threshold=0.1, neutral_threshold=0.05, enabled=True, reentry_cooldown_sec=None, holding_period=None, volatility_entry_logic=_SN(enabled=False))
+        "BTCUSDT": MagicMock(
+            signal_threshold=0.1,
+            neutral_threshold=0.05,
+            enabled=True,
+            reentry_cooldown_sec=None,
+            holding_period=None,
+            volatility_entry_logic=_SN(enabled=False),
+            allowed_regimes=["LOW_VOLATILITY"],
+        ),
+        "ETHUSDT": MagicMock(
+            signal_threshold=0.1,
+            neutral_threshold=0.05,
+            enabled=True,
+            reentry_cooldown_sec=None,
+            holding_period=None,
+            volatility_entry_logic=_SN(enabled=False),
+            allowed_regimes=["LOW_VOLATILITY"],
+        ),
     }
     cfg.instruments = {}
     return cfg
@@ -92,6 +108,8 @@ def test_reentry_cooldown_basic(mock_config):
     symbol = "BTCUSDT"
     state = handler._symbol_states[symbol]
     state.last_regime_heartbeat_ms = int(clock.now() * 1000)
+    state.regime = "LOW_VOLATILITY"
+    state.regime_effective = "LOW_VOLATILITY"
     
     event = {
         "symbol": symbol,
@@ -117,10 +135,10 @@ def test_reentry_cooldown_basic(mock_config):
     )
     handler.on_process_strategy(event)
 
-    # Verify established
+    # Simulate execution fill (AuroraHandler position tracking is SSOT from EVT:TRADE_EXECUTED)
+    handler.on_trade_executed({"symbol": symbol, "side": "buy", "quantity": "1"})
     assert state.position_side == "buy"
     state.entry_timestamp = clock.now() - 100
-    state.regime_effective = "DEFAULT"
 
     # 2. Exit (Neutral)
     handler.scoring_kernel_cls.compute.return_value = MagicMock(
@@ -200,6 +218,7 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
     handler.strategies_registry = None
     handler.timeframe_sec = 60
     handler._symbol_states["BTCUSDT"].last_regime_heartbeat_ms = int(clock.now() * 1000)
+    handler._symbol_states["BTCUSDT"].regime = "LOW_VOLATILITY"
     
     # --- PROACTIVE GUARD MOCKING ---
     handler._is_symbol_enabled = MagicMock(return_value=True)
@@ -234,6 +253,7 @@ def test_reentry_cooldown_regime_multiplier(mock_config):
     )
 
     # Force state
+    state.regime = "LOW_VOLATILITY"
     state.regime_effective = "LOW_VOLATILITY"
     state.position_side = "buy"
     state.entry_timestamp = 0.0

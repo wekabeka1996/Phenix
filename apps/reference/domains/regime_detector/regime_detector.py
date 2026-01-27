@@ -235,7 +235,9 @@ class RegimeDetector:
         self._ticks_seen[symbol] += 1
 
         # REG-FIX-01: Clock abstraction for deterministic testing
-        now_ms = self._clock.now_ms()
+        # Wall-clock for freshness/latency, monotonic for liveness heartbeat.
+        now_wall_ms = self._clock.now_ms()
+        now_monotonic_ms = int(self._clock.monotonic() * 1000)
         
         # BAR-TTL-REFORM-02: Use bar_ttl_ms for bar events, tick_ttl_ms for ticks
         # This mirrors the fix in decision_making.py Gate 5
@@ -252,7 +254,7 @@ class RegimeDetector:
 
         # P0-1 FIX: Check for stale features BEFORE any buffer updates
         is_stale = False
-        if ttl_ms > 0 and (now_ms - ts_ms) > ttl_ms:
+        if ttl_ms > 0 and (now_wall_ms - ts_ms) > ttl_ms:
             data_drops.append("stale_features")
             inc_data_quality_drop(domain="regime_detector", reason="stale_features")
             is_stale = True
@@ -488,8 +490,8 @@ class RegimeDetector:
             "data_quality": {"drops": data_drops, "notes": data_notes},
             # DM-CRITICAL-PATCHES-02: Heartbeat fields
             "changed": changed,
-            "last_update_ts_ms": now_ms,  # Heartbeat timestamp (monotonic)
-            "calc_lag_ms": now_ms - ts_ms, # Latency for audit
+            "last_update_ts_ms": now_monotonic_ms,  # Heartbeat timestamp (monotonic)
+            "calc_lag_ms": now_wall_ms - ts_ms, # Latency for audit
         }
 
         self.fsm.emit(

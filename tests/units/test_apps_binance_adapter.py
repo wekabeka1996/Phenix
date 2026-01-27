@@ -288,16 +288,17 @@ async def test_algo_fallback_removes_qty_and_reduce_only_on_close_position(adapt
     assert "quantity" not in algo_payload
     assert "reduceOnly" not in algo_payload
 
-def test_idempotency_ledger(adapter):
-    adapter.register_clientorderid("cid_1", "oid_1", "BTCUSDT")
+@pytest.mark.asyncio
+async def test_idempotency_ledger(adapter):
+    await adapter.register_clientorderid("cid_1", "oid_1", "BTCUSDT")
     
     # Immediate reuse
-    reused = adapter.check_clientorderid_reuse("BTCUSDT", "cid_1")
+    reused = await adapter.check_clientorderid_reuse("BTCUSDT", "cid_1")
     assert reused == "oid_1"
     
     # Wrong symbol
-    reused_wrong = adapter.check_clientorderid_reuse("ETHUSDT", "cid_1")
+    reused_wrong = await adapter.check_clientorderid_reuse("ETHUSDT", "cid_1")
     assert reused_wrong is None
     
     # Non-existent
-    assert adapter.check_clientorderid_reuse("BTCUSDT", "cid_999") is None
+    assert await adapter.check_clientorderid_reuse("BTCUSDT", "cid_999") is None

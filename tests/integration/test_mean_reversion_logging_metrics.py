@@ -11,7 +11,6 @@ from apps.reference.config_models import (
     MRAssetConfig,
     MRRegimeSizingConfig,
     MRRegimeThresholdsConfig,
-    MRRiskConfig,
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
 )
@@ -70,21 +69,13 @@ def test_mean_reversion_logs_signal_with_indicators() -> None:
             symbol: MRAssetConfig(
                 enabled=True,
                 strategy=None,
-                risk=None,
+                
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
                 position_mode="STRICT",
             )
         },
         regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
         allowed_regimes=["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"],
-        risk=MRRiskConfig(
-            position_size_usd=100.0,
-            max_concurrent_positions=1,
-            daily_loss_limit_usd=10_000.0,
-            expected_pnl_multiplier=1.0,
-            fees_pct=0.0,
-            slippage_pct=0.0,
-        ),
     )
 
     cfg = SimpleNamespace(strategies_registry=strategies_registry, strategies=SimpleNamespace(mean_reversion=mr_cfg))

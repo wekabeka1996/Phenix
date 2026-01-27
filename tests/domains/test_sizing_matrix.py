@@ -61,7 +61,8 @@ def test_sizing_decreases_when_sl_bps_increases():
                 "signal_weights": {"obi": 0.6, "tfi": 0.35, "delta_price": 0.05},
                 "signal_threshold": 0.05,
                 "bar_gating": {"enable": False},
-                "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000, "risk_fraction_q": 0.01, "liquidity_kappa": 1.0},
+                # TASK-ZOMBIE-FIX: Removed dead fields (risk_fraction_q, liquidity_kappa)
+                "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
             },
             "instruments": {"ETHUSDT": {"step_size": "0.001"}},
             "execution": {"manage": {"auto": True, "brackets": {"sl": {"fixed_bps": 40}, "tp": {"fixed_bps": 80}}}},
@@ -86,7 +87,8 @@ def test_regime_multiplier_affects_size():
                 "signal_weights": {"obi": 0.6, "tfi": 0.35, "delta_price": 0.05},
                 "signal_threshold": 0.05,
                 "bar_gating": {"enable": False},
-                "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000, "risk_fraction_q": 0.01, "liquidity_kappa": 1.0},
+                # TASK-ZOMBIE-FIX: Removed dead fields (risk_fraction_q, liquidity_kappa)
+                "position_sizing": {"min_position_size_usd": 10, "liquidity_based_cap_usd": 10000},
                 "sizing_modifiers": {"HIGH_VOLATILITY": "0.50", "LOW_VOLATILITY": "1.00", "MEAN_REVERSION": "1.00", "UNCERTAIN": "1.00"}
             },
             "instruments": {"ETHUSDT": {"step_size": "0.001"}},

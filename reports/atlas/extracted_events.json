@@ -725,7 +725,7 @@
   },
   {
     "source_file": "tests/runtime/test_task24_regime_detector_correctness.py",
-    "lineno": 70,
+    "lineno": 69,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -752,7 +752,7 @@
   },
   {
     "source_file": "tests/runtime/test_task24_regime_detector_correctness.py",
-    "lineno": 269,
+    "lineno": 270,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -896,16 +896,7 @@
   },
   {
     "source_file": "tests/e2e/test_e2e_intent_single_attempt_by_rid.py",
-    "lineno": 52,
-    "type": "DEC",
-    "verb": "OPEN",
-    "event": "DEC:OPEN",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests/e2e/test_e2e_intent_single_attempt_by_rid.py",
-    "lineno": 68,
+    "lineno": 53,
     "type": "DEC",
     "verb": "OPEN",
     "event": "DEC:OPEN",
@@ -915,6 +906,15 @@
   {
     "source_file": "tests/e2e/test_e2e_intent_single_attempt_by_rid.py",
     "lineno": 69,
+    "type": "DEC",
+    "verb": "OPEN",
+    "event": "DEC:OPEN",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests/e2e/test_e2e_intent_single_attempt_by_rid.py",
+    "lineno": 70,
     "type": "EVT",
     "verb": "TRADE_INTENT_REJECTED",
     "event": "EVT:TRADE_INTENT_REJECTED",
@@ -923,7 +923,7 @@
   },
   {
     "source_file": "tests/e2e/test_e2e_intent_single_attempt_by_rid.py",
-    "lineno": 106,
+    "lineno": 107,
     "type": "DEC",
     "verb": "CLOSE",
     "event": "DEC:CLOSE",
@@ -932,7 +932,7 @@
   },
   {
     "source_file": "tests/e2e/test_e2e_intent_single_attempt_by_rid.py",
-    "lineno": 107,
+    "lineno": 108,
     "type": "EVT",
     "verb": "TRADE_INTENT_REJECTED",
     "event": "EVT:TRADE_INTENT_REJECTED",
@@ -1276,7 +1276,7 @@
   },
   {
     "source_file": "tests/e2e/test_e2e_bridge_intent_to_execpos_dec_open.py",
-    "lineno": 59,
+    "lineno": 60,
     "type": "DEC",
     "verb": "OPEN",
     "event": "DEC:OPEN",
@@ -1285,7 +1285,7 @@
   },
   {
     "source_file": "tests/e2e/test_e2e_bridge_intent_to_execpos_dec_open.py",
-    "lineno": 109,
+    "lineno": 110,
     "type": "DEC",
     "verb": "CLOSE",
     "event": "DEC:CLOSE",
@@ -1371,7 +1371,7 @@
   },
   {
     "source_file": "tests/integration/test_mr_receives_forwarded_tick_smoke.py",
-    "lineno": 62,
+    "lineno": 67,
     "type": "EVT",
     "verb": "MARKET_TICK_FORWARDED",
     "event": "EVT:MARKET_TICK_FORWARDED",
@@ -1388,7 +1388,7 @@
   },
   {
     "source_file": "tests/integration/test_mr_receives_forwarded_tick_smoke.py",
-    "lineno": 63,
+    "lineno": 68,
     "type": "EVT",
     "verb": "MARKET_TICK_FORWARDED",
     "event": "EVT:MARKET_TICK_FORWARDED",
@@ -1804,7 +1804,7 @@
   },
   {
     "source_file": "tests/integration/test_task32_two_strategies_arbitration.py",
-    "lineno": 191,
+    "lineno": 198,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -1921,7 +1921,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 136,
+    "lineno": 128,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -1930,7 +1930,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 137,
+    "lineno": 129,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -1939,7 +1939,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 153,
+    "lineno": 145,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -1948,7 +1948,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 154,
+    "lineno": 146,
     "type": "EVT",
     "verb": "TRADE_INTENT_REJECTED",
     "event": "EVT:TRADE_INTENT_REJECTED",
@@ -1957,7 +1957,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 155,
+    "lineno": 147,
     "type": "EVT",
     "verb": "STRATEGY_DECISION_BLOCKED",
     "event": "EVT:STRATEGY_DECISION_BLOCKED",
@@ -1966,7 +1966,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 156,
+    "lineno": 148,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -1975,7 +1975,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 169,
+    "lineno": 161,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -1984,7 +1984,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 170,
+    "lineno": 162,
     "type": "EVT",
     "verb": "TRADE_INTENT_REJECTED",
     "event": "EVT:TRADE_INTENT_REJECTED",
@@ -1993,7 +1993,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 171,
+    "lineno": 163,
     "type": "EVT",
     "verb": "STRATEGY_DECISION_BLOCKED",
     "event": "EVT:STRATEGY_DECISION_BLOCKED",
@@ -2002,7 +2002,7 @@
   },
   {
     "source_file": "tests/integration/test_depth_imbalance_reachability_buy_sell.py",
-    "lineno": 172,
+    "lineno": 164,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -2074,7 +2074,7 @@
   },
   {
     "source_file": "tests/integration/test_mean_reversion_handler_event_contract_v1.py",
-    "lineno": 113,
+    "lineno": 117,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -2083,7 +2083,7 @@
   },
   {
     "source_file": "tests/integration/test_mean_reversion_handler_event_contract_v1.py",
-    "lineno": 114,
+    "lineno": 118,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -2092,7 +2092,7 @@
   },
   {
     "source_file": "tests/integration/test_mean_reversion_handler_event_contract_v1.py",
-    "lineno": 242,
+    "lineno": 246,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -2242,7 +2242,7 @@
   },
   {
     "source_file": "tests/integration/test_price_motion_sanity_blocks_entry.py",
-    "lineno": 36,
+    "lineno": 44,
     "type": "CMD",
     "verb": "OPEN",
     "event": "CMD:OPEN",
@@ -2254,7 +2254,7 @@
   },
   {
     "source_file": "tests/integration/test_price_motion_sanity_blocks_entry.py",
-    "lineno": 36,
+    "lineno": 44,
     "type": "CMD",
     "verb": "OPEN",
     "event": "CMD:OPEN",
@@ -2263,7 +2263,7 @@
   },
   {
     "source_file": "tests/integration/test_price_motion_sanity_blocks_entry.py",
-    "lineno": 41,
+    "lineno": 49,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -2272,7 +2272,7 @@
   },
   {
     "source_file": "tests/integration/test_price_motion_sanity_blocks_entry.py",
-    "lineno": 42,
+    "lineno": 50,
     "type": "CMD",
     "verb": "OPEN",
     "event": "CMD:OPEN",
@@ -2281,7 +2281,7 @@
   },
   {
     "source_file": "tests/integration/test_price_motion_sanity_blocks_entry.py",
-    "lineno": 121,
+    "lineno": 129,
     "type": "EVT",
     "verb": "DECISION_TRACE_EMITTED",
     "event": "EVT:DECISION_TRACE_EMITTED",
@@ -2290,7 +2290,7 @@
   },
   {
     "source_file": "tests/integration/test_price_motion_sanity_blocks_entry.py",
-    "lineno": 176,
+    "lineno": 184,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -2299,7 +2299,7 @@
   },
   {
     "source_file": "tests/integration/test_price_motion_sanity_blocks_entry.py",
-    "lineno": 213,
+    "lineno": 221,
     "type": "EVT",
     "verb": "DECISION_TRACE_EMITTED",
     "event": "EVT:DECISION_TRACE_EMITTED",
@@ -2308,7 +2308,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 16,
+    "lineno": 23,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -2317,7 +2317,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 26,
+    "lineno": 33,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2330,7 +2330,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 27,
+    "lineno": 34,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2339,7 +2339,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 44,
+    "lineno": 51,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -2348,7 +2348,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 45,
+    "lineno": 52,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -2357,7 +2357,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 46,
+    "lineno": 53,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -2366,7 +2366,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 54,
+    "lineno": 61,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -2375,7 +2375,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 55,
+    "lineno": 62,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2384,7 +2384,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 62,
+    "lineno": 69,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -2397,7 +2397,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 63,
+    "lineno": 70,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -2406,7 +2406,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 67,
+    "lineno": 74,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -2418,7 +2418,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 68,
+    "lineno": 75,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -2427,7 +2427,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 75,
+    "lineno": 82,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2440,7 +2440,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 76,
+    "lineno": 83,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2449,7 +2449,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 84,
+    "lineno": 91,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -2462,7 +2462,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 85,
+    "lineno": 92,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -2471,7 +2471,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 112,
+    "lineno": 119,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -2480,7 +2480,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 113,
+    "lineno": 120,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -2489,7 +2489,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 122,
+    "lineno": 129,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -2502,7 +2502,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 123,
+    "lineno": 130,
     "type": "EVT",
     "verb": "PORTFOLIO_STATE_UPDATED",
     "event": "EVT:PORTFOLIO_STATE_UPDATED",
@@ -2511,7 +2511,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 127,
+    "lineno": 134,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -2523,7 +2523,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 128,
+    "lineno": 135,
     "type": "EVT",
     "verb": "RISK_ASSESSMENT_COMPLETED",
     "event": "EVT:RISK_ASSESSMENT_COMPLETED",
@@ -2532,7 +2532,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 136,
+    "lineno": 143,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2545,7 +2545,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 137,
+    "lineno": 144,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2554,7 +2554,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 148,
+    "lineno": 155,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2567,7 +2567,7 @@
   },
   {
     "source_file": "tests/integration/test_regime_detector_event_flow.py",
-    "lineno": 149,
+    "lineno": 156,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2729,7 +2729,7 @@
   },
   {
     "source_file": "tests/integration/test_assignments_block_aurora_e2e.py",
-    "lineno": 32,
+    "lineno": 46,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -2738,7 +2738,7 @@
   },
   {
     "source_file": "tests/integration/test_assignments_block_aurora_e2e.py",
-    "lineno": 86,
+    "lineno": 100,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -2747,7 +2747,7 @@
   },
   {
     "source_file": "tests/integration/test_assignments_block_aurora_e2e.py",
-    "lineno": 99,
+    "lineno": 113,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -2852,7 +2852,7 @@
   },
   {
     "source_file": "tests/integration/test_fe_emits_cmd_process_strategy.py",
-    "lineno": 189,
+    "lineno": 191,
     "type": "CMD",
     "verb": "PROCESS_STRATEGY schema file should exist",
     "event": "CMD:PROCESS_STRATEGY schema file should exist",
@@ -2861,7 +2861,7 @@
   },
   {
     "source_file": "tests/integration/test_fe_emits_cmd_process_strategy.py",
-    "lineno": 241,
+    "lineno": 243,
     "type": "CMD",
     "verb": "PROCESS_STRATEGY should be active",
     "event": "CMD:PROCESS_STRATEGY should be active",
@@ -2870,7 +2870,7 @@
   },
   {
     "source_file": "tests/integration/test_fe_emits_cmd_process_strategy.py",
-    "lineno": 242,
+    "lineno": 244,
     "type": "CMD",
     "verb": "PROCESS_STRATEGY should have a schema",
     "event": "CMD:PROCESS_STRATEGY should have a schema",
@@ -2897,7 +2897,7 @@
   },
   {
     "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
-    "lineno": 46,
+    "lineno": 47,
     "type": "EVT",
     "verb": "MARKET_TICK_RECEIVED",
     "event": "EVT:MARKET_TICK_RECEIVED",
@@ -2906,19 +2906,10 @@
   },
   {
     "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
-    "lineno": 47,
+    "lineno": 48,
     "type": "EVT",
     "verb": "MARKET_TICK_FORWARDED",
     "event": "EVT:MARKET_TICK_FORWARDED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
-    "lineno": 49,
-    "type": "EVT",
-    "verb": "MARKET_TICK_RECEIVED",
-    "event": "EVT:MARKET_TICK_RECEIVED",
     "payload_keys": [],
     "domain": null
   },
@@ -2926,6 +2917,15 @@
     "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
     "lineno": 50,
     "type": "EVT",
+    "verb": "MARKET_TICK_RECEIVED",
+    "event": "EVT:MARKET_TICK_RECEIVED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
+    "lineno": 51,
+    "type": "EVT",
     "verb": "MARKET_TICK_FORWARDED",
     "event": "EVT:MARKET_TICK_FORWARDED",
     "payload_keys": [],
@@ -2933,10 +2933,28 @@
   },
   {
     "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
-    "lineno": 79,
+    "lineno": 20,
+    "type": "EVT",
+    "verb": "MARKET_TICK_FORWARDED not implemented in MarketDataProxy",
+    "event": "EVT:MARKET_TICK_FORWARDED not implemented in MarketDataProxy",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
+    "lineno": 81,
     "type": "EVT",
     "verb": "MARKET_TICK_FORWARDED",
     "event": "EVT:MARKET_TICK_FORWARDED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests/integration/test_market_tick_forwarded_emitted.py",
+    "lineno": 55,
+    "type": "EVT",
+    "verb": "MARKET_TICK_FORWARDED not implemented in MarketDataProxy",
+    "event": "EVT:MARKET_TICK_FORWARDED not implemented in MarketDataProxy",
     "payload_keys": [],
     "domain": null
   },
@@ -2951,7 +2969,7 @@
   },
   {
     "source_file": "tests/integration/test_sizing_gateway_margin_first.py",
-    "lineno": 121,
+    "lineno": 131,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -2960,76 +2978,26 @@
   },
   {
     "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 245,
+    "lineno": 247,
     "type": "EVT",
-    "verb": "REGIME_DETECTED",
-    "event": "EVT:REGIME_DETECTED",
+    "verb": "STRATEGY_SIGNAL_PRODUCED",
+    "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
     "payload_keys": [
       "symbol",
-      "regime",
-      "warmup"
+      "strategy_id",
+      "rid",
+      "side",
+      "price_ctx",
+      "ts_ms",
+      "volatility",
+      "liquidity",
+      "readiness"
     ],
     "domain": null
   },
   {
     "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 246,
-    "type": "EVT",
-    "verb": "REGIME_DETECTED",
-    "event": "EVT:REGIME_DETECTED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 259,
-    "type": "EVT",
-    "verb": "FEATURES_CALCULATED",
-    "event": "EVT:FEATURES_CALCULATED",
-    "payload_keys": [
-      "ts",
-      "symbol",
-      "tf_sec",
-      "features"
-    ],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 260,
-    "type": "EVT",
-    "verb": "FEATURES_CALCULATED",
-    "event": "EVT:FEATURES_CALCULATED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 265,
-    "type": "EVT",
-    "verb": "MARKET_TICK_RECEIVED",
-    "event": "EVT:MARKET_TICK_RECEIVED",
-    "payload_keys": [
-      "symbol",
-      "price",
-      "buy_volume",
-      "sell_volume",
-      "ts"
-    ],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 266,
-    "type": "EVT",
-    "verb": "MARKET_TICK_RECEIVED",
-    "event": "EVT:MARKET_TICK_RECEIVED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 272,
+    "lineno": 248,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -3038,7 +3006,16 @@
   },
   {
     "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
-    "lineno": 273,
+    "lineno": 264,
+    "type": "EVT",
+    "verb": "STRATEGY_SIGNAL_PRODUCED",
+    "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
+    "payload_keys": [],
+    "domain": null
+  },
+  {
+    "source_file": "tests/integration/test_mean_reversion_runtime_e2e_chain.py",
+    "lineno": 265,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -3689,33 +3666,6 @@
     "domain": null
   },
   {
-    "source_file": "tests/integration/test_block_reasons_present.py",
-    "lineno": 54,
-    "type": "EVT",
-    "verb": "STRATEGY_DECISION_BLOCKED",
-    "event": "EVT:STRATEGY_DECISION_BLOCKED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_block_reasons_present.py",
-    "lineno": 102,
-    "type": "EVT",
-    "verb": "STRATEGY_DECISION_BLOCKED",
-    "event": "EVT:STRATEGY_DECISION_BLOCKED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
-    "source_file": "tests/integration/test_block_reasons_present.py",
-    "lineno": 146,
-    "type": "EVT",
-    "verb": "STRATEGY_DECISION_BLOCKED",
-    "event": "EVT:STRATEGY_DECISION_BLOCKED",
-    "payload_keys": [],
-    "domain": null
-  },
-  {
     "source_file": "tests/domain_truth/test_wal_integrity.py",
     "lineno": 60,
     "type": "EVT",
@@ -3820,7 +3770,7 @@
   },
   {
     "source_file": "tests/audit/test_critical_fixes.py",
-    "lineno": 181,
+    "lineno": 182,
     "type": "EVT",
     "verb": "STRATEGY_DECISION_BLOCKED",
     "event": "EVT:STRATEGY_DECISION_BLOCKED",
@@ -3829,7 +3779,7 @@
   },
   {
     "source_file": "tests/audit/test_critical_fixes.py",
-    "lineno": 189,
+    "lineno": 190,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -3838,7 +3788,7 @@
   },
   {
     "source_file": "tests/audit/test_critical_fixes.py",
-    "lineno": 240,
+    "lineno": 242,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -3847,7 +3797,7 @@
   },
   {
     "source_file": "tests/audit/test_critical_fixes.py",
-    "lineno": 324,
+    "lineno": 326,
     "type": "EVT",
     "verb": "STRATEGY_DECISION_BLOCKED",
     "event": "EVT:STRATEGY_DECISION_BLOCKED",
@@ -3883,7 +3833,7 @@
   },
   {
     "source_file": "tests/domains/strategies/test_strat_assign_enforce_aurora.py",
-    "lineno": 58,
+    "lineno": 60,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -5479,7 +5429,7 @@
   },
   {
     "source_file": "apps/reference/domains/regime_detector/regime_detector.py",
-    "lineno": 288,
+    "lineno": 290,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -5488,7 +5438,7 @@
   },
   {
     "source_file": "apps/reference/domains/regime_detector/regime_detector.py",
-    "lineno": 289,
+    "lineno": 291,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -5497,7 +5447,7 @@
   },
   {
     "source_file": "apps/reference/domains/regime_detector/regime_detector.py",
-    "lineno": 492,
+    "lineno": 495,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -5506,7 +5456,7 @@
   },
   {
     "source_file": "apps/reference/domains/regime_detector/regime_detector.py",
-    "lineno": 493,
+    "lineno": 496,
     "type": "EVT",
     "verb": "REGIME_DETECTED",
     "event": "EVT:REGIME_DETECTED",
@@ -5955,7 +5905,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 520,
+    "lineno": 540,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -5964,7 +5914,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 552,
+    "lineno": 572,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -5973,7 +5923,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 585,
+    "lineno": 605,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -5982,7 +5932,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 614,
+    "lineno": 634,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -5991,7 +5941,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 747,
+    "lineno": 767,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -6000,7 +5950,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 810,
+    "lineno": 830,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -6009,7 +5959,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 854,
+    "lineno": 874,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -6018,7 +5968,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2040,
+    "lineno": 2078,
     "type": "EVT",
     "verb": "ALPHA_SCORE_CALCULATED",
     "event": "EVT:ALPHA_SCORE_CALCULATED",
@@ -6027,7 +5977,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2041,
+    "lineno": 2079,
     "type": "EVT",
     "verb": "ALPHA_SCORE_CALCULATED",
     "event": "EVT:ALPHA_SCORE_CALCULATED",
@@ -6036,7 +5986,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2110,
+    "lineno": 2148,
     "type": "EVT",
     "verb": "DECISION_BLOCKED",
     "event": "EVT:DECISION_BLOCKED",
@@ -6045,7 +5995,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2110,
+    "lineno": 2148,
     "type": "EVT",
     "verb": "DECISION_BLOCKED",
     "event": "EVT:DECISION_BLOCKED",
@@ -6054,7 +6004,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2845,
+    "lineno": 2888,
     "type": "EVT",
     "verb": "DECISION_TRACE_EMITTED",
     "event": "EVT:DECISION_TRACE_EMITTED",
@@ -6063,7 +6013,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2846,
+    "lineno": 2889,
     "type": "EVT",
     "verb": "DECISION_TRACE_EMITTED",
     "event": "EVT:DECISION_TRACE_EMITTED",
@@ -6072,7 +6022,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2934,
+    "lineno": 2977,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -6081,7 +6031,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2952,
+    "lineno": 2995,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -6096,7 +6046,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 2953,
+    "lineno": 2996,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -6105,7 +6055,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3250,
+    "lineno": 3303,
     "type": "EVT",
     "verb": "DECISION_TRACE_EMITTED",
     "event": "EVT:DECISION_TRACE_EMITTED",
@@ -6114,7 +6064,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3251,
+    "lineno": 3304,
     "type": "EVT",
     "verb": "DECISION_TRACE_EMITTED",
     "event": "EVT:DECISION_TRACE_EMITTED",
@@ -6123,7 +6073,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3286,
+    "lineno": 3339,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -6132,7 +6082,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3287,
+    "lineno": 3340,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -6141,7 +6091,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3553,
+    "lineno": 3606,
     "type": "EVT",
     "verb": "FEATURES_CALCULATED",
     "event": "EVT:FEATURES_CALCULATED",
@@ -6150,7 +6100,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3613,
+    "lineno": 3666,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -6159,7 +6109,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3613,
+    "lineno": 3666,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -6168,7 +6118,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3669,
+    "lineno": 3722,
     "type": "EVT",
     "verb": "TRADE_INTENT_REJECTED",
     "event": "EVT:TRADE_INTENT_REJECTED",
@@ -6177,7 +6127,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3669,
+    "lineno": 3722,
     "type": "EVT",
     "verb": "TRADE_INTENT_REJECTED",
     "event": "EVT:TRADE_INTENT_REJECTED",
@@ -6186,7 +6136,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3686,
+    "lineno": 3739,
     "type": "EVT",
     "verb": "TRADE_INTENT_PROPOSED",
     "event": "EVT:TRADE_INTENT_PROPOSED",
@@ -6195,7 +6145,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3694,
+    "lineno": 3747,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -6204,7 +6154,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3694,
+    "lineno": 3747,
     "type": "EVT",
     "verb": "INTENT_DEFERRED",
     "event": "EVT:INTENT_DEFERRED",
@@ -6213,7 +6163,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 3982,
+    "lineno": 4035,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",
@@ -6222,7 +6172,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 4045,
+    "lineno": 4098,
     "type": "CMD",
     "verb": "CLOSE",
     "event": "CMD:CLOSE",
@@ -6231,7 +6181,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 4045,
+    "lineno": 4098,
     "type": "CMD",
     "verb": "CLOSE",
     "event": "CMD:CLOSE",
@@ -6240,7 +6190,7 @@
   },
   {
     "source_file": "apps/reference/domains/decision_making/decision_making.py",
-    "lineno": 4057,
+    "lineno": 4110,
     "type": "EVT",
     "verb": "STRATEGY_SIGNAL_PRODUCED",
     "event": "EVT:STRATEGY_SIGNAL_PRODUCED",

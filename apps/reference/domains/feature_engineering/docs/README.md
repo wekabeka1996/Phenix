@@ -25,13 +25,15 @@ MarketData (EVT:MARKET_TICK_RECEIVED)
 ## Components
 
 ### Core Component
-- **`feature_engineering.py`** (~611 LOC) - Main FSM component with Phase 1 metrics
-- **`feature_engineering_phase1.py`** (~454 LOC) - Legacy Phase 1 implementation (deprecated, kept for reference)
+- **`feature_engineering.py`** (~1200 LOC) - Main FSM component.
+- **`calculation_engine.py`** - Numerical computation kernel.
+- **`mean_reversion_strategy.py`** - Signal logic (Zombie logic identified).
 
 ### Supporting Files
-- **`__init__.py`** - Package exports
-- **`domain_dict.json`** - Domain metadata, events imports/exports
-- **`schemas/features_calculated_v1.json`** - JSON Schema for output event
+- **`types.py`** - Data structures (Hot/Cold/SymbolState).
+- **`contracts.py`** - Pydantic models.
+- **`domain_dict.json`** - Domain metadata.
+- **`docs/DOMAIN_DOCUMENTATION_DEEP_DIVE.md`** - **CRITICAL**: Forensic Audit Report.
 
 ## Features Computed
 

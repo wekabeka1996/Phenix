@@ -112,9 +112,12 @@ class TestAuroraBuiltinKillSwitch:
         handler = plugin.create_handler(fsm=fsm, config=config)
         handler.register()
         
-        # T2B-03: Should have registered three listeners (CMD:PROCESS_STRATEGY is primary trigger)
-        assert fsm.listen.call_count == 3
+        # T2B-03: Should have registered four listeners:
+        # - CMD:PROCESS_STRATEGY is primary trigger
+        # - EVT:TRADE_EXECUTED for P0-3-FIX position state sync
+        assert fsm.listen.call_count == 4
         listen_calls = [call[0][0] for call in fsm.listen.call_args_list]
         assert "EVT:REGIME_DETECTED" in listen_calls
         assert "CMD:PROCESS_STRATEGY" in listen_calls  # T2B-03: Primary trigger
         assert "EVT:FEATURES_CALCULATED" in listen_calls  # Data-only (warmup caching)
+        assert "EVT:TRADE_EXECUTED" in listen_calls  # P0-3-FIX: Position state sync

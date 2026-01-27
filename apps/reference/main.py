@@ -31,7 +31,7 @@ from apps.reference.domains.decision_making.decision_making import DecisionMakin
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
-from apps.reference.core.time.clock import MockClock
+from apps.reference.core.time.clock import MockClock, set_clock, reset_clock
 from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
 )
@@ -62,7 +62,7 @@ import logging
 import sys
 import time
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import asyncio
 
@@ -96,60 +96,8 @@ def _run_async_loop(loop: asyncio.AbstractEventLoop) -> None:
 # AuroraBridge and global handlers removed (BRIDGE-SUNSET-01).
 # TRADE_INTENT_PROPOSED is now handled directly by ExecPosFSM.
 
-
-# JSON Formatter for structured logging
-class JSONFormatter(logging.Formatter):
-    """JSON formatter for structured event chain logging."""
-
-    def format(self, record):
-        # Extract extra fields from record
-        extra_fields = {}
-        if hasattr(record, "__dict__"):
-            for key, value in record.__dict__.items():
-                if key not in [
-                    "name",
-                    "msg",
-                    "args",
-                    "levelname",
-                    "levelno",
-                    "pathname",
-                    "filename",
-                    "module",
-                    "exc_info",
-                    "exc_text",
-                    "stack_info",
-                    "lineno",
-                    "funcName",
-                    "created",
-                    "msecs",
-                    "relativeCreated",
-                    "thread",
-                    "threadName",
-                    "processName",
-                    "process",
-                    "message",
-                ]:
-                    extra_fields[key] = value
-
-        # Create structured log entry
-        log_entry = {
-            "timestamp": self.formatTime(record),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-        }
-
-        # Add extra fields
-        log_entry.update(extra_fields)
-
-        return json.dumps(log_entry, default=str, ensure_ascii=False)
-
-
-# Configure logging
-log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+# NOTE: JSONFormatter and logging configuration moved to logging_setup.py (CFG-OBS-001)
+# Full logging setup is called after config load via setup_logging()
 
 
 def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: AuroraConfig) -> None:
@@ -199,146 +147,46 @@ def _perform_alert_checks(alert_manager: AlertManager, wal_dir: Path, config: Au
 fsm: FSMCore | None = None
 execution_position: ExecPosFSM | None = None
 
-# Create logs directory if it doesn't exist
+# ============================================================================
+# LOGGING SETUP (CFG-OBS-001)
+# ============================================================================
+# Bootstrap logging: minimal console setup for early startup messages.
+# Full config-based logging is set up after config load via setup_logging().
+# ============================================================================
+
+# Create logs directory early (needed for early file handlers if any)
 logs_dir = project_root / "logs"
 logs_dir.mkdir(exist_ok=True)
 
-# Configure root logger
-root_logger = logging.getLogger()
-root_logger.setLevel(getattr(logging, log_level, logging.INFO))
+# Bootstrap logger: minimal setup before config is loaded
+# This will be reconfigured by setup_logging(config) after config load.
+_bootstrap_logging_done = False
 
-# NOTE: This module is imported by some tests via importlib. Without a guard,
-# the module-level logging setup below adds duplicate handlers, causing double
-# (or N×) log lines in `logs/*.log` during a single pytest run.
-_AURORA_LOGGING_TAG = "_aurora_main_logging_configured"
-_aurora_logging_already_configured = any(
-    getattr(h, _AURORA_LOGGING_TAG, False) for h in root_logger.handlers
-)
+def _setup_bootstrap_logging() -> None:
+    """Minimal logging for startup (before config is loaded)."""
+    global _bootstrap_logging_done
+    if _bootstrap_logging_done:
+        return
+    
+    # Bootstrap log level from env (before config is loaded)
+    bootstrap_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, bootstrap_level, logging.INFO))
+    
+    # Check if already configured (by tests or previous import)
+    if any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+        _bootstrap_logging_done = True
+        return
+    
+    # Minimal console handler for startup
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(getattr(logging, bootstrap_level, logging.INFO))
+    console.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(message)s"))
+    root_logger.addHandler(console)
+    _bootstrap_logging_done = True
 
-# Configure handlers only once per process.
-if not _aurora_logging_already_configured:
-
-    def _tag(handler: logging.Handler) -> logging.Handler:
-        setattr(handler, _AURORA_LOGGING_TAG, True)
-        return handler
-
-    # Create console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(getattr(logging, log_level, logging.INFO))
-    console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(message)s")
-    console_handler.setFormatter(console_formatter)
-    console_handler.stream.reconfigure(encoding="utf-8")  # type: ignore
-    root_logger.addHandler(_tag(console_handler))
-
-    # File handler for detailed logs
-    log_file = logs_dir / "aurora_core.log"
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-    )
-    file_handler.setLevel(logging.DEBUG)  # Log everything to the file
-    file_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    file_handler.setFormatter(file_formatter)
-    root_logger.addHandler(_tag(file_handler))
-
-    # Domain-specific log handlers
-    domain_handlers = {}
-
-    # Feature Engineering domain logs
-    fe_log_file = logs_dir / "domain_feature_engineering.log"
-    fe_handler = RotatingFileHandler(
-        fe_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    fe_handler.setLevel(logging.DEBUG)
-    fe_handler.setFormatter(file_formatter)
-    fe_handler.addFilter(
-        lambda record: record.name.startswith(
-            "apps.reference.domains.feature_engineering")
-    )
-    domain_handlers["feature_engineering"] = fe_handler
-    root_logger.addHandler(_tag(fe_handler))
-
-    # Risk Management domain logs
-    rm_log_file = logs_dir / "domain_risk_management.log"
-    rm_handler = RotatingFileHandler(
-        rm_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    rm_handler.setLevel(logging.DEBUG)
-    rm_handler.setFormatter(file_formatter)
-    rm_handler.addFilter(
-        lambda record: record.name.startswith(
-            "apps.reference.domains.risk_management")
-    )
-    domain_handlers["risk_management"] = rm_handler
-    root_logger.addHandler(_tag(rm_handler))
-
-    # Decision Making domain logs
-    dm_log_file = logs_dir / "domain_decision_making.log"
-    dm_handler = RotatingFileHandler(
-        dm_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    dm_handler.setLevel(logging.DEBUG)
-    dm_handler.setFormatter(file_formatter)
-    dm_handler.addFilter(
-        lambda record: record.name.startswith(
-            "apps.reference.domains.decision_making")
-    )
-    domain_handlers["decision_making"] = dm_handler
-    root_logger.addHandler(_tag(dm_handler))
-
-    # Execution Position domain logs
-    ep_log_file = logs_dir / "domain_execution_position.log"
-    ep_handler = RotatingFileHandler(
-        ep_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    ep_handler.setLevel(logging.DEBUG)
-    ep_handler.setFormatter(file_formatter)
-    ep_handler.addFilter(
-        lambda record: record.name.startswith(
-            "apps.reference.domains.execution_position")
-    )
-    domain_handlers["execution_position"] = ep_handler
-    root_logger.addHandler(_tag(ep_handler))
-
-    # Regime Detector domain logs
-    rd_log_file = logs_dir / "domain_regime_detector.log"
-    rd_handler = RotatingFileHandler(
-        rd_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    rd_handler.setLevel(logging.DEBUG)
-    rd_handler.setFormatter(file_formatter)
-    rd_handler.addFilter(
-        lambda record: record.name.startswith(
-            "apps.reference.domains.regime_detector")
-    )
-    domain_handlers["regime_detector"] = rd_handler
-    root_logger.addHandler(_tag(rd_handler))
-
-    # Mean Reversion strategy logs (separate file, strategy-level telemetry)
-    mr_log_file = logs_dir / "domain_mean_reversion.log"
-    mr_handler = RotatingFileHandler(
-        mr_log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    mr_handler.setLevel(logging.DEBUG)
-    mr_handler.setFormatter(file_formatter)
-    mr_handler.addFilter(lambda record: record.name.startswith("domain_mean_reversion"))
-    domain_handlers["mean_reversion"] = mr_handler
-    root_logger.addHandler(_tag(mr_handler))
-
-    # Event Chain structured logs (JSON format)
-    chain_log_file = logs_dir / "event_chain.log"
-    chain_handler = RotatingFileHandler(
-        chain_log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-    )
-    chain_handler.setLevel(logging.INFO)
-    json_formatter = JSONFormatter()
-    chain_handler.setFormatter(json_formatter)
-    chain_handler.addFilter(
-        lambda record: hasattr(record, "rid") or record.name == "event_chain"
-    )
-    domain_handlers["event_chain"] = chain_handler
-    root_logger.addHandler(_tag(chain_handler))
+_setup_bootstrap_logging()
 
 LOG = logging.getLogger("AuroraCore")
 
@@ -474,6 +322,9 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     LOG.info("🚀 STARTING AURORA CORE IN BACKTEST MODE")
     LOG.info("="*60)
 
+    # Stable run id for artifacts (report + order log)
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     # BACKTEST UNBLOCKER: allow strategy loop to proceed even if FE warmup is not full_ready
     try:
         fe = getattr(config.domains, "feature_engineering", None)
@@ -522,6 +373,26 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     # Backtest timebase: prevent stale-feature gates by running domains on simulated time.
     # LiveClock (wall time) makes all 2023 events look stale in 2026.
     bt_clock = MockClock(start_ms=0)
+    
+    # CRITICAL: Wire MockClock globally so all guards (ExposureGuard, cooldowns, staleness checks)
+    # use simulated time instead of wall-clock. Without this, historical data from 2023 
+    # appears "stale" when checked against 2026 wall-clock.
+    set_clock(bt_clock)
+    LOG.info("🕐 MockClock wired globally via set_clock() for backtest timebase")
+
+    # Backtest-only: redirect OrderLoggerV1 to a run-specific file so reports can join rid<->order_id
+    # without mixing sessions (logs/order_log_v1.jsonl is global & accumulative).
+    order_log_path = None
+    try:
+        from apps.reference.telemetry.order_logger import order_logger as order_logger_proxy
+
+        order_log_path = project_root / "logs" / "backtests" / f"order_log_{run_id}.jsonl"
+        order_log_path.parent.mkdir(parents=True, exist_ok=True)
+        order_logger_proxy.log_file = order_log_path
+        LOG.info(f"🧾 Backtest OrderLogger file: {order_log_path}")
+    except Exception as e:
+        LOG.warning(f"Backtest OrderLogger redirection failed: {e}")
+        order_log_path = None
 
     # --- Backtest telemetry: capture regimes & feature readiness ---
     regime_events: list[dict] = []
@@ -529,6 +400,7 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     regime_counts_by_symbol: dict[str, dict[str, int]] = {}
     features_counts_by_tf: dict[int, int] = {}
     features_full_ready_by_tf: dict[int, int] = {}
+    trade_intents: list[dict] = []
 
     def _advance_clock_from_ts(ts_ms: int) -> None:
         try:
@@ -566,8 +438,40 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         if bool(warmup.get("full_ready")):
             features_full_ready_by_tf[tf_i] = int(features_full_ready_by_tf.get(tf_i, 0)) + 1
 
+    def _on_trade_intent(event: Message) -> None:
+        # Capture strategy_id + rid in backtest report.
+        pld = event.get("pld", {}) if isinstance(event, dict) else getattr(event, "pld", {})
+        if not isinstance(pld, dict):
+            return
+        rid = pld.get("rid")
+        if not isinstance(rid, str) or not rid:
+            return
+        # Add simulated emit time (MockClock) so we can join to order creation/fills deterministically.
+        stamped = dict(pld)
+        stamped["emitted_ts_ms"] = int(bt_clock.now_ms())
+        try:
+            stamped["emitted_iso_utc"] = datetime.fromtimestamp(int(bt_clock.now_ms()) / 1000.0, tz=timezone.utc).isoformat()
+        except Exception:
+            stamped["emitted_iso_utc"] = None
+
+        # Attach last known market regime for this symbol (from RegimeDetector stream).
+        # This is crucial for strategies whose why-chain does not include "regime:*" (e.g. Aurora).
+        try:
+            sym = stamped.get("instrument") or stamped.get("symbol")
+            if isinstance(sym, str) and sym:
+                last = last_regime_by_symbol.get(sym)
+                if isinstance(last, dict):
+                    stamped["market_regime"] = last.get("regime")
+                    stamped["market_regime_confidence"] = last.get("confidence")
+                    stamped["market_regime_ts_ms"] = last.get("ts") or last.get("last_update_ts_ms")
+        except Exception:
+            pass
+
+        trade_intents.append(stamped)
+
     fsm.listen("EVT:REGIME_DETECTED", _on_regime)
     fsm.listen("EVT:FEATURES_CALCULATED", _on_features)
+    fsm.listen("EVT:TRADE_INTENT_PROPOSED", _on_trade_intent)
     
     # 2. Initialize Backtest Engine (The Driver)
     
@@ -589,13 +493,22 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     # Symbols to test
     symbols = list(config.instruments.keys()) if config.instruments else ["BTCUSDT", "ETHUSDT"]
     
+    # Clock advance callback: updates global MockClock before each bar is processed
+    def _advance_global_clock(ts_ms: int) -> None:
+        """Advance the global MockClock to the given timestamp."""
+        try:
+            bt_clock.set_time_ms(ts_ms)
+        except Exception:
+            pass
+    
     engine = BacktestEngine(
         start_date=start_date,
         end_date=end_date,
         symbol_list=symbols,
         timeframe="5m", # Configurable?
         initial_balance=initial_balance,
-        event_bus=fsm
+        event_bus=fsm,
+        clock_advance_fn=_advance_global_clock  # Wire clock sync
     )
 
     from backtest_engine.wrappers import BacktestExecPosFSM
@@ -618,6 +531,15 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     risk_management = RiskManagement(fsm, config)
     fsm.register_domain("risk_management", risk_management)
     
+    # Position Tracking (Portfolio State SSOT)
+    # BACKTEST-ARCH-FIX: Initialize PositionTracking to maintain production parity.
+    # This domain listens to EVT:TRADE_EXECUTED and emits EVT:PORTFOLIO_STATE_UPDATED.
+    position_tracking = PositionTracking(fsm=fsm, config=config)
+    fsm.register_domain("position_tracking", position_tracking)
+    # Mark engine so it knows to skip manual portfolio emission (PositionTracking handles it)
+    engine._position_tracking_initialized = True
+    LOG.info("✅ PositionTracking initialized for Backtest (production parity)")
+    
     # Decision Making (Strategy Logic)
     # Task 18: DecisionMaking requires AuroraConfig object
     decision_making = DecisionMaking(fsm, config, clock=bt_clock)
@@ -629,6 +551,8 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     # Ensure BacktestEngine uses the same broker instance created by ExecPosFSM
     if exec_pos.adapter is not None:
         engine.broker = exec_pos.adapter
+    # DET-BT-15: Wire ExecPosFSM for tick-barrier synchronization
+    engine.execpos_fsm = exec_pos
     fsm.register_domain("execution_position", exec_pos)
     
     # 3b. Initialize Aurora Strategy Handler (processes CMD:PROCESS_STRATEGY)
@@ -636,7 +560,10 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     try:
         from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
         aurora_plugin = AuroraBuiltinPlugin()
-        aurora_handler = aurora_plugin.create_handler(fsm=fsm, config=config)
+        # DET-BT-COOLDOWN-FIX: Pass bt_clock.monotonic for deterministic cooldowns/holds
+        aurora_handler = aurora_plugin.create_handler(
+            fsm=fsm, config=config, monotonic_fn=bt_clock.monotonic
+        )
         aurora_handler.register()
         LOG.info("✅ Aurora Strategy Handler registered for Backtest.")
     except Exception as e:
@@ -661,7 +588,28 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
     
     # 4. Run Simulation
     try:
-        results = engine.run()
+        max_ticks = None
+        try:
+            env_max = os.getenv("BACKTEST_MAX_TICKS")
+            if env_max:
+                max_ticks = int(env_max)
+        except Exception:
+            max_ticks = None
+        if max_ticks is None:
+            try:
+                bt_cfg = getattr(getattr(config, "trading", None), "backtest", None)
+                mt = getattr(bt_cfg, "max_ticks", None) if bt_cfg is not None else None
+                if mt is not None:
+                    max_ticks = int(mt)
+            except Exception:
+                max_ticks = None
+
+        if max_ticks is not None and max_ticks > 0:
+            LOG.info(f"⏱️ Backtest max_ticks={max_ticks} (set BACKTEST_MAX_TICKS to override)")
+        else:
+            max_ticks = None
+
+        results = engine.run(max_ticks=max_ticks)
 
         # --- Regime summary (console) ---
         if last_regime_by_symbol:
@@ -698,37 +646,39 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         print("="*60 + "\n")
 
         # 2. JSON Report
-        report_data = {
-            "metadata": {
-                "timestamp": datetime.now().isoformat(),
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "symbols": symbols,
-                "timeframe": "5m", 
-                "initial_balance": initial_balance
-            },
-            "metrics": asdict(results)
-            ,
-            "regimes": {
+        from backtest_engine.reporting import build_backtest_report
+
+        report_data = build_backtest_report(
+            run_id=run_id,
+            config=config,
+            results=results,
+            engine=engine,
+            start_date=start_date,
+            end_date=end_date,
+            symbols=symbols,
+            timeframe="5m",
+            initial_balance=float(initial_balance),
+            regimes={
                 "events_total": int(len(regime_events)),
                 "last_by_symbol": last_regime_by_symbol,
                 "counts_by_symbol": regime_counts_by_symbol,
             },
-            "features": {
+            features={
                 "counts_by_tf_sec": {str(k): int(v) for k, v in features_counts_by_tf.items()},
                 "full_ready_counts_by_tf_sec": {str(k): int(v) for k, v in features_full_ready_by_tf.items()},
             },
-        }
+            trade_intents=trade_intents,
+            order_log_path=str(order_log_path) if order_log_path is not None else None,
+        )
         
         reports_dir = project_root / "reports" / "backtests"
         reports_dir.mkdir(parents=True, exist_ok=True)
         
         # Filename: backtest_{iso_timestamp}.json
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_path = reports_dir / f"backtest_{timestamp_str}.json"
+        report_path = reports_dir / f"backtest_{run_id}.json"
         
         with open(report_path, "w") as f:
-            json.dump(report_data, f, indent=2)
+            json.dump(report_data, f, indent=2, ensure_ascii=False)
             
         LOG.info(f"✅ Report saved to: {report_path}")
 
@@ -736,6 +686,13 @@ def run_backtest_simulation(config: AuroraConfig) -> None:
         LOG.error(f"❌ Backtest failed: {e}", exc_info=True)
         sys.exit(1)
     finally:
+        # Restore global clock to LiveClock for any subsequent code
+        try:
+            reset_clock()
+            LOG.info("🕐 Clock reset to LiveClock after backtest")
+        except Exception:
+            pass
+            
         try:
             if hasattr(exec_pos, "watchdog") and exec_pos.watchdog is not None:
                 exec_pos.watchdog.stop()
@@ -771,6 +728,16 @@ def main() -> None:
     config_loader = ConfigLoader(config_dir=project_root / "config" / "aurora")
     config = config_loader.load_config()
     LOG.info("Configuration loaded successfully")
+
+    # Step 1.5: Setup full logging from observability.yaml (CFG-OBS-001)
+    from apps.reference.logging_setup import setup_logging
+    setup_logging(config, logs_dir=logs_dir)
+
+    # PHASE 2: METADATA ACTIVATION - Log config versions at startup (PURGE-DIRTY-DOZEN)
+    sys_ver = getattr(config.system_meta, 'system_config_version', None) or 'N/A'
+    regime_ver = getattr(config.system_meta, 'regime_config_version', None) or 'N/A'
+    LOG.info(f"📋 Config Versions: system={sys_ver}, regime={regime_ver}")
+    LOG.info(f"📋 Trading Mode: {config.trading_mode}")
 
     # BACKTEST UNBLOCKER: force FeatureEngineering warmup to warn_only in backtest mode
     if config.trading_mode == "backtest":
@@ -1118,6 +1085,26 @@ def main() -> None:
     guardian_loop_thread.start()
 
     # ==========================================
+    # TASK47c-P3: LEVERAGE BOOTSTRAP (ACTIVE LEVERAGE MANAGEMENT)
+    # ==========================================
+    # Sync margin mode and leverage with exchange BEFORE trading starts.
+    # Failed symbols will be blocked from trading (fail-closed).
+    blocked_symbols: set = set()
+    try:
+        LOG.info("--- Starting Leverage Bootstrap ---")
+        future = asyncio.run_coroutine_threadsafe(
+            execution_position.run_leverage_bootstrap(),
+            guardian_loop
+        )
+        blocked_symbols = future.result(timeout=30.0)  # 30s timeout for all symbols
+        if blocked_symbols:
+            LOG.warning(f"TASK47c-P3: Symbols blocked from trading due to leverage sync failure: {blocked_symbols}")
+        else:
+            LOG.info("TASK47c-P3: Leverage bootstrap completed successfully")
+    except Exception as e:
+        LOG.error(f"TASK47c-P3: Leverage bootstrap failed with exception: {e}. Trading MAY proceed with default settings.")
+
+    # ==========================================
     # IN-FLIGHT RECONCILER (TRUTH DOMAIN REPAIR)
     # ==========================================
     try:
@@ -1178,7 +1165,46 @@ def main() -> None:
     except Exception as e:
         LOG.warning(f"⚠️ InFlightReconciler disabled (init failed): {e}")
 
-    # Bridge RetryScheduler binding removed (BRIDGE-SUNSET-01)
+    # RetryScheduler binding restored (PHASE2-DEAD-DEFER-FIX)
+    retry_scheduler = None
+    try:
+        from apps.reference.retry_scheduler import RetryScheduler
+        
+        # Config for retry scheduler (use arming config if available)
+        try:
+            arming_cfg = config.domains.decision_making.arming
+            max_attempts = int(getattr(arming_cfg, 'max_attempts', 5))
+            retry_backoff_ms = int(getattr(arming_cfg, 'retry_backoff_ms', 500))
+        except AttributeError:
+            max_attempts = 5
+            retry_backoff_ms = 500
+        
+        retry_scheduler = RetryScheduler(
+            fsm=fsm,
+            logger=LOG.getChild("RetryScheduler"),
+            default_max_attempts=max_attempts,
+            min_retry_delay_ms=retry_backoff_ms,
+            backoff_factor=2.0,
+            jitter_ms=100,
+        )
+        
+        if guardian_loop is not None and guardian_loop.is_running():
+            retry_scheduler.bind_loop(guardian_loop)
+            
+            # Listen to EVT:INTENT_DEFERRED and register with scheduler
+            def on_intent_deferred(msg):
+                """Handler for EVT:INTENT_DEFERRED — forwards to RetryScheduler."""
+                try:
+                    retry_scheduler.register_deferred(msg.pld)
+                except Exception as e:
+                    LOG.warning(f"RetryScheduler.register_deferred failed: {e}")
+            
+            fsm.listen("EVT:INTENT_DEFERRED", on_intent_deferred)
+            LOG.info("✅ RetryScheduler bound (max_attempts=%d, backoff_ms=%d)", max_attempts, retry_backoff_ms)
+        else:
+            LOG.warning("⚠️ RetryScheduler not bound: async loop is not running")
+    except Exception as e:
+        LOG.warning(f"⚠️ RetryScheduler disabled (init failed): {e}")
 
     try:
         sync_fn = getattr(

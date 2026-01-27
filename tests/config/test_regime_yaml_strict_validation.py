@@ -41,7 +41,7 @@ class TestRegimeYamlStrictValidation:
                 "K": 3
             },
             "features": {},
-            "hotreload_whitelist": [],
+            # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist - 2026-01-25
             "models": {
                 "sma_trend": {
                     "sma_short_period": 10,
@@ -94,7 +94,7 @@ class TestRegimeYamlStrictValidation:
                 "enabled": True
             },
             "features": {},
-            "hotreload_whitelist": [],
+            # PURGE-DIRTY-DOZEN: Removed hotreload_whitelist - 2026-01-25
             "models": {
                 "sma_trend": {
                     "sma_short_period": 10,

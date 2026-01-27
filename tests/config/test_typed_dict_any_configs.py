@@ -18,8 +18,7 @@ from apps.reference.config_models import (
     OrphanMonitorConfig,
     ExecutionConfig,
     WatchdogConfig,
-    ApiCallLimits,
-    KlinesConfig,
+    # PURGE-DIRTY-DOZEN: Removed ApiCallLimits, KlinesConfig (dead stubs) - 2026-01-25
 )
 
 
@@ -95,10 +94,9 @@ def _valid_execution_kwargs():
         "fsm_periodic_cleanup_enabled": False,
         "cooldown_after_close_ms": 1000,
         "anti_race_close_ms": 250,
-        "open_order_type": None,
+        # PURGE-DIRTY-DOZEN: Removed open_order_type, min_post_interval_per_symbol_ms
         "order_params": None,
         "preflight_backoff_ms": None,
-        "min_post_interval_per_symbol_ms": None,
         "allow_trade_with_guardian_tidy_only": None,
         "order_guardian": None,
     }
@@ -147,32 +145,7 @@ class TestDecisionModeOverrides:
         assert config_with_overrides.production.signal_threshold == 0.25
 
 
-class TestKlinesConfig:
-    """B: MarketDataConfig.get_klines - typed."""
-    
-    def test_klines_config_accept_known_fields(self):
-        """KlinesConfig accepts interval/limit (required fields)."""
-        klines = KlinesConfig(interval="1m", limit=2)
-        assert klines.interval == "1m"
-        assert klines.limit == 2
-
-        klines_custom = KlinesConfig(interval="5m", limit=10)
-        assert klines_custom.interval == "5m"
-        assert klines_custom.limit == 10
-    
-    def test_klines_config_reject_unknown_fields(self):
-        """KlinesConfig rejects unknown fields (extra='forbid')."""
-        with pytest.raises(ValidationError) as exc_info:
-            KlinesConfig(unknown_field="should_fail")
-        assert "extra" in str(exc_info.value).lower() or \
-               "unexpected" in str(exc_info.value).lower()
-    
-    def test_api_call_limits_uses_typed_klines(self):
-        """ApiCallLimits.get_klines is KlinesConfig (not Dict[str, Any])."""
-        limits = ApiCallLimits(get_recent_trades=10, get_klines={"interval": "1m", "limit": 2})
-        assert isinstance(limits.get_klines, KlinesConfig)
-        assert limits.get_klines.interval == "1m"
-        assert limits.get_klines.limit == 2
+# PURGE-DIRTY-DOZEN: Removed TestKlinesConfig class (ApiCallLimits, KlinesConfig deleted) - 2026-01-25
 
 
 class TestManageConfigTyped:
@@ -203,7 +176,7 @@ class TestManageConfigTyped:
         """ManageConfig top-level has extra='forbid' (all fields typed).
         
         CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: ManageConfig now forbid."""
-        manage = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor=None, failsafe=None)
+        manage = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor=None)
         assert manage.auto is True
         
         # extra='forbid' at top level
@@ -268,10 +241,11 @@ class TestE2ERegressionTypedConfigs:
     
     def test_no_dict_any_in_manage_config(self):
         """ManageConfig: emergency/orphan_monitor are typed (not Dict)."""
-        manage = ManageConfig(brackets=None, emergency={"enabled": True, "wait_mode_bars": 1}, auto=True, orphan_monitor=None, failsafe=None)
+        # TASK-ZOMBIE-FIX: Removed failsafe field
+        manage = ManageConfig(brackets=None, emergency={"enabled": True, "wait_mode_bars": 1}, auto=True, orphan_monitor=None)
         assert isinstance(manage.emergency, EmergencyConfig)
         
-        manage_orphan = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor={"enabled": False}, failsafe=None)
+        manage_orphan = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor={"enabled": False})
         assert isinstance(manage_orphan.orphan_monitor, OrphanMonitorConfig)
     
     def test_no_dict_any_in_execution_config(self):
@@ -284,8 +258,4 @@ class TestE2ERegressionTypedConfigs:
         )
         assert isinstance(execution.watchdog, WatchdogConfig)
     
-    def test_no_dict_any_in_api_call_limits(self):
-        """ApiCallLimits: get_klines is KlinesConfig (not Dict)."""
-        limits = ApiCallLimits(get_recent_trades=10, get_klines={"interval": "15m", "limit": 5})
-        assert isinstance(limits.get_klines, KlinesConfig)
-        assert limits.get_klines.interval == "15m"
+    # PURGE-DIRTY-DOZEN: Removed test_no_dict_any_in_api_call_limits (ApiCallLimits deleted) - 2026-01-25

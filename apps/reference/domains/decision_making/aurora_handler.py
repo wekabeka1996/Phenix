@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import decimal
 import logging
-import time
+# DET-BT-11: Import for deterministic backtest
+from apps.reference.core.time import get_clock
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable
@@ -28,6 +29,7 @@ from apps.reference.domains.decision_making.aurora_scoring_kernel import (
 )
 from apps.reference.domains.decision_making.normalized_reject_reasons import NormalizedRejectReasons
 from apps.reference.domains.decision_making.trade_intent_reject_wal import write_trade_intent_rejected
+from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 
 
 logger = logging.getLogger("aurora_handler")
@@ -115,8 +117,9 @@ class AuroraHandler:
         # Timebase separation:
         # - monotonic_fn(): durations / cooldowns / holding windows
         # - wall_time_fn(): epoch-based timestamps (ts_ms)
-        self.monotonic_fn: Callable[[], float] = monotonic_fn or time.monotonic
-        self.wall_time_fn: Callable[[], float] = wall_time_fn or time.time
+        # DET-BT-FIX-01: Deterministic monotonic fallback via get_clock()
+        self.monotonic_fn: Callable[[], float] = monotonic_fn or (lambda: get_clock().monotonic())
+        self.wall_time_fn: Callable[[], float] = wall_time_fn or (lambda: get_clock().now_sec())
         
         # Dependency Injection / Testability
         self.scoring_kernel_cls = AuroraScoringKernel
@@ -138,11 +141,13 @@ class AuroraHandler:
         # FeatureEngineering warmup enforcement mode (used for readiness fail-closed behavior).
         # Default is fail_fast to preserve live safety if config can't be resolved.
         self._fe_warmup_enforcement_mode: str = "fail_fast"
+        self._strict_pydantic_config: bool = False
         try:
             from apps.reference.config_models import AuroraConfig
             from apps.reference.domain_config import DomainConfigResolver
 
             if isinstance(self.config, AuroraConfig):
+                self._strict_pydantic_config = True
                 fe_cfg = DomainConfigResolver(self.config).get_feature_engineering()
                 warmup_cfg = getattr(fe_cfg, "warmup", None)
                 if warmup_cfg is not None:
@@ -168,12 +173,62 @@ class AuroraHandler:
         decision = getattr(aurora, "decision", None) if aurora else None
         
         if decision:
-            self.signal_threshold = decimal.Decimal(str(getattr(decision, "signal_threshold", "0.1")))
-            self.side_bias_window_sec = float(getattr(decision, "side_bias_window_sec", 420))
-            self.side_bias_target_ratio = float(getattr(decision, "side_bias_target_ratio", 0.72))
-            self.side_bias_penalty_factor = float(getattr(decision, "side_bias_penalty_factor", 0.25))
-            self.side_bias_min_intents = int(getattr(decision, "side_bias_min_intents", 18))
-            self.regime_thresholds = getattr(decision, "regime_threshold_multipliers", {"DEFAULT": 1.0})
+            if self._strict_pydantic_config:
+                from apps.reference.config_contract import ConfigContractError
+
+                thr_raw = getattr(decision, "signal_threshold", None)
+                if thr_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.signal_threshold",
+                        why="signal_threshold is required for AuroraHandler (no silent fallback).",
+                    )
+                self.signal_threshold = decimal.Decimal(str(thr_raw))
+
+                # Side-bias parameters are required for kernel scoring (fail-closed).
+                sb_window_raw = getattr(decision, "side_bias_window_sec", None)
+                sb_target_raw = getattr(decision, "side_bias_target_ratio", None)
+                sb_penalty_raw = getattr(decision, "side_bias_penalty_factor", None)
+                sb_min_intents_raw = getattr(decision, "side_bias_min_intents", None)
+                if sb_window_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_window_sec",
+                        why="side_bias_window_sec is required (no silent fallback).",
+                    )
+                if sb_target_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_target_ratio",
+                        why="side_bias_target_ratio is required (no silent fallback).",
+                    )
+                if sb_penalty_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_penalty_factor",
+                        why="side_bias_penalty_factor is required (no silent fallback).",
+                    )
+                if sb_min_intents_raw is None:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.side_bias_min_intents",
+                        why="side_bias_min_intents is required (no silent fallback).",
+                    )
+                self.side_bias_window_sec = float(sb_window_raw)
+                self.side_bias_target_ratio = float(sb_target_raw)
+                self.side_bias_penalty_factor = float(sb_penalty_raw)
+                self.side_bias_min_intents = int(sb_min_intents_raw)
+
+                regime_thr = getattr(decision, "regime_threshold_multipliers", None)
+                if not isinstance(regime_thr, dict) or not regime_thr:
+                    raise ConfigContractError(
+                        path="strategies.aurora.decision.regime_threshold_multipliers",
+                        why="regime_threshold_multipliers must be a non-empty mapping (include DEFAULT).",
+                    )
+                self.regime_thresholds = dict(regime_thr)
+            else:
+                # Legacy/non-typed config path (tests/mocks): keep backward-compatible defaults.
+                self.signal_threshold = decimal.Decimal(str(getattr(decision, "signal_threshold", "0.1")))
+                self.side_bias_window_sec = float(getattr(decision, "side_bias_window_sec", 420))
+                self.side_bias_target_ratio = float(getattr(decision, "side_bias_target_ratio", 0.72))
+                self.side_bias_penalty_factor = float(getattr(decision, "side_bias_penalty_factor", 0.25))
+                self.side_bias_min_intents = int(getattr(decision, "side_bias_min_intents", 18))
+                self.regime_thresholds = getattr(decision, "regime_threshold_multipliers", {"DEFAULT": 1.0})
             
             # Direction strength config
             ds_cfg = getattr(decision, "direction_strength_scoring", None)
@@ -191,6 +246,20 @@ class AuroraHandler:
             # Neutral threshold for hysteresis (global default)
             nt_raw = getattr(decision, "neutral_threshold", None)
             self.neutral_threshold = decimal.Decimal(str(nt_raw)) if nt_raw is not None else decimal.Decimal("0.05")
+
+            # REGIME-KILL-SWITCH-01: Optional config-driven regime blocklist.
+            # If current regime is blocked, Aurora strategy emits no signals.
+            blocked = getattr(decision, "blocked_regimes", None)
+            try:
+                self.blocked_regimes = {str(x) for x in (blocked or []) if str(x)}
+            except Exception:
+                self.blocked_regimes = set()
+
+            # Liquidity Gate (Score V2) - optional (per-symbol override supported at runtime)
+            # NOTE: For non-typed configs (tests/mocks), avoid accidentally enabling this gate via MagicMock.
+            self._global_liquidity_gate_cfg = (
+                getattr(decision, "liquidity_gate", None) if self._strict_pydantic_config else None
+            )
             
             # === Holding Period Config (Anti-Churn) ===
             hp_cfg = getattr(decision, "holding_period", None)
@@ -252,35 +321,12 @@ class AuroraHandler:
                 self.anti_fomo_sigma = 4.0
                 self.motion_window_sec = 900
         else:
-            # Defaults
-            self.signal_threshold = decimal.Decimal("0.1")
-            self.side_bias_window_sec = 420.0
-            self.side_bias_target_ratio = 0.72
-            self.side_bias_penalty_factor = 0.25
-            self.side_bias_min_intents = 18
-            self.regime_thresholds = {"DEFAULT": 1.0}
-            self.direction_strength_cfg = {}
-            self.delta_price_cap_pct = decimal.Decimal("0.005")
-            self.neutral_threshold = decimal.Decimal("0.05")
-            # Holding period defaults (disabled)
-            self.holding_period_enabled = False
-            self.default_min_duration_sec = 30.0
-            self.default_emergency_threshold = 0.7
-            self.holding_apply_to_flips = True
-            self.default_reentry_cooldown_sec = 60.0
-            # Vol-Adj Gates defaults (disabled)
-            self.vol_gates_enabled = False
-            self.anti_flat_sigma = 0.5
-            self.anti_fomo_sigma = 4.0
-            self.motion_window_sec = 900
-
-            # Anti-churn defaults (disabled)
-            self.anti_churn_enabled = False
-            self.time_multipliers = {}
-            self.regime_inertia_confirm_window_sec = 0.0
-            self.regime_inertia_confirm_window_same_severity_sec = 0.0
-            self.regime_inertia_immediate_risk_off = True
-            self.regime_severity_map = {}
+            # P2: FAIL-CLOSED — decision config is mandatory
+            from apps.reference.config_contract import ConfigContractError
+            raise ConfigContractError(
+                path="strategies.aurora.decision",
+                why="Aurora decision config is mandatory. Check config/aurora/strategies/aurora.yaml"
+            )
 
     def _get_time_multiplier(self, regime: Optional[str]) -> float:
         if not getattr(self, "anti_churn_enabled", False):
@@ -416,6 +462,7 @@ class AuroraHandler:
         details: dict | None = None,
         why_chain: list[str] | None = None,
     ) -> None:
+        ts_ms = int(self.wall_time_fn() * 1000)
         payload: Dict[str, Any] = {
             "schema_version": 1,
             "strategy_id": self.strategy_id,
@@ -423,12 +470,27 @@ class AuroraHandler:
             "reason_code": str(reason_code),
             "reason": str(reason),
             "context": str(context),
-            "ts_ms": int(self.wall_time_fn() * 1000),
+            "ts_ms": ts_ms,
             "why_chain": list(why_chain or []),
         }
         if details:
             payload["details"] = details
         self.emit_fn("EVT:STRATEGY_DECISION_BLOCKED", payload)
+        
+        # P1-OBSERVABILITY: Write to WAL for audit trail (post-mortem analysis)
+        try:
+            write_trade_intent_rejected(
+                symbol=symbol,
+                tf_sec=self.timeframe_sec,
+                bar_close_ts=None,
+                reason_code=reason_code,
+                stage="STRATEGY",
+                why=f"{context}: {reason}",
+                src="aurora_handler:_emit_strategy_blocked",
+                ts_ms=ts_ms,
+            )
+        except Exception:
+            pass  # Best-effort WAL write, don't fail on observability
     
     def on_regime_detected(self, event: Dict[str, Any]) -> None:
         """
@@ -457,10 +519,8 @@ class AuroraHandler:
         if getattr(self, "anti_churn_enabled", False):
             self._update_effective_regime(symbol, state.regime)
         
-        # Update warmup from regime event if present
-        warmup = event.get("warmup", {})
-        state.warmup_full_ready = bool(warmup.get("full_ready", False))
-        state.warmup_ticks_seen = int(warmup.get("ticks_seen", 0))
+        # P1-1-FIX: DO NOT update warmup from REGIME_DETECTED
+        # SSOT: warmup comes from CMD:PROCESS_STRATEGY only
         
         changed = event.get("changed", True)  # Default True for backward compat
         self.logger.debug(
@@ -559,8 +619,8 @@ class AuroraHandler:
     def on_features_data_only(self, event: Dict[str, Any]) -> None:
         """
         T2B-03: Data-only handler for EVT:FEATURES_CALCULATED.
-        
-        Updates warmup state cache but does NOT trigger decision.
+
+        Does NOT update warmup; warmup is SSOT from CMD:PROCESS_STRATEGY.
         Decision is now triggered exclusively by CMD:PROCESS_STRATEGY.
         
         P0-3: Also caches price_motion since CMD:PROCESS_STRATEGY doesn't include it.
@@ -569,11 +629,8 @@ class AuroraHandler:
         if not symbol:
             return
         
-        # Only cache warmup state (no decision trigger)
-        warmup = event.get("warmup", {})
+        # P1-1-FIX: DO NOT update warmup from FEATURES_CALCULATED
         state = self._symbol_states[symbol]
-        state.warmup_full_ready = bool(warmup.get("full_ready", False))
-        state.warmup_ticks_seen = int(warmup.get("ticks_seen", 0))
         
         # P0-3: Cache price_motion for vol-adj gates
         # CMD:PROCESS_STRATEGY does not include price_motion, only EVT:FEATURES_CALCULATED
@@ -685,6 +742,30 @@ class AuroraHandler:
         signal_weights = self._get_signal_weights(symbol, instr_cfg)
         feature_neutrals = self._get_feature_neutrals(symbol, instr_cfg)
         essential_features = self._get_essential_features(symbol, instr_cfg)
+
+        # === LIQUIDITY GATE (Score V2) ===
+        # If enabled, block trading when liquidity_kappa is missing/not-ready/too low.
+        liq_ok, liq_ctx = self._check_liquidity_gate(
+            symbol=symbol,
+            instr_cfg=instr_cfg,
+            features=features,
+            warmup_readiness=warmup_readiness,
+        )
+        if not liq_ok:
+            self._emit_strategy_blocked(
+                symbol=symbol,
+                reason_code=str(liq_ctx.get("reason_code") or "LIQUIDITY_GATE_FAIL"),
+                reason="LIQUIDITY",
+                context="aurora_handler:liquidity_gate",
+                details=liq_ctx,
+                why_chain=[
+                    "LIQUIDITY_GATE",
+                    f"kappa={liq_ctx.get('kappa')}",
+                    f"min={liq_ctx.get('kappa_min')}",
+                ],
+            )
+            return
+        # === END LIQUIDITY GATE ===
         
         # Build side bias state
         side_bias = self._get_side_bias_state(symbol)
@@ -749,6 +830,7 @@ class AuroraHandler:
         current_side = state.last_signal_side
         
         # Call scoring kernel
+        effective_regime_thresholds = self._get_regime_thresholds(symbol=symbol, instr_cfg=instr_cfg)
         result = self.scoring_kernel_cls.compute(
             symbol=symbol,
             features=features,
@@ -759,7 +841,7 @@ class AuroraHandler:
             essential_features=essential_features,
             base_threshold=effective_threshold,
             regime_name=state.regime,
-            regime_thresholds=self.regime_thresholds,
+            regime_thresholds=effective_regime_thresholds,
             side_bias_state=side_bias,
             direction_strength_cfg=self.direction_strength_cfg,
             delta_price_cap_pct=self.delta_price_cap_pct,
@@ -796,6 +878,37 @@ class AuroraHandler:
 
         # Never mutate scoring output object; use an effective side override instead.
         effective_side = result.side
+
+        # === STRICT REGIME ALLOWLIST GATE ===
+        # Contract: if a regime is not explicitly present in YAML allowed_regimes,
+        # strategy must NOT emit intents in that regime.
+        allowed_regimes = None
+        try:
+            allowed_regimes = getattr(instr_cfg, "allowed_regimes", None)
+        except Exception:
+            allowed_regimes = None
+        if not RegimeAllowlistContract.is_regime_allowed(current_regime=str(state.regime), allowed_regimes=allowed_regimes):
+            self._emit_strategy_blocked(
+                symbol=symbol,
+                reason_code="REGIME_NOT_ALLOWLISTED",
+                reason="REGIME",
+                context="aurora_handler:strict_regime_allowlist",
+                details={
+                    "regime": state.regime,
+                    "allowed_regimes": list(allowed_regimes or []),
+                    "score": float(result.score),
+                    "thr_buy": float(result.thr_buy),
+                    "thr_sell": float(result.thr_sell),
+                    "explain": RegimeAllowlistContract.explain_blocking(
+                        symbol=symbol,
+                        current_regime=str(state.regime),
+                        allowed_regimes=list(allowed_regimes) if allowed_regimes else None,
+                    ),
+                },
+                why_chain=["REGIME_ALLOWLIST", f"REGIME={state.regime}", "STRICT"],
+            )
+            return
+        # === END STRICT REGIME ALLOWLIST GATE ===
         
         # === [HOLDING PERIOD CHECK: ANTI-CHURN GATE] ===
         # Ensure we check holding period for BOTH exits (neutral) and flips.
@@ -821,6 +934,26 @@ class AuroraHandler:
                 effective_side = current_position_side
         
         # === END HOLDING PERIOD CHECK ===
+
+        # === REGIME KILL-SWITCH (config-driven) ===
+        # Block all strategy-driven intents in specified regimes (backtest hardening).
+        # Note: This does NOT affect safety exits (SL/TP) managed elsewhere.
+        if getattr(self, "blocked_regimes", None) and state.regime in self.blocked_regimes:
+            self._emit_strategy_blocked(
+                symbol=symbol,
+                reason_code="REGIME_KILL_SWITCH",
+                reason="REGIME_BLOCKED",
+                context="aurora_handler:regime_kill_switch",
+                details={
+                    "regime": state.regime,
+                    "score": float(result.score),
+                    "thr_buy": float(result.thr_buy),
+                    "thr_sell": float(result.thr_sell),
+                },
+                why_chain=["REGIME_KILL_SWITCH", f"REGIME={state.regime}"],
+            )
+            return
+        # === END REGIME KILL-SWITCH ===
 
         if not effective_side:
             # === [TRACK EXIT FOR RE-ENTRY COOLDOWN] ===
@@ -897,11 +1030,8 @@ class AuroraHandler:
         # Emit signal
         self._emit_signal(symbol, result, features, cmd, effective_side=effective_side)
         
-        # === [TRACK ENTRY FOR HOLDING PERIOD] ===
-        # Track entry timestamp when side changes (new entry or flip)
-        if effective_side and effective_side.lower() != current_position_side:
-            self._track_entry(symbol, effective_side)
-        # === END TRACK ENTRY ===
+        # P0-3-FIX: Do NOT track entry on signal emission.
+        # Entry tracking is now driven by EVT:TRADE_EXECUTED only.
         
         # Update side bias history
         self._update_side_bias(symbol, effective_side)
@@ -1107,6 +1237,53 @@ class AuroraHandler:
         state.position_side = ""
         self.logger.debug(f"[{symbol}] Entry tracking cleared")
 
+    def on_trade_executed(self, event: Dict[str, Any]) -> None:
+        """
+        P0-3-FIX: Sync position tracking with EVT:TRADE_EXECUTED.
+
+        Entry tracking is updated ONLY on real trades, not on signal emission.
+        """
+        symbol = event.get("symbol")
+        if not symbol:
+            return
+
+        state = self._symbol_states[symbol]
+
+        side = str(event.get("side", "")).lower()
+        if side not in ("buy", "sell"):
+            return
+
+        qty_raw = event.get("quantity")
+        try:
+            qty = float(qty_raw) if qty_raw is not None else 0.0
+        except (TypeError, ValueError):
+            qty = 0.0
+        if qty == 0.0:
+            return
+
+        if state.position_side == "":
+            state.entry_timestamp = float(self.monotonic_fn())
+            state.position_side = side
+            self.logger.info(
+                f"[{symbol}] TRADE_EXECUTED: entry confirmed (side={side}, qty={qty})"
+            )
+            return
+
+        if state.position_side == side:
+            self.logger.debug(
+                f"[{symbol}] TRADE_EXECUTED: add to position (side={side}, qty={qty})"
+            )
+            return
+
+        # Opposite-side trade: treat as exit/flatten (conservative)
+        prev_side = state.position_side
+        state.last_exit_timestamp = float(self.monotonic_fn())
+        state.entry_timestamp = None
+        state.position_side = ""
+        self.logger.info(
+            f"[{symbol}] TRADE_EXECUTED: exit detected (prev={prev_side}, side={side}, qty={qty})"
+        )
+
     # =========================================================================
     # END HOLDING PERIOD METHODS
     # =========================================================================
@@ -1268,10 +1445,382 @@ class AuroraHandler:
         except (decimal.InvalidOperation, ValueError) as e:
             self.logger.error(f"[{symbol}] ATR_INVALID: Cannot convert atr={atr!r} to Decimal: {e}")
             return None
-            return None
     
     # =========================================================================
     # END VOLATILITY-BASED ENTRY OFFSET
+    # =========================================================================
+
+    # =========================================================================
+    # REGIME-BASED TP/SL (AURORA_REGIME_TP_SL_PLAN)
+    # =========================================================================
+    
+    def _compute_regime_tpsl(
+        self,
+        symbol: str,
+        entry_price: decimal.Decimal,
+        side: str,
+        regime: Optional[str],
+        instr_cfg: Any,
+        features: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute regime-based TP/SL for Aurora signal.
+        
+        Returns dict with:
+        - stop_price: Decimal
+        - target_price: Decimal
+        - tpsl_ctx: dict (telemetry)
+        
+        Returns None if regime_tpsl is disabled or config missing.
+        
+        AURORA_REGIME_TP_SL_PLAN: Strategy-provided TP/SL injection point.
+        """
+        if instr_cfg is None:
+            return None
+        
+        exit_cfg = getattr(instr_cfg, "exit", None)
+        if exit_cfg is None:
+            return None
+        
+        regime_tpsl_cfg = getattr(exit_cfg, "regime_tpsl", None)
+        if regime_tpsl_cfg is None or not getattr(regime_tpsl_cfg, "enabled", False):
+            return None
+        
+        tp_cfg = getattr(instr_cfg, "take_profit", None)
+        
+        # Resolve effective regime (prefer effective from anti-churn if enabled)
+        state = self._symbol_states[symbol]
+        regime_used = regime or "DEFAULT"
+        if getattr(self, "anti_churn_enabled", False) and state.regime_effective:
+            regime_used = state.regime_effective
+        
+        mode = getattr(regime_tpsl_cfg, "mode", "pct_mult")
+        
+        # === Calculate SL/TP based on mode ===
+        if mode == "pct_mult":
+            result = self._compute_tpsl_pct_mult(
+                entry_price=entry_price,
+                side=side,
+                regime_used=regime_used,
+                exit_cfg=exit_cfg,
+                tp_cfg=tp_cfg,
+                regime_tpsl_cfg=regime_tpsl_cfg,
+            )
+        elif mode == "atr":
+            result = self._compute_tpsl_atr(
+                symbol=symbol,
+                entry_price=entry_price,
+                side=side,
+                regime_used=regime_used,
+                regime_tpsl_cfg=regime_tpsl_cfg,
+                features=features,
+            )
+        else:
+            self.logger.warning(f"[{symbol}] Unknown regime_tpsl mode: {mode}, skipping")
+            return None
+        
+        if result is None:
+            return None
+        
+        # Apply guardrails
+        result = self._apply_tpsl_guardrails(
+            symbol=symbol,
+            entry_price=entry_price,
+            side=side,
+            result=result,
+            regime_tpsl_cfg=regime_tpsl_cfg,
+        )
+        
+        return result
+    
+    def _compute_tpsl_pct_mult(
+        self,
+        entry_price: decimal.Decimal,
+        side: str,
+        regime_used: str,
+        exit_cfg: Any,
+        tp_cfg: Any,
+        regime_tpsl_cfg: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute TP/SL using pct_mult mode (simple multipliers).
+        
+        SL = entry × (1 ± sl_pct_base × sl_mult[regime])
+        TP = entry × (1 ± sl_pct_eff × tp_low_ratio × tp_mult[regime])
+        
+        FAIL-CLOSED: Requires explicit sl_pct and tp_low_ratio in config.
+        """
+        # Get base values (FAIL-CLOSED: no silent defaults)
+        sl_pct_raw = getattr(exit_cfg, "sl_pct", None)
+        if sl_pct_raw is None:
+            self.logger.error(
+                f"TPSL_CONFIG_ERROR: exit.sl_pct is required for regime_tpsl pct_mult mode. "
+                f"Add explicit sl_pct to instrument config."
+            )
+            return None
+        sl_pct_base = float(sl_pct_raw)
+        
+        tp_low_ratio_raw = getattr(tp_cfg, "tp_low_ratio", None) if tp_cfg else None
+        if tp_low_ratio_raw is None:
+            self.logger.error(
+                f"TPSL_CONFIG_ERROR: take_profit.tp_low_ratio is required for regime_tpsl pct_mult mode. "
+                f"Add explicit tp_low_ratio to instrument config."
+            )
+            return None
+        tp_low_ratio_base = float(tp_low_ratio_raw)
+        
+        # Get multipliers (FAIL-CLOSED: DEFAULT key required by model validator)
+        sl_mult_map = dict(getattr(regime_tpsl_cfg, "sl_mult", None) or {})
+        tp_mult_map = dict(getattr(regime_tpsl_cfg, "tp_mult", None) or {})
+        
+        if "DEFAULT" not in sl_mult_map or "DEFAULT" not in tp_mult_map:
+            self.logger.error(
+                f"TPSL_CONFIG_ERROR: sl_mult and tp_mult must have 'DEFAULT' key. "
+                f"Got sl_mult keys: {list(sl_mult_map.keys())}, tp_mult keys: {list(tp_mult_map.keys())}"
+            )
+            return None
+        
+        sl_mult = float(sl_mult_map.get(regime_used, sl_mult_map["DEFAULT"]))
+        tp_mult = float(tp_mult_map.get(regime_used, tp_mult_map["DEFAULT"]))
+        
+        # Calculate effective values
+        sl_pct_eff = sl_pct_base * sl_mult
+        tp_rr_eff = tp_low_ratio_base * tp_mult
+        
+        # Calculate prices
+        sl_pct_dec = decimal.Decimal(str(sl_pct_eff))
+        tp_dist_pct = sl_pct_dec * decimal.Decimal(str(tp_rr_eff))
+        
+        if side.upper() == "BUY":
+            stop_price = entry_price * (1 - sl_pct_dec)
+            target_price = entry_price * (1 + tp_dist_pct)
+        elif side.upper() == "SELL":
+            stop_price = entry_price * (1 + sl_pct_dec)
+            target_price = entry_price * (1 - tp_dist_pct)
+        else:
+            return None
+        
+        return {
+            "stop_price": stop_price,
+            "target_price": target_price,
+            "tpsl_ctx": {
+                "mode": "pct_mult",
+                "regime_used": regime_used,
+                "sl_pct_base": sl_pct_base,
+                "sl_mult": sl_mult,
+                "sl_pct_eff": sl_pct_eff,
+                "tp_low_ratio_base": tp_low_ratio_base,
+                "tp_mult": tp_mult,
+                "tp_rr_eff": tp_rr_eff,
+            },
+        }
+    
+    def _compute_tpsl_atr(
+        self,
+        symbol: str,
+        entry_price: decimal.Decimal,
+        side: str,
+        regime_used: str,
+        regime_tpsl_cfg: Any,
+        features: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute TP/SL using ATR mode (volatility-based).
+        
+        SL = entry ± (atr_pct × sl_k_atr[regime])
+        TP = entry ± (sl_dist × rr_by_regime[regime])
+        
+        FAIL-CLOSED: Requires ATR feature and explicit config maps.
+        """
+        # Get ATR (strict, no fallbacks)
+        atr = self._get_volatility_strict(symbol, features)
+        if atr is None or atr == 0:
+            self.logger.warning(f"[{symbol}] ATR missing for regime_tpsl atr mode, skipping TP/SL injection")
+            return None
+        
+        # ATR as percentage of entry price
+        atr_pct = atr / entry_price
+        
+        # Get coefficients (FAIL-CLOSED: DEFAULT key required)
+        sl_k_map = dict(getattr(regime_tpsl_cfg, "sl_k_atr", None) or {})
+        rr_map = dict(getattr(regime_tpsl_cfg, "rr_by_regime", None) or {})
+        
+        if "DEFAULT" not in sl_k_map:
+            self.logger.error(
+                f"[{symbol}] TPSL_CONFIG_ERROR: sl_k_atr must have 'DEFAULT' key for atr mode. "
+                f"Got keys: {list(sl_k_map.keys())}"
+            )
+            return None
+        if "DEFAULT" not in rr_map:
+            self.logger.error(
+                f"[{symbol}] TPSL_CONFIG_ERROR: rr_by_regime must have 'DEFAULT' key for atr mode. "
+                f"Got keys: {list(rr_map.keys())}"
+            )
+            return None
+        
+        sl_k = decimal.Decimal(str(sl_k_map.get(regime_used, sl_k_map["DEFAULT"])))
+        rr = decimal.Decimal(str(rr_map.get(regime_used, rr_map["DEFAULT"])))
+        
+        # Calculate SL distance
+        sl_pct_eff = atr_pct * sl_k
+        
+        # Calculate prices
+        if side.upper() == "BUY":
+            stop_price = entry_price * (1 - sl_pct_eff)
+            target_price = entry_price * (1 + sl_pct_eff * rr)
+        elif side.upper() == "SELL":
+            stop_price = entry_price * (1 + sl_pct_eff)
+            target_price = entry_price * (1 - sl_pct_eff * rr)
+        else:
+            return None
+        
+        return {
+            "stop_price": stop_price,
+            "target_price": target_price,
+            "tpsl_ctx": {
+                "mode": "atr",
+                "regime_used": regime_used,
+                "atr": float(atr),
+                "atr_pct": float(atr_pct),
+                "sl_k": float(sl_k),
+                "sl_pct_eff": float(sl_pct_eff),
+                "rr": float(rr),
+            },
+        }
+    
+    def _apply_tpsl_guardrails(
+        self,
+        symbol: str,
+        entry_price: decimal.Decimal,
+        side: str,
+        result: Dict[str, Any],
+        regime_tpsl_cfg: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Apply guardrails to computed TP/SL values.
+        
+        Validates:
+        - SL/TP on correct side of entry
+        - min/max SL%
+        - min/max TP RR
+        - min distance in bps
+        """
+        stop_price = result["stop_price"]
+        target_price = result["target_price"]
+        tpsl_ctx = result["tpsl_ctx"]
+        
+        # Guardrail params
+        min_sl_pct = decimal.Decimal(str(getattr(regime_tpsl_cfg, "min_sl_pct", 0.003)))
+        max_sl_pct = decimal.Decimal(str(getattr(regime_tpsl_cfg, "max_sl_pct", 0.06)))
+        min_tp_rr = decimal.Decimal(str(getattr(regime_tpsl_cfg, "min_tp_rr", 0.3)))
+        max_tp_rr = decimal.Decimal(str(getattr(regime_tpsl_cfg, "max_tp_rr", 3.0)))
+        min_dist_bps = int(getattr(regime_tpsl_cfg, "min_dist_bps", 15))
+        
+        # Calculate actual SL distance
+        if side.upper() == "BUY":
+            sl_dist_pct = (entry_price - stop_price) / entry_price
+            tp_dist_pct = (target_price - entry_price) / entry_price
+        else:
+            sl_dist_pct = (stop_price - entry_price) / entry_price
+            tp_dist_pct = (entry_price - target_price) / entry_price
+        
+        # Validate SL on correct side
+        if sl_dist_pct <= 0:
+            self.logger.error(
+                f"[{symbol}] TPSL_GUARDRAIL_FAIL: SL on wrong side of entry "
+                f"(side={side}, entry={entry_price}, sl={stop_price})"
+            )
+            return None
+        
+        # Validate TP on correct side
+        if tp_dist_pct <= 0:
+            self.logger.error(
+                f"[{symbol}] TPSL_GUARDRAIL_FAIL: TP on wrong side of entry "
+                f"(side={side}, entry={entry_price}, tp={target_price})"
+            )
+            return None
+        
+        # Clamp SL to min/max (clamp, not fail-closed)
+        if sl_dist_pct < min_sl_pct:
+            self.logger.warning(
+                f"[{symbol}] TPSL_GUARDRAIL: SL too close ({float(sl_dist_pct):.4f} < {float(min_sl_pct):.4f}), "
+                f"clamping to min_sl_pct"
+            )
+            sl_dist_pct = min_sl_pct
+            if side.upper() == "BUY":
+                stop_price = entry_price * (1 - sl_dist_pct)
+            else:
+                stop_price = entry_price * (1 + sl_dist_pct)
+            tpsl_ctx["guardrail_sl_clamp"] = "min"
+        elif sl_dist_pct > max_sl_pct:
+            self.logger.warning(
+                f"[{symbol}] TPSL_GUARDRAIL: SL too far ({float(sl_dist_pct):.4f} > {float(max_sl_pct):.4f}), "
+                f"clamping to max_sl_pct"
+            )
+            sl_dist_pct = max_sl_pct
+            if side.upper() == "BUY":
+                stop_price = entry_price * (1 - sl_dist_pct)
+            else:
+                stop_price = entry_price * (1 + sl_dist_pct)
+            tpsl_ctx["guardrail_sl_clamp"] = "max"
+        
+        # Calculate RR (Risk:Reward ratio) = TP distance / SL distance
+        current_rr = tp_dist_pct / sl_dist_pct if sl_dist_pct > 0 else decimal.Decimal("1.0")
+        
+        # Clamp RR to min/max (adjusts TP, not SL)
+        if current_rr < min_tp_rr:
+            self.logger.warning(
+                f"[{symbol}] TPSL_GUARDRAIL: RR too low ({float(current_rr):.2f} < {float(min_tp_rr):.2f}), "
+                f"clamping to min_tp_rr"
+            )
+            tp_dist_pct = sl_dist_pct * min_tp_rr
+            if side.upper() == "BUY":
+                target_price = entry_price * (1 + tp_dist_pct)
+            else:
+                target_price = entry_price * (1 - tp_dist_pct)
+            tpsl_ctx["guardrail_rr_clamp"] = "min"
+            current_rr = min_tp_rr
+        elif current_rr > max_tp_rr:
+            self.logger.warning(
+                f"[{symbol}] TPSL_GUARDRAIL: RR too high ({float(current_rr):.2f} > {float(max_tp_rr):.2f}), "
+                f"clamping to max_tp_rr"
+            )
+            tp_dist_pct = sl_dist_pct * max_tp_rr
+            if side.upper() == "BUY":
+                target_price = entry_price * (1 + tp_dist_pct)
+            else:
+                target_price = entry_price * (1 - tp_dist_pct)
+            tpsl_ctx["guardrail_rr_clamp"] = "max"
+            current_rr = max_tp_rr
+        
+        # Check min distance in bps (after all clamps)
+        min_dist_dec = decimal.Decimal(str(min_dist_bps)) / decimal.Decimal("10000")
+        if sl_dist_pct < min_dist_dec:
+            self.logger.error(
+                f"[{symbol}] TPSL_GUARDRAIL_FAIL: SL distance {float(sl_dist_pct)*10000:.1f} bps "
+                f"< min_dist_bps {min_dist_bps}"
+            )
+            return None
+        if tp_dist_pct < min_dist_dec:
+            self.logger.error(
+                f"[{symbol}] TPSL_GUARDRAIL_FAIL: TP distance {float(tp_dist_pct)*10000:.1f} bps "
+                f"< min_dist_bps {min_dist_bps}"
+            )
+            return None
+        
+        # Update telemetry with effective (post-clamp) values
+        tpsl_ctx["sl_pct_eff"] = float(sl_dist_pct)
+        tpsl_ctx["tp_pct_eff"] = float(tp_dist_pct)
+        tpsl_ctx["rr_eff"] = float(current_rr)
+        
+        return {
+            "stop_price": stop_price,
+            "target_price": target_price,
+            "tpsl_ctx": tpsl_ctx,
+        }
+    
+    # =========================================================================
+    # END REGIME-BASED TP/SL
     # =========================================================================
 
     
@@ -1283,6 +1832,113 @@ class AuroraHandler:
         # Fallback to global
         decision = getattr(self.config.strategies.aurora, "decision", None)
         return dict(getattr(decision, "signal_weights", {})) if decision else {}
+
+    def _get_regime_thresholds(self, *, symbol: str, instr_cfg: Any) -> Dict[str, float]:
+        """Get regime threshold multipliers for symbol (per-symbol override → global fallback)."""
+        thr = getattr(instr_cfg, "regime_thresholds", None)
+        if isinstance(thr, dict) and thr:
+            return dict(thr)
+        try:
+            return dict(getattr(self, "regime_thresholds", {}) or {})
+        except Exception:
+            return {}
+
+    def _check_liquidity_gate(
+        self,
+        *,
+        symbol: str,
+        instr_cfg: Any,
+        features: Dict[str, Any],
+        warmup_readiness: Any,
+    ) -> tuple[bool, Dict[str, Any]]:
+        """Liquidity gate for Aurora strategy (Score V2).
+
+        Fallback chain:
+        1) strategies.aurora.assets.<SYMBOL>.liquidity_gate
+        2) strategies.aurora.decision.liquidity_gate
+        3) Gate disabled (pass)
+
+        Fail-closed behavior (when enabled):
+        - warmup_readiness['liquidity_kappa'] must be True
+        - features['liquidity_kappa'] must exist and be parseable
+        - liquidity_kappa >= kappa_min
+        """
+        gate_cfg = getattr(instr_cfg, "liquidity_gate", None) if instr_cfg is not None else None
+        if gate_cfg is None:
+            gate_cfg = getattr(self, "_global_liquidity_gate_cfg", None)
+
+        enabled_raw = getattr(gate_cfg, "enabled", False) if gate_cfg is not None else False
+        if not isinstance(enabled_raw, bool) or not enabled_raw:
+            return True, {}
+
+        kappa_min_raw = getattr(gate_cfg, "kappa_min", None)
+        kappa_max_raw = getattr(gate_cfg, "kappa_max", None)
+        failsafe_qty_check = bool(getattr(gate_cfg, "failsafe_qty_check", True))
+
+        # Readiness contract: require liquidity_kappa readiness when gate is enabled.
+        ready_flag = None
+        if isinstance(warmup_readiness, dict):
+            ready_flag = warmup_readiness.get("liquidity_kappa")
+        if ready_flag is not True:
+            return False, {
+                "reason_code": "LIQUIDITY_NOT_READY",
+                "kappa": None,
+                "kappa_min": kappa_min_raw,
+                "kappa_max": kappa_max_raw,
+                "ready": ready_flag,
+                "failsafe_qty_check": failsafe_qty_check,
+            }
+
+        kappa_raw = features.get("liquidity_kappa")
+        if kappa_raw is None:
+            return False, {
+                "reason_code": "LIQUIDITY_MISSING",
+                "kappa": None,
+                "kappa_min": kappa_min_raw,
+                "kappa_max": kappa_max_raw,
+                "ready": ready_flag,
+                "failsafe_qty_check": failsafe_qty_check,
+            }
+
+        try:
+            kappa = decimal.Decimal(str(kappa_raw))
+        except Exception:
+            kappa = None
+        if kappa is None or (hasattr(kappa, "is_finite") and not kappa.is_finite()):
+            return False, {
+                "reason_code": "LIQUIDITY_INVALID",
+                "kappa": str(kappa_raw),
+                "kappa_min": kappa_min_raw,
+                "kappa_max": kappa_max_raw,
+                "ready": ready_flag,
+                "failsafe_qty_check": failsafe_qty_check,
+            }
+
+        # Clamp (defensive only; FE already clamps using its own config).
+        try:
+            if kappa_max_raw is not None:
+                kappa_max = decimal.Decimal(str(kappa_max_raw))
+                if kappa > kappa_max:
+                    kappa = kappa_max
+        except Exception:
+            pass
+
+        try:
+            kappa_min = decimal.Decimal(str(kappa_min_raw)) if kappa_min_raw is not None else decimal.Decimal("0")
+        except Exception:
+            kappa_min = decimal.Decimal("0")
+
+        if kappa < kappa_min:
+            return False, {
+                "reason_code": "LIQUIDITY_LOW",
+                "kappa": str(kappa),
+                "kappa_min": str(kappa_min),
+                "kappa_max": str(kappa_max_raw) if kappa_max_raw is not None else None,
+                "ready": ready_flag,
+                "failsafe_qty_check": failsafe_qty_check,
+            }
+
+        return True, {}
     
     def _get_feature_neutrals(self, symbol: str, instr_cfg: Any) -> Dict[str, float]:
         """Get feature neutrals for symbol."""
@@ -1303,21 +1959,43 @@ class AuroraHandler:
         return list(getattr(decision, "essential_features", [])) if decision else []
     
     def _get_side_bias_state(self, symbol: str) -> SideBiasState:
-        """Build SideBiasState for kernel from cached history."""
+        """Build SideBiasState for kernel from cached history (per-symbol overrides supported)."""
+        instr_cfg = self._get_instrument_config(symbol)
+        penalty_factor = self.side_bias_penalty_factor
+        window_sec = self.side_bias_window_sec
+        target_ratio = self.side_bias_target_ratio
+        min_intents = self.side_bias_min_intents
+
+        sb_cfg = getattr(instr_cfg, "side_bias", None) if instr_cfg is not None else None
+        if sb_cfg is not None:
+            try:
+                pen = getattr(sb_cfg, "penalty_factor", None)
+                if pen is not None:
+                    penalty_factor = float(pen)
+                win = getattr(sb_cfg, "window_sec", None)
+                if win is not None:
+                    window_sec = float(win)
+                targ = getattr(sb_cfg, "target_ratio", None)
+                if targ is not None:
+                    target_ratio = float(targ)
+            except Exception:
+                # Fail-safe: keep global values if override parsing fails
+                pass
+
         state = self._symbol_states[symbol]
         now = float(self.wall_time_fn())
         
         # Clean old entries outside window
-        state.buy_timestamps = [ts for ts in state.buy_timestamps if now - ts < self.side_bias_window_sec]
-        state.sell_timestamps = [ts for ts in state.sell_timestamps if now - ts < self.side_bias_window_sec]
+        state.buy_timestamps = [ts for ts in state.buy_timestamps if now - ts < window_sec]
+        state.sell_timestamps = [ts for ts in state.sell_timestamps if now - ts < window_sec]
         
         return SideBiasState(
             buy_count=len(state.buy_timestamps),
             sell_count=len(state.sell_timestamps),
-            window_sec=self.side_bias_window_sec,
-            target_ratio=self.side_bias_target_ratio,
-            penalty_factor=self.side_bias_penalty_factor,
-            min_intents=self.side_bias_min_intents,
+            window_sec=window_sec,
+            target_ratio=target_ratio,
+            penalty_factor=penalty_factor,
+            min_intents=min_intents,
         )
     
     def _update_side_bias(self, symbol: str, side: str) -> None:
@@ -1391,6 +2069,17 @@ class AuroraHandler:
             )
         # === END VOLATILITY OFFSET ===
         
+        # === REGIME-BASED TP/SL (AURORA_REGIME_TP_SL_PLAN) ===
+        tpsl_result = self._compute_regime_tpsl(
+            symbol=symbol,
+            entry_price=entry_price,
+            side=side,
+            regime=state.regime,
+            instr_cfg=instr_cfg,
+            features=features,
+        )
+        # === END REGIME-BASED TP/SL ===
+        
         # Build payload per v7 contract
         payload = {
             "strategy_id": self.strategy_id,
@@ -1417,6 +2106,31 @@ class AuroraHandler:
             "tf_sec": self.timeframe_sec,
         }
         
+        # === INJECT REGIME-BASED TP/SL INTO PAYLOAD ===
+        if tpsl_result is not None:
+            # Strategy Primacy: inject stop_price/target_price into price_ctx
+            payload["price_ctx"]["stop_price"] = str(tpsl_result["stop_price"])
+            payload["price_ctx"]["target_price"] = str(tpsl_result["target_price"])
+            
+            # Telemetry: tpsl_ctx for structured analysis
+            payload["tpsl_ctx"] = tpsl_result["tpsl_ctx"]
+            
+            # Append to why_chain for human-readable log
+            tpsl_ctx = tpsl_result["tpsl_ctx"]
+            tpsl_why = (
+                f"tpsl:regime={tpsl_ctx.get('regime_used')} "
+                f"mode={tpsl_ctx.get('mode')} "
+                f"sl_pct={tpsl_ctx.get('sl_pct_eff', 0):.4f} "
+                f"tp_rr={tpsl_ctx.get('tp_rr_eff', tpsl_ctx.get('rr', 0)):.2f}"
+            )
+            payload["why_chain"] = result.why_chain + [tpsl_why]
+            
+            self.logger.info(
+                f"[{symbol}] REGIME_TPSL: regime={tpsl_ctx.get('regime_used')} "
+                f"stop={tpsl_result['stop_price']:.6f} target={tpsl_result['target_price']:.6f}"
+            )
+        # === END INJECT TP/SL ===
+        
         self.logger.info(
             f"[{symbol}] SIGNAL: {side.upper()} score={float(result.score):.4f} "
             f"(thr_buy={float(result.thr_buy):.4f}, thr_sell={float(result.thr_sell):.4f})"
@@ -1427,4 +2141,3 @@ class AuroraHandler:
         # Update state
         state.last_signal_ts_ms = now_ms
         state.last_signal_side = side
-

@@ -101,16 +101,23 @@ class StrategyRegimeConfig:
     @property
     def allows_mr_regimes(self) -> bool:
         """Check if config allows any MR-compatible regimes."""
-        if self.allowed_regimes is None:
-            return True  # No restriction = allow all
+        # STRICT allowlist semantics:
+        # - allowed_regimes missing/empty => allow NOTHING (fail-closed)
+        if not self.allowed_regimes:
+            return False
         return bool(set(self.allowed_regimes) & MR_COMPATIBLE_REGIMES)
     
     @property
     def allows_aurora_regimes(self) -> bool:
         """Check if config allows any Aurora-compatible regimes."""
-        if self.allowed_regimes is None:
-            return True
+        if not self.allowed_regimes:
+            return False
         return bool(set(self.allowed_regimes) & AURORA_COMPATIBLE_REGIMES)
+
+    @property
+    def is_aurora_enabled_but_blocked(self) -> bool:
+        """Aurora assigned but all Aurora-compatible regimes are blocked."""
+        return self.has_aurora_assignment and not self.allows_aurora_regimes
     
     @property
     def is_mr_enabled_but_blocked(self) -> bool:
@@ -129,7 +136,7 @@ class RegimeAllowlistContract:
     TASK51-B Contract:
     - If strategy "mean_reversion" is assigned to a symbol, at least one
       MR-compatible regime must be in allowed_regimes
-    - If allowed_regimes is empty/None, all regimes are allowed (no blocking)
+        - STRICT: If allowed_regimes is empty/None, all regimes are BLOCKED (fail-closed)
     - Blocking must be explicit and explainable in logs
     """
     
@@ -179,6 +186,18 @@ class RegimeAllowlistContract:
                 message=(
                     f"MR strategy assigned but no MR-compatible regimes in allowed_regimes: "
                     f"{config.allowed_regimes}. Add FLAT_LOW/FLAT_NORMAL/FLAT_HIGH or MEAN_REVERSION."
+                ),
+                severity="CRITICAL",
+            ))
+
+        # Check: Aurora assigned but no Aurora-compatible regimes allowed
+        if config.is_aurora_enabled_but_blocked:
+            violations.append(AllowlistViolation(
+                symbol=config.symbol,
+                strategy="aurora",
+                message=(
+                    f"Aurora strategy assigned but no Aurora-compatible regimes in allowed_regimes: "
+                    f"{config.allowed_regimes}. Add TREND_UP/TREND_DOWN/LOW_VOLATILITY/HIGH_VOLATILITY."
                 ),
                 severity="CRITICAL",
             ))
@@ -272,8 +291,11 @@ class RegimeAllowlistContract:
         Returns:
             Human-readable explanation
         """
-        if allowed_regimes is None:
-            return f"[{symbol}] No regime restriction (all allowed)"
+        if not allowed_regimes:
+            return (
+                f"[{symbol}] Regime {current_regime} BLOCKED: allowed_regimes is missing/empty (fail-closed) "
+                f"(configured in strategies/*.yaml allowlists)"
+            )
         
         if current_regime in allowed_regimes:
             return f"[{symbol}] Regime {current_regime} is ALLOWED"
@@ -283,6 +305,13 @@ class RegimeAllowlistContract:
             f"not in allowed_regimes={allowed_regimes} "
             f"(configured in strategies/aurora.yaml::aurora.assets)"
         )
+
+    @staticmethod
+    def is_regime_allowed(*, current_regime: str, allowed_regimes: Optional[List[str]]) -> bool:
+        """Strict allowlist semantics: only explicitly listed regimes are allowed."""
+        if not allowed_regimes:
+            return False
+        return str(current_regime) in set(str(x) for x in allowed_regimes)
 
 
 def validate_strategy_regime_config(

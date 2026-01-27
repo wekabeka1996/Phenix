@@ -173,7 +173,12 @@ class MockClock(Clock):
         Args:
             ms: New time in milliseconds.
         """
+        # Calculate delta and advance monotonic proportionally
+        # Monotonic clock should NEVER go backwards, so only add positive deltas
+        delta_ms = ms - self._time_ms
         self._time_ms = ms
+        if delta_ms > 0:
+            self._monotonic += delta_ms / 1000.0
     
     async def sleep_ms(self, ms: int) -> None:
         """Simulated sleep — advances time instantly (no real delay).

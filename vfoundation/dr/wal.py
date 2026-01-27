@@ -111,7 +111,6 @@ def read_by_rid(rid: str) -> tuple[list[Dict[str, Any]], list[str], bool]:
     import glob
 
     events = []
-    why_chain = []
     all_hashes = []
 
     # Get all WAL files (current and historical)
@@ -135,27 +134,70 @@ def read_by_rid(rid: str) -> tuple[list[Dict[str, Any]], list[str], bool]:
                             events.append(record)
                             all_hashes.append(record.get("_hash", ""))
 
-                            # Collect WHY information
-                            why = record.get("why") or record.get(
-                                "pld", {}).get("why")
-                            if why:
-                                if isinstance(why, list):
-                                    why_chain.extend(why)
-                                else:
-                                    why_chain.append(why)
-
-                            # Also check data_ref for WHY chain
-                            data_ref = record.get("pld", {}).get("data_ref")
-                            if data_ref and isinstance(data_ref, list):
-                                why_chain.extend(data_ref)
-
                     except Exception:
                         continue  # Skip malformed lines
         except Exception:
             continue  # Skip files that can't be read
 
-    # Verify integrity of the chain
-    integrity_ok = verify_chain(events) if events else True
+    # Present events in chronological order for debugging.
+    def _event_ts(obj: Dict[str, Any]) -> int:
+        ts = obj.get("ts")
+        if isinstance(ts, int):
+            return ts
+        pld = obj.get("pld") if isinstance(obj.get("pld"), dict) else {}
+        ts_ms = pld.get("ts_ms")
+        if isinstance(ts_ms, int):
+            return ts_ms
+        timestamp = obj.get("timestamp")
+        if isinstance(timestamp, int):
+            return timestamp
+        return 0
+
+    events.sort(key=_event_ts)
+
+    # Build WHY chain evidence from payload + message-level fields (chronological).
+    why_chain: list[str] = []
+
+    def _extend_chain(val: Any) -> None:
+        if not val:
+            return
+        if isinstance(val, list):
+            for item in val:
+                s = str(item)
+                if s:
+                    why_chain.append(s)
+        else:
+            s = str(val)
+            if s:
+                why_chain.append(s)
+
+    for record in events:
+        before_len = len(why_chain)
+
+        pld = record.get("pld") if isinstance(record.get("pld"), dict) else {}
+        _extend_chain(pld.get("why"))        # DecisionMaking trade_intent payloads
+        _extend_chain(pld.get("why_chain"))  # explicit why_chain payloads
+        _extend_chain(record.get("data_ref"))  # message-level audit chain
+
+        # Hot-path WHY tag as fallback only (avoid polluting an existing chain).
+        if len(why_chain) == before_len:
+            _extend_chain(record.get("why"))
+
+    # Verify record integrity (per-record hash), not rid-subset chain order.
+    integrity_ok = True
+    for record in events:
+        try:
+            rec_hash = record.get("_hash")
+            if not isinstance(rec_hash, str) or not rec_hash:
+                integrity_ok = False
+                break
+            record_for_hash = {k: v for k, v in record.items() if k != "_hash"}
+            if _calculate_record_hash(record_for_hash) != rec_hash:
+                integrity_ok = False
+                break
+        except Exception:
+            integrity_ok = False
+            break
 
     # Remove duplicates from why_chain while preserving order
     seen = set()

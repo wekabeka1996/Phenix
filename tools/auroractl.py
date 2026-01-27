@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 import json
+from decimal import Decimal
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from apps.reference.config_loader import ConfigLoader  # noqa: E402
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """JSON encoder that handles Decimal objects."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 def cmd_config_validate(args: argparse.Namespace) -> int:
@@ -56,7 +65,7 @@ def cmd_config_provenance(args: argparse.Namespace) -> int:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
-        json.dump(provenance, f, indent=2)
+        json.dump(provenance, f, indent=2, cls=DecimalEncoder)
     
     print(f"PROVENANCE_DUMPED: {out_path}")
     return 0

@@ -336,8 +336,9 @@ class MeanReversion1mStrategy:
                 bar=bar, rsi=state.rsi
             )
             
-        # Check whitelist if configured
-        if self.config.allowed_regimes and flat_regime.name not in self.config.allowed_regimes:
+        # Strict allowlist semantics: only explicitly allowlisted regimes are tradable.
+        # Empty allowlist => allow nothing (fail-closed).
+        if flat_regime.name not in self.config.allowed_regimes:
             return self._neutral_signal(
                 symbol, price, timestamp_ms,
                 f"regime_not_allowed:{flat_regime.name}",
@@ -421,8 +422,9 @@ class MeanReversion1mStrategy:
                 bar=completed_bar, rsi=state.rsi
             )
             
-        # Check whitelist if configured
-        if self.config.allowed_regimes and flat_regime.name not in self.config.allowed_regimes:
+        # Strict allowlist semantics: only explicitly allowlisted regimes are tradable.
+        # Empty allowlist => allow nothing (fail-closed).
+        if flat_regime.name not in self.config.allowed_regimes:
             return self._neutral_signal(
                 symbol, price, timestamp_ms,
                 f"regime_not_allowed:{flat_regime.name}",

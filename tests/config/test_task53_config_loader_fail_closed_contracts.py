@@ -114,7 +114,7 @@ class TestDuplicateLeafPathCrashes:
             cfg_dir / "trading.yaml",
             {"trading": {"mode": "testnet", "market_data": {"websocket_streams": ["trade"]}}},
         )
-        _write_yaml(cfg_dir / "regime.yaml", {"hmm": {}, "features": {}, "hotreload_whitelist": []})
+        _write_yaml(cfg_dir / "regime.yaml", {"hmm": {}, "features": {}})
         _write_yaml(cfg_dir / "domains.yaml", {"debug": {"disable_positions_stale_gate": False, "disable_daily_loss_limit": False}})
         
         loader = ConfigLoader(config_dir=cfg_dir)
@@ -129,16 +129,23 @@ class TestMissingRequiredNumericCrashes:
     """Test that missing required numeric fields cause crash."""
     
     def test_missing_watchdog_ack_ttl_ms_crashes(self, tmp_path: Path) -> None:
-        """Missing required numeric field (ack_ttl_ms) → ValidationError."""
+        """Missing required numeric field (ack_ttl_ms) → ValidationError.
+        
+        TASK-ZOMBIE-FIX: watchdog now lives in trading.yaml under trading.execution.watchdog,
+        not in domains.yaml.
+        """
         cfg_dir = _copy_config_to_tmp(tmp_path)
         
-        domains_path = cfg_dir / "domains.yaml"
-        domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+        # FIX: watchdog is in trading.yaml, not domains.yaml
+        trading_path = cfg_dir / "trading.yaml"
+        trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
         
         # Remove required numeric field
-        if "execution_position" in domains and "watchdog" in domains["execution_position"]:
-            del domains["execution_position"]["watchdog"]["ack_ttl_ms"]
-        _write_yaml(domains_path, domains)
+        if "trading" in trading and "execution" in trading["trading"]:
+            execution = trading["trading"]["execution"]
+            if "watchdog" in execution:
+                del execution["watchdog"]["ack_ttl_ms"]
+        _write_yaml(trading_path, trading)
         
         loader = ConfigLoader(config_dir=cfg_dir)
         with pytest.raises(ValidationError) as exc_info:
@@ -160,6 +167,20 @@ class TestMissingRequiredNumericCrashes:
             del domains["decision_making"]["qos"]["symbol_cooldown_sec"]
         _write_yaml(domains_path, domains)
         
+        # TASK53-FIX: Also remove from backtest_override.yaml since it provides fallback
+        override_path = cfg_dir / "backtest_override.yaml"
+        if override_path.exists():
+            override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
+            if (
+                isinstance(override, dict)
+                and "domains" in override
+                and "decision_making" in override["domains"]
+                and "qos" in override["domains"]["decision_making"]
+                and "symbol_cooldown_sec" in override["domains"]["decision_making"]["qos"]
+            ):
+                del override["domains"]["decision_making"]["qos"]["symbol_cooldown_sec"]
+                _write_yaml(override_path, override)
+        
         loader = ConfigLoader(config_dir=cfg_dir)
         with pytest.raises(ValidationError) as exc_info:
             loader.load_config()
@@ -172,15 +193,19 @@ class TestWrongTypeNumericCrashes:
     """Test that wrong type for numeric fields causes crash."""
     
     def test_string_instead_of_int_crashes(self, tmp_path: Path) -> None:
-        """String value for int field → ValidationError."""
+        """String value for int field → ValidationError.
+        
+        TASK-ZOMBIE-FIX: watchdog now lives in trading.yaml under trading.execution.watchdog.
+        """
         cfg_dir = _copy_config_to_tmp(tmp_path)
         
-        domains_path = cfg_dir / "domains.yaml"
-        domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+        # FIX: watchdog is in trading.yaml, not domains.yaml
+        trading_path = cfg_dir / "trading.yaml"
+        trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
         
         # Set string instead of int
-        domains["execution_position"]["watchdog"]["ack_ttl_ms"] = "not_a_number"
-        _write_yaml(domains_path, domains)
+        trading["trading"]["execution"]["watchdog"]["ack_ttl_ms"] = "not_a_number"
+        _write_yaml(trading_path, trading)
         
         loader = ConfigLoader(config_dir=cfg_dir)
         with pytest.raises(ValidationError) as exc_info:

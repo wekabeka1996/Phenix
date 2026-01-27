@@ -66,6 +66,12 @@ def fsm_config():
     eg.post_fill_ttl_sec = 5
     eg.stale_ttl_sec = 10
     
+    # P1: Add fallback config (required by exposure_guard)
+    fb = cfg.domains.execution_position.fallback
+    fb.policy = "fail_closed"
+    fb.risk_reduction_pct = "0.5"
+    fb.backoff_ms = [200, 500, 1000]
+    
     # Legacy/Fallback paths if accessed directly
     cfg.trading.exposure.max_equity_utilization_pct = "95.0"
     cfg.trading.exposure.count_pending_orders = True

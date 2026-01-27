@@ -17,6 +17,19 @@ from pathlib import Path
 
 import polars as pl
 
+# Import clock abstraction for consistent time in backtest
+try:
+    from apps.reference.core.time import get_clock
+except ImportError:
+    # Fallback: use wall-clock if import fails
+    class _FallbackClock:
+        def now_ms(self) -> int:
+            return int(time.time() * 1000)
+        def now_sec(self) -> float:
+            return time.time()
+    def get_clock():
+        return _FallbackClock()
+
 # Try to import real EventBus or use LocalBus for simulation
 try:
     from apps.reference.orchestrator.utils_event_bus import LocalBus
@@ -64,7 +77,8 @@ class BacktestEngine:
         timeframe: str,
         event_bus: Any = None, # Expecting LocalBus or compatible
         data_dir: str = "data/processed",
-        initial_balance: float = 10000.0
+        initial_balance: float = 10000.0,
+        clock_advance_fn: Any = None  # Callback to advance global clock: fn(ts_ms: int) -> None
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -72,9 +86,13 @@ class BacktestEngine:
         self.timeframe = timeframe
         self.data_dir = Path(data_dir)
         self.event_bus = event_bus if event_bus else LocalBus()
+        self.clock_advance_fn = clock_advance_fn  # For backtest timebase synchronization
         
         # Initialize Mock Broker
         self.broker = MockBroker(initial_balance_usdt=initial_balance)
+        
+        # DET-BT-15: Direct reference to ExecPosFSM for tick-barrier sync
+        self.execpos_fsm = None
         
         # Data storage
         self.feed: Optional[pl.DataFrame] = None
@@ -216,11 +234,36 @@ class BacktestEngine:
         
         row_iterator = self.feed.iter_rows(named=True)
         count = 0
+        initial_portfolio_emitted = False
         
         for row in row_iterator:
             count += 1
             if max_ticks is not None and count > int(max_ticks):
                 break
+
+            # CRITICAL: Advance global clock BEFORE processing this row.
+            # This ensures ExposureGuard staleness checks, cooldowns, etc.
+            # see the simulated time, not wall-clock.
+            try:
+                ts_val = row.get("ts")
+                if ts_val is not None and self.clock_advance_fn is not None:
+                    ts_ms = int(ts_val.timestamp() * 1000) if hasattr(ts_val, "timestamp") else int(ts_val)
+                    self.clock_advance_fn(ts_ms)
+            except Exception:
+                pass
+            
+            # BACKTEST-ARCH-FIX: Emit initial portfolio AFTER first clock advance.
+            # DecisionMaking requires latest_portfolio to be set, otherwise it blocks ALL signals
+            # with "NRR-PORTFOLIO-UNKNOWN". We emit initial portfolio AFTER clock is set to
+            # first bar's timestamp so ExposureGuard staleness check passes.
+            if not initial_portfolio_emitted:
+                self._emit_initial_portfolio()
+                initial_portfolio_emitted = True
+            else:
+                # BACKTEST-ARCH-FIX: Emit portfolio heartbeat on EVERY bar.
+                # ExposureGuard checks staleness: stale_sec = now_sec() - (positions_last_ts_ms / 1000)
+                # Without heartbeat, positions_last_ts_ms stays at first bar and becomes stale.
+                self._emit_portfolio_heartbeat()
 
             # Emit deferred ACKs before matching this bar (keeps ACK->FILL ordering sane)
             try:
@@ -244,15 +287,36 @@ class BacktestEngine:
             
             # Emit Fills
             for fill in fills:
+                # EVT:ORDER_FILL for ExecPosFSM order lifecycle
                 self.event_bus.emit(
                     event_name="EVT:ORDER_FILL",
                     payload=fill,
                     why="backtest_fill"
                 )
+                # BACKTEST-ARCH-FIX: Emit EVT:TRADE_EXECUTED for PositionTracking (production parity)
+                # PositionTracking listens to TRADE_EXECUTED, not ORDER_FILL
+                trade_executed_payload = {
+                    "symbol": fill.get("symbol"),
+                    "side": fill.get("side", "").lower(),  # PositionTracking expects lowercase
+                    "price": fill.get("price"),
+                    "quantity": fill.get("quantity"),
+                    "fees": fill.get("fee", "0"),
+                    "venue": "backtest",
+                    "ts": fill.get("timestamp", get_clock().now_ms()),
+                }
+                self.event_bus.emit(
+                    event_name="EVT:TRADE_EXECUTED",
+                    payload=trade_executed_payload,
+                    why="backtest_trade_executed"
+                )
                 LOG.info(f"Filled: {fill['symbol']} {fill['side']} {fill['quantity']} @ {fill['price']}")
 
-            # Emit Portfolio Update (Balance/Positions have changed)
-            self._emit_portfolio_update()
+            # BACKTEST-ARCH-FIX: Removed _emit_portfolio_update() here.
+            # PositionTracking now emits EVT:PORTFOLIO_STATE_UPDATED after processing TRADE_EXECUTED.
+            # Fallback: emit portfolio update only if PositionTracking is not initialized
+            # (for backward compatibility with tests that don't init all domains)
+            if not hasattr(self, '_position_tracking_initialized') or not self._position_tracking_initialized:
+                self._emit_portfolio_update()
             
             # --- STEP 2: Emit Market Event ---
             # Simulate the "EVT:MARKET_TICK_RECEIVED" or "UPD:MARKET_DATA"
@@ -446,6 +510,17 @@ class BacktestEngine:
                 except Exception:
                     pass
             
+            # DET-BT-15: TICK-BARRIER - Drain all pending async tasks before next bar
+            # This ensures deterministic ordering of FSM operations.
+            if self.execpos_fsm is not None and hasattr(self.execpos_fsm, "drain_pending_tasks"):
+                try:
+                    tasks_before = len(getattr(self.execpos_fsm, "_pending_tasks", set()))
+                    self.execpos_fsm.drain_pending_tasks()
+                    if tasks_before > 0:
+                        LOG.debug(f"BARRIER_DRAIN: tasks_before={tasks_before} tasks_after=0")
+                except Exception as e:
+                    LOG.warning(f"BARRIER_DRAIN failed: {e}")
+            
         duration = time.time() - start_time
         LOG.info(f"Simulation ended. Processed {count} ticks in {duration:.2f}s ({count/duration:.0f} ticks/s)")
         
@@ -468,24 +543,31 @@ class BacktestEngine:
         pnl = total_balance - self.broker.initial_balance
         roi = (pnl / self.broker.initial_balance) * 100
         
-        # Max Drawdown (Requires tracking balance history - TODO for V2)
-        # For V1, return 0.0
+        # Win Rate: calculated from broker's trade PnL history
+        trade_pnl_history = getattr(self.broker, '_trade_pnl_history', [])
+        winning_trades = sum(1 for p in trade_pnl_history if p > 0)
+        total_closed_trades = len(trade_pnl_history)
+        win_rate = winning_trades / total_closed_trades if total_closed_trades > 0 else 0.0
         
-        # Win Rate (Requires trade history - MockBroker stores filled orders?)
-        # We can implement a simple check if MockBroker stored history.
-        # Currently MockBroker deletes filled orders from _orders? No, sets status FILLED.
-        # But get_open_orders filters them out.
-        # We can inspect _orders dict directly.
+        # Max Drawdown: calculated from broker's equity history
+        equity_history = getattr(self.broker, '_equity_history', [self.broker.initial_balance])
+        max_drawdown = 0.0
+        peak = equity_history[0] if equity_history else self.broker.initial_balance
+        for equity in equity_history:
+            if equity > peak:
+                peak = equity
+            drawdown = (peak - equity) / peak if peak > 0 else 0.0
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
         
+        # Total trades = all filled orders
         trades = [o for o in self.broker._orders.values() if o.status == "FILLED"]
-        # Win rate is elusive without PnL per trade tracking in Broker.
-        # We will return 0 for now unless we calculate it.
         
         return BacktestResult(
             total_pnl=pnl,
-            max_drawdown=0.0,
+            max_drawdown=max_drawdown,
             total_trades=len(trades),
-            win_rate=0.0,
+            win_rate=win_rate,
             start_balance=self.broker.initial_balance,
             end_balance=total_balance,
             roi_pct=roi
@@ -523,7 +605,7 @@ class BacktestEngine:
         # Calculate equity (balance + unrealized PnL from positions)
         unrealized_pnl = sum(float(pos.unrealized_profit) for pos in self.broker._positions.values())
         total_equity = self.broker.balance_usdt + unrealized_pnl
-        positions_last_ts_ms = int(time.time() * 1000)
+        positions_last_ts_ms = get_clock().now_ms()  # Use simulated clock, not wall-clock
         open_positions_usd = 0.0
         open_positions_margin_usd = 0.0
         for pos in self.broker._positions.values():
@@ -542,7 +624,7 @@ class BacktestEngine:
         payload = {
             "balances": balances,
             "positions": positions,
-            "event_time_ms": int(time.time() * 1000),
+            "event_time_ms": get_clock().now_ms(),  # Use simulated clock
             # ExposureGuard staleness SSOT
             "positions_last_ts_ms": positions_last_ts_ms,
             "open_positions_usd": str(open_positions_usd),
@@ -559,6 +641,70 @@ class BacktestEngine:
             payload=payload,
             why="backtest_portfolio_sync"
         )
+
+    def _emit_initial_portfolio(self):
+        """
+        Emit initial empty/flat portfolio at backtest start.
+        
+        BACKTEST-ARCH-FIX: DecisionMaking blocks ALL signals if latest_portfolio == None
+        (fail-closed with "NRR-PORTFOLIO-UNKNOWN"). PositionTracking.start() intentionally
+        does NOT emit initial portfolio for production safety (truth-first startup).
+        
+        In backtest, we bootstrap with synthetic "flat" portfolio:
+        - No positions (empty list)
+        - Full initial balance available
+        - This unblocks first trade signals
+        
+        After first trade, PositionTracking takes over via EVT:TRADE_EXECUTED handler.
+        """
+        initial_balance = self.broker.initial_balance
+        ts_ms = get_clock().now_ms()
+        
+        payload = {
+            "balances": [{
+                "asset": "USDT",
+                "balance": str(initial_balance),
+                "crossWalletBalance": str(initial_balance),
+                "availableBalance": str(initial_balance)
+            }],
+            "positions": [],  # Flat - no open positions
+            "event_time_ms": ts_ms,
+            "positions_last_ts_ms": ts_ms,
+            "open_positions_usd": "0",
+            "open_positions_margin_usd": "0",
+            "equity": str(initial_balance),
+            "equity_free_usdt": str(initial_balance),
+            "equity_cross_usdt": str(initial_balance),
+            "margin": "0",
+        }
+        
+        self.event_bus.emit(
+            event_name="EVT:PORTFOLIO_STATE_UPDATED",
+            payload=payload,
+            why="backtest_initial_portfolio_bootstrap"
+        )
+        LOG.info(f"✅ Emitted initial portfolio: equity={initial_balance}, positions=[] (flat)")
+
+    def _emit_portfolio_heartbeat(self):
+        """
+        Emit portfolio "heartbeat" to keep positions_last_ts_ms fresh.
+        
+        BACKTEST-ARCH-FIX: ExposureGuard checks staleness via:
+            stale_sec = now_sec() - (positions_last_ts_ms / 1000)
+        
+        In backtest, simulation clock advances faster than real time.
+        If we only emit portfolio on trades, the timestamp becomes stale
+        after a few bars and ExposureGuard blocks with PORTFOLIO_STALE.
+        
+        This heartbeat emits current broker state with fresh timestamp
+        on EVERY bar, ensuring ExposureGuard staleness check passes.
+        
+        When PositionTracking emits after TRADE_EXECUTED, it will override
+        this with truth-source data. The heartbeat is just for timestamp freshness.
+        """
+        # Reuse existing _emit_portfolio_update logic
+        self._emit_portfolio_update()
+
 
 if __name__ == "__main__":
     # Quick Test

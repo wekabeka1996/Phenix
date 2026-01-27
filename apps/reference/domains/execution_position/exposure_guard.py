@@ -52,7 +52,7 @@ class FallbackState:
     entered_at: Optional[float] = None
     reason: Optional[str] = None
     # 50% risk reduction in fallback mode
-    risk_reduction_pct: Decimal = Decimal("0.5")
+    risk_reduction_pct: Optional[Decimal] = None
 
 
 class ExposureGuard:
@@ -94,10 +94,8 @@ class ExposureGuard:
         self.max_concentration_pct = _to_dec(eg_config.max_concentration_pct) / Decimal("100")
 
         # Directional ratio (legacy support)
-        max_directional_ratio_raw = getattr(eg_config, "max_directional_ratio", None)
-        if max_directional_ratio_raw is None:
-            max_directional_ratio_raw = getattr(eg_config, "directional_ratio_max", "5.0")
-        self.max_directional_ratio = _to_dec(max_directional_ratio_raw)
+        # Fail-closed: ExposureGuardConfig is strict and requires this field.
+        self.max_directional_ratio = _to_dec(eg_config.max_directional_ratio)
 
         # TTL configurations
         self.pending_ttl_sec = eg_config.pending_ttl_sec
@@ -109,7 +107,7 @@ class ExposureGuard:
         if execution_cfg is None or execution_cfg.exposure is None:
             raise ConfigContractError(
                 path="trading.execution.exposure",
-                why="Missing required exposure config (expected count_pending_orders/exclude_reduce_only/leverage_defaults).",
+                why="Missing required exposure config (expected count_pending_orders/exclude_reduce_only).",
             )
         self.count_pending_orders = bool(execution_cfg.exposure.count_pending_orders)
         self.exclude_reduce_only = bool(execution_cfg.exposure.exclude_reduce_only)
@@ -124,7 +122,9 @@ class ExposureGuard:
 
         # PHASE P0: Fallback mode configuration and state
         self.fallback_config = self._load_fallback_config()
-        self.fallback_state = FallbackState()
+        self.fallback_state = FallbackState(
+            risk_reduction_pct=self.fallback_config["risk_reduction_pct"]
+        )
 
         # State
         self.state = ExposureState(
@@ -176,10 +176,26 @@ class ExposureGuard:
 
     def _load_fallback_config(self) -> Dict[str, Any]:
         """
-        PHASE P0: Load fallback mode configuration.
-        NOTE: trading.execution.fallback is currently an empty typed block; keep the historical constants here.
+        P1: Load fallback mode configuration from domains.execution_position.fallback.
+        Fail-closed: raises ConfigContractError if config missing.
         """
-        config = {"policy": "fail_closed", "risk_reduction_pct": Decimal("0.5"), "backoff_ms": [200, 500, 1000]}
+        fallback_cfg = getattr(
+            getattr(self.config.domains, "execution_position", None),
+            "fallback",
+            None
+        )
+        
+        if fallback_cfg is None:
+            raise ConfigContractError(
+                path="domains.execution_position.fallback",
+                why="Fallback config is mandatory. Add fallback section to config/aurora/domains.yaml"
+            )
+        
+        config = {
+            "policy": fallback_cfg.policy,
+            "risk_reduction_pct": Decimal(str(fallback_cfg.risk_reduction_pct)),
+            "backoff_ms": list(fallback_cfg.backoff_ms)
+        }
         self.logger.info(
             f"FALLBACK_CONFIG loaded: policy={config['policy']}, risk_reduction_pct={config['risk_reduction_pct']}, backoff_ms={config['backoff_ms']}"
         )
@@ -333,50 +349,51 @@ class ExposureGuard:
         """
         Resolve leverage for a symbol.
 
-        Leverage SSOT priority:
-        1) instruments.<SYM>.execution.target_leverage (instruments.yaml SSOT)
-        2) trading.execution.exposure.leverage_defaults (legacy fallback; do not rely on it for sizing)
+        SSOT: instruments.<SYM>.execution.target_leverage (instruments.yaml)
 
         Args:
             symbol: Trading symbol
 
         Returns:
             Decimal: Leverage value (>= 1)
+
+        Raises:
+            ConfigContractError: If leverage not found in instruments.yaml (no silent defaults)
         """
         symbol = str(symbol or "").strip()
         if not symbol:
             raise ValueError("symbol is required")
 
-        # 1) SSOT: instruments.yaml
-        try:
-            instruments = getattr(self.config, "instruments", None)
-            spec = instruments.get(symbol) if isinstance(instruments, dict) else None
-            exec_cfg = getattr(spec, "execution", None) if spec is not None else None
-            target = getattr(exec_cfg, "target_leverage", None) if exec_cfg is not None else None
-            if target is not None:
-                return max(Decimal(str(target)), Decimal("1"))
-        except Exception:
-            # Defer to legacy fallback below (fail-closed happens if that is missing too).
-            pass
-
-        # 2) Legacy fallback: trading.execution.exposure.leverage_defaults
-        execution_cfg = self.config.trading.execution
-        if execution_cfg is None or execution_cfg.exposure is None:
+        # SSOT: instruments.yaml (fail-closed, no fallback)
+        instruments = getattr(self.config, "instruments", None)
+        if instruments is None or not isinstance(instruments, dict):
             raise ConfigContractError(
-                path="trading.execution.exposure",
-                why="Missing required exposure config (leverage_defaults).",
+                path="instruments",
+                why=f"Missing instruments config for leverage resolution (symbol={symbol})"
             )
 
-        leverage_defaults = execution_cfg.exposure.leverage_defaults
-        if not isinstance(leverage_defaults, dict):
+        spec = instruments.get(symbol)
+        if spec is None:
             raise ConfigContractError(
-                path="trading.execution.exposure.leverage_defaults",
-                why=f"Expected dict, got {type(leverage_defaults)}",
+                path=f"instruments.{symbol}",
+                why=f"Symbol {symbol} not found in instruments.yaml"
             )
 
-        default_leverage_raw = leverage_defaults["__default__"] if "__default__" in leverage_defaults else 20
-        symbol_leverage_raw = leverage_defaults[symbol] if symbol in leverage_defaults else default_leverage_raw
-        return max(Decimal(str(symbol_leverage_raw)), Decimal("1"))
+        exec_cfg = getattr(spec, "execution", None)
+        if exec_cfg is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}.execution",
+                why=f"Missing execution config for {symbol}"
+            )
+
+        target = getattr(exec_cfg, "target_leverage", None)
+        if target is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}.execution.target_leverage",
+                why=f"Missing target_leverage for {symbol} in instruments.yaml (no silent defaults)"
+            )
+
+        return max(Decimal(str(target)), Decimal("1"))
 
     def on_portfolio(self, portfolio_state: Dict[str, Any]) -> None:
         """
@@ -724,8 +741,9 @@ class ExposureGuard:
             raise ValueError("ExposureGuard.reserve requires non-empty symbol")
 
         side = str(side or "").upper()
-        if side not in {"BUY", "SELL", "LONG", "SHORT"}:
-            side = "BUY"
+        allowed_sides = {"BUY", "SELL", "LONG", "SHORT"}
+        if side not in allowed_sides:
+            raise ValueError(f"Invalid order side: '{side}'. Expected one of {allowed_sides}")
 
         # Idempotency: do not create duplicate reservations/log entries for same key.
         if key in self.state.pending_exposure or key in self.state.reservations:
@@ -829,8 +847,9 @@ class ExposureGuard:
         if not symbol:
             symbol = str(self.state.pending_exposure.get(key, {}).get("symbol", "") or "").strip()
         side = str(side or self.state.pending_exposure.get(key, {}).get("side", "SELL")).upper()
-        if side not in {"BUY", "SELL", "LONG", "SHORT"}:
-            side = "SELL"
+        allowed_sides = {"BUY", "SELL", "LONG", "SHORT"}
+        if side not in allowed_sides:
+            raise ValueError(f"Invalid order side: '{side}'. Expected one of {allowed_sides}")
 
         if key in self.state.reservations:
             # Calculate filled margin

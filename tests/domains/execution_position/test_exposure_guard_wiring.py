@@ -54,6 +54,10 @@ def mock_config():
     dom_ep.idempotent_cancel.max_retries = 3
     dom_ep.event_dedup.max_size = 100
     dom_ep.event_dedup.ttl_ms = 1000
+    # P1: Add fallback config (required by exposure_guard)
+    dom_ep.fallback.policy = "fail_closed"
+    dom_ep.fallback.risk_reduction_pct = "0.5"
+    dom_ep.fallback.backoff_ms = [200, 500, 1000]
     cfg.domains.execution_position = dom_ep
     
     # watchdog defaults

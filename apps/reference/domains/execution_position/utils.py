@@ -2,7 +2,9 @@
 from __future__ import annotations
 from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from typing import Optional, Tuple, Any
-import hashlib, time, re, math
+import hashlib, re, math
+# DET-BT-11: Use get_clock() for deterministic backtest
+from apps.reference.core.time import get_clock
 
 __all__ = [
     "quantize_stop_price",
@@ -173,8 +175,8 @@ def generate_client_order_id(
         hash_part = hashlib.md5(raw_str.encode("utf-8")).hexdigest()[:12]
         cid = f"{role}-{hash_part}"
     else:
-        # Fallback: time-based uniqueness (non-deterministic across restarts).
-        base = f"{prefix}:{decision_id}:{extra or ''}:{int(time.time() * 1000)}"
+        # DET-BT-11: Use get_clock() for deterministic backtest
+        base = f"{prefix}:{decision_id}:{extra or ''}:{get_clock().now_ms()}"
         h = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
         cid = f"{prefix}-{h}"
 
@@ -331,7 +333,8 @@ class BoundedEventDeduper(set):
     def add(self, event_key: str, now_ms: int | None = None):
         """Mark event as processed and prune old entries."""
         if now_ms is None:
-            now_ms = int(time.time() * 1000)
+            # DET-BT-11: Use get_clock() for deterministic backtest
+            now_ms = get_clock().now_ms()
         
         super().add(event_key)
         if event_key in self._ts:

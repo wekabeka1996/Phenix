@@ -159,17 +159,16 @@ def test_config_validation_no_silent_extra_fields():
         MRRegimeThresholdsConfig,
         MRAssetConfig,
         MRRegimeSizingConfig,
-        MRRiskConfig,
         MeanReversionConfig,
     )
     
     # All Group A models should have extra='forbid' now
+    # MRRiskConfig was purged (DEAD CODE): global risk config was never read in runtime.
     test_models = [
         MRStrategyParamsConfig,
         MRRegimeThresholdsConfig,
         MRAssetConfig,
         MRRegimeSizingConfig,
-        MRRiskConfig,
         MeanReversionConfig,
     ]
     

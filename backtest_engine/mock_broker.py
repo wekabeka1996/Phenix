@@ -18,6 +18,17 @@ from vfoundation.core.adapters.base import (
     ExchangePosition,
 )
 
+# Import clock abstraction for consistent time in backtest
+try:
+    from apps.reference.core.time import get_clock
+except ImportError:
+    # Fallback: use wall-clock if import fails
+    class _FallbackClock:
+        def now_ms(self) -> int:
+            return int(time.time() * 1000)
+    def get_clock():
+        return _FallbackClock()
+
 LOG = logging.getLogger(__name__)
 
 
@@ -33,11 +44,13 @@ class MockBroker(AbstractExchangeAdapter):
     - Latency simulation (optional - currently 0ms)
     """
 
-    def __init__(self, initial_balance_usdt: float = 10000.0, commission_maker: float = 0.0002, commission_taker: float = 0.0004):
+    def __init__(self, initial_balance_usdt: float = 10000.0, commission_maker: float = 0.0002, commission_taker: float = 0.0004, leverage_map: Optional[Dict[str, int]] = None):
         self.initial_balance = initial_balance_usdt
         self.balance_usdt = initial_balance_usdt
         self.commission_maker = commission_maker
         self.commission_taker = commission_taker
+        # Leverage map from config (symbol -> leverage), default 20x for all
+        self.leverage_map = leverage_map or {"__default__": 20}
 
         # Exchange-like attributes expected by ExecPosFSM safety checks/logging.
         self.base_url = "mock://backtest"
@@ -53,6 +66,12 @@ class MockBroker(AbstractExchangeAdapter):
         self._client_order_map: Dict[str, str] = {} # client_order_id -> order_id
         self._fills: List[Dict[str, Any]] = []
         self._pending_acks: List[str] = []
+        
+        # Trade PnL tracking for Win Rate calculation
+        self._trade_pnl_history: List[float] = []  # realized PnL per closed trade
+        
+        # Equity history for Max Drawdown calculation  
+        self._equity_history: List[float] = [initial_balance_usdt]
         
         # Market Data State (Last seen price)
         self._last_prices: Dict[str, float] = {}
@@ -276,10 +295,10 @@ class MockBroker(AbstractExchangeAdapter):
                 entry_price="0",
                 mark_price=str(price),
                 unrealized_profit="0",
-                leverage=1, # Default
+                leverage=self.leverage_map.get(symbol, self.leverage_map.get("__default__", 20)),  # Use config leverage
                 margin_type="CROSS",
                 isolated_margin=0.0,
-                update_time_ms=int(time.time()*1000)
+                update_time_ms=get_clock().now_ms()  # Use simulated clock
             )
 
         pos = self._positions[symbol]
@@ -306,6 +325,12 @@ class MockBroker(AbstractExchangeAdapter):
             self.balance_usdt += pnl
             LOG.debug(f"[MockBroker] Realized PnL: {pnl:.4f}")
             
+            # Track trade PnL for Win Rate calculation
+            self._trade_pnl_history.append(pnl)
+            
+            # Update equity history for Drawdown tracking
+            self._equity_history.append(self.balance_usdt)
+            
             # If flipping position
             if (curr_amt > 0 and new_amt < 0) or (curr_amt < 0 and new_amt > 0):
                 # Remainder is new position at new price
@@ -317,7 +342,7 @@ class MockBroker(AbstractExchangeAdapter):
         pos.position_amount = str(new_amt)
         pos.entry_price = str(new_entry) if new_amt != 0 else "0"
         pos.side = "LONG" if new_amt > 0 else ("SHORT" if new_amt < 0 else "FLAT")
-        pos.update_time_ms = int(time.time()*1000)
+        pos.update_time_ms = get_clock().now_ms()  # Use simulated clock
         
         # Clean up zero positions? Or keep as Flat
         if new_amt == 0:
@@ -333,7 +358,7 @@ class MockBroker(AbstractExchangeAdapter):
             "fee": str(fee),
             "fee_asset": "USDT",
             "role": role,
-            "timestamp": int(time.time() * 1000),
+            "timestamp": get_clock().now_ms(),  # Use simulated clock
             "clientOrderId": order.client_order_id,
             "status": "FILLED",
         }
@@ -369,7 +394,7 @@ class MockBroker(AbstractExchangeAdapter):
             filled_qty="0",
             price=params.price,
             status="ACCEPTED", # New
-            timestamp_ms=int(time.time() * 1000),
+            timestamp_ms=get_clock().now_ms(),  # Use simulated clock
             reason=None
         )
 

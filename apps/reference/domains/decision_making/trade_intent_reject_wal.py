@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Literal, Optional
 
@@ -7,6 +8,8 @@ from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
 
 RejectStage = Literal["RISK", "STRATEGY", "DECISION", "EXECUTION"]
+
+logger = logging.getLogger(__name__)
 
 
 def write_trade_intent_rejected(
@@ -73,4 +76,8 @@ def write_trade_intent_rejected(
         why=truncate_why(f"trade_intent_rejected:{reason_code}"),
         pld=payload,
     )
-    wal.append(msg.model_dump())
+    res = wal.append(msg.model_dump())
+    if res is None:
+        logger.error(
+            f"[{symbol}] CRITICAL: WAL WRITE FAILED (LOCK TIMEOUT). RID={rid}"
+        )

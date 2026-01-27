@@ -967,10 +967,19 @@ class OrderGuardian:
             if self.bus and tidied_symbols:
                 for tidy_symbol in tidied_symbols:
                     try:
-                        self.bus.emit("EVT:SYMBOL_TIDY", {
-                                      "symbol": tidy_symbol, "source": "guardian_poll"})
-                    except Exception:
-                        pass
+                        self.bus.emit(
+                            "EVT:SYMBOL_TIDY",
+                            {
+                                "symbol": tidy_symbol,
+                                "source": "guardian_poll",
+                                "ts_ms": int(self.clock.time() * 1000),
+                            },
+                            why="guardian:orphan_cleanup:tidy",
+                        )
+                    except Exception as e:
+                        LOG.error(
+                            f"[{tidy_symbol}] CRITICAL: Failed to emit EVT:SYMBOL_TIDY: {e}"
+                        )
 
         except Exception as e:
             LOG.error(f"Orphan cleanup failed: {e}")
@@ -1186,10 +1195,20 @@ class OrderGuardian:
                         break
                 if not any_tracked and self.bus:
                     try:
-                        self.bus.emit("EVT:SYMBOL_TIDY", {
-                                      "symbol": symbol, "rid": rid})
-                    except Exception:
-                        pass
+                        self.bus.emit(
+                            "EVT:SYMBOL_TIDY",
+                            {
+                                "symbol": symbol,
+                                "rid": rid,
+                                "source": "guardian_reconcile",
+                                "ts_ms": int(self.clock.time() * 1000),
+                            },
+                            why=f"guardian:reconcile:tidy:rid={rid}",
+                        )
+                    except Exception as e:
+                        LOG.error(
+                            f"[{symbol}] CRITICAL: Failed to emit EVT:SYMBOL_TIDY: {e}"
+                        )
             except Exception:
                 # Silent guard: event emission is best-effort
                 pass

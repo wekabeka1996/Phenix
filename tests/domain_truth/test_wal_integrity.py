@@ -46,6 +46,12 @@ def mock_config():
     trading.execution = execution
     config.trading = trading
 
+    # SSOT: instruments.yaml leverage
+    btcusdt_spec = MagicMock()
+    btcusdt_spec.execution.target_leverage = 50
+    btcusdt_spec.execution.margin_mode = "cross"
+    config.instruments = {"BTCUSDT": btcusdt_spec}
+
     return config
 
 

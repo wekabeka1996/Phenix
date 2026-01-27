@@ -48,7 +48,7 @@ instruments:
       leverage_policy: "set_and_verify"
       max_notional_utilization: 0.8
     sizing:
-      margin_pct: 0.09
+      margin_pct: 0.10
     
   DOGEUSDT:
     symbol: "DOGEUSDT"

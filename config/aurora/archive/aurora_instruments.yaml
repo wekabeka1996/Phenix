@@ -66,8 +66,7 @@ ETHUSDT:
   # Regime Gating - ETH "Universal" from optimization reports
   allowed_regimes: ["TREND_UP", "TREND_DOWN", "FLAT_LOW", "FLAT_NORMAL", "LOW_VOLATILITY"]
 
-  execution: null
-  ema_clamp: null
+  # PURGE-04: execution and ema_clamp removed
   signal_threshold: null
   max_risk_score: null
   cooldown_sec: null
@@ -122,8 +121,7 @@ SOLUSDT:
     min_update_interval_sec: 5
 
   regime_thresholds: null
-  execution: null
-  ema_clamp: null
+  # PURGE-04: execution and ema_clamp removed
   signal_threshold: null
   max_risk_score: null
   cooldown_sec: null
@@ -181,8 +179,7 @@ DOGEUSDT:
   # Regime Gating - DOGE works best in FLAT regimes (MR champion)
   allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "LOW_VOLATILITY"]
 
-  execution: null
-  ema_clamp: null
+  # PURGE-04: execution and ema_clamp removed
   signal_threshold: null
   max_risk_score: null
   cooldown_sec: null
@@ -238,8 +235,7 @@ XRPUSDT:
   # Regime Gating - XRP from Phase 3 optimization + FLAT regimes for MR
   allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_LOW", "FLAT_NORMAL"]
 
-  execution: null
-  ema_clamp: null
+  # PURGE-04: execution and ema_clamp removed
   signal_threshold: null
   max_risk_score: null
   cooldown_sec: null
@@ -295,8 +291,7 @@ BTCUSDT:
 
   allowed_regimes: ["TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "MEAN_REVERSION", "FLAT_LOW", "FLAT_NORMAL"]
 
-  execution: null
-  ema_clamp: null
+  # PURGE-04: execution and ema_clamp removed
   signal_threshold: null
   max_risk_score: null
   cooldown_sec: null

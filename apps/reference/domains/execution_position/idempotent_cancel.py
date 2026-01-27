@@ -5,7 +5,8 @@ Implements robust cancellation with pre-checks, -2011 absorption, and determinis
 
 import asyncio
 import hashlib
-import time
+# DET-BT-13: Use get_clock for deterministic backtest
+from apps.reference.core.time import get_clock
 from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple, Callable, Awaitable
 from dataclasses import dataclass
@@ -98,8 +99,8 @@ class IdempotentCancelHelper:
             str(notional_usdt).encode()).hexdigest()[:6]
 
         if use_timestamp:
-            # Last 6 digits of ms timestamp
-            time_component = int(time.time() * 1000) % 1_000_000
+            # DET-BT-13: Use get_clock for deterministic backtest
+            time_component = get_clock().now_ms() % 1_000_000
         else:
             time_component = counter % 1_000_000
 
@@ -329,7 +330,8 @@ class IdempotentCancelHelper:
         """Exponential backoff before retry"""
         wait_ms = min(100 * (2 ** attempt),
                       1000)  # 100ms, 200ms, 400ms, capped at 1s
-        await asyncio.sleep(wait_ms / 1000)
+        # DET-BT-13: Use get_clock for deterministic backtest
+        await get_clock().sleep_ms(wait_ms)
 
     def log_cancel_result(self, result: IdempotentCancelResult, order_id: str) -> None:
         """Log cancellation result for audit trail"""

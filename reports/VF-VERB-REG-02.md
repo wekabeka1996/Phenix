@@ -2,10 +2,10 @@
 Дата: 2026-01-08
 
 ## Итоги
-- runtime tokens (без tests): **51**
+- runtime tokens (без tests): **50**
 - registry tokens: **56**
 - runtime_not_in_registry: **0**
-- registry_not_in_runtime: **5**
+- registry_not_in_runtime: **6**
 
 ## Артефакты
 - `reports/VF-VERB-REG-02_diff.json`

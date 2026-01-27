@@ -1,6 +1,6 @@
 # Events - Feature Engineering Domain
 
-**Last Updated:** 2025-11-29
+**Last Updated:** 2026-01-27
 
 ---
 
@@ -12,25 +12,21 @@
 │                    (WebSocket/REST)                           │
 └──────────────────────────┬───────────────────────────────────┘
                            │
-                           ▼ EVT:MARKET_TICK_RECEIVED
+                           ▼ EVT:MARKET_TICK_RECEIVED (Hot Path)
 ┌──────────────────────────────────────────────────────────────┐
 │                   FeatureEngineering                          │
 │                                                               │
-│  1. Store tick (first tick only stored, no emission)         │
-│  2. Calculate OBI, TFI, delta_price, liquidity_kappa         │
-│  3. If enable_new_metrics:                                   │
-│     - Update EMA3, EMA7 → compute ema_bias                   │
-│     - Accumulate volume → compute volume_spike               │
-│     - Track price range → compute volatility_state           │
-│     - Compute depth_imbalance                                 │
-│     - Compute macro_sync (correlation with BTC/ETH)          │
-│  4. Store to feature_store (if configured)                   │
-└──────────────────────────┬───────────────────────────────────┘
-                           │
-                           ▼ EVT:FEATURES_CALCULATED
-┌──────────────────────────────────────────────────────────────┐
-│          decision_making / risk_strategy / analyzer           │
-└──────────────────────────────────────────────────────────────┘
+│  1. Hot Path: Tick -> OBI, TFI, Micro-Features               │
+│     -> Emit EVT:FEATURES_CALCULATED (Immediate)              │
+│                                                               │
+│  2. Cold Path: Funding/OI Updates -> Update State            │
+│                                                               │
+│  3. Bar Path: Bar Close -> Synthetic Tick -> Bar Features    │
+│     -> Emit CMD:PROCESS_STRATEGY (To DecisionMaking)         │
+└──────────────────────────┬──────────────────┬───────────────┘
+                           │                  │
+                           ▼                  ▼
+              EVT:FEATURES_CALCULATED   CMD:PROCESS_STRATEGY
 ```
 
 ---

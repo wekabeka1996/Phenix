@@ -22,10 +22,7 @@ features:
   spread_min_ticks: 1 # used for normalization safeguards
   micro_return_window: 1
 
-hotreload_whitelist:
-  - hmm.sticky_kappa
-  - hmm.update_interval
-  - hmm.change_conf_min
+# PURGE-DIRTY-DOZEN: Removed hotreload_whitelist (dead stub, hot-reload never implemented) - 2026-01-25
 models:
   sma_trend:
     # TESTNET SMOKE: minimize warmup (min allowed: 2)

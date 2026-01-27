@@ -102,7 +102,12 @@ class ManageFlowFSM:
 
         if isinstance(config, dict):
             raise TypeError("ManageFlowFSM requires typed AuroraConfig, got dict")
-        self.config = AuroraConfig() if config is None else config
+        if config is None:
+            raise ValueError(
+                f"CRITICAL: {self.__class__.__name__} requires valid AuroraConfig. "
+                "Refusing to start with empty defaults."
+            )
+        self.config = config
 
         # Extract commonly used configs for easier access
         self._manage_cfg = self.config.trading.execution.manage if self.config.trading.execution else None

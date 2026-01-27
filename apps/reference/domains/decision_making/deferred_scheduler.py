@@ -41,9 +41,9 @@ class DeferredIntentScheduler:
                 "DeferredIntentScheduler: no running event loop, skip scheduling")
             return
 
-        # NOTE: `when_ts_ms` is documented as Unix epoch milliseconds.
-        # Do NOT use loop.time() here (monotonic seconds); mixing time bases breaks delay calculation.
-        now_ms = int(time.time() * 1000)
+            # DET-BT-09: Use get_clock() for deterministic backtest
+        from apps.reference.core.time import get_clock
+        now_ms = get_clock().now_ms()
 
         # Heuristic: epoch-ms in modern years is ~1.6e12+. Much smaller values likely mean a wrong timebase.
         if when_ts_ms < 1_000_000_000_000:

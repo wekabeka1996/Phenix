@@ -75,14 +75,8 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
         assert rs_cfg.stop_mult == expected["stop_mult"]
         assert rs_cfg.target_mult == expected["target_mult"]
 
-    # Risk (global)
-    raw_risk = raw_mr["risk"]
-    assert mr.risk.position_size_usd == raw_risk["position_size_usd"]
-    assert mr.risk.max_concurrent_positions == raw_risk["max_concurrent_positions"]
-    assert mr.risk.daily_loss_limit_usd == raw_risk["daily_loss_limit_usd"]
-    assert mr.risk.expected_pnl_multiplier == raw_risk["expected_pnl_multiplier"]
-    assert mr.risk.fees_pct == raw_risk["fees_pct"]
-    assert mr.risk.slippage_pct == raw_risk["slippage_pct"]
+    # Risk (global) purged: MRRiskConfig was DEAD CODE - never read in runtime.
+    # Risk decisions are centralized in RiskManagement and PositionSizing domains.
 
     # Assets
     raw_assets = raw_mr["assets"]
@@ -108,10 +102,6 @@ def test_mean_reversion_profile_yaml_fully_loaded(tmp_path: Path) -> None:
             assert a.strategy.cooldown_sec == raw_asset_strategy.get("cooldown_sec")
             assert a.strategy.allowed_regimes == raw_asset_strategy.get("allowed_regimes")
 
-        raw_asset_risk = raw_asset.get("risk")
-        if raw_asset_risk is None:
-            assert a.risk is None
-        else:
-            assert a.risk is not None
-            assert a.risk.position_size_usd == raw_asset_risk.get("position_size_usd")
-            assert a.risk.max_risk_score == raw_asset_risk.get("max_risk_score")
+        # MRAssetRiskConfig purged (DEAD CODE): per-asset risk fields were never read in runtime.
+        # MRRiskConfig purged (DEAD CODE): global risk config was never read in runtime.
+        # Risk decisions are centralized in RiskManagement and PositionSizing domains.

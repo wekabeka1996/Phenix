@@ -38,8 +38,8 @@ def test_hybrid_mode_config_contract_mapping_and_credentials_present(tmp_path: P
     assert dc.market_data.trading_mode == "live"
     assert dc.feature_engineering.trading_mode == "live"
     assert dc.decision_making.trading_mode == "live"
-    assert dc.risk_management.trading_mode == "testnet"
-    assert dc.execution_position.trading_mode == "testnet"
+    # PURGE-DIRTY-DOZEN: risk_management, execution_position trading_modes are now Optional (deprecated)
+    # Global trading_mode is SSOT for these domains
 
     assert cfg.domains.decision_making.arming.require_regime_warmup is True
 

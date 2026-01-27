@@ -173,3 +173,4 @@ pytest tests/test_decision_making_qos.py tests/test_normalized_reject_reasons.py
 - [Events](./EVENTS.md) - Event structures and flow
 - [Testing](./TESTING.md) - Test strategy and examples
 - [Analysis Summary](./ANALYSIS_SUMMARY.md) - Architecture assessment
+- [**Deep Dive Audit (2026-01-26)**](./DEEP_DIVE_AUDIT.md) - Comprehensive code audit and red flags

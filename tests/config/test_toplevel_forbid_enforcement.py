@@ -76,6 +76,7 @@ def _valid_decision_kwargs():
 
 
 def _valid_execution_kwargs():
+    # TASK-ZOMBIE-FIX / PURGE-DIRTY-DOZEN: Removed dead fields
     return {
         "manage": None,
         "exposure": None,
@@ -86,39 +87,38 @@ def _valid_execution_kwargs():
         "fsm_periodic_cleanup_enabled": False,
         "cooldown_after_close_ms": 0,
         "anti_race_close_ms": 250,
-        "open_order_type": None,
+        # Removed: open_order_type, min_post_interval_per_symbol_ms (PURGE-DIRTY-DOZEN)
         "order_params": None,
         "preflight_backoff_ms": None,
-        "min_post_interval_per_symbol_ms": None,
         "allow_trade_with_guardian_tidy_only": None,
         "order_guardian": None,
     }
 
 
 def _valid_market_data_kwargs():
+    # PURGE-DIRTY-DOZEN: Removed api_call_limits (dead stub, REST replaced by WebSocket)
     return {
         "poll_interval_sec": 3.0,
         "use_multiprocessing": False,
         "websocket_streams": ["kline_1m"],
-        "api_call_limits": {
-            "get_recent_trades": 10,
-            "get_klines": {"interval": "1m", "limit": 500},
-        },
+        # Removed: api_call_limits (PURGE-DIRTY-DOZEN)
         "macro_sync": None,
     }
 
 
 def _valid_exposure_kwargs():
+    # TASK-ZOMBIE-FIX: Removed dead fields (max_side_utilization_pct, per_symbol_cap_pct, 
+    # pending_reservation_ttl_sec, positions_stale_ttl_sec)
     return {
         "max_equity_utilization_pct": 0.30,
         "max_portfolio_fraction": 0.95,
-        "max_side_utilization_pct": {"long": 0.95, "short": 0.95},
+        # Removed: max_side_utilization_pct (TASK-ZOMBIE-FIX)
         "max_directional_ratio": 20.0,
-        "per_symbol_cap_pct": 0.10,
+        # Removed: per_symbol_cap_pct (TASK-ZOMBIE-FIX)
         "pending_ttl_sec": 90,
-        "pending_reservation_ttl_sec": 10,
+        # Removed: pending_reservation_ttl_sec (TASK-ZOMBIE-FIX)
         "post_fill_hold_ttl_sec": 5,
-        "positions_stale_ttl_sec": 60,
+        # Removed: positions_stale_ttl_sec (duplicate, SSOT is domains.position_tracking)
         "leverage_defaults": {"long": 1, "short": 1},
         "count_pending_orders": True,
         "exclude_reduce_only": True,
@@ -143,8 +143,8 @@ class TestTopLevelForbidEnforcement:
     
     def test_manage_config_forbid_rejects_unknown_keys_strict(self):
         """ManageConfig rejects unknown keys (extra='forbid')."""
-        # Valid config OK
-        valid_config = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor=None, failsafe=None)
+        # Valid config OK (failsafe removed in TASK-ZOMBIE-FIX)
+        valid_config = ManageConfig(brackets=None, emergency=None, auto=True, orphan_monitor=None)
         assert valid_config.auto is True
         
         # Unknown key rejected
@@ -245,11 +245,10 @@ class TestExplicitFieldsPresent:
         assert hasattr(config, 'fsm_periodic_cleanup_enabled')
         assert hasattr(config, 'anti_race_close_ms')
         
-        # DEPRECATED fields (kept for backward compat)
-        assert hasattr(config, 'open_order_type')
+        # PURGE-DIRTY-DOZEN: Removed dead fields - these should NOT exist now
+        # open_order_type, min_post_interval_per_symbol_ms removed
         assert hasattr(config, 'order_params')
         assert hasattr(config, 'preflight_backoff_ms')
-        assert hasattr(config, 'min_post_interval_per_symbol_ms')
         assert hasattr(config, 'allow_trade_with_guardian_tidy_only')
         assert hasattr(config, 'order_guardian')
     
@@ -259,13 +258,11 @@ class TestExplicitFieldsPresent:
         
         assert hasattr(config, 'max_equity_utilization_pct')
         assert hasattr(config, 'max_portfolio_fraction')
-        assert hasattr(config, 'max_side_utilization_pct')
+        # TASK-ZOMBIE-FIX: Removed dead fields
+        # max_side_utilization_pct, per_symbol_cap_pct, pending_reservation_ttl_sec, positions_stale_ttl_sec removed
         assert hasattr(config, 'max_directional_ratio')
-        assert hasattr(config, 'per_symbol_cap_pct')
         assert hasattr(config, 'pending_ttl_sec')
-        assert hasattr(config, 'pending_reservation_ttl_sec')
         assert hasattr(config, 'post_fill_hold_ttl_sec')
-        assert hasattr(config, 'positions_stale_ttl_sec')
         assert hasattr(config, 'leverage_defaults')
         assert hasattr(config, 'count_pending_orders')
         assert hasattr(config, 'exclude_reduce_only')
@@ -277,7 +274,7 @@ class TestExplicitFieldsPresent:
         assert hasattr(config, 'poll_interval_sec')
         assert hasattr(config, 'use_multiprocessing')
         assert hasattr(config, 'websocket_streams')
-        assert hasattr(config, 'api_call_limits')
+        # PURGE-DIRTY-DOZEN: Removed api_call_limits
         assert hasattr(config, 'macro_sync')
 
 
@@ -293,13 +290,14 @@ class TestDeprecatedFieldsOptional:
         assert config.symbols_to_track is None  # Use instruments SSOT
     
     def test_execution_config_deprecated_fields_optional(self):
-        """ExecutionConfig deprecated fields are Optional."""
+        """ExecutionConfig deprecated fields are Optional.
+        
+        PURGE-DIRTY-DOZEN: open_order_type, min_post_interval_per_symbol_ms removed.
+        """
         config = ExecutionConfig(**_valid_execution_kwargs())
         
-        # Dead fields (no consumption found)
-        assert config.open_order_type is None
+        # Remaining optional fields (dead fields already purged)
         assert config.order_params is None
         assert config.preflight_backoff_ms is None
-        assert config.min_post_interval_per_symbol_ms is None
         assert config.allow_trade_with_guardian_tidy_only is None
         assert config.order_guardian is None

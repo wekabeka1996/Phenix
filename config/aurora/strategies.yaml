@@ -42,7 +42,8 @@ assignments:
   # Backtest showed 59% MEAN_REVERSION regime - Aurora unsuitable for ranging markets.
   # Mean Reversion strategy designed for sideways/flat market conditions.
   BTCUSDT:
-    - mean_reversion
+    - aurora
+
 
 # ==============================================================================
 # ARBITRATION (conflict resolution)

@@ -76,6 +76,53 @@ class BinanceAPIError(Exception):
         return f"[{self.code}] {self.msg} ({self.nrr_code or 'no-nrr'})"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Specific Leverage/Margin Errors (P0: Adapter Hardening)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class LeverageReductionError(BinanceAPIError):
+    """
+    -4161: Leverage reduction is not supported in Isolated Margin Mode
+    with open positions.
+    
+    This error occurs when trying to REDUCE leverage while:
+    - Margin mode is ISOLATED
+    - There is an open position
+    
+    Recovery: Either close position first, or switch to CROSS margin mode.
+    """
+    pass
+
+
+class MaxLeverageExceededError(BinanceAPIError):
+    """
+    -2027: Exceeded the maximum allowable position at current leverage.
+    
+    This error occurs when the position notional exceeds the bracket cap
+    for the requested leverage level.
+    
+    Example: Position $60k, requesting 125x → bracket cap for 125x is $50k.
+    
+    Recovery: Use lower leverage or reduce position size.
+    """
+    pass
+
+
+class MarginChangeError(BinanceAPIError):
+    """
+    -4047: Margin type cannot be changed if there exists open orders.
+    -4048: Margin type cannot be changed if there exists position.
+    
+    Margin mode (ISOLATED/CROSS) can ONLY be changed when:
+    - No open orders exist
+    - No open position exists (qty = 0)
+    
+    Recovery: Close all orders and positions first, then change margin mode.
+    """
+    pass
+
+
 class BinanceAdapter(AbstractExchangeAdapter):
     """
     Binance Futures (USDM) Exchange Adapter.
@@ -1023,6 +1070,10 @@ class BinanceAdapter(AbstractExchangeAdapter):
         TASK47c-B: LeverageService L0 support.
         Uses /fapi/v1/leverage endpoint.
         
+        P0-HARDENING: Specific error handling for:
+        - -4161: LeverageReductionError (ISOLATED + reduce + position)
+        - -2027: MaxLeverageExceededError (notional > bracket cap)
+        
         Note: Binance sets leverage for ALL position sides with one call.
         
         Args:
@@ -1033,14 +1084,52 @@ class BinanceAdapter(AbstractExchangeAdapter):
             True on success
             
         Raises:
-            BinanceAPIError: On failure
+            LeverageReductionError: Cannot reduce leverage in ISOLATED mode with position
+            MaxLeverageExceededError: Position notional exceeds bracket for this leverage
+            BinanceAPIError: Other API failures
         """
         path = "/fapi/v1/leverage"
         params = {
             "symbol": symbol,
             "leverage": leverage,
         }
-        result = await self._request("POST", path, params)
+        
+        try:
+            result = await self._request("POST", path, params)
+        except BinanceAPIError as e:
+            # -4161: ISOLATED_LEVERAGE_REJECT_WITH_POSITION
+            # "Leverage reduction is not supported in Isolated Margin Mode with open positions"
+            if e.code == -4161:
+                LOG.warning(
+                    f"LEVERAGE_SET_BLOCKED: {symbol} cannot reduce to {leverage}x "
+                    f"(ISOLATED mode with open position)"
+                )
+                raise LeverageReductionError(
+                    code=e.code,
+                    msg=e.msg,
+                    nrr_code="NRR-LEV-REDUCE",
+                    http_status=e.http_status,
+                    payload=e.payload,
+                ) from e
+            
+            # -2027: MAX_LEVERAGE_RATIO
+            # "Exceeded the maximum allowable position at current leverage"
+            if e.code == -2027:
+                LOG.warning(
+                    f"LEVERAGE_SET_BLOCKED: {symbol} cannot set {leverage}x "
+                    f"(position notional exceeds bracket cap)"
+                )
+                raise MaxLeverageExceededError(
+                    code=e.code,
+                    msg=e.msg,
+                    nrr_code="NRR-LEV-BRACKET",
+                    http_status=e.http_status,
+                    payload=e.payload,
+                ) from e
+            
+            # Unknown error - reraise as-is
+            raise
+        
         actual = result.get("leverage")
         LOG.info(f"LEVERAGE_SET: {symbol} -> {leverage}x (response: {actual})")
         
@@ -1157,15 +1246,21 @@ class BinanceAdapter(AbstractExchangeAdapter):
         TASK47c-B: LeverageService L0 support.
         Uses /fapi/v1/marginType endpoint.
         
+        P0-HARDENING: Specific error handling for:
+        - -4046: Idempotent success (already set)
+        - -4047: MarginChangeError (open orders exist)
+        - -4048: MarginChangeError (position exists)
+        
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT")
             mode: Margin mode ("isolated" or "cross")
             
         Returns:
-            True on success
+            True on success (including idempotent -4046)
             
         Raises:
-            BinanceAPIError: On failure (except -4046: no need to change)
+            MarginChangeError: Cannot change margin type with orders/position
+            BinanceAPIError: Other API failures
         """
         # Binance uses ISOLATED and CROSSED for marginType values
         margin_type = "ISOLATED" if mode.lower() == "isolated" else "CROSSED"
@@ -1182,9 +1277,42 @@ class BinanceAdapter(AbstractExchangeAdapter):
             return True
         except BinanceAPIError as e:
             # -4046: No need to change margin type (already correct)
+            # This is idempotent success, not an error
             if e.code == -4046:
                 LOG.debug(f"MARGIN_MODE_SET: {symbol} already {mode} (no change needed)")
                 return True
+            
+            # -4047: THERE_EXISTS_OPEN_ORDERS
+            # "Margin type cannot be changed if there exists open orders"
+            if e.code == -4047:
+                LOG.warning(
+                    f"MARGIN_MODE_BLOCKED: {symbol} cannot change to {mode} "
+                    f"(open orders exist - cancel them first)"
+                )
+                raise MarginChangeError(
+                    code=e.code,
+                    msg=e.msg,
+                    nrr_code="NRR-MARGIN-ORDERS",
+                    http_status=e.http_status,
+                    payload=e.payload,
+                ) from e
+            
+            # -4048: THERE_EXISTS_QUANTITY
+            # "Margin type cannot be changed if there exists position"
+            if e.code == -4048:
+                LOG.warning(
+                    f"MARGIN_MODE_BLOCKED: {symbol} cannot change to {mode} "
+                    f"(open position exists - close it first)"
+                )
+                raise MarginChangeError(
+                    code=e.code,
+                    msg=e.msg,
+                    nrr_code="NRR-MARGIN-POSITION",
+                    http_status=e.http_status,
+                    payload=e.payload,
+                ) from e
+            
+            # Unknown error - reraise as-is
             raise
 
 

@@ -10,6 +10,7 @@ Shadow-mode: decisions only, no live closures.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import Enum
 from typing import Dict, Any, Optional
 
@@ -36,14 +37,14 @@ class CloseFlowFSM:
 
     Role:
     1. Execution: Processes CMD:CLOSE from Decision Making.
-    2. Failsafe: Emergency close on max_hold_sec (default 24h) if Decision fails.
-    3. Technical: Handles REJECTED/EXPIRED events.
+    2. Technical: Handles REJECTED/EXPIRED events.
+    
+    Note: Autonomous failsafe closing (max_hold_sec) was removed in P2.
+    This domain follows the "soldier" pattern — only executes explicit CMD:CLOSE.
     """
 
-    def __init__(self, max_hold_sec: float = 86400.0):  # Default 24h failsafe
-        # Note: In production, max_hold_sec should be injected from config (trading.execution.failsafe.max_hold_sec)
+    def __init__(self):
         self.state = CloseState.FLAT
-        self.max_hold_sec = max_hold_sec
         self.position_open_ts: float = 0.0
         self.position_active = False
         self._metrics: Dict[str, int] = {
@@ -99,7 +100,8 @@ class CloseFlowFSM:
         if self.state == CloseState.FLAT and msg.verb in ("TRADE_EXECUTED", "PARTIAL_FILL"):
             # Check if this actually opened a position (qty > 0)
             pld = msg.pld or {}
-            qty = float(pld["qty"] if "qty" in pld else 0)
+            qty_raw = pld.get("qty", 0)
+            qty = Decimal(str(qty_raw)) if qty_raw else Decimal("0")
             if qty > 0:
                 self.position_active = True
                 self.position_open_ts = get_clock().now_sec()

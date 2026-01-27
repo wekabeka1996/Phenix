@@ -162,19 +162,21 @@ def test_guard_reserve_and_release(fsm_config):
     assert "order_1" not in guard.state.reservations
 
 
-def test_resolve_symbol_leverage_default_and_override(fsm_config):
-    fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 15, "BTCUSDT": 25}
+def test_resolve_symbol_leverage_from_instruments_ssot(fsm_config):
+    """Test leverage resolution from instruments.yaml SSOT (no legacy fallback)."""
+    # SSOT: instruments.<SYM>.execution.target_leverage
+    assert fsm_config.instruments["BTCUSDT"].execution.target_leverage == 20
     guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
-    assert guard.resolve_symbol_leverage("ETHUSDT") == Decimal("15")
-    # SSOT: instruments.<SYM>.execution.target_leverage wins over legacy leverage_defaults
     assert guard.resolve_symbol_leverage("BTCUSDT") == Decimal("20")
 
 
 def test_resolve_symbol_leverage_clamps_to_one(fsm_config):
-    fsm_config.trading.execution.exposure.leverage_defaults = {"__default__": 0.5}
+    """Test that leverage is clamped to minimum of 1."""
+    # Override instruments SSOT with value < 1
+    fsm_config.instruments["BTCUSDT"].execution.target_leverage = 0.5
     guard = ExposureGuard(fsm_core=MagicMock(), config=fsm_config)
-    # Use symbol without instruments SSOT entry to exercise legacy fallback clamping
-    assert guard.resolve_symbol_leverage("ETHUSDT") == Decimal("1")
+    # Should clamp to 1
+    assert guard.resolve_symbol_leverage("BTCUSDT") == Decimal("1")
 
 
 # ===========================================================================

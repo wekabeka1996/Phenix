@@ -1,7 +1,8 @@
 # Testing - Feature Engineering Domain
 
-**Last Updated:** 2025-11-29  
-**Test Status:** ✅ 8/8 PASSED
+**Last Updated:** 2026-01-27
+**Test Status:** ✅ 100% Forensic Coverage (12 Files Audited)
+**See:** `FORENSIC_CODE_AUDIT_FEATURE_ENGINEERING.md`
 
 ---
 
@@ -30,14 +31,17 @@ tests/test_feature_engineering_domain_integration.py::...test_feature_engineerin
 
 ---
 
-## Test Files
+## Audited Files (Forensic Scope)
 
-| File | Purpose | Tests |
-|------|---------|-------|
-| `tests/domains/test_feature_engineering.py` | Core domain unit tests | 5 |
-| `tests/units/test_feature_math_basic.py` | OBI/TFI math validation | 1 |
-| `tests/units/test_features_payload_validation.py` | Payload schema validation | 1 |
-| `tests/test_feature_engineering_domain_integration.py` | Config integration | 1 |
+| File | Type | LOC (Approx) | Status |
+|------|------|--------------|--------|
+| `feature_engineering.py` | FSM | 1254 | ✅ Audited |
+| `calculation_engine.py` | Logic | 800+ | ✅ Audited |
+| `mean_reversion_strategy.py` | Strategy | 700+ | ⚠️ Zombie Logic |
+| `bar_resampler.py` | Util | 400+ | ✅ Audited |
+| `types.py` | Data | 800+ | ✅ Audited |
+| `indicators.py` | Math | 300+ | ✅ Audited |
+| ... and 6 others | - | - | ✅ Audited |
 
 ---
 

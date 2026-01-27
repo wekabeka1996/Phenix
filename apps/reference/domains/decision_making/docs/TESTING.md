@@ -22,6 +22,7 @@
 | `tests/test_phase7_performance.py` | Latency and throughput testing |
 | `tests/bugfixes/test_p1_004_failclosed_price.py` | Fail-closed behavior testing |
 | `tests/test_why_chain_message_preservation.py` | WHY chain integrity |
+| `tests/audit_remediation/test_red_flags.py` | **Audit Red Flags Verification** (New) |
 
 ## Running Tests
 
@@ -161,6 +162,29 @@ def test_comprehensive_rejection_scenarios(self):
         with self.subTest(reason=reason):
             result = NormalizedRejectReasons.normalize(reason)
             assert result == expected_nrr
+```
+
+---
+
+## Audit Red Flags Validation (2026-01-26)
+
+### 1. Hardcoded Anchor Test
+```python
+def test_anchor_is_configurable(self):
+    """Verify anchor symbol is not hardcoded to BTCUSDT."""
+    handler = AuroraHandler(config={"anchor_symbol": "ETHUSDT"})
+    assert handler.anchor_symbol == "ETHUSDT"
+    # Logic should NOT default to BTCUSDT if config provided
+```
+
+### 2. Anti-Pyramiding Fail-Open Check
+```python
+def test_anti_pyramiding_fail_closed(self):
+    """Verify position check raises exception instead of False on error."""
+    with patch("portfolio_manager.get_position", side_effect=Exception("DB Error")):
+        with pytest.raises(Exception):
+            _has_active_position_same_side(...)
+        # Should NOT return False (allow trade)
 ```
 
 ---

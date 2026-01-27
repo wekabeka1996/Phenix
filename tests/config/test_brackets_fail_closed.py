@@ -33,7 +33,7 @@ from apps.reference.config_models import (
     FeatureEngineeringDomainConfig,
     RiskManagementDomainConfig,
     PositionTrackingDomainConfig,
-    AccountObserverDomainConfig,
+    # NOTE: AccountObserverDomainConfig removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
 )
 
 
@@ -51,7 +51,7 @@ class TestBracketsFailClosed:
             feature_engineering=MagicMock(spec=FeatureEngineeringDomainConfig),
             risk_management=MagicMock(spec=RiskManagementDomainConfig),
             position_tracking=MagicMock(spec=PositionTrackingDomainConfig),
-            account_observer=MagicMock(spec=AccountObserverDomainConfig),
+            # NOTE: account_observer removed (TASK-ACCOUNT-OBSERVER-REACHABILITY-DELETE-01)
             execution_position=MagicMock(spec=ExecutionPositionDomainConfig),
         )
 
@@ -67,7 +67,7 @@ class TestBracketsFailClosed:
             sl=SLConfig(fixed_bps=40),
             tp=TPConfig(fixed_bps=80),
             oco_emulation=True,
-            stop_loss_bps=40,
+            # PURGE-DEAD-CONFIG-03: stop_loss_bps removed (dead duplicate, SSOT is sl.fixed_bps)
             offset_bps=5,
         )
 
@@ -152,7 +152,7 @@ class TestBracketsFailClosed:
             sl=SLConfig(fixed_bps=40),
             tp=TPConfig(fixed_bps=80),
             oco_emulation=True,
-            stop_loss_bps=40,
+            # PURGE-DEAD-CONFIG-03: stop_loss_bps removed (dead duplicate, SSOT is sl.fixed_bps)
             offset_bps=5,
         )
 

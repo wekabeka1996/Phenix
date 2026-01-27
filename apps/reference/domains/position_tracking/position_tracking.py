@@ -235,13 +235,16 @@ class PositionTracking:
         open_positions_margin_usd = self._calc_margin_used_usd([], authoritative=False)
         # EXP-DIRECTION: Calculate margin by side
         margin_by_side = self._calculate_margin_by_side([])
-        positions_last_ts_ms = int(time.time() * 1000)
+        # DET-BT-11: Use get_clock() for deterministic backtest (PT-002)
+        positions_last_ts_ms = get_clock().now_ms()
 
         # Emit portfolio state updated event
         portfolio_payload = {
             "ts": ts,
             # Preserve Decimal precision as string
             "equity": str(self._equity),
+            # EXP-FIX: Required by ExposureGuard (PT-001)
+            "equity_free_usdt": str(self._equity),
             "realized_pnl": str(
                 self._realized_pnl
             ),  # Preserve Decimal precision as string
@@ -398,11 +401,12 @@ class PositionTracking:
             account_positions, authoritative=True)
         # EXP-DIRECTION: Calculate margin by side for directional ratio checks
         margin_by_side = self._calculate_margin_by_side(account_positions)
-        positions_last_ts_ms = int(time.time() * 1000)
+        # DET-BT-11: Use get_clock() for deterministic backtest (PT-002)
+        positions_last_ts_ms = get_clock().now_ms()
 
         # Emit portfolio state updated event with real account data
         portfolio_payload = {
-            "ts": int(time.time() * 1000),
+            "ts": get_clock().now_ms(),  # DET-BT-11: Consistent timebase
             "equity": str(self._equity),  # Legacy field for compatibility
             # EXP-FIX: Always include equity_free_usdt
             "equity_free_usdt": str(self._equity),
@@ -490,11 +494,12 @@ class PositionTracking:
         open_positions_margin_usd = self._calc_margin_used_usd([], authoritative=False)
         # EXP-DIRECTION: Calculate margin by side
         margin_by_side = self._calculate_margin_by_side([])
-        positions_last_ts_ms = int(time.time() * 1000)
+        # DET-BT-11: Use get_clock() for deterministic backtest (PT-002)
+        positions_last_ts_ms = get_clock().now_ms()
 
         # Emit portfolio state updated event with equity fields for DecisionMaking
         portfolio_payload = {
-            "ts": int(time.time() * 1000),
+            "ts": get_clock().now_ms(),  # DET-BT-11: Consistent timebase
             # Legacy field for compatibility
             "equity": equity_data["equity_free_usdt"],
             "equity_free_usdt": equity_data["equity_free_usdt"],
@@ -677,7 +682,8 @@ class PositionTracking:
             decimal.Decimal: Total unrealized P&L
         """
         total_unrealized_pnl = decimal.Decimal("0")
-        now_ms = int(time.time() * 1000)
+        # DET-BT-11: Use get_clock() for deterministic backtest (stale check)
+        now_ms = get_clock().now_ms()
 
         if positions:
             # Use positionRisk API data (most accurate)
@@ -741,7 +747,8 @@ class PositionTracking:
             ts_ms: Timestamp in milliseconds (defaults to current time)
         """
         if ts_ms is None:
-            ts_ms = int(time.time() * 1000)
+            # DET-BT-11: Use get_clock() for deterministic backtest
+            ts_ms = get_clock().now_ms()
 
         self._mark_prices[symbol] = {
             "mark_price": mark_price,
@@ -829,18 +836,11 @@ class PositionTracking:
                     f"Position margin for {(p.get('symbol') if p.get('symbol') is not None else 'unknown')}: notional={notional}, lev={lev}, margin={margin}"
                 )
         else:
-            # Fallback to internal position data with leverage from config
+            # Fallback to internal position data with leverage from SSOT (instruments.yaml)
             self.logger.warning(
                 f"🔴 _calc_margin_used_usd() FALLBACK MODE: API returned empty, using {len(self._positions)} internal positions from self._positions")
             self.logger.warning(
                 f"   Internal positions: {list(self._positions.keys())}")
-            
-            # EXP-LEVERAGE-002: Use centralized leverage extraction
-            leverage_config = self._get_leverage_config()
-
-            # EXP-LEVERAGE-002: Use unified default resolution (__default__ first, then "default")
-            default_leverage_val = self._resolve_default_leverage(leverage_config)
-            default_leverage = decimal.Decimal(str(default_leverage_val))
 
             for symbol, position in self._positions.items():
                 quantity = abs(position["quantity"])
@@ -850,10 +850,8 @@ class PositionTracking:
                     # Calculate notional
                     position_notional = quantity * entry_price
 
-                    # EXP-LEVERAGE-002: Use unified symbol leverage resolution
-                    symbol_leverage = self._resolve_symbol_leverage(
-                        leverage_config, symbol, default_leverage
-                    )
+                    # SSOT: instruments.<SYM>.execution.target_leverage
+                    symbol_leverage = self._resolve_leverage_for_symbol(symbol)
 
                     # Calculate margin
                     margin = position_notional / symbol_leverage
@@ -904,11 +902,7 @@ class PositionTracking:
                 elif amount < 0:
                     short_margin += margin
         else:
-            # EXP-LEVERAGE-002: Use centralized leverage extraction
-            leverage_config = self._get_leverage_config()
-            default_leverage_val = self._resolve_default_leverage(leverage_config)
-            default_leverage = decimal.Decimal(str(default_leverage_val))
-
+            # Fallback to internal positions with SSOT leverage (instruments.yaml)
             for symbol, position in self._positions.items():
                 quantity = position["quantity"]
                 entry_price = position["avg_price"]
@@ -917,10 +911,8 @@ class PositionTracking:
                     # Calculate notional
                     position_notional = abs(quantity) * entry_price
 
-                    # EXP-LEVERAGE-002: Use unified symbol leverage resolution
-                    symbol_leverage = self._resolve_symbol_leverage(
-                        leverage_config, symbol, default_leverage
-                    )
+                    # SSOT: instruments.<SYM>.execution.target_leverage
+                    symbol_leverage = self._resolve_leverage_for_symbol(symbol)
 
                     # Calculate margin
                     margin = position_notional / symbol_leverage
@@ -945,75 +937,50 @@ class PositionTracking:
             "realized_pnl_usd": float(self._realized_pnl)
         }
 
-    def _get_leverage_config(self) -> Any:
+    def _resolve_leverage_for_symbol(self, symbol: str) -> decimal.Decimal:
         """
-        Extract leverage_defaults config from strict typed config.
+        Resolve leverage for a specific symbol from instruments.yaml SSOT.
 
-        EXP-LEVERAGE-002: Centralized leverage config extraction (fail-closed).
-        """
-        exec_cfg = self.config.trading.execution
-        if exec_cfg is None or exec_cfg.exposure is None:
-            raise ConfigContractError(path="trading.execution.exposure", why="Missing exposure config (leverage_defaults).")
-        return exec_cfg.exposure.leverage_defaults
-
-    def _resolve_default_leverage(self, leverage_config: Any) -> str:
-        """
-        Resolve default leverage value from config.
-
-        EXP-LEVERAGE-002: Unified default leverage resolution.
-        Checks keys in order: __default__ (config_models.py standard) -> default (legacy) -> "20" (fallback)
+        SSOT: instruments.<SYM>.execution.target_leverage
 
         Args:
-            leverage_config: Dict or Pydantic model with leverage values
-
-        Returns:
-            str: Default leverage value (e.g., "125" or "20")
-        """
-        DEFAULT_FALLBACK = "20"
-
-        if not isinstance(leverage_config, dict):
-            raise ConfigContractError(path="trading.execution.exposure.leverage_defaults", why="Expected dict leverage_defaults")
-
-        # Check __default__ first (config_models.py standard), then "default" (legacy)
-        val = leverage_config.get("__default__")
-        if val is not None:
-            return str(val)
-        val = leverage_config.get("default")
-        if val is not None:
-            return str(val)
-
-        return DEFAULT_FALLBACK
-
-    def _resolve_symbol_leverage(
-        self, leverage_config: Any, symbol: str, default_leverage: decimal.Decimal
-    ) -> decimal.Decimal:
-        """
-        Resolve leverage for a specific symbol.
-
-        EXP-LEVERAGE-002: Unified symbol leverage resolution.
-
-        Args:
-            leverage_config: Dict or Pydantic model with leverage values
             symbol: Trading symbol (e.g., 'BTCUSDT')
-            default_leverage: Fallback leverage value
 
         Returns:
             decimal.Decimal: Leverage value >= 1
+
+        Raises:
+            ConfigContractError: If leverage not found in instruments.yaml (no silent defaults)
         """
-        symbol_leverage_val = None
+        instruments = getattr(self.config, "instruments", None)
+        if instruments is None or not isinstance(instruments, dict):
+            raise ConfigContractError(
+                path="instruments",
+                why=f"Missing instruments config for leverage resolution (symbol={symbol})"
+            )
 
-        if not isinstance(leverage_config, dict):
-            raise ConfigContractError(path="trading.execution.exposure.leverage_defaults", why="Expected dict leverage_defaults")
-        symbol_leverage_val = leverage_config.get(symbol)
+        spec = instruments.get(symbol)
+        if spec is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}",
+                why=f"Symbol {symbol} not found in instruments.yaml"
+            )
 
-        if symbol_leverage_val is not None:
-            try:
-                symbol_leverage = decimal.Decimal(str(symbol_leverage_val))
-                return max(symbol_leverage, decimal.Decimal("1"))
-            except (decimal.InvalidOperation, ValueError):
-                pass
+        exec_cfg = getattr(spec, "execution", None)
+        if exec_cfg is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}.execution",
+                why=f"Missing execution config for {symbol}"
+            )
 
-        return max(default_leverage, decimal.Decimal("1"))
+        target_leverage = getattr(exec_cfg, "target_leverage", None)
+        if target_leverage is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}.execution.target_leverage",
+                why=f"Missing target_leverage for {symbol} in instruments.yaml (no silent defaults)"
+            )
+
+        return max(decimal.Decimal(str(target_leverage)), decimal.Decimal("1"))
 
     def _get_positions_snapshot(self) -> List[Dict[str, Any]]:
         """

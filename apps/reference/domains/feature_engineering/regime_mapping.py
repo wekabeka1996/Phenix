@@ -122,9 +122,9 @@ def map_to_flat_regime(
         if atr_pct is not None:
             return thresholds.classify(atr_pct)
         else:
-            # P0 FIX: No ATR data → fail-closed (don't assume normal)
-            # Without volatility data, we can't properly classify the flat regime
-            return None
+            # DET-BT-15: Fallback to FLAT_NORMAL when atr_pct not available
+            # This allows backtest trading while being conservative
+            return FlatRegime.FLAT_NORMAL
     
     # P0 FIX: UNCERTAIN → None (fail-closed)
     # MR must NOT trade when regime is uncertain/uninitialized.

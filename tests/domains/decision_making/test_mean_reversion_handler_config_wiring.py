@@ -6,7 +6,6 @@ from apps.reference.config_models import (
     MRAssetConfig,
     MRRegimeSizingConfig,
     MRRegimeThresholdsConfig,
-    MRRiskConfig,
     MRStrategyOverrideConfig,
     MRStrategyParamsConfig,
     MeanReversion1mStrategyConfig,
@@ -63,7 +62,7 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
                     sl_atr_mult=None,
                     allowed_regimes=["FLAT_HIGH"],
                 ),
-                risk=None,
+                
             )
         },
         regime_sizing={
@@ -71,14 +70,6 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
             "FLAT_NORMAL": MRRegimeSizingConfig(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0),
         },
         allowed_regimes=["FLAT_NORMAL"],
-        risk=MRRiskConfig(
-            position_size_usd=100.0,
-            max_concurrent_positions=1,
-            daily_loss_limit_usd=10_000.0,
-            expected_pnl_multiplier=1.0,
-            fees_pct=0.0,
-            slippage_pct=0.0,
-        ),
         execution=StrategyExecutionConfig(
             entry_order_type="MARKET",
             entry_tif=None,
@@ -142,19 +133,11 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
                 position_mode="STRICT",
                 allowed_regimes=["FLAT_LOW", "FLAT_NORMAL"],
                 strategy=None,
-                risk=None,
+                
             )
         },
         regime_sizing={"FLAT_NORMAL": MRRegimeSizingConfig(sizing_mult=1.0, stop_mult=1.0, target_mult=1.0)},
         allowed_regimes=["FLAT_HIGH"],
-        risk=MRRiskConfig(
-            position_size_usd=100.0,
-            max_concurrent_positions=1,
-            daily_loss_limit_usd=10_000.0,
-            expected_pnl_multiplier=1.0,
-            fees_pct=0.0,
-            slippage_pct=0.0,
-        ),
         execution=StrategyExecutionConfig(
             entry_order_type="MARKET",
             entry_tif=None,

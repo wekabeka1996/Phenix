@@ -227,20 +227,6 @@ class TestMRBarPathGating:
         # These should NOT be present
         assert "EVT:MARKET_TICK_FORWARDED" not in listen_calls
         assert "EVT:MARKET_TICK_RECEIVED" not in listen_calls
-    
-    def test_deprecated_tick_handler_returns_immediately(self, mr_handler):
-        """
-        Test: Calling deprecated _on_market_tick should not crash.
-        """
-        event = MagicMock()
-        event.pld = {
-            "symbol": "BTCUSDT",
-            "price": "50000.0",
-            "ts": 1000000,
-        }
-        
-        # Should not crash
-        mr_handler._on_market_tick(event)
 
 
 class TestMRTimeframeConfig:

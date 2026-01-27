@@ -37,7 +37,7 @@ class TestMockBroker(IsolatedAsyncioTestCase):
         
         orders = await broker.get_open_orders("BTCUSDT")
         self.assertEqual(len(orders), 1)
-        self.assertEqual(orders[0].status, "ACCEPTED")
+        self.assertEqual(orders[0]["status"], "ACCEPTED")  # MockBroker returns dicts
         
         # 3. Process Data - Low price (Fill)
         candle_low = {"symbol": "BTCUSDT", "close": 99.0, "high": 100.0, "low": 98.0}

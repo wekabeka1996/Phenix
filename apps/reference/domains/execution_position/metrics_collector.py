@@ -25,15 +25,25 @@ class MetricsCollector:
     to provide insights into system performance and identify issues.
     """
 
-    def __init__(self, window_size_minutes: int = 60, config: Optional[Any] = None):
+    def __init__(
+        self,
+        window_size_minutes: int = 60,
+        recent_rejections_minutes: int = 5,
+        config: Optional[Any] = None,
+    ):
         """
         Initialize Metrics Collector.
 
         Args:
             window_size_minutes: Rolling window size for metrics aggregation
+            recent_rejections_minutes: Default window for get_recent_rejections()
+            config: MetricsCollectorConfig (optional, for future extensions)
         """
         self.window_size_seconds = window_size_minutes * 60
         self.logger = logging.getLogger(__name__)
+        
+        # FIX-METRICS-COLLECTOR-WIRING: Store recent_rejections_minutes (explicit param)
+        self._recent_rejections_minutes = recent_rejections_minutes
 
         # Thread-safe storage for metrics
         self._lock = threading.RLock()
@@ -299,8 +309,14 @@ class MetricsCollector:
 
             return metrics
 
-    def get_recent_rejections(self, minutes: int = 5) -> List[Dict[str, Any]]:
-        """Get recent rejection events within the specified time window."""
+    def get_recent_rejections(self, minutes: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get recent rejection events within the specified time window.
+        
+        Args:
+            minutes: Time window in minutes. Defaults to config.recent_rejections_minutes (5).
+        """
+        if minutes is None:
+            minutes = self._recent_rejections_minutes
         with self._lock:
             cutoff_time = get_clock().now_sec() - (minutes * 60)
             recent_rejections = []

@@ -9,7 +9,6 @@ the vFoundation BinanceAdapter to execute trades in the configured environment.
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 import logging
 import threading
 from datetime import datetime, timezone
@@ -17,8 +16,7 @@ from decimal import Decimal
 
 # T2B-04: Time abstraction for deterministic testing
 from apps.reference.core.time import get_clock
-from typing import Dict, Any, Optional, Tuple, Set, Coroutine
-from pydantic import BaseModel
+from typing import Dict, Any, Optional, Tuple, Set, Coroutine, List, TYPE_CHECKING
 
 from vfoundation.core.fsm_emit_compat import Message, emit_compat
 from vfoundation.dr import wal
@@ -30,13 +28,10 @@ from .fsm_open import OpenFlowFSM
 from .fsm_manage import ManageFlowFSM
 from .fsm_close import CloseFlowFSM
 from .exposure_guard import ExposureGuard
-from .watchdog import OrderTimeoutWatchdog
-from .utils_event_bus import LocalBus
+from .watchdog import OrderTimeoutWatchdog, OrderDeadline
 from .utils import (
     quantize_stop_price,
-    validate_anti_2021,
     generate_client_order_id,
-    calc_tp_sl_from_mark,
     validate_not_immediate,
     opposite_side,
     BoundedEventDeduper,
@@ -53,18 +48,16 @@ from .idempotent_cancel import IdempotentCancelHelper, IdempotentCancelResult
 from apps.reference.domains.execution_position.order_guardian import OrderGuardian
 
 # EP-01: Import regime mapping for ExposureGuard adaptation
-from apps.reference.core.types.regime_types import (
-    ExecutionRegimeBucket,
-    map_regime_to_bucket,
-)
+from apps.reference.core.types.regime_types import map_regime_to_bucket
 
 # TASK50: Import qty normalizer for fail-closed quantity validation
-from apps.reference.domains.execution_position.qty_normalizer import (
-    normalize_qty,
-    verify_ack_qty,
-    NRR_QTY_ROUNDED_TO_ZERO,
-    NRR_QTY_BELOW_MIN_QTY,
-    NRR_NOTIONAL_BELOW_MIN,
+from apps.reference.domains.execution_position.qty_normalizer import normalize_qty
+
+# PHASE4: Pending brackets WAL persistence
+from apps.reference.domains.execution_position.pending_brackets_wal import (
+    write_pending_brackets_stored,
+    write_pending_brackets_cleared,
+    read_pending_brackets_from_wal,
 )
 
 # Import AlertManager for circuit breaker alerts
@@ -77,6 +70,9 @@ except ImportError:
         pass
 
 LOG = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from apps.reference.config_models import LeverageConfig
 
 
 def _utc_hm() -> Tuple[int, int]:
@@ -128,15 +124,31 @@ class ExecPosFSM:
     per symbol and handles trade execution via the BinanceAdapter.
     """
 
-    def __init__(self, config: Optional[AuroraConfig], fsm, shadow_mode: bool = False):
+    def __init__(
+        self,
+        config: Optional[AuroraConfig],
+        fsm,
+        shadow_mode: bool = False,
+        leverage_service: Optional[Any] = None,
+        is_live_execution: bool = False,
+    ):
         if isinstance(config, dict):
             raise TypeError("ExecPosFSM requires typed AuroraConfig, got dict")
-        self.config = AuroraConfig() if config is None else config
+        if config is None:
+            raise ValueError(
+                f"CRITICAL: {self.__class__.__name__} requires valid AuroraConfig. "
+                "Refusing to start with empty defaults."
+            )
+        self.config = config
 
         self.fsm = fsm
         self.shadow_mode = shadow_mode
         # BinanceExecutionAdapter or similar
         self.adapter: Optional[Any] = None
+        
+        # TASK47c-P3: LeverageService for OpenFlowFSM
+        self.leverage_service = leverage_service
+        self.is_live_execution = is_live_execution
 
         self.open_flows: Dict[str, OpenFlowFSM] = {}
         self.manage_flows: Dict[str, ManageFlowFSM] = {}
@@ -144,7 +156,22 @@ class ExecPosFSM:
         self._flows_lock = threading.Lock()  # EXP-FIX: Thread-safe flows access
 
         self.log_adapter = AuroraLogAdapter()
-        self.metrics_collector = MetricsCollector()
+        
+        # TASK-ZOMBIE-FIX: Wire MetricsCollector to config (was hardcoded defaults)
+        try:
+            mc_cfg = self.config.domains.execution_position.metrics_collector
+            if mc_cfg is None:
+                raise ValueError("metrics_collector config is required")
+            self.metrics_collector = MetricsCollector(
+                window_size_minutes=int(mc_cfg.window_size_minutes),
+                recent_rejections_minutes=int(mc_cfg.recent_rejections_minutes),
+                config=mc_cfg,
+            )
+        except (AttributeError, TypeError) as e:
+            raise ValueError(
+                f"Failed to load metrics_collector config from domains.execution_position: {e}. "
+                "Check domains.yaml has execution_position.metrics_collector.window_size_minutes"
+            ) from e
 
         # Idempotent cancel helper - SSOT: domains.execution_position.idempotent_cancel (FAIL-CLOSED)
         self._idempotent_cancel_helper: Optional[IdempotentCancelHelper] = None
@@ -208,6 +235,19 @@ class ExecPosFSM:
         # TP/SL Intent Data Cache (PHASE A2 fix)
         # Stores intent params from DEC:OPEN to be injected into Manage flow on FILL
         self._pending_intent_data: Dict[str, Dict[str, Any]] = {}
+
+        # LIMIT-ENTRY-DEFERRED-BRACKETS: Pending TP/SL for LIMIT entries (placed on fill)
+        # Key = entry_order_id, Value = {"symbol", "side", "sl", "tp", "qty", "rid", "idem_key", "tick_size"}
+        self._pending_brackets: Dict[str, Dict[str, Any]] = {}
+        
+        # PHASE4: Rehydrate pending brackets from WAL on startup
+        try:
+            restored = read_pending_brackets_from_wal()
+            if restored:
+                self._pending_brackets = restored
+                LOG.info(f"📌 [PHASE4] Restored {len(restored)} pending brackets from WAL")
+        except Exception as e:
+            LOG.warning(f"[PHASE4] Failed to restore pending brackets from WAL: {e}")
 
         # EP-01.3-SUPERSEDE-ACK: Queued supersede state
         # When supersede cancels old entry, new open is queued until cancel confirmed
@@ -426,23 +466,13 @@ class ExecPosFSM:
                 LOG.info(
                     "✅ Watchdog REST polling hooks connected to adapter functions")
             # Initialize OrderGuardian for TP/SL cleanup with strict ownership tracking
-            # Get poll_interval_ms from config
-            poll_interval_ms = self._guardian_poll_interval_ms or 500
+            # MAGIC-NUM-EXTRACTION: poll_interval_ms from SSOT domains.execution_position.guardian
+            poll_interval_ms = self._guardian_poll_interval_ms
+
+            LOG.info(
+                f"OrderGuardian poll_interval_ms from config: {poll_interval_ms}")
+
             try:
-                # Try reading from execution.order_guardian.poll_interval_ms first
-                og_cfg = self._get_config_value(["execution", "order_guardian"])
-                if not og_cfg:
-                    og_cfg = self._get_config_value(["trading", "execution", "order_guardian"])
-
-                if og_cfg:
-                    if isinstance(og_cfg, dict):
-                        poll_interval_ms = int(dget(og_cfg, "poll_interval_ms", 500))
-                    else:
-                        poll_interval_ms = int(aget(og_cfg, "poll_interval_ms", 500))
-
-                LOG.info(
-                    f"OrderGuardian poll_interval_ms from config: {poll_interval_ms}")
-
                 self.order_guardian = OrderGuardian(
                     self.adapter, config=self.config, poll_interval_ms=poll_interval_ms, bus=self.bus)
                 LOG.info("✅ OrderGuardian initialized for ExecPosFSM")
@@ -463,28 +493,16 @@ class ExecPosFSM:
 
                 self._schedule_guardian_start()
                 self._schedule_fsm_cleanup_loop()
+                self.watchdog.start()  # Start timeout watchdog (always, not just on guardian failure)
             except Exception as e:
                 LOG.error(f"Failed to initialize OrderGuardian: {e}")
                 self.order_guardian = None
-                self.watchdog.start()  # Start timeout watchdog
+                self.watchdog.start()  # Start timeout watchdog even if guardian fails
                 self._schedule_fsm_cleanup_loop()
         else:
             # Initialize OrderGuardian even in shadow mode for cleanup operations
-            # Default to 500ms polling even in shadow mode
-            poll_interval_ms = self._guardian_poll_interval_ms or 500
-            try:
-                # Try reading from execution.order_guardian.poll_interval_ms first
-                og_cfg = self._get_config_value(["execution", "order_guardian"])
-                if not og_cfg:
-                    og_cfg = self._get_config_value(["trading", "execution", "order_guardian"])
-
-                if og_cfg:
-                    if isinstance(og_cfg, dict):
-                        poll_interval_ms = int(dget(og_cfg, "poll_interval_ms", 500))
-                    else:
-                        poll_interval_ms = int(aget(og_cfg, "poll_interval_ms", 500))
-            except Exception:
-                poll_interval_ms = 500
+            # MAGIC-NUM-EXTRACTION: poll_interval_ms from SSOT domains.execution_position.guardian
+            poll_interval_ms = self._guardian_poll_interval_ms
 
             self.order_guardian = OrderGuardian(
                 None,  # No adapter in shadow mode
@@ -501,6 +519,7 @@ class ExecPosFSM:
                     pass
             self._schedule_guardian_start()
             self._schedule_fsm_cleanup_loop()
+            self.watchdog.start()  # Start timeout watchdog in shadow mode too
 
         # Subscribe to Guardian TIDY events to update gate state
         try:
@@ -508,6 +527,197 @@ class ExecPosFSM:
                 self.bus.listen("EVT:SYMBOL_TIDY", self._on_symbol_tidy_event)
         except Exception:
             pass
+
+    async def run_leverage_bootstrap(self) -> Set[str]:
+        """Run leverage bootstrap to sync margin mode and leverage with exchange.
+        
+        P3: Active Leverage Management — Runtime Integration
+        
+        This method:
+        1. Collects LeverageConfig from all active strategy configs
+        2. Runs LeverageBootstrapper to sync each symbol
+        3. Returns set of symbols that failed (blocked from trading)
+        
+        MUST be called AFTER _initialize_adapter() and BEFORE trading starts.
+        
+        Returns:
+            Set of symbols that failed to sync (should be blocked from trading)
+        """
+        if self.shadow_mode or self.adapter is None:
+            LOG.info("TASK47c-P3: Leverage bootstrap skipped (shadow mode or no adapter)")
+            return set()
+        
+        # LEVERAGE-SSOT-FIX-01: Validate consistency and log warnings
+        ssot_warnings = self.validate_leverage_ssot_consistency()
+        if ssot_warnings:
+            LOG.warning(
+                f"LEVERAGE-SSOT-FIX-01: Found {len(ssot_warnings)} legacy leverage values in strategy configs. "
+                "These are IGNORED. SSOT is instruments.yaml."
+            )
+        
+        # Import here to avoid circular imports
+        from apps.reference.domains.execution_position.bootstrapping.leverage_bootstrapper import (
+            LeverageBootstrapper,
+        )
+        
+        # Collect leverage configs from strategies
+        leverage_configs = self._collect_leverage_configs()
+        
+        if not leverage_configs:
+            LOG.warning("TASK47c-P3: No leverage configs found, bootstrap skipped")
+            return set()
+        
+        LOG.info(f"TASK47c-P3: Running leverage bootstrap for {len(leverage_configs)} symbols")
+        
+        bootstrapper = LeverageBootstrapper(adapter=self.adapter, logger=LOG)
+        results = await bootstrapper.run(leverage_configs)
+        
+        if results.has_failures:
+            LOG.error(
+                f"TASK47c-P3: Leverage bootstrap FAILED for {len(results.failed)} symbols: {results.failed}"
+            )
+            for sym in results.failed:
+                fail_result = results.failures.get(sym)
+                if fail_result:
+                    LOG.error(f"  {sym}: code={fail_result.error_code}, msg={fail_result.error_msg}")
+        else:
+            LOG.info(f"TASK47c-P3: Leverage bootstrap SUCCESS for all {len(leverage_configs)} symbols")
+        
+        return set(results.failed)
+    
+    def _collect_leverage_configs(self) -> Dict[str, "LeverageConfig"]:
+        """Collect LeverageConfig from instruments.yaml SSOT.
+        
+        LEVERAGE-SSOT-FIX-01: Read from instruments.<SYM>.execution.target_leverage
+        instead of strategies.*.assets.<SYM>.leverage to avoid SSOT conflict.
+        
+        The instruments.yaml is the SSOT for:
+        - Sizing calculations (DecisionMaking._calculate_position_size)
+        - Exposure guard (ExposureGuard.resolve_symbol_leverage)
+        - Bootstrap (this method → LeverageBootstrapper)
+        
+        Returns:
+            Dict mapping symbol → LeverageConfig (only active symbols with execution config)
+        """
+        from apps.reference.config_models import LeverageConfig
+        
+        result: Dict[str, LeverageConfig] = {}
+        
+        # Get active symbols from strategies_registry assignments
+        try:
+            registry = self.config.strategies_registry
+            if registry is None or not hasattr(registry, 'assignments'):
+                LOG.warning("LEVERAGE-SSOT-FIX-01: No strategies_registry.assignments found")
+                return result
+            assignments = registry.assignments or {}
+        except AttributeError:
+            LOG.warning("LEVERAGE-SSOT-FIX-01: Failed to read strategies_registry.assignments")
+            return result
+        
+        # Get instruments dict
+        instruments = getattr(self.config, 'instruments', None)
+        if not isinstance(instruments, dict):
+            LOG.warning("LEVERAGE-SSOT-FIX-01: No instruments dict found in config")
+            return result
+        
+        for symbol in assignments.keys():
+            spec = instruments.get(symbol)
+            if spec is None:
+                LOG.warning(f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} in assignments but not in instruments")
+                continue
+            
+            exec_cfg = getattr(spec, 'execution', None)
+            if exec_cfg is None:
+                LOG.warning(f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} has no execution config")
+                continue
+            
+            target_leverage = getattr(exec_cfg, 'target_leverage', None)
+            margin_mode = getattr(exec_cfg, 'margin_mode', 'isolated')
+            
+            if target_leverage is None:
+                LOG.warning(f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} has no target_leverage")
+                continue
+            
+            # Convert margin_mode to LeverageConfig format
+            # instruments.yaml uses "isolated"/"cross", LeverageConfig uses "ISOLATED"/"CROSSED"
+            mode_map = {"isolated": "ISOLATED", "cross": "CROSSED"}
+            mode_normalized = mode_map.get(
+                margin_mode.lower() if isinstance(margin_mode, str) else "isolated",
+                "ISOLATED"
+            )
+            
+            # Create LeverageConfig from instruments SSOT
+            result[symbol] = LeverageConfig(
+                target=int(target_leverage),
+                mode=mode_normalized,
+            )
+        
+        LOG.info(
+            f"LEVERAGE-SSOT-FIX-01: Collected leverage from instruments.yaml for {len(result)} symbols: "
+            f"{[(s, c.target) for s, c in result.items()]}"
+        )
+        return result
+    
+    def validate_leverage_ssot_consistency(self) -> List[str]:
+        """Validate that strategy leverage configs match instruments SSOT.
+        
+        LEVERAGE-SSOT-FIX-01: Startup guard to detect legacy/stale strategy leverage.
+        
+        Checks:
+        - strategies.aurora.assets.<SYM>.leverage.target vs instruments.<SYM>.execution.target_leverage
+        - strategies.mean_reversion.assets.<SYM>.leverage.target vs instruments.<SYM>.execution.target_leverage
+        
+        Returns:
+            List of warning messages for mismatches (empty if consistent)
+        """
+        warnings: List[str] = []
+        
+        instruments = getattr(self.config, 'instruments', None)
+        if not isinstance(instruments, dict):
+            return warnings
+        
+        # Check Aurora strategy assets
+        try:
+            aurora = self.config.strategies.aurora
+            if aurora and aurora.assets:
+                for symbol, asset_cfg in aurora.assets.items():
+                    if asset_cfg and asset_cfg.leverage:
+                        strategy_lev = asset_cfg.leverage.target
+                        spec = instruments.get(symbol)
+                        if spec and spec.execution:
+                            inst_lev = spec.execution.target_leverage
+                            if strategy_lev != inst_lev:
+                                warnings.append(
+                                    f"LEVERAGE_SSOT_MISMATCH: {symbol} aurora.leverage.target={strategy_lev} "
+                                    f"!= instruments.execution.target_leverage={inst_lev} "
+                                    f"(SSOT is instruments.yaml, strategy value is IGNORED)"
+                                )
+        except AttributeError:
+            pass
+        
+        # Check MeanReversion strategy assets
+        try:
+            mr = self.config.strategies.mean_reversion
+            if mr and mr.assets:
+                for symbol, asset_cfg in mr.assets.items():
+                    if asset_cfg and asset_cfg.leverage:
+                        strategy_lev = asset_cfg.leverage.target
+                        spec = instruments.get(symbol)
+                        if spec and spec.execution:
+                            inst_lev = spec.execution.target_leverage
+                            if strategy_lev != inst_lev:
+                                warnings.append(
+                                    f"LEVERAGE_SSOT_MISMATCH: {symbol} mean_reversion.leverage.target={strategy_lev} "
+                                    f"!= instruments.execution.target_leverage={inst_lev} "
+                                    f"(SSOT is instruments.yaml, strategy value is IGNORED)"
+                                )
+        except AttributeError:
+            pass
+        
+        for warn in warnings:
+            LOG.warning(warn)
+        
+        return warnings
 
     def _resolve_price(self, pld: Dict[str, Any], key: str) -> Optional[str]:
         """
@@ -567,43 +777,28 @@ class ExecPosFSM:
         return node if node is not None else default
 
     def _resolve_guardian_config(self) -> Dict[str, Any]:
-        """Aggregate guardian config from active runtime sources."""
-        resolved: Dict[str, Any] = {
-            "unified": True,
-            "emit_tidy_event": True,
-            "poll_interval_ms": 500,
-            "cleanup_ttl_ms": 6000,
-            "symbol_cooldown_ms": 4000,
-        }
-
-        def _update_from(source: Any) -> None:
-            if not source:
-                return
-            keys = ("unified", "emit_tidy_event", "poll_interval_ms",
-                    "cleanup_ttl_ms", "symbol_cooldown_ms")
-            if isinstance(source, dict):
-                for key in keys:
-                    if key in source and source[key] is not None:
-                        resolved[key] = source[key]
-            else:
-                for key in keys:
-                    value = aget(source, key, None)
-                    if value is not None:
-                        resolved[key] = value
-
-        _update_from(self._get_config_value(["guardian"], default={}))
-        _update_from(self._get_config_value(
-            ["execution", "order_guardian"], default={}))
-        _update_from(self._get_config_value(
-            ["trading", "execution", "order_guardian"], default={}))
-
+        """Aggregate guardian config from SSOT: domains.execution_position.guardian.
+        
+        MAGIC-NUM-EXTRACTION: All guardian config now from domains.yaml, no hardcoded defaults.
+        """
+        # SSOT: domains.execution_position.guardian (fail-closed if missing)
         try:
-            resolved["poll_interval_ms"] = int(
-                dget(resolved, "poll_interval_ms", 500))
-        except Exception:
-            resolved["poll_interval_ms"] = 500
-
-        return resolved
+            guardian_cfg = self.config.domains.execution_position.guardian
+            if guardian_cfg is None:
+                raise ValueError("guardian config is required in domains.execution_position")
+            
+            return {
+                "unified": bool(guardian_cfg.unified),
+                "emit_tidy_event": bool(guardian_cfg.emit_tidy_event),
+                "poll_interval_ms": int(guardian_cfg.poll_interval_ms),
+                "cleanup_ttl_ms": int(guardian_cfg.cleanup_ttl_ms),
+                "symbol_cooldown_ms": int(guardian_cfg.symbol_cooldown_ms),
+            }
+        except (AttributeError, TypeError) as e:
+            raise ValueError(
+                f"Failed to load guardian config from domains.execution_position: {e}. "
+                "Check domains.yaml has execution_position.guardian section."
+            ) from e
 
     def _collect_guardian_symbols(self) -> Set[str]:
         """Gather configured trading symbols for guardian ownership tracking."""
@@ -976,10 +1171,13 @@ class ExecPosFSM:
                 LOG.error(f"TRADE_INTENT_PROPOSED missing symbol/instrument: keys={list(pld.keys())}")
                 return
             strategy_id = pld.get("strategy") or pld.get("strategy_id")
+            # WHY-CHAIN/TRACE: Treat payload rid as canonical trace_id.
+            # FSMCore emits Message.rid independently; upstream rid lives in payload.
+            intent_rid = str(pld.get("rid") or msg.rid or "unknown")
 
             # Log intent via authorized adapter
             self.log_adapter.log_trade_intent(
-                rid=msg.rid or "unknown",
+                rid=intent_rid,
                 symbol=symbol,
                 side=pld.get("side", ""),
                 qty=pld.get("order", {}).get("qty"),
@@ -1004,14 +1202,14 @@ class ExecPosFSM:
                     verb="CLOSE",
                     src="execution_position",
                     dst="execution_position",
-                    rid=msg.rid,
+                    rid=intent_rid,
                     pld={
                         "symbol": symbol,
                         "reason": pld.get("reason") or "intent_reduce_only",
                         "idempotent_key": pld.get("idempotent_key"),
                         "retry_key": pld.get("retry_key"),
                     },
-                    why=f"intent_reduce_only:{msg.rid}",
+                    why=f"intent_reduce_only:{intent_rid}",
                     data_ref=msg.data_ref
                 )
                 LOG.info(f"[{symbol}] Processing TRADE_INTENT (reduce_only) -> CMD:CLOSE")
@@ -1073,7 +1271,7 @@ class ExecPosFSM:
                     "tif": tif,
                     "stop_price": stop_price_raw,
                     "target_price": target_price_raw,
-                    "rid": str(msg.rid) if msg.rid else None,
+                    "rid": intent_rid,
                     "valid_for_ms": pld.get("valid_for_ms"),
                     "idempotent_key": pld.get("idempotent_key"),
                     "price_ref": str(order_info.get("price_ref")) if order_info.get("price_ref") else None,
@@ -1095,9 +1293,9 @@ class ExecPosFSM:
                     verb="OPEN",
                     src="execution_position",
                     dst="execution_position",
-                    rid=msg.rid,
+                    rid=intent_rid,
                     pld=cmd_payload,
-                    why=f"intent_execution:{msg.rid}",
+                    why=f"intent_execution:{intent_rid}",
                     data_ref=msg.data_ref
                 )
 
@@ -1111,9 +1309,11 @@ class ExecPosFSM:
                  # Emit the decision event (DEC:OPEN, DEC:CLOSE, etc.) to the bus
                  # so that listeners (Adapters, Loggers, Tests) can react.
                  if hasattr(self, "bus"):
+                     out_pld = dict(result.pld or {})
+                     out_pld.setdefault("rid", result.rid)
                      self.bus.emit(
                          f"{result.op}:{result.verb}",
-                         result.pld or {},
+                         out_pld,
                          result.why,
                          result.data_ref
                      )
@@ -1126,13 +1326,16 @@ class ExecPosFSM:
                          verb="TRADE_INTENT_REJECTED",
                          src="execution_position",
                          dst="*",
-                         rid=msg.rid,
+                         rid=intent_rid,
                          pld={
                             "symbol": symbol,
                             "reason": result.why,
-                            "original_verification_key": pld.get("idempotent_key")
+                            "original_verification_key": pld.get("idempotent_key"),
+                            "rid": intent_rid,
                          },
-                         why="execution_rejected"
+                         why="execution_rejected",
+                         # Preserve upstream WHY chain even if ERR message drops it.
+                         data_ref=msg.data_ref,
                      )
                      if hasattr(self, "bus"):
                          self.bus.emit(
@@ -1148,8 +1351,9 @@ class ExecPosFSM:
                  if hasattr(self, "bus"):
                      self.bus.emit(
                          "EVT:TRADE_INTENT_REJECTED",
-                         {"symbol": symbol, "reason": "internal_error_no_result"},
-                         "execution_no_result"
+                         {"symbol": symbol, "reason": "internal_error_no_result", "rid": intent_rid},
+                         "execution_no_result",
+                         msg.data_ref,
                      )
 
         except Exception as e:
@@ -1164,9 +1368,11 @@ class ExecPosFSM:
                         {
                             "symbol": symbol,
                             "reason": f"EXCEPTION: {str(e)}",
-                            "error_type": type(e).__name__
+                            "error_type": type(e).__name__,
+                            "rid": str(pld.get("rid") or msg.rid or "unknown"),
                         },
-                        "execution_exception"
+                        "execution_exception",
+                        msg.data_ref,
                     )
                 except Exception as emit_e:
                     LOG.error(f"Failed to emit exception rejection: {emit_e}")
@@ -1389,6 +1595,13 @@ class ExecPosFSM:
         LOG.debug(
             f"[FILL] Processing FILL for {symbol} order {order_id}, qty={filled_qty} (rid={rid})")
 
+        # FIX: Notify watchdog that order is filled (stop timeout tracking)
+        try:
+            if hasattr(self, "watchdog") and self.watchdog is not None:
+                self.watchdog.on_order_fill(order_id)
+        except Exception as e:
+            LOG.warning(f"[FILL] Failed to notify watchdog for {order_id}: {e}")
+
         # TASK40: Mark entry order terminal in OrderIndex (unblocks one-open-order guard).
         try:
             if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
@@ -1436,12 +1649,40 @@ class ExecPosFSM:
             }
             LOG.debug(f"[FILL] Created postfill hold for {postfill_key}")
 
+        # LIMIT-ENTRY-DEFERRED-BRACKETS: Check if this is a LIMIT entry fill with pending brackets
+        if order_id in self._pending_brackets:
+            bracket_data = self._pending_brackets.pop(order_id)
+            
+            # PHASE4: Mark as cleared in WAL
+            try:
+                write_pending_brackets_cleared(
+                    entry_order_id=order_id,
+                    reason="filled",
+                    symbol=bracket_data.get("symbol", ""),
+                )
+            except Exception as e:
+                LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+            
+            LOG.info(
+                f"📌 [LIMIT-DEFERRED] Fill received for {symbol} entry {order_id}, "
+                f"placing deferred TP/SL brackets"
+            )
+            # Schedule async bracket placement
+            loop = self._get_async_loop()
+            if loop:
+                self._submit_async(
+                    self._place_deferred_brackets(order_id, bracket_data),
+                    loop
+                )
+
         # Best-effort cleanup of orphaned brackets in case this fill closed the position
-        # Debounce: wait 500ms to allow TP/SL registration before cleanup
+        # Debounce: wait for fill settlement before cleanup (config-based)
         loop = self._get_async_loop()
         if loop:
+            lifecycle_cfg = self.config.domains.execution_position.order_lifecycle
             async def delayed_cleanup():
-                await asyncio.sleep(0.5)
+                # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+                await get_clock().sleep_ms(lifecycle_cfg.fill_settlement_delay_ms)
                 await self.order_guardian.cleanup_orphans()
             self._submit_async(delayed_cleanup(), loop)
 
@@ -1592,6 +1833,8 @@ class ExecPosFSM:
                     guard_enabled=guard_enabled,
                     config=self.config,
                     metrics_collector=self.metrics_collector,
+                    leverage_service=self.leverage_service,
+                    is_live_execution=self.is_live_execution,
                 )
                 self.manage_flows[symbol] = ManageFlowFSM(config=self.config)
                 self.close_flows[symbol] = CloseFlowFSM()
@@ -1960,8 +2203,10 @@ class ExecPosFSM:
                 self._symbol_brackets.pop(symbol, None)
 
                 # ✅ PHASE A1: Ensure cleanup after manual CLOSE
-                # Wait for position to settle, then cleanup any orphaned brackets
-                await asyncio.sleep(2.0)
+                # Wait for position to settle, then cleanup any orphaned brackets (config-based)
+                lifecycle_cfg = self.config.domains.execution_position.order_lifecycle
+                # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+                await get_clock().sleep_ms(lifecycle_cfg.position_close_cleanup_delay_ms)
 
                 # 🔄 Synchronous reconcile: fetch open orders ONLY for this symbol
                 # and cancel any STOP/TP with reduceOnly=true or closePosition=true
@@ -2206,7 +2451,8 @@ class ExecPosFSM:
                         loop = self._get_async_loop()
                         if loop:
                             async def _supersede_timeout():
-                                await asyncio.sleep(5.0)  # 5 second timeout
+                                # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+                                await get_clock().sleep_sec(5.0)  # 5 second timeout
                                 if symbol in self._supersede_canceling:
                                     LOG.warning(
                                         f"EP-01.3: {symbol} supersede cancel timeout, proceeding with queued open"
@@ -2355,7 +2601,7 @@ class ExecPosFSM:
                 try:
                     aurora = getattr(self.config.strategies, "aurora", None)
                     if aurora is None:
-                        raise ValueError(f"strategies.aurora not configured")
+                        raise ValueError("strategies.aurora not configured")
                     
                     instr_cfg = aurora.assets.get(symbol)
                     if instr_cfg is None:
@@ -2869,7 +3115,52 @@ class ExecPosFSM:
             self.watchdog.ensure_started()  # Safe late-start if needed
             self.watchdog.on_order_ack(entry_order_id)
 
+            # LIMIT-ENTRY-DEFERRED-BRACKETS: For LIMIT entries, defer TP/SL until fill
+            # MARKET orders fill immediately, LIMIT orders need to wait for fill event
+            if order_type == "LIMIT":
+                # Store pending bracket data for placement on fill
+                self._pending_brackets[entry_order_id] = {
+                    "symbol": symbol,
+                    "side": side,
+                    "sl": sl,
+                    "tp": tp,
+                    "qty": qty,
+                    "rid": decision.rid,
+                    "idem_key": idem_key,
+                    "tick_size": tick_size,
+                    "corr_id": decision.corr_id,
+                    "oco_group_id": decision.oco_group_id,
+                    "entry_client_order_id": entry_id,
+                    "created_at": get_clock().now_sec(),
+                }
+                
+                # PHASE4: Persist to WAL for restart safety
+                try:
+                    write_pending_brackets_stored(
+                        entry_order_id=entry_order_id,
+                        symbol=symbol,
+                        side=side,
+                        sl=sl,
+                        tp=tp,
+                        qty=qty,
+                        rid=decision.rid,
+                        idem_key=idem_key,
+                        tick_size=tick_size,
+                        corr_id=decision.corr_id,
+                        oco_group_id=decision.oco_group_id,
+                        entry_client_order_id=entry_id,
+                    )
+                except Exception as e:
+                    LOG.warning(f"Failed to persist pending brackets to WAL: {e}")
+                
+                LOG.info(
+                    f"📌 [LIMIT-DEFERRED] Stored pending brackets for {symbol} entry {entry_order_id}, "
+                    f"SL={sl}, TP={tp} - will place on fill"
+                )
+                return None  # TP/SL will be placed when fill arrives
+
             # ✅ PHASE A3: Pre-flight check before placing TP/SL (with retry for REST lag)
+            # Only for MARKET entries - LIMIT entries are handled on fill
             if not await self._preflight_position_check(symbol):
                 LOG.warning(
                     f"🚫 [PHASE A3] Skipping TP/SL placement - position check failed for {symbol}")
@@ -2899,6 +3190,13 @@ class ExecPosFSM:
             # ✅ Place SL and TP in parallel (not sequentially)
             sl_resp = None
             tp_resp = None
+            
+            # MAGIC-NUM-EXTRACTION: Read bracket placement config from SSOT
+            bracket_cfg = self.config.domains.execution_position.bracket_placement
+            tp_widen_first = Decimal("1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+            tp_widen_second = Decimal("1") + Decimal(str(bracket_cfg.tp_widen_second_bps)) / Decimal("10000")
+            retry_backoff_ms = bracket_cfg.retry_backoff_ms
+            
             try:
                 async def place_sl_async():
                     return await self.adapter.place_stop_market_close_position(
@@ -2919,29 +3217,31 @@ class ExecPosFSM:
                                 f"⚠️ [PHASE A3] TP -2021 error, attempting backoff for {symbol}")
                             self._orphan_metrics["tp_sl_retry_backoff"] += 1
 
-                            # Retry with widened TP
-                            tp_adj = tp * 1.002  # +20 bps approx
+                            # Retry with widened TP (from config)
+                            tp_adj = tp * tp_widen_first
                             tp_adj = quantize_stop_price(
                                 tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
                             )
                             self.metrics_collector.record_retry(
                                 "tp_adjust") if self.metrics_collector else None
 
-                            # Exponential backoff: 200ms first retry
-                            await asyncio.sleep(0.2)
+                            # Exponential backoff from config
+                            # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+                            await get_clock().sleep_ms(retry_backoff_ms[0])
 
                             try:
                                 return await self.adapter.place_take_profit_market_close_position(
                                     symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
                                 )
                             except BinanceAPIError as e2:
-                                if e2.code == -2021:
-                                    # Second retry: 400ms backoff
+                                if e2.code == -2021 and len(retry_backoff_ms) > 1:
+                                    # Second retry with second backoff
                                     LOG.warning(
-                                        f"⚠️ [PHASE A3] TP -2021 retry 2, backoff 400ms for {symbol}")
-                                    await asyncio.sleep(0.4)
+                                        f"⚠️ [PHASE A3] TP -2021 retry 2, backoff {retry_backoff_ms[1]}ms for {symbol}")
+                                    # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+                                    await get_clock().sleep_ms(retry_backoff_ms[1])
 
-                                    tp_adj2 = tp * 1.005  # +50 bps
+                                    tp_adj2 = tp * tp_widen_second
                                     tp_adj2 = quantize_stop_price(
                                         tp_adj2, tick_size, side="BUY" if side == "BUY" else "SELL"
                                     )
@@ -2996,7 +3296,8 @@ class ExecPosFSM:
                     )
                 except BinanceAPIError as e:
                     if e.code == -2021:
-                        tp_adj = tp * 1.002
+                        # Use config values (already loaded above in bracket_cfg)
+                        tp_adj = tp * tp_widen_first
                         tp_adj = quantize_stop_price(
                             tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
                         )
@@ -3441,15 +3742,20 @@ class ExecPosFSM:
         qty = pld.get("qty")
         price_ref = pld.get("price_ref")
 
-        side_raw = pld.get("side")
-        side = str(side_raw).upper() if side_raw is not None else "BUY"
-        if side not in {"BUY", "SELL", "LONG", "SHORT"}:
-            side = "BUY"
-
         if not symbol or not qty or not price_ref:
             LOG.warning(
                 f"EXPOSURE_CHECK_SKIP: Missing required fields for {symbol}")
             return None
+
+        side_raw = pld.get("side")
+        side_str = getattr(side_raw, "value", side_raw)
+        side = str(side_str).strip().upper() if side_str is not None else ""
+        if not side:
+            raise ValueError(
+                "Order side is missing in payload. Cannot default to BUY."
+            )
+        if side not in {"BUY", "SELL", "LONG", "SHORT"}:
+            raise ValueError(f"Order side is invalid: {side_raw!r}")
 
         try:
             # Calculate notional
@@ -3542,10 +3848,11 @@ class ExecPosFSM:
                 # Clipping is best-effort; do not block execution if clip metadata is malformed.
                 pass
 
-            # EXP-FIX: Periodic shadow notional check (every 10 requests approx)
+            # EXP-FIX: Periodic shadow notional check (config-based sampling rate)
+            shadow_cfg = self.config.domains.execution_position.shadow_check
             self._shadow_check_counter += 1
 
-            if self._shadow_check_counter % 10 == 0 and self.adapter:
+            if shadow_cfg.enabled and self._shadow_check_counter % shadow_cfg.check_every_n_requests == 0 and self.adapter:
                 loop = self._get_async_loop()
                 if loop:
                     self._submit_async(self._check_shadow_notional(), loop)
@@ -3710,6 +4017,24 @@ class ExecPosFSM:
         LOG.info(
             f"CANCEL_EVENT: Processing cancellation for {symbol} order {order_id}")
 
+        # LIMIT-ENTRY-DEFERRED-BRACKETS: Cleanup pending brackets if entry was cancelled
+        if order_id and order_id in self._pending_brackets:
+            bracket_data = self._pending_brackets.pop(order_id, None)
+            
+            # PHASE4: Mark as cleared in WAL
+            try:
+                write_pending_brackets_cleared(
+                    entry_order_id=order_id,
+                    reason="cancelled",
+                    symbol=bracket_data.get("symbol", "") if bracket_data else "",
+                )
+            except Exception as e:
+                LOG.warning(f"Failed to clear pending brackets from WAL: {e}")
+            
+            LOG.info(
+                f"📌 [LIMIT-DEFERRED] Cleaned up pending brackets for cancelled entry {order_id}"
+            )
+
         # TASK40: Mark order terminal in OrderIndex (unblocks one-open-order guard).
         try:
             if hasattr(self.fsm, "order_index") and self.fsm.order_index:  # type: ignore[attr-defined]
@@ -3792,6 +4117,10 @@ class ExecPosFSM:
             if not hasattr(self, "adapter") or not self.adapter:
                 return
 
+            # BACKTEST-GUARD: MockBroker doesn't have this method
+            if not hasattr(self.adapter, "get_positions_notional_usd_shadow"):
+                return
+
             # Get shadow notional from exchange
             shadow_notional = await self.adapter.get_positions_notional_usd_shadow()
 
@@ -3800,17 +4129,29 @@ class ExecPosFSM:
                 str(self._latest_portfolio_state["open_positions_usd"] if "open_positions_usd" in self._latest_portfolio_state else "0")
             )
 
-            # Compare with tolerance (allow 1% difference)
-            tolerance = 0.01
-            diff_pct = (
-                abs(shadow_notional - float(portfolio_notional))
-                / max(shadow_notional, float(portfolio_notional), 1)
-                * 100
-            )
+            # MAGIC-NUM-EXTRACTION: Compare with tolerance from config
+            shadow_cfg = self.config.domains.execution_position.shadow_check
+            max_notional = max(shadow_notional, float(portfolio_notional), 1)
+            diff_abs = abs(shadow_notional - float(portfolio_notional))
+            diff_pct = (diff_abs / max_notional) * 100
 
-            if diff_pct > tolerance:
+            # Determine which threshold to use based on portfolio size
+            use_absolute = (
+                shadow_cfg.use_absolute_for_large_portfolios
+                and max_notional >= shadow_cfg.large_portfolio_threshold_usd
+            )
+            
+            if use_absolute:
+                is_mismatch = diff_abs > shadow_cfg.absolute_threshold_usd
+                threshold_desc = f">${shadow_cfg.absolute_threshold_usd:.0f}"
+            else:
+                is_mismatch = diff_pct > shadow_cfg.tolerance_pct
+                threshold_desc = f">{shadow_cfg.tolerance_pct}%"
+
+            if is_mismatch:
                 LOG.warning(
-                    f"EXPOSURE_MISMATCH: portfolio={portfolio_notional}, shadow={shadow_notional}, diff={diff_pct:.2f}%"
+                    f"EXPOSURE_MISMATCH: portfolio={portfolio_notional}, shadow={shadow_notional}, "
+                    f"diff={diff_pct:.2f}%, threshold={threshold_desc}"
                 )
                 self.exposure_guard._increment_metric(
                     "exposure_mismatch_total", "shadow_check"
@@ -3830,6 +4171,7 @@ class ExecPosFSM:
                         "portfolio_notional": str(portfolio_notional),
                         "shadow_notional": shadow_notional,
                         "diff_pct": diff_pct,
+                        "threshold": threshold_desc,
                     },
                     why="shadow_notional_mismatch",
                 )
@@ -3922,7 +4264,7 @@ class ExecPosFSM:
 
                 # Position found!
                 if abs(position_amt) >= 1e-10:
-                    LOG.info(f"[BRK] preflight DECISION=allow (pos!=0)")
+                    LOG.info("[BRK] preflight DECISION=allow (pos!=0)")
                     return True
 
                 # Exhausted retries
@@ -3933,14 +4275,158 @@ class ExecPosFSM:
                     return False
 
                 # Wait before next retry
-                await asyncio.sleep(backoff_ms[tries - 1] / 1000.0)
+                # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+                await get_clock().sleep_ms(backoff_ms[tries - 1])
 
             except Exception as e:
                 LOG.warning(
                     f"⚠️ [PHASE A3] PRE-FLIGHT ERROR for {symbol} (try {tries}): {e}")
                 if tries > len(backoff_ms):
                     return False
-                await asyncio.sleep(backoff_ms[tries - 1] / 1000.0)
+                # DET-BT-13: Use clock.sleep_ms for deterministic backtest
+                await get_clock().sleep_ms(backoff_ms[tries - 1])
+
+    async def _place_deferred_brackets(
+        self, entry_order_id: str, bracket_data: Dict[str, Any]
+    ) -> None:
+        """
+        LIMIT-ENTRY-DEFERRED-BRACKETS: Place TP/SL brackets after LIMIT entry fill.
+        
+        Called from _on_order_fill when a LIMIT entry order is filled.
+        Uses cached bracket data to place SL and TP orders.
+        """
+        symbol = bracket_data["symbol"]
+        side = bracket_data["side"]
+        sl = bracket_data["sl"]
+        tp = bracket_data["tp"]
+        _qty = bracket_data["qty"]  # Extracted but unused: closePosition=True
+        rid = bracket_data.get("rid")
+        idem_key = bracket_data.get("idem_key")
+        tick_size = bracket_data.get("tick_size", Decimal("0.1"))
+        corr_id = bracket_data.get("corr_id")
+        oco_group_id = bracket_data.get("oco_group_id")
+        entry_client_order_id = bracket_data.get("entry_client_order_id")
+
+        LOG.info(
+            f"📌 [LIMIT-DEFERRED] Placing brackets for {symbol}: SL={sl}, TP={tp}"
+        )
+
+        # Pre-flight check: verify position exists (should be there after fill)
+        if not await self._preflight_position_check(symbol):
+            LOG.warning(
+                f"🚫 [LIMIT-DEFERRED] Position check failed for {symbol}, skipping brackets"
+            )
+            return
+
+        # Check with OrderGuardian
+        if not await self.order_guardian.should_place_brackets(symbol, entry_order_id):
+            LOG.warning(
+                f"🚫 [LIMIT-DEFERRED] OrderGuardian blocked brackets for {symbol}"
+            )
+            return
+
+        # Generate bracket IDs
+        sl_side = opposite_side(side)
+        sl_id = generate_client_order_id(
+            "SL", symbol, idempotent_key=str(idem_key) if idem_key else None
+        )
+        tp_side = opposite_side(side)
+        tp_id = generate_client_order_id(
+            "TP", symbol, idempotent_key=str(idem_key) if idem_key else None
+        )
+
+        # MAGIC-NUM-EXTRACTION: Read bracket placement config from SSOT
+        bracket_cfg = self.config.domains.execution_position.bracket_placement
+        tp_widen_first = Decimal("1") + Decimal(str(bracket_cfg.tp_widen_first_bps)) / Decimal("10000")
+
+        # Place SL and TP
+        sl_resp = None
+        tp_resp = None
+        try:
+            sl_resp = await self.adapter.place_stop_market_close_position(
+                symbol, sl_side, str(sl), new_client_order_id=sl_id
+            )
+            LOG.info(f"✅ [LIMIT-DEFERRED] SL placed: {sl_resp}")
+            self._orphan_metrics["tp_sl_placed_success"] += 1
+
+            # Correlation store
+            sl_order_id = str(sl_resp["orderId"])
+            self.correlation_store.put_sl_tp_ack(
+                sl_order_id, entry_client_order_id or "", corr_id or "", 
+                oco_group_id or "", rid or ""
+            )
+            self._symbol_brackets.setdefault(symbol, {})["sl_order_id"] = sl_order_id
+
+        except Exception as e:
+            LOG.error(f"❌ [LIMIT-DEFERRED] Failed to place SL for {symbol}: {e}")
+
+        try:
+            tp_resp = await self.adapter.place_take_profit_market_close_position(
+                symbol, tp_side, str(tp), new_client_order_id=tp_id
+            )
+            LOG.info(f"✅ [LIMIT-DEFERRED] TP placed: {tp_resp}")
+            self._orphan_metrics["tp_sl_placed_success"] += 1
+
+            # Correlation store
+            tp_order_id = str(tp_resp["orderId"])
+            self.correlation_store.put_sl_tp_ack(
+                tp_order_id, entry_client_order_id or "", corr_id or "",
+                oco_group_id or "", rid or ""
+            )
+            self._symbol_brackets.setdefault(symbol, {})["tp_order_id"] = tp_order_id
+
+        except BinanceAPIError as e:
+            if e.code == -2021:
+                # TP too close to mark price - widen and retry (config-based)
+                LOG.warning(f"⚠️ [LIMIT-DEFERRED] TP -2021 for {symbol}, widening")
+                tp_adj = tp * tp_widen_first
+                tp_adj = quantize_stop_price(
+                    tp_adj, tick_size, side="BUY" if side == "BUY" else "SELL"
+                )
+                try:
+                    tp_resp = await self.adapter.place_take_profit_market_close_position(
+                        symbol, tp_side, str(tp_adj), new_client_order_id=tp_id
+                    )
+                    LOG.info(f"✅ [LIMIT-DEFERRED] TP placed (widened): {tp_resp}")
+                    tp_order_id = str(tp_resp["orderId"])
+                    self.correlation_store.put_sl_tp_ack(
+                        tp_order_id, entry_client_order_id or "", corr_id or "",
+                        oco_group_id or "", rid or ""
+                    )
+                    self._symbol_brackets.setdefault(symbol, {})["tp_order_id"] = tp_order_id
+                except Exception as e2:
+                    LOG.error(f"❌ [LIMIT-DEFERRED] TP retry failed for {symbol}: {e2}")
+            else:
+                LOG.error(f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+        except Exception as e:
+            LOG.error(f"❌ [LIMIT-DEFERRED] Failed to place TP for {symbol}: {e}")
+
+        # Register brackets with OrderGuardian
+        if sl_resp:
+            self.order_guardian.register_bracket(
+                symbol=symbol,
+                parent_order_id=entry_order_id,
+                order_id=str(sl_resp["orderId"]),
+                client_order_id=sl_id,
+                kind="SL",
+                corr_id=corr_id,
+                rid=rid
+            )
+        if tp_resp:
+            self.order_guardian.register_bracket(
+                symbol=symbol,
+                parent_order_id=entry_order_id,
+                order_id=str(tp_resp["orderId"]),
+                client_order_id=tp_id,
+                kind="TP",
+                corr_id=corr_id,
+                rid=rid
+            )
+
+        LOG.info(
+            f"✅ [LIMIT-DEFERRED] Brackets placed for {symbol}: "
+            f"SL={'OK' if sl_resp else 'FAILED'}, TP={'OK' if tp_resp else 'FAILED'}"
+        )
 
     async def _cleanup_loop(self) -> None:
         """Periodic orphaned-order cleanup loop (interval from config)."""
@@ -3948,7 +4434,8 @@ class ExecPosFSM:
             try:
                 interval = max(
                     5, int(self._orphan_cfg["periodic_interval_sec"]))
-                await asyncio.sleep(interval)
+                # DET-BT-13: Use clock.sleep_sec for deterministic backtest
+                await get_clock().sleep_sec(interval)
                 await self.order_guardian.cleanup_orphans()
                 self._orphan_metrics["loops"] += 1
             except asyncio.CancelledError:

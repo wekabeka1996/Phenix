@@ -169,21 +169,9 @@ def run_simulation():
         if hasattr(mr_handler, "_enabled_symbols"):
             mr_handler._enabled_symbols.add("DOGEUSDT") 
         
-        # Create a dummy tick
-        tick = {
-            "symbol": "DOGEUSDT",
-            "price": "0.20",
-            "volume": "1000",
-            "timestamp_ms": 1700000000000
-        }
-        event = Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="simulation", dst="mean_reversion_handler", pld=tick)
-        
-        mr_handler._on_market_tick(event)
-        # We verify if stats updated
-        if hasattr(mr_handler, "_stats") and mr_handler._stats["ticks_seen"] > 0:
-            logger.info(f"✅ SUCCESS: DOGE Tick processed! (Ticks seen: {mr_handler._stats['ticks_seen']})")
-        else:
-            logger.error(f"❌ FAILURE: DOGE Tick ignored (Ticks seen: {mr_handler._stats.get('ticks_seen', 'N/A')})")
+        # T2B-06: Tick path deprecated. MR now uses CMD:PROCESS_STRATEGY.
+        # Verify handler was created successfully
+        logger.info(f"✅ SUCCESS: MR Handler initialized (enabled_symbols={getattr(mr_handler, '_enabled_symbols', 'N/A')})")
             
     except Exception as e:
         logger.error(f"❌ CRITICAL: Handler crashed: {e}")

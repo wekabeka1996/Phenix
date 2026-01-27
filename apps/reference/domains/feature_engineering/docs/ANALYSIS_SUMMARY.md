@@ -1,8 +1,8 @@
 # Feature Engineering Domain - Analysis Summary
 
-**Last Updated:** 2025-11-29  
-**Component:** `feature_engineering.py` (611 LOC)  
-**Test Coverage:** 8 tests passed, baseline coverage established
+**Last Updated:** 2026-01-27
+**Component:** `feature_engineering.py` (1254 LOC)
+**Audit Status:** 100% Forensic Coverage (See `DOMAIN_DOCUMENTATION_DEEP_DIVE.md`)
 
 ---
 
@@ -47,25 +47,14 @@
 
 ## 🔍 Code Issues Found
 
-### 1. Legacy File (`feature_engineering_phase1.py`)
-- Contains syntax errors (`self.self.config`)
-- Duplicate of main implementation
-- **Recommendation:** Remove or archive
+### 1. Forensic Audit Critical Findings
+-   **Causality Violation**: `_create_synthetic_tick_for_bar_close` manipulates timestamps (-1ms).
+-   **Wallclock Leak**: usage of `time.time()` in production paths.
+-   **Shadow Config**: Hardcoded strategy parameters in Python code.
 
-### 2. Volume Spike Calculation (FIXED in main file)
-```python
-# OLD (phase1 - tick count only):
-state["vol_window_trades"] += 1
-
-# NEW (main file - real volumes):
-current_volume = buy_vol + sell_vol
-state["vol_window_trades"] += current_volume
-```
-
-### 3. Schema Outdated
-- `schemas/features_calculated_v1.json` doesn't include Phase 1 features
-- `additionalProperties: false` would reject new fields
-- **Recommendation:** Update schema to include all features
+### 2. Feature Gaps
+-   **Macro Resid**: Implemented but relies on fragile anchor timestamps.
+-   **Large Trade Imbalance**: Returns `ready=False` too aggressively ("Blind Safety").
 
 ---
 
@@ -140,20 +129,15 @@ state["vol_window_trades"] += current_volume
 
 ## 📝 Recommendations
 
-### Immediate (P0)
-1. ~~Remove `feature_engineering_phase1.py`~~ or mark deprecated
-2. Update `features_calculated_v1.json` schema with Phase 1 fields
-3. Add type hints to all methods
+### Immediate (P0) - REMEDIATION PLAN
+1.  **Kill Zombie Logic**: Delete `mean_reversion_strategy.on_tick`.
+2.  **Fix Timestamp Heuristics**: Replace `1e12` checks with strict config.
+3.  **Strict Time**: Remove `time.time()`.
 
 ### Short-term (P1)
-1. Add Phase 1 feature unit tests (EMA, volume spike, volatility)
-2. Simplify config access pattern (use single helper method)
-3. Add performance metrics (computation time per tick)
-
-### Long-term (P2)
-1. Add new features: Funding Rate, Open Interest delta
-2. Implement feature importance tracking (Information Coefficient)
-3. Add feature drift detection for production monitoring
+1.  **Expose Shadow Config**: Move multipliers to YAML.
+2.  **Fix Silent Fallbacks**: Implement proper error signaling.
+3.  **Optimize Math**: Remove `sorted()` and `list.insert()` from hot paths.
 
 ---
 

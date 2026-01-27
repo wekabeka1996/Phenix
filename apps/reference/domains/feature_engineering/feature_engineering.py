@@ -570,24 +570,52 @@ class FeatureEngineering:
             "ask": last_tick.get("ask"),
         }
         
-        # Create synthetic last_tick with ts slightly before bar_ts
-        # to ensure time_diff > 0 in feature calculation
-        # FIX-NRR026-BACKTEST: Use bar's OPEN price as prev_price for delta_price calculation
-        # This ensures delta_price = (close - open), not (close - last_tick_price)
-        bar_last_tick = dict(last_tick)
-        bar_last_tick["ts"] = bar_ts - 1  # 1ms before bar close
-        
         # Extract bar's open price for correct delta_price
         if isinstance(bar_data, dict):
             bar_open = bar_data.get("open")
         else:
             bar_open = getattr(bar_data, "open", None)
         
-        if bar_open is not None:
-            bar_last_tick["price"] = str(bar_open)  # Use bar's OPEN as prev_price
+        bar_open_dec = decimal.Decimal(str(bar_open)) if bar_open is not None else None
+        
+        # P2: Use extracted method for synthetic tick creation
+        bar_last_tick = self._create_synthetic_tick_for_bar_close(last_tick, bar_ts, bar_open_dec)
         
         self.logger.info(f"📊 on_bar_closed: emitting bar-features for {symbol} tf_sec={tf_sec}")
         self._calculate_and_emit_features_for_tf(symbol, tf_sec=tf_sec, current_tick=bar_tick, last_tick=bar_last_tick, bar_data=bar_data)
+
+    def _create_synthetic_tick_for_bar_close(
+        self, 
+        last_tick: Dict[str, Any], 
+        bar_ts: int, 
+        bar_open: Optional[decimal.Decimal]
+    ) -> Dict[str, Any]:
+        """Create synthetic 'previous tick' for bar-feature calculation.
+        
+        Problem: When calculating bar-features, time_diff = current_ts - last_ts.
+        If last_tick.ts == bar_ts (same millisecond), time_diff = 0 → rejected by guard.
+        
+        Solution: Offset last_tick.ts by -1ms to ensure time_diff > 0.
+        This is safe because bar-features use OHLC data, not tick-level timing.
+        
+        Additionally, use bar's OPEN price as prev_price for delta_price calculation,
+        ensuring delta_price = (close - open), not (close - last_tick_price).
+        
+        Args:
+            last_tick: Last real tick data for this symbol
+            bar_ts: Bar close timestamp (end_ts_ms)
+            bar_open: Bar's opening price (for delta_price calculation)
+        
+        Returns:
+            Synthetic tick dict with ts=bar_ts-1 and price=bar_open
+        """
+        synthetic_tick = dict(last_tick)
+        synthetic_tick["ts"] = bar_ts - 1  # 1ms before bar close
+        
+        if bar_open is not None:
+            synthetic_tick["price"] = str(bar_open)
+        
+        return synthetic_tick
 
     def _calculate_and_emit_features(self, symbol: str, current_tick: dict, last_tick: dict) -> bool:
         """Calculate tick-features and emit EVT:FEATURES_CALCULATED.

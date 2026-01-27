@@ -61,13 +61,66 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_entry, ensure_ascii=False)
 
 
+def _do_setup_logging(log_level: str, log_file: str, max_bytes: int, backup_count: int) -> None:
+    """Internal helper to configure logging handlers."""
+    # Create logs directory if it doesn't exist
+    log_path = Path(log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Clear existing handlers
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # Set log level
+    root_logger.setLevel(getattr(logging, log_level, logging.INFO))
+
+    # Console handler with text format
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(getattr(logging, log_level, logging.INFO))
+    root_logger.addHandler(console_handler)
+
+    # File handler with JSON format
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
+    json_formatter = JsonFormatter()
+    file_handler.setFormatter(json_formatter)
+    file_handler.setLevel(getattr(logging, log_level, logging.INFO))
+    root_logger.addHandler(file_handler)
+
+
 def setup_logging(config: Any) -> None:
     """Setup centralized logging configuration.
+
+    DEPRECATED: Use apps.reference.logging_setup.setup_logging() instead.
+    This function is kept for backward compatibility.
 
     Args:
         config: Configuration object with logging section
     """
-    # Support both Pydantic (typed) and dict-based config
+    # CFG-OBS-001: Try new observability.logging structure first
+    try:
+        if hasattr(config, 'observability') and config.observability:
+            obs_logging = config.observability.logging
+            if obs_logging:
+                log_level = obs_logging.default_level.upper()
+                log_file = obs_logging.core.path if obs_logging.core else "logs/aurora_core.log"
+                log_format = obs_logging.default_format
+                rotation = obs_logging.rotation
+                max_bytes = rotation.max_bytes if rotation else 10 * 1024 * 1024
+                backup_count = rotation.backup_count if rotation else 5
+                # Skip old logic, go directly to setup
+                _do_setup_logging(log_level, log_file, max_bytes, backup_count)
+                return
+    except (AttributeError, TypeError):
+        pass
+    
+    # Legacy: Try config.system.logging (DEPRECATED structure)
     try:
         # Try Pydantic access first (new pattern)
         if hasattr(config, 'system') and config.system:
@@ -108,35 +161,8 @@ def setup_logging(config: Any) -> None:
         backup_count = rotation_config.get(
             "backup_count", 5) if isinstance(rotation_config, dict) else 5
 
-    # Create logs directory if it doesn't exist
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Clear existing handlers
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # Set log level
-    root_logger.setLevel(getattr(logging, log_level))
-
-    # Console handler with text format
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(getattr(logging, log_level))
-    root_logger.addHandler(console_handler)
-
-    # File handler with JSON format
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
-    )
-    json_formatter = JsonFormatter()
-    file_handler.setFormatter(json_formatter)
-    file_handler.setLevel(getattr(logging, log_level))
-    root_logger.addHandler(file_handler)
+    # Use shared helper
+    _do_setup_logging(log_level, log_file, max_bytes, backup_count)
 
 
 def log_event(**fields: Any) -> None:

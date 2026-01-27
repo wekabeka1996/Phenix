@@ -6,6 +6,7 @@ Provides a simple event-driven communication system for FSM components.
 
 from typing import Dict, List, Callable, Any, Optional
 import logging
+import threading
 from .protocol import Message
 
 
@@ -22,6 +23,7 @@ class FSMCore:
         self.domains: Dict[str, Any] = {}  # Domain registry
         # Module logger for structured logging
         self.logger = logging.getLogger(__name__)
+        self._lock = threading.RLock()
 
     def listen(self, event_name: str, callback: Callable) -> None:
         """
@@ -31,9 +33,10 @@ class FSMCore:
             event_name: Name of the event to listen for (e.g., "EVT:TRADE_INTENT_PROPOSED")
             callback: Function to call when event is emitted
         """
-        if event_name not in self.listeners:
-            self.listeners[event_name] = []
-        self.listeners[event_name].append(callback)
+        with self._lock:
+            if event_name not in self.listeners:
+                self.listeners[event_name] = []
+            self.listeners[event_name].append(callback)
 
     def emit(self, event_name: str, payload: Dict[str, Any], why: str, data_ref: Optional[List[str]] = None) -> None:
         """
@@ -45,7 +48,10 @@ class FSMCore:
             why: Reason for emitting the event
             data_ref: Optional WHY chain data reference
         """
-        if event_name in self.listeners:
+        with self._lock:
+            callbacks = list(self.listeners.get(event_name, []))
+
+        if callbacks:
             # Create Message object
             message = Message(
                 op="EVT",
@@ -58,7 +64,7 @@ class FSMCore:
             )
 
             # Call all listeners
-            for callback in self.listeners[event_name]:
+            for callback in callbacks:
                 try:
                     callback(message)
                 except Exception as e:
@@ -78,13 +84,14 @@ class FSMCore:
             event_name: Name of the event
             callback: The callback function to remove
         """
-        if event_name in self.listeners:
-            try:
-                self.listeners[event_name].remove(callback)
-                if not self.listeners[event_name]:
-                    del self.listeners[event_name]
-            except ValueError:
-                pass  # Callback not found, ignore
+        with self._lock:
+            if event_name in self.listeners:
+                try:
+                    self.listeners[event_name].remove(callback)
+                    if not self.listeners[event_name]:
+                        del self.listeners[event_name]
+                except ValueError:
+                    pass  # Callback not found, ignore
 
     def register_domain(self, name: str, domain_instance: Any) -> None:
         """

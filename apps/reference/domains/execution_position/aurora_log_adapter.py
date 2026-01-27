@@ -7,10 +7,11 @@ Provides enhanced trade logging with all necessary fields for debugging and anal
 """
 
 import logging
-import time
 from typing import Dict, Any, Optional
 from pathlib import Path
 
+# T2B-04: Time abstraction for deterministic testing
+from apps.reference.core.time import get_clock
 from apps.reference.utils.accessors import aget
 
 
@@ -85,7 +86,7 @@ class AuroraLogAdapter:
             "rid": rid,
             "symbol": symbol,
             "side": side,
-            "timestamp": time.time(),
+            "timestamp": get_clock().now_sec(),
         }
 
         # Add optional fields if provided
@@ -146,7 +147,7 @@ class AuroraLogAdapter:
             "symbol": symbol,
             "side": side,
             "decision": decision,
-            "timestamp": time.time(),
+            "timestamp": get_clock().now_sec(),
         }
 
         if reason:
@@ -191,7 +192,7 @@ class AuroraLogAdapter:
             "symbol": symbol,
             "side": side,
             "status": status,
-            "timestamp": time.time(),
+            "timestamp": get_clock().now_sec(),
         }
 
         if order_id:
@@ -240,7 +241,7 @@ class AuroraLogAdapter:
             "side": side,
             "guard_type": guard_type,
             "reason": reason,
-            "timestamp": time.time(),
+            "timestamp": get_clock().now_sec(),
         }
 
         log_data.update(extra_fields)

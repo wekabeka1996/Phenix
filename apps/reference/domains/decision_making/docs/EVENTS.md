@@ -13,6 +13,7 @@
 | `EVT:REGIME_DETECTED` | **IN** | Market regime from regime_detector |
 | `EVT:EXPOSURE_SUMMARY_UPDATED` | **IN** | Exposure limits from risk_management |
 | `EVT:TRADE_INTENT_PROPOSED` | **OUT** | Trade intent to execution_position |
+| `EVT:STRATEGY_DECISION_BLOCKED` | **OUT** | Telemetry for blocked decisions (NRR codes) |
 | `EVT:ALPHA_SCORE_CALCULATED` | **OUT** | Alpha scores to monitoring |
 | `CMD:CLOSE` | **OUT** | ROI exit command to execution_position |
 
@@ -193,6 +194,29 @@ Message(
     why="roi_target_met_0.52",
     pld={...}
 )
+```
+
+---
+
+## EVT:STRATEGY_DECISION_BLOCKED
+
+### Description
+Emitted when a strategy signal is generated but blocked by safety gates (Risk, QoS, Feature Readiness).
+
+### Schema Reference
+`schemas_decision_blocked.py` (Pydantic Model)
+
+### Payload Structure
+```json
+{
+  "symbol": "BTCUSDT",
+  "stage": "on_features.risk_gate",
+  "ts_ms": 1732900000000,
+  "reason_code": "NRR-RISK-SCORE-HIGH",
+  "reason": "Risk score 0.85 exceeds max 0.8",
+  "path": "risk_parameters.score",
+  "why": "risk_score_limit"
+}
 ```
 
 ---

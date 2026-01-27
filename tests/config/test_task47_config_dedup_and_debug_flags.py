@@ -31,7 +31,7 @@ def test_task47_duplicate_paths_fail_closed(tmp_path: Path) -> None:
         cfg_dir / "trading.yaml",
         {"trading": {"mode": "testnet", "market_data": {"websocket_streams": ["trade"]}}},
     )
-    _write_yaml(cfg_dir / "regime.yaml", {"hmm": {}, "features": {}, "hotreload_whitelist": []})
+    _write_yaml(cfg_dir / "regime.yaml", {"hmm": {}, "features": {}})
     _write_yaml(cfg_dir / "domains.yaml", {"debug": {"disable_positions_stale_gate": False, "disable_daily_loss_limit": False}})
 
     loader = ConfigLoader(config_dir=cfg_dir)

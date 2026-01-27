@@ -89,11 +89,13 @@ The Decision Making domain is the **core trading decision engine** in the Quantu
 
 ### Downstream Consumers
 
-| Domain | Receives | Event | Integration Quality |
-|--------|----------|-------|---------------------|
-| Execution Position | Trade intents | `EVT:TRADE_INTENT_PROPOSED` | ✅ Robust |
-| Execution Position | Close commands | `CMD:CLOSE` | ✅ Robust |
-| Monitoring | Alpha scores | `EVT:ALPHA_SCORE_CALCULATED` | ✅ Robust |
+| Domain | Receives | Event | Integration Quality | Event Schema | Consumer |
+|--------|----------|-------|---------------------|--------------|----------|
+| Execution Position | Trade intents | `EVT:TRADE_INTENT_PROPOSED` | ✅ Robust | `schemas/trade_intent_v1.json` | execution_position |
+| Telemetry | Blocked decisions | `EVT:STRATEGY_DECISION_BLOCKED` | ✅ Robust | `schemas_decision_blocked.py` | telemetry |
+| Monitoring | Alpha scores | `EVT:ALPHA_SCORE_CALCULATED` | ✅ Robust | N/A | monitoring |
+| Execution Position | Close commands | `CMD:CLOSE` | ✅ Robust | N/A | execution_position |
+| Monitoring | Alpha scores | `EVT:ALPHA_SCORE_CALCULATED` | ✅ Robust | N/A | monitoring |
 
 ---
 
@@ -181,6 +183,8 @@ The Decision Making domain is the **core trading decision engine** in the Quantu
 
 | Improvement | Effort | Impact |
 |-------------|--------|--------|
+| Fix Fail-Open Anti-Pyramiding | Low | Critical |
+| Fix Hardcoded Anchor (BTCUSDT) | Low | High |
 | Add runtime config validation | Low | Medium |
 | Enhance decision metrics collection | Low | High |
 | Pre-compute regime multipliers | Low | Low |
@@ -230,6 +234,11 @@ The Decision Making domain is the **core trading decision engine** in the Quantu
 │  │ (enums)         │     │ (validation)    │                     │
 │  └─────────────────┘     └─────────────────┘                     │
 │                                                                  │
+│  ┌──────────────────────────┐                                    │
+│  │ Schema Definitions       │                                    │
+│  │ (trade_intent_v1.json)   │                                    │
+│  └──────────────────────────┘                                    │
+│                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -246,6 +255,6 @@ The Decision Making domain demonstrates **robust architectural design** with:
 - ✅ Clean separation of concerns
 - ✅ Production-grade error handling
 
-**Overall Assessment**: ✅ **PRODUCTION READY**
+**Overall Assessment**: ⚠️ **PRODUCTION READY WITH CAVEATS**
 
-The domain successfully balances sophistication with operational reliability and is well-positioned for future enhancements.
+The domain successfully balances sophistication with operational reliability, but recent audits (Jan 2026) have identified critical risks (Fail-Open Anti-Pyramiding, In-Memory State) that must be addressed before high-capital deployment.

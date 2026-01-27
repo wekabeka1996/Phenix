@@ -321,22 +321,36 @@ async def test_fsm_submit_async_scheduling(exec_pos_fsm):
     await coro # cleanup
 
 def test_fsm_resolve_guardian_config_branches(exec_pos_fsm):
-    """Test guardian config resolution logic."""
-    # Use real dict to test resolution
-    exec_pos_fsm.config = {
-        "execution": {
-            "order_guardian": {"poll_interval_ms": 1000}
-        },
-        "trading": {
-            "execution": {
-                "order_guardian": {"cleanup_ttl_ms": 9999}
-            }
-        }
-    }
+    """Test guardian config resolution logic.
+    
+    MAGIC-NUM-EXTRACTION: Guardian config now from SSOT domains.execution_position.guardian.
+    """
+    from unittest.mock import MagicMock
+    
+    # Mock the config structure to have domains.execution_position.guardian
+    mock_guardian = MagicMock()
+    mock_guardian.unified = True
+    mock_guardian.emit_tidy_event = True
+    mock_guardian.poll_interval_ms = 1000
+    mock_guardian.cleanup_ttl_ms = 9999
+    mock_guardian.symbol_cooldown_ms = 5000
+    
+    mock_ep = MagicMock()
+    mock_ep.guardian = mock_guardian
+    
+    mock_domains = MagicMock()
+    mock_domains.execution_position = mock_ep
+    
+    mock_config = MagicMock()
+    mock_config.domains = mock_domains
+    
+    exec_pos_fsm.config = mock_config
     
     res = exec_pos_fsm._resolve_guardian_config()
     assert res["poll_interval_ms"] == 1000
     assert res["cleanup_ttl_ms"] == 9999
+    assert res["unified"] is True
+    assert res["symbol_cooldown_ms"] == 5000
 
 def test_fsm_on_portfolio_state_expiry_and_release(exec_pos_fsm):
     """Test expiry of stale reservations and release of post-fill holds."""
@@ -561,10 +575,46 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
         def get(self, symbol, default=None):
             return InstrumentExecConfig()
 
+    # New SSOT config structures (bracket_placement, order_lifecycle, shadow_check, guardian)
+    class BracketPlacementCfg:
+        tp_widen_first_bps = 20
+        tp_widen_second_bps = 50
+        retry_backoff_ms = [200, 400]
+        max_retries = 3
+
+    class OrderLifecycleCfg:
+        fill_settlement_delay_ms = 500
+        position_close_cleanup_delay_ms = 2000
+        preflight_backoff_ms = 100
+
+    class ShadowCheckCfg:
+        enabled = True
+        check_every_n_requests = 10
+        tolerance_pct = 1.0
+        absolute_threshold_usd = None
+        use_absolute_for_large_portfolios = False
+
+    class GuardianCfg:
+        poll_interval_ms = 500
+        unified = True
+        emit_tidy_event = True
+        cleanup_ttl_ms = 60000
+        symbol_cooldown_ms = 5000
+
+    class ExecutionPositionDomainCfg:
+        bracket_placement = BracketPlacementCfg()
+        order_lifecycle = OrderLifecycleCfg()
+        shadow_check = ShadowCheckCfg()
+        guardian = GuardianCfg()
+
+    class DomainsCfg:
+        execution_position = ExecutionPositionDomainCfg()
+
     class Config:
         def get_domain_mode(self, d): return "live"
         strategies = Strategies()
         instruments = InstrumentsDict()
+        domains = DomainsCfg()
 
     cfg = Config()
     cfg.trading = MagicMock()

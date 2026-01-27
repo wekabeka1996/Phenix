@@ -1,23 +1,15 @@
 
 import os
-import time
 import shutil
 import unittest
-import decimal
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Domains
 from apps.reference.domains.decision_making.mean_reversion_handler import MeanReversionHandler
-from apps.reference.domains.feature_engineering.mean_reversion_strategy import (
-    MeanReversion1mStrategy, MRStrategyConfig, MRSignal, MRSignalType
-)
-from apps.reference.domains.feature_engineering.bar_resampler import Bar
 from apps.reference.domains.decision_making.mean_reversion_logger import MeanReversionBarLogger
 from apps.reference.config_models import (
     AuroraConfig, 
     StrategiesRegistryConfig,
-    StrategiesConfig,
     MeanReversion1mStrategyConfig,
     MRStrategyParamsConfig,
     MRAssetConfig,
@@ -115,111 +107,11 @@ class TestMeanReversionBarLogging(unittest.TestCase):
         
         return config
 
-    @pytest.mark.xfail(reason="MR chain broken: missing features updates for tf=180")
-    def test_log_bar_creation(self):
-        """Test that a bar is logged when on_tick completes a bar."""
-        symbol = "BTCUSDT"
-        
-        # Send ticks to complete a bar
-        # Ticks: 0s, 30s, 60s (closes bar 0-60)
-        base_ts = 1000000000000 # arbitrary start
-        
-        # 1. Start Bar
-        self.handler.on_tick(symbol, decimal.Decimal("50000"), decimal.Decimal("1"), base_ts + 0, "FLAT_NORMAL")
-        
-        # Check log exists with header
-        self.assertTrue(os.path.exists(self.handler.bar_logger.tsv_path), "Log should exist with header")
-        with open(self.handler.bar_logger.tsv_path, 'r') as f:
-            lines = f.readlines()
-            self.assertEqual(len(lines), 1, "Only header should exist")
+    # NOTE: test_log_bar_creation and test_log_signal_generation were removed
+    # They used handler.on_tick() which was deprecated dead code (T2B-06).
+    # MR now uses CMD:PROCESS_STRATEGY exclusively (T2B-03).
+    # New tests should use _on_process_strategy() or CMD:PROCESS_STRATEGY events.
 
-        # 2. Add intermediate tick
-        self.handler.on_tick(symbol, decimal.Decimal("50050"), decimal.Decimal("1"), base_ts + 30000, "FLAT_NORMAL")
-
-        # 3. Close Bar (Tick at 60s starts new bar, closes old)
-        self.handler.on_tick(symbol, decimal.Decimal("50100"), decimal.Decimal("1"), base_ts + 60000, "FLAT_NORMAL")
-        
-        # Check log Created
-        self.assertTrue(os.path.exists(self.handler.bar_logger.tsv_path))
-        with open(self.handler.bar_logger.tsv_path, 'r') as f:
-            lines = f.readlines()
-        
-        # Should contain header + 1 bar
-        self.assertEqual(len(lines), 2, f"Expected 2 lines (Header + Bar), got {len(lines)}")
-        
-        # Verify content of last line
-        bar_line = lines[-1]
-        self.assertIn("BTCUSDT", bar_line)
-        self.assertIn("50000", bar_line) # Open
-        self.assertIn("50050", bar_line) # High/Close of previous actions? No, Close was 50050 (last tick in bar)
-        # Wait: tick 1 @ 50000 (0s)
-        # tick 2 @ 50050 (30s) -> High 50050, Low 50000, Close 50050
-        # tick 3 @ 50100 (60s) -> Closes 0-60 bar.
-        
-        # Note: on_tick logic: tick 3 is processed by strategy. add_tick sees new period, returns closed bar.
-        # Closed bar includes tick 1 and 2. Tick 3 starts NEXT bar.
-        
-        self.assertIn("50050.0000", bar_line) # Close
-        self.assertIn("neutral:insufficient_bars", bar_line) # Reason (min_bars=25 default)
-        
-        # Verify JSONL
-        self.assertTrue(os.path.exists(self.handler.bar_logger.jsonl_path))
-        with open(self.handler.bar_logger.jsonl_path, 'r') as f:
-            lines = f.readlines()
-            self.assertEqual(len(lines), 1)
-            import json
-            data = json.loads(lines[0])
-            self.assertEqual(data["symbol"], "BTCUSDT")
-            self.assertEqual(data["ohlcv"]["c"], "50050")
-            self.assertEqual(data["signal"]["type"], "NEUTRAL")
-
-    @pytest.mark.xfail(reason="MR chain broken: missing features updates for tf=180")
-    def test_log_signal_generation(self):
-        """Test logging when a real signal is generated (requires enough bars)."""
-        symbol = "BTCUSDT"
-        
-        # Hack strategy to have enough bars and force a signal condition
-        strategy = self.handler._strategies[symbol]
-        strategy.config.min_bars = 2
-        strategy.config.bb_window = 2
-        strategy.config.rsi_length = 2
-        
-        base_ts = 1000000000000
-        
-        # Bar 1: Neutral
-        self.handler.on_tick(symbol, decimal.Decimal("100"), decimal.Decimal("1"), base_ts, "FLAT_NORMAL")
-        self.handler.on_tick(symbol, decimal.Decimal("100"), decimal.Decimal("1"), base_ts + 60000, "FLAT_NORMAL") # Close Bar 1
-        
-        # Bar 2: Force Low (Trigger Buy)
-        # Need BB to form. With 2 bars, BB is thin? 
-        # Actually need bb_window bars for BB. Mock it?
-        # Let's mock the strategy's _evaluate_signal to return a LONG signal
-        
-        with patch.object(MeanReversion1mStrategy, '_evaluate_signal') as mock_eval:
-             # Make return a valid signal
-             mock_eval.return_value = MRSignal(
-                 signal_type=MRSignalType.LONG,
-                 symbol=symbol,
-                 price=decimal.Decimal("90"),
-                 bb=None, # Log should handle None bb
-                 flat_regime=None,
-                 timestamp_ms=base_ts + 120000,
-                 why="test_signal",
-                 confidence=decimal.Decimal("0.9"),
-                 entry_price=decimal.Decimal("90"),
-                 bar=Bar(symbol, 60, decimal.Decimal(100), decimal.Decimal(100), decimal.Decimal(90), decimal.Decimal(90), decimal.Decimal(1), 1, base_ts + 60000, base_ts + 120000)
-             )
-             
-             # Trigger Bar Close
-             self.handler.on_tick(symbol, decimal.Decimal("90"), decimal.Decimal("1"), base_ts + 120000, "FLAT_NORMAL")
-             
-             # Check Log
-             with open(self.handler.bar_logger.tsv_path, 'r') as f:
-                 lines = f.readlines()
-             
-             # Header + Bar 2 (only signaled bars are logged)
-             self.assertEqual(len(lines), 2)
-             self.assertIn("test_signal", lines[-1])
 
 if __name__ == '__main__':
     unittest.main()

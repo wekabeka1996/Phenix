@@ -841,7 +841,8 @@ class DecisionMaking:
             # === GATE 3: QOS GATE ===
             qos_enabled = self._qos_enabled_for_strategy(str(strategy_id))
             if qos_enabled:
-                qos_allowed, qos_reason = self._qos_allow(symbol)
+                # QOS-SPLIT-BRAIN-FIX: Pass strategy_id to ensure partition isolation
+                qos_allowed, qos_reason = self._qos_allow(symbol, strategy_id=str(strategy_id))
                 if not qos_allowed:
                     effective_mode = self.qos_mode
                     if self.qos_enforce and effective_mode == "defer":
@@ -855,7 +856,8 @@ class DecisionMaking:
                     elif effective_mode == "defer":
                         # Defer mode: emit INTENT_DEFERRED (v1) and retry after cooldown.
                         now_ms = self._clock.now_ms()
-                        next_allowed_ts = int(self._calculate_next_allowed_time(symbol))
+                        # QOS-SPLIT-BRAIN-FIX: Pass strategy_id for correct partition
+                        next_allowed_ts = int(self._calculate_next_allowed_time(symbol, strategy_id=str(strategy_id)))
                         retry_key = self._stable_retry_key(
                             prefix=f"{strategy_id}:qos",
                             symbol=symbol,
@@ -918,9 +920,30 @@ class DecisionMaking:
                 "portfolio": self.latest_portfolio,
                 "features": self.symbol_states[symbol].get("features") if symbol in self.symbol_states else {},
             }
+            # === Aurora Regime Sizing (per-symbol multiplier) ===
+            # Optional: strategies.aurora.assets.<SYM>.regime_sizing[regime] scales margin_pct (margin-first sizing).
+            regime_name = None
+            scoring = pld.get("scoring") if isinstance(pld.get("scoring"), dict) else None
+            if isinstance(scoring, dict):
+                regime_name = scoring.get("regime")
+
+            margin_pct_mult: decimal.Decimal | None = None
+            if str(strategy_id) == "aurora" and regime_name:
+                try:
+                    instr_cfg = self._get_aurora_instrument_cfg(symbol)
+                    rs = aget(instr_cfg, "regime_sizing", None) if instr_cfg is not None else None
+                    if isinstance(rs, dict) and rs:
+                        mult_raw = rs.get(str(regime_name))
+                        if mult_raw is None:
+                            mult_raw = rs.get("DEFAULT")
+                        if mult_raw is not None:
+                            margin_pct_mult = decimal.Decimal(str(mult_raw))
+                except Exception:
+                    margin_pct_mult = None
+            # === END Aurora Regime Sizing ===
             try:
                 qty_dec, why_sizing, sizing_reject_reason, _sizing_dbg = self._calculate_position_size(
-                    symbol, entry_price_dec, side, sizing_ctx
+                    symbol, entry_price_dec, side, sizing_ctx, margin_pct_mult=margin_pct_mult
                 )
             except Exception as e:
                 self.logger.error(f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: Sizing error: {e}", exc_info=True)
@@ -952,44 +975,35 @@ class DecisionMaking:
                 return
             
             # === GATE 5: TTL GATE (features freshness) ===
-            # Use symbol_states SSOT (not self.latest_features which doesn't exist)
-            features_data = self.symbol_states[symbol].get("features") or {}
-            features_ts = features_data.get("ts", 0)
-            
-            # BAR-TTL-REFORM-01: Bar-specific TTL logic
-            tf_sec_val = int(features_data.get("tf_sec") or 0)
-            is_bar = tf_sec_val > 0
-            
+            # P1-2-FIX: Use signal ts_ms as reference (not cached features)
+            signal_ts_ms = pld.get("ts_ms", 0)
+            if signal_ts_ms in (None, 0, "0", ""):
+                self.logger.warning(
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Missing ts_ms in signal"
+                )
+                self._record_blocked_intent(symbol)
+                return
+
             current_ms = self._clock.now_ms()
-            
+
+            tf_sec_val = int(pld.get("tf_sec") or 0)
+            is_bar = tf_sec_val > 0
+
             if is_bar:
-                # Use BAR TTL from system config
+                bar_ttl_ms = tf_sec_val * 1000 * 2
                 sys_md = getattr(self.config.system, "market_data", None)
                 if sys_md:
-                    bar_ttl_ms = float(getattr(sys_md, "bar_ttl_ms", 10000) or 10000)
-                    age_mode = getattr(sys_md, "bar_event_age_mode", "received")
-                else:
-                    bar_ttl_ms = 10000.0
-                    age_mode = "received"
-                
-                ttl_sec = bar_ttl_ms / 1000.0
-                
-                # Use specified age mode (received vs close_ts)
-                if age_mode == "received":
-                    start_ts = features_data.get("_received_ts", features_ts)
-                else:
-                    start_ts = features_ts
+                    bar_ttl_ms = float(getattr(sys_md, "bar_ttl_ms", bar_ttl_ms) or bar_ttl_ms)
+                ttl_ms = bar_ttl_ms
             else:
-                # Use TICK TTL (standard domain config)
-                ttl_sec = self.features_ttl_sec
-                start_ts = features_ts
+                ttl_ms = self.features_ttl_sec * 1000
 
-            features_age_sec = (current_ms - start_ts) / 1000 if start_ts > 0 else float('inf')
-            
-            if features_age_sec > ttl_sec:
+            signal_age_ms = current_ms - int(signal_ts_ms)
+
+            if signal_age_ms > ttl_ms:
                 self.logger.info(
-                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Features stale "
-                    f"(age={features_age_sec:.1f}s > ttl={ttl_sec:.1f}s)"
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Signal stale "
+                    f"(age={signal_age_ms}ms > ttl={ttl_ms}ms, signal_ts={signal_ts_ms})"
                 )
                 self._record_blocked_intent(symbol)
                 return
@@ -1029,6 +1043,46 @@ class DecisionMaking:
                 strategy_stop_price = str(strategy_stop_price) if strategy_stop_price not in ("", "None") else None
             if strategy_target_price is not None:
                 strategy_target_price = str(strategy_target_price) if strategy_target_price not in ("", "None") else None
+
+            def _validate_price_input(val: Any) -> Decimal | None | str:
+                if val is None:
+                    return None
+                try:
+                    d = Decimal(str(val))
+                    if not d.is_finite() or d < 0:
+                        raise ValueError("Non-finite/Negative")
+                    return d
+                except Exception:
+                    return "INVALID"
+
+            stop_valid = _validate_price_input(strategy_stop_price)
+            target_valid = _validate_price_input(strategy_target_price)
+            if stop_valid == "INVALID" or target_valid == "INVALID":
+                invalid_fields = []
+                if stop_valid == "INVALID":
+                    invalid_fields.append("stop_price")
+                if target_valid == "INVALID":
+                    invalid_fields.append("target_price")
+                self.logger.warning(
+                    f"[{symbol}] STRATEGY_SIGNAL_GATEWAY: REJECT - Invalid price inputs: {invalid_fields}"
+                )
+                self._emit_trade_intent_rejected(
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=side,
+                    rid=str(rid),
+                    reason_code="STRATEGY_INVALID_PRICES",
+                    reason="STRATEGY_SIGNAL",
+                    context="strategy_signal_gateway:invalid_prices",
+                    why_chain=(why_chain if isinstance(why_chain, list) else []) + ["invalid_prices"],
+                    details={
+                        "invalid_fields": invalid_fields,
+                        "stop_price": strategy_stop_price,
+                        "target_price": strategy_target_price,
+                    },
+                )
+                self._record_blocked_intent(symbol)
+                return
             
             # Log Strategy Primacy usage
             if strategy_stop_price or strategy_target_price:
@@ -1343,28 +1397,36 @@ class DecisionMaking:
 
         return {"allowed": True, "reason": None}
 
-    def _calculate_next_allowed_time(self, symbol: str) -> int:
+    def _calculate_next_allowed_time(self, symbol: str, strategy_id: str = "aurora") -> int:
         """Calculate next allowed timestamp for symbol based on QoS rules.
         
         T2B-08: Uses injected Clock for deterministic testing.
+        QOS-SPLIT-BRAIN-FIX: Now strategy-aware (reads from correct partition).
+        
+        Args:
+            symbol: Trading symbol
+            strategy_id: Strategy identifier for state partitioning
         """
         current_time = self._clock.now_sec()
         next_allowed = current_time
 
+        # QOS-SPLIT-BRAIN-FIX: Read from strategy-specific partition
+        strat_state = self._qos_state[strategy_id]
+
         # Check symbol cooldown (uses per-symbol resolver)
-        symbol_cooldowns: dict[str, Any] = dget(self._qos_state, "symbol_cooldowns", {})
-        last_decision: float = float(dget(symbol_cooldowns, symbol, 0.0))
-        cooldown_duration = self._get_symbol_cooldown(symbol)
+        symbol_cooldowns: dict[str, Any] = strat_state.get("symbol_cooldowns", {})
+        last_decision: float = float(symbol_cooldowns.get(symbol, 0.0))
+        cooldown_duration = self._get_symbol_cooldown(symbol, strategy_id)
 
         cooldown_end: float = last_decision + cooldown_duration
         next_allowed = max(next_allowed, cooldown_end)
 
         # Check rate limit window
-        symbol_intent_counts: dict[str, Any] = dget(self._qos_state, "symbol_intent_counts", {})
-        intent_data: dict[str, Any] = symbol_intent_counts[symbol] if symbol in symbol_intent_counts else {"count": 0, "window_start": current_time}
-        window_start = float(intent_data["window_start"] if "window_start" in intent_data else current_time)
+        symbol_intent_counts: dict[str, Any] = strat_state.get("symbol_intent_counts", {})
+        intent_data: dict[str, Any] = symbol_intent_counts.get(symbol, {"count": 0, "window_start": current_time})
+        window_start = float(intent_data.get("window_start", current_time))
         window_end: float = window_start + 60
-        intent_count: int = int(intent_data["count"] if "count" in intent_data else 0)
+        intent_count: int = int(intent_data.get("count", 0))
         if intent_count >= self.qos_max_intents_per_minute_per_symbol:
             next_allowed = max(next_allowed, window_end)
 
@@ -1883,76 +1945,6 @@ class DecisionMaking:
         # 2. Global fallback (already loaded in __init__)
         return (self.flip_hysteresis_enabled, self.flip_hysteresis_mult)
 
-
-    def _has_active_position_same_side(
-        self,
-        symbol: str,
-        side: str,
-    ) -> bool:
-        """
-        Check if there's an active position for this symbol in the same direction.
-        
-        ETAP4: Anti-pyramiding gate - prevents multiple entries in same direction.
-        
-        Args:
-            symbol: Trading pair symbol (e.g., 'BTCUSDT')
-            side: Intended trade side ('buy'/'long' or 'sell'/'short')
-            
-        Returns:
-            True if a position exists in the same direction, False otherwise.
-        """
-        try:
-            portfolio = self.latest_portfolio
-            if not portfolio:
-                return False
-            
-            positions = portfolio.get("positions") or []
-            if not positions:
-                return False
-            
-            # Normalize side to compare
-            side_upper = side.upper()
-            is_long_intent = side_upper in ("BUY", "LONG")
-            
-            for pos in positions:
-                pos_symbol = pos.get("symbol")
-                if pos_symbol != symbol:
-                    continue
-                
-                # Get position quantity
-                qty = pos.get("quantity") or pos.get("positionAmt") or pos.get("qty")
-                if qty is None:
-                    continue
-                
-                try:
-                    qty_val = float(qty) if isinstance(qty, str) else qty
-                except (ValueError, TypeError):
-                    continue
-                
-                # Skip flat positions
-                if abs(qty_val) < 1e-9:
-                    continue
-                
-                # Check if same side
-                pos_is_long = qty_val > 0
-                
-                if is_long_intent and pos_is_long:
-                    self.logger.debug(
-                        f"[{symbol}] Anti-pyramiding: existing LONG position (qty={qty_val})"
-                    )
-                    return True
-                elif not is_long_intent and not pos_is_long:
-                    self.logger.debug(
-                        f"[{symbol}] Anti-pyramiding: existing SHORT position (qty={qty_val})"
-                    )
-                    return True
-            
-            return False
-            
-        except Exception as e:
-            # Fail-closed: if we can't determine, assume no position (allow trade)
-            self.logger.warning(f"[{symbol}] Anti-pyramiding check error: {e}")
-            return False
 
     def on_features(self, event: Message) -> None:
         try:
@@ -2544,7 +2536,13 @@ class DecisionMaking:
         return False
 
     def _calculate_position_size(
-        self, symbol: str, price: decimal.Decimal, side: str, context: dict
+        self,
+        symbol: str,
+        price: decimal.Decimal,
+        side: str,
+        context: dict,
+        *,
+        margin_pct_mult: decimal.Decimal | None = None,
     ) -> tuple[Optional[decimal.Decimal], str, Optional[str], dict[str, Any]]:
         """Compute order quantity using margin-first SSOT.
 
@@ -2576,7 +2574,27 @@ class DecisionMaking:
             spec = self.config.instruments[symbol]
         except Exception as e:
             return None, f"unknown_instrument:{symbol}:{e}", "UNKNOWN_INSTRUMENT", {"symbol": str(symbol)}
-        margin_pct = decimal.Decimal(str(spec.sizing.margin_pct))
+        margin_pct_base = decimal.Decimal(str(spec.sizing.margin_pct))
+        margin_pct = margin_pct_base
+        if margin_pct_mult is not None:
+            try:
+                if margin_pct_mult <= 0:
+                    return (
+                        None,
+                        f"invalid_margin_pct_mult:{margin_pct_mult}",
+                        "CONFIG_REGIME_SIZING_INVALID",
+                        {"margin_pct_mult": str(margin_pct_mult)},
+                    )
+                margin_pct = margin_pct_base * margin_pct_mult
+                if margin_pct > decimal.Decimal("1"):
+                    margin_pct = decimal.Decimal("1")
+            except Exception as e:
+                return (
+                    None,
+                    f"invalid_margin_pct_mult:{margin_pct_mult}:{e}",
+                    "CONFIG_REGIME_SIZING_INVALID",
+                    {"margin_pct_mult": str(margin_pct_mult), "error": str(e)},
+                )
         leverage = int(spec.execution.target_leverage)
         step_size = decimal.Decimal(str(spec.step_size))
         min_qty = decimal.Decimal(str(spec.min_qty))
@@ -2598,6 +2616,8 @@ class DecisionMaking:
 
         sizing_dbg: dict[str, Any] = {
             "equity": str(equity),
+            "margin_pct_base": str(margin_pct_base),
+            "margin_pct_mult": str(margin_pct_mult) if margin_pct_mult is not None else None,
             "margin_pct": str(margin_pct),
             "margin_usdt": str(margin_usdt),
             "leverage": int(leverage),
@@ -3331,7 +3351,11 @@ class DecisionMaking:
                 data_ref=[str(x) for x in why_chain] if isinstance(why_chain, list) else [],
                 intent="PROPOSAL",
             )
-            wal.append(intent_evt.model_dump())
+            res = wal.append(intent_evt.model_dump())
+            if res is None:
+                self.logger.error(
+                    f"[{symbol}] CRITICAL: WAL WRITE FAILED (LOCK TIMEOUT). RID={rid}"
+                )
         except Exception as wal_e:
             # Best-effort: do not block trading on WAL tap errors here.
             self.logger.warning(f"Failed to write TRADE_INTENT_PROPOSED to WAL: {wal_e}")
@@ -3475,8 +3499,14 @@ class DecisionMaking:
             
         return False
         
-    def _emit_reduce_only_close(self, symbol: str, reason: str, rid: str) -> bool:
-        """Emit immediate reduce-only close intent for Flip Orchestration."""
+    def _emit_reduce_only_close(self, symbol: str, reason: str, rid: str, *, strategy_id: str) -> bool:
+        """Emit immediate reduce-only close intent for Flip Orchestration.
+
+        IMPORTANT: Use the originating strategy_id for registry arbitration.
+        Otherwise, the close can be silently blocked when the symbol is assigned to a
+        different strategy (e.g. BTCUSDT assigned to mean_reversion) which leaves the
+        position stuck and effectively halts trading (observed in backtests).
+        """
         qty_signed, curr_pos = self._get_portfolio_position_qty_signed(symbol)
         if qty_signed is None:
             self.logger.warning(
@@ -3511,7 +3541,8 @@ class DecisionMaking:
             price=decimal.Decimal("0"), # Market/Best-effort
             why_chain=["flip_orchestration_close", reason],
             rid=rid,
-            reduce_only=True
+            reduce_only=True,
+            strategy_id=str(strategy_id),
         )
         return True
 
@@ -4008,7 +4039,12 @@ class DecisionMaking:
 
         # Emit Reduce-Only Close
         rid = original_pld.get("rid") or f"flip-{int(self._clock.now_sec())}"
-        close_emitted = self._emit_reduce_only_close(symbol, "flip_orchestration", f"{rid}-close")
+        close_emitted = self._emit_reduce_only_close(
+            symbol,
+            "flip_orchestration",
+            f"{rid}-close",
+            strategy_id=str(source),
+        )
         
         # Schedule Retry (Defer Open)
         # Use simple cooldown for now (e.g. 5s) or fetch per-symbol config

@@ -6,17 +6,11 @@ trading_mode: "backtest"
 
 # REQUIRED: typed system config (SystemConfig)
 system:
-  logging:
-    level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
-    file: "logs/aurora_core.log"
-    format: "json"  # 'json' or 'text'
-    rotation:
-      max_bytes: 10485760  # 10 MB
-      backup_count: 5
+  # NOTE: logging configuration moved to observability.yaml (CFG-OBS-001)
+  # See config/aurora/observability.yaml for all logging settings.
   market_data:
     queue_maxsize: 10000
-    local_queue_maxsize: 10000
-    emit_workers: 4
+    # DEPRECATED (CFG-OBS-001): local_queue_maxsize and emit_workers removed - not used in runtime
     tick_ttl_ms: 2000
     bar_ttl_ms: 10000        # BAR-TTL-REFORM-01: Tolerance for bar latency (2x p95)
     bar_event_age_mode: "received"
@@ -29,11 +23,8 @@ system:
 # REQUIRED: ops config (OpsConfig)
 ops:
   panic_killswitch: false
-  panic_ttl_sec: null
-  quiet_hours_utc: ["22:00-06:00"]
-  allowlist_symbols: []
-  metrics_url: "http://localhost:8000/metrics"
-  reports_dir: "reports"
+  metrics_url: http://127.0.0.1:8000/metrics
+  reports_dir: reports
 
 # TASK22 (zero defaults): root-level optional keys must be explicitly present
 execution: null
@@ -43,16 +34,6 @@ trailing:
   activation_pct: 0.003  # 0.3% profit to activate
   trail_pct: 0.006       # 0.6% trailing distance
   min_update_interval_sec: 5
-
-# AuroraBridge (required)
-bridge:
-  # BRIDGE-LIMIT-UNBLOCK-01: Bridge does NOT filter by order_type.
-  # Order type policy lives in strategy configs / decision_making domain.
-  retry_scheduler:
-    max_attempts: 5
-    min_retry_delay_ms: 500
-    backoff_factor: 2.0
-    jitter_ms: 50
 
 # NOTE: binance_api is now defined in trading.yaml with correct env var names
 # pointing to .env file (BINANCE_FUTURES_API_KEY_LIVE, BINANCE_TESTNET_API_KEY, etc.)

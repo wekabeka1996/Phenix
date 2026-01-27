@@ -33,9 +33,9 @@ def mock_config():
     domains.position_tracking = pt_config
     config.domains = domains
     
-    # Mock config.trading.execution.exposure (Required by _calculate_margin_by_side)
+    # Mock config.trading.execution.exposure (legacy, kept for other fields)
     exposure = MagicMock()
-    exposure.leverage_defaults = {"__default__": "10.0"} # Fallback 10x leverage
+    exposure.leverage_defaults = {"__default__": "10.0"}
     
     execution = MagicMock()
     execution.exposure = exposure
@@ -43,6 +43,12 @@ def mock_config():
     trading = MagicMock()
     trading.execution = execution
     config.trading = trading
+    
+    # SSOT: instruments.yaml leverage
+    btcusdt_spec = MagicMock()
+    btcusdt_spec.execution.target_leverage = 50
+    btcusdt_spec.execution.margin_mode = "cross"
+    config.instruments = {"BTCUSDT": btcusdt_spec}
     
     return config
 
